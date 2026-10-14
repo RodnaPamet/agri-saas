@@ -12439,6 +12439,132 @@
         ],
         "description": "A bare error body: `{\"error\": \"<code-or-message>\"}` — NOT the `ErrorResponse` envelope, so there is no `code`, `requestId`, `details` or `params`. Used by the native auth family, where it is the shape RFC 6749 §5.2 specifies for an OAuth token endpoint, and by the cadastre-import job poll. The spatial-import routes used it until #1447 moved them to the envelope. A rate-limit (429) or an unexpected failure (5xx) on the same route still answers with `ErrorResponse`, because the error wrapper builds those rather than the route.\n\nMOSTLY `error` alone, but not a guarantee: `POST /api/auth/accept-terms` adds `currentVersion` on its stale-version branch and declares that with its own `AcceptTermsErrorResponse`. This said \"and nothing else\" until #1478, which was overstated the day it was written."
       },
+      "RecordDiaryTreatment": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "SPRAY",
+              "FERTILIZE"
+            ],
+            "description": "Spraying fills the ДНЕВНИК’s химични обработки table; fertilising fills торове. Each carries its own columns, which is why this is a kind rather than a free label."
+          },
+          "occurredOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "The calendar DAY the treatment happened — a day, not an instant, because that is what the register records and what a farmer knows. It dates both the journal entries and the completed lines. **A future day is refused** (`TREATMENT_DATE_IN_FUTURE`), and a day that does not exist, such as 2026-02-31, is refused rather than rolled forward (`TREATMENT_DATE_INVALID`)."
+          },
+          "parcelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "description": "The parcels treated, as one flat list that may span blocks. The server groups them and writes one field operation per block — the ДНЕВНИК resolves a treatment’s block through the task’s location link, so a single task spanning blocks would print a parcel under a block it was never on. Empty is refused with `TREATMENT_NO_PARCELS`; a parcel of another farm with `REFERENCE_NOT_IN_TENANT` and `params.reference: parcels`, as a 400 rather than a 404 so the refusal does not confirm the row exists somewhere."
+          },
+          "productItemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "productName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "A typed product name, resolved to the farm’s own product of that name or created. Send this OR `productItemId`."
+          },
+          "fertilizerItemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fertilizerName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "pppRegistrationNo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "ЗЗР рег. № — consulted only when a typed product name has to CREATE a product the farm does not have."
+          },
+          "quarantinePeriodDays": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 365,
+            "description": "Карантинен срок in days. **Consulted only when a typed `productName` has to CREATE a product**, where it lands on that product’s registration. If the name or `productItemId` resolves to a product the farm ALREADY has, this value is IGNORED — an operation payload must not silently rewrite a stored ЗЗР registration, the same rule `newProductRegistration` follows on a name match. The ДНЕВНИК computes «най-ранна дата за прибиране» from the PRODUCT’s current period at generation time, not from a copy taken on the day, so changing a product’s period changes what a reprint says. Storing it per entry is #1775."
+          },
+          "newProductCategory": {
+            "type": "string",
+            "enum": [
+              "PESTICIDE",
+              "FERTILIZER"
+            ]
+          },
+          "targetNote": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Вредител — the pest or disease treated."
+          },
+          "doseValue": {
+            "type": "number",
+            "description": "Доза на приложение. Per-decare for the register; the unit says which."
+          },
+          "doseUnitId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "applicationTechnique": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Техника за приложение — one rig per treatment, as the field reality is."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "kind",
+          "occurredOn",
+          "parcelIds",
+          "doseValue",
+          "doseUnitId"
+        ],
+        "description": "A treatment a farmer already carried out. Recorded as DONE — handing work to an operator stays in Задачи."
+      },
+      "RecordedTreatment": {
+        "type": "object",
+        "properties": {
+          "treatmentGroupId": {
+            "type": "string",
+            "description": "The treatment handle. Equals the `Idempotency-Key` you sent; a UUID minted by the server when you sent none."
+          },
+          "parcelCount": {
+            "type": "integer",
+            "description": "Lines written across every block — the number to show the farmer."
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One per BLOCK, not per parcel. The register joins a block through the task’s location link, so a treatment spanning three blocks is three tasks."
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "True when this request resolved onto an existing treatment and wrote nothing."
+          }
+        },
+        "required": [
+          "treatmentGroupId",
+          "parcelCount",
+          "taskIds",
+          "replayed"
+        ]
+      },
       "RegisterStartResult": {
         "type": "object",
         "properties": {
@@ -14149,6 +14275,47 @@
         ],
         "description": "A lot’s provenance in both directions. ancestors and descendants are flat arrays; `edges` is what makes them a graph."
       },
+      "TreatmentSummary": {
+        "type": "object",
+        "properties": {
+          "treatmentGroupId": {
+            "type": "string"
+          },
+          "parcelCount": {
+            "type": "integer",
+            "description": "Lines across every block — planned, not necessarily recorded."
+          },
+          "completedCount": {
+            "type": "integer",
+            "description": "Of those, how many are DONE. A line gets its ДНЕВНИК entry when it is marked DONE, so this is how much of the treatment the register actually has."
+          },
+          "taskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "occurredOn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The calendar DAY the treatment happened, `YYYY-MM-DD`. Null when nothing has been marked yet — an unmarked line has no date."
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "True only when `completedCount === parcelCount` and at least one line exists. False means partly recorded: retry on the SAME handle and the write finishes the rest."
+          }
+        },
+        "required": [
+          "treatmentGroupId",
+          "parcelCount",
+          "completedCount",
+          "taskIds",
+          "occurredOn",
+          "complete"
+        ]
+      },
       "TrendDataPoint": {
         "type": "object",
         "properties": {
@@ -15191,6 +15358,299 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LogEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/journal/treatments": {
+      "post": {
+        "operationId": "recordDiaryTreatment",
+        "summary": "Record a treatment already carried out",
+        "description": "The two-step «Нов запис»: pick a crop, tick parcels, describe one treatment. Recorded as DONE and dated by `occurredOn` — handing work to an operator stays in Задачи.\n\nSend `Idempotency-Key` ALWAYS, minted BEFORE the first attempt and reused on every retry. Here it is also the TREATMENT HANDLE, returned as `treatmentGroupId`: the per-block writes derive their own keys from it, so a replay resolves on the handle rather than on any one of them, and the handle is what later addresses this treatment.\n\n**A reused key RESUMES an unfinished treatment and REPLAYS a finished one.** A replay (`replayed: true`) happens only when every line is already DONE. If the treatment is partly recorded — any failure during marking leaves it so — this request finishes the remaining blocks and lines and answers `replayed: false`. It is safe to re-send: each block carries a derived idempotency key, so an existing block is replayed rather than duplicated, and only lines still pending are marked.\n\n**A reused key is never REFUSED, and the body is not compared** (owner ruling 2026-10-14). Reusing a key whose body differs returns the ORIGINAL treatment with `replayed: true` and writes nothing — the edit is silently not applied. So mint a NEW key the moment a field or the parcel set changes; the server cannot detect that you did not. This matches every other idempotent write in this API (journal entries, the cost batch, exchange messages), none of which compares a body, and it is stated here because the alternative — refusing the reuse — is what a client would reasonably assume.\n\n`parcelIds` is ONE flat list that may span blocks — the server groups it and writes one field operation per block, because the register resolves a block through the task’s location link.\n\nNo stock is deducted. A treatment is a RECORD of what was applied, and deducting from a lot the farmer may never have tracked would make the inventory wrong in the name of making the diary right (owner ruling 2026-10-13).\n\nRefusals, each a 400 carrying `error.code`: `TREATMENT_DATE_INVALID` (a day that does not exist — 2026-02-31 is refused, never rolled forward to 3 March), `TREATMENT_DATE_IN_FUTURE` (you cannot have sprayed tomorrow), `TREATMENT_NO_PARCELS` (an empty `parcelIds`), and `REFERENCE_NOT_IN_TENANT` with `params.reference` naming which list held the stranger — a 400 rather than a 404 so the refusal does not confirm the row exists on some other farm. `params.reference` is `parcels` and nothing else on this route.\n\nA treatment day is the FARM’s day (Europe/Sofia), not the server’s UTC day, so recording today keeps working after local midnight.\n\n`PRODUCT_IS_SAMPLE_ARCHETYPE` — the chosen `productItemId` or `fertilizerItemId` is a SAMPLE product, not a registered one, and the farm record needs a trade name. Refused BEFORE anything is written, so nothing is left behind: the underlying operation write refuses a sample only on the way to DONE, which would leave a partial treatment whose cause repeats on every retry — unfinishable and, with no delete-by-handle yet, unabandonable. Reachable only by id; a typed product NAME never resolves to a sample.\n\nInherited from the operation write underneath, all 400: `OPERATION_INPUT_AMBIGUOUS` (not exactly one input kind, or an id AND a name for the same kind), `PRODUCT_DOSE_REQUIRED` / `FERTILIZER_DOSE_REQUIRED`, `PRODUCT_NOT_FOUND` / `FERTILIZER_NOT_FOUND`, `PRODUCT_NAME_REQUIRED` (a name empty once trimmed), `FERTILIZER_EXPECTED` (the fertiliser field was given an item that is not a `FERTILIZER`; **the converse is deliberately NOT enforced** — a liquid fertiliser through a sprayer is a legitimate SPRAY, so the product field accepts any category), `PESTICIDE_REGULATORY_FIELDS_REQUIRED` (a typed name has to CREATE a plant protection product and the ЗЗР registration number or quarantine period is missing — `params.missing` names which), and `DOSE_UNIT_HAS_NO_BASE` (a typed name has to create a product but the dose unit is not a `<base>-per-<area>` rate, so no stock unit can be derived — create the product from the catalogue instead).\n\nRecording a treatment needs WRITE. The restricted machine-operator persona (`MECHANISATOR`) does not have it and is refused 403 — by design: completing work handed to an operator stays in Задачи, and filling in the register is not an operator action.",
+        "tags": [
+          "Journal"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordDiaryTreatment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The handle, the counts, and whether this was a replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordedTreatment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Signed in, but not permitted.\n\nFour of these come from `src/middleware.ts` rather than from any handler, so they are reachable on EVERY route and are the ones worth switching on:\n\n- `ADMIN_REQUIRED` — the route is admin-only and this role is not.\n- `CSRF_BLOCKED` — a cross-site admin request. Retrying will not help; the request must originate from the app.\n- `MFA_REQUIRED` — the session carries a pending MFA challenge. Complete it and retry; the credential is valid.\n- `TERMS_ACCEPTANCE_REQUIRED` — consent has not been recorded. `POST /api/auth/accept-terms` is the way out, and the session must be re-minted afterwards because `termsPending` is a JWT claim.\n\nEach carries a `message`. Since #1677 the SERVER translates it, into the language on the signed-in person's profile (`User.uiLanguage`, default Bulgarian) — NOT negotiated from `Accept-Language`, which this API deliberately ignores. So `message` is safe to render to a user for any code that has a catalogue entry.\n\n  The migration is INCOMPLETE and visibly so: a code with no entry yet keeps its English developer-facing sentence, unchanged. There is no flag telling the two apart, which is why switching on `code` and holding your own copy remains the robust choice — the server's `message` is then a better fallback than it used to be rather than something you depend on. Route-level 403s carry their own codes and are described on the operation that returns them.\n\nOne route-level code is described HERE rather than per-operation. MOST operations cannot return it — it is confined to the five capability families named below — but it means the same thing on each of them, and one of the five (`upload`) is gated at a choke point that many unrelated routes reach, so an exhaustive per-operation list would be the kind that is wrong by omission:\n\n- `ACCOUNT_DELETION_PENDING` — this person asked to delete their account and is inside the 30-day grace period, so the account creates nothing new. It is NOT a moderator action and NOT a permission problem: do not offer an appeal. Reachable on any MUTATION outside `/api/auth/**` and `/api/account/**`, which stay open precisely so the way out stays open — `DELETE /api/account/deletion` cancels it, and the person recovers their account and their listings in full. Reads are unaffected, and `GET /api/account/export` keeps working, because a right of access does not lapse because a right of erasure was invoked.\n\n- `PAST_DUE_RESTRICTED` — a payment on this tenant failed and the 14-day grace period has elapsed. It is NOT a quota or a plan ceiling: the plan is untouched and nothing was exceeded. The withheld capabilities are exactly `exchange`, `trends`, `task.create`, `upload` and `journal.create`; every other surface, including reading everything already recorded, is unaffected. The tenant's own ACTIVE exchange listings stay visible to other farms and inbound threads keep arriving — this is the unpaid tenant's own view closing, not a withdrawal.\n\n  The restriction is COMPUTED per request, with no sweep and nothing to settle, so a cleared balance lifts it on the very next request — a client can honestly tell the user to resolve it and refresh. This description deliberately names no remedy beyond that: App Store guideline 3.1.1 keeps the native client from pointing anyone to pay outside the app, so a prescribed destination would be unreachable for one of the two clients (#1490). What both clients CAN do is distinguish this from `PLAN_LIMIT_EXCEEDED` and say which happened.\n\nFive billing and capability codes are described here for the same reason and with the same caveat: each is confined to the routes that reach one gate, those gates sit below many operations, and an exhaustive per-operation list would be wrong by omission. Each carries `params` so a client composes its own sentence rather than rendering ours (#1679):\n\n- `PLAN_LIMIT_EXCEEDED` — a per-plan ceiling on a COUNT was reached. Params: `plan`, `resource`, `limit`, `current`. Reachable wherever `assertWithinLimit` guards a create. It is NOT a payment problem and NOT a permission shortfall: nothing failed and no role lifts it. The remedy is a higher plan or deleting something, and this description names no destination for the same reason `PAST_DUE_RESTRICTED` does not.\n- `AI_BUDGET_EXCEEDED` — the tenant has spent its monthly AI token budget. Params: `plan`, `limit`, `used`. It resets at the start of the next **UTC** month with nothing to settle, so a client can honestly say \"next month\" — which is what distinguishes it from the one above, where waiting changes nothing. UTC is stated because it is not local: for a Bulgarian user the reset lands at 02:00 or 03:00 on the 1st (EET/EEST), so copy naming a DAY would be wrong for a few hours each month. Raised by agrent-ios, which got this right before the spec said it.\n- `AI_TIER_NOT_ALLOWED` — the requested model TIER is above this plan's ceiling. Params: `plan`, `tier`, `ceiling`. Distinct from the budget code on purpose: the refusal is on capability, not on spend, so retrying at `ceiling` succeeds immediately and retrying the same tier never will.\n- `MODULE_DISABLED` — a product module is off for this tenant. Params: `module` and `reason`. AVAILABLE is a conjunction (plan-allowed AND tenant-enabled) and `reason` says which half failed, because the remedies differ: `\"tenant\"` means an administrator of THIS farm can turn it on, `\"plan\"` means the plan does not include it and no administrator can. Do NOT name an administrator without reading `reason` — telling somebody to ask an admin who cannot help is the defect agrent-ios#241 is about, and an earlier draft of this paragraph said exactly that. A client that ignores `reason` should stay neutral; the code alone only means \"off\".\n- `BILLING_UNAVAILABLE` — this deployment runs self-hosted and exposes no in-app checkout at all. Params: `mode`. Nothing the client or the user can do lifts it; do not offer a retry or a plan picker.\n\n  TWO of the five are TRANSLATED by the server (#1677) — `MODULE_DISABLED` and `BILLING_UNAVAILABLE` — so their `message` is renderable to a user. The other three still carry an English developer-facing sentence: their Bulgarian needs ICU plural agreement, which the server-side renderer does not yet do, and shipping copy that interpolated a wire identifier (`exchange_listing`, `deep`, `FREE`) into a farmer's screen would have been worse than the English. They are tracked on #1677.\n\n  All five carried a legacy `lower_snake:` prefix at the start of `message` until #1677; that prefix is GONE for all of them. If you are reading a cached copy of this spec and your client matches on `plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was removed once the only client depending on it had shipped the codes.\n\nTwo more are described here rather than per-operation, and their scope is NARROWER than the four above: they come from `getUserCtx`, so they are reachable on the PERSON-scoped routes only — `/api/account/**`, `/api/me/**` and `/api/social/**`. No tenant route can answer either. They are here because that one function is the choke point all of those routes reach and three of their paths are not in this document yet, so a per-operation list would be wrong by omission:\n\n- `API_KEY_NOT_PERSON_SCOPED` — an `iflk_` API key was presented on a route about a PERSON. A key belongs to a farm and authorises nobody in particular, so this is a category error rather than a permission shortfall: retrying with a wider-scoped key cannot work. Use a user session or a bearer token minted for one.\n- `OPERATOR_SCOPE` — the signed-in user is a MECHANISATOR and the route is a social surface. Deliberately narrower than the Edge lockdown of the same persona: an operator reaches their own account and security pages normally, because a lockdown that locks somebody out of their own credentials is a defect (owner ruling, 2026-10-02). Nothing the client can do lifts it; do not offer a retry.\n\nBoth carried their code in `error.message` with a generic `error.code` until #1645. If you are reading a cached copy of this spec, check that it carries this sentence before switching on either.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}": {
+      "get": {
+        "operationId": "getDiaryTreatment",
+        "summary": "Look a recorded treatment up by its handle",
+        "description": "Answers whether a treatment was recorded under this handle, and in what state.\n\n**This exists because the write replays a reused key without comparing the body.** A save whose response is lost, followed by an edit, goes out under a NEW key and writes a SECOND treatment if the first had landed. Asking whether the earlier handle exists is the only way a client can tell, so read this before re-sending an edited treatment under a fresh key.\n\nThree answers, and a client needs all three:\n\n| answer | meaning | what to do |\n| --- | --- | --- |\n| `404` `TREATMENT_NOT_FOUND` | nothing landed | write afresh |\n| `200` `complete: true` | fully recorded | do not write again |\n| `200` `complete: false` | PARTLY recorded — see `completedCount` | retry on the SAME handle; the write finishes the rest |\n\n**`complete` counts DONE lines, not lines.** A line is created pending and marked DONE afterwards, and the mark is what writes the ДНЕВНИК entry — so a treatment whose lines all exist but are unmarked is in the register nowhere. Any failure during marking leaves earlier blocks recorded and later ones not, which is the partial state this answer exists for.\n\nTreating it as a 404 writes a duplicate treatment; treating it as an ordinary 200 reports a compliance record the register does not have.\n\nThe handle is a PATH segment and not a query parameter on purpose: iOS writes the full URL including the query string to the device log, unsuppressably.",
+        "tags": [
+          "Journal"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "treatmentGroupId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The treatment, including whether it is complete.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreatmentSummary"
                 }
               }
             }
