@@ -192,6 +192,78 @@ describeFn('ДНЕВНИК list fold (DB-backed)', () => {
         expect(t.earliestHarvestOn).toBe('2026-03-08'); // 1 Mar + 7 days
     });
 
+    it('reports a free-hand entry\'s day in the FARM zone, not sliced from UTC', async () => {
+        // Finding 2 from agrent-ios's review. `occurredOn` was
+        // `occurredAt.toISOString().slice(0, 10)`, justified as "reading back
+        // the stored UTC midnight" — true of a TREATMENT entry, whose day is
+        // written as `Date.UTC(y, mo, d)`, and FALSE of a free-hand entry,
+        // whose `occurredAt` is a real instant.
+        //
+        // 22:30 UTC on 11 March IS 00:30 on 12 March in Sofia. The old slice
+        // reported the 11th — the previous day — for anything a farmer typed
+        // between local midnight and 03:00. Same UTC-slice-of-an-instant
+        // mistake as the date guard they caught earlier on this issue.
+        await globalPrisma.logEntry.create({
+            data: {
+                tenantId, type: 'OBSERVATION', title: `Късна бележка ${TAG}`,
+                occurredAt: new Date('2026-03-11T22:30:00.000Z'),
+                createdByUserId: userId,
+            },
+        });
+
+        const rows = await walk(50);
+        const late = rows.find((r) => (r.treatment?.occurredOn as string) === '2026-03-12');
+        expect(late).toBeDefined();
+        // And emphatically NOT the 11th.
+        expect(rows.map((r) => r.treatment?.occurredOn)).not.toContain('2026-03-11');
+    });
+
+    it('keeps a treatment\'s own day stable under the same conversion', async () => {
+        // The other half: the farm-zone conversion must not MOVE a treatment's
+        // day. Its `occurredAt` is UTC midnight, which renders as the same
+        // calendar day in Sofia (02:00 or 03:00) — asserted rather than
+        // assumed, because a conversion that fixed the free-hand case by
+        // shifting the treatment case would be a worse trade.
+        const rows = await walk(50);
+        for (let i = 0; i < DAYS.length; i++) {
+            const row = rows.find((r) => r.treatmentGroupId === handles[i])!;
+            expect(row.treatment!.occurredOn).toBe(DAYS[i]);
+        }
+    });
+
+    it('aggregates EXACTLY and per group, with groups of different sizes', async () => {
+        // Finding 1. The aggregate was a `findMany` with `take: 2000` over the
+        // page's entries across ALL its groups, unordered — so a big page
+        // returned arbitrary groups PARTIAL, with counts and areas too small
+        // and nothing saying so. It is a GROUP BY now, which is bounded by the
+        // page size rather than by the parcels behind it.
+        //
+        // Sizes differ deliberately: a cross-group sum, or a count taken from
+        // one group and applied to all, would show up as equal figures here.
+        const smallKey = `${TAG}-small`;
+        await recordDiaryTreatment(
+            ctx(),
+            {
+                kind: 'SPRAY', occurredOn: '2026-03-03', parcelIds: [parcels[0]],
+                productItemId: itemId, doseValue: 2, doseUnitId: unitId,
+            },
+            smallKey,
+        );
+
+        const rows = await walk(50);
+        const small = rows.find((r) => r.treatmentGroupId === smallKey)!.treatment!;
+        const big = rows.find((r) => r.treatmentGroupId === handles[0])!.treatment!;
+
+        // One parcel, 4 ha, one block.
+        expect(small.parcelCount).toBe(1);
+        expect(small.totalAreaHa).toBe(4);
+        expect(small.blockNames).toEqual([`Блок А ${TAG}`]);
+        // Three parcels, 20 ha, both blocks — and NOT the same as the small one.
+        expect(big.parcelCount).toBe(3);
+        expect(big.totalAreaHa).toBe(20);
+        expect(big.blockNames).toHaveLength(2);
+    });
+
     it('gives the manual entry its own row with no treatment detail', async () => {
         const rows = await walk(50);
         const manual = rows.find((r) => r.type === 'OBSERVATION')!;
