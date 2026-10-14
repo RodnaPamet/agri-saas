@@ -120,6 +120,11 @@
       "documented": false
     },
     {
+      "path": "/api/admin/moderation/metrics",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/admin/moderation/notices",
       "status": "live",
       "documented": true
