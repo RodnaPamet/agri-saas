@@ -5,14 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { useCursorPagination, PullToRefresh } from '@/components/ui/hooks';
+import { PullToRefresh, useCursorPagination, useToast } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useOfflineSync, type ConflictResolution } from '@/lib/offline/use-offline-sync';
 import { OfflineConflictBanner } from '@/components/offline/OfflineConflictBanner';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash } from '@/components/ui/icons/nucleo';
+import { Download, Plus, Trash } from '@/components/ui/icons/nucleo';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DeletedJournalView } from './DeletedJournalView';
 import { Fab } from '@/components/ui/fab';
@@ -33,7 +33,7 @@ import {
     JOURNAL_FILTER_KEYS,
     LOG_ENTRY_TYPE_LABELS,
 } from './filter-defs';
-import { JournalEntryModal, type OptimisticJournalEntry } from './JournalEntryModal';
+import { TreatmentEntryModal, type TreatmentSaved } from './TreatmentEntryModal';
 
 /** List-row shape returned by GET /journal (see JournalRepository.list). */
 interface JournalRow {
@@ -119,6 +119,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
     const t = useTranslations('journal');
     const te = useTranslations('journalEnums');
     const tTrash = useTranslations('journal.trash');
+    const toast = useToast();
     // B1 — in-page ADMIN Trash (no new navbar entry).
     const [showDeleted, setShowDeleted] = useState(false);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -204,8 +205,9 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
 
     // Offline-capable journal-entry create. One shared hook so a create queued
     // from the modal is reflected in this page's OfflineSyncBar pending count.
-    const { online, pending, readable, queueGrowing, foreign, durability, submit: offlineSubmit, flush, conflicts, resolveConflict } = useOfflineSync();
+    const { online, pending, readable, queueGrowing, foreign, durability, flush, conflicts, resolveConflict } = useOfflineSync();
     const [resolvingId, setResolvingId] = useState<string | null>(null);
+    const [pdfBusyFor, setPdfBusyFor] = useState<string | null>(null);
     const onResolveConflict = useCallback(
         async (id: string, resolution: ConflictResolution) => {
             setResolvingId(id);
@@ -220,20 +222,86 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
         },
         [resolveConflict, page1Query],
     );
-    const handleEntryCreated = (queued: boolean, optimistic: OptimisticJournalEntry) => {
-        // Prepend an optimistic row so the just-logged entry shows at once.
-        // Online (!queued): revalidate to swap it for the server row. Offline
-        // (queued): keep it until the outbox delivers on reconnect (deduped by
-        // Idempotency-Key), when SWR's reconnect revalidation replaces it. The
-        // mutate changes page 1's signature, so the accumulator reseeds and the
-        // optimistic row surfaces at the top immediately.
-        void page1Query.mutate(
-            (cur) => ({
-                rows: [optimistic as JournalRow, ...(cur?.rows ?? [])],
-                nextCursor: cur?.nextCursor ?? null,
-            }),
-            { revalidate: !queued },
-        );
+    /**
+     * The per-treatment ДНЕВНИК, for one folded row.
+     *
+     * Offered on the ROW rather than as a post-save screen, deliberately. A
+     * confirmation step would carry the document for the treatment just
+     * recorded and for no other, so a farmer who closed the modal — or who
+     * recorded it on the phone — would have no way back to it. On the row it
+     * is reachable for every treatment the register holds.
+     *
+     * Shown only where `parcelCount > 0`: the route answers 404
+     * `TREATMENT_NOT_FOUND` for a treatment with no lines rather than
+     * returning an empty document, and a free-hand entry has no treatment to
+     * document. The whole-farm ДНЕВНИК for a date range is a different
+     * document and lives on the entry detail page.
+     *
+     * The blob dance (Content-Disposition, anchor, revoke) is the same one
+     * `journal/[id]/page.tsx` uses for the location farm-record — one idiom
+     * for both, so a filename served by the API wins over a guessed one.
+     */
+    const downloadTreatmentPdf = useCallback(
+        async (treatmentGroupId: string) => {
+            setPdfBusyFor(treatmentGroupId);
+            try {
+                const res = await fetch(
+                    buildApiUrl(`/journal/treatments/${treatmentGroupId}/farm-record`),
+                );
+                if (!res.ok) throw new Error(String(res.status));
+                const blob = await res.blob();
+                // RFC 5987's extended form FIRST, then the quoted ASCII
+                // half. `contentDisposition()` emits both when the name is
+                // not ASCII-safe (`filename="dnevnik-blok-a.pdf";
+                // filename*=UTF-8''%D0%94…`), and the extended one carries
+                // the real Bulgarian name while the quoted one is a
+                // transliteration. The iOS client already reads both.
+                //
+                // Note the `=`: the older regex at `journal/[id]/page.tsx`
+                // is `/filename="?([^"]+)"?/`, which matches the literal
+                // `filename` inside `filename*=` and would capture
+                // `*=UTF-8''%D0%94…` as the filename if the two parameters
+                // were ever emitted in the other order. Harmless today
+                // because the ASCII half is written first.
+                const cd = res.headers.get('Content-Disposition') ?? '';
+                const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+                const plain = cd.match(/filename="?([^";]+)"?/i);
+                const named = star
+                    ? decodeURIComponent(star[1])
+                    : (plain?.[1] ?? '').trim();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = named || `dnevnik-${treatmentGroupId}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch {
+                toast.error(t('treatmentPdfFail'));
+            } finally {
+                setPdfBusyFor(null);
+            }
+        },
+        [buildApiUrl, t, toast],
+    );
+
+    /**
+     * After a treatment is recorded, RELOAD rather than inserting a row.
+     *
+     * A folded ДНЕВНИК row is a server-side aggregate over the treatment's N
+     * entries — the handle, the parcel count, the total area, the block
+     * names, the earliest-harvest day. Building a convincing one here would
+     * be a second implementation of the fold, and it would be the one the
+     * farmer sees first.
+     */
+    const handleTreatmentSaved = (_saved: TreatmentSaved) => {
+        // Revalidating page 1 is what reseeds the accumulator: the effect
+        // above compares the content signature and calls
+        // `reloadPagination(rows, nextCursor)` with the SERVER's rows. There
+        // is deliberately no optimistic prepend here, unlike the free-form
+        // create this replaces — see the docblock.
+        void page1Query.mutate();
     };
 
     const liveFilters = useMemo(() => buildJournalFilters(te), [te]);
@@ -411,9 +479,44 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                     },
                     meta: { mobileCard: { slot: 'meta', label: t('colNotes') } },
                 },
+                {
+                    id: 'actions',
+                    header: '',
+                    enableHiding: false,
+                    cell: ({ row }) => {
+                        const tr = row.original.treatment;
+                        // Only a row that STANDS FOR a treatment. On a
+                        // free-hand entry the route would 404, so offering
+                        // the button there would be offering a failure.
+                        if (!tr || tr.parcelCount === 0) return null;
+                        const busy = pdfBusyFor === tr.treatmentGroupId;
+                        return (
+                            <div className="flex items-center justify-end gap-tight">
+                                <Tooltip content={t('treatmentPdf')}>
+                                    <button
+                                        type="button"
+                                        aria-label={t('treatmentPdf')}
+                                        disabled={busy}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                        data-testid={`treatment-pdf-${tr.treatmentGroupId}`}
+                                        onClick={(e) => {
+                                            // The row itself navigates to the
+                                            // entry, so without this the PDF
+                                            // click also leaves the page.
+                                            e.stopPropagation();
+                                            void downloadTreatmentPdf(tr.treatmentGroupId);
+                                        }}
+                                    >
+                                        <Download className="h-3.5 w-3.5" aria-hidden />
+                                    </button>
+                                </Tooltip>
+                            </div>
+                        );
+                    },
+                },
             ]),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [tenantSlug, t, te],
+        [tenantSlug, t, te, pdfBusyFor, downloadTreatmentPdf],
     );
 
     // Swap the whole surface into the Trash view. Placed after every hook so
@@ -533,13 +636,16 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
         >
             {permissions.canWrite && (
                 <>
-                    <JournalEntryModal
+                    {/* «Нов запис» records a TREATMENT, not a free-form note
+                        (#1740). The free-form form is replaced rather than
+                        hidden behind a flag: the owner ruled it replaced, and
+                        a flag would leave two ways to write a journal entry
+                        with different semantics — which is the web/phone
+                        divergence this closes, reproduced inside the web. */}
+                    <TreatmentEntryModal
                         open={isCreateOpen}
                         setOpen={setIsCreateOpen}
-                        tenantSlug={tenantSlug}
-                        offlineSubmit={offlineSubmit}
-                        onCreated={handleEntryCreated}
-                        grainEnabled={grainEnabled}
+                        onSaved={handleTreatmentSaved}
                     />
                     {/* 409 conflicts — a queued journal write the server refused
                         because the entry moved on. Mounted UNCONDITIONALLY (it

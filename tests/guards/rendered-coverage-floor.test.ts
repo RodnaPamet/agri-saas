@@ -249,7 +249,18 @@ const ROOT = path.resolve(__dirname, '../..');
 // It can tell them apart because it is a server component and can read
 // Postgres, which is the one thing the Edge could not do. Raised to this
 // branch's own live count, measured.
-const RENDERED_TEST_FLOOR = 255;
+//
+// Raised 255 -> 257 for the #1740 web form: `journal-treatment-pdf-action`
+// (the per-treatment ДНЕВНИК is offered on a folded row and nowhere else, and
+// reads RFC 5987's `filename*` so a Cyrillic document keeps its name) and
+// `journal-treatment-two-step-form` (the write carries an `Idempotency-Key`,
+// which on this route IS the treatment handle — without it a retry after a
+// lost answer writes a SECOND treatment into a regulated register, and a
+// green typecheck said nothing about it).
+//
+// 257 is this branch's own measured live count, not 255 + 2: a shared floor
+// raised by arithmetic lands wrong whenever another branch merged first.
+const RENDERED_TEST_FLOOR = 257;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
