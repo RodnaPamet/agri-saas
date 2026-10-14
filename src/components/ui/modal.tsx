@@ -43,6 +43,7 @@ import {
     ComponentProps,
     Dispatch,
     FormEventHandler,
+    isValidElement,
     ReactNode,
     SetStateAction,
     useState,
@@ -151,6 +152,76 @@ export interface ModalProps extends VariantProps<typeof modalContentVariants> {
 
 // ─── Component ──────────────────────────────────────────────────────
 
+/**
+ * Does the modal's own content already supply a `Dialog.Title` (or
+ * `Dialog.Description`)?
+ *
+ * ## The defect this removes
+ *
+ * `<Modal.Header title=…>` renders a `Dialog.Title`, and the fallback below
+ * used to render ANOTHER unconditionally — so a modal with a header shipped
+ * two. Radix gives every `Dialog.Title` under one dialog the SAME generated
+ * id, the id `aria-labelledby` names, so the result was a duplicate id and a
+ * title in the accessibility tree twice. Measured: 33 call sites passed a
+ * title at both levels.
+ *
+ * Worse for the 18 sites that pass a title ONLY to `Modal.Header`: their
+ * fallback rendered `t("dialogFallback")` — «Диалог» — so a hidden element
+ * saying "Dialog" shared the id with the real heading, and which one wins is
+ * the consumer's choice. The description was the same shape, except the
+ * fallback's value is `description ?? ""`: an EMPTY element carrying the id
+ * `aria-describedby` points at.
+ *
+ * ## Why a children scan and not a context flag
+ *
+ * `Modal` has to decide BEFORE it renders the fallback, and a flag a child
+ * sets on mount is known only afterwards — which means either a frame with
+ * both (the thing being fixed) or a `setState` in an effect, a rule this repo
+ * already silences 157 times (#1730). The children are available
+ * synchronously, so they answer the question at the right moment.
+ *
+ * ## What it deliberately does NOT see
+ *
+ * A header produced by a CHILD COMPONENT's render (`<MyOwnHeader/>` that
+ * returns `Modal.Header` internally) is invisible here, because that output
+ * does not exist until it renders. Such a site keeps today's behaviour — the
+ * fallback stays, and so does its duplicate. That is the safe direction: this
+ * can only ever REMOVE a title it has proven is already there, never leave a
+ * dialog without one. Measured at the time of writing: 57 of 62 call sites
+ * put `Modal.Header` directly inside `<Modal>`, and the rest reach it through
+ * ordinary JSX children (`Modal.Form`, a `form`), which this walk descends.
+ */
+function contentSupplies(children: ReactNode, prop: "title" | "description"): boolean {
+    let found = false;
+    const visit = (node: ReactNode): void => {
+        if (found || node == null || typeof node === "boolean") return;
+        if (Array.isArray(node)) {
+            node.forEach(visit);
+            return;
+        }
+        if (!isValidElement(node)) return;
+        const props = node.props as {
+            title?: unknown;
+            description?: unknown;
+            children?: ReactNode;
+        };
+        if (node.type === Header) {
+            const value = props[prop];
+            // `null`, `undefined` and `""` all mean "no title supplied" —
+            // `Header` renders its `Dialog.Title` on the same truthiness
+            // test, so this must agree with it or the two disagree about
+            // whether a title exists.
+            if (value != null && value !== false && value !== "") {
+                found = true;
+                return;
+            }
+        }
+        visit(props.children);
+    };
+    visit(children);
+    return found;
+}
+
 function ModalRoot({
     children,
     className,
@@ -208,16 +279,35 @@ function ModalRoot({
         />
     ) : null;
 
+    // Only the halves the content does not already supply. See
+    // `contentSupplies` for what this fixes and what it cannot see.
+    //
+    // Both branches take the same condition, which is not an assumption:
+    // `vaul` re-exports Radix's dialog primitives, so a `Dialog.Title`
+    // rendered by `Modal.Header` registers with the DRAWER too. Measured —
+    // in the drawer branch the header's `<h2>` and the fallback's carried the
+    // same generated id, which can only happen if they share one dialog
+    // context.
+    const headerHasTitle = contentSupplies(children, "title");
+    const headerHasDescription = contentSupplies(children, "description");
     const fallbackDialogTitle = (
         <VisuallyHidden.Root>
-            <Dialog.Title>{title ?? t("dialogFallback")}</Dialog.Title>
-            <Dialog.Description>{description ?? ""}</Dialog.Description>
+            {headerHasTitle ? null : (
+                <Dialog.Title>{title ?? t("dialogFallback")}</Dialog.Title>
+            )}
+            {headerHasDescription ? null : (
+                <Dialog.Description>{description ?? ""}</Dialog.Description>
+            )}
         </VisuallyHidden.Root>
     );
     const fallbackDrawerTitle = (
         <VisuallyHidden.Root>
-            <Drawer.Title>{title ?? t("dialogFallback")}</Drawer.Title>
-            <Drawer.Description>{description ?? ""}</Drawer.Description>
+            {headerHasTitle ? null : (
+                <Drawer.Title>{title ?? t("dialogFallback")}</Drawer.Title>
+            )}
+            {headerHasDescription ? null : (
+                <Drawer.Description>{description ?? ""}</Drawer.Description>
+            )}
         </VisuallyHidden.Root>
     );
 
@@ -357,9 +447,12 @@ function DrawerHandle() {
 }
 
 /**
- * Pinned header. Rendering this automatically declares the Dialog.Title
- * (so you don't need `title=` on <Modal>). Long body content scrolls
- * underneath the header stays visible.
+ * Pinned header. Rendering this with a `title` declares the Dialog.Title, and
+ * `Modal` then does NOT render its hidden fallback — `contentSupplies` finds
+ * this element in the children and stands down. Passing `title=` to `<Modal>`
+ * as well is harmless and is what most call sites do; it is simply unused
+ * while this header carries one. Long body content scrolls underneath and the
+ * header stays visible.
  */
 function Header({
     title,
