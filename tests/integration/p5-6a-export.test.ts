@@ -227,6 +227,7 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
         const out = await exportPersonalData(me);
 
         const collections: Record<string, unknown> = {
+            PersonProfile: out.personProfile,
             ContentReport: out.contentReports,
             StatementOfReasons: out.statementsOfReasons,
             UserBlock: out.blocksIMade,

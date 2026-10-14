@@ -1,0 +1,193 @@
+// ═══════════════════════════════════════════════════════════════════
+//  PUBLIC PROFILE DOMAIN — P6.1: a farm in public
+// ═══════════════════════════════════════════════════════════════════
+//
+//  GAP-09 multi-file schema: new domain file. Generator + datasource
+//  remain in base.prisma.
+//
+//  WHY A NEW FILE, AND WHY THESE THREE TOGETHER. The scoping here is
+//  MIXED, and the header says so rather than claiming otherwise:
+//  `FarmBrand` is tenant-scoped, `PersonProfile` and
+//  `PublicFarmProfile` are global by design. `social.prisma` states
+//  that its models are platform-scoped and that "there is no
+//  `tenantId` here, and the RLS classification is deliberately not the
+//  tenant-scoped one" — so `FarmBrand` cannot live there without
+//  making that paragraph false, which is the reasoning
+//  `farm-identity.prisma` already recorded for its own split.
+//
+//  They sit together because they are one path: an owner edits
+//  `FarmBrand`, and a projection of the allowlisted subset appears as
+//  `PublicFarmProfile`. Splitting them across files would mean reading
+//  two to understand what publishing does.
+//
+//  THE PROJECTION HOLDS NO PII COLUMNS AT ALL, and that is structural
+//  rather than a matter of discipline. P6.10's hardening test seeds
+//  ЕГН, ЕИК, УРН and address and expects zero hits in the HTML,
+//  JSON-LD, OG image and API. `FarmProfile` — the private model — has
+//  `egn` and `eik` (encrypted at rest), `address`, `municipality` and
+//  `settlement`. None of those columns EXIST on `PublicFarmProfile`,
+//  so a projection writer cannot leak them by forgetting an allowlist
+//  entry: there is nowhere for the value to land. The allowlist (P6.1
+//  PR 2) is the second line, not the only one.
+//
+//  WHY THE HANDLE IS ON FarmBrand AND NOT ONLY ON THE PROJECTION.
+//  Owner ruling 2026-10-14: a handle is a SEPARATE public identifier,
+//  not the tenant slug. If it lived only on the projection then
+//  unpublishing would free it, and P6.7 prints handles on A6 paper and
+//  into QR codes — a freed handle makes printed material resolve to a
+//  different farm later. Holding it on the owner's own row reserves it
+//  for as long as the farm exists, published or not. That answers
+//  "can a handle be reused?" with no, by construction.
+//
+//  Handle availability is observable through the unique constraint: a
+//  taken handle fails with 23505 regardless of RLS. That is how every
+//  username system behaves and is the intended behaviour here — it is
+//  NOT an enumeration leak of publication state, because the
+//  constraint answers "reserved" and says nothing about `published`.
+
+/// The owner's editable source of truth for how their farm appears in
+/// public. TENANT-SCOPED: one row per tenant, RLS-protected, and the
+/// rls-coverage ratchet picks it up automatically from `tenantId`.
+///
+/// Nothing here is public by itself. Publishing is a separate act that
+/// produces a `PublicFarmProfile` row; this model is what the owner
+/// edits and what survives an unpublish.
+model FarmBrand {
+  id       String @id @default(cuid())
+  /// One brand per farm. `@unique` rather than a plain index: two brands
+  /// for one farm is the bug this prevents, and it is the same shape
+  /// `FarmProfile.tenantId` already uses.
+  tenantId String @unique
+
+  /// The public identifier in `/f/[handle]`. Nullable because a farm
+  /// exists before it chooses one, and `@unique` across every tenant
+  /// because the namespace is global — see the header on why it is
+  /// reserved here rather than on the projection.
+  ///
+  /// Reserved words, length and character rules are enforced in the
+  /// application layer, not here: a CHECK constraint cannot be changed
+  /// without a migration, and the reserved list will grow as routes are
+  /// added (`f`, `go`, `api`, `admin`, `t`, `org`, `_next`,
+  /// `.well-known`).
+  handle String? @unique
+
+  /// Curated public name — deliberately NOT `FarmProfile.producerName`,
+  /// which is the legal name and may be a person's.
+  displayName String?
+  tagline     String?
+  about       String?
+
+  /// Coarse location and crops, for P6.8's directory filters. Oblast
+  /// only: `FarmProfile` holds the address, municipality and settlement,
+  /// and those stay private.
+  oblast String?
+  crops  String[]
+
+  /// The handle currently live in `PublicFarmProfile`, or null if this
+  /// farm has never been published. PRIVATE and tenant-scoped, because
+  /// it exists only so the projection writer knows which public row to
+  /// remove when an owner changes their handle — without it the old row
+  /// would be orphaned and `/f/[old-handle]` would keep answering.
+  projectedHandle String?
+
+  /// Publication state. `published` is the switch an owner flips;
+  /// `publishedAt` records when it last became true, for the
+  /// "unpublish → 404 within 60s" claim in P6.10 to be measurable
+  /// against something.
+  published   Boolean   @default(false)
+  publishedAt DateTime?
+
+  /// P6.6 ships a consent sheet on publish, and consent to publish
+  /// identifiable information about a farm is a legal artefact rather
+  /// than UI state — so it is recorded here from the start, with the
+  /// version of the text that was shown.
+  consentedAt        DateTime?
+  consentTextVersion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([oblast])
+  @@index([published])
+}
+
+/// A person's own public identity. GLOBAL BY DESIGN, following `User`:
+/// a person exists once across every farm they belong to — that is what
+/// `TenantMembership` is for — so this is keyed by `userId` and carries
+/// no `tenantId`.
+///
+/// Classified in `GLOBAL_BY_DESIGN_MODELS` alongside `User` rather than
+/// left to the tenant-scoped ratchet, which would have no `tenantId` to
+/// enforce on.
+model PersonProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  displayName String?
+  about       String?
+
+  /// Default OFF. A person who has never opened the editor is not
+  /// published, and the absence of a row means the same thing.
+  published Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// The read model every public route uses. GLOBAL BY DESIGN —
+/// cross-tenant readability IS the point, the same argument
+/// `ExchangeListing` already carries.
+///
+/// Written ONLY through the exhaustive field allowlist (P6.1 PR 2) and
+/// read ONLY via `runWithoutRls({ reason: 'public-projection-read' })`.
+/// Public routes never touch tenant tables.
+///
+/// Every column here is already decided to be public. There are no
+/// visibility flags: a field an owner has hidden is ABSENT from this
+/// row, not present-and-suppressed, so a rendering bug cannot reveal
+/// it and a `select *` cannot either.
+model PublicFarmProfile {
+  /// The handle is the identity of the read model, because `/f/[handle]`
+  /// is the only way it is ever looked up. A surrogate id would add a
+  /// second key nothing queries by.
+  handle String @id
+
+  /// NO `tenantId`, and that is a correction worth recording.
+  ///
+  /// I first carried one here so the projection writer could find its
+  /// row. The rls-coverage ratchet refused it, and was right twice
+  /// over: `TENANT_SCOPED_MODELS` is DMMF-derived from the PRESENCE of
+  /// a `tenantId`, so the column put this model in the tenant-scoped
+  /// set AND in `GLOBAL_BY_DESIGN_MODELS` — classified twice, with no
+  /// policies, which is exactly the state the ratchet exists to catch.
+  ///
+  /// It is also wrong on product grounds. A public read model carrying
+  /// the internal tenant id publishes that identifier to anyone who
+  /// reads the row, which is the coupling this phase exists to avoid —
+  /// the same reasoning as the owner's ruling that a handle is not the
+  /// tenant slug. The writer finds its row by `handle` instead, and
+  /// `FarmBrand.projectedHandle` tells it which row to remove when a
+  /// handle changes.
+
+  displayName String
+  tagline     String?
+  about       String?
+  oblast      String?
+  crops       String[]
+
+  /// Whether search engines may index this profile. P6.5 ships robots
+  /// and a sitemap covering indexable profiles only, so the flag has to
+  /// be readable from the projection without consulting the owner's row.
+  indexable Boolean @default(false)
+
+  /// When the projection was last rewritten. The freshness handle for
+  /// P6.10's "unpublish → 404 within 60s".
+  projectedAt DateTime @default(now())
+
+  @@index([oblast])
+  @@index([indexable])
+}

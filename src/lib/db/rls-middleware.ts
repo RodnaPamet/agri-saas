@@ -121,6 +121,27 @@ export type RlsBypassReason =
      */
     | 'org-portfolio-read'
     /**
+     * Reading `PublicFarmProfile` on a PUBLIC, unauthenticated route — the
+     * `/f/[handle]` profile page and its OG image (P6.1, #1810).
+     *
+     * The bypass is load-bearing rather than convenient, and for a different
+     * reason from every other entry here: there is no principal at all. An
+     * anonymous visitor has no session, no tenant and no membership, so
+     * `runInTenantContext` has nothing to enter with — the alternative is not
+     * a narrower context, it is no query.
+     *
+     * What it may read is bounded by the TABLE, not by this reason. Every
+     * column on `PublicFarmProfile` is already decided to be public, and the
+     * private farm identity — ЕГН, ЕИК, address, municipality, settlement —
+     * lives on `FarmProfile`, whose columns do not exist there. So a mistake
+     * in a caller cannot widen what this reason can reach.
+     *
+     * Public routes read ONLY this projection and never a tenant table. A
+     * caller using this reason to touch anything else is the defect the
+     * reason exists to make findable in an audit.
+     */
+    | 'public-projection-read'
+    /**
      * Reading tenant-scoped `TenantModuleSettings` to compute a
      * marketplace-wide exclusion — which sellers have the EXCHANGE module
      * off. Selects tenant IDs only.
@@ -235,6 +256,7 @@ export async function runWithoutRls<T>(
  * was the defect; this removes it rather than adding a guard for it.
  */
 const REASON_REGISTRY: Record<RlsBypassReason, true> = {
+    'public-projection-read': true,
     'auth-tenant-discovery': true,
     'auth-credentials': true,
     'webhook-ingest': true,

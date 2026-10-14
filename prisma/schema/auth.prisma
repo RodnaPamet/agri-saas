@@ -186,6 +186,10 @@ model Tenant {
   moduleSettings           TenantModuleSettings?
   // БАБХ farm-record — one-per-tenant farm identity block.
   farmProfile              FarmProfile?
+  // P6.1 — the PUBLIC face of the same farm. Sibling to farmProfile
+  // deliberately: that one holds ЕГН/ЕИК/address and stays private,
+  // this one holds what an owner chooses to publish.
+  farmBrand                FarmBrand?
   // Enterprise-grain domain.
   contracts                Contract[]
   yieldRecords             YieldRecord[]
@@ -860,6 +864,10 @@ model User {
   // Enterprise-grain — payroll/labour cost register.
   costEntriesCreated            CostEntry[]                  @relation("CostEntryCreator")
   featureFlagCohorts FeatureFlagCohortMember[] @relation("FeatureFlagCohortMemberships")
+  // P6.1 — the person's own public identity. One per USER, not per
+  // membership: a person exists once across every farm they belong to,
+  // which is what TenantMembership is for.
+  personProfile      PersonProfile?
 
   /// P5.9 (#1600). Read on every authenticated request via the suspension
   /// check, and the index also answers "who is currently suspended" — a

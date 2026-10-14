@@ -83,6 +83,12 @@ export interface PersonalDataExport {
      */
     readonly notIncluded: readonly string[];
     readonly account: Record<string, unknown>;
+    /**
+     * P6.1 — the person's own public profile, if they have one. Their own
+     * words about themselves, so Art 15 covers it plainly; and the registry
+     * classifies it `ERASE_AND_EXPORT`, which this half honours.
+     */
+    readonly personProfile: ExportCollection<Record<string, unknown>>;
     readonly contentReports: ExportCollection<Record<string, unknown>>;
     readonly statementsOfReasons: ExportCollection<Record<string, unknown>>;
     readonly blocksIMade: ExportCollection<Record<string, unknown>>;
@@ -133,6 +139,7 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
     });
 
     const [
+        personProfile,
         contentReports,
         statements,
         blocksIMade,
@@ -146,6 +153,13 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         orgMemberships,
         cohorts,
     ] = await Promise.all([
+        // At most one row — `userId` is `@unique` — but returned as a
+        // collection so the envelope has one shape for every model and a
+        // caller never special-cases this one.
+        prisma.personProfile.findMany({
+            where: { userId },
+            select: { displayName: true, about: true, published: true, createdAt: true, updatedAt: true },
+        }),
         prisma.contentReport.findMany({
             where: { reporterUserId: userId },
             // `detail` is their own words, decrypted by the extension. The
@@ -275,6 +289,7 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         exportedAt: new Date().toISOString(),
         notIncluded: NOT_INCLUDED,
         account: (user ?? {}) as Record<string, unknown>,
+        personProfile: collection(personProfile as Record<string, unknown>[]),
         contentReports: collection(contentReports as Record<string, unknown>[]),
         statementsOfReasons: collection(statements as Record<string, unknown>[]),
         blocksIMade: collection(blocksIMade as Record<string, unknown>[]),
