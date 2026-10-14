@@ -33,6 +33,8 @@
  */
 import type { FarmBrand } from '@prisma/client';
 
+import { transliterate } from '@/lib/bg-transliterate';
+
 /** Published, or deliberately not. */
 export type FieldDecision =
     | { readonly decision: 'published' }
@@ -105,6 +107,31 @@ export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
     ),
 };
 
+/**
+ * Projection columns that are NOT copied from a `FarmBrand` field.
+ *
+ * `BRAND_FIELD_DECISIONS` answers "may this brand field cross?". It cannot
+ * answer for a column the brand does not have — and a derived column still
+ * needs a deliberate decision, because it is published just the same.
+ *
+ * Declared as a map with reasons for the same purpose as the private entries
+ * above: without it, `projectionPayload`'s runtime check would read
+ * `BRAND_FIELD_DECISIONS['displayNameLatin']` as `undefined` and throw a
+ * TypeError that says nothing about why — which is exactly what happened the
+ * first time I added one.
+ */
+export const DERIVED_PROJECTION_FIELDS: Record<string, string> = {
+    displayNameLatin:
+        'P6.8 — the Latin form of `displayName`, from `transliterate()` (the '
+        + 'Закон за транслитерацията 2009 Streamlined System). Derived rather '
+        + 'than copied because no such field exists on FarmBrand, and STORED '
+        + 'rather than computed at query time because cross-script trigram '
+        + 'similarity is ZERO (measured: similarity(\'pobeda\', \'Победа\') = 0), '
+        + 'so a Latin query cannot match a Cyrillic column at any threshold. It '
+        + 'publishes nothing the Cyrillic name does not already publish — it is '
+        + 'the same name, spelled the way a Bulgarian passport spells it.',
+};
+
 /** The field names that may cross, derived rather than listed twice. */
 export const PUBLISHED_BRAND_FIELDS = (
     Object.keys(BRAND_FIELD_DECISIONS) as Array<keyof FarmBrand>
@@ -139,7 +166,15 @@ export function projectionPayload(brand: {
     about: string | null;
     oblast: string | null;
     crops: string[];
-}): { handle: string; displayName: string; tagline: string | null; about: string | null; oblast: string | null; crops: string[] } {
+}): {
+    handle: string;
+    displayName: string;
+    tagline: string | null;
+    about: string | null;
+    oblast: string | null;
+    crops: string[];
+    displayNameLatin: string;
+} {
     // Narrowed by the caller's preconditions; asserted again rather than cast,
     // because a cast here would be the one place the NOT NULL columns could be
     // violated and the failure would surface as a Prisma error with no cause.
@@ -173,18 +208,33 @@ export function projectionPayload(brand: {
         about: brand.about,
         oblast: brand.oblast,
         crops: brand.crops,
+        // DERIVED, not copied — see DERIVED_PROJECTION_FIELDS. Computed from
+        // the already-normalised display name so the stored Latin form and
+        // the Cyrillic one describe the same string.
+        displayNameLatin: transliterate(brand.displayName),
     };
 
     // The allowlist is the authority, so a private field appearing in `out`
     // would be a defect in THIS function rather than in the allowlist. Checked
     // at runtime as well as by the shape above, because the shape is a type
     // and types do not survive a `JSON.parse` or a future spread.
-    for (const key of Object.keys(out) as Array<keyof typeof out>) {
-        const decision = BRAND_FIELD_DECISIONS[key];
+    for (const key of Object.keys(out)) {
+        // A derived column has no brand field to consult, and is accounted for
+        // separately rather than skipped — an unaccounted key must still fail.
+        if (key in DERIVED_PROJECTION_FIELDS) continue;
+
+        const decision = (BRAND_FIELD_DECISIONS as Record<string, FieldDecision | undefined>)[key];
+        if (!decision) {
+            throw new Error(
+                `projectionPayload would publish '${key}', which is neither a decided `
+                    + `FarmBrand field nor a declared derived column. Add it to `
+                    + `BRAND_FIELD_DECISIONS or to DERIVED_PROJECTION_FIELDS, with a reason.`,
+            );
+        }
         if (decision.decision !== 'published') {
             throw new Error(
                 `projectionPayload would publish '${key}', which the allowlist marks private: `
-                    + `${decision.decision === 'private' ? decision.why : ''}`,
+                    + `${decision.why}`,
             );
         }
     }

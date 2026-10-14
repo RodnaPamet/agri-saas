@@ -142,9 +142,39 @@ describeFn('projectFarmBrand', () => {
                 'tagline',
             ].sort(),
         );
-        // …and null, which is the point of the phase's ordering rule: the
-        // column exists and nothing writes it yet.
-        expect((row as { displayNameLatin: string | null }).displayNameLatin).toBeNull();
+        // …and now POPULATED. The column shipped a release ahead of this
+        // (v12.29.0) and the writer fills it in the same PR as the search that
+        // reads it, which is what the phase's ordering rule is for.
+        expect((row as { displayNameLatin: string | null }).displayNameLatin).toBe(
+            'Stopanstvo Pobeda',
+        );
+    });
+
+    it('the Latin form is DERIVED and refreshed with the name', async () => {
+        // P6.8 (#1817). The search cannot match a Latin query against a
+        // Cyrillic column — cross-script trigram similarity is zero — so this
+        // column is what makes «Pobeda» find «Победа». A rename must refresh
+        // it, or the farm stays findable under its OLD Latin spelling.
+        const farm = await aFarm({ displayName: 'Стопанство Победа' });
+        await projectFarmBrand(farm.ctx);
+
+        let row = await globalPrisma.publicFarmProfile.findUnique({
+            where: { handle: farm.handle as string },
+        });
+        expect(row?.displayNameLatin).toBe('Stopanstvo Pobeda');
+
+        await globalPrisma.farmBrand.updateMany({
+            where: { tenantId: farm.tenantId },
+            data: { displayName: 'Нива Търговище' },
+        });
+        await projectFarmBrand(farm.ctx);
+
+        row = await globalPrisma.publicFarmProfile.findUnique({
+            where: { handle: farm.handle as string },
+        });
+        // `ъ → a`, the rule people get wrong — `Targovishte`, as the road sign
+        // says, not `Turgovishte`.
+        expect(row?.displayNameLatin).toBe('Niva Targovishte');
     });
 
     it('indexable stays FALSE on publish — nothing is opted into search by default', async () => {

@@ -221,6 +221,19 @@ const PUBLIC_PATH_PREFIXES = [
 ];
 
 const PUBLIC_PATH_EXACT = new Set([
+    // P6.8 (#1817) — the public farm directory. EXACT and not a prefix: it is
+    // one path, so the narrower claim is the right one, and a prefix would
+    // open anything added beneath it later. It carries no credential to
+    // verify, which is the point — a stranger browsing has no account.
+    //
+    // I first added this to PUBLIC_PATH_PREFIXES by anchoring next to
+    // `/api/public/notices` and assuming that list was the exact one. It is
+    // not: PREFIXES runs to line ~226 and this Set starts after it. The tell
+    // was a probe — `/api/public/farms/secret` came back PUBLIC while
+    // `/api/public/farmsomething` came back gated, which is the signature of a
+    // prefix entry under `matchesPublicPrefix` and not of an exact one. Only a
+    // CHILD path distinguishes the two forms; a sibling cannot.
+    '/api/public/farms',
 
     // The landing page (P3.8). EXACT, so ONLY the root opens — no prefix, and
     // nothing under `/` inherits it.

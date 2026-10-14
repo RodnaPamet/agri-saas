@@ -48,6 +48,8 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db-context';
+import { Prisma } from '@prisma/client';
+
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -332,4 +334,118 @@ export async function listIndexableFarmHandles(): Promise<
             take: SITEMAP_MAX_ENTRIES,
         }),
     );
+}
+
+/** One directory hit. Projection fields only, plus the match score. */
+export interface FarmSearchHit {
+    readonly handle: string;
+    readonly displayName: string;
+    readonly tagline: string | null;
+    readonly oblast: string | null;
+    readonly crops: readonly string[];
+    /** 0..1 trigram similarity. 0 when browsing with no query. */
+    readonly score: number;
+}
+
+/** Bounded, because a public endpoint is not a data export. */
+export const FARM_SEARCH_MAX_LIMIT = 50;
+export const FARM_SEARCH_DEFAULT_LIMIT = 20;
+
+/**
+ * Search the public directory (P6.8, #1817).
+ *
+ * ## Why raw SQL
+ *
+ * `similarity()` and the `%` operator are pg_trgm's and Prisma's query builder
+ * cannot express either. `%` specifically is what lets the GIN trigram index
+ * serve the query — an `ILIKE '%…%'` would be a sequential scan that looks
+ * identical from the outside, which is the shape the migration's own comment
+ * warns about.
+ *
+ * Every value is parameterised through `Prisma.sql`. The filters are plain
+ * equality and array containment, so there is no dynamic SQL and no place for
+ * a caller-supplied fragment to land.
+ *
+ * ## Both columns, and never a reversed query
+ *
+ * `displayName` is Cyrillic as the owner typed it; `displayNameLatin` is its
+ * transliteration. A Cyrillic query matches the first, a Latin query the
+ * second, and nothing is ever transliterated backwards — the mapping is not
+ * injective (`a` ← а and ъ), so reversing would have more than one answer and
+ * would miss farms silently.
+ *
+ * `GREATEST` of the two scores, so a hit is ranked by its best match rather
+ * than by whichever column is checked first.
+ *
+ * ## An empty query is BROWSE, not "match everything badly"
+ *
+ * With no `q` the trigram predicate is skipped entirely rather than compared
+ * against `''` — `similarity(x, '')` is 0 for every row, so a threshold filter
+ * would return nothing and an unfiltered one would rank randomly. Browsing is
+ * ordered by handle, which is stable; searching is ordered by score.
+ *
+ * ## It reads only the projection
+ *
+ * Same bypass and the same bound as the single read: no PII columns exist on
+ * this table and there is no `tenantId` to join through.
+ */
+export async function searchPublicFarms(opts: {
+    readonly q?: string;
+    readonly oblast?: string;
+    readonly crop?: string;
+    readonly limit?: number;
+}): Promise<FarmSearchHit[]> {
+    const q = (opts.q ?? '').trim();
+    const oblast = (opts.oblast ?? '').trim() || null;
+    const crop = (opts.crop ?? '').trim() || null;
+    const limit = Math.min(
+        Math.max(1, opts.limit ?? FARM_SEARCH_DEFAULT_LIMIT),
+        FARM_SEARCH_MAX_LIMIT,
+    );
+
+    return runWithoutRls({ reason: 'public-projection-read' }, async (db) => {
+        const rows = await db.$queryRaw<
+            Array<{
+                handle: string;
+                displayName: string;
+                tagline: string | null;
+                oblast: string | null;
+                crops: string[];
+                score: number;
+            }>
+        >(
+            Prisma.sql`
+                SELECT
+                    "handle",
+                    "displayName",
+                    "tagline",
+                    "oblast",
+                    "crops",
+                    CASE WHEN ${q} = '' THEN 0::real ELSE GREATEST(
+                        similarity("displayName", ${q}),
+                        similarity(COALESCE("displayNameLatin", ''), ${q})
+                    ) END AS "score"
+                FROM "PublicFarmProfile"
+                WHERE
+                    (
+                        ${q} = ''
+                        OR "displayName" % ${q}
+                        OR COALESCE("displayNameLatin", '') % ${q}
+                    )
+                    AND (${oblast}::text IS NULL OR "oblast" = ${oblast})
+                    AND (${crop}::text IS NULL OR ${crop} = ANY("crops"))
+                ORDER BY "score" DESC, "handle" ASC
+                LIMIT ${limit}
+            `,
+        );
+
+        return rows.map((r) => ({
+            handle: r.handle,
+            displayName: r.displayName,
+            tagline: r.tagline,
+            oblast: r.oblast,
+            crops: r.crops,
+            score: Number(r.score),
+        }));
+    });
 }
