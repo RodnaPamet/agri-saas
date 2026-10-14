@@ -34,6 +34,16 @@ function makeDb() {
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     });
     return {
+        // The folded ДНЕВНИК list aggregates per treatment with a `GROUP BY`
+        // (#1740), so a DB double without `$queryRaw` throws
+        // "is not a function" the moment a page has rows — which is exactly
+        // what it did when the aggregate replaced a bounded `findMany`.
+        //
+        // Returns an empty set: these are CLAUSE tests, asserting the `where`
+        // the repository emits. The aggregate's arithmetic is covered against
+        // a real database in `tests/integration/dnevnik-list-fold.test.ts`,
+        // where it can be wrong in ways a double cannot express.
+        $queryRaw: jest.fn().mockResolvedValue([]),
         logEntry: model(),
         logEntryFile: model(),
         location: model(),
