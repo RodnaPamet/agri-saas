@@ -686,19 +686,43 @@ export async function waitForFieldMapWarm(page: Page): Promise<void> {
     ).toBeVisible({ timeout: 30_000 });
 }
 
-export async function openJournalEntryModalWarm(page: Page): Promise<void> {
+export async function openTreatmentFormWarm(
+    page: Page,
+    opts: { product: string; crop?: string },
+): Promise<Locator> {
+    const crop = opts.crop ?? 'Wheat';
     await page.getByRole('button', { name: 'Add entry' }).click();
-    // BARE on purpose. This id belongs to a MODAL, and the Modal
-    // primitive renders through `Dialog.Portal` / `Drawer.Portal`
-    // (src/components/ui/modal.tsx:234,306) — so its content is
-    // mounted OUTSIDE `<main>` and `getByRole('main')` would never
-    // resolve it. Scoping this would convert a passing assertion into
-    // a permanent failure (#1516).
-    await expect(page.locator('#journal-entry-title')).toBeVisible();
-    // THE LOAD-BEARING WAIT. Do not replace this with the title input, and do
-    // not delete it as redundant — it is the only assertion here that proves
-    // the lazy chunk is no longer in flight.
-    await expect(page.getByTestId('rich-text-editor')).toBeVisible();
+
+    // ── Step one ───────────────────────────────────────────────────────
+    // BARE locators on purpose. These ids belong to a MODAL, and the Modal
+    // primitive renders through `Dialog.Portal` / `Drawer.Portal`, so its
+    // content is mounted OUTSIDE `<main>` and `getByRole('main')` would never
+    // resolve it (#1516).
+    await expect(page.locator('#treatment-product')).toBeVisible();
+    await page.locator('#treatment-product').click();
+    await page.getByRole('option', { name: new RegExp(opts.product) }).click();
+    await page.locator('#treatment-dose').fill('2');
+    await page.locator('#treatment-unit').click();
+    // By position: the dose units are global seed data, and no spec should
+    // assert which symbol that seed happens to use.
+    await page.getByRole('option').first().click();
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    // ── Step two ───────────────────────────────────────────────────────
+    await page.locator('#treatment-crop').click();
+    await page.getByRole('option', { name: new RegExp(crop) }).click();
+    const parcel = page.locator('#treatment-parcel-list').getByRole('checkbox').first();
+    await expect(parcel).toBeVisible();
+
+    // THE LOAD-BEARING WAIT. Do not replace it with the parcel checkbox above,
+    // and do not delete it as redundant — it is the only assertion here that
+    // proves MapLibre's lazily-imported chunk is no longer in flight. The
+    // checkboxes render from data that has already arrived, while the ~200KB
+    // map chunk is still downloading, so waiting on them is the same mistake
+    // `#journal-entry-title` was for the form this replaced (#730).
+    await expect(page.getByRole('group', { name: /^Parcel map/ })).toBeVisible();
+
+    return parcel;
 }
 
 /**

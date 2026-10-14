@@ -26,7 +26,8 @@
  * does NOT claim the work is on the server".
  */
 import { test, expect } from '../fixtures';
-import { openJournalEntryModalWarm } from '../e2e-utils';
+import { openTreatmentFormWarm } from '../e2e-utils';
+import { agPrisma, seedTreatmentBasics } from '../ag-fixtures';
 
 test.describe('offline outbox survives eviction visibly @mobile', () => {
     test.describe.configure({ retries: 0 });
@@ -38,34 +39,38 @@ test.describe('offline outbox survives eviction visibly @mobile', () => {
         test.setTimeout(120_000);
         const page = authedPage;
         const slug = isolatedTenant.tenantSlug;
-        const title = `Aphid scouting ${Date.now()}`;
 
         await page.goto(`/t/${slug}/journal`);
         await expect(page.getByText('No journal entries yet')).toBeVisible();
 
-        // Open the create modal ONLINE so its lazy chunk lands, then cut the
-        // network before submitting. Waiting on `#journal-entry-title` alone
-        // would prove only that the modal is open, not that the ~200KB
-        // RichTextEditor chunk has arrived; `openJournalEntryModalWarm` waits
-        // for the editor itself.
+        // Open the create form ONLINE so its lazy chunk lands, then cut the
+        // network before submitting.
+        //
+        // «Нов запис» records a TREATMENT now (#1740), so this drives that
+        // form — the vehicle changed, the subject of this spec did not: all it
+        // needs is one write sitting in the outbox, and the journal create is
+        // where a field operator actually produces one.
+        //
+        // `openTreatmentFormWarm` holds the load-bearing wait. Waiting on the
+        // parcel checkboxes alone would prove only that the data arrived, not
+        // that MapLibre's ~200KB chunk has — the same shape as the
+        // `#journal-entry-title` mistake this spec used to carry.
         //
         // This is a real hazard but it was NOT the cause of this spec's two
         // failures on main (#730). That was traced instead to the service
         // worker racing the page to reopen the evicted database and consuming
         // the one `upgradeneeded` event the loss detector depends on — see
-        // `tests/unit/offline/sw-outbox-recreation.test.ts`. The trace from
-        // the failing run carries no ChunkLoadError at all, and every
-        // assertion before the banner passed.
-        await openJournalEntryModalWarm(page);
+        // `tests/unit/offline/sw-outbox-recreation.test.ts`.
+        const { product } = await seedTreatmentBasics(
+            page.request, agPrisma(), isolatedTenant.tenantId, slug,
+            { product: `Aphid spray ${Date.now()}` },
+        );
+        const parcelBox = await openTreatmentFormWarm(page, { product });
 
         await page.context().setOffline(true);
-        // BARE on purpose. This id belongs to a MODAL, and the Modal primitive
-        // renders through `Dialog.Portal` / `Drawer.Portal`
-        // (src/components/ui/modal.tsx:234,306), so its content is mounted
-        // OUTSIDE `<main>`. Scoping it would never resolve (#1516).
-        await page.locator('#journal-entry-title').fill(title);
-        await page.locator('#journal-entry-submit').click();
-        await expect(page.locator('#journal-entry-title')).toBeHidden();
+        await parcelBox.click();
+        await page.getByRole('button', { name: 'Save' }).click();
+        await expect(page.locator('#treatment-product')).toBeHidden();
 
         // Queued, and the app says WHERE it is: on the phone, not the server.
         await expect(page.getByTestId('offline-pending-count')).toHaveText(
@@ -126,16 +131,24 @@ test.describe('offline outbox survives eviction visibly @mobile', () => {
         await expect(lost).toBeVisible({ timeout: 20_000 });
         await expect(lost).toContainText('Unsent work was deleted by this phone');
         // Named, so the operator knows WHAT to re-enter rather than just that
-        // something is missing.
-        await expect(lost).toContainText(title);
+        // something is missing. The name is the queue LABEL the form supplied,
+        // which for a treatment is the product — the farmer's own word for it.
+        await expect(lost).toContainText(product);
 
         // And the negative half: the app must not be claiming the work landed.
         await expect(page.getByTestId('offline-unsynced-pill')).toHaveCount(0);
         const server = await page.request.get(`/api/t/${slug}/journal`);
-        const entries = (await server.json()) as Array<{ title: string }>;
+        const body = (await server.json()) as
+            | Array<{ title?: string }>
+            | { entries?: Array<{ title?: string }>; rows?: Array<{ title?: string }> };
+        const entries = Array.isArray(body) ? body : (body.entries ?? body.rows ?? []);
         expect(
-            entries.filter((e) => e.title === title),
-            'the entry genuinely never reached the server',
+            // CONTAINS, not equals: the server composes an entry's title per
+            // operation line (`{product} — {parcel}`), so equality against the
+            // product name alone would pass whatever the server holds — a
+            // negative assertion that cannot fail is worse than none.
+            entries.filter((e) => String(e.title ?? '').includes(product)),
+            'the treatment genuinely never reached the server',
         ).toHaveLength(0);
 
         // ── The record is STICKY ─────────────────────────────────────────

@@ -205,7 +205,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
 
     // Offline-capable journal-entry create. One shared hook so a create queued
     // from the modal is reflected in this page's OfflineSyncBar pending count.
-    const { online, pending, readable, queueGrowing, foreign, durability, flush, conflicts, resolveConflict } = useOfflineSync();
+    const { online, pending, readable, queueGrowing, foreign, durability, submit: offlineSubmit, flush, conflicts, resolveConflict } = useOfflineSync();
     const [resolvingId, setResolvingId] = useState<string | null>(null);
     const [pdfBusyFor, setPdfBusyFor] = useState<string | null>(null);
     const onResolveConflict = useCallback(
@@ -295,12 +295,53 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
      * be a second implementation of the fold, and it would be the one the
      * farmer sees first.
      */
-    const handleTreatmentSaved = (_saved: TreatmentSaved) => {
-        // Revalidating page 1 is what reseeds the accumulator: the effect
-        // above compares the content signature and calls
-        // `reloadPagination(rows, nextCursor)` with the SERVER's rows. There
-        // is deliberately no optimistic prepend here, unlike the free-form
-        // create this replaces — see the docblock.
+    const handleTreatmentSaved = (saved: TreatmentSaved) => {
+        if (saved.delivery === 'queued') {
+            // QUEUED: there is no server row to fetch, so prepend an
+            // optimistic one and do NOT revalidate — a revalidation offline
+            // fails, and online it would replace this row before the outbox
+            // has delivered it. The outbox's own reconnect drain is what
+            // eventually makes the real row appear, via SWR's reconnect
+            // revalidation.
+            //
+            // The row carries NO `treatment` object, which is exactly right
+            // rather than a shortcut: the aggregate does not exist yet, and
+            // its absence is what keeps «Изтегли дневник (PDF)» off a
+            // treatment the server has never seen. A button there would 404.
+            void page1Query.mutate(
+                (cur) => ({
+                    rows: [
+                        {
+                            id: `optimistic-${Date.now()}`,
+                            type: 'INPUT_APPLICATION',
+                            // The farmer's own word for it. The server
+                            // composes the real title (`{product} — {parcel}`)
+                            // per line, and the folded row prefers the product
+                            // name anyway — so this reads the same before and
+                            // after delivery.
+                            title: saved.productName ?? '',
+                            status: 'DONE',
+                            occurredAt: `${saved.occurredOn}T00:00:00.000Z`,
+                        } as JournalRow,
+                        ...(cur?.rows ?? []),
+                    ],
+                    nextCursor: cur?.nextCursor ?? null,
+                }),
+                { revalidate: false },
+            );
+            return;
+        }
+        // SENT: revalidating page 1 is what reseeds the accumulator — the
+        // effect above compares the content signature and calls
+        // `reloadPagination(rows, nextCursor)` with the SERVER's rows. No
+        // optimistic row, because a folded ДНЕВНИК row is a server-side
+        // aggregate (handle, parcel count, total area, block names, earliest
+        // harvest day) and building a convincing one here would be a second
+        // implementation of the fold — the one the farmer sees first.
+        //
+        // 'conflict' lands here too: the item is parked for the
+        // OfflineConflictBanner this page already renders, and revalidating
+        // shows whatever the server actually holds.
         void page1Query.mutate();
     };
 
@@ -645,6 +686,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                     <TreatmentEntryModal
                         open={isCreateOpen}
                         setOpen={setIsCreateOpen}
+                        offlineSubmit={offlineSubmit}
                         onSaved={handleTreatmentSaved}
                     />
                     {/* 409 conflicts — a queued journal write the server refused

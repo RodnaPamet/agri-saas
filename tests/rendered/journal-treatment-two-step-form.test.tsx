@@ -2,29 +2,31 @@
  * «Нов запис» is a two-step TREATMENT record, and the request it sends carries
  * an `Idempotency-Key` (#1740).
  *
- * ## Why the header is the load-bearing assertion
+ * ## What this file asserts, after the write moved to the outbox
  *
- * `apiPost(url, body, schema?, init?)` takes a Zod schema THIRD and the
- * `RequestInit` fourth. The first version of this form passed
- * `{ headers: { 'Idempotency-Key': … } }` third, so the header was never
- * sent. On this route the key IS the treatment handle
- * (`idempotencyKey?.trim() || randomUUID()`), so without one the server mints
- * a fresh UUID per attempt: a retry after a lost answer writes a SECOND
- * treatment into a regulated register, and the farm record then shows the
- * same spray twice over the same parcels.
+ * The treatment is handed to the offline outbox (#1830, owner ruling
+ * 2026-10-14), not to `fetch`. So the `Idempotency-Key` is no longer this
+ * component's to send: `submit` mints an outbox id BEFORE the first attempt
+ * and reuses it on every replay (#924), and on this route that key IS the
+ * treatment handle. Asserting the header here would be asserting the outbox's
+ * contract in the wrong file.
  *
- * ## The typecheck is NOT what this test stands in for
+ * What IS this component's responsibility, and is asserted:
  *
- * `tsc` rejects that mistake — `TS2353: 'headers' does not exist in type
- * ZodType<…>` — measured by putting it back while trying to mutation-prove
- * this file. What hid it was a stale `tsconfig.tsbuildinfo` reporting 0
- * errors on a file that had 12 (#1829).
+ *   • the url, method and BODY it hands over — trimmed, with empties omitted,
+ *     and `parcelIds` sorted so ticking two parcels in either order is one
+ *     treatment;
+ *   • the queue LABEL, which is what the OfflineSyncBar shows a farmer while
+ *     the write waits;
+ *   • relaying the outcome, because 'queued' and 'sent' have opposite
+ *     consequences on the page — a queued treatment gets an optimistic row
+ *     and NO «Изтегли PDF», since the server has never seen it.
  *
- * So the gap this test covers is not "the compiler cannot see it". It is
- * that the compiler's answer is only as good as its cache, and that nothing
- * else in the suite would notice a request losing a header — a 200 with the
- * key dropped looks exactly like a 200 with it present, until the second
- * attempt. Asserted against a real `fetch` for that reason.
+ * The history is worth keeping: this form first passed its `RequestInit` as
+ * `apiPost`'s THIRD argument, which is the Zod schema, so the header was
+ * never sent at all. `tsc` rejects that (TS2353) — a stale
+ * `tsconfig.tsbuildinfo` reporting 0 errors on a file with 12 is what hid it
+ * (#1829).
  *
  * ## Which presentation this exercises
  *
@@ -62,12 +64,22 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantContext: () => ({ tenantName: 'Acme Farms', tenantSlug: 'acme', currencySymbol: '€' }),
 }));
 
-/** MapLibre/WebGL has no place in jsdom; the selection contract is what matters. */
+/**
+ * MapLibre/WebGL has no place in jsdom; the selection contract is what matters.
+ *
+ * `next/dynamic` is mocked too, because the component loads the map through it
+ * — the same pair the location-page suite uses. Without the second mock the
+ * module mock is simply never consulted and the real MapLibre is pulled in.
+ */
 jest.mock('@/components/ui/map/MapCanvas', () => ({
     MapCanvas: ({ selectedIds }: { selectedIds: string[] }) => (
         <div data-testid="map-canvas" data-selected={selectedIds.join(',')} />
     ),
 }));
+jest.mock('next/dynamic', () => () => {
+    const mod = require('@/components/ui/map/MapCanvas');
+    return mod.MapCanvas;
+});
 
 /**
  * Reference data, keyed by the URL the component asks for.
@@ -121,17 +133,43 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 import { TreatmentEntryModal } from '@/app/t/[tenantSlug]/(app)/journal/TreatmentEntryModal';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+/** The subset of `EnqueueInput` this component is responsible for filling. */
+interface EnqueuedWrite {
+    url: string;
+    method: string;
+    body: Record<string, unknown>;
+    label: string;
+    supersedes?: unknown;
+}
+
 const user = () => userEvent.setup({ delay: null, pointerEventsCheck: 0 });
 
-function mount() {
+/**
+ * `outcome` is what the outbox answers: 'sent' online, 'queued' when the
+ * network failed, 'conflict' when the server parked it — or 'throw' for a
+ * terminal 4xx, which `submit` raises rather than returns.
+ */
+function mount(outcome: 'sent' | 'queued' | 'conflict' | 'throw' = 'sent') {
     const onSaved = jest.fn();
     const setOpen = jest.fn();
+    const submit = jest.fn((_input: EnqueuedWrite) =>
+        outcome === 'throw'
+            ? Promise.reject(
+                  new Error('"Sample product" is a sample product, not a registered one.'),
+              )
+            : Promise.resolve(outcome),
+    );
     const view = render(
         <TooltipProvider>
-            <TreatmentEntryModal open setOpen={setOpen} onSaved={onSaved} />
+            <TreatmentEntryModal
+                open
+                setOpen={setOpen}
+                offlineSubmit={submit as unknown as React.ComponentProps<typeof TreatmentEntryModal>['offlineSubmit']}
+                onSaved={onSaved}
+            />
         </TooltipProvider>,
     );
-    return { ...view, onSaved, setOpen };
+    return { ...view, onSaved, setOpen, submit };
 }
 
 /**
@@ -162,45 +200,13 @@ async function pickFrom(fieldLabel: string, optionText: RegExp) {
 /**
  * Fill step 1 completely, which is what un-disables «Next».
  *
- * The date goes through the real `DatePicker` popover — it is Date-valued and
- * the draft holds `YYYY-MM-DD`, and that conversion is the thing that would
- * shift a day for a farmer east of UTC, so it is exercised rather than
- * bypassed.
+ * The DATE is deliberately not touched: a fresh draft is dated TODAY, because
+ * the ДНЕВНИК records work already done and the server refuses a future farm
+ * day. The picker's own conversion gets its own case below, which chooses the
+ * 1st of the month — never a future day, which is what a fixed "15" would be
+ * for the first half of every month.
  */
 async function fillStepOne() {
-    const u = user();
-    // The DATE trigger is reached by its visible text, not by an id.
-    //
-    // `<DatePicker id="treatment-day">` inside a `FormField` puts that id on
-    // the LABEL's `htmlFor` and spreads `{...props}` onto the Calendar inside
-    // the popover — never onto the trigger button. So `#treatment-day` does
-    // not exist in the closed state, and the label labels nothing (#1839).
-    // By the FIELD LABEL, which is the trigger's accessible name — the
-    // `DatePicker` Trigger takes `aria-labelledby` from the `FormField`,
-    // while its visible text is only the placeholder.
-    await u.click(screen.getByRole('button', { name: 'Date carried out' }));
-    // react-day-picker renders each day as a button named by its number; any
-    // day in the shown month will do, and the 15th is never a leading or
-    // trailing day of an adjacent month.
-    // NOT scoped to `findByRole('dialog')`: once the calendar popover opens
-    // there are TWO dialogs on screen — the modal itself and the popover —
-    // and the query is ambiguous. A button whose trimmed text is exactly a
-    // day number exists only inside the calendar, so it needs no scope.
-    //
-    // Selected by VISIBLE TEXT, not by accessible name.
-    //
-    // react-day-picker 10 labels a day button with the fully formatted date
-    // (`labelDayButton` → `format(date, 'PPPP')`, prefixed "Today, " and
-    // suffixed ", selected" when those modifiers apply), and the format
-    // follows the calendar's locale — which is Bulgarian in the running app.
-    // So `getByRole('button', { name: '15' })` finds nothing, which is how
-    // the first version of this file failed. The day NUMBER is the one thing
-    // that is the same in every locale.
-    const findDay = () =>
-        screen.getAllByRole('button').find((b) => b.textContent?.trim() === '15');
-    await waitFor(() => expect(findDay()).toBeDefined());
-    await u.click(findDay() as HTMLElement);
-
     await pickFrom('Product', /Тест Препарат/);
     // By LABEL, not by a query against the render root. `<Modal>` renders
     // into a portal on `document.body`, so the root holds none of this — the
@@ -214,29 +220,6 @@ async function fillStepOne() {
         target: { value: '2' },
     });
     await pickFrom('Unit', /л\/ха/);
-}
-
-/** A POST double that records what `apiPost` handed to `fetch`. */
-function postDouble() {
-    return jest.fn((input: unknown, init?: RequestInit) => {
-        if (String(input).includes('/journal/treatments')) {
-            return Promise.resolve({
-                ok: true,
-                status: 201,
-                headers: { get: () => null },
-                json: async () => ({
-                    treatmentGroupId: 'handle-xyz',
-                    parcelCount: 1,
-                    taskIds: ['task-1'],
-                    replayed: false,
-                }),
-            } as unknown as Response);
-        }
-        void init;
-        return Promise.resolve({
-            ok: true, status: 200, headers: { get: () => null }, json: async () => ({}),
-        } as unknown as Response);
-    });
 }
 
 describe('the two-step treatment form', () => {
@@ -257,6 +240,45 @@ describe('the two-step treatment form', () => {
         // And the crop picker belongs to step TWO — it must not be reachable
         // before the treatment is described.
         expect(document.querySelector('#treatment-crop')).toBeNull();
+    });
+
+    it('dates a fresh treatment TODAY, so the common case needs no tap', async () => {
+        const { submit } = mount();
+        await fillStepOne();
+        await user().click(screen.getByRole('button', { name: 'Next' }));
+        await pickFrom('Crop', /Пшеница/);
+        const boxes = await screen.findAllByRole('checkbox');
+        await user().click(boxes[0]);
+        await user().click(await screen.findByRole('button', { name: 'Save' }));
+
+        await waitFor(() => expect(submit).toHaveBeenCalled());
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        // LOCAL parts, not a UTC slice: between 00:00 and 03:00 in Sofia the
+        // UTC day is YESTERDAY, which is the mistake this issue has now made
+        // three times elsewhere.
+        expect(submit.mock.calls[0][0].body.occurredOn).toBe(today);
+    });
+
+    it('keeps the picker’s own day when one is chosen', async () => {
+        const { submit } = mount();
+        const u = user();
+        await u.click(screen.getByRole('button', { name: 'Date carried out' }));
+        // The 1st — a day that is never in the future, unlike a fixed 15th.
+        const first = () =>
+            screen.getAllByRole('button').find((b) => b.textContent?.trim() === '1');
+        await waitFor(() => expect(first()).toBeDefined());
+        await u.click(first() as HTMLElement);
+
+        await fillStepOne();
+        await u.click(screen.getByRole('button', { name: 'Next' }));
+        await pickFrom('Crop', /Пшеница/);
+        const boxes = await screen.findAllByRole('checkbox');
+        await u.click(boxes[0]);
+        await u.click(await screen.findByRole('button', { name: 'Save' }));
+
+        await waitFor(() => expect(submit).toHaveBeenCalled());
+        expect(submit.mock.calls[0][0].body.occurredOn).toMatch(/^\d{4}-\d{2}-01$/);
     });
 
     it('will not advance until the treatment is fully described', async () => {
@@ -301,11 +323,8 @@ describe('the two-step treatment form', () => {
         expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-selected', '');
     });
 
-    it('sends an Idempotency-Key, without which a retry writes a second treatment', async () => {
-        const fetchMock = postDouble();
-        global.fetch = fetchMock as unknown as typeof fetch;
-
-        const { onSaved } = mount();
+    it('hands the treatment to the outbox, which is what survives a lost signal', async () => {
+        const { submit, onSaved } = mount();
         await fillStepOne();
         await user().click(screen.getByRole('button', { name: 'Next' }));
         await pickFrom('Crop', /Пшеница/);
@@ -313,49 +332,69 @@ describe('the two-step treatment form', () => {
         await user().click(boxes[0]);
         await user().click(await screen.findByRole('button', { name: 'Save' }));
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-        const call = fetchMock.mock.calls.find((c) =>
-            String(c[0]).includes('/journal/treatments'),
-        );
-        expect(call).toBeDefined();
-        expect(call?.[0]).toBe('/api/t/acme/journal/treatments');
-
-        const headers = (call?.[1] as RequestInit | undefined)?.headers as
-            | Record<string, string>
-            | undefined;
-        // The header itself. `apiPost` MERGES a caller's headers into its own
-        // `Content-Type` rather than replacing them, so both must survive.
-        expect(headers?.['Idempotency-Key']).toBeTruthy();
-        expect(headers?.['Content-Type']).toBe('application/json');
-
-        // And the body is the treatment, with the parcel the farmer ticked.
-        const body = JSON.parse(String((call?.[1] as RequestInit | undefined)?.body));
-        expect(body.parcelIds).toEqual(['p-1']);
-        expect(body.productItemId).toBe('item-1');
-        expect(body.doseValue).toBe(2);
-        expect(body.doseUnitId).toBe('unit-1');
-        // A real day, in the API's own `YYYY-MM-DD` form — not an ISO instant,
-        // whose UTC slice is the wrong day for a farmer in Sofia near midnight.
-        expect(body.occurredOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-
-        // The handle reaches the page, which is what the list reload and the
-        // «Изтегли PDF» button are keyed on.
+        await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+        const input = submit.mock.calls[0][0];
+        expect(input.url).toBe('/api/t/acme/journal/treatments');
+        expect(input.method).toBe('POST');
+        expect(input.body.parcelIds).toEqual(['p-1']);
+        expect(input.body.productItemId).toBe('item-1');
+        expect(input.body.doseValue).toBe(2);
+        expect(input.body.doseUnitId).toBe('unit-1');
+        // A real day in the API's own form — not an ISO instant, whose UTC
+        // slice is the previous day for a farmer in Sofia near midnight.
+        expect(input.body.occurredOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        // The farmer's own word for it, shown by the OfflineSyncBar while it waits.
+        expect(input.label).toBe('Тест Препарат');
+        // NO supersede key: every save MINTS a treatment, so an older queued
+        // one is a DIFFERENT treatment and must not be replaced by this.
+        expect(input.supersedes).toBeUndefined();
         await waitFor(() => expect(onSaved).toHaveBeenCalled());
-        expect(onSaved.mock.calls[0][0]).toMatchObject({ treatmentGroupId: 'handle-xyz' });
     });
 
-    it('keys on what is SENT, so untrimmed typing cannot mint a second treatment', async () => {
-        const fetchMock = postDouble();
-        global.fetch = fetchMock as unknown as typeof fetch;
-
-        mount();
+    it('relays a QUEUED write, which the page must render without a document', async () => {
+        // The two outcomes have opposite consequences: 'queued' gets an
+        // optimistic row and no «Изтегли PDF», because the treatment the
+        // button would fetch does not exist on the server yet.
+        const { submit, onSaved } = mount('queued');
         await fillStepOne();
-        // A trailing space in the pest field. The body trims it, so the
-        // request is byte-identical to one typed without it — and the key
-        // must be too. Keyed on the DRAFT, it was not: lose the answer,
-        // delete the space, retry, and the server mints a SECOND treatment
-        // in a regulated register because the key moved while the request
-        // did not.
+        await user().click(screen.getByRole('button', { name: 'Next' }));
+        await pickFrom('Crop', /Пшеница/);
+        const boxes = await screen.findAllByRole('checkbox');
+        await user().click(boxes[0]);
+        await user().click(await screen.findByRole('button', { name: 'Save' }));
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled());
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(onSaved.mock.calls[0][0]).toMatchObject({
+            delivery: 'queued',
+            productName: 'Тест Препарат',
+            parcelCount: 1,
+        });
+    });
+
+    it('shows a terminal refusal instead of closing on it', async () => {
+        // `submit` THROWS on a terminal 4xx — the sample-product refusal and
+        // the cross-tenant parcel refusal both arrive this way, already
+        // localised. Closing the modal would discard the farmer's typing and
+        // say nothing.
+        const { submit, onSaved } = mount('throw');
+        await fillStepOne();
+        await user().click(screen.getByRole('button', { name: 'Next' }));
+        await pickFrom('Crop', /Пшеница/);
+        const boxes = await screen.findAllByRole('checkbox');
+        await user().click(boxes[0]);
+        await user().click(await screen.findByRole('button', { name: 'Save' }));
+
+        await waitFor(() => expect(submit).toHaveBeenCalled());
+        expect(await screen.findByText(/sample product/i)).toBeInTheDocument();
+        expect(onSaved).not.toHaveBeenCalled();
+        // Still on step two, with the selection intact.
+        expect(screen.getByRole('combobox', { name: 'Crop' })).toBeInTheDocument();
+    });
+
+    it('sends what was typed TRIMMED, so the body is the treatment and nothing else', async () => {
+        const { submit } = mount();
+        await fillStepOne();
         fireEvent.change(screen.getByLabelText(/Pest/), {
             target: { value: 'листни въшки   ' },
         });
@@ -365,54 +404,29 @@ describe('the two-step treatment form', () => {
         await user().click(boxes[0]);
         await user().click(await screen.findByRole('button', { name: 'Save' }));
 
-        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-        const call = fetchMock.mock.calls.find((c) =>
-            String(c[0]).includes('/journal/treatments'),
-        );
-        const headers = (call?.[1] as RequestInit | undefined)?.headers as Record<string, string>;
-        const body = String((call?.[1] as RequestInit | undefined)?.body);
-        expect(JSON.parse(body).targetNote).toBe('листни въшки');
-        // The key contains the trimmed value and NOT the typed whitespace.
-        expect(headers['Idempotency-Key']).toContain('листни въшки"');
-        expect(headers['Idempotency-Key']).not.toContain('листни въшки   ');
-        // The strongest form: the key IS the body.
-        expect(headers['Idempotency-Key']).toBe(`web:${body}`);
+        await waitFor(() => expect(submit).toHaveBeenCalled());
+        const body = submit.mock.calls[0][0].body;
+        expect(body.targetNote).toBe('листни въшки');
+        // And an untouched optional field is ABSENT rather than empty, so the
+        // server is not asked to store a blank it would have to interpret.
+        expect(body).not.toHaveProperty('applicationTechnique');
+        expect(body).not.toHaveProperty('quarantinePeriodDays');
     });
 
-    it('keys the same treatment identically, so a double-click cannot write twice', async () => {
-        const fetchMock = postDouble();
-        global.fetch = fetchMock as unknown as typeof fetch;
-        mount();
+    it('sorts the parcel ids, so ticking them in either order is ONE treatment', async () => {
+        const { submit } = mount();
         await fillStepOne();
         await user().click(screen.getByRole('button', { name: 'Next' }));
         await pickFrom('Crop', /Пшеница/);
         const boxes = await screen.findAllByRole('checkbox');
-        // BOTH parcels, ticked in reverse order, to pin the one property that
-        // makes the key stable: it sorts the ids. Ticking p-2 then p-1 must
-        // produce the same key as p-1 then p-2, or the same treatment
-        // retried after a reorder would be written twice.
+        // Reverse order deliberately.
         await user().click(boxes[1]);
         await user().click(boxes[0]);
         await user().click(await screen.findByRole('button', { name: 'Save' }));
 
-        await waitFor(() =>
-            expect(
-                fetchMock.mock.calls.filter((c) => String(c[0]).includes('/journal/treatments')),
-            ).toHaveLength(1),
-        );
-        const call = fetchMock.mock.calls.find((c) => String(c[0]).includes('/journal/treatments'));
-        const headers = (call?.[1] as RequestInit | undefined)?.headers as Record<string, string>;
-        const key = headers['Idempotency-Key'];
-        // The key is the serialised REQUEST BODY, so the parcel ids appear in
-        // it as a JSON array — sorted, which is what makes ticking them in
-        // either order the same treatment.
-        expect(key).toContain('["p-1","p-2"]');
-        expect(key).not.toContain('["p-2","p-1"]');
-        // And the body itself carries them sorted, since the key is derived
-        // FROM the body rather than alongside it. If these two could
-        // disagree, the key would stop describing what was sent.
-        const body = JSON.parse(String((call?.[1] as RequestInit | undefined)?.body));
+        await waitFor(() => expect(submit).toHaveBeenCalled());
+        const body = submit.mock.calls[0][0].body;
         expect(body.parcelIds).toEqual(['p-1', 'p-2']);
-        expect(key).toContain(JSON.stringify(body.parcelIds));
     });
+
 });

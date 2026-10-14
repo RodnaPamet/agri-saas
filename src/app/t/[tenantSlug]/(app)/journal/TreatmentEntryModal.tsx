@@ -40,14 +40,35 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
-import { apiPost } from '@/lib/api-client';
+import type { OfflineSync } from '@/lib/offline/use-offline-sync';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { MapCanvas, type MapParcel } from '@/components/ui/map/MapCanvas';
+import dynamic from 'next/dynamic';
+import type { MapParcel } from '@/components/ui/map/MapCanvas';
+
+/**
+ * MapLibre, lazily and client-only — the same import every other map site in
+ * this app uses.
+ *
+ * A static import put the whole MapLibre bundle in the JOURNAL LIST page's
+ * chunk, paid for by every farmer opening the register whether or not they
+ * ever record a treatment, and dropped the `ssr: false` the other three sites
+ * carry deliberately. The map is also only rendered once a crop is chosen, so
+ * static loading bought nothing in exchange.
+ *
+ * It being a lazy chunk is what `tests/guards/offline-spec-chunk-warmup.test.ts`
+ * is about: an offline spec must wait for the chunk to LAND before cutting the
+ * network, and the wait that looks obvious (the parcel list) appears while the
+ * chunk is still in flight.
+ */
+const MapCanvas = dynamic(
+    () => import('@/components/ui/map/MapCanvas').then((m) => m.MapCanvas),
+    { ssr: false },
+);
 import { DatePicker } from '@/components/ui/date-picker';
 
 type Kind = 'SPRAY' | 'FERTILIZE';
@@ -77,14 +98,33 @@ interface UnitOption {
     symbol: string;
 }
 
+/**
+ * What the page learns from a save.
+ *
+ * Deliberately NOT the treatment handle. The write goes through the offline
+ * outbox, whose `submit` answers an OUTCOME and discards the response body —
+ * a queued write has no response to carry one. That is not a loss here: the
+ * «Изтегли PDF» button lives on the folded ДНЕВНИК row and reads the handle
+ * the SERVER put there, so no client ever needs to know it. A queued
+ * treatment therefore shows as a row with no document until it is delivered,
+ * which is the owner's ruling of 2026-10-14 stated exactly.
+ */
 export interface TreatmentSaved {
-    treatmentGroupId: string;
+    delivery: 'sent' | 'queued' | 'conflict';
+    /** For the optimistic row a queued write needs; the server composes the real title. */
+    productName: string | null;
+    occurredOn: string;
     parcelCount: number;
 }
 
 interface Props {
     open: boolean;
     setOpen: (next: boolean) => void;
+    /**
+     * The shared outbox `submit`, passed in rather than hooked here so a write
+     * queued from this modal is counted by the page's own OfflineSyncBar.
+     */
+    offlineSubmit: OfflineSync['submit'];
     onSaved: (saved: TreatmentSaved) => void;
 }
 
@@ -111,12 +151,43 @@ const EMPTY_DRAFT: Draft = {
     quarantinePeriodDays: '',
 };
 
-export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
+/**
+ * Today, as LOCAL calendar parts.
+ *
+ * Not `toISOString().slice(0, 10)`, which is the UTC day: for a farmer in
+ * Sofia between 00:00 and 03:00 that is YESTERDAY, and the same UTC-slice
+ * mistake has now been made three times on this issue — in the server's
+ * future-day guard, in the list's `occurredOn`, and in this form's
+ * `DatePicker` conversion.
+ */
+function todayLocal(): string {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * A fresh draft, dated TODAY.
+ *
+ * The ДНЕВНИК records work already done, and "today" is what a farmer
+ * recording a spray they have just finished wants — so the date is a field
+ * they correct, not one they must fill. The server refuses a future farm day
+ * anyway, which is the case a default could otherwise walk into.
+ *
+ * Deliberately a function, not a constant: a constant computed at module load
+ * would date every treatment by the day the TAB was opened, which for a phone
+ * left open overnight in a vehicle is the wrong day in a regulated register.
+ */
+function emptyDraft(): Draft {
+    return { ...EMPTY_DRAFT, occurredOn: todayLocal() };
+}
+
+
+export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: Props) {
     const t = useTranslations('journal.treatmentForm');
     const apiUrl = useTenantApiUrl();
 
     const [step, setStep] = useState<1 | 2>(1);
-    const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+    const [draft, setDraft] = useState<Draft>(emptyDraft);
     const [crop, setCrop] = useState<string | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
@@ -205,7 +276,7 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
      */
     const closeAndReset = useCallback(() => {
         setStep(1);
-        setDraft(EMPTY_DRAFT);
+        setDraft(emptyDraft());
         setCrop(null);
         setSelected([]);
         setError(null);
@@ -213,7 +284,8 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
     }, [setOpen]);
 
     const dirty =
-        JSON.stringify(draft) !== JSON.stringify(EMPTY_DRAFT) || selected.length > 0;
+        JSON.stringify({ ...draft, occurredOn: '' }) !== JSON.stringify(EMPTY_DRAFT) ||
+        selected.length > 0;
 
     const step1Complete =
         draft.occurredOn !== '' &&
@@ -273,51 +345,79 @@ export function TreatmentEntryModal({ open, setOpen, onSaved }: Props) {
         [draft, selected],
     );
 
-    const idempotencyKey = useMemo(() => `web:${JSON.stringify(payload)}`, [payload]);
+    /**
+     * The chosen product's NAME, for the queue label and the optimistic row.
+     *
+     * Read from the ITEM LIST and not from `itemOptions`, whose `label` is a
+     * `ReactNode` — a combobox option may render an element, so that field
+     * cannot be handed to anything wanting a string. `ItemOption.name` is the
+     * data behind the option and is typed `string`.
+     */
+    const productName = useMemo(() => {
+        const list = Array.isArray(items) ? items : (items?.items ?? []);
+        return list.find((i) => i.id === draft.productItemId)?.name ?? null;
+    }, [items, draft.productItemId]);
 
     const submit = useCallback(async () => {
         if (submitting || selected.length === 0) return;
         setSubmitting(true);
         setError(null);
         try {
-            const saved = await apiPost<TreatmentSaved>(
-                apiUrl('/journal/treatments'),
-                payload,
-                // `apiPost(url, body, schema?, init?)` — the header rides in
-                // the FOURTH argument. The third is a Zod schema, and this
-                // file passed the init THERE, so the header was never sent:
-                // on this route a missing key means the server mints a UUID,
-                // and a retry after a lost answer writes a second treatment.
-                //
-                // Worth being exact about why it survived, because the
-                // obvious explanation is wrong. `tsc` DOES reject it —
-                // `TS2353: 'headers' does not exist in type ZodType<…>`,
-                // measured by putting the mistake back. Excess-property
-                // checking applies to an object literal passed directly as
-                // an argument; it is spreads that escape it. What hid the
-                // error was a stale `tsconfig.tsbuildinfo` reporting 0
-                // errors on a file that had 12 (#1829), found with a
-                // deliberate `const __probe: number = 'x'` that also came
-                // back clean.
-                //
-                // Deliberately a plain header rather than `outboxHeaders()`:
-                // that helper exists so a queued write's first attempt and its
-                // replays share one key, and this write is not an outbox
-                // surface.
-                undefined,
-                { headers: { 'Idempotency-Key': idempotencyKey } },
-            );
-            onSaved(saved);
+            /**
+             * Through the OUTBOX, not straight to the network (#1830).
+             *
+             * `submit` tries the network first when online and queues on a
+             * network failure, so a farmer who loses signal with the form
+             * open does not lose the work — which is the capability
+             * `journal-offline-create.spec.ts` has asserted since before this
+             * form existed, and which replacing the free-form modal would
+             * otherwise have deleted.
+             *
+             * The outbox also owns the `Idempotency-Key`: it mints an id
+             * BEFORE the first attempt and reuses it for every replay
+             * (#924), so an answer lost after the server committed cannot
+             * write a second treatment. That is a stronger guarantee than
+             * the content-derived key this file used to build, and it is the
+             * house mechanism rather than a second one beside it — on this
+             * route the key IS the treatment handle, so the handle is now
+             * the outbox id.
+             *
+             * What it does NOT make offline-proof is step TWO's reads. The
+             * crop list and the parcels come from `/parcels/by-crop`, so a
+             * farmer who opens this form with no signal at all has nothing
+             * to tick. Queuing covers losing signal mid-form, not starting
+             * without it.
+             */
+            const delivery = await offlineSubmit({
+                url: apiUrl('/journal/treatments'),
+                method: 'POST',
+                body: payload,
+                // What the OfflineSyncBar shows while it waits. The product
+                // name is the farmer's own word for this treatment; the kind
+                // is the fallback when a product was typed rather than picked.
+                label:
+                    productName ??
+                    t(draft.kind === 'FERTILIZE' ? 'kind_FERTILIZE' : 'kind_SPRAY'),
+                // NO supersede key, deliberately: every save MINTS a
+                // treatment, so an older queued one is a different
+                // treatment, not a stale version of this one.
+            });
+            onSaved({
+                delivery,
+                productName,
+                occurredOn: draft.occurredOn,
+                parcelCount: selected.length,
+            });
             closeAndReset();
         } catch (e) {
-            // The server's message is already localised for every coded
-            // refusal, so showing it beats a generic sentence — and the codes
-            // this route can return are documented in its spec entry.
+            // A terminal 4xx throws out of `submit` — the sample-product
+            // refusal and the cross-tenant parcel refusal both land here, and
+            // the server's message is already localised for every coded one.
             setError(e instanceof Error ? e.message : t('saveFailed'));
         } finally {
             setSubmitting(false);
         }
-    }, [apiUrl, closeAndReset, draft, idempotencyKey, onSaved, selected, submitting, t]);
+    }, [apiUrl, closeAndReset, draft.kind, draft.occurredOn, offlineSubmit, onSaved, payload, productName, selected.length, submitting, t]);
 
     const heading = step === 1 ? t('stepOneTitle') : t('stepTwoTitle');
 

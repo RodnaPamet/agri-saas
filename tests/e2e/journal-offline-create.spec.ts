@@ -1,56 +1,92 @@
 /**
- * @mobile — offline journal-entry create (the manifest promise: "log work,
- * online or off").
+ * @mobile — offline journal create, now a TREATMENT record (#1740, #1830).
  *
- * A field operator authors a journal entry with no signal: the create is
- * enqueued in the outbox (OfflineSyncBar shows it "queued"), and on reconnect
- * the service worker replays it — carrying its outbox id as the Idempotency-Key
- * so the server dedupes the delivery. The regression class: a journal note
- * silently dropped offline, or delivered twice on a flaky reconnect.
+ * A field operator records a treatment and loses signal before it is sent: the
+ * write is enqueued in the outbox (OfflineSyncBar shows it queued), and on
+ * reconnect the service worker replays it carrying its outbox id as the
+ * `Idempotency-Key` so the server dedupes the delivery. The regression class
+ * is unchanged: work silently dropped offline, or delivered twice on a flaky
+ * reconnect.
  *
- * Mutating spec → isolated empty tenant.
+ * ## What changed, and what deliberately did not
+ *
+ * «Нов запис» used to open a free-form note; it now opens the two-step
+ * treatment form, so this spec drives that instead of `#journal-entry-title`.
+ * The PROMISE under test is the same one, which is why the spec was updated
+ * rather than retired: replacing the form must not quietly remove the
+ * capability it covers.
+ *
+ * ## Why every read happens while ONLINE
+ *
+ * Step two's crop list and parcel list come from `/parcels/by-crop`. Queuing
+ * covers a farmer who loses signal MID-FORM, not one who opens the form with
+ * no signal at all — there would be nothing to tick. So the flow here warms
+ * both steps online and cuts the network immediately before Save, which is
+ * the scenario the outbox actually protects. The same reasoning as the old
+ * spec's modal warm-up (#730), for a different reason: there it was a lazy
+ * chunk, here it is the data the form is about.
+ *
+ * Mutating spec → isolated empty tenant, so the farm data is created here.
  */
 import { test, expect } from './fixtures';
-import { openJournalEntryModalWarm } from './e2e-utils';
+import { agPrisma, seedTreatmentBasics } from './ag-fixtures';
+import { openTreatmentFormWarm } from './e2e-utils';
 
-test('@mobile journal entry created offline queues and delivers exactly once', async ({ authedPage, isolatedTenant }) => {
+test('@mobile journal entry created offline queues and delivers exactly once', async ({
+    authedPage,
+    isolatedTenant,
+}) => {
     const slug = isolatedTenant.tenantSlug;
     const api = authedPage.request;
-    const title = `Scouted aphids ${Date.now()}`;
+    const prisma = agPrisma();
+    const product = `Aphid spray ${Date.now()}`;
+
+    // ── The farm this treatment is recorded against ────────────────────
+    const { product: productName } = await seedTreatmentBasics(
+        api, prisma, isolatedTenant.tenantId, slug, { product },
+    );
 
     await authedPage.goto(`/t/${slug}/journal`);
     await expect(authedPage.getByText('No journal entries yet')).toBeVisible();
 
-    // Open the create modal WHILE ONLINE so its lazy chunk + catalog fetches
-    // land — then we cut the network before submitting.
-    //
-    // Same warm-up as offline-eviction, and it had the same latent bug (#730):
-    // the old wait was on the title input, which is visible while the
-    // RichTextEditor chunk is still downloading. This spec had not been
-    // observed to fail, which was luck rather than a difference in design.
-    await openJournalEntryModalWarm(authedPage);
+    // ── Both steps, ONLINE: every read lands before the network is cut ──
+    const parcelBox = await openTreatmentFormWarm(authedPage, { product: productName });
 
-    // Go offline and log the entry (title-only — no signal needed).
+    // ── Signal lost, then Save ─────────────────────────────────────────
     await authedPage.context().setOffline(true);
-    await authedPage.locator('#journal-entry-title').fill(title);
-    await authedPage.locator('#journal-entry-submit').click();
+    await parcelBox.click();
+    await authedPage.getByRole('button', { name: 'Save' }).click();
 
     // The modal closes; the outbox holds it and the sync bar shows it queued.
-    await expect(authedPage.locator('#journal-entry-title')).toBeHidden();
+    await expect(authedPage.locator('#treatment-product')).toBeHidden();
     await expect(authedPage.getByText('Offline', { exact: true })).toBeVisible();
-    await expect(authedPage.getByTestId('offline-pending-count')).toHaveText('1 change saved on this phone');
-    // The optimistic row shows the just-logged entry immediately.
-    await expect(authedPage.getByText(title)).toBeVisible();
+    await expect(authedPage.getByTestId('offline-pending-count')).toHaveText(
+        '1 change saved on this phone',
+    );
+    // The optimistic row names the product, which is also how the folded row
+    // reads once it is delivered — so this assertion holds either side of the
+    // reconnect rather than describing a transient shape.
+    await expect(authedPage.getByText(product).first()).toBeVisible();
+    // And it offers NO document: the treatment does not exist on the server
+    // yet, so a «Изтегли дневник (PDF)» button there would fetch a 404.
+    await expect(authedPage.getByRole('button', { name: 'Download diary (PDF)' })).toHaveCount(0);
 
-    // Reconnect → the outbox drains; the queue clears.
+    // ── Reconnect → the outbox drains; the queue clears ────────────────
     await authedPage.context().setOffline(false);
     await expect(authedPage.getByTestId('offline-pending-count')).toBeHidden({ timeout: 20_000 });
 
-    // Server truth: the entry was delivered EXACTLY ONCE (no duplicate row).
+    // Server truth: delivered EXACTLY ONCE. One parcel is one operation line,
+    // which is one journal entry — a duplicate delivery would be two.
     await expect
-        .poll(async () => {
-            const entries = (await (await api.get(`/api/t/${slug}/journal`)).json()) as Array<{ title: string }>;
-            return entries.filter((e) => e.title === title).length;
-        }, { timeout: 20_000 })
+        .poll(
+            async () => {
+                const body = (await (await api.get(`/api/t/${slug}/journal`)).json()) as
+                    | Array<{ title?: string }>
+                    | { entries?: Array<{ title?: string }>; rows?: Array<{ title?: string }> };
+                const rows = Array.isArray(body) ? body : (body.entries ?? body.rows ?? []);
+                return rows.filter((e) => String(e.title ?? '').includes(product)).length;
+            },
+            { timeout: 20_000 },
+        )
         .toBe(1);
 });
