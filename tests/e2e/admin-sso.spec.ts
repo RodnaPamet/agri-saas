@@ -11,7 +11,7 @@
  * dev-server compilation cache before the heavier SSO page tests.
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto } from './e2e-utils';
+import { expectSettledSingle, loginAndGetTenant, safeGoto } from './e2e-utils';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 const READER_USER = { email: 'viewer@acme.com', password: 'password123' };
@@ -24,15 +24,18 @@ test.describe('Admin SSO Configuration', () => {
 
         await safeGoto(page, `/t/${tenantSlug}/admin`, { waitUntil: 'domcontentloaded' });
 
-        // Settle-then-assert, the same barrier admin-regression.spec.ts applies
-        // to this very pill row: during the admin page's hydration window a pill
-        // can transiently render twice, and a bare toBeVisible() then fails with
-        // a strict-mode violation instead of waiting the double out. Asserting
-        // the count first waits for the window to close while still failing a
+        // The same barrier admin-regression.spec.ts applies to this very pill
+        // row: during the admin page's hydration window a pill can transiently
+        // render twice, and a bare toBeVisible() then fails with a strict-mode
+        // violation instead of waiting the double out. The count still fails a
         // page that really did render two — `.first()` would pass on both.
-        const ssoPill = page.getByRole('main').locator('#sso-pill-btn');
-        await expect(ssoPill).toHaveCount(1, { timeout: 15000 });
-        await expect(ssoPill).toBeVisible();
+        //
+        // One call rather than two statements: the previous form claimed the
+        // count assertion "waits for the window to close", and it does not —
+        // it returns on the first observation of one. That is #1567.
+        await expectSettledSingle(page.getByRole('main').locator('#sso-pill-btn'), {
+            timeout: 15000,
+        });
     });
 
     // ── SSO page tests: server should be warm from admin page ──

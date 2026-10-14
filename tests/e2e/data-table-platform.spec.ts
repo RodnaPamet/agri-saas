@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, waitForHydration, expectRouteTransition, instrumentRowGestures } from './e2e-utils';
+import {
+    expectRouteTransition,
+    expectSettledSingle,
+    instrumentRowGestures,
+    loginAndGetTenant,
+    waitForHydration,
+} from './e2e-utils';
 
 /**
  * DataTable Platform E2E — Validates that all migrated list pages render
@@ -29,15 +35,25 @@ test.describe('DataTable Platform — Cross-page regression', () => {
     }) {
         await page.goto(`/t/${tenantSlug}${path}`);
 
-        // Wait for heading. The count is allowed to SETTLE first: during an
-        // App Router transition the outgoing and incoming trees are both
-        // mounted, so a bare `locator('h1')` is a strict-mode violation rather
-        // than a wait, and strict mode throws immediately — the 15s never
-        // applies. #1010 hit exactly this once its `networkidle` (which had
-        // been hiding it by running late) was removed.
+        // Wait for heading. During an App Router transition the outgoing and
+        // incoming trees are both mounted, so a bare `locator('h1')` is a
+        // strict-mode violation rather than a wait, and strict mode throws
+        // immediately — the 15s never applies. #1010 hit exactly this once its
+        // `networkidle` (which had been hiding it by running late) was removed.
+        //
+        // That reasoning was right and the two-statement form it produced was
+        // not: a count assertion returns on its first sight of one, so the
+        // text assertion on the next line re-queried and could see the double
+        // again, and then throw immediately for the stated reason. #1567.
+        //
+        // `also` carries the TEXT assertion rather than the default visibility
+        // one, which is parity with what this site asserted before — a hidden
+        // `h1` containing the heading passed here and still does.
         if (opts?.heading) {
-            await expect(page.locator('h1')).toHaveCount(1, { timeout: 15_000 });
-            await expect(page.locator('h1')).toContainText(opts.heading, { timeout: 15_000 });
+            await expectSettledSingle(page.locator('h1'), {
+                timeout: 15_000,
+                also: (only) => expect(only).toContainText(opts.heading!, { timeout: 1_000 }),
+            });
         } else {
             await page.waitForSelector('h1', { timeout: 15000 });
         }
