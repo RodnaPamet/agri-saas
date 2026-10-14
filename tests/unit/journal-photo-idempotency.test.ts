@@ -38,7 +38,10 @@ jest.mock('@/lib/storage', () => ({
     isAllowedSize: () => true,
     FILE_MAX_SIZE_BYTES: 10_000_000,
 }));
-jest.mock('@/lib/storage/av-scan', () => ({ scanUploadedBuffer: jest.fn(async () => 'CLEAN') }));
+jest.mock('@/lib/storage/av-scan', () => ({
+    scanUploadedBuffer: jest.fn(async () => 'CLEAN'),
+    scanUploadedBufferDetailed: jest.fn(async () => ({ status: 'CLEAN' })),
+}));
 
 import { JournalRepository } from '@/app-layer/repositories/JournalRepository';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';

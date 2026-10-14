@@ -325,25 +325,75 @@ export async function isClamavAvailable(): Promise<boolean> {
  * closed; anything else records SKIPPED and logs, because failing open on an
  * unreachable optional scanner is what the operator asked for.
  */
-export async function scanUploadedBuffer(
-    buffer: Buffer,
-): Promise<'CLEAN' | 'INFECTED' | 'SKIPPED' | 'PENDING'> {
+/**
+ * Why a buffer ended up unscanned — #1811.
+ *
+ * `SKIPPED` alone cannot say, and the three situations it covers are not the
+ * same operator problem:
+ *
+ *   `scanning-disabled`        the operator turned scanning off. Expected.
+ *   `no-scanner-configured`    a scanning MODE is set but no `CLAMAV_HOST`.
+ *                              A misconfiguration, and the default state:
+ *                              `AV_SCAN_MODE` defaults to `strict` while
+ *                              `CLAMAV_HOST` is optional.
+ *   `scanner-error-failed-open` a scanner IS deployed, it errored, and the
+ *                              mode asked to fail open. The only one that
+ *                              means something broke tonight.
+ *
+ * An operator reading `scanStatus: SKIPPED` could not tell "I never deployed
+ * ClamAV" from "my ClamAV is down", and the fail-open argument in the
+ * docblock below is made on the strength of the first while silently
+ * covering the third.
+ *
+ * ## What this deliberately does NOT change
+ *
+ * `no-scanner-configured` still fails OPEN, including under `strict`. The
+ * branch returns before the mode is consulted, so a deployment that asked to
+ * fail closed and forgot the host stores unscanned bytes — which is worth
+ * knowing and is NOT fixed here. `AV_SCAN_MODE` defaults to `strict` and CI
+ * sets no `CLAMAV_HOST`, so reclassifying it would refuse every upload in CI
+ * and on every developer machine. `av-scan-mode-coherence` already closes the
+ * hole where it matters, for the four compose files that configure real
+ * deployments; production is one of them and sets `disabled`.
+ */
+export type ScanSkipReason =
+    | 'scanning-disabled'
+    | 'no-scanner-configured'
+    | 'scanner-error-failed-open';
+
+export type ScanOutcome =
+    | { readonly status: 'CLEAN' }
+    | { readonly status: 'INFECTED'; readonly threat?: string }
+    | { readonly status: 'SKIPPED'; readonly reason: ScanSkipReason }
+    | { readonly status: 'PENDING'; readonly reason: 'scanner-error-strict' };
+
+/**
+ * The same decision as `scanUploadedBuffer`, with the reason retained.
+ *
+ * `scanUploadedBuffer` derives from this rather than duplicating the logic,
+ * because two functions deciding the same thing is how they drift apart — and
+ * this one is the only place the branch is written.
+ */
+export async function scanUploadedBufferDetailed(buffer: Buffer): Promise<ScanOutcome> {
     const mode = env.AV_SCAN_MODE;
-    if (mode === 'disabled' || !env.CLAMAV_HOST) {
-        // No scanner deployed. SKIPPED says so; PENDING would imply a scan is
-        // coming, and none is.
-        return 'SKIPPED';
+    if (mode === 'disabled') {
+        return { status: 'SKIPPED', reason: 'scanning-disabled' };
+    }
+    if (!env.CLAMAV_HOST) {
+        // A scanning mode with nothing to scan with. See the note above on why
+        // this still fails open.
+        return { status: 'SKIPPED', reason: 'no-scanner-configured' };
     }
 
     const result = await scanBuffer(buffer);
-    if (result.status === 'CLEAN') return 'CLEAN';
+    if (result.status === 'CLEAN') return { status: 'CLEAN' };
     if (result.status === 'INFECTED') {
         logger.warn('av-scan: upload rejected as infected', {
             component: 'av-scan',
             threat: result.threat,
             engine: result.engine,
         });
-        return 'INFECTED';
+        return { status: 'INFECTED', threat: result.threat };
     }
 
     logger.error('av-scan: scanner error on upload', {
@@ -351,5 +401,13 @@ export async function scanUploadedBuffer(
         engine: result.engine,
         mode,
     });
-    return mode === 'strict' ? 'PENDING' : 'SKIPPED';
+    return mode === 'strict'
+        ? { status: 'PENDING', reason: 'scanner-error-strict' }
+        : { status: 'SKIPPED', reason: 'scanner-error-failed-open' };
+}
+
+export async function scanUploadedBuffer(
+    buffer: Buffer,
+): Promise<'CLEAN' | 'INFECTED' | 'SKIPPED' | 'PENDING'> {
+    return (await scanUploadedBufferDetailed(buffer)).status;
 }

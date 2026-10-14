@@ -17,11 +17,33 @@ export {};
 
 const mockScanVerdict = jest.fn();
 
+/**
+ * Both seams, deliberately.
+ *
+ * `scanOrRefuse` reads `scanUploadedBufferDetailed` since #1811, so mocking
+ * only `scanUploadedBuffer` would spread the REAL detailed function through
+ * `...actual` and every assertion below would silently exercise it instead of
+ * the verdict it set — passing or failing for reasons unrelated to the test.
+ * That is the partial-barrel-mock trap, and it is quiet here because the
+ * spread makes the missing override look like a present one.
+ *
+ * A bare status from `mockScanVerdict` is widened to an outcome so the twelve
+ * assertions written before the split keep working unchanged; a test that
+ * cares about the REASON can resolve a full outcome instead.
+ */
 jest.mock('@/lib/storage/av-scan', () => {
     const actual = jest.requireActual('@/lib/storage/av-scan');
+    const widen = (v: unknown) => {
+        if (typeof v !== 'string') return v;
+        if (v === 'SKIPPED') return { status: 'SKIPPED', reason: 'scanning-disabled' };
+        if (v === 'PENDING') return { status: 'PENDING', reason: 'scanner-error-strict' };
+        return { status: v };
+    };
     return {
         ...actual,
         scanUploadedBuffer: (...args: unknown[]) => mockScanVerdict(...args),
+        scanUploadedBufferDetailed: async (...args: unknown[]) =>
+            widen(await mockScanVerdict(...args)),
     };
 });
 
@@ -40,7 +62,10 @@ import { scanOrRefuse } from '@/lib/upload/ingest';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 
 const BYTES = Buffer.from('some image bytes');
-const OPTS = { component: 'test-surface', subjectId: 's-1' };
+// `private` keeps every assertion written before #1811 meaning what it
+// meant: those cases are about which verdicts may be STORED, and the
+// public-surface gate is a separate question tested at the bottom.
+const OPTS = { component: 'test-surface', subjectId: 's-1', exposure: 'private' } as const;
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -126,5 +151,68 @@ describe('scanOrRefuse — which verdicts may be stored', () => {
         mockScanVerdict.mockResolvedValue('PENDING');
         const err = await scanOrRefuse(BYTES, OPTS).catch((e: Error) => e);
         expect((err as Error).message).toMatch(/try again shortly/i);
+    });
+});
+
+
+// ─── the public-surface gate (#1811) ───
+
+describe('scanOrRefuse — unscanned bytes and a public surface', () => {
+    it('REFUSES a SKIPPED verdict when the bytes will be public', async () => {
+        // The ruling: fail closed on public, open on private. `SKIPPED` means
+        // nothing examined these bytes, and `isDownloadAllowed` permits it in
+        // every mode — correct for a file behind a session, and the one case
+        // where that is not good enough.
+        mockScanVerdict.mockResolvedValue('SKIPPED');
+        await expect(
+            scanOrRefuse(BYTES, { ...OPTS, exposure: 'public' }),
+        ).rejects.toThrow(/cannot be published/i);
+    });
+
+    it('STORES the same verdict when the bytes stay private', async () => {
+        // The control that makes the test above about EXPOSURE rather than
+        // about SKIPPED. Same verdict, same bytes, opposite outcome.
+        mockScanVerdict.mockResolvedValue('SKIPPED');
+        await expect(scanOrRefuse(BYTES, { ...OPTS, exposure: 'private' })).resolves.toBe(
+            'SKIPPED',
+        );
+    });
+
+    it('does not refuse a scanned file on a public surface', async () => {
+        // Otherwise the gate above would be satisfied by refusing everything
+        // public, which is not the ruling.
+        mockScanVerdict.mockResolvedValue('CLEAN');
+        await expect(scanOrRefuse(BYTES, { ...OPTS, exposure: 'public' })).resolves.toBe('CLEAN');
+    });
+
+    it('refuses INFECTED on a private surface too — exposure never widens what is allowed', async () => {
+        mockScanVerdict.mockResolvedValue('INFECTED');
+        await expect(
+            scanOrRefuse(BYTES, { ...OPTS, exposure: 'private' }),
+        ).rejects.toThrow(/malware scanner/i);
+    });
+
+    it('distinguishes the three reasons a scan was skipped', async () => {
+        // The reason is what an operator needs: `scanning-disabled` and
+        // `no-scanner-configured` mean nobody deployed a scanner,
+        // `scanner-error-failed-open` means one broke tonight. Collapsed into
+        // `SKIPPED` they are indistinguishable in a log.
+        const { scanUploadedBufferDetailed } = jest.requireActual<
+            typeof import('@/lib/storage/av-scan')
+        >('@/lib/storage/av-scan');
+
+        mockEnv.AV_SCAN_MODE = 'disabled';
+        await expect(scanUploadedBufferDetailed(BYTES)).resolves.toEqual({
+            status: 'SKIPPED',
+            reason: 'scanning-disabled',
+        });
+
+        // A scanning mode with no host. Still fails OPEN, including under
+        // strict — see the note in av-scan.ts on why that is not changed here.
+        mockEnv.AV_SCAN_MODE = 'strict';
+        await expect(scanUploadedBufferDetailed(BYTES)).resolves.toEqual({
+            status: 'SKIPPED',
+            reason: 'no-scanner-configured',
+        });
     });
 });

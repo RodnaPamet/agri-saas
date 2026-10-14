@@ -55,7 +55,14 @@ jest.mock('@/lib/storage', () => ({
     isAllowedSize: (n: number) => n < 10_000_000,
     FILE_MAX_SIZE_BYTES: 10_000_000,
 }));
-jest.mock('@/lib/storage/av-scan', () => ({ scanUploadedBuffer: async () => 'CLEAN' }));
+jest.mock('@/lib/storage/av-scan', () => ({
+    scanUploadedBuffer: async () => 'CLEAN',
+    // Both seams: this factory does NOT spread `requireActual`, so an
+    // unmocked `scanUploadedBufferDetailed` would be undefined and throw if
+    // anything on this path ever read it. See
+    // `av-scan-mocks-cover-both-seams`.
+    scanUploadedBufferDetailed: async () => ({ status: 'CLEAN' }),
+}));
 jest.mock('@/lib/storage/mime-sniff', () => ({
     reconcileMimeType: (declared: string) => ({ resolved: declared, detected: declared, corrected: false }),
 }));

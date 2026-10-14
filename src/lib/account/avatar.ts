@@ -103,6 +103,9 @@ export async function uploadOwnAvatar(
     const scanStatus = await scanOrRefuse(buf, {
         component: 'account-avatar',
         subjectId: userId,
+        // Private: the serve route requires a session. An avatar is visible to
+        // other members of the tenants a user shares, never to the internet.
+        exposure: 'private',
     });
 
     await getStorageProvider().write(avatarStorageKey(userId), buf, {

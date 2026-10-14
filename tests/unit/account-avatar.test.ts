@@ -15,11 +15,24 @@
 const mockScanVerdict = jest.fn();
 
 jest.mock('@/lib/storage', () => ({ getStorageProvider: jest.fn() }));
+// Both seams. `uploadOwnAvatar` reaches `scanOrRefuse`, which reads
+// `scanUploadedBufferDetailed` since #1811 — so overriding only
+// `scanUploadedBuffer` would let `...actual` spread the REAL detailed
+// function through and every verdict set below would be ignored. The spread
+// is what makes that quiet: a missing override looks like a present one.
 jest.mock('@/lib/storage/av-scan', () => {
     const actual = jest.requireActual('@/lib/storage/av-scan');
+    const widen = (v: unknown) => {
+        if (typeof v !== 'string') return v;
+        if (v === 'SKIPPED') return { status: 'SKIPPED', reason: 'scanning-disabled' };
+        if (v === 'PENDING') return { status: 'PENDING', reason: 'scanner-error-strict' };
+        return { status: v };
+    };
     return {
         ...actual,
         scanUploadedBuffer: (...args: unknown[]) => mockScanVerdict(...args),
+        scanUploadedBufferDetailed: async (...args: unknown[]) =>
+            widen(await mockScanVerdict(...args)),
     };
 });
 // Jest runs with `skipValidation`, so zod's `.default('strict')` never fires
