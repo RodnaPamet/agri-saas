@@ -111,7 +111,7 @@ describe('the document Apple receives', () => {
         expect(APP_ID).toBe('9423GKWL67.bg.agrent.app');
     });
 
-    it('claims exactly the two prefixes the rulings leave, and nothing else', async () => {
+    it('claims exactly ONE prefix — the only one with no web page to hijack', async () => {
         const body = await (await GET()).json();
 
         // Was `toEqual([])`, and the change of answer is the whole history of
@@ -129,7 +129,21 @@ describe('the document Apple receives', () => {
         // an absent path falls back to the browser, which is the better of
         // the two outcomes. #1794 claimed five from this issue's BODY without
         // reading its COMMENTS.
-        const expected = [{ '/': '/f/*' }, { '/': '/m/*' }];
+        //
+        // And now ONE. `/f/*` was withdrawn on 2026-10-14, the day P6.5
+        // (#1814) shipped `/f/[handle]` as a real server-rendered page. The
+        // collision case below had already named this as the regression to
+        // watch for, and it fired: a claimed path WITH a working web page
+        // hijacks it on a phone whose app has no screen for it, so an iOS
+        // visitor tapping a shared farm link — or scanning a printed QR code
+        // (P6.7) — would get the app's home screen while every other browser
+        // shows the farm.
+        //
+        // The owner's own ruling settles the direction: an absent path "simply
+        // falls back to the browser, which is the BETTER outcome of the two",
+        // and there is now something in the browser worth falling back to.
+        // `/f/*` returns with P6.9's iOS screen.
+        const expected = [{ '/': '/m/*' }];
         expect(APPLINK_COMPONENTS).toEqual(expected);
         // And the same list actually reaches the wire — the module and the
         // response are separate facts, and only the second is what Apple
@@ -228,6 +242,11 @@ describe('what may be claimed, once anything is', () => {
         // from the filesystem, and this case states the condition the
         // acceptance rests on so the two cannot drift apart silently.
         expect(collisions(APPLINK_COMPONENTS)).toEqual([]);
-        expect(APPLINK_COMPONENTS.length).toBe(2);
+        // 2 → 1 (#1814). `/f/*` was withdrawn the day P6.5 shipped
+        // `/f/[handle]` as a real web page: the collision check above started
+        // failing, exactly as this file's docblock predicted it would, because
+        // a claimed path with a working page HIJACKS that page on a phone
+        // whose app has no screen for it. It returns with P6.9.
+        expect(APPLINK_COMPONENTS.length).toBe(1);
     });
 });

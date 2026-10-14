@@ -37,6 +37,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 import { isPublicPath, matchesPublicPrefix } from '@/lib/auth/guard';
 
@@ -49,9 +50,21 @@ const GUARD_SRC = path.join(REPO_ROOT, 'src/lib/auth/guard.ts');
  * second consumer. The extraction is floored below — a regex that silently
  * stops matching would otherwise make every assertion here vacuous, which is
  * the exact failure mode this file exists to prevent one level down.
+ *
+ * COMMENTS ARE BLANKED FIRST, and that is not tidiness. `/'([^']+)'/` cannot
+ * tell a quoted entry from an apostrophe in prose, so one comment reading
+ * "a farm's public page" inside the array makes the regex capture the text
+ * BETWEEN two apostrophes as though it were an entry — measured while adding
+ * `/f` (#1814), where it produced a multi-line "entry" and the floor below
+ * caught it. The floor working is the only reason that was a red build rather
+ * than a silently wrong population.
+ *
+ * `blankNonCode` is the sanctioned stripper (`comment-stripper-order` caps
+ * hand-rolled ones at zero for TypeScript) and it preserves line LENGTH, so
+ * the line indices this function computes still line up.
  */
 function publicPrefixEntries(): string[] {
-    const src = fs.readFileSync(GUARD_SRC, 'utf8').split('\n');
+    const src = blankNonCode(fs.readFileSync(GUARD_SRC, 'utf8')).split('\n');
     const start = src.findIndex((l) => l.startsWith('const PUBLIC_PATH_PREFIXES'));
     expect(start).toBeGreaterThanOrEqual(0);
     const end = src.findIndex((l, i) => i > start && l.startsWith(']'));

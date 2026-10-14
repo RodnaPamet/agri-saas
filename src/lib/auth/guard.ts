@@ -14,6 +14,26 @@ const PUBLIC_PATH_PREFIXES = [
     '/register',
     '/forgot-password',  // Password-reset request page — unauthenticated users must reach it
     '/reset-password',   // Password-reset confirm page — reached from an emailed token link
+    // P6.5 (#1814) — a farm's PUBLIC page, `/f/[handle]`. The whole point is
+    // that a stranger with a shared link or a printed QR code reaches it with
+    // no session.
+    //
+    // A PREFIX and not an exact entry, deliberately: the handle is part of the
+    // path, so there is no finite set of exact paths to list. What that opens
+    // is `/f` and everything under `/f/`, and nothing else —
+    // `matchesPublicPrefix` requires the match to end at a separator or at the
+    // end of the string, so `/fx`, `/fx/admin` and `/f-debug` stay gated.
+    // Measured against the live predicate rather than assumed, because the
+    // pre-#1770 `startsWith` behaviour would have opened all three.
+    //
+    // No trailing slash, so a bare `/f` is public too and answers 404 — the
+    // honest reply for an address with no handle. Gating it would redirect an
+    // anonymous visitor to a login page they have no account for.
+    //
+    // Anything added under `/f/` later is public by this entry. That is the
+    // cost of a prefix and it is the right trade here, because every path
+    // under `/f/` is by definition a published profile.
+    '/f',
     '/no-tenant',        // Landing page for uninvited users — must not gate-loop
     '/tenants',          // R-1: tenant picker — must be reachable before active-tenant is set
     '/invite/',          // Invite preview page (tenant + org) — public so unauthenticated users can see invite details

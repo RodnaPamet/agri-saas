@@ -89,7 +89,18 @@ describe('the typed bypass is actually USED — not a control that only exists',
         const callers = callersOf('runWithoutRls').filter(
             (rel) => rel !== 'src/lib/db/rls-middleware.ts',
         );
-        expect(callers.length).toBeLessThanOrEqual(3);
+        // 3 → 4 (#1814): `readPublicFarmProfile` is the PUBLIC read path for
+        // `/f/[handle]`, and its bypass is load-bearing in a way none of the
+        // other three are — an anonymous visitor has no session, no tenant and
+        // no membership, so `runInTenantContext` has nothing to enter with.
+        // The alternative is not a narrower context, it is no query.
+        //
+        // What it may read is bounded by the TABLE rather than by the reason:
+        // `PublicFarmProfile` has no PII columns and no `tenantId`, so a
+        // mistake at the call site cannot widen its reach. Raised rather than
+        // exempted, so the fourth caller is a visible diff — which is the
+        // whole purpose of the number.
+        expect(callers.length).toBeLessThanOrEqual(4);
     });
 
     it('every bypass site names a reason from the union', () => {
