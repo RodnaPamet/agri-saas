@@ -30,6 +30,19 @@ export interface CreateLogEntryInput {
      * list, which is the 2026-10-10 manual-only ruling.
      */
     recordedInDiary?: boolean;
+    /**
+     * The ДНЕВНИК fold key (#1740) — the treatment's handle, or omitted so the
+     * column's own unique default applies and the entry folds to itself.
+     *
+     * Declared here because the repository maps `data` field by field. A
+     * caller passing it through a SPREAD gets no help from `tsc`: excess
+     * property checking does not apply to spreads, so an undeclared field is
+     * accepted at every call site and silently dropped at the write. That is
+     * what happened — four links of the chain were wired, the fifth discarded
+     * it, and the first sign was three entries with three different group ids
+     * in a DB-backed test.
+     */
+    treatmentGroupId?: string;
     type:
         | 'ACTIVITY'
         | 'OBSERVATION'
@@ -545,6 +558,11 @@ export class JournalRepository {
                 ...(input.conditionsJson !== undefined ? { conditionsJson: input.conditionsJson } : {}),
                 operationParcelId: input.operationParcelId ?? null,
                 recordedInDiary: input.recordedInDiary ?? false,
+            // Omitted rather than defaulted: the column is NOT NULL with its
+            // own unique default, so writing `undefined` would be wrong and
+            // writing a chosen fallback would put every un-grouped entry in
+            // ONE group — the ghost-row collapse the NOT NULL exists to stop.
+            ...(input.treatmentGroupId ? { treatmentGroupId: input.treatmentGroupId } : {}),
                 ...(input.costAmount != null ? { costAmount: input.costAmount } : {}),
                 costCurrency: input.costCurrency ?? null,
                 clientMutationId: input.clientMutationId ?? null,

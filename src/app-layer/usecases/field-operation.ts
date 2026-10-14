@@ -717,7 +717,12 @@ export async function markOperationParcel(
      * completed from a task in Задачи stays hidden from the journal list,
      * exactly as the 2026-10-10 ruling intends.
      */
-    opts?: { recordedInDiary?: boolean; occurredAt?: Date; quarantinePeriodDays?: number | null },
+    opts?: {
+        recordedInDiary?: boolean;
+        occurredAt?: Date;
+        quarantinePeriodDays?: number | null;
+        treatmentGroupId?: string;
+    },
 ) {
     return traceAgUsecase('field-operation.markOperationParcel', ctx, () =>
         markOperationParcelImpl(ctx, taskId, lineId, status, note, expectedVersion, opts),
@@ -731,7 +736,12 @@ async function markOperationParcelImpl(
     status: ParcelStatus,
     note?: string | null,
     expectedVersion?: number,
-    opts?: { recordedInDiary?: boolean; occurredAt?: Date; quarantinePeriodDays?: number | null },
+    opts?: {
+        recordedInDiary?: boolean;
+        occurredAt?: Date;
+        quarantinePeriodDays?: number | null;
+        treatmentGroupId?: string;
+    },
 ) {
     const result = await runInTenantContext(ctx, async (db) => {
         const line = await db.operationParcel.findFirst({
@@ -943,6 +953,7 @@ async function markOperationParcelImpl(
                 doseUnitId: line.doseUnitId,
                 recordedInDiary: opts?.recordedInDiary ?? false,
                 ...(opts?.occurredAt ? { occurredAt: opts.occurredAt } : {}),
+                ...(opts?.treatmentGroupId ? { treatmentGroupId: opts.treatmentGroupId } : {}),
             });
 
             // БАБХ farm-record completion snapshot: freeze the applicator's

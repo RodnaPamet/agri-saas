@@ -421,6 +421,18 @@ export interface InputApplicationLine {
      */
     recordedInDiary?: boolean;
     /**
+     * The treatment this line belongs to, denormalised onto the journal entry
+     * so the ДНЕВНИК list can fold without a join (#1740).
+     *
+     * Set HERE for the same reason `recordedInDiary` is: a second write would
+     * leave a window in which the entries exist un-grouped, and during that
+     * window the list would show one row per parcel instead of one per
+     * treatment. Omitted leaves the column at its own default, which is a
+     * unique value per entry — so an entry belonging to no treatment folds to
+     * itself rather than joining a group it has nothing to do with.
+     */
+    treatmentGroupId?: string;
+    /**
      * When the treatment HAPPENED, for the journal entry's `occurredAt`
      * (#1740). Omitted means now, which is right for an operator completing a
      * line today and wrong for a backdated diary record.
@@ -574,6 +586,10 @@ async function recordInputApplicationImpl(
         const entry = await createLogEntryWithAudit(db, ctx, {
             type: 'INPUT_APPLICATION',
             recordedInDiary: line.recordedInDiary ?? false,
+            // Spread rather than `?? undefined`: the column is NOT NULL with
+            // its own default, so passing an explicit undefined would be a
+            // write of nothing, while omitting the key lets the default apply.
+            ...(line.treatmentGroupId ? { treatmentGroupId: line.treatmentGroupId } : {}),
             ...(line.occurredAt ? { occurredAt: line.occurredAt } : {}),
             title: composed.title,
             titleKey: composed.titleKey,
