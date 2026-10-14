@@ -86,6 +86,15 @@ export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
             + 'page, and `projectedAt` on the projection already gives a reader the '
             + 'freshness they need.',
     ),
+    indexable: privateField(
+        'Whether search engines may index the page — a control, not content. The '
+            + 'projection has carried its own `indexable` column since P6.1, and the '
+            + 'path that will copy this value into it is the editor’s (P6.6, #1815), '
+            + 'deliberately absent for one release so the migration adding this column '
+            + 'can still be rolled back without breaking a reader. Marking it '
+            + '`published` is what starts it crossing, per `projectionPayload` above, '
+            + 'so that change belongs in the PR that ships the control.',
+    ),
     consentedAt: privateField(
         'When consent to publish was given (P6.6). A compliance record about the '
             + 'OWNER’s act, not a fact about the farm — and publishing the '
