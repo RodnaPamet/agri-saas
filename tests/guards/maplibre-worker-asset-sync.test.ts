@@ -56,6 +56,46 @@ const sha256 = (p: string) =>
     createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 
 describe('maplibre worker asset is in sync with the installed package', () => {
+    /**
+     * CONTROLS, and they were missing.
+     *
+     * `scripts/selector-teeth.mjs` stubbed `sha256` to return a constant and
+     * every test below still PASSED. It was right to call that dead: each
+     * comparison here is between two values from the SAME function, so
+     * `'' === ''` satisfies all of them.
+     *
+     * The consequence is narrow but real. This guard has teeth against a stale
+     * asset — corrupt `public/maplibre/maplibre-gl-worker.mjs` and it reddens —
+     * and had none against ITSELF reading nothing. The concrete way that bites
+     * is a path refactor: if `SERVED_DIR` and `DIST_DIR` ever resolved to the
+     * same place, every assertion would compare a file to itself and pass for
+     * ever, and the `existsSync` checks would pass too.
+     *
+     * So the controls assert what the comparisons cannot: that the hash
+     * function discriminates on this very population, and that the two sides
+     * are actually two places.
+     */
+    it('CONTROL: sha256 tells this population apart', () => {
+        // Two REQUIRED_ASSETS are needed for the control to mean anything —
+        // one digest is never unequal to anything.
+        expect(REQUIRED_ASSETS.length).toBeGreaterThan(1);
+
+        const digests = REQUIRED_ASSETS.map((a) => sha256(path.join(DIST_DIR, a)));
+
+        // The worker and its shared chunk are different files, so their
+        // digests must differ. A `sha256` returning '' / 0 / null / undefined /
+        // false collapses them to one value — the exact mutation that survived.
+        expect(new Set(digests).size).toBe(REQUIRED_ASSETS.length);
+
+        // And each is a real digest, so the inequality above cannot be
+        // satisfied by two different flavours of nothing.
+        for (const d of digests) expect(d).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('CONTROL: the two compared sides are different directories', () => {
+        expect(path.resolve(SERVED_DIR)).not.toBe(path.resolve(DIST_DIR));
+    });
+
     it.each(REQUIRED_ASSETS)('%s is served from public/maplibre', (asset) => {
         const served = path.join(SERVED_DIR, asset);
         expect(fs.existsSync(served)).toBe(true);
