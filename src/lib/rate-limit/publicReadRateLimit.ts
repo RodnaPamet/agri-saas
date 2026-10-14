@@ -92,12 +92,34 @@ const PUBLIC_READ_PREFIXES: readonly string[] = [
     // in-handler option instead only because this tier is GET-only and that
     // route is a POST.)
     //
-    // No trailing slash, and here that is harmless where in `guard.ts` it
-    // would not be: this list is matched with `startsWith`, so the entry also
-    // covers a hypothetical `/api/public/farmsomething` — and over-matching a
-    // RATE LIMIT fails in the safe direction, because the effect is more
-    // throttling rather than less authentication.
+    // No trailing slash. That is safe for THIS entry because no sibling path
+    // beginning `/api/public/farms` exists — but the reasoning I first wrote
+    // here was wrong and is corrected below, because the next person adding an
+    // entry would have followed it.
     '/api/public/farms',
+    // P6.10 (#1818) — the public profile PAGE. `force-dynamic`, so every view
+    // is a database read, which is what this tier is for.
+    //
+    // THE TRAILING SLASH IS LOAD-BEARING, and not for the usual reason. This
+    // list is matched with `startsWith`, so a bare `/f` would also match
+    // `/favicon.ico`, `/fonts/*` and `/forgot-password` — measured, all three
+    // are real served paths. Throttling a favicon and a font at 60/min per IP
+    // breaks ordinary page loads for a real person.
+    //
+    // So "over-matching a rate limit fails in the safe direction" — which I
+    // wrote on the entry above — is true of SAFETY and false of AVAILABILITY.
+    // Over-throttling does not leak anything; it takes the product down. The
+    // two failure directions are not the same axis and the slash is what keeps
+    // them apart here.
+    //
+    // It excludes the bare `/f`, which 404s without touching the database, so
+    // hammering it costs a Next 404 rather than a query. Accepted.
+    //
+    // Page ASSETS do not count against the budget: they are served from
+    // `/_next/static/*`, which matches nothing here. That is what makes a
+    // 60/min page budget workable where the exclusion note above says it is
+    // not for `/login` — there the assets were the problem.
+    '/f/',
 ];
 
 /**
