@@ -368,7 +368,7 @@ export function registerAdminMembersPaths(registry: OpenAPIRegistry): void {
             'the field LEAVES IT UNCHANGED. A client sending the whole form every time will clear what it does not know ' +
             'about, so send only the fields the admin edited — or send every field explicitly, including the nulls.' +
             '\n\nA `PUT` rather than a `PATCH` despite the merge semantics; the method is what it is.' +
-            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. This is the ONE membership lookup on the surface with no status predicate, so it carries NO `requiredStatus` — and that absence is itself information: any state would have been accepted, so the membership really is gone.',
+            '\n\n**Refusal code.** `MEMBERSHIP_NOT_FOUND` — one code for every membership lookup on this surface, with `params.requiredStatus` naming the state the operation needed. Four codes would advertise a distinction the SERVER CANNOT MAKE: each is a single query with a status predicate, so an absent membership and one in the wrong state both come back empty. This is the ONE membership lookup on the surface with no status predicate, so it carries NO `requiredStatus` — and that absence is itself information — the lookup would have accepted a membership in ANY state, so the membership really is gone.',
         tags: ['Admin'],
         params: MembershipParams,
         body: UpdateMemberCertificatesSchema,

@@ -292,7 +292,7 @@ export async function updateMemberCertificates(
         });
         // No status predicate on this query, so this one really is "absent"
         // and carries no `requiredStatus`. The absence of the param is itself
-        // information: any state would have been accepted.
+        // information — the lookup would have accepted a membership in ANY state.
         if (!membership) throw codedNotFound('MEMBERSHIP_NOT_FOUND', 'Membership not found.');
 
         const data: Prisma.TenantMembershipUpdateInput = {};
