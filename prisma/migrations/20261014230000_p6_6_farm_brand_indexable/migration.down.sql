@@ -1,0 +1,13 @@
+-- Rollback for 20261014230000_p6_6_farm_brand_indexable.
+--
+-- Safe for exactly one release. Nothing writes this column yet — the editor
+-- that sets it is a later PR, and `projectFarmBrand` still omits
+-- `indexable` when it refreshes the projection — so dropping it now loses
+-- no decision anyone has made.
+--
+-- After the editor ships, this becomes DESTRUCTIVE in a way that is easy to
+-- under-read: the column holds a consent-shaped answer (whether a farm
+-- agreed to be findable by search engines), and dropping it resets every
+-- farm to `false` on re-apply. That direction is fail-closed, so it would
+-- not expose anyone — it would silently revoke a choice they made.
+ALTER TABLE "FarmBrand" DROP COLUMN "indexable";
