@@ -39,20 +39,28 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
-const SRC = path.join(ROOT, 'src');
 
-function tsFiles(dir: string, acc: string[] = []): string[] {
-    if (!fs.existsSync(dir)) {
-        throw new Error(`scan root missing: ${dir} — a renamed root would scan zero files and pass`);
-    }
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) tsFiles(full, acc);
-        else if (e.name.endsWith('.ts')) acc.push(full);
-    }
-    return acc;
+/**
+ * `collectSourceFiles`, not a hand-rolled walk.
+ *
+ * My first version walked `src/` itself and
+ * `tests/guards/file-collection-is-not-silently-empty.test.ts` refused it in
+ * CI: no NEW guard may collect files by hand. That guard holds a list of 223
+ * existing collectors which may only SHRINK, and its measurement is the reason
+ * — a mutation sweep found 47 of 58 auditable guards had a selector that could
+ * be gutted to `return []` with every assertion still green, and 37 of the 47
+ * were this same `walk`.
+ *
+ * `collectSourceFiles` throws on an empty result, so the population cannot
+ * silently vanish. That is strictly stronger than the missing-root throw my
+ * version had: a root that resolves says nothing about whether the walk found
+ * anything.
+ */
+function parcelSourceFiles(): string[] {
+    return collectSourceFiles({ roots: ['src'], extensions: ['.ts'] });
 }
 
 /**
@@ -101,7 +109,7 @@ function callExtent(code: string, start: number): string {
 
 function parcelReads(): ParcelRead[] {
     const out: ParcelRead[] = [];
-    for (const file of tsFiles(SRC)) {
+    for (const file of parcelSourceFiles()) {
         const code = blankNonCode(fs.readFileSync(file, 'utf8'));
         const re = /\.parcel\.findMany\(/g;
         let m: RegExpExecArray | null;
