@@ -27,6 +27,12 @@
  * Checked-in files ride the builder's `COPY . .` and the runner's
  * `COPY --from=builder /app/public ./public` with no pipeline changes at all.
  *
+ * The consequence is that a maplibre bump needs a human, because Dependabot
+ * cannot run a copy — so the refresh has a name, `npm run maplibre:sync`
+ * (`scripts/sync-maplibre-worker.mjs`), which is both the remedy this message
+ * prints and the seam a CI step could call. Whether CI should call it is
+ * #1807; nothing here depends on that answer.
+ *
  * BOTH files are required. `maplibre-gl-worker.mjs` does
  * `import … from "./maplibre-gl-shared.mjs"`, so the sibling must sit in the
  * same directory with that relative specifier intact — shipping only the worker
@@ -75,8 +81,11 @@ describe('maplibre worker asset is in sync with the installed package', () => {
                         `maplibre-gl.\n\n` +
                         `The map would run last release's worker against this release's main ` +
                         `thread. Refresh both files in the same commit as the bump:\n\n` +
-                        `  cp node_modules/maplibre-gl/dist/{${REQUIRED_ASSETS.join(',')}} ` +
-                        `public/maplibre/\n\n` +
+                        `  npm run maplibre:sync\n\n` +
+                        `(It copies every entry in REQUIRED_ASSETS and verifies the result, so a ` +
+                        `copy whose source was missing fails instead of leaving the stale file ` +
+                        `shipping. This used to print a bare \`cp\` with brace expansion, which ` +
+                        `is not POSIX sh — the remedy silently did nothing on some shells.)\n\n` +
                         `served: ${servedHash.slice(0, 16)}…  installed: ${distHash.slice(0, 16)}…`,
                 );
             }
