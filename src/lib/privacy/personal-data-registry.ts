@@ -322,6 +322,24 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
             + 'see the usecase, where disclosing who blocked them would defeat the '
             + 'silence P5.2b exists to provide.',
     },
+    {
+        model: 'PersonProfile',
+        columns: ['userId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
+        reason:
+            'P6.1 — a person\u2019s own public identity (displayName, about). DELETE_ROW '
+            + 'rather than PSEUDONYMISE_COLUMN, because here the ROW is the personal '
+            + 'data and not merely keyed by it: pseudonymising `userId` would leave a '
+            + 'published profile carrying someone\u2019s name and self-description '
+            + 'attached to a random pseudonym \u2014 the content still identifies them '
+            + 'and now nothing can find it to remove. Exported, because a person asking '
+            + 'for their data should receive what they wrote about themselves. '
+            + 'The FK cascade does NOT cover this: `onDelete: Cascade` fires when a '
+            + 'User row is DELETED, and P5.6 erasure PSEUDONYMISES the user instead, so '
+            + 'the User survives and the cascade never runs. An entry here is what '
+            + 'actually removes it.',
+    },
 ];
 
 /** Fast lookup by model name. */

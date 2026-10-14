@@ -241,7 +241,15 @@ describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () =
             .sort();
         expect(deleted).toEqual([
             'Account', 'AuthSession', 'FeatureFlagCohortMember',
-            'OrgMembership', 'PasswordResetToken', 'UserBlock',
+            'OrgMembership', 'PasswordResetToken',
+            // P6.1 — a person's own public identity. It passes this test's own
+            // criterion exactly: nobody else owns it, so deleting it destroys
+            // no one else's record. The alternative is worse than useless here
+            // — pseudonymising `userId` leaves a published displayName and
+            // self-description attached to a random pseudonym, still
+            // identifying the person and now unfindable.
+            'PersonProfile',
+            'UserBlock',
         ]);
     });
 

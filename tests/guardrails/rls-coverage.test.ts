@@ -251,6 +251,25 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
             'layer (ctx.tenantId === listing.sellerTenantId), and the PRIVATE ' +
             'half of the marketplace — ExchangeInquiry — is RLS-protected above.',
     ],
+    [
+        'PublicFarmProfile',
+        'P6.1 — the read model every public `/f/[handle]` page uses. ' +
+            'Cross-tenant readability IS the product, the same argument ' +
+            'ExchangeListing carries above: a public profile only its own farm ' +
+            'can read is not a public profile. Two things make the absence of ' +
+            'RLS safe and neither is discipline. (1) The table has NO PII ' +
+            'columns: egn, eik, address, municipality and settlement live on ' +
+            'FarmProfile and do not exist here, so a projection writer cannot ' +
+            'leak them by forgetting an allowlist entry — there is nowhere for ' +
+            'the value to land, which is what makes P6.10\u2019s "0 hits" ' +
+            'hardening test structurally satisfied for anything read from it. ' +
+            '(2) Writes never come from a tenant session: the projection is ' +
+            'written by the allowlist path on the global client, so there is no ' +
+            'write surface for RLS to constrain. FORCE ROW LEVEL SECURITY is ' +
+            'deliberately NOT set either — with no policy to force it would ' +
+            'make the table unreadable under app_user, which reads as isolation ' +
+            'but would be an outage of the public page.',
+    ],
     // The reference catalogues. Every one of these says so in its own schema
     // docblock — "GLOBAL ... NO tenantId ... no RLS: every tenant reads the
     // same shared list" — and is written by a platform-admin surface or a
@@ -296,6 +315,7 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
 const NO_RLS_NOT_APP_USER_MODELS: ReadonlyMap<string, string> = new Map([
     ['User', 'The person. Read via the global client on auth paths; pii-middleware handles the encrypted columns.'],
     ['Account', 'NextAuth OAuth link rows, owned by the adapter. No src/ call site runs under app_user.'],
+    ['PersonProfile', 'P6.1 \u2014 a person\u2019s own public identity, keyed by userId with no tenantId, following User above: a person exists once across every farm they belong to, which is what TenantMembership is for. Measured 2026-10-14: NO reader of any kind yet \u2014 the P6.1 migration ships the table and the writer comes a release later, per the phase rule that tables precede the code that writes them. I first wrote a user-scoped fail-closed policy citing P1.4, and that was the wrong precedent: P1.4 narrowed tables that ALREADY HAD an over-permissive policy (UserSession\u2019s unconditional null-tenant arm), where there was a live over-permission to close. This has no policy and no reader, which is the User / Tenant / FeatureFlag situation. The policy belongs to the FIRST PR that routes a person-scoped read through app_user \u2014 P6.6\u2019s editor or P6.9\u2019s iOS profile view \u2014 which is also the only PR that can write an integration test with real negative controls for it, and a control that cannot express failure is green for ever.'],
     ['AuthSession', 'NextAuth adapter session table (@@map "Session"). ZERO src/ references — the adapter owns it.'],
     ['PasswordResetToken', 'Single-purpose reset tokens, claimed by a conditional updateMany on the auth path.'],
     ['VerificationToken', 'Single-purpose verify-email tokens, keyed by identifier rather than by user.'],
