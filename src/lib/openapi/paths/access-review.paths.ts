@@ -66,6 +66,68 @@ const DecisionParams = ReviewParams.extend({
     }),
 });
 
+const PersonStubSchema = z
+    .object({
+        id: z.string(),
+        email: z.string().nullable(),
+        name: z.string().nullable(),
+    })
+    .openapi('AccessReviewPerson', {
+        description:
+            'The three fields every person reference on this surface selects. `email` and `name` are nullable because a snapshotted subject may have neither recorded — a reviewer still has to be able to tell them apart, which is why `id` is always present.',
+    });
+
+const DecisionRowSchema = z
+    .object({
+        id: z.string(),
+        subjectUserId: z.string(),
+        subjectUser: PersonStubSchema,
+        membershipId: z.string().nullable().openapi({
+            description:
+                '`null` once the membership is gone — the FK is `onDelete: SetNull`, deliberately. A campaign must stay readable after a member leaves, and losing the row would destroy the record of what was reviewed.',
+        }),
+        snapshotRole: z.string().openapi({
+            description:
+                'The role held when the campaign opened, NOT the role now. This is the whole point of a snapshot: the reviewer judges what access existed during the period, and a later change must not rewrite the question.',
+        }),
+        snapshotCustomRoleId: z.string().nullable(),
+        snapshotMembershipStatus: z.string(),
+        snapshotAt: z.string().datetime({ offset: true }),
+        decision: z.enum(['CONFIRM', 'REVOKE', 'MODIFY']).nullable().openapi({
+            description: '`null` until a verdict is submitted. The count of nulls is what `ACCESS_REVIEW_DECISIONS_PENDING` refuses a close on.',
+        }),
+        decidedAt: z.string().datetime({ offset: true }).nullable(),
+        decidedBy: PersonStubSchema.nullable(),
+        notes: z.string().nullable(),
+        modifiedToRole: z.string().nullable().openapi({
+            description: 'Set only for a `MODIFY` verdict — the role the subject should hold instead.',
+        }),
+        modifiedToCustomRoleId: z.string().nullable(),
+        executedAt: z.string().datetime({ offset: true }).nullable().openapi({
+            description:
+                '`null` until the campaign closes. A REVOKE is RECORDED when submitted and APPLIED at close, so a non-null value here is the only proof the access actually changed.',
+        }),
+    })
+    .openapi('AccessReviewDecisionRow', {
+        description: 'One snapshotted subject and the verdict on it, if any.',
+    });
+
+const ExecutionResultSchema = z
+    .object({
+        decisionId: z.string(),
+        subjectUserId: z.string(),
+        decision: z.enum(['CONFIRM', 'REVOKE', 'MODIFY']).nullable(),
+        outcome: z
+            .enum(['EXECUTED', 'NO_CHANGE', 'SKIPPED_PENDING', 'SKIPPED_STALE', 'SKIPPED_LAST_OWNER'])
+            .openapi({
+                description:
+                    'What actually happened at close. `EXECUTED` changed access; `NO_CHANGE` is a CONFIRM, which is a decision rather than an action. The three `SKIPPED_*` values are the ones worth reading: `SKIPPED_PENDING` means no verdict was recorded, `SKIPPED_STALE` that the membership changed since the snapshot so the recorded verdict no longer applies to what is there, and `SKIPPED_LAST_OWNER` that applying it would have left the farm with no OWNER. A skip is not a failure — it is the campaign declining to act on a decision it can no longer honour.',
+            }),
+    })
+    .openapi('AccessReviewExecution', {
+        description: 'What one decision did when the campaign closed.',
+    });
+
 const ListRowSchema = z
     .object({
         id: z.string(),
@@ -121,9 +183,9 @@ const DetailSchema = z
         id: z.string(),
         status: z.enum(['OPEN', 'IN_REVIEW', 'CLOSED']),
         name: z.string(),
-        decisions: z.array(z.record(z.string(), z.unknown())).openapi({
+        decisions: z.array(DecisionRowSchema).openapi({
             description:
-                'The decision graph the reviewer page renders: one row per snapshotted subject, with its snapshot role and the verdict if one has been submitted. Loosely typed here on purpose — it is a page-shaped projection joining the roster, the snapshot and the decision, and pinning every field would duplicate a shape that exists to serve one screen.',
+                'One row per snapshotted subject, ordered by `subjectUserId`. This was a `record` of unknowns with a paragraph explaining why that was acceptable; `openapi-schema-documents-something` refused it, correctly — a schema that accepts anything while describing nothing looks complete to a generated client and is worse than an undocumented route, because the gap is invisible.',
         }),
         lastActivityByUser: z.record(z.string(), z.string().datetime({ offset: true }).nullable()).openapi({
             description:
@@ -138,7 +200,7 @@ const DetailSchema = z
 const ClosedSchema = z
     .object({
         accessReviewId: z.string(),
-        executions: z.array(z.record(z.string(), z.unknown())).openapi({
+        executions: z.array(ExecutionResultSchema).openapi({
             description: 'What each decision did when the campaign closed — a REVOKE is applied here, not when it is submitted.',
         }),
         evidenceFileRecordId: z.string().nullable().openapi({
