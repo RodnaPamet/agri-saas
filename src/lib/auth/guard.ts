@@ -290,6 +290,25 @@ const PUBLIC_PATH_EXACT = new Set([
     // forms; only a CHILD can. The probe had no power over the property it
     // was run to establish.
     '/api/webhooks/resend',
+    // ── Apple Universal Links (#1763) ──
+    //
+    // Apple fetches `/.well-known/apple-app-site-association` from its own
+    // CDN, UNAUTHENTICATED, and a redirect is a hard failure. Without this
+    // entry the middleware 307s it to `/login` — measured on production on
+    // 2026-10-14 — so NO link to this origin could open the native app, while
+    // the iOS side was already built and waiting on `applinks:app.agrent.bg`.
+    //
+    // EXACT, not a `/.well-known/` prefix: a prefix opens every method on
+    // everything beneath that segment and nothing else under it is public yet.
+    // The entry above is the cautionary tale for getting that wrong.
+    //
+    // The handler claims no applink PATHS (#1623 — `/c` and `/l` have no
+    // defined meaning anywhere, and the screens `/f` and `/m` would open do
+    // not exist), so this opens a document that associates the app and
+    // promises nothing. Assertion B of `public-routes-self-authenticate` does
+    // not apply: it is not an API route, and the document is published by
+    // design rather than protected.
+    '/.well-known/apple-app-site-association',
 ]);
 
 // `webmanifest` — the PWA manifest is fetched by the browser WITHOUT
