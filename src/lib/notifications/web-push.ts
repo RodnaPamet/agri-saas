@@ -66,12 +66,37 @@ export async function sendWebPushToUser(
 
     let subs: Array<{ id: string; endpoint: string; p256dh: string; auth: string }> = [];
     try {
-        subs = await runInTenantContext(ctx, (db) =>
+        /**
+         * `platform: 'WEB'` is load-bearing, not tidiness (#1764).
+         *
+         * The table now holds APNs rows too, and they have no `endpoint` — so
+         * without this filter they would be fetched, fail the SSRF gate below
+         * on a null endpoint, and be counted as dead devices by the prune at
+         * the end. Filtering in SQL rather than after the read means an iOS
+         * row never enters this function's world at all.
+         *
+         * The per-row dispatch that picks a transport belongs one level up;
+         * this function's whole contract is Web Push, and it says so.
+         */
+        const rows = await runInTenantContext(ctx, (db) =>
             db.pushSubscription.findMany({
-                where: { tenantId: ctx.tenantId, userId: recipientUserId },
+                where: { tenantId: ctx.tenantId, userId: recipientUserId, platform: 'WEB' },
                 select: { id: true, endpoint: true, p256dh: true, auth: true },
                 take: 25,
             }),
+        );
+        /**
+         * The three columns are nullable in the schema and non-null for a WEB
+         * row by `PushSubscription_web_shape`. This filter is what makes
+         * TypeScript agree — and it is a DEFENCE rather than a cast: a row
+         * that somehow carried a null here (a constraint dropped by a future
+         * migration, a direct database write) is skipped instead of crashing
+         * a notification send for every other device the person owns.
+         */
+        subs = rows.flatMap((r) =>
+            r.endpoint !== null && r.p256dh !== null && r.auth !== null
+                ? [{ id: r.id, endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth }]
+                : [],
         );
     } catch {
         return; // reading subs failed — nothing to send
