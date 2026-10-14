@@ -13466,6 +13466,51 @@ exports[`API contract — per-schema snapshots schema: PriceOverrideWriteResult 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PublicFarmSearchHit 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "handle": {
+      "type": "string",
+      "description": "The farm’s public address. Its page is at \`/f/{handle}\`."
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "tagline": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "oblast": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "crops": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "score": {
+      "type": "number",
+      "description": "Trigram similarity, 0–1. **Zero when browsing** — a request with no \`q\` has no ranking signal, so every score is 0 rather than a meaningless small number. Do not render it as a relevance percentage; it is a sort key."
+    }
+  },
+  "required": [
+    "handle",
+    "displayName",
+    "tagline",
+    "oblast",
+    "crops",
+    "score"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: QueueStatement 1`] = `
 "{
   "type": "object",

@@ -501,6 +501,11 @@
       "documented": true
     },
     {
+      "path": "/api/public/farms",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/public/notices",
       "status": "live",
       "documented": true

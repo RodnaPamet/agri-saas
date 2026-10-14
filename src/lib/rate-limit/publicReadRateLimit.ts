@@ -46,10 +46,11 @@ import {
 /**
  * The public prefixes this tier covers, and NOTHING else.
  *
- * These two are the public, unauthenticated, token-parameterised DATA reads —
- * four GET routes between them (`/api/invites/[token]`,
+ * The first two are the public, unauthenticated, token-parameterised DATA
+ * reads — four GET routes between them (`/api/invites/[token]`,
  * `/api/invites/[token]/start-signin`, and the `/api/org/invite/` pair of the
- * same shape).
+ * same shape). The third is the public farm directory (P6.8), which is the
+ * same class: an anonymous data read that costs a database query.
  *
  * Why every other public prefix is EXCLUDED:
  *
@@ -76,7 +77,28 @@ import {
  * `/api/invitesomething`, and a limiter must never be wider than the hole it
  * defends — nor narrower.
  */
-const PUBLIC_READ_PREFIXES: readonly string[] = ['/api/invites/', '/api/org/invite/'];
+const PUBLIC_READ_PREFIXES: readonly string[] = [
+    '/api/invites/',
+    '/api/org/invite/',
+    // P6.8 (#1817) — the public farm directory. A public, unauthenticated DATA
+    // read, which is exactly what this tier is for, and the 60/min it applies
+    // IS P6.10's requirement that the 61st anonymous request in a minute gets
+    // 429. The limit was not chosen for this route; the route joined the tier
+    // that already had it.
+    //
+    // At the EDGE rather than in the handler, because a trigram search is a
+    // database read: refusing before the handler runs means a flood costs a
+    // comparison instead of a query. (`/api/public/eik-check` uses the
+    // in-handler option instead only because this tier is GET-only and that
+    // route is a POST.)
+    //
+    // No trailing slash, and here that is harmless where in `guard.ts` it
+    // would not be: this list is matched with `startsWith`, so the entry also
+    // covers a hypothetical `/api/public/farmsomething` — and over-matching a
+    // RATE LIMIT fails in the safe direction, because the effect is more
+    // throttling rather than less authentication.
+    '/api/public/farms',
+];
 
 /**
  * Which requests this tier claims. The ONE definition — the middleware calls

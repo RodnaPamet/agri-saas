@@ -41,6 +41,7 @@ import { registerAccessReviewPaths } from './access-review.paths';
 import { registerModerationPaths } from './moderation.paths';
 import { registerAdminMembersPaths } from './admin-members.paths';
 import { registerFarmBrandPaths } from './farm-brand.paths';
+import { registerPublicFarmsPaths } from './public-farms.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -81,4 +82,5 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerModerationPaths(registry);
     registerAdminMembersPaths(registry);
     registerFarmBrandPaths(registry);
+    registerPublicFarmsPaths(registry);
 }

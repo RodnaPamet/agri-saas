@@ -140,6 +140,29 @@ describe('credential-verifying routes are reachable, and public routes verify', 
                 'data), so what it discloses is bounded to legal entities. Rate-limited with ' +
                 'PUBLIC_READ_LIMIT, which is the control here because uniformity cannot be — ' +
                 'telling a typo from an unregistered company IS the feature.',
+            '/api/public/farms':
+                'P6.8 — anonymous by design, and the design IS the product: a stranger '
+                + 'holding a shared link or scanning a printed QR code browses the directory '
+                + 'with no account, which is what a public directory means. It verifies no '
+                + 'credential because there is none to verify.\n\n'
+                + 'What it discloses is bounded by the TABLE rather than by this route. It '
+                + 'reads one parameterised query against `PublicFarmProfile`, which has no '
+                + 'PII columns at all — ЕГН, ЕИК, address, municipality and settlement live '
+                + 'on `FarmProfile` and have no counterpart there — and no `tenantId`, so '
+                + 'there is nothing to join through even by accident. Every row it can see '
+                + 'belongs to a farm that chose to publish: a projection row EXISTS only '
+                + 'while published, because withdrawing DELETES it rather than flagging it.\n\n'
+                + 'It is not an enumeration oracle, and the reason is structural rather than '
+                + 'a uniform response: there is no hidden population to enumerate. An '
+                + 'unpublished farm has no row, so no query shape can distinguish "not '
+                + 'published" from "does not exist" — the same property that makes '
+                + '`/f/[handle]` return one 404 for both.\n\n'
+                + 'Rate-limited at the EDGE by the public-read tier (60/min per IP), which '
+                + 'is also P6.10\u2019s requirement that the 61st anonymous request in a '
+                + 'minute gets 429. At the edge rather than in the handler because a trigram '
+                + 'search is a database read, so a flood should cost a comparison and not a '
+                + 'query. Results are capped at 50 and the endpoint is deliberately not '
+                + 'pageable: a visitor who needs more narrows by oblast or crop.',
             '/api/public/notices':
                 'P5.2 — anonymous by design, and by LEGAL DUTY. DSA Art 16 requires a '
                 + 'mechanism any person or entity can use to notify illegal content, so '
