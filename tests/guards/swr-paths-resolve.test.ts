@@ -23,9 +23,10 @@
  * ## What is checked, and the denominator
  *
  * Literal first arguments to `useTenantSWR(...)` under `src/`, with the query
- * string stripped. Each must map to a `route.ts` under
- * `src/app/api/t/[tenantSlug]/`, matching a literal segment exactly or a
- * dynamic one (`[id]`) for any single segment.
+ * string stripped. Each must match a template from `routePathTemplates()` —
+ * the shared enumerator behind `src/generated/route-inventory.json` — under
+ * the `/api/t/{tenantSlug}` prefix the hook prepends, with `{id}` matching any
+ * single segment.
  *
  * Both populations come from `tests/helpers/collect-files.ts`, which refuses
  * an empty result, and the test PRINTS how many paths it resolved and how many
@@ -39,38 +40,42 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { routePathTemplates } from '../../scripts/lib/api-routes';
 
 const ROOT = REPO_ROOT;
-const API_ROOT = 'src/app/api/t/[tenantSlug]';
+
+/** What `useTenantSWR` prepends to every path it is given. */
+const TENANT_PREFIX = '/api/t/{tenantSlug}';
 
 /**
- * Both populations come from `collectSourceFiles`, which refuses an empty
- * result — required by `file-collection-is-not-silently-empty`, and for the
- * reason it gives: a collector written by hand here can be gutted to return
- * nothing with every assertion below still green, measured across 81% of the
- * guards an automated sweep could audit. This guard's first version walked
- * the tree itself and that meta-guard failed it on CI, which is the system
- * working.
+ * The tenant subtree of the HTTP surface, from the SHARED enumerator.
  *
- * The route scan passes `extensions: ['route.ts']` — the helper matches by
- * SUFFIX, so a filename works where an extension is expected.
+ * `scripts/lib/api-routes.ts` is this repo's definition of "every path
+ * template the API serves" — it is what generates
+ * `src/generated/route-inventory.json`, what `route-inventory-ledger` guards,
+ * and what the OpenAPI sync reads. The first version of this guard walked the
+ * route tree itself, which made a SECOND definition of the route set: it
+ * counted 284 paths where the enumerator knows 410, and it had no idea about
+ * `NON_SURFACE_ROUTE_FILES` — the files that live under `app/api` without
+ * being a surface. A guard about paths resolving should not disagree with the
+ * ledger about which paths exist.
  */
-function routeSegments(): string[][] {
-    // No label option: `CollectOptions` is roots / extensions / skipDirs /
-    // exclude / floor / expectEmptyBecause, and the helper builds its own
-    // failure label from the roots. I passed `what:` and it is an excess
-    // property — TS2353, caught by CI's Typecheck and NOT by this file's own
-    // jest run, because the node project's ts-jest does not reject it.
-    return collectSourceFiles({
-        roots: [API_ROOT],
-        extensions: ['route.ts'],
-        floor: 100,
-    }).map((abs) =>
-        path
-            .relative(path.join(ROOT, API_ROOT), abs)
-            .split(path.sep)
-            .slice(0, -1), // drop the `route.ts` filename
+function tenantRouteSegments(): string[][] {
+    const all = routePathTemplates();
+    const tenant = all.filter(
+        (p) => p === TENANT_PREFIX || p.startsWith(`${TENANT_PREFIX}/`),
     );
+    // A floor on BOTH numbers. The enumerator is shared and separately
+    // guarded, but a typo in the prefix above would filter everything away
+    // and leave this suite asserting over nothing — which passes.
+    if (all.length < 300 || tenant.length < 100) {
+        throw new Error(
+            `route enumeration looks wrong: ${all.length} templates total, ` +
+                `${tenant.length} under ${TENANT_PREFIX}. Expected 300+ and 100+. ` +
+                `A prefix typo here would resolve zero paths and pass for free.`,
+        );
+    }
+    return tenant.map((p) => p.slice(TENANT_PREFIX.length).split('/').filter(Boolean));
 }
 
 /** Does a client path match a route, treating `[x]` as one wildcard segment? */
@@ -79,7 +84,7 @@ function resolves(clientPath: string, routes: string[][]): boolean {
     return routes.some(
         (route) =>
             route.length === want.length &&
-            route.every((seg, i) => (seg.startsWith('[') ? true : seg === want[i])),
+            route.every((seg, i) => (seg.startsWith('{') ? true : seg === want[i])),
     );
 }
 
@@ -119,7 +124,7 @@ function scanClientPaths(): { literal: Found[]; skipped: Found[] } {
 }
 
 describe('client SWR paths resolve to real API routes', () => {
-    const routes = routeSegments();
+    const routes = tenantRouteSegments();
     const { literal, skipped } = scanClientPaths();
 
     it('resolved a meaningful number of routes and paths', () => {
