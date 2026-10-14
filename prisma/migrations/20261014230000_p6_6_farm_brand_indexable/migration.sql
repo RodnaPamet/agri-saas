@@ -1,0 +1,11 @@
+-- P6.6 (#1815) — the source for `PublicFarmProfile.indexable`.
+--
+-- The projection has carried an `indexable` column since P6.1 with nothing
+-- to populate it: every row is `false` and `projectFarmBrand` omits the
+-- column on both branches so a republish cannot flip it. This is the column
+-- the editor will write.
+--
+-- Defaults to false, which is the same answer every existing row already
+-- gives, so this is not a behaviour change for any farm — it is the place
+-- the answer will come from once there is a control for it.
+ALTER TABLE "FarmBrand" ADD COLUMN "indexable" BOOLEAN NOT NULL DEFAULT false;
