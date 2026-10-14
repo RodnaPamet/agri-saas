@@ -30,6 +30,19 @@ export interface CreateLogEntryInput {
      * list, which is the 2026-10-10 manual-only ruling.
      */
     recordedInDiary?: boolean;
+    /**
+     * The ДНЕВНИК fold key (#1740) — the treatment's handle, or omitted so the
+     * column's own unique default applies and the entry folds to itself.
+     *
+     * Declared here because the repository maps `data` field by field. A
+     * caller passing it through a SPREAD gets no help from `tsc`: excess
+     * property checking does not apply to spreads, so an undeclared field is
+     * accepted at every call site and silently dropped at the write. That is
+     * what happened — four links of the chain were wired, the fifth discarded
+     * it, and the first sign was three entries with three different group ids
+     * in a DB-backed test.
+     */
+    treatmentGroupId?: string;
     type:
         | 'ACTIVITY'
         | 'OBSERVATION'
@@ -164,6 +177,80 @@ export interface LogEntryFilters {
     cropPlanId?: string;
 }
 
+/**
+ * The ДНЕВНИК list's own cursor: `(occurredAt, treatmentGroupId)`.
+ *
+ * ## Why not the shared `{ createdAt, id }` one
+ *
+ * The list folds a treatment's N entries into ONE row with
+ * `distinct: ['treatmentGroupId']`, and `DISTINCT ON` picks the FIRST member
+ * of each group in the ORDER BY. A cursor naming a ROW excludes only that
+ * row, so the group's remaining members are still eligible and represent it
+ * AGAIN on the next page.
+ *
+ * Measured, 3 treatments of 3 entries paged 2 at a time with a
+ * `(createdAt, id)` cursor: six rows came back, one treatment three times.
+ * For a compliance register a farmer would reasonably read a repeated
+ * treatment as a repeated application.
+ *
+ * `treatmentGroupId` is one-per-group by construction, so ordering on it
+ * makes each treatment appear exactly once and a cursor can skip the whole
+ * group. `occurredAt` leads because that is the day the work happened, which
+ * is how a register is read (owner ruling 2026-10-14, and #1771's question
+ * answered in the same move) — not the day the row was typed.
+ *
+ * Deliberately LOCAL rather than an extension of `src/lib/pagination.ts`:
+ * that helper is shared by every other cursor-paginated list here, and none
+ * of them folds. Widening it would put a field on the shared payload that
+ * only this list can populate.
+ */
+interface DiaryCursor {
+    occurredAt: string;
+    treatmentGroupId: string;
+}
+
+/**
+ * Exported so a test can build a VALID cursor from the implementation rather
+ * than hand-rolling the base64, which would drift the moment the payload
+ * changed and would leave the cursor tests passing over a shape the code no
+ * longer reads.
+ */
+export function encodeDiaryCursor(c: DiaryCursor): string {
+    return Buffer.from(JSON.stringify(c), 'utf8').toString('base64');
+}
+
+function decodeDiaryCursor(raw: string | null | undefined): DiaryCursor | null {
+    if (!raw) return null;
+    try {
+        const parsed: unknown = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+        if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            typeof (parsed as DiaryCursor).occurredAt === 'string' &&
+            typeof (parsed as DiaryCursor).treatmentGroupId === 'string' &&
+            !Number.isNaN(Date.parse((parsed as DiaryCursor).occurredAt))
+        ) {
+            return parsed as DiaryCursor;
+        }
+    } catch {
+        // A malformed cursor is treated as no cursor — the first page — rather
+        // than as an error. A client that lost its place gets the top of the
+        // list, which is recoverable; a 400 on a stale bookmark is not.
+    }
+    return null;
+}
+
+/** `(occurredAt, treatmentGroupId)` strictly after the cursor, descending. */
+function diaryCursorWhere(c: DiaryCursor): Prisma.LogEntryWhereInput {
+    const at = new Date(c.occurredAt);
+    return {
+        OR: [
+            { occurredAt: { lt: at } },
+            { occurredAt: at, treatmentGroupId: { lt: c.treatmentGroupId } },
+        ],
+    };
+}
+
 export interface LogEntryListParams {
     limit?: number;
     cursor?: string;
@@ -199,6 +286,12 @@ const ENTRY_LIST_INCLUDE = {
         select: {
             doseValue: true,
             parcel: { select: { name: true, cropType: true, areaHa: true } },
+            // The LINE's own period first (#1775); the product is the
+            // fallback for lines written before that column existed. Selected
+            // here so the list's earliest-harvest day is computed from the
+            // same source as the PDF's — two readers of one number must not
+            // disagree about which number it is.
+            quarantinePeriodDays: true,
             product: { select: { name: true, activeIngredient: true, quarantinePeriodDays: true } },
             doseUnit: { select: { symbol: true } },
             task: { select: { operationType: true, applicationTechnique: true } },
@@ -230,28 +323,223 @@ export class JournalRepository {
         });
     }
 
+    /**
+     * The ДНЕВНИК list: ONE row per treatment, folded server-side (#1740).
+     *
+     * A treatment writes one `INPUT_APPLICATION` entry per line — twelve
+     * parcels in three blocks is twelve entries — and the register shows one
+     * row. Client folding is impossible because a page boundary can split a
+     * treatment, so the fold is `distinct: ['treatmentGroupId']` and happens
+     * IN the query: collapsing rows after `take: limit + 1` would shrink the
+     * page and make `hasNextPage` wrong, turning the fold into a pagination
+     * bug. Same note P5.2b's thread list and #1655's browse filter carry.
+     *
+     * The row stays ENTRY-SHAPED — `id`, `type`, `status` at the top level,
+     * detail in `treatment` (owner ruling). Every phone build in use decodes
+     * each row as an entry needing those three, and one row without them
+     * fails the whole list while the Дневник is the launch screen. The `id` is
+     * a real `LogEntry` id, so an old build's tap opens the existing
+     * entry-detail read rather than 404ing.
+     *
+     * Ordering and the cursor are `(occurredAt, treatmentGroupId)` — see
+     * `DiaryCursor`. Not `(createdAt, id)`: a cursor naming a ROW cannot skip
+     * a folded group, and 3 treatments paged 2 at a time came back as 6 rows.
+     *
+     * Two queries, both bounded by the page: the folded page, then one read
+     * for its groups' aggregates. Never per row.
+     */
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: LogEntryListParams): Promise<PaginatedResponse<unknown>> {
         const limit = clampLimit(params.limit);
         const where = JournalRepository._buildWhere(ctx, params.filters);
 
-        const cursorWhere = buildCursorWhere(params.cursor);
-        if (cursorWhere) {
-            if (where.AND) {
-                (where.AND as Prisma.LogEntryWhereInput[]).push(cursorWhere as Prisma.LogEntryWhereInput);
-            } else {
-                where.AND = [cursorWhere as Prisma.LogEntryWhereInput];
-            }
-        }
+        // `andClause`, never assignment: the `q` search already owns
+        // `where.OR`, and an assignment here would be silently discarded and
+        // WIDEN the result — the collision that made `where.OR` unusable for
+        // the manual-only rule.
+        const cursor = decodeDiaryCursor(params.cursor);
+        if (cursor) andClause(where, diaryCursorWhere(cursor));
 
         const items = await db.logEntry.findMany({
             where,
-            orderBy: CURSOR_ORDER_BY,
+            distinct: ['treatmentGroupId'],
+            orderBy: [{ occurredAt: 'desc' }, { treatmentGroupId: 'desc' }],
             take: limit + 1,
             include: ENTRY_LIST_INCLUDE,
         });
 
-        const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
-        return { items: trimmedItems, pageInfo: { nextCursor, hasNextPage } };
+        const hasNextPage = items.length > limit;
+        const page = hasNextPage ? items.slice(0, limit) : items;
+        const last = page[page.length - 1];
+        const nextCursor =
+            hasNextPage && last
+                ? encodeDiaryCursor({
+                      occurredAt: last.occurredAt.toISOString(),
+                      treatmentGroupId: last.treatmentGroupId,
+                  })
+                : undefined;
+
+        const treatments = await JournalRepository._treatmentSummaries(
+            db,
+            ctx,
+            page.map((e) => e.treatmentGroupId),
+        );
+
+        return {
+            items: page.map((e) => ({
+                ...e,
+                treatment: treatments.get(e.treatmentGroupId) ?? null,
+            })),
+            pageInfo: { nextCursor, hasNextPage },
+        };
+    }
+
+    /**
+     * Per-treatment aggregates for ONE page of folded rows.
+     *
+     * One query for the whole page rather than one per row — the N+1 the
+     * `query-shape-guardrails` D1 layer exists to catch, and which it caught
+     * in `diary-treatment.ts` earlier on this issue.
+     *
+     * Aggregated in memory rather than by `groupBy` because the figures a
+     * farmer reads — total area and the block names — live on the PARCEL
+     * behind the line, and `groupBy` cannot reach through a relation.
+     *
+     * Returns an empty map for an empty page, which matters: a treatment whose
+     * entries are all filtered out by the caller's facets has no summary, and
+     * the row carries `treatment: null` rather than a half-built object.
+     */
+    private static async _treatmentSummaries(
+        db: PrismaTx,
+        ctx: RequestContext,
+        handles: string[],
+    ): Promise<Map<string, unknown>> {
+        const out = new Map<string, unknown>();
+        if (handles.length === 0) return out;
+
+        const rows = await db.logEntry.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                treatmentGroupId: { in: handles },
+            },
+            select: {
+                treatmentGroupId: true,
+                occurredAt: true,
+                recordedInDiary: true,
+                operationParcel: {
+                    select: {
+                        quarantinePeriodDays: true,
+                        doseValue: true,
+                        targetNote: true,
+                        product: { select: { name: true, quarantinePeriodDays: true } },
+                        doseUnit: { select: { symbol: true } },
+                        task: { select: { operationType: true, applicationTechnique: true } },
+                        parcel: {
+                            select: {
+                                name: true,
+                                areaHa: true,
+                                location: { select: { name: true } },
+                            },
+                        },
+                    },
+                },
+            },
+            // Bounded: the page's groups times their lines. A treatment over
+            // every parcel of a large farm is the worst case, and this keeps
+            // one page's read from becoming unbounded in the number of
+            // PARCELS rather than the number of rows displayed.
+            take: 2000,
+        });
+
+        type Acc = {
+            parcelCount: number;
+            totalAreaHa: number;
+            blocks: Set<string>;
+            occurredOn: string | null;
+            kind: string | null;
+            productName: string | null;
+            doseValue: number | null;
+            doseUnit: string | null;
+            quarantinePeriodDays: number | null;
+            targetNote: string | null;
+            applicationTechnique: string | null;
+            recordedInDiary: boolean;
+        };
+        const acc = new Map<string, Acc>();
+
+        for (const r of rows) {
+            const a: Acc =
+                acc.get(r.treatmentGroupId) ??
+                {
+                    parcelCount: 0,
+                    totalAreaHa: 0,
+                    blocks: new Set<string>(),
+                    occurredOn: null,
+                    kind: null,
+                    productName: null,
+                    doseValue: null,
+                    doseUnit: null,
+                    quarantinePeriodDays: null,
+                    targetNote: null,
+                    applicationTechnique: null,
+                    recordedInDiary: false,
+                };
+            const line = r.operationParcel;
+            if (line) {
+                a.parcelCount += 1;
+                if (line.parcel?.areaHa != null) a.totalAreaHa += Number(line.parcel.areaHa);
+                if (line.parcel?.location?.name) a.blocks.add(line.parcel.location.name);
+                a.kind ??= line.task?.operationType ?? null;
+                a.productName ??= line.product?.name ?? null;
+                a.doseValue ??= line.doseValue != null ? Number(line.doseValue) : null;
+                a.doseUnit ??= line.doseUnit?.symbol ?? null;
+                a.targetNote ??= line.targetNote ?? null;
+                a.applicationTechnique ??= line.task?.applicationTechnique ?? null;
+                // The LINE's period first, product as fallback (#1775) — the
+                // same resolution the PDF uses, so the two agree.
+                a.quarantinePeriodDays ??=
+                    line.quarantinePeriodDays ?? line.product?.quarantinePeriodDays ?? null;
+            }
+            // The DAY, read back from the stored UTC midnight, which is the
+            // exact inverse of how the write stored it. Deliberately not a
+            // zone conversion: that would be a second conversion of an
+            // already-converted value and near midnight returns the wrong day.
+            a.occurredOn ??= r.occurredAt.toISOString().slice(0, 10);
+            a.recordedInDiary = a.recordedInDiary || r.recordedInDiary;
+            acc.set(r.treatmentGroupId, a);
+        }
+
+        for (const [handle, a] of acc) {
+            out.set(handle, {
+                treatmentGroupId: handle,
+                occurredOn: a.occurredOn,
+                kind: a.kind,
+                productName: a.productName,
+                parcelCount: a.parcelCount,
+                totalAreaHa: Math.round(a.totalAreaHa * 1e4) / 1e4,
+                blockNames: [...a.blocks].sort(),
+                doseValue: a.doseValue,
+                doseUnit: a.doseUnit,
+                targetNote: a.targetNote,
+                applicationTechnique: a.applicationTechnique,
+                quarantinePeriodDays: a.quarantinePeriodDays,
+                // Computed server-side so every client shows the same date,
+                // from the period that applied ON THE DAY. Null when no
+                // period was captured — never the treatment day itself, which
+                // would read as "harvest today".
+                earliestHarvestOn:
+                    a.occurredOn != null && a.quarantinePeriodDays != null
+                        ? new Date(
+                              Date.parse(`${a.occurredOn}T00:00:00.000Z`) +
+                                  a.quarantinePeriodDays * 86_400_000,
+                          )
+                              .toISOString()
+                              .slice(0, 10)
+                        : null,
+                recordedInDiary: a.recordedInDiary,
+            });
+        }
+        return out;
     }
 
     /**
@@ -545,6 +833,11 @@ export class JournalRepository {
                 ...(input.conditionsJson !== undefined ? { conditionsJson: input.conditionsJson } : {}),
                 operationParcelId: input.operationParcelId ?? null,
                 recordedInDiary: input.recordedInDiary ?? false,
+            // Omitted rather than defaulted: the column is NOT NULL with its
+            // own unique default, so writing `undefined` would be wrong and
+            // writing a chosen fallback would put every un-grouped entry in
+            // ONE group — the ghost-row collapse the NOT NULL exists to stop.
+            ...(input.treatmentGroupId ? { treatmentGroupId: input.treatmentGroupId } : {}),
                 ...(input.costAmount != null ? { costAmount: input.costAmount } : {}),
                 costCurrency: input.costCurrency ?? null,
                 clientMutationId: input.clientMutationId ?? null,

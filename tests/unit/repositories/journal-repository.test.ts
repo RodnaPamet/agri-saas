@@ -16,7 +16,7 @@
  *    attaching another tenant's location, equipment or parcel to their
  *    own journal entry. They are the tenant boundary for those joins.
  */
-import { JournalRepository } from '@/app-layer/repositories/JournalRepository';
+import { JournalRepository, encodeDiaryCursor } from '@/app-layer/repositories/JournalRepository';
 import { makeRequestContext } from '../../helpers/make-context';
 import { MACHINE_ASSET_TYPE_LIST } from '@/lib/agriculture/machine-asset-types';
 import { encodeCursor, MAX_LIMIT, DEFAULT_LIMIT } from '@/lib/pagination';
@@ -398,7 +398,7 @@ describe('JournalRepository — filter translation', () => {
         // page one.
         await JournalRepository.listPaginated(asTx(db), ctx, {
             limit: 10,
-            cursor: encodeCursor({ createdAt: '2026-05-01T00:00:00.000Z', id: 'e-1' }),
+            cursor: encodeDiaryCursor({ occurredAt: '2026-05-01T00:00:00.000Z', treatmentGroupId: 'g-1' }),
             filters: { locationId: 'loc-1' },
         });
 
@@ -799,9 +799,13 @@ describe('JournalRepository — updateLogEntry', () => {
 });
 
 describe('JournalRepository — cursor pagination', () => {
+    // `occurredAt` and `treatmentGroupId` are what the folded list orders and
+    // cursors on (#1740), so a row without them cannot stand in for one.
     const row = (i: number) => ({
         id: `e-${i}`,
         createdAt: new Date(Date.UTC(2026, 0, i + 1)),
+        occurredAt: new Date(Date.UTC(2026, 0, i + 1)),
+        treatmentGroupId: `g-${i}`,
     });
 
     it('over-fetches by one and trims, reporting the next page', async () => {
@@ -831,9 +835,9 @@ describe('JournalRepository — cursor pagination', () => {
     it('keeps the soft-delete and tenant filters alongside the cursor', async () => {
         // Break: replacing `where` with the cursor predicate would page
         // across tenants AND resurface deleted entries.
-        const cursor = encodeCursor({
-            createdAt: new Date(Date.UTC(2026, 0, 5)).toISOString(),
-            id: 'e-5',
+        const cursor = encodeDiaryCursor({
+            occurredAt: new Date(Date.UTC(2026, 0, 5)).toISOString(),
+            treatmentGroupId: 'g-5',
         });
 
         await JournalRepository.listPaginated(asTx(db), ctx, { cursor });

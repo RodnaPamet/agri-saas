@@ -518,6 +518,64 @@ describeFn('getDiaryTreatment (DB-backed)', () => {
         expect(lines[0].quarantinePeriodDays).toBeNull();
     });
 
+    it('stamps the handle on every journal entry, which is what the Дневник folds on', async () => {
+        // The ДНЕВНИК shows ONE row per treatment, and a treatment writes one
+        // INPUT_APPLICATION entry per line — so the fold needs the handle on
+        // the ENTRY. It is otherwise reachable only as
+        // `LogEntry.operationParcelId -> OperationParcel.taskId -> Task`, and
+        // folding across that join would mean reimplementing the journal's
+        // manual-only WHERE clause in raw SQL — two spellings of a rule that
+        // took a DB-backed test to pin down.
+        const key = `${TAG}-fold`;
+        await recordDiaryTreatment(
+            ctx(),
+            { ...baseInput(), parcelIds: [parcelA1, parcelA2, parcelB1] },
+            key,
+        );
+
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: key } },
+            select: { id: true },
+        });
+        expect(lines).toHaveLength(3);
+
+        const entries = await globalPrisma.logEntry.findMany({
+            where: { tenantId, operationParcelId: { in: lines.map((l) => l.id) } },
+            select: { treatmentGroupId: true },
+        });
+        // Three entries, ONE group — three rows in the register today, one
+        // after the fold.
+        expect(entries).toHaveLength(3);
+        expect(new Set(entries.map((e) => e.treatmentGroupId))).toEqual(new Set([key]));
+    });
+
+    it('gives a non-treatment entry its OWN group, so it folds to itself', async () => {
+        // NOT NULL with a unique default, and that is load-bearing rather
+        // than tidy: `DISTINCT ON` treats all NULLs as ONE value, so a
+        // nullable key would collapse every manual entry a farm has ever
+        // written into a single ghost row. Measured at 4 null rows -> 1.
+        const a = await globalPrisma.logEntry.create({
+            data: {
+                tenantId, type: 'OBSERVATION', title: `Manual A ${TAG}`,
+                occurredAt: new Date(`${DAY}T00:00:00.000Z`), createdByUserId: userId,
+            },
+            select: { id: true, treatmentGroupId: true },
+        });
+        const b = await globalPrisma.logEntry.create({
+            data: {
+                tenantId, type: 'OBSERVATION', title: `Manual B ${TAG}`,
+                occurredAt: new Date(`${DAY}T00:00:00.000Z`), createdByUserId: userId,
+            },
+            select: { id: true, treatmentGroupId: true },
+        });
+
+        // Never null...
+        expect(a.treatmentGroupId).toBeTruthy();
+        expect(b.treatmentGroupId).toBeTruthy();
+        // ...and never shared, so two manual entries are two rows.
+        expect(a.treatmentGroupId).not.toBe(b.treatmentGroupId);
+    });
+
     it('replays only once every line is recorded', async () => {
         const key = `${TAG}-full-replay`;
         const first = await recordDiaryTreatment(

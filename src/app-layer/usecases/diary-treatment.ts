@@ -575,6 +575,10 @@ export async function recordDiaryTreatment(
                 // Before this it only reached `newProductRegistration`, so on
                 // a product the farm already had it was silently dropped.
                 quarantinePeriodDays: input.quarantinePeriodDays ?? null,
+                // Denormalised onto each journal entry so the ДНЕВНИК list
+                // folds the treatment's N entries into one row without
+                // joining through OperationParcel -> Task (#1740).
+                treatmentGroupId,
             },
         );
     }

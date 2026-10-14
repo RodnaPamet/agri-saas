@@ -213,7 +213,31 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'Returns a FLAT array by default. With `limit` or `cursor` it returns ' +
             '`{ rows, nextCursor }` and carries a weak ETag (honours `If-None-Match` with 304). ' +
             'With `deleted=true` it returns `{ entries }` and escalates to an admin check. ' +
-            'Three bodies on one operation — a client must branch on the query it sent.',
+            'Three bodies on one operation — a client must branch on the query it sent.\n\n' +
+            '**The PAGINATED branch is the \u0414\u041d\u0415\u0412\u041d\u0418\u041a and folds one row per ' +
+            'treatment (#1740).** A treatment writes one `INPUT_APPLICATION` entry per line \u2014 twelve ' +
+            'parcels in three blocks is twelve entries \u2014 and the register shows ONE row. Each row ' +
+            'stays ENTRY-SHAPED, carrying `id`, `type` and `status` at the top level with the ' +
+            'treatment detail in an added `treatment` object, so a client that decodes rows as ' +
+            'entries keeps working and ignores the extra key. The `id` is a real entry id that ' +
+            '`GET /journal/{id}` answers.\n\n' +
+            '`treatment` carries `treatmentGroupId` (the handle), `occurredOn` as a DAY, `kind`, ' +
+            '`productName`, `parcelCount`, `totalAreaHa`, `blockNames`, `doseValue` + `doseUnit`, ' +
+            '`targetNote`, `applicationTechnique`, `quarantinePeriodDays` and a server-computed ' +
+            '`earliestHarvestOn`. An entry belonging to no treatment folds to ITSELF and its ' +
+            '`treatment.parcelCount` is 0 \u2014 one list, both kinds.\n\n' +
+            '`earliestHarvestOn` is computed from the period captured ON THE DAY (#1775), falling ' +
+            'back to the product for lines written before that was stored. Same resolution the ' +
+            '\u0414\u041d\u0415\u0412\u041d\u0418\u041a PDF uses, so the list and the document cannot ' +
+            'disagree about the same number. Null when no period was captured \u2014 never the ' +
+            'treatment day, which would read as \u201charvest today\u201d.\n\n' +
+            '**Ordered by `occurredAt` \u2014 the day the work HAPPENED \u2014 newest first, not by the ' +
+            'day the row was typed** (owner ruling 2026-10-14; see #1771). So a back-dated ' +
+            'treatment sorts to its own date rather than to the top. The `cursor` for this branch ' +
+            'is opaque and encodes `(occurredAt, treatmentGroupId)`: a cursor naming a ROW cannot ' +
+            'skip a folded treatment, and one that tried returned 3 treatments as 6 rows. Treat ' +
+            'it as opaque and send back exactly what `nextCursor` gave you; a malformed cursor ' +
+            'returns the FIRST page rather than a 400, so a stale bookmark is recoverable.',
         tags: ['Journal'],
         params: TenantParams,
         query: JournalListQuery,
