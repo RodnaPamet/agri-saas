@@ -923,3 +923,76 @@ async function describeListState(page: Page): Promise<string> {
         return `  (diagnostics unavailable: ${(e as Error).message.slice(0, 80)})`;
     }
 }
+
+/**
+ * Assert a locator resolves to exactly ONE element and that element is visible,
+ * holding BOTH in the same observation (#1567).
+ *
+ * ## The bug this replaces
+ *
+ * Four call sites had written the barrier as two consecutive statements:
+ *
+ *     await expect(header).toHaveCount(1, { timeout: 30000 });
+ *     await expect(header).toBeVisible();
+ *
+ * The reasoning above them is right about the mechanism — the App Router keeps
+ * the outgoing tree mounted while the incoming one streams in, so both briefly
+ * render the same `data-testid` — and right to refuse `.first()`, which would
+ * pass just as happily on a page that really did render two.
+ *
+ * It is wrong that a count assertion SETTLES anything. `toHaveCount(1)`
+ * succeeds the moment it observes one, and the transition is not over: the
+ * count can go back up. The next statement re-queries and sees two, and
+ * `toBeVisible()` on a two-element locator is a strict-mode violation, which
+ * fails INSTANTLY rather than retrying.
+ *
+ * Measured, from attempt 1 of run 38022280789 (`admin-regression.spec.ts:35`):
+ *
+ *     Error: strict mode violation: getByTestId('page-header-title')
+ *     resolved to 2 elements
+ *
+ * both of them `<h1 …>Administration</h1>`. That is also why the failure took
+ * 2.5s in total and so looked like it had happened earlier, in the login or
+ * the navigation — #1567's own reading, from the duration alone. A 30s timeout
+ * on line 34 is irrelevant when line 35 throws without waiting at all.
+ *
+ * ## Why `toPass` and not a longer timeout
+ *
+ * The defect is the WINDOW between the two statements: the invariant is
+ * asserted at T and visibility at T+ε, and nothing requires them to describe
+ * the same moment. Lengthening either timeout widens the window rather than
+ * closing it. `toPass` re-runs both together, so a transient double retries
+ * instead of failing, and the one-element invariant is still asserted rather
+ * than stepped around.
+ *
+ * The inner timeouts are deliberately short. They are the cost of ONE
+ * observation — a long inner timeout would spend the whole outer budget inside
+ * a single attempt and retry nothing.
+ *
+ * Safe to wrap here because the body is only assertions, which are idempotent
+ * reads. `toPass` round a non-idempotent action (a click) deadlocks instead,
+ * which is a separate lesson this repo has already paid for.
+ */
+export async function expectSettledSingle(
+    locator: Locator,
+    opts: {
+        timeout?: number;
+        /**
+         * What must ALSO hold of the single element, in the same observation as
+         * the count. Defaults to visibility, which is what four of the five
+         * call sites asserted.
+         *
+         * Override it rather than adding a second statement after the call —
+         * a second statement is the very window this helper exists to close.
+         * Give the inner assertion a SHORT timeout for the same reason the
+         * defaults are short: it is the cost of one attempt, not of the wait.
+         */
+        also?: (only: Locator) => Promise<unknown>;
+    } = {},
+): Promise<void> {
+    const also = opts.also ?? ((only: Locator) => expect(only).toBeVisible({ timeout: 1_000 }));
+    await expect(async () => {
+        await expect(locator).toHaveCount(1, { timeout: 1_000 });
+        await also(locator);
+    }).toPass({ timeout: opts.timeout ?? 30_000 });
+}
