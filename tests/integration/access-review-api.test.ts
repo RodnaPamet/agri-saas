@@ -13,6 +13,8 @@
 import * as fs from 'node:fs';
 import path from 'node:path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const ROOT = path.resolve(__dirname, '../..');
 function read(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
@@ -27,6 +29,9 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
     );
     const decisionRoute = read(
         'src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/decisions/[decisionId]/route.ts',
+    );
+    const revokeRoute = read(
+        'src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/decisions/[decisionId]/revoke/route.ts',
     );
     const closeRoute = read(
         'src/app/api/t/[tenantSlug]/access-reviews/[reviewId]/close/route.ts',
@@ -77,6 +82,18 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
         expect(decisionRoute).toContain('submitDecision');
     });
 
+    it('POST revoke route validates with RevokeDecisionSchema and calls revokeDecision', () => {
+        expect(revokeRoute).toMatch(/export const POST/);
+        expect(revokeRoute).toContain('RevokeDecisionSchema');
+        expect(revokeRoute).toContain('withValidatedBody');
+        expect(revokeRoute).toContain('revokeDecision');
+        // The decision id, not the review id — both are strings, so the swap
+        // compiles. `tests/unit/revoke-decision-route-is-reachable.test.ts`
+        // catches it by inspecting what ARRIVED; this is the cheap textual
+        // half, kept here because this file is the surface's wiring ratchet.
+        expect(revokeRoute).toContain('params.decisionId');
+    });
+
     it('POST close route delegates to closeAccessReview', () => {
         expect(closeRoute).toMatch(/export const POST/);
         expect(closeRoute).toContain('closeAccessReview');
@@ -94,16 +111,40 @@ describe('Epic G-4 — access-review API + UI wiring', () => {
 
     // ── 2. Tenant scoping invariant ─────────────────────────────────
 
+    /**
+     * DERIVED from the filesystem, not listed.
+     *
+     * This was a hardcoded array of five route sources, which is how a gate
+     * stops covering the thing it names without anything going red: the
+     * `revoke` route (#1793) landed and the "every route" invariant would have
+     * gone on asserting about five of six, reporting a pass for a population
+     * that no longer matched its own description.
+     */
+    const ROUTE_FILES = collectSourceFiles({
+        roots: ['src/app/api/t/[tenantSlug]/access-reviews'],
+        extensions: ['.ts'],
+    }).filter((f) => f.endsWith(`${path.sep}route.ts`));
+
     it('every route uses getTenantCtx so the tenant gate runs', () => {
-        for (const src of [
-            listRoute,
-            detailRoute,
-            decisionRoute,
-            closeRoute,
-            evidenceRoute,
-        ]) {
+        // The denominator, asserted rather than assumed. `collectSourceFiles`
+        // throws on an empty result, so this cannot pass vacuously — but it
+        // could still shrink, and a filter that stopped matching would read
+        // as "every route complies".
+        expect(ROUTE_FILES.length).toBe(6);
+
+        for (const abs of ROUTE_FILES) {
+            const src = fs.readFileSync(abs, 'utf-8');
             expect(src).toContain('getTenantCtx');
         }
+    });
+
+    it('a new route on this surface must be registered above', () => {
+        // The count in the case above is a tripwire: a seventh route file
+        // reddens it, and the fix is to add the source to the wiring cases
+        // rather than to raise the number. Stated separately so the reason is
+        // findable from the failure.
+        const named = [listRoute, detailRoute, decisionRoute, revokeRoute, closeRoute, evidenceRoute];
+        expect(named).toHaveLength(ROUTE_FILES.length);
     });
 
     // ── 3. Pages exist + import their client islands ───────────────

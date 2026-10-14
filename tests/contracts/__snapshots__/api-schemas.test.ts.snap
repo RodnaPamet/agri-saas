@@ -141,6 +141,24 @@ exports[`API contract — per-schema snapshots schema: AccessReviewCreated 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AccessReviewDecisionRevoked 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "decisionId": {
+      "type": "string"
+    },
+    "accessReviewId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "decisionId",
+    "accessReviewId"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AccessReviewDecisionRow 1`] = `
 "{
   "type": "object",

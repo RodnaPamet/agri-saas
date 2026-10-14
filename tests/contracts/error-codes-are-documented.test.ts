@@ -265,8 +265,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // that path documented them too. I had not set out to drain them, and the
     // guard refusing a baseline entry for an already-documented code is the
     // reason they did not quietly stay.
-    'ACCESS_REVIEW_DECISION_ALREADY_EXECUTED',
-    'ACCESS_REVIEW_DECISION_NOT_RECORDED',
     'ACCOUNT_HAS_NO_EMAIL',
     'EVIDENCE_DELETED',
     'EVIDENCE_NOT_FOUND',
