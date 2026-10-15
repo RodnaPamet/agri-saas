@@ -20,7 +20,7 @@
  */
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { updateFarmBrand } from '@/app-layer/usecases/public-farm-profile';
+import { readFarmBrandDraft, updateFarmBrand } from '@/app-layer/usecases/public-farm-profile';
 import { UpdateFarmBrandSchema } from '@/app-layer/schemas/farm-brand.schemas';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -50,4 +50,22 @@ export const PUT = withApiErrorHandling(
             return jsonResponse(result);
         },
     ),
+);
+
+/**
+ * The draft, for the editor to render.
+ *
+ * `200` with `null` when there is no draft rather than `404`: a farm that has
+ * never opened the editor is in a normal state, and the form should show
+ * itself empty instead of an error. The operations that genuinely need a
+ * draft — claiming a handle, recording consent — refuse with
+ * `FARM_BRAND_NOT_FOUND` on their own.
+ */
+export const GET = withApiErrorHandling(
+    async (req: NextRequest, { params: paramsPromise }: { params: Promise<{ tenantSlug: string }> }) => {
+        const params = await paramsPromise;
+        const ctx = await getTenantCtx(params, req);
+        await assertFeatureEnabled('social.public-profile', ctx.userId);
+        return jsonResponse(await readFarmBrandDraft(ctx));
+    },
 );

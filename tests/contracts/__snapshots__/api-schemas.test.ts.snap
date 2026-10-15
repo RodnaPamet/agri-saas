@@ -6238,6 +6238,92 @@ exports[`API contract — per-schema snapshots schema: FarmBrandConsentResult 1`
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmBrandDraft 1`] = `
+"{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "handle": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "displayName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tagline": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "about": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "oblast": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "crops": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "published": {
+      "type": "boolean"
+    },
+    "publishedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "consentedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "consentTextVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "indexable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "handle",
+    "displayName",
+    "tagline",
+    "about",
+    "oblast",
+    "crops",
+    "published",
+    "publishedAt",
+    "consentedAt",
+    "consentTextVersion",
+    "indexable"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmBrandHandleClaimResult 1`] = `
 "{
   "type": "object",
