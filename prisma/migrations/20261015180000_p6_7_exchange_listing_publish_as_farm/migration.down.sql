@@ -1,0 +1,13 @@
+-- Rollback for 20261015180000_p6_7_exchange_listing_publish_as_farm.
+--
+-- Safe for exactly one release, and this is the window it exists for: nothing
+-- writes the column yet, so dropping it loses no decision anyone has made.
+--
+-- After the writer ships this becomes DESTRUCTIVE in a way that is easy to
+-- under-read. The column holds a consent-shaped answer — whether a farm agreed
+-- to be IDENTIFIED on a particular offer — and dropping it resets every
+-- listing to `false` on re-apply. That direction is fail-closed, so it would
+-- not expose any farm that had stayed anonymous; it would silently revoke the
+-- choice of every farm that had chosen to be named, and those listings would
+-- fall back to the typed `sellerDisplayName` or to «анонимно стопанство».
+ALTER TABLE "ExchangeListing" DROP COLUMN "publishAsFarm";
