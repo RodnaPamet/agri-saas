@@ -645,7 +645,13 @@ export async function uploadLogEntryPhoto(
         throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
     }
     if (!isAllowedSize(file.size)) {
-        throw codedBadRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
+        // See ingest.ts: the cap travels as a param so the catalogue entry
+        // can name it (#1918).
+        throw codedBadRequest(
+            'FILE_TOO_LARGE',
+            `File exceeds the maximum size of ${FILE_MAX_SIZE_BYTES} bytes`,
+            { maxBytes: String(FILE_MAX_SIZE_BYTES) },
+        );
     }
 
     const storage = getStorageProvider();

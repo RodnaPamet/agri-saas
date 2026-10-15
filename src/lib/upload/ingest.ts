@@ -180,7 +180,16 @@ export async function ingestUploadedFile(
     }
     const cap = opts.maxBytes ?? FILE_MAX_SIZE_BYTES;
     if (opts.maxBytes != null ? file.size > opts.maxBytes : !isAllowedSize(file.size)) {
-        throw codedBadRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${cap} bytes`);
+        // `maxBytes` on the wire, not only inside the sentence (#1918). The
+        // catalogue entry names the number — a NUMBER is the one thing
+        // `localize.ts`'s rule permits interpolating — and it cannot do that
+        // unless the value is a param. Without it the Bulgarian would have to
+        // say "too large" and drop the figure an operator needs to act on.
+        throw codedBadRequest(
+            'FILE_TOO_LARGE',
+            `File exceeds the maximum size of ${cap} bytes`,
+            { maxBytes: String(cap) },
+        );
     }
     if (file.size === 0) {
         throw codedBadRequest('FILE_EMPTY', 'File is empty');
