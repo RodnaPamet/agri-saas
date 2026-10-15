@@ -416,6 +416,16 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'batch, exchange messages), none of which compares a body, and it is stated here because ' +
             'the alternative \u2014 refusing the reuse \u2014 is what a client would reasonably assume.' +
             '\n\n' +
+            '**The one key that IS refused: an ABANDONED handle, with 410 `TREATMENT_ABANDONED`.** ' +
+            'An administrator can abandon a treatment that cannot be finished ' +
+            '(`DELETE /journal/treatments/{treatmentGroupId}`, #1777). Its rows are soft-deleted but ' +
+            'keep the handle, so this route can tell — and refuses, because a client still retrying a ' +
+            'short 201 would otherwise sail past the replay, reach the create path and write the WHOLE ' +
+            'treatment again under the same handle, undoing the abandon with nobody seeing it. Found by ' +
+            'the agrent-ios session, whose outbox resends such a treatment on every launch. 410 rather ' +
+            'than 404 so a client can tell "never landed, write afresh" from "do not send this again"; ' +
+            'record the work under a NEW key if it still needs a register entry.' +
+            '\n\n' +
             '`parcelIds` is ONE flat list that may span blocks \u2014 the server groups it and writes one ' +
             'field operation per block, because the register resolves a block through the task\u2019s ' +
             'location link.\n\n' +

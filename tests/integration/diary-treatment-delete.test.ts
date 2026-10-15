@@ -215,7 +215,16 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(done?.status).toBe('DONE');
     });
 
-    it('releases the handle: a later send mints a NEW treatment, not a resume', async () => {
+    it('REFUSES a resend of an abandoned handle rather than recreating it', async () => {
+        // This test asserted the opposite when #1777 merged — that a resend
+        // "mints a NEW treatment" — and that was the hole, not the feature.
+        // Found by the agrent-ios session reading the merged code: their
+        // outbox resends a treatment whose 201 came back short on every
+        // launch, so an admin abandons a stuck treatment, the phone wakes up,
+        // and the whole thing is back with every ДНЕВНИК entry. With a task
+        // in a terminal status as the dead-end cause, the fresh tasks do not
+        // share it, so the resend COMPLETES and the abandon is undone with
+        // nobody seeing it.
         const handle = `release-${randomUUID()}`;
         await recordPartial(handle);
         await deleteDiaryTreatment(ctx(), handle);
@@ -223,21 +232,22 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         // The summary stops resolving, which is what a client sees as 404.
         expect(await getDiaryTreatment(ctx(), handle)).toBeNull();
 
-        // And the replay arm looks up tasks with `deletedAt: null`, so the
-        // same key does NOT resume the abandoned one.
-        const again = await recordDiaryTreatment(ctx(), input(), handle);
-        expect(again.replayed).toBe(false);
+        await expect(recordDiaryTreatment(ctx(), input(), handle)).rejects.toMatchObject({
+            code: 'TREATMENT_ABANDONED',
+            status: 410,
+        });
 
+        // And nothing was written on the way to the refusal: no live task
+        // under that handle, which a create-then-fail would have left behind.
         const live = await globalPrisma.task.findMany({
             where: { tenantId, treatmentGroupId: handle, deletedAt: null },
         });
-        expect(live).toHaveLength(1);
+        expect(live).toHaveLength(0);
 
-        // The mechanism, asserted directly: the abandoned task released its
-        // `clientMutationId`. Each block's task is created with the derived
-        // key `<handle>:<locationId>` under a UNIQUE index, and a
-        // soft-deleted row still occupying it made the re-send die on the
-        // constraint — a 500 where there had been a resumable treatment.
+        // The abandoned task still released its `clientMutationId`. That is
+        // no longer what stops the recreation — the 410 above is — but the
+        // key belongs to a dead row, and leaving it would trip any future
+        // path that creates with the same derived key.
         const abandoned = await globalPrisma.task.findMany({
             where: { tenantId, treatmentGroupId: handle, deletedAt: { not: null } },
             select: { clientMutationId: true, treatmentGroupId: true },
@@ -245,10 +255,18 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(abandoned).toHaveLength(1);
         expect(abandoned[0].clientMutationId).toBeNull();
         // …while still saying which treatment it was, which is the half that
-        // must survive for the audit trail to mean anything.
+        // must survive for the audit trail to mean anything — and which is
+        // also how the refusal above knows the handle was abandoned.
         expect(abandoned[0].treatmentGroupId).toBe(handle);
-        // And the live task took the key.
-        expect(live[0].clientMutationId).toContain(handle);
+    });
+
+    it('a handle nobody abandoned still records normally', async () => {
+        // The other side of the refusal. Without this, a 410 on EVERY fresh
+        // handle would pass the test above and break every write.
+        const handle = `fresh-${randomUUID()}`;
+        const result = await recordDiaryTreatment(ctx(), input(), handle);
+        expect(result).toMatchObject({ treatmentGroupId: handle, replayed: false });
+        expect(result.parcelCount).toBe(2);
     });
 
     it('writes ONE audit event naming the handle and what it removed', async () => {

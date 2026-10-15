@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
 import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
-import { codedBadRequest, codedConflict, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedClientError, codedConflict, codedNotFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
+import { withDeleted } from '@/lib/soft-delete';
 import { createFieldOperation, markOperationParcel } from './field-operation';
 import type { CreateFieldOperationInput } from './field-operation';
 
@@ -359,13 +360,71 @@ export async function recordDiaryTreatment(
     // because the handle is the one thing a replay of the same treatment is
     // guaranteed to carry. A per-block lookup would also have to know the
     // block set, which is what the replay is trying to avoid recomputing.
-    const existing = await runInTenantContext(ctx, (db) =>
-        db.task.findMany({
-            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
-            select: { id: true },
-            orderBy: { createdAt: 'asc' },
-        }),
+    //
+    // ONE query, both states. The live tasks drive the replay below; the
+    // soft-deleted ones mean this handle was ABANDONED, and resending it must
+    // not quietly undo that — see the refusal immediately after.
+    const priorTasks = await runInTenantContext(ctx, (db) =>
+        db.task.findMany(
+            // `withDeleted`, or this read cannot see the thing it is for.
+            //
+            // A Prisma extension injects `deletedAt: null` into every read of
+            // a soft-delete model unless the caller names `deletedAt` or opts
+            // out through this helper (`src/lib/soft-delete.ts`). Omitting it
+            // here returned ZERO rows for an abandoned handle, so the refusal
+            // below never fired and the resend recreated the treatment — the
+            // exact hole this change exists to close, reproduced by the fix
+            // for it. The integration test caught that because it reads the
+            // same rows through a RAW client, which the extension does not
+            // wrap.
+            withDeleted({
+                where: { tenantId: ctx.tenantId, treatmentGroupId },
+                select: { id: true, deletedAt: true },
+                orderBy: { createdAt: 'asc' as const },
+            }),
+        ),
     );
+    const existing = priorTasks.filter((t) => t.deletedAt === null);
+
+    /**
+     * A resend of an ABANDONED handle is refused, not honoured (#1777 follow-up).
+     *
+     * Found by the agrent-ios session reading the merged code, and it is a
+     * hole this endpoint's own fix opened. The abandon releases
+     * `clientMutationId` so the handle stops colliding, and the replay lookup
+     * only sees live tasks — so a client still retrying would sail past the
+     * replay, reach the create path, and write the WHOLE treatment again
+     * under the same handle.
+     *
+     * That is not theoretical: the phone's outbox resends a treatment whose
+     * 201 came back short on every launch and foreground (agrent-ios #325).
+     * So an admin abandons a stuck treatment, the phone wakes up, and the
+     * treatment is back — every parcel with its ДНЕВНИК entry. Worse when the
+     * dead-end cause was a task in a terminal status, because the fresh tasks
+     * do not share it: the resend COMPLETES, and the abandon is undone with
+     * nobody seeing it happen.
+     *
+     * 410 rather than 404 or 409: the treatment existed and was deliberately
+     * removed, which is exactly what Gone means, and it tells a client the
+     * difference between "never landed, write afresh" (404) and "do not send
+     * this again". A client that wants to record the work after all mints a
+     * new handle, which both clients already do per save.
+     *
+     * This is now the load-bearing protection, and the `clientMutationId`
+     * release is not redundant behind it: the key belongs to a dead row, and
+     * leaving it there would trip any future path that creates with the same
+     * derived key.
+     */
+    if (existing.length === 0 && priorTasks.length > 0) {
+        throw codedClientError(
+            410,
+            'TREATMENT_ABANDONED',
+            'This treatment was abandoned by an administrator. Do not send it again — ' +
+                'record it afresh under a new key if the work still needs a register entry.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
     if (existing.length > 0) {
         const prior = await summariseTreatmentLines(ctx, existing.map((t) => t.id));
         // Replay ONLY a treatment that is fully recorded.
