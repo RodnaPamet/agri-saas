@@ -24,6 +24,9 @@ jest.mock('@/lib/observability/context', () => ({
     getRequestContext: () => getRequestContext(),
 }));
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { localizeErrorPayload } from '@/lib/errors/localize';
 import type { ApiErrorResponse } from '@/lib/errors/types';
 
@@ -58,9 +61,47 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
             await localizeErrorPayload(p);
             expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
             expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
-            expect(p.error.message).toContain('EDITOR');
             expect(p.error.message).not.toBe('You do not have permission …');
+
+            // The role is named in BULGARIAN, and the wire enum does NOT
+            // appear (#1919). This case asserted `toContain('EDITOR')` when
+            // it shipped, which locked in «Вашата роля в това стопанство
+            // (EDITOR) не позволява…» — a Bulgarian sentence with an English
+            // enum inside it, breaking the rule `localize.ts` states in its
+            // own docblock: a `{param}` belongs in a sentence only if it is a
+            // NUMBER or a NAME THE PERSON TYPED.
+            //
+            // «Редактор» is agrent-ios's own `MembershipRole.label`, so the
+            // two clients do not name one role two ways.
+            expect(p.error.message).toContain('Редактор');
+            expect(p.error.message).not.toContain('EDITOR');
         }
+    });
+
+    it('a role with NO sentence falls back to the roleless default (#1919)', async () => {
+        // The variant table's own fallback. OWNER and ADMIN are never refused
+        // by these two checks, so they have no entry — and a role that
+        // somehow arrived without one must get a sentence rather than the
+        // literal key or the English. This is what `errors.<CODE>.default` is
+        // for, and it is the arm a `has`-only detector would miss.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payloadFor('ADMIN_FORBIDDEN_FOR_ROLE', 'English fallback', { role: 'OWNER' });
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).not.toContain('OWNER');
+        expect(p.error.message).not.toContain('errors.');
+        expect(p.error.message).not.toBe('English fallback');
+    });
+
+    it('an English reader gets the role in English, not the enum (#1919)', async () => {
+        // Same rule, other locale: `EDITOR` is a wire value in an English
+        // sentence too, and the table gives both locales the same treatment
+        // so the two cannot drift apart.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'en' });
+        const p = payloadFor('ADMIN_FORBIDDEN_FOR_ROLE', 'original', { role: 'MECHANISATOR' });
+        await localizeErrorPayload(p);
+        expect(p.error.message).toContain('Machine operator');
+        expect(p.error.message).not.toContain('MECHANISATOR');
     });
 
     it('and an English reader still gets English for the same two', async () => {
@@ -73,7 +114,12 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
         const p = payloadFor('ADMIN_FORBIDDEN_FOR_ROLE', 'original', { role: 'READER' });
         await localizeErrorPayload(p);
         expect(p.error.message).not.toMatch(/[А-Яа-я]/);
-        expect(p.error.message).toContain('READER');
+        // 'Reader', not 'READER' (#1919). This asserted the ENUM when it
+        // shipped — the same mistake as the Bulgarian case above, and the
+        // reason both locales get the variant table rather than only the one
+        // whose breakage was visible.
+        expect(p.error.message).toContain('Reader');
+        expect(p.error.message).not.toContain('READER');
     });
 
     it('translates a code that HAS an entry', async () => {
@@ -155,9 +201,29 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
     });
 
     it('leaves a code with NO entry byte for byte — the migration property', async () => {
+        // The example is COMPUTED, not named. This case used to name
+        // `JOURNAL_ENTRY_NOT_FOUND`, and #1918 batch 1 gave that code an
+        // entry — so the test failed on somebody doing exactly the work it
+        // was describing. Naming an instance of a shrinking set makes a test
+        // break on its own success, which is the lesson
+        // `i18n-dead-keys-reports-three-numbers` records for the same reason.
+        //
+        // So: take any code the catalogue does not yet carry. 124 of the
+        // server's 211 were unentried when #1918 was filed, and the set
+        // shrinks as batches land.
+        const bg = JSON.parse(
+            readFileSync(join(process.cwd(), 'messages/bg.json'), 'utf8'),
+        ) as { errors: Record<string, string> };
+        const unentried = ['JOURNAL_IMPORT_FAILED', 'SOME_CODE_WITHOUT_AN_ENTRY_1918']
+            .find((c) => !(c in bg.errors));
+
+        // When this set is EMPTY, #1918 is finished and this case should be
+        // deleted rather than repaired — the migration it describes is over.
+        expect(unentried).toBeDefined();
+
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
-        const original = 'Journal entry not found';
-        const p = payloadFor('JOURNAL_ENTRY_NOT_FOUND', original);
+        const original = 'An English sentence that must survive.';
+        const p = payloadFor(unentried as string, original);
         await localizeErrorPayload(p);
         expect(p.error.message).toBe(original);
     });
