@@ -57,10 +57,21 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 /**
  * Guards that read source text and match against it WITHOUT blanking.
  *
- * Measured 2026-10-15: 457. Shrink-only — lower it when a batch converts,
- * never raise it. A new guard that greps source must call `blankNonCode`.
+ * Measured 2026-10-15: **449**, after the first conversion batch took it down
+ * from 457. Shrink-only — lower it when a batch converts, never raise it. A
+ * new guard that greps source must call `blankNonCode`.
+ *
+ * Raised to the branch's LIVE count each time rather than to a round number:
+ * slack here is how the next unblanked guard arrives unnoticed, which is what
+ * `DRIFT_ALLOWANCE` below also guards.
+ *
+ * Batch 1 (8 files, all WITHOUT a numeric cap of their own — the safe class,
+ * since a capped guard needs its cap re-measured in the same diff and 29 of
+ * those at once is how a shared floor lands wrong). 12 capped guards remain,
+ * not the 29 this issue estimated; that figure came from a looser match for
+ * cap-shaped constants.
  */
-const UNBLANKED_CAP = 457;
+const UNBLANKED_CAP = 449;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -177,6 +188,18 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/guardrails/api-error-wrapper-coverage.test.ts',
             'tests/guards/swr-paths-resolve.test.ts',
             'tests/guards/comment-stripper-order.test.ts',
+            // Batch 1, #1774. Each shares one conversion: `read()` routed
+            // through `blankNonCode` with comments only and NOT strings,
+            // because several of these assert on string LITERALS and
+            // `{ strings: true }` would blank those too and pass vacuously.
+            'tests/guards/vr8-canvas-export.test.ts',
+            'tests/guards/ui-action-row.test.ts',
+            'tests/guards/vr7-subflow.test.ts',
+            'tests/guards/automation-epic9-analytics.test.ts',
+            'tests/guards/vr10-governance-graph.test.ts',
+            'tests/guards/vr4-automation-inspector.test.ts',
+            'tests/guards/vr6-execution-overlay.test.ts',
+            'tests/guards/vr5-chain-edges.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);
