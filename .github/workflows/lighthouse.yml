@@ -213,16 +213,33 @@ jobs:
         # attempt's — the same pooling defect #1814 already produced once,
         # where one table mixed two pages.
         #
-        # Bound: 3 attempts x 600s + 2 x 10s backoff = 1820s worst case,
-        # derivable rather than observed, which is what the job budget can be
-        # sized against.
+        # Each attempt is CAPPED, which `ci-retry-loop-timeout` requires and
+        # for a reason worth restating: an unbounded attempt means attempt 1
+        # consumes the whole job budget on a hang and attempts 2 and 3 never
+        # exist — a retry loop that reads as protective with no path to
+        # executing under the condition it was added for. My first version
+        # used 600s and that guard caught it.
+        #
+        # 250s is DERIVED from measurement, not picked:
+        #
+        #   lhci step, 10 runs, measured   137s / 143s / 165s
+        #   whole job, measured            414s / 430s / 451s  (budget 1200s)
+        #   so the rest of the job is      ~290s
+        #
+        # 250s leaves ~1.5x headroom over the slowest observed collection, and
+        # the worst case fits the budget with room:
+        #
+        #   290 + 3 x 250 + 2 x 10 = 1060s  <=  1200s
+        #
+        # At 300s it would not: 290 + 900 + 20 = 1210s, over by ten seconds,
+        # which is how a cap that satisfies the guard still kills the job.
         run: |
           log=/tmp/lhci.log
           started=$SECONDS
           for attempt in 1 2 3; do
             rm -rf .lighthouseci
             status=0
-            timeout -k 10 600 npx --yes @lhci/cli@0.15.1 autorun \
+            timeout -k 10 250 npx --yes @lhci/cli@0.15.1 autorun \
               --config=lighthouserc.json > "$log" 2>&1 || status=$?
             cat "$log"
             if [ "$status" -eq 0 ]; then
