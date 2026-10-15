@@ -13,8 +13,10 @@
  * lives here, not duplicated.
  *
  * Determinism contract:
- *   - The only dynamic input is `package.json::version`. No
- *     timestamps, no env-dependent paths, no random ids.
+ *   - There are NO dynamic inputs. No package version, no timestamps, no
+ *     env-dependent paths, no random ids. `info.version` was the last one
+ *     and it was removed in #1916, so this contract is now unconditional
+ *     rather than true-except-for-one-field.
  *   - The asteasolutions generator emits keys in registration order,
  *     and the registration loop below is deterministic, so two runs
  *     without code changes produce structurally identical output.
@@ -22,7 +24,6 @@
  *     runs produce byte-identical output. The contract test relies
  *     on this.
  */
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
     OpenApiGeneratorV31,
@@ -181,20 +182,46 @@ export function buildOpenApiDoc(opts: BuildOptions = {}): {
     // typed optional.
     registerAllPaths(registry);
 
-    const pkg = JSON.parse(
-        readFileSync(resolve(REPO_ROOT, 'package.json'), 'utf-8'),
-    ) as { version: string; name: string };
-
     const generator = new OpenApiGeneratorV31(registry.definitions);
     const doc = generator.generateDocument({
         openapi: '3.1.0',
         info: {
             title: 'Agrent API',
-            version: pkg.version,
+            /**
+             * STABLE, and deliberately not the package version (#1916).
+             *
+             * It used to be `package.json::version`, which semantic-release
+             * bumps ~8 times a day. That made this the one line of a COMMITTED
+             * artifact that changed on every release, so every open PR which
+             * regenerated the spec conflicted with main — and a conflicting PR
+             * gets no `pull_request` workflow run at all, which is
+             * indistinguishable from "CI has not started". #1910 lived its
+             * entire life untested that way.
+             *
+             * Nothing was lost by stopping. Three things were already true:
+             *
+             *   - the contract test STRIPS `info.version` before comparing, so
+             *     the repo already treated it as noise;
+             *   - the value actually SERVED was already stale — the route
+             *     serves the committed JSON, so it reported whenever someone
+             *     last regenerated rather than the running release;
+             *   - the meaningful number is published separately as
+             *     `x-api-version` below, and `contract-version.ts` records why
+             *     that had to be a different field.
+             *
+             * `0.0.0` rather than a plausible `1.0.0`: a made-up semver would
+             * assert a contract generation that does not exist. This says "not
+             * meaningful here", which is the truth, and the description points
+             * at the field that is.
+             */
+            version: '0.0.0',
             description:
                 'Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` ' +
                 '(request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of ' +
-                'truth — this document is generated from those Zod schemas via `npm run openapi:generate`.',
+                'truth — this document is generated from those Zod schemas via `npm run openapi:generate`.' +
+                '\n\n`info.version` is intentionally fixed at `0.0.0` and carries no meaning. The API ' +
+                'contract version is `x-api-version` at the root of this document, bumped only on a ' +
+                'breaking change; `x-minimum-client-version` is the oldest client still served.',
             license: { name: 'Proprietary' },
         },
         // The contract carries its OWN version, rather than the number living
