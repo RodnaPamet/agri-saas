@@ -84,4 +84,41 @@ describe('font preload is derived from the lock', () => {
         // would also shift the window csp-webpack-nonce-bridge-hydration scans.
         expect(tag).not.toContain('nonce');
     });
+
+    it('preloads the HEADING face, not only the body face', () => {
+        // #1814: the public farm page's LCP element is a `<Heading>`, which
+        // renders `font-heading font-semibold` — Onest 600. Only Inter 400 was
+        // preloaded, so the heading painted in the fallback at FCP and
+        // re-painted when Onest arrived; measured as a one-second FCP->LCP gap
+        // with CLS at 0.000, so nothing was moving.
+        for (const locale of ['bg', 'en']) {
+            const hrefs = preloadFaces(locale).map((f) => f.href);
+            expect(hrefs.some((h) => h.includes('onest') && h.includes('600'))).toBe(true);
+            expect(hrefs.some((h) => h.includes('inter') && h.includes('400'))).toBe(true);
+        }
+    });
+
+    it('asks for the heading face BEFORE the body face', () => {
+        // Preload order is request priority, and the heading is what the
+        // metric watches. Asserted rather than left to the array literal,
+        // because a reorder that looks cosmetic would undo the point.
+        for (const locale of ['bg', 'en']) {
+            const hrefs = preloadFaces(locale).map((f) => f.href);
+            const heading = hrefs.findIndex((h) => h.includes('onest'));
+            const body = hrefs.findIndex((h) => h.includes('inter'));
+            expect(heading).toBeGreaterThanOrEqual(0);
+            expect(heading).toBeLessThan(body);
+        }
+    });
+
+    it('the Cyrillic heading cut exists, so a bg heading is not a fallback', () => {
+        // Onest carries `cyrillic`; `Bricolage Grotesque` — the other display
+        // face in the lock — does NOT. If the heading family ever changed to
+        // one without that subset, every Bulgarian heading would silently
+        // render in a fallback face, which no preload assertion would catch.
+        const cyrillicHeading = lock.faces.filter(
+            (f) => f.file.includes('onest') && f.subset === 'cyrillic',
+        );
+        expect(cyrillicHeading.length).toBeGreaterThan(0);
+    });
 });
