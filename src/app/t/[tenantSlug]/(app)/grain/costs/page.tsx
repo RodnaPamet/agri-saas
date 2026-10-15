@@ -35,6 +35,7 @@ export default async function GrainCostsPage({
 
     return (
         <CostsClient
+            fetchedAt={Date.now()}
             tenantSlug={tenantSlug}
             initialRows={JSON.parse(JSON.stringify(rows))}
             initialTotalCount={totalCount}

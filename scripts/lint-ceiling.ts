@@ -152,8 +152,20 @@ export const LIMITS: Limits = {
     // The value is the MEASURED count on the merged tree, not 1578 plus a
     // predicted delta — a shared ratchet raised to a projected total fails for
     // whoever merges second.
-    suppressionCeiling: 1586,
-    unjustifiedCeiling: 461,
+    // LOWERED 1586 -> 1582 and 461 -> 450 (#1946, #1730). Four
+    // `react-hooks/purity` directives went away rather than being explained:
+    // the four grain clients dated their SSR payload with `Date.now()` during
+    // a client render, and now take the server's `fetchedAt` as a prop, so
+    // nothing impure is called during render and there is nothing to mute.
+    //
+    // Both numbers are the MEASURED count on this branch, not a predicted
+    // delta — the note above is right that a shared ratchet set to a
+    // projection fails whoever merges second. The unjustified drop is larger
+    // than the four directives removed: #1730 recorded 453 against a limit of
+    // 461 on an older main, so some of that slack predates this change and
+    // this is simply the first diff to close it.
+    suppressionCeiling: 1582,
+    unjustifiedCeiling: 450,
     // The 13 error-severity mutes that exist today. `no-explicit-any` is
     // escalated to `error` for the security surface by the override at
     // `eslint.config.mjs:116`, so those mutes turn the repo's STRICTEST scoping

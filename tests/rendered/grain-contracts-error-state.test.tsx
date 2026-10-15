@@ -126,6 +126,7 @@ function mount(initialContracts: ContractRow[] = []) {
     const utils = render(
         <QueryClientProvider client={client}>
             <ContractsClient
+                fetchedAt={1767225600000}
                 initialContracts={initialContracts}
                 initialTotals={[]}
                 tenantSlug="acme"

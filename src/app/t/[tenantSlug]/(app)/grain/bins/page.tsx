@@ -39,6 +39,7 @@ export default async function GrainBinsPage({
 
     return (
         <BinsClient
+            fetchedAt={Date.now()}
             initialBins={JSON.parse(JSON.stringify(bins))}
             tenantSlug={tenantSlug}
             permissions={{ canWrite: ctx.permissions.canWrite }}
