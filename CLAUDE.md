@@ -847,6 +847,18 @@ others as backstops.
   `sanitizeRichTextHtml` / `sanitizePlainText` from `@/lib/security/sanitize` —
   never at render time only, because the row is also read by PDF export, share
   links and SDK consumers. Do not widen the allowlist without a security review.
+  **`sanitizePlainText` TRIMS, since #1825**, so the repo's standard blank
+  check — `const name = sanitizePlainText(x); if (!name) throw …_REQUIRED` —
+  now refuses a whitespace-only value, and no stored plain-text field keeps
+  leading or trailing whitespace. It did not until 2026-10-15: `'   '` was
+  truthy, so a name of three spaces passed a check whose own code says it is
+  required, and 17 of the 28 blank-check sites had independently reached for
+  a local `.trim()` to compensate — which is what made trimming inside the
+  one function the right fix (owner ruling) over a helper or 28 edits. Only
+  the ENDS are trimmed, so multi-line notes keep their internal newlines. A
+  **zero-width space (U+200B) survives** and is still truthy — `String.trim`
+  does not match it — recorded and asserted rather than fixed, because
+  widening past `String.trim` means deciding which characters count as blank.
 
 **When you add an auth scheme that is not the session cookie, add an HTTP-level
 test that crosses the middleware.** `token.error`, the `iflk_` API key and SCIM
