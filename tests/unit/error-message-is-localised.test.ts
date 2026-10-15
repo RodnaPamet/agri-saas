@@ -24,6 +24,9 @@ jest.mock('@/lib/observability/context', () => ({
     getRequestContext: () => getRequestContext(),
 }));
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { localizeErrorPayload } from '@/lib/errors/localize';
 import type { ApiErrorResponse } from '@/lib/errors/types';
 
@@ -155,9 +158,29 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
     });
 
     it('leaves a code with NO entry byte for byte — the migration property', async () => {
+        // The example is COMPUTED, not named. This case used to name
+        // `JOURNAL_ENTRY_NOT_FOUND`, and #1918 batch 1 gave that code an
+        // entry — so the test failed on somebody doing exactly the work it
+        // was describing. Naming an instance of a shrinking set makes a test
+        // break on its own success, which is the lesson
+        // `i18n-dead-keys-reports-three-numbers` records for the same reason.
+        //
+        // So: take any code the catalogue does not yet carry. 124 of the
+        // server's 211 were unentried when #1918 was filed, and the set
+        // shrinks as batches land.
+        const bg = JSON.parse(
+            readFileSync(join(process.cwd(), 'messages/bg.json'), 'utf8'),
+        ) as { errors: Record<string, string> };
+        const unentried = ['JOURNAL_IMPORT_FAILED', 'SOME_CODE_WITHOUT_AN_ENTRY_1918']
+            .find((c) => !(c in bg.errors));
+
+        // When this set is EMPTY, #1918 is finished and this case should be
+        // deleted rather than repaired — the migration it describes is over.
+        expect(unentried).toBeDefined();
+
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
-        const original = 'Journal entry not found';
-        const p = payloadFor('JOURNAL_ENTRY_NOT_FOUND', original);
+        const original = 'An English sentence that must survive.';
+        const p = payloadFor(unentried as string, original);
         await localizeErrorPayload(p);
         expect(p.error.message).toBe(original);
     });
