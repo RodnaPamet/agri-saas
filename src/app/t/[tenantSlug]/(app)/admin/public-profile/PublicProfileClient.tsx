@@ -46,8 +46,23 @@ import { cardVariants } from '@/components/ui/card';
 import { shareKit } from '@/lib/public-profile/share-links';
 import { cn } from '@/lib/cn';
 
-/** The version of the consent text this build renders. */
-const CONSENT_TEXT_VERSION = 'v1';
+/**
+ * The version of the consent text this build renders.
+ *
+ * v1 -> v2 (2026-10-15, owner review): v2 adds a paragraph naming the PUBLIC
+ * ADDRESS as itself public. v1 listed the five content fields and said the
+ * link could be forwarded, but never said that the handle the owner chooses is
+ * public, is the link, and ends up on printed material — which, since the A6
+ * share card (#1910), the product itself prints.
+ *
+ * Bumping this is not bookkeeping. `setVisible` compares it with the recorded
+ * `consentTextVersion` and RE-ASKS when they differ, so every farm that agreed
+ * to v1 is shown v2 before its page can go public again. That is the whole
+ * reason a version is stored next to the timestamp: "they agreed" is
+ * unfalsifiable once the wording changes; "they agreed to v2" can be held
+ * against the v2 text.
+ */
+const CONSENT_TEXT_VERSION = 'v2';
 
 interface Draft {
     handle: string | null;

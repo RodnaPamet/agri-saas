@@ -163,7 +163,7 @@ describe('the public-profile editor', () => {
                     published: true,
                     publishedAt: '2026-10-15T00:00:00Z',
                     consentedAt: '2026-10-15T00:00:00Z',
-                    consentTextVersion: 'v1',
+                    consentTextVersion: 'v2',
                 },
             },
         ]);
@@ -181,8 +181,11 @@ describe('the public-profile editor', () => {
         expect(consentAt).toBeGreaterThanOrEqual(0);
         expect(consentAt).toBeLessThan(publishAt);
         // And the recorded version is the one this build rendered, not a
-        // hard-coded string that could drift from the text on screen.
-        expect(String(calls[consentAt].init?.body)).toContain('v1');
+        // hard-coded string that could drift from the text on screen. `v2`
+        // since the owner's review added the public-address paragraph — and
+        // the bump is what makes every v1 consent re-ask (see the stale test
+        // below).
+        expect(String(calls[consentAt].init?.body)).toContain('v2');
     });
 
     it('cancelling leaves the page private and sends nothing', async () => {
@@ -207,7 +210,7 @@ describe('the public-profile editor', () => {
             published: true,
             publishedAt: '2026-10-15T00:00:00Z',
             consentedAt: '2026-10-15T00:00:00Z',
-            consentTextVersion: 'v1',
+            consentTextVersion: 'v2',
         };
         const calls = mockFetch([
             { ok: true, body: published },
@@ -234,7 +237,7 @@ describe('the public-profile editor', () => {
         const consented = {
             ...DRAFT,
             consentedAt: '2026-10-15T00:00:00Z',
-            consentTextVersion: 'v1',
+            consentTextVersion: 'v2',
         };
         const calls = mockFetch([
             { ok: true, body: consented },
@@ -258,7 +261,10 @@ describe('the public-profile editor', () => {
         const stale = {
             ...DRAFT,
             consentedAt: '2026-10-01T00:00:00Z',
-            consentTextVersion: 'v0',
+            // v1 — the REAL superseded version, not a synthetic 'v0'. This is
+            // the exact state every farm that consented before the owner's
+            // review is in, so the test now describes a real population.
+            consentTextVersion: 'v1',
         };
         const calls = mockFetch([{ ok: true, body: stale }]);
         render(<PublicProfileClient baseUrl={BASE} />);
