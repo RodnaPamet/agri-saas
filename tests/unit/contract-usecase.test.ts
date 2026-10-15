@@ -239,14 +239,20 @@ describe('createContract', () => {
     });
 
     it('rejects a counterparty that is blank after sanitise + trim — proven against the REAL sanitiser', async () => {
-        // Premise the assertion depends on: `sanitizePlainText` strips
-        // markup but does NOT trim. So whitespace can only be rejected by
-        // the usecase's own `.trim()`. Asserting this against the `SAN::`
-        // mock (or a `mockReturnValueOnce('')`) would prove the branch
-        // exists while `"   "` still sailed through in production.
-        expect(realSanitize('   ')).toBe('   ');
-        expect(realSanitize('\t\n ')).toBe('\t\n ');
+        // Premise the assertion depends on, re-stated for #1825: the real
+        // `sanitizePlainText` now TRIMS, so `"   "` is blank before the
+        // usecase's own `.trim()` ever runs. Either layer alone would
+        // reject it today, which is why both are asserted here rather than
+        // one being deleted.
+        //
+        // Still pinned against the REAL sanitiser, not the `SAN::` mock:
+        // asserting through a `mockReturnValueOnce('')` would prove the
+        // branch exists while saying nothing about what production sends
+        // into it — which is exactly how `"   "` sailed through before.
+        expect(realSanitize('   ')).toBe('');
+        expect(realSanitize('\t\n ')).toBe('');
         expect(realSanitize('<b></b>')).toBe('');
+        expect(realSanitize('  Acme  ')).toBe('Acme');
 
         for (const raw of ['   ', '\t\n ', '<b></b>']) {
             // Counterparty is the FIRST sanitiser call in createContract.

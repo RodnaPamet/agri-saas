@@ -15,7 +15,7 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
 import { PublicFarmSearchQuerySchema } from '@/app-layer/schemas/public-farms.schemas';
-import { op } from './helpers';
+import { NO_AUTH, op } from './helpers';
 
 const FarmSearchHitSchema = z
     .object({
@@ -38,6 +38,8 @@ export function registerPublicFarmsPaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/public/farms',
         operationId: 'searchPublicFarms',
+        // Anonymous by design — see NO_AUTH (#1843).
+        security: NO_AUTH,
         summary: 'Search the public farm directory',
         description:
             'ANONYMOUS. No session, no tenant, no credential — a stranger with a shared link browses the same surface.\n\n'

@@ -209,6 +209,75 @@ describe('sanitizePlainText — strips everything', () => {
         expect(sanitizePlainText(undefined)).toBe('');
         expect(sanitizePlainText(42 as unknown as string)).toBe('');
     });
+
+    // ── Trimming (#1825) ──────────────────────────────────────────
+
+    it('a whitespace-only value becomes FALSY, which is what 28 blank checks read', () => {
+        // The defect: the repo's standard check is
+        //     const name = sanitizePlainText(input.name);
+        //     if (!name) throw codedBadRequest('…_NAME_REQUIRED', '…');
+        // and this function did not trim, so `'   '` was truthy and a name
+        // of three spaces passed a check whose own code says it is required.
+        // 28 call sites are that shape; none of them trimmed.
+        for (const v of ['   ', '\t', '\n', ' \t\n ', '']) {
+            expect(`${JSON.stringify(v)} falsy=${!sanitizePlainText(v)}`)
+                .toBe(`${JSON.stringify(v)} falsy=true`);
+        }
+    });
+
+    it('strips surrounding whitespace from a value it KEEPS', () => {
+        // The quieter half, with no refusal attached: `' a '` was STORED as
+        // `' a '` at all 139 call sites, so leading whitespace reached the
+        // ДНЕВНИК and the search index — a name nobody could find by typing
+        // it.
+        expect(sanitizePlainText('  Пшеница 2026  ')).toBe('Пшеница 2026');
+        expect(sanitizePlainText('\n Karate Zeon \t')).toBe('Karate Zeon');
+    });
+
+    it('trims AFTER decoding, so a decoded space is also trimmed', () => {
+        // Ordering, and it is observable: `&#x20;` is a space only once
+        // decoded. Trimming first would leave it, which is the bug one line
+        // earlier in the chain.
+        expect(sanitizePlainText('&#x20;a&#x20;')).toBe('a');
+        expect(sanitizePlainText('&#x20;&#x20;')).toBe('');
+    });
+
+    it('keeps INTERNAL whitespace, so multi-line text is unchanged', () => {
+        // Trim touches only the ends. A description or note keeps its
+        // newlines and its internal spacing, which is why this could be a
+        // one-function change rather than a per-field decision.
+        expect(sanitizePlainText('a\n\nb')).toBe('a\n\nb');
+        expect(sanitizePlainText('  a  b  ')).toBe('a  b');
+    });
+
+    it('covers the Unicode spaces String.trim covers — nbsp included', () => {
+        // MEASURED, because I guessed the opposite first and wrote it into a
+        // docblock: `String.prototype.trim` strips the spec's WhiteSpace,
+        // which includes every Unicode space separator — so U+00A0, U+2007
+        // and U+3000 all go, as does U+FEFF. A non-breaking-space-only name
+        // is therefore refused too.
+        for (const v of ['\u00a0', '\u2007', '\u3000', '\ufeff']) {
+            expect(`${JSON.stringify(v)} -> ${JSON.stringify(sanitizePlainText(v))}`)
+                .toBe(`${JSON.stringify(v)} -> ""`);
+        }
+    });
+
+    it('a ZERO-WIDTH space survives — the one residual, recorded not fixed', () => {
+        // U+200B is NOT in the spec's WhiteSpace, so `trim` leaves it and a
+        // name of one zero-width space is still truthy and still accepted.
+        // Same class as the defect #1825 fixes, for a far rarer input.
+        //
+        // Left alone deliberately rather than overlooked. Widening past
+        // `String.trim` means deciding which characters count as blank, and
+        // U+200B is a character some scripts use as a line-break hint — so
+        // discarding it is a different call from discarding incidental
+        // whitespace, and it is not one to take while fixing 28 typo-shaped
+        // sites. Asserted so the residual is visible, in the same way the
+        // case this replaces in `crop-planning-refusals-are-coded` kept the
+        // original gap visible until somebody fixed it.
+        expect(sanitizePlainText('\u200b')).toBe('\u200b');
+        expect(!sanitizePlainText('\u200b')).toBe(false);
+    });
 });
 
 // ─── Policy-content selector ──────────────────────────────────────

@@ -33,10 +33,51 @@ const NO_SWEEP_EXCEPTIONS: Record<string, string> = {
 
 function readSchema(): string {
     const dir = path.join(ROOT, 'prisma/schema');
-    return fs
-        .readdirSync(dir)
-        .filter((f) => f.endsWith('.prisma'))
-        .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+    return stripSchemaComments(
+        fs
+            .readdirSync(dir)
+            .filter((f) => f.endsWith('.prisma'))
+            .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
+            .join('\n'),
+    );
+}
+
+/**
+ * Drop `///` and `//` comment lines before any block is parsed.
+ *
+ * ## Why this is load-bearing and not tidiness
+ *
+ * `blocks()` below delimits a body with `[^}]*`, which stops at the FIRST `}`
+ * it meets. A brace inside a comment is indistinguishable from the end of the
+ * block, so one `///` line mentioning `/f/{handle}` truncates the model body
+ * before the parser ever reaches `expiresAt` — and the model then reads as not
+ * expiry-shaped at all.
+ *
+ * That is not hypothetical and it is not rare. Measured across
+ * `prisma/schema/` today: **24 comment lines in 11 files already contain a
+ * brace** — `{ count }`, `Framework{kind:'AG_SCHEME'}`, `NOT: { a, b }`,
+ * `/api/org/{slug}/tenants`. Every one of them silently shortens its model's
+ * body for a parser of this shape. They happen not to hide `expiresAt` from
+ * the models THIS guard cares about, which is the only reason it was green.
+ *
+ * P6.7 (#1816) added the first such comment to `ExchangeListing` — the one
+ * model with a canary below — and the whole population collapsed to `[]`. The
+ * canary is what turned a silent empty set into a loud failure; without it
+ * this guard would have gone on passing over nothing, which is the shape of
+ * defect this repository keeps finding.
+ *
+ * Comments carry no schema, so removing them cannot lose a field. Verified
+ * before the change: the model count is 135 either way, and the only
+ * difference in the expiry-shaped set is `ExchangeListing` returning.
+ */
+function stripSchemaComments(schema: string): string {
+    // Line-wise, and only for lines whose first non-space is a comment marker.
+    // A `//` appearing after a field (`x String // note`) is left alone: it
+    // cannot introduce an unbalanced brace that a field line does not already
+    // have, and blanking mid-line risks eating a default value.
+    return schema
+        .split('\n')
+        .filter((line) => !/^\s*\/\//.test(line))
         .join('\n');
 }
 
@@ -81,6 +122,37 @@ describe('lifecycle-sweep-coverage', () => {
     const schema = readSchema();
     const models = expiryShapedModels(schema);
     const jobs = registeredJobNames();
+
+    it('is not fooled by a brace inside a comment', () => {
+        // A POSITIVE CONTROL, independent of the live schema. The canary below
+        // only catches this while `ExchangeListing` happens to be the model
+        // carrying the brace; a comment added to any other model would empty
+        // that model out of the population with nothing objecting.
+        //
+        // Built as a synthetic schema so it keeps its teeth no matter how the
+        // real one changes.
+        const synthetic = [
+            'enum WidgetStatus {',
+            '  ACTIVE',
+            '  EXPIRED',
+            '}',
+            '',
+            'model Widget {',
+            '  id     String @id',
+            '  /// Served at `/w/{handle}` — this brace is the whole test.',
+            '  status WidgetStatus',
+            '  expiresAt DateTime?',
+            '}',
+        ].join('\n');
+
+        const stripped = stripSchemaComments(synthetic);
+        expect(expiryShapedModels(stripped)).toEqual(['Widget']);
+
+        // And the control for the control: WITHOUT the strip, the same schema
+        // parses to nothing — so this test is measuring the strip and not
+        // merely restating that the parser works.
+        expect(expiryShapedModels(synthetic)).toEqual([]);
+    });
 
     it('finds the known expiry-shaped models (parser sanity)', () => {
         expect(models).toEqual(expect.arrayContaining(['ExchangeListing']));

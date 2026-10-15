@@ -617,9 +617,25 @@ Three seams keep a PWA relaunch cheap on rural LTE — see
   bounded first page (`JOURNAL_PAGE_SIZE = 50`) and pages forward over
   the `?limit`/`?cursor` path via `useCursorPagination` (its additive
   `reload()` reseeds the accumulator on a filter/optimistic change).
-  The paginated `/journal` branch returns `{ rows, nextCursor }`; the
-  bare `/journal` (no params) still returns a flat array (offline
-  outbox replay depends on it).
+    The paginated `/journal` branch returns `{ rows, nextCursor }`; the
+    bare `/journal` (no params) still returns a flat array, kept for
+    BACKWARD COMPATIBILITY with clients that predate the cursor branch.
+    **Nothing in this repo or in the iOS client reads it** (#1881, owner
+    ruling 2026-10-15: keep it, fix the sentence). This line said "offline
+    outbox replay depends on it" until then, which was the only recorded
+    reason the branch survived the move to cursor pagination, and it was
+    false: no `useTenantSWR` or `apiGet` in `src/` requests it (the two
+    `buildUrl('/journal')` hits are POSTs), `src/lib/offline/**` never
+    reads `/journal` at all, `public/sw.js` — the outbox's parallel
+    reimplementation, and the one place a `src/` sweep would be blind —
+    does not contain the word, and the iOS journal always sends
+    `?limit=50` while its outbox replays writes only. Retiring it would
+    therefore be defensible, and is deliberately NOT done: it is `live` in
+    the append-only `src/generated/route-inventory.json`, so removal is an
+    act with a written reason, and nobody has established that no shipped
+    iOS build calls it — #1087 is what a silent route removal costs (five
+    renamed routes, an iOS client 404ing for four days). If you are about
+    to reason from this branch having a dependant: it has none.
 
 ### Offline outbox durability
 
@@ -637,9 +653,32 @@ evict. The rules, each of which has cost something to learn:
   waiting, of which M cannot move" — never two numbers an operator has to
   reconcile in a field.
 - **A poison item is PARKED, never deleted** — `flushOutbox` has exactly ONE
-  removal (success). Park through `parkIfStillQueued`, because `store.update`
+  removal, and since #1870 it is guarded by a completeness verdict rather than
+  by `res.ok` alone. Park through `parkIfStillQueued`, because `store.update`
   is an upsert and the page and service worker drain the same queue. A
   `refused` park MUST be surfaced with a per-item discard.
+- **A 2xx is delivery for every write but one.** `POST /journal/treatments` is
+  RESUMABLE rather than atomic — the per-parcel mark writes each ДНЕВНИК entry
+  — so it can answer 201 having recorded fewer parcels than were sent. An item
+  may therefore carry `completeWhen: { field, equals }`, and a 2xx that does
+  not satisfy it RETAINS the item for a re-send under the same
+  `Idempotency-Key`. It is DATA, not a predicate function: the row is written
+  to IndexedDB and replayed later, possibly by `public/sw.js` with no page at
+  all, and a closure survives neither. An expectation that cannot be
+  evaluated — unreadable body, missing field, wrong type — counts as NOT
+  finished, because retaining costs a deduped retry while the other direction
+  drops field work out of a compliance register.
+  **THREE senders have to honour it**, and `public/sw.js` cannot import from
+  `src/`, so its copy is by hand: `use-offline-sync.ts` (`submit`, online-first),
+  `sync.ts` (`flushOutbox`, page) and `public/sw.js` (`flushOutbox`, Background
+  Sync). A sender that treats every 2xx as delivered DELETES an item the others
+  are deliberately retaining — and leaves a delivery receipt, which is the one
+  trace the page uses to tell a drain apart from an eviction, so the register
+  ends short while every signal says it is fine.
+  `tests/guards/outbox-completion-mirrors-the-sw.test.ts` enforces the mirror
+  that the 426 arm's own comment records as enforced by nothing;
+  `tests/unit/offline/outbox-completion-expectation.test.ts` executes both
+  drains, the worker included.
 - **Request `navigator.storage.persist()` at the FIRST ENQUEUE**, not on first
   paint, and read the CACHED verdict (`agri.offline.durability.v1`) rather than
   re-measuring. Installed PWA grants on iOS; Safari refuses — so Add-to-Home-
@@ -808,6 +847,18 @@ others as backstops.
   `sanitizeRichTextHtml` / `sanitizePlainText` from `@/lib/security/sanitize` —
   never at render time only, because the row is also read by PDF export, share
   links and SDK consumers. Do not widen the allowlist without a security review.
+  **`sanitizePlainText` TRIMS, since #1825**, so the repo's standard blank
+  check — `const name = sanitizePlainText(x); if (!name) throw …_REQUIRED` —
+  now refuses a whitespace-only value, and no stored plain-text field keeps
+  leading or trailing whitespace. It did not until 2026-10-15: `'   '` was
+  truthy, so a name of three spaces passed a check whose own code says it is
+  required, and 17 of the 28 blank-check sites had independently reached for
+  a local `.trim()` to compensate — which is what made trimming inside the
+  one function the right fix (owner ruling) over a helper or 28 edits. Only
+  the ENDS are trimmed, so multi-line notes keep their internal newlines. A
+  **zero-width space (U+200B) survives** and is still truthy — `String.trim`
+  does not match it — recorded and asserted rather than fixed, because
+  widening past `String.trim` means deciding which characters count as blank.
 
 **When you add an auth scheme that is not the session cookie, add an HTTP-level
 test that crosses the middleware.** `token.error`, the `iflk_` API key and SCIM
@@ -1445,6 +1496,30 @@ duplicating the limits table).
 
 Several mechanisms in this repo let a check pass without verifying
 anything. All read as green forever, so all are named here.
+
+**A denominator goes in the step summary, and it needs a `[tag]` (#1879).**
+Many guards here print their population, for the reason
+`a-gate-narrow-enough-to-always-pass` gives: a floor separates zero from
+nonzero, and the reading is what shows a population quietly shrinking while
+still above its floor. Those prints went nowhere for as long as the
+convention existed — **jest's default reporter drops `console.log` entirely
+once a run has more than one suite** (measured: 1 suite prints, 2 print
+nothing, `--verbose` restores it), and CI shards the whole tree with no
+`--verbose`.
+
+`tests/reporters/denominator-summary.cjs` collects them now. It takes any
+console line whose first non-space characters are a kebab `[tag]` and appends
+it to `$GITHUB_STEP_SUMMARY`, labelled with the shard. So: **start the line
+with a `[tag]`, and tag EVERY line of a multi-line reading** — collection is
+per line, so an untagged continuation is silently dropped and the reading
+arrives truncated. 32 tags / 46 readings across the 750 guard + guardrail
+suites today.
+
+It is a READING, never a gate: the floor is still what fails the build. The
+reporter is wrapped so it cannot fail a run, and `formatSummary` returns an
+empty string rather than an empty heading, because a "Guard denominators"
+section with no rows reads as "the guards found nothing" when it means
+"nothing was collected".
 
 **Guards assert on source text, not behaviour.** Every file under
 `tests/guards/` — and most of `tests/guardrails/` — `readFileSync`s a

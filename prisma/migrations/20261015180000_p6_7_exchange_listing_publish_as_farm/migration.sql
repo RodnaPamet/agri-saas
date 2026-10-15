@@ -1,0 +1,20 @@
+-- P6.7 (#1816) — the source for a listing published AS THE FARM.
+--
+-- `sellerDisplayName` has always been free text a seller types, which means
+-- it cannot assert anything a seller could not simply claim. This column
+-- holds the verified alternative: when set, the listing's seller name is
+-- resolved from the tenant's own PUBLISHED `FarmBrand` and the listing links
+-- to `/f/{handle}`.
+--
+-- Only the DECISION lives here. The identity it resolves to is read live from
+-- the brand at projection time, so a farm that renames its handle or
+-- withdraws its public profile changes every old listing in the same moment.
+-- A snapshotted name and handle would instead leave listings pointing at an
+-- address that stopped answering.
+--
+-- Defaults to false, which is the answer every existing row already gives
+-- implicitly, so this changes no listing's behaviour. Plain additive: no
+-- previous image can break on it (CLAUDE.md's migration policy), and nothing
+-- writes it yet — the writer is a later PR, one release behind, the same
+-- split `FarmBrand.indexable` used in #1850 / #1873.
+ALTER TABLE "ExchangeListing" ADD COLUMN "publishAsFarm" BOOLEAN NOT NULL DEFAULT false;
