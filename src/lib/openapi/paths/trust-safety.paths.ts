@@ -16,7 +16,7 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
 import { FileReportSchema, PersonBlockSchema } from '@/lib/schemas';
-import { op } from './helpers';
+import { NO_AUTH, op } from './helpers';
 
 const FiledReceiptSchema = z
     .object({
@@ -84,6 +84,8 @@ export function registerTrustSafetyPaths(registry: OpenAPIRegistry): void {
         method: 'post',
         path: '/api/public/notices',
         operationId: 'fileAnonymousNotice',
+        // Anonymous by design — see NO_AUTH (#1843).
+        security: NO_AUTH,
         summary: 'DSA Art 16 — file a notice without an account',
         description:
             'The anonymous notice mechanism. Art 16 requires a way for **any** person or entity to notify illegal content, so requiring an account would be requiring an account to exercise a right — this is the one write path in the product that accepts a body from nobody. '

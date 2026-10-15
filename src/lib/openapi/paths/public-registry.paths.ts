@@ -18,7 +18,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { NO_AUTH, op } from './helpers';
 
 /**
  * The 200 body, shared by BOTH methods of `/api/public/eik-check` (#1356).
@@ -60,7 +60,6 @@ const EikCheckResult = z
     });
 
 /** Nothing to authenticate with — that is the point of the prefix. */
-const NO_AUTH: Array<Record<string, string[]>> = [];
 
 export function registerPublicRegistryPaths(registry: OpenAPIRegistry): void {
     // Shared between the two methods so one description cannot drift from the
