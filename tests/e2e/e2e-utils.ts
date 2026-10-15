@@ -7,7 +7,17 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve as resolvePath } from 'node:path';
-import { expect, type APIRequestContext, type Page, type Locator } from '@playwright/test';
+// `type Request` explicitly: without it `Request` resolves to the DOM global,
+// which has no `.failure()` — and the DOM one is structurally close enough
+// that the mistake would surface as a confusing error rather than a missing
+// import.
+import {
+    expect,
+    type APIRequestContext,
+    type Page,
+    type Locator,
+    type Request,
+} from '@playwright/test';
 
 import prisma from '@/lib/prisma';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
@@ -811,15 +821,41 @@ export async function expectRouteTransition(
     // What is collected answers the questions the measured facts leave open:
     // one selection toggle took effect, the second click reached nothing, and
     // the selection ended cleared — without the row node being replaced.
+    // Armed BEFORE the URL wait, because the evidence it gathers cannot be
+    // recovered afterwards. A Resource Timing entry is created on RESPONSE
+    // END, so an aborted fetch leaves none — `getEntriesByType('resource')`
+    // inside the page is structurally blind to the one event that would
+    // explain a navigation that rolls back, and that is the live hypothesis
+    // on #1862. Playwright's `requestfailed` sees it.
+    const failedRequests: string[] = [];
+    const onRequestFailed = (req: Request): void => {
+        failedRequests.push(
+            `${req.method()} ${req.url().slice(-100)} — ${req.failure()?.errorText ?? 'unknown'}`,
+        );
+    };
+    page.on('requestfailed', onRequestFailed);
     try {
         await page.waitForURL(opts.url, {
             timeout: opts.navTimeout ?? 15_000,
             waitUntil: 'domcontentloaded',
         });
     } catch (err) {
+        page.off('requestfailed', onRequestFailed);
+        // Reported on THIS half too, not just the paint half. Attaching
+        // evidence to only one branch is the exact mistake this file records
+        // having made once already — the diagnostics went on the `waitForURL`
+        // catch while the paint catch produced nothing, and six hypotheses
+        // were refuted without reaching a cause. An aborted request explains
+        // a URL that never changed just as readily as one that rolls back.
         throw new Error(
             `${(err as Error).message}\n` +
                 `--- #1076 diagnostics (the artifact for this attempt is not kept) ---\n` +
+                `  expected url   : ${String(opts.url)}\n` +
+                `  failed/aborted requests: ${
+                    failedRequests.length === 0
+                        ? 'NONE'
+                        : `${failedRequests.length}\n    ${failedRequests.slice(-6).join('\n    ')}`
+                }\n` +
                 (opts.rowsBefore === undefined
                     ? ''
                     : `  rows BEFORE gesture: ${opts.rowsBefore}   <- compare with \`rows\` below;` +
@@ -837,17 +873,29 @@ export async function expectRouteTransition(
     // message channel is that the job log survives a flake whose artifact may
     // not. Wired to the other half now too.
     //
-    // `describeListState` is deliberately NOT reused: by here the URL wait has
-    // passed, so the page is the DETAIL page and a list's rows and selection
-    // describe a page that is gone.
+    // `describeListState` is deliberately NOT reused: a list's rows and
+    // selection describe a different page's state.
+    //
+    // CORRECTED 2026-10-16: the reason given here was "by here the URL wait
+    // has passed, so the page is the DETAIL page". That premise is false in
+    // exactly the case that fires. Measured twice — 2026-10-15 and
+    // 2026-10-16 — the URL at paint failure is the LIST again, with
+    // `h1: Farm Assets` and no `entity-detail-*` testid present. The URL wait
+    // passing means the URL was the destination at some instant, not that it
+    // still is: the transition is ROLLED BACK, not merely unpainted.
     try {
         await expect(opts.content).toBeVisible({ timeout: opts.paintTimeout ?? 30_000 });
     } catch (err) {
         throw new Error(
             `${(err as Error).message}\n` +
                 `--- #1076 PAINT-wait diagnostics (the URL wait above SUCCEEDED) ---\n` +
-                (await describeDetailPaintState(page, opts.content)),
+                (await describeDetailPaintState(page, opts.content, {
+                    expectedUrl: String(opts.url),
+                    failedRequests,
+                })),
         );
+    } finally {
+        page.off('requestfailed', onRequestFailed);
     }
 }
 
@@ -861,7 +909,11 @@ export async function expectRouteTransition(
  *
  * The per-field reasoning lives in `./detail-paint-state`, next to the type.
  */
-async function describeDetailPaintState(page: Page, content: Locator): Promise<string> {
+async function describeDetailPaintState(
+    page: Page,
+    content: Locator,
+    extra: { expectedUrl?: string; failedRequests?: string[] } = {},
+): Promise<string> {
     let contentCount: number | undefined;
     try {
         contentCount = await content.count();
@@ -913,12 +965,12 @@ async function describeDetailPaintState(page: Page, content: Locator): Promise<s
                 detailRequests,
             };
         });
-        return formatDetailPaintState({ ...inPage, contentCount });
+        return formatDetailPaintState({ ...inPage, contentCount, ...extra });
     } catch (e) {
         // Still print what was gathered outside the page — the locator count
         // alone distinguishes absent from hidden, which is the first question.
         return (
-            formatDetailPaintState({ contentCount })
+            formatDetailPaintState({ contentCount, ...extra })
             + `\n  (in-page diagnostics unavailable: ${(e as Error).message.slice(0, 80)})`
         );
     }

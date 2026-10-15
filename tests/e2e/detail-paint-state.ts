@@ -71,6 +71,26 @@ export interface DetailPaintState {
     bodyTextLength?: number;
     nextErrorOverlay?: boolean;
     detailRequests?: Array<{ name: string; ms: number }>;
+    /**
+     * The URL the transition was waiting FOR.
+     *
+     * `detailRequests` is filtered on `location.pathname` read at failure
+     * time, and the measured failure has the URL back on the LIST — so "this
+     * URL" is the page the test navigated away from, and the report could not
+     * say whether the destination was ever fetched. Carrying the expected URL
+     * separately is what makes that question answerable.
+     */
+    expectedUrl?: string;
+    /**
+     * Requests that FAILED or were aborted during the transition.
+     *
+     * Not available from inside the page: a Resource Timing entry is created
+     * on response end, so an aborted fetch leaves no entry and
+     * `getEntriesByType('resource')` cannot see the one event that would
+     * explain a rolled-back navigation. Collected from Playwright's
+     * `requestfailed`, which does.
+     */
+    failedRequests?: string[];
 }
 
 const UNKNOWN = '?';
@@ -128,6 +148,25 @@ export function formatDetailPaintState(s: DetailPaintState): string {
         `  testids present: ${show(s.testidTotal)} total`
             + (s.testids && s.testids.length > 0 ? ` — ${s.testids.join(', ')}` : ''),
     );
+    if (s.expectedUrl !== undefined) {
+        lines.push(`  expected url   : ${s.expectedUrl}   <- what the wait was FOR`);
+    }
+    // ABSENT and NOT-COLLECTED kept apart, exactly as `detailRequests` does
+    // below: "no request failed" and "nobody looked" are different facts and
+    // the first is the interesting one.
+    if (s.failedRequests === undefined) {
+        lines.push(`  failed/aborted requests: ${UNKNOWN}`);
+    } else if (s.failedRequests.length === 0) {
+        lines.push(
+            '  failed/aborted requests: NONE'
+                + '   <- nothing was aborted, so a dropped flight request is NOT the cause',
+        );
+    } else {
+        lines.push(`  failed/aborted requests: ${s.failedRequests.length}`);
+        for (const f of s.failedRequests.slice(-REQUEST_TAIL)) lines.push(`    ${f}`);
+        const omitted = s.failedRequests.length - Math.min(s.failedRequests.length, REQUEST_TAIL);
+        if (omitted > 0) lines.push(`    (${omitted} earlier failure(s) not shown)`);
+    }
     if (s.detailRequests === undefined) {
         lines.push(`  requests for this URL: ${UNKNOWN}`);
     } else if (s.detailRequests.length === 0) {
