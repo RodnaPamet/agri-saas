@@ -15,6 +15,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import {
     badRequest,
     notFound,
+    codedNotFound,
     configurationError,
     externalServiceError,
 } from '@/lib/errors/types';
@@ -57,7 +58,7 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
 
     if (!tenant) {
         ssoLog('warn', 'Tenant not found', { ...logCtx, stage: 'start' });
-        throw notFound('Tenant not found');
+        throw codedNotFound('TENANT_NOT_FOUND', 'Tenant not found');
     }
 
     // ── Load provider config ──

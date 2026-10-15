@@ -88,6 +88,29 @@ const BATCH_2: ReadonlyArray<[code: string, english: string]> = [
     ['UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE', 'This image cannot be published.'],
 ];
 
+/**
+ * Batch 3 — chosen by REACH rather than by throw-site count, which is the
+ * wrong axis. `TENANT_NOT_FOUND` has two call sites and both are in
+ * `lib/tenant-context.ts`, which every tenant-scoped request passes through;
+ * the agrent-ios peer measured the same two codes as documented on all 109
+ * operations the phone calls. A code with seven sites in one usecase is
+ * narrower than a code with two in the request path.
+ *
+ * The MFA family is here for the WEB. The peer's reading is that the phone
+ * branches on these in code rather than displaying them, so the sentence buys
+ * it nothing — but `api-client.ts` prints `error.message` at 142 web call
+ * sites with no language test, so on the web an MFA refusal was English prose
+ * in front of a Bulgarian farmer.
+ */
+const BATCH_3: ReadonlyArray<[code: string, english: string]> = [
+    ['MFA_CODE_MALFORMED', 'A six-digit code is required.'],
+    ['MFA_ENROLLMENT_REQUIRED', 'This farm requires a second factor and this account has none set up yet. Set up an authenticator from the web, then sign in again.'],
+    ['MFA_REQUIRED', 'MFA verification required.'],
+    ['MFA_TICKET_INVALID', 'The sign-in attempt is no longer valid.'],
+    ['TENANT_IDENTIFIER_REQUIRED', 'Tenant identifier required'],
+    ['TENANT_NOT_FOUND', 'Tenant not found'],
+];
+
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
 
 beforeEach(() => {
@@ -198,14 +221,113 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 1)', () => {
         expect(p.error.message).toBe(original);
     });
 
-    it('a code with NO entry is left alone, which is the 109 still to do', async () => {
+    it('a code with NO entry is left alone, which is still most of them', async () => {
         // The boundary. An invented code must pass through untouched, or this
-        // batch would be claiming coverage it does not have — and a
+        // batch would be claiming coverage it does not have. The count is out
+        // of the NAME deliberately — it was "109 still to do" and is 81 after
+        // batch 3, and a number in a name goes stale with nothing failing — and a
         // `localizeErrorPayload` that invented a sentence for an unknown code
         // would be worse than leaving the English.
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
         const p = payload('NOT_A_REAL_CODE_1918', 'Original English stays.');
         await localizeErrorPayload(p);
         expect(p.error.message).toBe('Original English stays.');
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 3)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // 88 codes had no entry before this batch, counted with comments
+        // BLANKED: a `@throws codedBadRequest('INVALID_LIMIT')` in a docblock
+        // had inflated that code from 0 real sites to 4, and a scar is not a
+        // wound. 81 remain after this one.
+        // BATCH_3.length is 6, and the batch added SEVEN entries:
+        // MFA_CODE_INVALID carries a param and has its own case below, so it
+        // is not in the table. Printing the table length alone would
+        // under-report the batch by one.
+        console.log(
+            `[refusal-bg] batch 3 added 7 entries (${BATCH_3.length} in this table` +
+                ` + MFA_CODE_INVALID), of 88 untranslated before it, 81 after`,
+        );
+        expect(BATCH_3.length).toBeGreaterThanOrEqual(6);
+    });
+
+    it.each(BATCH_3.map(([c, e]) => [c, e] as const))(
+        'batch 3: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('TENANT_NOT_FOUND says WHICH thing is gone, which is the whole point', async () => {
+        // The peer's reason for ranking this first: on the phone a bare 404
+        // renders «Търсеното не беше намерено.», and someone looking at their
+        // own farm learns nothing from it. The entry has to name the farm and
+        // the two things that actually happened — removed, or access ended —
+        // or it is the generic sentence with extra steps.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('TENANT_NOT_FOUND', 'Tenant not found');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toContain('стопанство');
+        expect(p.error.message).not.toMatch(/Търсеното/);
+    });
+
+    it('MFA_CODE_INVALID interpolates the remaining attempts', async () => {
+        // A NUMBER, which `localize.ts`'s rule permits in a sentence. The
+        // site already passes `attemptsRemaining`, so unlike FILE_TOO_LARGE
+        // in batch 2 no call site had to change.
+        //
+        // Phrased as a list ("Оставащи опити: 2") rather than agreeing with
+        // the number, because «Остават 1 опита» is wrong and no entry in
+        // `errors.*` uses ICU plurals yet — introducing that convention
+        // belongs in its own change, not in a batch about coverage.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('MFA_CODE_INVALID', 'That code is not right.');
+        p.error.params = { attemptsRemaining: '2' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).toContain('2');
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('INVALID_LIMIT has NO entry, deliberately', async () => {
+        // Three sites, three DIFFERENT sentences, and both of the things that
+        // distinguish them live in the English template rather than on the
+        // wire: a caller-supplied `opts.label` (so the same code says "Invalid
+        // limit" or "Invalid radius" depending on who called it) and the
+        // received value. One entry would flatten all three and lose the
+        // label, in every locale — rule 3.
+        //
+        // It is not unfixable, and the fix is a separate change: pass
+        // `{ reason: 'empty' | 'not_an_integer' }` and the label as params,
+        // then write a variant TABLE, which `DISCRIMINATORS` already supports
+        // because `reason` is one. Recorded on #1918 rather than half-done
+        // here, because the validator is shared by every list endpoint.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const original = 'Invalid radius: must be a positive integer; received "x".';
+        const p = payload('INVALID_LIMIT', original);
+        await localizeErrorPayload(p);
+        expect(p.error.message).toBe(original);
+    });
+
+    it('THREAD_CLOSED gets no entry because the code is RETIRED', async () => {
+        // The peer nominated it from the spec. The spec mention is the
+        // sentence that documents its REMOVAL — "This previously returned 400
+        // `THREAD_CLOSED`; that refusal is gone, because either party can
+        // close and a refusal would let one side mute the other permanently"
+        // — and `openapi.json` documents it on no operation at all. Nothing
+        // in `src/` throws it.
+        //
+        // Asserted so the next batch does not re-nominate it: an entry for a
+        // code nothing raises is dead copy that reads as coverage.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('THREAD_CLOSED', 'This thread is closed.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toBe('This thread is closed.');
     });
 });
