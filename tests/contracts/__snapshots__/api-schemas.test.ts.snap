@@ -6217,6 +6217,31 @@ exports[`API contract — per-schema snapshots schema: ExportedAccount 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmBrandHandleClaimResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "handle": {
+      "type": "string",
+      "description": "The address the farm now holds, NORMALISED — lower-cased and transliterated from Cyrillic. This is what \`/f/{handle}\` will serve, and it is often not what was submitted: \`Победа\` is stored and served as \`pobeda\`. Show it back to the owner rather than echoing their input, or they will discover the difference from a link that does not work."
+    },
+    "normalised": {
+      "type": "boolean",
+      "description": "True when the stored address differs from the submitted one. Exists so a client can say \\"your page will be at /f/pobeda\\" at the moment of choosing instead of after publishing."
+    },
+    "reprojected": {
+      "type": "boolean",
+      "description": "True when the farm was already published and the public page moved as part of this call. The OLD address stops answering immediately — which matters because it may be printed on paper (P6.7) or shared in a chat that cannot be edited."
+    }
+  },
+  "required": [
+    "handle",
+    "normalised",
+    "reprojected"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmBrandProjectionResult 1`] = `
 "{
   "type": "object",
