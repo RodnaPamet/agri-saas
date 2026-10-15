@@ -178,3 +178,74 @@ export function contentDisposition(
 
     return `${disposition}; filename="${ascii}"; filename*=UTF-8''${extended}`;
 }
+
+/**
+ * Read a filename back OUT of a `Content-Disposition` header (#1833).
+ *
+ * The inverse of `contentDisposition()` above, and deliberately in the same
+ * module: the two halves must agree about `filename*`, and a change to the
+ * builder that the reader does not follow is invisible when they live apart.
+ *
+ * ## Why this exists
+ *
+ * Ten routes build an RFC 5987 header so a Bulgarian filename survives a
+ * download. Three client sites consumed one, and two threw that away:
+ * `journal/[id]/page.tsx` matched `/filename="?([^"]+)"?/` — note the missing
+ * `=`, so it also matches the literal `filename` inside `filename*=` and
+ * would capture `*=UTF-8''%D0%94…` as the name if the parameters were ever
+ * emitted in the other order — and `planning/seasons` ignored the header
+ * entirely. So the server paid to carry the real name and the browser never
+ * saw it.
+ *
+ * ## The cases, each a decision
+ *
+ * 1. **`filename*` wins.** It carries the truth; the quoted half is a
+ *    transliteration (`faktura-2026.pdf` for «Фактура-2026.pdf»).
+ * 2. **`charset'lang'value`.** RFC 5987's extended value has THREE parts and
+ *    the language is usually empty — `UTF-8''%D0%94…`. A reader that splits
+ *    on the first quote and decodes the rest returns `'%D0%94…` with a
+ *    leading quote, which is the shape most hand-rolled parsers get wrong.
+ * 3. **A charset that is not UTF-8 is ignored** rather than guessed at. The
+ *    builder only ever emits UTF-8, so anything else came from somewhere
+ *    else and the quoted half is the safer answer.
+ * 4. **A bad percent-encoding falls back** instead of throwing:
+ *    `decodeURIComponent('%E0%A4%A')` raises `URIError`, and a malformed
+ *    header must not take down the download.
+ * 5. **Path separators are stripped.** A filename is a NAME; `../` in it is
+ *    not the user's name and some clients have historically mishandled it.
+ *    Matches `isSafeForQuoted`'s reasoning above.
+ * 6. **Returns `null`, not `''`**, when there is nothing usable, so a caller
+ *    can `?? fallbackName` in one expression.
+ */
+export function parseContentDispositionFilename(
+    header: string | null | undefined,
+): string | null {
+    if (!header) return null;
+
+    const extended = /filename\*\s*=\s*([^;]+)/i.exec(header);
+    if (extended) {
+        // `charset'language'percent-encoded-value`
+        const parts = /^\s*([^']*)'([^']*)'([\s\S]*)$/.exec(extended[1].trim());
+        if (parts && /^utf-?8$/i.test(parts[1])) {
+            try {
+                const decoded = basename(decodeURIComponent(parts[3].trim()));
+                if (decoded) return decoded;
+            } catch {
+                // Malformed encoding — fall through to the quoted parameter.
+            }
+        }
+    }
+
+    // `filename=` with the `=` REQUIRED, which is what stops this matching
+    // inside `filename*=`.
+    const quoted = /filename\s*=\s*(?:"([^"]*)"|([^;]*))/i.exec(header);
+    const raw = quoted?.[1] ?? quoted?.[2];
+    const plain = basename((raw ?? '').trim());
+    return plain || null;
+}
+
+/** A filename is a NAME: drop anything that looks like a path. */
+function basename(name: string): string {
+    const last = name.replace(/\\/g, '/').split('/').pop() ?? '';
+    return last === '.' || last === '..' ? '' : last;
+}

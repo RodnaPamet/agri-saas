@@ -13,6 +13,7 @@ import { OfflineConflictBanner } from '@/components/offline/OfflineConflictBanne
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { Button } from '@/components/ui/button';
 import { Download, Plus, Trash } from '@/components/ui/icons/nucleo';
+import { parseContentDispositionFilename } from '@/lib/http/content-disposition';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DeletedJournalView } from './DeletedJournalView';
 import { Fab } from '@/components/ui/fab';
@@ -250,29 +251,16 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                 );
                 if (!res.ok) throw new Error(String(res.status));
                 const blob = await res.blob();
-                // RFC 5987's extended form FIRST, then the quoted ASCII
-                // half. `contentDisposition()` emits both when the name is
-                // not ASCII-safe (`filename="dnevnik-blok-a.pdf";
-                // filename*=UTF-8''%D0%94…`), and the extended one carries
-                // the real Bulgarian name while the quoted one is a
-                // transliteration. The iOS client already reads both.
-                //
-                // Note the `=`: the older regex at `journal/[id]/page.tsx`
-                // is `/filename="?([^"]+)"?/`, which matches the literal
-                // `filename` inside `filename*=` and would capture
-                // `*=UTF-8''%D0%94…` as the filename if the two parameters
-                // were ever emitted in the other order. Harmless today
-                // because the ASCII half is written first.
-                const cd = res.headers.get('Content-Disposition') ?? '';
-                const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
-                const plain = cd.match(/filename="?([^";]+)"?/i);
-                const named = star
-                    ? decodeURIComponent(star[1])
-                    : (plain?.[1] ?? '').trim();
+                // One parser, shared with the builder that writes the header
+                // (#1833). This logic was inline here and the other two
+                // download sites each did something different.
+                const named = parseContentDispositionFilename(
+                    res.headers.get('Content-Disposition'),
+                );
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = named || `dnevnik-${treatmentGroupId}.pdf`;
+                a.download = named ?? `dnevnik-${treatmentGroupId}.pdf`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
