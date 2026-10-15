@@ -32,7 +32,7 @@
     {
       "path": "/api/account/avatar",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/account/avatar/{userId}",
