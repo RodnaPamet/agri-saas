@@ -164,6 +164,38 @@ export type RlsBypassReason =
      */
     | 'farm-handle-availability'
     /**
+     * Resolving which seller tenants are PUBLISHED farms, to attribute an
+     * exchange listing to the farm that posted it — P6.7 (#1816).
+     *
+     * The bypass is load-bearing rather than convenient, and for exactly the
+     * reason `module-availability` below gives for the same feed: `FarmBrand`
+     * is tenant-scoped, so under the viewer's own context this read would
+     * return at most the VIEWER's own brand. Every other farm's listing would
+     * silently fall back to anonymous, and the feature would appear to work
+     * for whoever was testing it.
+     *
+     * Bounded three ways, and none of them is the caller's discipline:
+     *
+     *   - It selects `tenantId`, `handle` and `displayName` ONLY. Those three
+     *     are already public for a published farm — `handle` and
+     *     `displayName` are served at `/f/{handle}` to anonymous visitors.
+     *   - It filters `published: true`. An unpublished or withdrawn farm is
+     *     not returned at all, so a listing cannot name a farm that has no
+     *     public page. That is what makes withdrawal propagate to every old
+     *     listing in the same moment.
+     *   - It takes an explicit list of tenant ids the caller already holds —
+     *     the sellers on ONE page of listings. There is no unfiltered read,
+     *     so it answers "is this seller a published farm" and never "which
+     *     farms exist".
+     *
+     * `tenantId` is in the projection because it is the join key and the
+     * caller needs it to put the right name on the right row. It never
+     * reaches the wire: `toPublicListing` emits `farmHandle`, and
+     * `ExchangePublicListing` has carried no raw tenant id since it was
+     * written.
+     */
+    | 'exchange-farm-attribution'
+    /**
      * Reading tenant-scoped `TenantModuleSettings` to compute a
      * marketplace-wide exclusion — which sellers have the EXCHANGE module
      * off. Selects tenant IDs only.
@@ -280,6 +312,7 @@ export async function runWithoutRls<T>(
 const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'public-projection-read': true,
     'farm-handle-availability': true,
+    'exchange-farm-attribution': true,
     'auth-tenant-discovery': true,
     'auth-credentials': true,
     'webhook-ingest': true,

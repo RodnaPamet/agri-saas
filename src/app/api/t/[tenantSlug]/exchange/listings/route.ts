@@ -148,6 +148,7 @@ export const POST = withApiErrorHandling(
                 regionCode: body.regionCode,
                 description: body.description ?? null,
                 sellerDisplayName: body.sellerDisplayName ?? null,
+                publishAsFarm: body.publishAsFarm,
                 // PRIVATE — persisted here, withheld by `toPublicListing` (and
                 // by every other listing projection). It only ever reaches a
                 // browser through `toPublicInquiry`'s reveal gate, i.e. to the

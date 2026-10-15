@@ -37,6 +37,68 @@ function row(overrides: Partial<ExchangeListingRow> = {}): ExchangeListingRow {
     };
 }
 
+describe('toPublicListing — farm attribution (P6.7, #1816)', () => {
+    const FARM = { handle: 'pobeda', displayName: 'Стопанство Победа' };
+
+    it('shows the farm when the seller asked AND the farm is published', () => {
+        const out = toPublicListing(row({ publishAsFarm: true, farm: FARM }), 'tenant-2');
+        // The VERIFIED name replaces whatever was typed. 'Acme Farm' is the
+        // row's own `sellerDisplayName`, so this also proves the override
+        // direction rather than a coincidental match.
+        expect(out.sellerDisplayName).toBe('Стопанство Победа');
+        expect(out.farmHandle).toBe('pobeda');
+    });
+
+    it('does NOT attribute a listing whose seller did not ask', () => {
+        // The privacy assertion, and the one most worth having: a farm with a
+        // public page must not have every listing it posts silently named.
+        // `publishAsFarm` is per-listing precisely so that "my farm has a
+        // page" and "name my farm on THIS offer" stay separate answers.
+        const out = toPublicListing(row({ publishAsFarm: false, farm: FARM }), 'tenant-2');
+        expect(out.sellerDisplayName).toBe('Acme Farm');
+        expect(out.farmHandle).toBeNull();
+    });
+
+    it('falls back to the typed name when the farm has withdrawn its page', () => {
+        // `farm: null` is what the resolver returns for a seller who is not a
+        // published farm — never published, or withdrawn since. This is the
+        // behaviour that makes withdrawal propagate to old listings without
+        // writing to any of them.
+        const out = toPublicListing(row({ publishAsFarm: true, farm: null }), 'tenant-2');
+        expect(out.sellerDisplayName).toBe('Acme Farm');
+        expect(out.farmHandle).toBeNull();
+    });
+
+    it('falls back when nobody resolved the attribution at all', () => {
+        // `farm` ABSENT rather than null — a caller that forgot to resolve.
+        // Fail-closed: a listing never claims an identity that was not
+        // confirmed on this read. A test rather than a comment because the
+        // optionality exists for `toPublicInquiry`'s nested listing and is
+        // therefore reachable.
+        const out = toPublicListing(row({ publishAsFarm: true }), 'tenant-2');
+        expect(out.sellerDisplayName).toBe('Acme Farm');
+        expect(out.farmHandle).toBeNull();
+    });
+
+    it('emits a handle and never a url or a tenant id', () => {
+        const out = toPublicListing(row({ publishAsFarm: true, farm: FARM }), 'tenant-2');
+        // The client builds `/f/{handle}`. Shipping a url here would put the
+        // base url in the wire shape, and this projection has never carried a
+        // raw owning-tenant id either.
+        expect(out.farmHandle).not.toMatch(/https?:|\//);
+        expect(JSON.stringify(out)).not.toContain('tenant-1');
+    });
+
+    it('leaves an anonymous listing anonymous', () => {
+        const out = toPublicListing(
+            row({ sellerDisplayName: null, publishAsFarm: false, farm: null }),
+            'tenant-2',
+        );
+        expect(out.sellerDisplayName).toBeNull();
+        expect(out.farmHandle).toBeNull();
+    });
+});
+
 describe('toPublicListing', () => {
     it('marks isOwn true only for the viewing tenant and never leaks the tenant id', () => {
         const own = toPublicListing(row(), 'tenant-1');
@@ -61,8 +123,17 @@ describe('toPublicListing', () => {
         const dto = toPublicListing(row(), 'tenant-9');
         // The complete, exact public surface. lat/lon are the REGION centroid
         // (a coarse map pin), never exact parcel geometry.
+        //
+        // `farmHandle` joined the list in P6.7 (#1816) and is a DELIBERATE
+        // addition rather than an accommodation. It is public by construction:
+        // a handle identifies a page already served to anonymous visitors at
+        // `/f/{handle}`, and it is non-null only for a listing whose seller
+        // asked to be named AND whose farm is published at that moment. It is
+        // also what this list is for — the field had to be argued for rather
+        // than appearing, which is why this assertion is exact instead of a
+        // `toContain`.
         expect(Object.keys(dto).sort()).toEqual([
-            'commodity', 'createdAt', 'description', 'expiresAt', 'id', 'isOwn',
+            'commodity', 'createdAt', 'description', 'expiresAt', 'farmHandle', 'id', 'isOwn',
             'kind', 'lat', 'lon', 'priceCurrency', 'pricePerTonne', 'quantityTonnes',
             'regionCode', 'regionName', 'sellerDisplayName', 'side', 'status',
         ]);

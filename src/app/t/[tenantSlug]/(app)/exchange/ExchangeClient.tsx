@@ -621,7 +621,36 @@ function ExchangeInner() {
                                     </>
                                 )}
                                 <dt className="text-content-muted">{t('detailSeller')}</dt>
-                                <dd>{selectedOffer.sellerDisplayName || t('anonymousFarm')}</dd>
+                                {/* A verified farm gets a link to its public
+                                    page; anything else is plain text. P6.7
+                                    (#1816).
+
+                                    Only HERE and not in the feed row above:
+                                    that name sits inside a `<button>`, and an
+                                    anchor nested in a button is invalid and
+                                    unpredictable to activate. The feed still
+                                    shows the farm's real name — the projection
+                                    already resolved it — it just is not
+                                    clickable.
+
+                                    `rel="noopener"` and a new tab because this
+                                    leaves the application for a public page,
+                                    and a seller's page should not replace a
+                                    buyer's half-filled inquiry. */}
+                                <dd>
+                                    {selectedOffer.farmHandle ? (
+                                        <a
+                                            href={`/f/${selectedOffer.farmHandle}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="underline underline-offset-2"
+                                        >
+                                            {selectedOffer.sellerDisplayName || t('anonymousFarm')}
+                                        </a>
+                                    ) : (
+                                        selectedOffer.sellerDisplayName || t('anonymousFarm')
+                                    )}
+                                </dd>
                             </dl>
                             {selectedOffer.description && (
                                 <p className="whitespace-pre-wrap text-content-muted">{selectedOffer.description}</p>
