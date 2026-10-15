@@ -842,3 +842,64 @@ export async function recordFarmBrandConsent(
         };
     });
 }
+
+/**
+ * The farm's own public-profile draft, for the editor — #1884.
+ *
+ * The four write endpoints shipped without a read, so nothing could show an
+ * owner what they already had: the editor would open blank over existing
+ * content, and a farmer would have no way to see the handle they chose or
+ * whether consent was on record. Measured before this change — all four
+ * `farm-brand` routes exported `PUT` and nothing else.
+ *
+ * Returns the EDITOR's view, which is deliberately wider than the public
+ * projection: it includes the fields a reader never sees — `published`,
+ * `consentedAt`, `consentTextVersion`, `indexable` — because those are the
+ * state the form has to render. The public read path is
+ * `readPublicFarmProfile` and it stays narrow.
+ *
+ * `null` when there is no draft, not a 404: a farm that has never opened the
+ * editor is in a normal state and the form should show itself empty rather
+ * than an error. Only operations that need an existing draft refuse.
+ */
+export async function readFarmBrandDraft(ctx: RequestContext): Promise<{
+    handle: string | null;
+    displayName: string | null;
+    tagline: string | null;
+    about: string | null;
+    oblast: string | null;
+    crops: string[];
+    published: boolean;
+    publishedAt: Date | null;
+    consentedAt: Date | null;
+    consentTextVersion: string | null;
+    indexable: boolean;
+} | null> {
+    // Same gate as every write on this model: the public face of a farm is an
+    // owner concern, and a read that was looser than the write would let a
+    // member see a draft they cannot edit.
+    assertCanAdmin(ctx);
+
+    return runInTenantContext(ctx, (db) =>
+        db.farmBrand.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: {
+                handle: true,
+                displayName: true,
+                tagline: true,
+                about: true,
+                oblast: true,
+                crops: true,
+                published: true,
+                publishedAt: true,
+                consentedAt: true,
+                consentTextVersion: true,
+                indexable: true,
+                // `projectedHandle` and `tenantId` are deliberately NOT
+                // selected. The first is this writer's bookkeeping and means
+                // nothing to an editor; the second is the coupling the
+                // handle ruling exists to avoid putting in front of anyone.
+            },
+        }),
+    );
+}
