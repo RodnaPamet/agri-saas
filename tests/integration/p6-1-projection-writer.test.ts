@@ -187,18 +187,28 @@ describeFn('projectFarmBrand', () => {
         expect(row?.indexable).toBe(false);
     });
 
-    it('a REFRESH does not reset indexable — the upsert omits it on both branches', async () => {
-        // The case that proves the omission in the upsert is deliberate. Once
-        // P6.6 can set this, a routine republish must not silently de-index a
-        // farm that opted in — and `update: { ...payload }` with `indexable`
-        // in the payload would do exactly that.
+    it('a REFRESH does not silently de-index a farm that opted in', async () => {
+        // The SAME intent this test was written with — "a routine republish
+        // must not silently de-index a farm that opted in" — with its premise
+        // corrected.
+        //
+        // It used to set `indexable` on the PROJECTION and assert the upsert
+        // left it alone, because `FarmBrand` had no column to hold the choice
+        // and preservation was the only way to keep it. #1850 shipped that
+        // column and the allowlist now publishes it, so the opt-in lives on
+        // the brand and a refresh REPRODUCES it. Asserting the old mechanism
+        // would now be asserting that the projection can disagree with the
+        // owner's recorded choice.
+        //
+        // The complementary direction — brand wins over an out-of-band edit
+        // to the projection — is in `p6-6-indexable-toggle`.
         const farm = await aFarm();
-        await projectFarmBrand(farm.ctx);
-        await globalPrisma.publicFarmProfile.update({
-            where: { handle: farm.handle as string },
+        await globalPrisma.farmBrand.update({
+            where: { tenantId: farm.tenantId },
             data: { indexable: true },
         });
 
+        await projectFarmBrand(farm.ctx);
         await projectFarmBrand(farm.ctx);
 
         const row = await globalPrisma.publicFarmProfile.findUnique({
