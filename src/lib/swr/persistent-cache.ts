@@ -127,11 +127,22 @@ export const SWR_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
  *
  * The 24h whole-bucket age is UNCHANGED (owner ruling, same date). A
  * parcel's crop changes a few times a year, so a longer window was on
- * the table and declined: the ETag/304 seam makes a stale entry cost one
- * conditional request wherever there IS signal, and per-key ages are not
- * something this bucket can express — it carries one timestamp for the
- * whole tenant. The consequence, recorded rather than fixed, is that a
- * farmer returning after a day off still starts cold on every path here.
+ * the table and declined, on the argument that a stale entry costs one
+ * conditional request wherever there IS signal.
+ *
+ * **That argument was not true when it was made.** All three new routes
+ * answered with a plain JSON response and no `ETag`, so a revalidation
+ * was a FULL body — which for a crop's parcels is up to 5000 geometries
+ * on the rural LTE this whole cache exists for. The same change wires
+ * `jsonWithETag` into all three, which is also CLAUDE.md's standing rule
+ * for a cacheable list GET; without that half, allowlisting these paths
+ * would have traded an unopenable form for a heavier one. Do not reason
+ * from the 304 seam without checking the route still has it.
+ *
+ * Per-key ages are not something this bucket can express — it carries
+ * one timestamp for the whole tenant. The consequence, recorded rather
+ * than fixed, is that a farmer returning after a day off still starts
+ * cold on every path here.
  */
 const PERSISTABLE_PATHS: readonly string[] = [
     '/journal',
