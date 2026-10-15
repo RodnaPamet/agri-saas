@@ -70,9 +70,19 @@ describe('formatDetailPaintState', () => {
         expect(unknown).not.toContain('NONE');
     });
 
-    it('lists the requests it did find, newest-first order preserved, capped', () => {
+    it('keeps the MOST RECENT requests, which is the end the failure is at', () => {
+        // This test replaces one named "newest-first order preserved, capped"
+        // that asserted the opposite: with nine oldest-first entries it
+        // required `rsc=5` present and `rsc=6` absent, i.e. it pinned the
+        // OLDEST six and dropped the three closest to the failure — under a
+        // name claiming the newest were kept, and a comment claiming the cap
+        // was "asserted in both directions".
+        //
+        // The cap genuinely was asserted in both directions. It was asserted
+        // at the wrong END, so the diagnostic withheld the navigation's own
+        // RSC fetch while reporting a count that read as the whole list.
         const many: DetailPaintState = {
-            detailRequests: Array.from({ length: 9 }, (_, i) => ({
+            detailRequests: Array.from({ length: 15 }, (_, i) => ({
                 name: `/assets/a-1?rsc=${i}`,
                 ms: i * 10 + 0.4,
             })),
@@ -80,14 +90,42 @@ describe('formatDetailPaintState', () => {
 
         const out = formatDetailPaintState(many);
 
-        expect(out).toContain('requests for this URL: 9');
-        // Capped at 6 so one failure cannot flood a job log, and the cap is
-        // asserted in both directions.
-        expect(out).toContain('rsc=5');
-        expect(out).not.toContain('rsc=6');
+        expect(out).toContain('requests for this URL: 15');
+        // The newest must survive: it is the one that says whether the route
+        // this URL names was fetched at all before the wait expired.
+        expect(out).toContain('rsc=14');
+        expect(out).toContain('rsc=3');
+        // And the oldest are what gets dropped, not the newest.
+        expect(out).not.toContain('rsc=0?');
+        for (const dropped of ['rsc=0\n', 'rsc=1\n', 'rsc=2\n']) {
+            expect(out).not.toContain(dropped);
+        }
+        // The omission is NAMED. A bare count beside a truncated list reads as
+        // the whole list, which is how the old cap went unnoticed.
+        expect(out).toContain('3 earlier request(s) not shown');
         // Durations rounded — a diagnostic reporting 0.4000000001ms is noise.
         expect(out).toContain('0ms');
         expect(out).not.toMatch(/\d\.\d+ms/);
+    });
+
+    it('prints every request when there are fewer than the cap, and says nothing about omission', () => {
+        // The real failure that prompted this (run 38700294675) had EIGHT
+        // requests and a cap of six, so the header said 8 and the body showed
+        // 6. Under the new cap that case prints in full — and must not grow a
+        // spurious "0 earlier requests not shown" line, which would be a
+        // different kind of lie about the same data.
+        const out = formatDetailPaintState({
+            detailRequests: Array.from({ length: 8 }, (_, i) => ({
+                name: `/assets/a-1?rsc=${i}`,
+                ms: i * 10,
+            })),
+        });
+
+        expect(out).toContain('requests for this URL: 8');
+        for (let i = 0; i < 8; i++) {
+            expect(out).toContain(`rsc=${i}`);
+        }
+        expect(out).not.toContain('not shown');
     });
 
     it('reports booleans as words and nothing-rendered as a flag', () => {
