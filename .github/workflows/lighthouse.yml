@@ -184,7 +184,68 @@ jobs:
           exit 1
 
       - name: "Gate: Lighthouse mobile budget"
-        run: npx --yes @lhci/cli@0.15.1 autorun --config=lighthouserc.json
+        # Retried on COLLECTION failure only, never on a budget failure
+        # (#1901). The distinction is the whole design: retrying a verdict
+        # until it passes is gaming the gate, while retrying data COLLECTION
+        # re-gathers measurements a crashed Chrome never produced.
+        #
+        # What this fixes, measured on #1900 — a PR touching only OpenAPI
+        # descriptions:
+        #
+        #     Running Lighthouse 5 time(s) on .../login
+        #     Run #1...done. #2...done. #3...done. #4...done.
+        #     Run #5...failed!
+        #     LH:largest-contentful-paint:warn Caught exception: NO_NAVSTART
+        #
+        # lhci aborts the whole run there, so `/f/lighthouse` was never
+        # measured at all and the job reported a performance failure for a
+        # page it never loaded. A re-run passed with 0 failed runs.
+        #
+        # The exposure is partly self-inflicted: #1880 took numberOfRuns from
+        # 3 to 5 for precision (two 3-run medians of identical code came back
+        # 296ms apart), which is 10 Chrome launches per job and raised the
+        # chance of one aborting by about two thirds. The answer is tolerance,
+        # not fewer samples.
+        #
+        # `.lighthouseci` is CLEARED before each attempt. The reporter reads
+        # every `lhr-*.json` in that directory, so a failed attempt's partial
+        # reports would otherwise be medianed together with the next
+        # attempt's — the same pooling defect #1814 already produced once,
+        # where one table mixed two pages.
+        #
+        # Bound: 3 attempts x 600s + 2 x 10s backoff = 1820s worst case,
+        # derivable rather than observed, which is what the job budget can be
+        # sized against.
+        run: |
+          log=/tmp/lhci.log
+          started=$SECONDS
+          for attempt in 1 2 3; do
+            rm -rf .lighthouseci
+            status=0
+            timeout -k 10 600 npx --yes @lhci/cli@0.15.1 autorun \
+              --config=lighthouserc.json > "$log" 2>&1 || status=$?
+            cat "$log"
+            if [ "$status" -eq 0 ]; then
+              echo "::notice::Lighthouse passed in $((SECONDS - started))s (attempt ${attempt}/3)"
+              exit 0
+            fi
+            # Reaching the assertion stage means every run collected and a
+            # BUDGET was judged. That is a result about the page, so it is
+            # final — re-rolling it would turn a regression gate into a
+            # coin toss with three flips.
+            if grep -q 'Checking assertions against' "$log"; then
+              echo "::error::Lighthouse BUDGET failed (attempt ${attempt}/3, exit ${status}). Not retried — this is a verdict about the page, not a lost measurement."
+              exit "$status"
+            fi
+            if [ "$status" -eq 124 ]; then
+              echo "::warning::Lighthouse COLLECTION timed out after 600s (attempt ${attempt}/3) — retrying"
+            else
+              echo "::warning::Lighthouse COLLECTION failed before assertions with exit ${status} (attempt ${attempt}/3) — retrying. A run that never navigated produced no data to keep."
+            fi
+            sleep 10
+          done
+          echo "::error::Lighthouse collection failed 3/3 after $((SECONDS - started))s"
+          exit 1
 
       # The number behind the verdict (#796).
       #
