@@ -40,6 +40,42 @@ beforeEach(() => {
 });
 
 describe('a refusal speaks the reader’s language (#1677)', () => {
+    it('the two role refusals from #1779 read in Bulgarian, with the role substituted', async () => {
+        // The half #1779's first version left out. Adding a code without a
+        // catalogue entry gains the WEB nothing: `src/lib/api-client.ts` does
+        // `message = body.error.message || message` with no language test, and
+        // 142 call sites print that straight to screen. So the unit of work is
+        // code PLUS entry, and this is the assertion that the pair reaches a
+        // farmer.
+        //
+        // `params.role` is substituted, so a reader is told which role they
+        // actually hold rather than being left to guess — and an unsubstituted
+        // `{role}` on screen would be worse than the English it replaced,
+        // which is why the placeholder is asserted absent.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        for (const code of ['ADMIN_FORBIDDEN_FOR_ROLE', 'AUDIT_FORBIDDEN_FOR_ROLE']) {
+            const p = payloadFor(code, 'You do not have permission …', { role: 'EDITOR' });
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+            expect(p.error.message).toContain('EDITOR');
+            expect(p.error.message).not.toBe('You do not have permission …');
+        }
+    });
+
+    it('and an English reader still gets English for the same two', async () => {
+        // The other direction. A catalogue entry that replaced the message for
+        // EVERY reader would be a regression for the English one, and
+        // `localizeErrorPayload` keys on the session language — so this is the
+        // control that the lookup is language-dependent rather than
+        // unconditional.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'en' });
+        const p = payloadFor('ADMIN_FORBIDDEN_FOR_ROLE', 'original', { role: 'READER' });
+        await localizeErrorPayload(p);
+        expect(p.error.message).not.toMatch(/[А-Яа-я]/);
+        expect(p.error.message).toContain('READER');
+    });
+
     it('translates a code that HAS an entry', async () => {
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
         const p = payloadFor('BILLING_UNAVAILABLE', 'This deployment runs in self-hosted mode; …', {
