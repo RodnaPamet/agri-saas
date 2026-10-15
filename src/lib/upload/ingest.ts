@@ -77,7 +77,7 @@
 import { Readable } from 'node:stream';
 
 import { env } from '@/env';
-import { badRequest, codedBadRequest } from '@/lib/errors/types';
+import { codedBadRequest } from '@/lib/errors/types';
 import { assertTenantNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { logger } from '@/lib/observability';
 
@@ -152,8 +152,8 @@ export interface IngestOptions {
 /**
  * Validate, store and scan one uploaded file.
  *
- * Throws `badRequest` on any rejection — the caller never has to map error
- * shapes. Returns on success; the caller then writes its own rows.
+ * Throws a CODED `badRequest` on any rejection — the caller never has to map
+ * error shapes. Returns on success; the caller then writes its own rows.
  */
 export async function ingestUploadedFile(
     tenantId: string,
@@ -236,10 +236,17 @@ export async function ingestUploadedFile(
 /**
  * The scan gate for bytes that will be stored WITHOUT a `FileRecord`.
  *
- * Returns the verdict when the bytes may be stored, and throws
- * `badRequest` when they may not. Call it BEFORE the write: a record-less
- * object is served by key, so once the bytes are at that key nothing later
- * in the request can stop them being handed out.
+ * Returns the verdict when the bytes may be stored, and throws a coded
+ * `badRequest` when they may not — `UPLOAD_INFECTED`,
+ * `UPLOAD_SCANNER_UNAVAILABLE` or `UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE`.
+ * Coded rather than bare because `no-server-authored-user-copy` exempts a
+ * coded throw from its ratchet, so these three lower the count instead of
+ * raising it — and a client can tell "we refused your file" from "we could
+ * not check it" without parsing a sentence.
+ *
+ * Call it BEFORE the write: a record-less object is served by key, so once
+ * the bytes are at that key nothing later in the request can stop them being
+ * handed out.
  *
  * ── The policy is the download gate, not a second opinion ────────────
  *
@@ -314,7 +321,10 @@ export async function scanOrRefuse(
             subjectId: opts.subjectId,
             verdict,
         });
-        throw badRequest('This image was rejected by the malware scanner.');
+        throw codedBadRequest(
+            'UPLOAD_INFECTED',
+            'This image was rejected by the malware scanner.',
+        );
     }
 
     if (!isDownloadAllowed(verdict)) {
@@ -324,7 +334,8 @@ export async function scanOrRefuse(
             verdict,
             reason: 'reason' in outcome ? outcome.reason : undefined,
         });
-        throw badRequest(
+        throw codedBadRequest(
+            'UPLOAD_SCANNER_UNAVAILABLE',
             'The malware scanner is unavailable, so the image was not stored. Try again shortly.',
         );
     }
@@ -346,7 +357,8 @@ export async function scanOrRefuse(
             reason: outcome.status === 'SKIPPED' ? outcome.reason : undefined,
             exposure: opts.exposure,
         });
-        throw badRequest(
+        throw codedBadRequest(
+            'UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE',
             'This image cannot be published because the malware scanner is unavailable.',
         );
     }
