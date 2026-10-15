@@ -61,6 +61,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { REPO_ROOT } from '../helpers/collect-files';
 
 import { isPublicPath } from '@/lib/auth/guard';
@@ -140,7 +141,17 @@ describe('a documented anonymous operation needs no credential (#1843)', () => {
         // absent field. If that default were `[]` this guard would assert
         // nothing.
         expect(spec.security).toBeUndefined();
-        const helpers = readFileSync(join(REPO_ROOT, 'src/lib/openapi/paths/helpers.ts'), 'utf8');
+        // Comments blanked (#1774), and the shrink-only cap in
+        // `guards-blank-comments-before-matching` caught this guard's first
+        // version for omitting it — correctly, and it is the trap in
+        // miniature: the NO_AUTH docblock I added to helpers.ts in this very
+        // change discusses `input.security ??` and the credentialed default
+        // at length, so an unblanked read is matching prose about the
+        // mechanism alongside the mechanism. Comments only, not strings: the
+        // pattern below is code.
+        const helpers = blankNonCode(
+            readFileSync(join(REPO_ROOT, 'src/lib/openapi/paths/helpers.ts'), 'utf8'),
+        );
         expect(helpers).toMatch(/security:\s*input\.security\s*\?\?\s*\[\{\s*sessionCookie/);
     });
 
