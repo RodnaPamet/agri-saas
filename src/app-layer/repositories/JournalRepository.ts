@@ -1,7 +1,7 @@
 import { Prisma, LogEntryType, LogEntryStatus } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
-import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
+import { buildCursorWhere, computePageInfo, clampLimit } from '@/lib/pagination';
 import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { AssetRepository } from './AssetRepository';
@@ -392,11 +392,32 @@ const ENTRY_LIST_INCLUDE = {
 export class JournalRepository {
     // ─── Reads ───────────────────────────────────────────────────────
 
+    /**
+     * The FLAT read: every matching entry, newest work first, capped at 200.
+     *
+     * `occurredAt` and then `id`, and the tiebreak is contractual rather than
+     * tidy (#1771, the same class as #1742 for parcels).
+     *
+     * `occurredAt` on a diary entry is a DAY — a treatment stores
+     * `Date.UTC(y, mo, d)` — so every entry recorded for the same day ties,
+     * and a farm records several. With `take: 200` and no tiebreak, Postgres
+     * may return a different subset of a tied group between two identical
+     * requests: an entry near the cap can be present in one read and absent
+     * from the next with nothing changed. The offline outbox replay reads this
+     * branch, so "the same request answered differently" is not academic
+     * there.
+     *
+     * Ordering here matches `listPaginated`, which pairs `occurredAt` with
+     * `treatmentGroupId` because it folds treatments. This one returns rows,
+     * so `id` is its total key. The two branches agreed on the COLUMN as of
+     * the owner's ruling of 2026-10-14; this makes them agree on being
+     * deterministic.
+     */
     static async list(db: PrismaTx, ctx: RequestContext, filters?: LogEntryFilters) {
         const where = JournalRepository._buildWhere(ctx, filters);
         return db.logEntry.findMany({
             where,
-            orderBy: { occurredAt: 'desc' },
+            orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
             include: ENTRY_LIST_INCLUDE,
             take: 200,
         });
