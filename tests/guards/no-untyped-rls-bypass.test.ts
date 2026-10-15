@@ -71,16 +71,35 @@ function callersOf(symbol: string): string[] {
  * `f.code`, which `blankNonCode` has already blanked, so a comment naming
  * the function is not a site.
  */
-function callSitesOf(symbol: string): string[] {
-    const re = new RegExp('\\b' + symbol + '\\s*\\(', 'g');
+export function callSitesIn(
+    files: ReadonlyArray<{ rel: string; code: string }>,
+    symbol: string,
+): string[] {
     const out: string[] = [];
-    for (const f of FILES) {
+    for (const f of files) {
         f.code.split('\n').forEach((line, i) => {
+            const re = new RegExp('\\b' + symbol + '\\s*\\(', 'g');
             const hits = [...line.matchAll(re)].length;
             for (let k = 0; k < hits; k += 1) out.push(`${f.rel}:${i + 1}`);
         });
     }
     return out;
+}
+
+/**
+ * Takes the file list so a SYNTHETIC one can be handed to it.
+ *
+ * `selector-teeth` reported the first version dead: gutted to `return []` it
+ * survived, because `expect(sites.length).toBeLessThanOrEqual(9)` is
+ * satisfied by zero. A ceiling cannot prove its own selector works — the
+ * same defect, in the same shape, as `staticSiblings` in #1847.
+ *
+ * Two controls answer it below: a floor tying sites to files, which an empty
+ * result cannot satisfy, and a synthetic population proving the counter sees
+ * two calls on one line.
+ */
+function callSitesOf(symbol: string): string[] {
+    return callSitesIn(FILES, symbol);
 }
 
 describe('the untyped RLS bypass is gone', () => {
@@ -169,6 +188,16 @@ describe('the typed bypass is actually USED — not a control that only exists',
                 sites.join('\n  '),
         );
         expect(sites.length).toBeLessThanOrEqual(9);
+
+        // The floor, and it is an INVARIANT rather than a second hardcoded
+        // number: every file that bypasses contains at least one call, so
+        // sites can never be fewer than files. A selector returning nothing
+        // fails this (0 >= 4 is false) while sailing through the ceiling
+        // above — which is exactly how the first version of this was dead.
+        //
+        // It also costs nothing as bypasses are REMOVED: both numbers fall
+        // together, where a floor of 9 would have to be edited down.
+        expect(sites.length).toBeGreaterThanOrEqual(callers.length);
     });
 
     it('every bypass site names a reason from the union', () => {
@@ -207,4 +236,23 @@ describe('the detector has teeth', () => {
         const good = codeOf("await runWithoutRls({ reason: 'seed' }, async (db) => db.x());");
         expect(/runWithoutRls\s*\(([^)]{0,80})/.exec(good)?.[1] ?? '').toMatch(/reason\s*:/);
     });
+    it('the site counter can select, and counts CALLS not lines', () => {
+        // The positive control `selector-teeth` asked for. Synthetic, because
+        // the real population cannot demonstrate the two-on-one-line case —
+        // no file in src happens to have one, so only a fixture can show the
+        // counter does not merely count lines.
+        const synthetic = [
+            { rel: 'a.ts', code: 'runWithoutRls(x); runWithoutRls(y);' },
+            { rel: 'b.ts', code: 'const q = 1;\nrunWithoutRls(z);' },
+        ];
+        const sites = callSitesIn(synthetic, 'runWithoutRls');
+        expect(sites).toEqual(['a.ts:1', 'a.ts:1', 'b.ts:2']);
+
+        // And it finds nothing when there is nothing, rather than matching a
+        // similarly-named symbol.
+        expect(callSitesIn([{ rel: 'c.ts', code: 'runWithoutRlsX(1);' }], 'runWithoutRls')).toEqual(
+            [],
+        );
+    });
+
 });
