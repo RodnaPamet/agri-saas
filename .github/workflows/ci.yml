@@ -755,6 +755,13 @@ jobs:
           # check (#914) needs its base here as well as in the shard-1 step.
           RATCHET_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           RATCHET_DELTA_REQUIRE_BASE: "1"
+          # Names the shard in the step-summary section the denominator
+          # reporter writes (#1879). GITHUB_STEP_SUMMARY is set by the runner
+          # for every step, so the reporter needs no other wiring -- this only
+          # says WHICH subset produced the numbers, since each shard ran a
+          # different one and an unlabelled section invites reading six
+          # partial populations as one.
+          DENOMINATOR_SUMMARY_LABEL: "shard ${{ matrix.shard }}/${{ matrix.total }}"
         # Invoke jest via `node --max-old-space-size=8192` (mirrors the
         # Typecheck job's tsc call). The runner's default ~2 GB V8 heap is
         # too small for the `--runInBand` suite and OOMs ("Reached heap

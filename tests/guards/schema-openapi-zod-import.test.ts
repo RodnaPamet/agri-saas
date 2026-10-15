@@ -55,7 +55,7 @@ describe('a schema calling .openapi() imports the EXTENDED zod', () => {
         // Printed, because the interesting number is the small one: a regex
         // that stopped matching `.openapi(` would sweep zero and agree.
         console.log(
-            `schema files: ${files.length}, of which call .openapi(): ${callers.length}\n  ` +
+            `[schema-zod-import] schema files: ${files.length}, of which call .openapi(): ${callers.length}\n  ` +
                 callers.map((f) => path.relative(ROOT, f)).join('\n  '),
         );
 

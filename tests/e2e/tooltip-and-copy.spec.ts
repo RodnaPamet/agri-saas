@@ -31,7 +31,12 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
-import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
+import {
+    expectRouteTransition,
+    loginAndGetTenant,
+    safeGoto,
+    waitForHydration,
+} from './e2e-utils';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
 
@@ -174,18 +179,50 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         // unhydrated <Link> is a no-op that surfaces later as a navigation
         // that never happened.
         await waitForHydration(page, '[data-testid="farm-tasks-table"] tbody tr a[href*="/farm-tasks/"]');
-        await firstTask.click();
-        await page.waitForURL(/farm-tasks\/[a-z0-9]+$/i, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30_000,
-        });
 
         // `task.key` renders as the CopyText button — accessible name
         // is "Copy task key {KEY}". Seeded tasks always have a key.
         const keyBtn = page.locator(
             'button[aria-label^="Copy task key "]',
         );
-        await expect(keyBtn.first()).toBeVisible({ timeout: 30_000 });
+
+        // Rows BEFORE the gesture, which only the caller can see — the #1076
+        // capture showed `rows: 1` at failure against a seed of four, and
+        // whether the set shrank DURING the gesture or was already short is
+        // the next fact that family needs.
+        const rowsBefore = await page
+            .locator('[data-testid="farm-tasks-table"] tbody tr')
+            .count();
+
+        await firstTask.click();
+
+        // `expectRouteTransition` rather than a bare `page.waitForURL` plus a
+        // separate visibility wait (#1896). This test is in
+        // `known-flakes.json` against #1862 for the dropped-transition shape,
+        // and on 2026-10-15 it exhausted all three attempts on a MAIN run
+        // whose commit was one markdown paragraph. The entire output was:
+        //
+        //     TimeoutError: page.waitForURL: Timeout 30000ms exceeded.
+        //
+        // Nothing about whether the click registered, whether the RSC request
+        // went out, whether a service worker was controlling, or whether the
+        // page had moved at all. The helper attaches all of that, and since
+        // #1887 prints the requests NEAREST the failure rather than the
+        // oldest six.
+        //
+        // It is the same two waits, not an extra one: the helper does the URL
+        // wait and then waits for `content` to be visible, which is exactly
+        // what the removed `expect(keyBtn.first()).toBeVisible()` did.
+        //
+        // This does NOT fix the flake. It makes the next recurrence arrive
+        // with its state attached, which is the difference between another
+        // tally mark on #1862 and a cause — that family has spent two
+        // explanations on tally marks already.
+        await expectRouteTransition(page, {
+            url: /farm-tasks\/[a-z0-9]+$/i,
+            content: keyBtn.first(),
+            rowsBefore,
+        });
 
         const expected = (await keyBtn.textContent())?.trim() ?? '';
         expect(expected).toMatch(/^[A-Z]+-\d+$/);
