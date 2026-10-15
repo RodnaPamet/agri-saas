@@ -42,7 +42,7 @@ const CACHE_VERSION = 'agrent-v1';
  * `tests/guards/sw-revision-stamp.test.ts` recomputes it and prints the
  * expected value on failure, so updating it is a paste.
  */
-const SW_REVISION = 'e5c00117205d';
+const SW_REVISION = '99ab211e863e';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const DATA_CACHE = `${CACHE_VERSION}-fielddata`;
