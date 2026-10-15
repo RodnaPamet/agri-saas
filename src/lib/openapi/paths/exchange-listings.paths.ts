@@ -84,8 +84,37 @@ const PublicListingSchema = z
         lat: z.number(),
         lon: z.number(),
         description: z.string().nullable(),
-        /** Null when the seller has no display name resolved. */
+        /**
+         * The seller's public name.
+         *
+         * Two sources, and a client cannot tell them apart from this field
+         * alone — which is deliberate, because it should render them the same.
+         * Either the free text the seller typed, or — when `farmHandle` is
+         * non-null — the VERIFIED name of their published farm, resolved from
+         * the farm's own profile on this read rather than copied onto the
+         * listing when it was posted.
+         *
+         * Null when the seller typed nothing and is not attributed; render
+         * your own "anonymous farm" string.
+         */
         sellerDisplayName: z.string().nullable(),
+        /**
+         * The seller's public farm address when this listing is attributed to
+         * a published farm, else `null` — P6.7.
+         *
+         * A HANDLE, not a url: build `/f/{handle}`. When it is non-null,
+         * `sellerDisplayName` is that farm's verified name and may be rendered
+         * as a link to the page.
+         *
+         * **It can change without the listing changing.** The attribution is
+         * resolved live, so a farm that renames its address or withdraws its
+         * public page alters this field on every listing it had attributed, in
+         * the same moment and with no write to the listing. `null` therefore
+         * covers both "never attributed" and "the farm has since withdrawn",
+         * and a client does not need to distinguish them: in both cases there
+         * is no page to link to.
+         */
+        farmHandle: z.string().nullable(),
         status: z.string(),
         createdAt: z.string().datetime(),
         expiresAt: z.string().datetime().nullable(),
@@ -223,7 +252,9 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         operationId: 'createExchangeListing',
         summary: 'Борса — publish a listing',
         description:
-            'Publishes a listing for the calling tenant. Requires the EXCHANGE module — 403 `module_disabled: EXCHANGE` otherwise. Rate-limited separately from ordinary writes.',
+            'Publishes a listing for the calling tenant. Requires the EXCHANGE module — 403 `module_disabled: EXCHANGE` otherwise. Rate-limited separately from ordinary writes.\n\n'
+            + '**`publishAsFarm`** attributes the listing to the seller\u2019s published farm (P6.7): the response\u2019s `sellerDisplayName` becomes that farm\u2019s verified name and `farmHandle` carries its public address. It is accepted whatever the farm\u2019s publication state and is NOT refused when the farm has no public page — the attribution is resolved on every read, so a seller who ticks it first and publishes later has every listing they already posted attributed, with nothing to back-fill. Until then the listing reads as anonymous, or as whatever `sellerDisplayName` they typed.\n\n'
+            + 'The inverse holds too, and is the reason nothing is copied onto the row: withdrawing the farm\u2019s public page returns every listing it had attributed to anonymous on the next read, so no listing is left naming an address that no longer answers.',
         tags: ['Exchange'],
         params: TenantParams,
         body: CreateListingSchema,

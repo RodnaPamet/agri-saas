@@ -122,6 +122,65 @@ it('enables + POSTs the assembled body (region as CODE) on a full submit', async
 });
 
 /**
+ * Publish AS THE FARM — P6.7 (#1816).
+ *
+ * The server side of this is resolved live from the seller's published farm,
+ * so the ONLY thing the form is responsible for is sending the decision. A
+ * toggle that rendered but never reached the body would leave every listing
+ * anonymous with nothing failing — the control would look like it worked.
+ */
+describe('publish as the farm', () => {
+    /** The three required fields, so the submit button enables. */
+    async function fillRequired() {
+        fireEvent.click(document.querySelector('#exchange-commodity')!);
+        fireEvent.click(await screen.findByRole('option', { name: 'Wheat' }));
+        fireEvent.change(document.querySelector('#exchange-qty')!, { target: { value: '12' } });
+        fireEvent.click(document.querySelector('#exchange-region')!);
+        const regions = await screen.findAllByRole('option');
+        fireEvent.click(regions[0]);
+        const submit = screen.getByRole('button', { name: /create offer/i });
+        await waitFor(() => expect(submit).toBeEnabled());
+        return submit;
+    }
+
+    it('is OFF by default and posts false', async () => {
+        // A listing is anonymous unless its seller asked otherwise. That is
+        // the direction a per-listing consent has to default in, and `false`
+        // is sent explicitly rather than omitted so the body always states
+        // the decision.
+        renderModal();
+        const toggle = screen.getByRole('switch', { name: /publish as the farm/i });
+        expect(toggle).not.toBeChecked();
+
+        fireEvent.click(await fillRequired());
+        await waitFor(() => expect(apiPost).toHaveBeenCalled());
+        const [, body] = apiPost.mock.calls[0] as [string, Record<string, unknown>];
+        expect(body.publishAsFarm).toBe(false);
+    });
+
+    it('posts true once the seller turns it on', async () => {
+        renderModal();
+        fireEvent.click(screen.getByRole('switch', { name: /publish as the farm/i }));
+        fireEvent.click(await fillRequired());
+
+        await waitFor(() => expect(apiPost).toHaveBeenCalled());
+        const [, body] = apiPost.mock.calls[0] as [string, Record<string, unknown>];
+        expect(body.publishAsFarm).toBe(true);
+    });
+
+    it('states the condition in copy rather than disabling itself', async () => {
+        // Deliberate: knowing whether this farm's page is public needs
+        // `GET /farm-brand`, which is ADMIN-gated — a member who can post a
+        // listing may not be able to read it — so a disabled switch would be
+        // disabled for the wrong people. The copy carries the condition
+        // instead, and the server is lenient to match.
+        renderModal();
+        expect(screen.getByRole('switch', { name: /publish as the farm/i })).toBeEnabled();
+        expect(screen.getByText(/only while that page is public/i)).toBeInTheDocument();
+    });
+});
+
+/**
  * The one PRIVATE field on a form whose every other field is broadcast to
  * every tenant. It has to say so before the seller types, and it must reach
  * the API — a contact that never leaves the browser makes Accept a dead end.

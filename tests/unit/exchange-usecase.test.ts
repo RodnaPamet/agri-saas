@@ -45,7 +45,14 @@ jest.mock('@/lib/db/rls-middleware', () => ({
     runWithoutRls: jest.fn(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         async (opts: { reason: string }, fn: (db: any) => any) => {
-            expect(opts.reason).toBe('module-availability');
+            // TWO legitimate bypasses reach this usecase now, so the
+            // assertion is an allowlist rather than a single value — a bypass
+            // that silently changed its stated justification must still fail,
+            // which is the whole reason this mock asserts the reason at all.
+            //
+            //   module-availability        — which sellers switched EXCHANGE off
+            //   exchange-farm-attribution  — which sellers are published farms (P6.7)
+            expect(['module-availability', 'exchange-farm-attribution']).toContain(opts.reason);
             return fn(mockDb);
         },
     ),
@@ -55,6 +62,10 @@ jest.mock('@/app-layer/repositories/exchange', () => ({
     ExchangeRepository: {
         listActiveListings: jest.fn(),
         listTenantIdsWithModuleDisabled: jest.fn().mockResolvedValue([]),
+        // P6.7 — resolves which sellers are published farms. Defaults to
+        // NONE, so every existing assertion in this file keeps seeing the
+        // typed `sellerDisplayName` and nothing is attributed by accident.
+        listPublishedFarmBrands: jest.fn().mockResolvedValue([]),
         getListing: jest.fn(),
         createListing: jest.fn(),
         updateListingStatus: jest.fn(),

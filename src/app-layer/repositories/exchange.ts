@@ -133,6 +133,40 @@ export class ExchangeRepository {
     }
 
     /**
+     * Which of `tenantIds` are PUBLISHED farms, with the identity to show.
+     *
+     * MUST be called with an RLS-BYPASSING client — `runWithoutRls({ reason:
+     * 'exchange-farm-attribution' })`. `FarmBrand` is tenant-scoped, so under
+     * a viewer's own context this returns at most the viewer's own row and
+     * every other seller's listing falls back to anonymous.
+     *
+     * `published: true` is the filter that makes withdrawal propagate: a farm
+     * that takes its page down stops being returned here, so every listing it
+     * had attributed reverts to the typed name on the next read. Nothing has
+     * to be back-filled, and no listing is left naming a page that 404s.
+     *
+     * `handle` and `displayName` are non-null for any published brand — the
+     * publication preconditions refuse without them — but they are nullable
+     * COLUMNS, so the narrowing is done here rather than asserted at the call
+     * site.
+     */
+    static async listPublishedFarmBrands(
+        db: PrismaTx,
+        tenantIds: string[],
+    ): Promise<Array<{ tenantId: string; handle: string; displayName: string }>> {
+        if (tenantIds.length === 0) return [];
+        const rows = await db.farmBrand.findMany({
+            where: { tenantId: { in: tenantIds }, published: true },
+            select: { tenantId: true, handle: true, displayName: true },
+        });
+        return rows.flatMap((r) =>
+            r.handle != null && r.displayName != null
+                ? [{ tenantId: r.tenantId, handle: r.handle, displayName: r.displayName }]
+                : [],
+        );
+    }
+
+    /**
      * GLOBAL browse of ACTIVE, not-yet-expired listings across ALL tenants,
      * newest first, with server-side facets and cursor pagination.
      *

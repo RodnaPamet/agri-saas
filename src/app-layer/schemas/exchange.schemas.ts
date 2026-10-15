@@ -110,6 +110,21 @@ export const CreateListingSchema = z
         regionCode: z.string().min(1).max(16),
         description: z.union([z.string().max(2000), z.null()]).optional(),
         sellerDisplayName: z.union([z.string().max(120), z.null()]).optional(),
+        /**
+         * Publish this listing AS THE FARM — P6.7 (#1816).
+         *
+         * Accepted whatever the farm's publication state, deliberately. The
+         * attribution is resolved LIVE on every read, so a seller who ticks
+         * this before publishing their page simply shows as anonymous until
+         * they do — and then every listing they already posted becomes
+         * attributed, with nothing to back-fill. Refusing here would make the
+         * ORDER of two unrelated decisions matter.
+         *
+         * Defaults to false. A listing is anonymous unless its seller asked
+         * otherwise, which is the direction a per-listing consent has to
+         * default in.
+         */
+        publishAsFarm: z.boolean().default(false),
         // Private: never projected into a public listing. Revealed to ONE
         // buyer, only if the seller accepts their inquiry. Short cap because a
         // contact is a phone number or an email, not a paragraph.

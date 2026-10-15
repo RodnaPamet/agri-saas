@@ -3622,7 +3622,9 @@
             "sellerContactConsent": "Optional — a phone number or email. Never shown publicly. Revealed only to a buyer whose interest you accept.",
             "pricePlaceholder": "e.g. 320",
             "sellerNamePlaceholder": "Your farm name",
-            "sellerNameConsent": "Optional. Shown publicly on the offer. Leave it blank and the offer appears as \"Anonymous farm\"."
+            "sellerNameConsent": "Optional. Shown publicly on the offer. Leave it blank and the offer appears as \"Anonymous farm\".",
+            "publishAsFarm": "Publish as the farm",
+            "publishAsFarmConsent": "The listing shows the farm’s public name with a link to its page. It applies only while that page is public — withdraw the page and the listing goes back to anonymous."
         },
         "inquiry": {
             "title": "Express interest",
