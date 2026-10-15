@@ -29,6 +29,45 @@ const SENSITIVE_PATTERNS = [
     /privateKey/i,
     /encryption/i,
     /hash$/i,        // passwordHash, tokenHash, etc.
+    // Any column holding ciphertext. The module already INTENDED to cover
+    // these — `secretEncrypted`, `accessTokenEncrypted`,
+    // `refreshTokenEncrypted` and `auditStreamSecretEncrypted` were all
+    // redacted before this line existed, but only by the accident of their
+    // names containing `secret` or `token`. The three `*Encrypted` columns
+    // whose names do NOT contain one were written to the audit row verbatim:
+    // `Tenant.encryptedDek`, `Tenant.previousEncryptedDek` and
+    // `NotificationOutbox.toEmailEncrypted`.
+    //
+    // MEASURED: a `Tenant.update` touching `encryptedDek` under an audit
+    // context stored the wrapped DEK in BOTH `diffJson.after` and
+    // `detailsJson.after`. It would then leave the server, because
+    // `AuditLogRepository.list` does a `findMany` with no `select`, so
+    // `GET /api/t/{slug}/audit-log` returns every column to any caller past
+    // `assertCanAudit` — AUDITOR as well as ADMIN, and an AUDITOR is a
+    // read-only role that is explicitly not a key holder.
+    //
+    // AND THE SECOND NUMBER, which is what right-sizes this: **0 of 1045**
+    // production audit rows carry any of the three columns (counted
+    // 2026-10-15 with the owner's authorisation). The reason is structural,
+    // not luck — `DIFF_ACTIONS` is `['update', 'upsert']`, and every real
+    // writer of these columns uses `updateMany` or `create`:
+    // `tenant-key-manager.ts` backfills with `updateMany` and rotates with
+    // `updateMany`, so no `after` snapshot is ever built. The leak needs a
+    // plain `update` or `upsert` on a ciphertext column, which no current
+    // path performs.
+    //
+    // So this is hardening ahead of a refactor, not an incident, and no
+    // remediation of existing rows is needed. Worth keeping precisely
+    // because the thing standing between the DEK and the audit log is one
+    // `updateMany` that a future change has every reason to make a plain
+    // `update`.
+    //
+    // Redacting costs the trail nothing: `changedFields` still records that
+    // the column changed, and the value was opaque to every reader without
+    // the KEK anyway. The one thing to watch is a future BOOLEAN named
+    // `isEncrypted`, which this would redact pointlessly; there is no such
+    // column in the schema today (measured across all 910 field names).
+    /encrypted/i,
     /^salt$/i,
     /^ssn$/i,
     // ── AI prompt/response fields (feat/ai-guardrails) ──
