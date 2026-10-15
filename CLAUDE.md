@@ -617,9 +617,25 @@ Three seams keep a PWA relaunch cheap on rural LTE — see
   bounded first page (`JOURNAL_PAGE_SIZE = 50`) and pages forward over
   the `?limit`/`?cursor` path via `useCursorPagination` (its additive
   `reload()` reseeds the accumulator on a filter/optimistic change).
-  The paginated `/journal` branch returns `{ rows, nextCursor }`; the
-  bare `/journal` (no params) still returns a flat array (offline
-  outbox replay depends on it).
+    The paginated `/journal` branch returns `{ rows, nextCursor }`; the
+    bare `/journal` (no params) still returns a flat array, kept for
+    BACKWARD COMPATIBILITY with clients that predate the cursor branch.
+    **Nothing in this repo or in the iOS client reads it** (#1881, owner
+    ruling 2026-10-15: keep it, fix the sentence). This line said "offline
+    outbox replay depends on it" until then, which was the only recorded
+    reason the branch survived the move to cursor pagination, and it was
+    false: no `useTenantSWR` or `apiGet` in `src/` requests it (the two
+    `buildUrl('/journal')` hits are POSTs), `src/lib/offline/**` never
+    reads `/journal` at all, `public/sw.js` — the outbox's parallel
+    reimplementation, and the one place a `src/` sweep would be blind —
+    does not contain the word, and the iOS journal always sends
+    `?limit=50` while its outbox replays writes only. Retiring it would
+    therefore be defensible, and is deliberately NOT done: it is `live` in
+    the append-only `src/generated/route-inventory.json`, so removal is an
+    act with a written reason, and nobody has established that no shipped
+    iOS build calls it — #1087 is what a silent route removal costs (five
+    renamed routes, an iOS client 404ing for four days). If you are about
+    to reason from this branch having a dependant: it has none.
 
 ### Offline outbox durability
 

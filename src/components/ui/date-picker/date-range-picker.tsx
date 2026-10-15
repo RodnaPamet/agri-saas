@@ -126,6 +126,18 @@ export function DateRangePicker({
     align = 'center',
     className,
     clearable = true,
+    // Destructured OUT of `...props` on purpose (#1839). `props` is spread
+    // onto the Calendar INSIDE the popover, so an `id` left in it landed on
+    // an element that does not exist until the popover opens — while
+    // `FormField` resolves its label's `htmlFor` from exactly this prop
+    // (`form-field.tsx:106`). The result was `<label htmlFor="x">` naming
+    // nothing: the control still had an accessible NAME, because FormField
+    // also injects `aria-labelledby` and that one IS forwarded, which is why
+    // it went unnoticed — but clicking the label opened nothing, `htmlFor`
+    // was an HTML-validity failure, and an id passed for E2E selection
+    // silently did not exist. `Combobox` already does this correctly via
+    // `triggerA11yProps`; the two components disagreed and neither said so.
+    id,
     ...props
 }: DateRangePickerProps) {
     const { formatDateRange } = useDateFormat();
@@ -362,6 +374,8 @@ export function DateRangePicker({
                     disabled={disabled}
                     className={className}
                     hasError={hasError}
+                    // The label's htmlFor target (#1839).
+                    id={id}
                     aria-required={props.required || props['aria-required']}
                     aria-invalid={props['aria-invalid']}
                     aria-label={props['aria-label']}
