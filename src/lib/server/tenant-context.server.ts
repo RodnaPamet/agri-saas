@@ -16,7 +16,7 @@
 import prisma from '@/lib/prisma';
 import { redirectIfSuspended } from '@/lib/auth/suspension-page';
 import { resolveTenantContext } from '@/lib/tenant-context';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import type { Role } from '@prisma/client';
 import type { Permissions } from '@/lib/tenant-context';
 import type { PermissionSet } from '@/lib/permissions';
@@ -74,7 +74,7 @@ export async function resolveTenantBySlug(slug: string): Promise<TenantRecord> {
         select: { id: true, slug: true, name: true, currencySymbol: true },
     });
     if (!tenant) {
-        throw notFound('Tenant not found');
+        throw codedNotFound('TENANT_NOT_FOUND', 'Tenant not found');
     }
     return tenant;
 }

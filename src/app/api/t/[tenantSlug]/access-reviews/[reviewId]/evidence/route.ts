@@ -36,7 +36,7 @@ export const GET = withApiErrorHandling(
                 where: { id: params.reviewId, tenantId: ctx.tenantId },
                 select: { evidenceFileRecordId: true },
             });
-            if (!review) throw notFound('Access review not found');
+            if (!review) throw codedNotFound('ACCESS_REVIEW_NOT_FOUND', 'Access review not found');
             if (!review.evidenceFileRecordId) {
                 throw notFound(
                     'No evidence artifact has been generated for this campaign yet.',

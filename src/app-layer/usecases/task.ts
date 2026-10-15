@@ -12,7 +12,7 @@ import { sendWebPushToUser } from '@/lib/notifications/web-push';
 import { runInTenantContext } from '@/lib/db-context';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { env } from '@/env';
-import { badRequest, codedBadRequest, codedNotFound, notFound } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
@@ -1114,7 +1114,7 @@ export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], 
         for (const id of taskIds) {
             const fromStatus = existingMap.get(id);
             if (!fromStatus) {
-                throw notFound(`Task ${id} not found`);
+                throw codedNotFound('TASK_NOT_FOUND', `Task ${id} not found`);
             }
             const err = checkWorkItemTransition(fromStatus, status);
             if (err) {

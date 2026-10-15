@@ -15,7 +15,7 @@
 import { RequestContext } from '../types';
 import { assertCanVerifyIntegrity } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { getStorageProvider, assertTenantKey } from '@/lib/storage';
 import { FileRepository } from '../repositories/FileRepository';
 import crypto from 'crypto';
@@ -61,7 +61,7 @@ export async function verifyFileIntegrity(
 
     return runInTenantContext(ctx, async (db) => {
         const fileRecord = await FileRepository.getById(db, ctx, fileId);
-        if (!fileRecord) throw notFound('File not found');
+        if (!fileRecord) throw codedNotFound('FILE_NOT_FOUND', 'File not found');
 
         assertTenantKey(fileRecord.pathKey, ctx.tenantId);
 

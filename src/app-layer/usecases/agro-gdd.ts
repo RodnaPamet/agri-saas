@@ -17,7 +17,7 @@
 import type { RequestContext } from '../types';
 import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { accumulateGdd, type DailyTemp, type GddDay } from '@/lib/agro/gdd';
 import { cachedListRead } from '@/lib/cache/list-cache';
 
@@ -82,7 +82,7 @@ export async function getPlantingGdd(
                 variety: { select: { gddBaseC: true, gddToMaturity: true } },
             },
         });
-        if (!planting) throw notFound('Planting not found');
+        if (!planting) throw codedNotFound('PLANTING_NOT_FOUND', 'Planting not found');
 
         // Base temperature: the variety's crop-specific floor, else the
         // conventional GDD_BASE_TEMP_C default. Decimal → number.
