@@ -28,7 +28,13 @@ const SENSITIVE_PATTERNS = [
     /private_key/i,
     /privateKey/i,
     /encryption/i,
-    /hash$/i,        // passwordHash, tokenHash, etc.
+    // UNANCHORED (#1935). `/hash$/i` missed exactly one column across all 910
+    // in the schema: `UserMfaEnrollment.backupCodesHashJson`, whose name ends
+    // in `Json`. MFA backup codes are short enough to be brute-forced from
+    // their hashes offline, so that is the one miss that mattered. The 14
+    // names the anchored form already covered are unaffected
+    // (`passwordHash`, `tokenHash`, `keyHash`, `emailHash`, …).
+    /hash/i,
     // Any column holding ciphertext. The module already INTENDED to cover
     // these — `secretEncrypted`, `accessTokenEncrypted`,
     // `refreshTokenEncrypted` and `auditStreamSecretEncrypted` were all
@@ -72,8 +78,23 @@ const SENSITIVE_PATTERNS = [
     /^ssn$/i,
     // ── AI prompt/response fields (feat/ai-guardrails) ──
     // Never store the raw prompt/response/messages of an AI call in an
-    // audit row — only the promptHash. These are ANCHORED so they DON'T
-    // match `promptHash` (which is safe to store + is the correlation key).
+    // audit row. These are ANCHORED so that they alone do not match
+    // `promptHash`.
+    //
+    // CORRECTION (#1935): the anchoring did not achieve what its note
+    // claimed. It read "so they DON'T match `promptHash` (which is safe to
+    // store + is the correlation key)" — but `/hash/i` above matches
+    // `promptHash` and redacts it, so the correlation key has never reached
+    // an audit diff. The anchoring protected it from one pattern while
+    // another took it.
+    //
+    // Left redacted, deliberately, rather than exempted: a prompt is
+    // low-entropy enough that its hash confirms a guess offline, so "safe to
+    // store" overstates it — and the correlation use case is served by
+    // `AiCall.promptHash` itself, which is where the value belongs. Pinned
+    // by `audit-redaction-covers-the-schema` so this stays a decision
+    // instead of drifting back into a comment that describes the opposite of
+    // what the code does.
     /^prompt$/i,
     /^rawPrompt$/i,
     /^response$/i,
