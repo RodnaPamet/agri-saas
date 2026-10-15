@@ -1,26 +1,107 @@
 {
   "ci": {
     "collect": {
-      "url": ["http://localhost:3006/login"],
+      "url": [
+        "http://localhost:3006/login",
+        "http://localhost:3006/f/lighthouse"
+      ],
       "numberOfRuns": 3,
       "settings": {
         "formFactor": "mobile",
-        "screenEmulation": { "mobile": true, "width": 390, "height": 844, "deviceScaleFactor": 3, "disabled": false },
+        "screenEmulation": {
+          "mobile": true,
+          "width": 390,
+          "height": 844,
+          "deviceScaleFactor": 3,
+          "disabled": false
+        },
         "throttlingMethod": "simulate",
-        "onlyCategories": ["performance"],
+        "onlyCategories": [
+          "performance"
+        ],
         "chromeFlags": "--no-sandbox --headless=new --disable-gpu --disable-dev-shm-usage --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling"
       }
     },
     "assert": {
-      "//": "Re-baselined 2026-07-13. The /login page grew since the 2026-06-19 baseline (bundle + the ~6.3k-key i18n catalog shipped to unauthenticated pages): LCP is now a STABLE ~6.15s (3 runs 6.11-6.16s) and TBT is NOISY on shared CI runners (900-2630ms run-to-run). This stays a REGRESSION GATE, not an aspirational target — hard `error` budgets remain on the STABLE metrics (LCP 7000 = ~850ms headroom over 6.15s; CLS 0.25) so a real regression fails, while TBT is demoted to a non-failing `warn` (2500) because its run-to-run variance flaked the build by fractions of a ms (a median of 900.2 against a 900 budget). TBT is still tracked in the report. The June->July regression is real and worth a dedicated perf pass — the biggest lever is trimming the full message catalog sent to unauthenticated pages. simulate throttling is host-independent so CI matches local.",
-      "assertions": {
-        "categories:performance": ["warn", { "minScore": 0.45 }],
-        "largest-contentful-paint": ["error", { "maxNumericValue": 7000 }],
-        "total-blocking-time": ["warn", { "maxNumericValue": 2500 }],
-        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.25 }],
-        "first-contentful-paint": ["warn", { "maxNumericValue": 3800 }]
-      }
+      "//": "TWO urls as of P6.5 (#1814), with SEPARATE budgets \u2014 a single `assertions` block would have applied /login's 7000ms LCP to the public page, which is the number this phase exists to beat rather than to inherit. Measured 2026-10-15: this gate covered ONE of 395 live routes, and the one route P6.5 promises an LCP target for was not it.\n\n/f/{handle} starts on `warn` DELIBERATELY. Its real LCP has never been measured, and the repo's rule for this file is that a budget is a REGRESSION GATE set just above a known-stable number, not an aspirational target asserted before anybody looked. The 2500ms in #1814's title is a goal; the `error` gate goes in once the three-run median is in a report. Asserting 2500 now would either pass by luck or fail a PR for a number nobody had measured.",
+      "assertMatrix": [
+        {
+          "matchingUrlPattern": ".*/login$",
+          "//": "Re-baselined 2026-07-13. The /login page grew since the 2026-06-19 baseline (bundle + the ~6.3k-key i18n catalog shipped to unauthenticated pages): LCP is now a STABLE ~6.15s (3 runs 6.11-6.16s) and TBT is NOISY on shared CI runners (900-2630ms run-to-run). This stays a REGRESSION GATE, not an aspirational target \u2014 hard `error` budgets remain on the STABLE metrics (LCP 7000 = ~850ms headroom over 6.15s; CLS 0.25) so a real regression fails, while TBT is demoted to a non-failing `warn` (2500) because its run-to-run variance flaked the build by fractions of a ms (a median of 900.2 against a 900 budget). TBT is still tracked in the report. The June->July regression is real and worth a dedicated perf pass \u2014 the biggest lever is trimming the full message catalog sent to unauthenticated pages. simulate throttling is host-independent so CI matches local.",
+          "assertions": {
+            "categories:performance": [
+              "warn",
+              {
+                "minScore": 0.45
+              }
+            ],
+            "largest-contentful-paint": [
+              "error",
+              {
+                "maxNumericValue": 7000
+              }
+            ],
+            "total-blocking-time": [
+              "warn",
+              {
+                "maxNumericValue": 2500
+              }
+            ],
+            "cumulative-layout-shift": [
+              "error",
+              {
+                "maxNumericValue": 0.25
+              }
+            ],
+            "first-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 3800
+              }
+            ]
+          }
+        },
+        {
+          "matchingUrlPattern": ".*/f/.*",
+          "//": "The public farm page. It should be the FASTEST page in the product and is the one the slim i18n payload (#1842, P6.4) was built for: /login's own note names 'trimming the full message catalog sent to unauthenticated pages' as the biggest lever, and /f/* is the only surface where that has actually been done \u2014 475 B of the 404,981 B bg catalog. So the gap between these two urls in the same report is the evidence that work paid off, which no single-url config could show.",
+          "assertions": {
+            "categories:performance": [
+              "warn",
+              {
+                "minScore": 0.9
+              }
+            ],
+            "largest-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 2500
+              }
+            ],
+            "total-blocking-time": [
+              "warn",
+              {
+                "maxNumericValue": 600
+              }
+            ],
+            "cumulative-layout-shift": [
+              "warn",
+              {
+                "maxNumericValue": 0.1
+              }
+            ],
+            "first-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 1800
+              }
+            ]
+          }
+        }
+      ]
     },
-    "upload": { "target": "filesystem", "outputDir": ".lighthouseci" }
+    "upload": {
+      "target": "filesystem",
+      "outputDir": ".lighthouseci"
+    }
   }
 }
