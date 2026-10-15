@@ -47,7 +47,25 @@ import * as path from 'node:path';
 
 import * as yaml from 'js-yaml';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const WORKFLOWS = path.resolve(__dirname, '../../.github/workflows');
+
+/**
+ * Through `collectSourceFiles` rather than `readdirSync`, because
+ * `file-collection-is-not-silently-empty` is right about what it prevents: a
+ * hand-rolled collector can be gutted to return `[]` with every assertion
+ * built on it still green — measured at 81% of the guards an automated sweep
+ * could audit. The floor is what separates "no workflow has a bad budget"
+ * from "no workflow was read", and this guard's claim is about a population.
+ */
+function workflowFiles(): string[] {
+    return collectSourceFiles({
+        roots: ['.github/workflows'],
+        extensions: ['.yml', '.yaml'],
+        floor: 8,
+    });
+}
 
 interface Step {
     name?: string;
@@ -72,8 +90,9 @@ interface Budgeted {
 
 function collect(): Budgeted[] {
     const out: Budgeted[] = [];
-    for (const file of fs.readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f))) {
-        const doc = yaml.load(fs.readFileSync(path.join(WORKFLOWS, file), 'utf8')) as Workflow;
+    for (const abs of workflowFiles()) {
+        const file = path.basename(abs);
+        const doc = yaml.load(fs.readFileSync(abs, 'utf8')) as Workflow;
         for (const [job, body] of Object.entries(doc.jobs ?? {})) {
             for (const step of body.steps ?? []) {
                 const stepBudget = step['timeout-minutes'];
@@ -97,7 +116,7 @@ describe('a step budget can actually fire (#1720)', () => {
     it('ranges over every workflow — the denominator', () => {
         console.log(
             `[step-budgets] ${budgeted.length} step(s) with a step-level timeout across ` +
-                `${fs.readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f)).length} workflow file(s)`,
+                `${workflowFiles().length} workflow file(s)`,
         );
         // A floor, so a refactor that stopped finding steps fails loudly
         // rather than passing over an empty population.
