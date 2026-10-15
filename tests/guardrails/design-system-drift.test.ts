@@ -20,6 +20,15 @@ const COMPONENTS_DIR = path.resolve(__dirname, '../../src/components');
  * These pages must NOT regress to raw color utilities.
  */
 const MIGRATED_PAGES = [
+    // P6.6 public-profile editor (#1884) — design-system-native from birth:
+    // cardVariants / Heading / FormField / Input / Textarea / Switch /
+    // Checkbox / Button / InlineNotice / QrCode and semantic tokens only, no
+    // raw colours and no legacy btn/badge/glass-card. Promoted on arrival
+    // rather than parked in the unmigrated tally, so it carries the
+    // raw-colour and legacy-class assertions from day one — the stronger
+    // position: the cap stays at 94 and the allowlist grows.
+    'admin/public-profile/page.tsx',
+    'admin/public-profile/PublicProfileClient.tsx',
     // #12 platform-support console — design-system-native from birth
     // (ListPageShell / DataTable / Modal / Combobox / DatePicker / FormField /
     // StatusBadge / Button + semantic tokens only; no raw colors, no legacy
