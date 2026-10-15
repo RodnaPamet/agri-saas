@@ -53,7 +53,19 @@ echo "Ledger entries reference ${#ISSUES[@]} distinct issue(s): ${ISSUES[*]}"
 
 STALE=""
 for N in "${ISSUES[@]}"; do
-    STATE=$(gh issue view "$N" --json state --jq .state 2>/dev/null || echo "UNKNOWN")
+    # The failure is HANDLED, not swallowed. `… || echo UNKNOWN` would bury a
+    # rate limit, an auth failure and a deleted issue in one bucket, and
+    # `shell-checks-that-cannot-fail` bans that shape for exactly this reason —
+    # it caught this script's first version. A lookup we could not perform is
+    # NOT a pass: the whole value of this probe is noticing an absence.
+    STATE="$(gh issue view "$N" --json state --jq .state 2>/dev/null)" || {
+        echo "::error::could not read the state of #$N — unverified, which is not the same as fine"
+        exit 1
+    }
+    if [[ -z "$STATE" ]]; then
+        echo "::error::empty state for #$N — the lookup succeeded and said nothing, which is worse"
+        exit 1
+    fi
     echo "  #$N -> $STATE"
     if [[ "$STATE" == "CLOSED" ]]; then
         # Every entry naming it, so the report is actionable without opening
@@ -61,16 +73,17 @@ for N in "${ISSUES[@]}"; do
         while IFS= read -r line; do
             STALE+="| #$N | $line |"$'\n'
         done < <(jq -r --argjson n "$N" '(.flakes // .) | .[] | select(.issue == $n) | "`\(.spec)` | \(.title)"' "$LEDGER")
-    elif [[ "$STATE" == "UNKNOWN" ]]; then
-        # A lookup failure is NOT a pass. Say so and fail the run rather than
-        # reporting a clean ledger we did not actually verify.
-        echo "::error::could not read the state of #$N — treating as unverified rather than fine"
-        exit 1
     fi
 done
 
-EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title \
-    --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+# `--limit 1` rather than `| head -1`: under `pipefail` a closing pipe can
+# SIGPIPE `gh`, and a failed lookup silently becoming "no existing issue" would
+# file a duplicate every week instead of commenting on one.
+EXISTING="$(gh issue list --state open --limit 50 --search "\"$TITLE\" in:title" --json number,title \
+    --jq "[.[] | select(.title == \"$TITLE\") | .number] | first // empty")" || {
+    echo "::error::could not list open issues — refusing to guess whether a tracking issue exists"
+    exit 1
+}
 
 if [[ -z "$STALE" ]]; then
     echo "Every ledger entry points at an open issue."

@@ -104,6 +104,12 @@ on:
       # still watching 90 minutes later", which is this file's premise.
       - "Coverage parity (reference run)"
       - "SBOM backfill"
+      # Weekly cron. A RED run here means the ledger probe itself is
+      # broken — the ledger moved, its shape changed, or an issue lookup
+      # could not be performed — and a stale flake excuse then goes
+      # unreported with nothing saying so. A stale POINTER never reaches
+      # this channel: the script files its own issue and exits 0.
+      - "Flake ledger pointers"
     types: [completed]
 
 permissions:
