@@ -527,6 +527,34 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                     <div className="flex flex-col gap-tight">
                         <p>{kit.url}</p>
                         <QrCode value={kit.qrValue} size={128} />
+                        {/* The A6 card — P6.7 (#1908).
+                            Until this, the card shipped (#1910) with nothing in
+                            the product linking to it.
+
+                            NO disabled state, and that is deliberate. The route
+                            refuses an unpublished farm with
+                            `FARM_BRAND_NOT_PUBLISHED`, and this whole block is
+                            already gated on `kit`, which is non-null only when
+                            `published && handle` — the same conditions. So the
+                            affordance's PRESENCE is the condition: it cannot be
+                            offered in a state where it would 400. A disabled
+                            button would have to restate a rule the layout
+                            already enforces, and the two could drift.
+
+                            A plain anchor, not a fetch-and-blob: the route
+                            already sends `Content-Disposition: attachment` with
+                            the farm's own Bulgarian name in RFC 5987
+                            `filename*`, so the browser's own download path
+                            preserves it. Reading the bytes in JS to re-offer
+                            them would throw that away and add a failure mode. */}
+                        <a
+                            href={apiUrl('/farm-brand/share-card')}
+                            download
+                            className="underline underline-offset-2"
+                        >
+                            {t('downloadCard')}
+                        </a>
+                        <span className="text-content-muted">{t('downloadCardHint')}</span>
                     </div>
                 )}
             </section>
