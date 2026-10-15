@@ -72,10 +72,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
      * P6.4 (#1813) — what an ANONYMOUS visitor is sent.
      *
      * `NextIntlClientProvider` serialises whatever `messages` it is given into
-     * the RSC payload. Measured 2026-10-14, the full Bulgarian catalogue is
-     * 404,981 bytes across 93 namespaces, and `/f/[handle]` needs 475 of them
-     * — 0.12%. A stranger opening a farm page was downloading every string of
-     * a product they have no account for, to render three.
+     * the RSC payload. Re-measured 2026-10-15: the full Bulgarian catalogue
+     * SERIALISES to 272,298 bytes across 93 namespaces, and `/f/[handle]`
+     * needs 314 of them — 0.12%. A stranger opening a farm page was
+     * downloading every string of a product they have no account for, to
+     * render three.
+     *
+     * Serialised, not the file's byte count — `messages/bg.json` is 491,803
+     * bytes on disk with its 4-space indentation, and the indentation never
+     * reaches the payload. The earlier figure here ("475 bytes instead of
+     * 404,981") reproduced as neither, which is how a number measured one way
+     * and compared another rots while the claim it supports stays true. The
+     * ratio is now DERIVED by
+     * `tests/guards/public-surface-i18n-complete.test.ts` rather than restated
+     * here, so a namespace added to the public list fails a test instead of
+     * making this comment wrong.
      *
      * On P6.5's budget of LCP <= 2.5s over rural mobile data, that payload is
      * the difference between the target being reachable and not.
