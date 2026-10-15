@@ -52537,14 +52537,7 @@
         "tags": [
           "Trust & safety"
         ],
-        "security": [
-          {
-            "sessionCookie": []
-          },
-          {
-            "bearerToken": []
-          }
-        ],
+        "security": [],
         "requestBody": {
           "content": {
             "application/json": {
@@ -56978,14 +56971,7 @@
         "tags": [
           "Public"
         ],
-        "security": [
-          {
-            "sessionCookie": []
-          },
-          {
-            "bearerToken": []
-          }
-        ],
+        "security": [],
         "parameters": [
           {
             "schema": {
