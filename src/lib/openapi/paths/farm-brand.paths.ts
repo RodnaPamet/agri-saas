@@ -204,6 +204,33 @@ export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
 
     op(registry, {
         method: 'get',
+        path: '/api/t/{tenantSlug}/farm-brand/share-card',
+        operationId: 'getFarmShareCard',
+        summary: 'The farm’s A6 share card, as a PDF',
+        description:
+            'A 105 × 148 mm (A6) card carrying the farm’s public name, its address as text, and a QR code that resolves to `/f/{handle}`. Intended to be printed and handed out — at a market stall, pinned to a gate.\n\n'
+            + '**A PDF rather than a print stylesheet, and that is a constraint rather than a preference.** `@page` is a document-level CSS rule with no element scope, and the application’s global stylesheet already declares the only one it has (`size: A4 landscape`, inside `@media print`). A second `@page` for A6 would either lose to that rule or re-size every other print surface in the application, depending on nothing more than stylesheet order. Serving bytes also means the Cyrillic face is EMBEDDED, so the farm’s name does not depend on the fonts installed wherever the sheet is printed.\n\n'
+            + '**No image.** Text and the QR only, per the owner’s ruling that the public farm page carries no avatar — a card is the same surface one step further from anyone who could correct it.\n\n'
+            + '`Cache-Control: no-store`. The card embeds the farm’s current public name, and a cached copy would hand out a sheet naming what the farm used to be called.\n\n'
+            + '**Refusal codes.** All three are fail-closed, and stricter than the editor’s on purpose: paper outlives state. A card printed from an incomplete draft points at a dead address for as long as the sheet exists, and there is no equivalent of withdrawing it.\n'
+            + '- `FARM_BRAND_NOT_FOUND` (404) — this farm has no public profile yet.\n'
+            + '- `FARM_BRAND_HANDLE_REQUIRED` — no public address has been chosen, so there is nothing for the QR to encode.\n'
+            + '- `FARM_BRAND_DISPLAY_NAME_REQUIRED` — no public name, so the card would be a QR code and nothing else.\n'
+            + '- `FARM_BRAND_NOT_PUBLISHED` — the profile exists but is not public, so `/f/{handle}` does not answer. This is the first operation in the product that requires an ALREADY-published farm; every other write on this model is what gets it there. Call `PUT .../farm-brand/publication` first.',
+        tags: ['Farm profile'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description:
+                'The card. `Content-Disposition: attachment` with the farm’s own name carried in RFC 5987 `filename*`, so a Bulgarian name survives the download rather than being transliterated or dropped.',
+            content: {
+                'application/pdf': z.string().openapi({ format: 'binary' }),
+            },
+        },
+    });
+
+    op(registry, {
+        method: 'get',
         path: '/api/t/{tenantSlug}/farm-brand',
         operationId: 'readFarmBrandDraft',
         summary: 'The farm’s public-profile draft',

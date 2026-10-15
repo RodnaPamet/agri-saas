@@ -64,6 +64,8 @@ import {
     checkHandleShape,
     suggestHandles,
 } from '@/lib/public-profile/handle';
+import { publicProfileUrl } from '@/lib/public-profile/share-links';
+import { getAppBaseUrl } from '@/lib/auth/app-base-url';
 
 export interface ProjectionResult {
     /** What the farm is published as, or null when it is not published. */
@@ -902,4 +904,84 @@ export async function readFarmBrandDraft(ctx: RequestContext): Promise<{
             },
         }),
     );
+}
+
+/**
+ * Everything the A6 share card needs, with the preconditions that make it
+ * safe to PRINT — P6.7 (#1816).
+ *
+ * ## Why this refuses where the editor merely warns
+ *
+ * The card carries `https://app.agrent.bg/f/{handle}` onto paper, and paper
+ * outlives state. #1816 raises the hazard in its own text for handle reuse;
+ * the same reasoning applies one step earlier. A card printed from an
+ * unpublished draft points at a 404 for as long as the sheet exists, and
+ * there is no equivalent of withdrawing it.
+ *
+ * So all three preconditions are fail-closed, matching
+ * {@link projectFarmBrand}'s publication gate rather than the editor's
+ * save-anything-anytime contract. Two of the codes are deliberately the SAME
+ * ones publishing raises — a client that already translates
+ * `FARM_BRAND_HANDLE_REQUIRED` needs no new string for the same cause.
+ *
+ * `FARM_BRAND_NOT_PUBLISHED` is the one new code, because this is the first
+ * operation in the product that requires an ALREADY-published farm; every
+ * other write is what gets it there.
+ */
+export async function buildFarmShareCard(ctx: RequestContext): Promise<{
+    handle: string;
+    displayName: string;
+    tagline: string | null;
+    url: string;
+    generatedAt: string;
+}> {
+    // Same gate as every other read and write on this model: a farm's public
+    // face is an owner concern.
+    assertCanAdmin(ctx);
+
+    const brand = await runInTenantContext(ctx, (db) =>
+        db.farmBrand.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: { handle: true, displayName: true, tagline: true, published: true },
+        }),
+    );
+
+    if (!brand) {
+        throw codedNotFound('FARM_BRAND_NOT_FOUND', 'This farm has no public profile yet.');
+    }
+    if (!brand.handle) {
+        throw codedBadRequest(
+            'FARM_BRAND_HANDLE_REQUIRED',
+            'Choose a public address for the farm before printing a card.',
+        );
+    }
+    if (!brand.displayName) {
+        throw codedBadRequest(
+            'FARM_BRAND_DISPLAY_NAME_REQUIRED',
+            'A public name is required before printing a card.',
+        );
+    }
+    if (!brand.published) {
+        throw codedBadRequest(
+            'FARM_BRAND_NOT_PUBLISHED',
+            'Publish the farm profile first — a printed address that is not published leads nowhere.',
+        );
+    }
+
+    return {
+        handle: brand.handle,
+        displayName: brand.displayName,
+        tagline: brand.tagline,
+        // `publicProfileUrl`, never a local template. It is described as "the
+        // ONE definition every share surface uses" for exactly this case: the
+        // printed card and the Viber forward must resolve to the same place,
+        // and the printed one is the copy nobody can correct.
+        //
+        // `baseUrl` is passed in rather than read inside that module, which is
+        // what makes it importable from a `'use client'` component: reading it
+        // there reached `getAppBaseUrl` -> `logger` -> `node:async_hooks` and
+        // failed the BUILD. Here we are server-side, so resolving it is free.
+        url: publicProfileUrl(brand.handle, getAppBaseUrl()),
+        generatedAt: new Date().toISOString(),
+    };
 }
