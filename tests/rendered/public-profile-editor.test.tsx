@@ -417,6 +417,53 @@ describe('the public-profile editor', () => {
         expect(body).toEqual({ hideAbout: true });
     });
 
+    describe('the live preview', () => {
+        it('renders the draft as a visitor would see it', async () => {
+            mockFetch([{ ok: true, body: DRAFT }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+
+            // The same markup `/f/[handle]` renders — addressed by the test
+            // ids the public page's own guards use, which is what proves it is
+            // the shared component rather than a lookalike.
+            expect(await screen.findByTestId('public-farm-name')).toHaveTextContent(
+                'Стопанство Победа',
+            );
+            expect(screen.getByTestId('public-farm-tagline')).toHaveTextContent(
+                'Зърно от Добруджа',
+            );
+            expect(screen.getByTestId('public-farm-about')).toBeInTheDocument();
+        });
+
+        it('shows an UNSAVED edit, which is the point of a preview', async () => {
+            // A link to the published page could only ever show the saved
+            // state. If this showed the saved value too, the preview would be
+            // a slower way to open a tab.
+            mockFetch([{ ok: true, body: DRAFT }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+            await screen.findByTestId('public-farm-name');
+
+            const tagline = screen.getByDisplayValue('Зърно от Добруджа');
+            await userEvent.clear(tagline);
+            await userEvent.type(tagline, 'Нов лозунг');
+
+            expect(screen.getByTestId('public-farm-tagline')).toHaveTextContent('Нов лозунг');
+        });
+
+        it('honours the eye toggles, so it cannot show what a visitor will not', async () => {
+            // The preview runs `applyVisibility`, the same function the
+            // projection uses. A preview that displayed hidden text would be
+            // believed — worse than no preview.
+            mockFetch([{ ok: true, body: { ...DRAFT, hideAbout: true, hideCrops: true } }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+
+            await screen.findByTestId('public-farm-name');
+            expect(screen.queryByTestId('public-farm-about')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('public-farm-crops')).not.toBeInTheDocument();
+            // And only those — the tagline is still shown.
+            expect(screen.getByTestId('public-farm-tagline')).toBeInTheDocument();
+        });
+    });
+
     it.each([
         ['mobile', 390],
         ['desktop', 1280],
