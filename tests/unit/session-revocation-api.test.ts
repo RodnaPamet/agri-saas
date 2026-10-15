@@ -121,14 +121,19 @@ describe('Session Revocation Enforcement', () => {
             expect(event.details).toContain('15 users');
         });
 
-        it('audit events never contain session tokens or secrets', () => {
-            const sensitivePatterns = [/Bearer\s+\S+/, /eyJ\w+/, /session-token/i];
-            const details = 'Admin admin-001 revoked sessions for user target-user-456. New sessionVersion: 3';
-            
-            for (const pattern of sensitivePatterns) {
-                expect(pattern.test(details)).toBe(false);
-            }
-        });
+        // REMOVED: 'audit events never contain session tokens or secrets' (#1784).
+        //
+        // It tested a `details` string typed into this file against patterns
+        // chosen by the same author — so it asserted that a constant does not
+        // match a regex, passed for ever, and would have passed just as
+        // happily if every audit writer started interpolating a bearer token.
+        // Its NAME was the harmful part: a reader searching for coverage of
+        // that claim found it, stopped, and was wrong.
+        //
+        // The claim is now checked where a leak would be written:
+        // `tests/guards/audit-details-carry-no-secrets.test.ts` scans all 220
+        // `logEvent` call sites in `src/` and fails on an interpolated value
+        // whose name is a secret.
     });
 
     // ─── Path Guards ────────────────────────────────────────────────
