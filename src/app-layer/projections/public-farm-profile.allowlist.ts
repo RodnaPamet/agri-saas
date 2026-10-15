@@ -34,6 +34,7 @@
 import type { FarmBrand } from '@prisma/client';
 
 import { transliterate } from '@/lib/bg-transliterate';
+import { applyVisibility } from '@/lib/public-profile/visibility';
 
 /** Published, or deliberately not. */
 export type FieldDecision =
@@ -268,19 +269,18 @@ export function projectionPayload(brand: {
     if (!brand.displayName) throw new Error('projectionPayload called without a displayName');
 
     /**
-     * Whether `field` is withheld — P6.6 (#1815).
+     * The eye toggles, applied by the SHARED rule — P6.6 (#1815).
      *
-     * Reads the flag THROUGH `HIDEABLE_FIELDS` rather than naming the column
-     * inline, so the partition that the agreement test checks is also the
-     * thing that runs. A field whose toggle column were renamed could not
-     * silently keep publishing: there would be no entry to read it by.
+     * `applyVisibility` is also what the editor's live preview uses, so the
+     * preview cannot disagree with the projection about whether a paragraph is
+     * public. A preview that disagreed would be worse than none, because it is
+     * believed.
      *
-     * Hiding withholds the field from the PROJECTION only. The text stays on
+     * Hiding withholds from the PROJECTION only. The text stays on
      * `FarmBrand`, which is the owner's ruling — an eye toggle must be
      * reversible without retyping the paragraph.
      */
-    const hidden = (field: keyof typeof HIDEABLE_FIELDS): boolean =>
-        brand[HIDEABLE_FIELDS[field]] === true;
+    const visible = applyVisibility(brand, brand);
 
     const out = {
         // NORMALISED here, and here only.
@@ -316,10 +316,10 @@ export function projectionPayload(brand: {
         // required rather than incidental: the flags are `privateField` in
         // this very module precisely so the page never reveals that something
         // is being withheld.
-        tagline: hidden('tagline') ? null : brand.tagline,
-        about: hidden('about') ? null : brand.about,
-        oblast: hidden('oblast') ? null : brand.oblast,
-        crops: hidden('crops') ? [] : brand.crops,
+        tagline: visible.tagline,
+        about: visible.about,
+        oblast: visible.oblast,
+        crops: [...visible.crops],
         // DERIVED, not copied — see DERIVED_PROJECTION_FIELDS. Computed from
         // the already-normalised display name so the stored Latin form and
         // the Cyrillic one describe the same string.

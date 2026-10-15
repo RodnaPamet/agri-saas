@@ -40,6 +40,8 @@ import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { QrCode } from '@/components/ui/qr-code';
+import { PublicFarmBody } from '@/components/public-profile/public-farm-body';
+import { applyVisibility } from '@/lib/public-profile/visibility';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cardVariants } from '@/components/ui/card';
@@ -119,6 +121,15 @@ function VisibilityToggle({
 
 export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
     const t = useTranslations('admin.publicProfile');
+    // The PUBLIC page's own copy, for the live preview. A second namespace
+    // rather than duplicated keys under `admin.publicProfile`: the preview
+    // must show the words a visitor sees, and two copies of «Култури» would
+    // let the preview and the page disagree about the label as easily as
+    // about the markup.
+    //
+    // Available here because `publicSurfaceMessages` trims the catalogue only
+    // for /f/ requests — the admin editor is served the full set.
+    const tp = useTranslations('publicFarm');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     // The shared formatter, not an ad-hoc Intl call:
@@ -520,6 +531,62 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                     <Button onClick={() => claimHandle()} disabled={busy}>
                         {t('addressClaim')}
                     </Button>
+                </div>
+            </section>
+
+            {/* ── live preview ── */}
+            <section className={cn(cardVariants(), 'flex flex-col gap-default')}>
+                <Heading level={2}>{t('previewHeading')}</Heading>
+                <p className="text-content-muted">{t('previewHelp')}</p>
+                {/* The SAME component `/f/[handle]` renders, so the preview
+                    cannot drift from the page. Fed with the LIVE form values
+                    rather than the saved draft, so an unsaved edit is visible
+                    — which is the whole point of a preview rather than a link.
+
+                    `applyVisibility` is the same function the projection uses,
+                    so a field hidden by its eye toggle disappears here exactly
+                    as it will for a visitor. A preview that showed hidden text
+                    would be believed. */}
+                <div className="rounded-lg border border-border-subtle p-default">
+                    {(() => {
+                        const visible = applyVisibility(
+                            {
+                                tagline: tagline.trim() || null,
+                                about: about.trim() || null,
+                                oblast: oblast.trim() || null,
+                                crops: crops
+                                    .split(',')
+                                    .map((c) => c.trim())
+                                    .filter((c) => c !== ''),
+                            },
+                            {
+                                hideTagline: draft?.hideTagline ?? false,
+                                hideAbout: draft?.hideAbout ?? false,
+                                hideOblast: draft?.hideOblast ?? false,
+                                hideCrops: draft?.hideCrops ?? false,
+                            },
+                        );
+                        return (
+                            <PublicFarmBody
+                                profile={{
+                                    // The page's `displayName` column is NOT
+                                    // NULL, so an empty form field previews as
+                                    // the placeholder rather than as a blank
+                                    // heading — a publication precondition
+                                    // refuses it long before it could ship.
+                                    displayName: displayName.trim() || t('previewNoName'),
+                                    ...visible,
+                                }}
+                                labels={{
+                                    oblastLine: visible.oblast
+                                        ? tp('oblast', { oblast: visible.oblast })
+                                        : null,
+                                    cropsTitle: tp('cropsTitle'),
+                                    aboutTitle: tp('aboutTitle'),
+                                }}
+                            />
+                        );
+                    })()}
                 </div>
             </section>
 
