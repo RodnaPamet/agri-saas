@@ -351,7 +351,9 @@ export function registerPlanningPaths(registry: OpenAPIRegistry): void {
         description: '**Refusal codes.**\n'
             + '- `SEASON_NOT_FOUND` (404) — no season with that id in this farm. Distinct from `CROP_SEASON_NOT_FOUND`, which is a crop grown on a PARCEL in a season and lives on the parcel-history routes.\n'
             + '- `SEASON_NAME_REQUIRED` — sending `name` explicitly blank. Omitting the field leaves the name unchanged; sending it empty is a request to clear a required field, which is refused.\n\n'
-            + 'Note this operation does NOT validate dates: unlike create, an unparseable `startDate` or `endDate` is not refused here, and neither is an inverted window. That asymmetry is a known defect rather than a contract (#1826) — do not build on it.',
+            + '- `SEASON_INVALID_DATE` — a supplied `startDate` or `endDate` is not a date. `params.field` names which, comma-joined when both are bad, the same shape create uses.\n'
+            + '- `SEASON_WINDOW_INVERTED` — the window after this update would run backwards. Judged on the EFFECTIVE window, so sending `endDate` alone is compared against the STORED `startDate` rather than being accepted because the request carries only one date. A single-day season (equal dates) is legal.\n\n'
+            + 'Dates ARE validated here as of #1826. This operation previously refused neither an unparseable date nor an inverted window, and said so in this description so no client would build on the gap; both are now refused on write. Rows already holding an inverted window are left alone and stay readable — they are not migrated.',
         tags: ['Planning'],
         params: p('seasonId'),
         body: UpdateSeasonSchema,

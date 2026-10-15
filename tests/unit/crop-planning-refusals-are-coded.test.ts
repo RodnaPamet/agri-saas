@@ -91,23 +91,24 @@ describe('a blank name is coded, per entity', () => {
         expect(err.code).toBe('SEASON_NAME_REQUIRED');
     });
 
-    it('DOCUMENTS A GAP: a whitespace-only name is NOT refused today', async () => {
-        // This is not the behaviour anyone wants, and the test asserts what
-        // HAPPENS rather than what should. `sanitizePlainText` strips markup
-        // and does not trim, so `if (!name)` catches only a truly empty
-        // string and `'   '` is stored as a name.
+    it('a whitespace-only name is refused — GAP CLOSED (#1825)', async () => {
+        // This case was called "DOCUMENTS A GAP" and asserted the OPPOSITE:
+        // `expect(err.code).not.toBe('SEASON_NAME_REQUIRED')`, because
+        // `sanitizePlainText` stripped markup without trimming, so
+        // `if (!name)` caught only a truly empty string and `'   '` was
+        // stored as a name. It asserted what HAPPENED rather than what
+        // should, deliberately, so the gap stayed visible and this case
+        // would fail the moment somebody fixed it.
         //
-        // Measured across src/: 28 sites blank-check a `sanitizePlainText`
-        // result and ZERO of them trim, so this is a repo-wide pattern rather
-        // than a slip here. Filed as #1825 — tightening it changes which
-        // requests are refused, which is a product decision and not something
-        // a refusal-coding batch should take on the side.
-        //
-        // Asserting it keeps the gap visible: when it is fixed, this case
-        // fails and points at the decision.
+        // It did. `sanitizePlainText` trims as of 2026-10-15 (owner ruling
+        // on #1825: trim in the one function rather than at 28 call sites,
+        // so the 140th caller is correct without knowing it exists). The
+        // flip is the proof the fix reaches this usecase: nothing in
+        // `crop-planning.ts` changed.
         const err = await refusal(() => createSeason(ctx, { ...SEASON, name: '   ' } as never));
-        expect(err.code).not.toBe('SEASON_NAME_REQUIRED');
+        expect(err.code).toBe('SEASON_NAME_REQUIRED');
     });
+
 });
 
 describe('an unparseable date names WHICH date', () => {
@@ -135,6 +136,46 @@ describe('an unparseable date names WHICH date', () => {
         );
         expect(err.code).toBe('SEASON_INVALID_DATE');
         expect(err.params?.field).toBe('startDate,endDate');
+    });
+
+    it('the SEASON carries its field on UPDATE too — the #1826 asymmetry, closed', async () => {
+        // updateSeason validated NEITHER date until #1826, where create
+        // validated both. An unparseable string reached Prisma as an
+        // `Invalid Date` object, so the operator saw whatever the driver
+        // said rather than SEASON_INVALID_DATE.
+        //
+        // Reachable in THIS suite, which has no database, precisely because
+        // the parse check runs before the transaction is opened. The window
+        // check cannot be tested here for the same reason — it needs the
+        // STORED date — and lives in
+        // tests/integration/crop-plan-lifecycle.test.ts.
+        const onStart = await refusal(() =>
+            updateSeason(ctx, 's-1', { startDate: 'not-a-date' } as never),
+        );
+        expect(onStart.code).toBe('SEASON_INVALID_DATE');
+        expect(onStart.params?.field).toBe('startDate');
+
+        const onEnd = await refusal(() =>
+            updateSeason(ctx, 's-1', { endDate: 'nope' } as never),
+        );
+        expect(onEnd.code).toBe('SEASON_INVALID_DATE');
+        expect(onEnd.params?.field).toBe('endDate');
+
+        // Computed, not hardcoded — the case that makes the param worth
+        // having, same as create's.
+        const onBoth = await refusal(() =>
+            updateSeason(ctx, 's-1', { startDate: 'x', endDate: 'y' } as never),
+        );
+        expect(onBoth.params?.field).toBe('startDate,endDate');
+    });
+
+    it('an OMITTED date on update is not reported as invalid', async () => {
+        // The direction a naive `new Date(input.startDate)` gets wrong:
+        // `new Date(undefined)` is an Invalid Date, so a check that did not
+        // gate on `!== undefined` would refuse every PATCH that touches only
+        // the name — turning a fix into an outage on the most common request.
+        const err = await refusal(() => updateSeason(ctx, 's-1', { name: 'Renamed' } as never));
+        expect(err.code).not.toBe('SEASON_INVALID_DATE');
     });
 
     it('the crop plan carries its field too, on create AND update', async () => {

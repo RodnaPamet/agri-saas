@@ -126,11 +126,18 @@ function parseDate(value: string | null | undefined, label: string): Date | null
  * Sanitise an optional short free-text field and normalise the empty
  * result to `null`.
  *
- * `sanitizePlainText` strips markup but does NOT trim, so a value of
- * `"   "` survives as `"   "` — which for `key` meant a second
- * blank-keyed contract collided on the `[tenantId, key]` unique index
- * (a 409 the operator could not diagnose), and for `counterparty`
- * meant whitespace passed the required-field check.
+ * `sanitizePlainText` TRIMS as of #1825, so the `.trim()` below is now
+ * belt-and-braces rather than the load-bearing part. It stays: this
+ * function's contract is "blank becomes null", and that should not depend
+ * on a detail of the sanitiser, which has already changed once.
+ *
+ * What it was for, kept because it is why the normalisation exists at all:
+ * the sanitiser used to leave `"   "` as `"   "`, which for `key` meant a
+ * second blank-keyed contract collided on the `[tenantId, key]` unique
+ * index (a 409 the operator could not diagnose), and for `counterparty`
+ * meant whitespace passed the required-field check. Seventeen call sites
+ * across this codebase had independently reached for the same `.trim()`,
+ * which is what made trimming inside the sanitiser the right fix.
  */
 function cleanOptionalText(value: string | null | undefined): string | null {
     if (value == null) return null;
@@ -267,9 +274,10 @@ export async function getContract(ctx: RequestContext, id: string) {
 export async function createContract(ctx: RequestContext, input: CreateContractInput) {
     assertCanWrite(ctx);
 
-    // Trim AFTER sanitising: the sanitiser does not trim, so an
-    // all-whitespace counterparty would otherwise pass the required check
-    // and persist as a blank row title.
+    // The `.trim()` is redundant since #1825 — `sanitizePlainText` trims —
+    // and is kept as belt-and-braces. Before that, an all-whitespace
+    // counterparty passed this required check and persisted as a blank row
+    // title.
     const counterparty = sanitizePlainText(input.counterparty ?? '').trim();
     if (!counterparty) throw codedBadRequest('CONTRACT_COUNTERPARTY_REQUIRED', 'Contract counterparty is required');
 
