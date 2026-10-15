@@ -1,0 +1,65 @@
+name: Flake ledger pointers
+
+# Weekly: does every known-flake entry still point at an OPEN issue? (#1803)
+#
+# ## Why this is scheduled rather than a guard
+#
+# `tests/guards/known-flake-ledger.test.ts` checks everything about an entry
+# that is visible offline — the spec exists, the title still occurs in it so a
+# rename cannot orphan an entry, the review date is a real date. About the
+# issue it can only assert the number is an integer, because the state of a
+# GitHub issue is not in the repository.
+#
+# That fact rots on WALL-CLOCK TIME, not on a diff: nobody edits the ledger on
+# the day someone else closes the issue it names. So the trigger has to be
+# time, and it must not sit in the per-PR test population — a guard that needs
+# the network fails closed on a rate limit, which is how a guard becomes one
+# people disable.
+#
+# Measured before this existed: FOUR of six entries pointed at closed issues
+# (#1329 x3, #1487). An entry whose issue is closed reads as tracked while
+# nothing tracks it, and goes on excusing a CI retry on every run.
+#
+# ## What a red run means
+#
+# Nothing is broken in the product. A pointer has gone stale and wants a human
+# decision — prune the entry, or re-point it at a live issue. The script files
+# that decision as an issue rather than failing the run, so this workflow is
+# deliberately NOT in `ci-failure-issue.yml`'s watched list: a stale pointer is
+# a tidy-up, and routing it through the CI-failure channel would dilute a
+# channel that means "main is broken".
+
+on:
+    schedule:
+        # Mondays 06:00 UTC — the start of a working week, and an hour before
+        # the basemap probe so two scheduled jobs are not competing for
+        # attention on the same morning.
+        - cron: "0 6 * * 1"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    issues: write
+
+concurrency:
+    # A manual dispatch landing on top of the weekly run must not file twice:
+    # both would lose the "does an issue already exist?" race.
+    group: flake-ledger-pointers
+    cancel-in-progress: false
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out the ledger and the script
+              uses: actions/checkout@v7
+              with:
+                  sparse-checkout: |
+                      .github/scripts
+                      tests/e2e/known-flakes.json
+                  sparse-checkout-cone-mode: false
+
+            - name: Report any entry pointing at a closed issue
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: ./.github/scripts/flake-ledger-pointers.sh
