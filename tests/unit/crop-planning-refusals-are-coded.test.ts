@@ -138,6 +138,46 @@ describe('an unparseable date names WHICH date', () => {
         expect(err.params?.field).toBe('startDate,endDate');
     });
 
+    it('the SEASON carries its field on UPDATE too — the #1826 asymmetry, closed', async () => {
+        // updateSeason validated NEITHER date until #1826, where create
+        // validated both. An unparseable string reached Prisma as an
+        // `Invalid Date` object, so the operator saw whatever the driver
+        // said rather than SEASON_INVALID_DATE.
+        //
+        // Reachable in THIS suite, which has no database, precisely because
+        // the parse check runs before the transaction is opened. The window
+        // check cannot be tested here for the same reason — it needs the
+        // STORED date — and lives in
+        // tests/integration/crop-plan-lifecycle.test.ts.
+        const onStart = await refusal(() =>
+            updateSeason(ctx, 's-1', { startDate: 'not-a-date' } as never),
+        );
+        expect(onStart.code).toBe('SEASON_INVALID_DATE');
+        expect(onStart.params?.field).toBe('startDate');
+
+        const onEnd = await refusal(() =>
+            updateSeason(ctx, 's-1', { endDate: 'nope' } as never),
+        );
+        expect(onEnd.code).toBe('SEASON_INVALID_DATE');
+        expect(onEnd.params?.field).toBe('endDate');
+
+        // Computed, not hardcoded — the case that makes the param worth
+        // having, same as create's.
+        const onBoth = await refusal(() =>
+            updateSeason(ctx, 's-1', { startDate: 'x', endDate: 'y' } as never),
+        );
+        expect(onBoth.params?.field).toBe('startDate,endDate');
+    });
+
+    it('an OMITTED date on update is not reported as invalid', async () => {
+        // The direction a naive `new Date(input.startDate)` gets wrong:
+        // `new Date(undefined)` is an Invalid Date, so a check that did not
+        // gate on `!== undefined` would refuse every PATCH that touches only
+        // the name — turning a fix into an outage on the most common request.
+        const err = await refusal(() => updateSeason(ctx, 's-1', { name: 'Renamed' } as never));
+        expect(err.code).not.toBe('SEASON_INVALID_DATE');
+    });
+
     it('the crop plan carries its field too, on create AND update', async () => {
         const onCreate = await refusal(() =>
             createCropPlan(ctx, { ...PLAN, firstSowDate: 'bad' } as never),
