@@ -38,7 +38,7 @@ import prisma from '@/lib/prisma';
 import { getStorageProvider } from '@/lib/storage';
 import { sniffMimeType } from '@/lib/storage/mime-sniff';
 import { scanOrRefuse } from '@/lib/upload/ingest';
-import { badRequest } from '@/lib/errors/types';
+import { codedBadRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 
 /**
@@ -82,11 +82,17 @@ export async function uploadOwnAvatar(
     userId: string,
     buf: Buffer,
 ): Promise<{ imageUrl: string }> {
+    // Coded, not bare (#1861). `no-server-authored-user-copy` exempts a
+    // coded throw, so these lower that ratchet rather than adding to it —
+    // and a client can tell "you sent nothing" from "you sent the wrong
+    // format" without parsing English, which matters for the one of these
+    // that means the canvas step was skipped.
     if (buf.length === 0) {
-        throw badRequest('Avatar upload was empty.');
+        throw codedBadRequest('AVATAR_EMPTY', 'Avatar upload was empty.');
     }
     if (buf.length > AVATAR_MAX_BYTES) {
-        throw badRequest(
+        throw codedBadRequest(
+            'AVATAR_TOO_LARGE',
             'Processed avatar is too large — re-select a smaller image.',
         );
     }
@@ -94,7 +100,7 @@ export async function uploadOwnAvatar(
         // The client canvas emits webp; anything else means the
         // canvas step was bypassed. Reject rather than store
         // unprocessed (possibly EXIF-bearing) bytes.
-        throw badRequest('Avatar must be a WebP image.');
+        throw codedBadRequest('AVATAR_NOT_WEBP', 'Avatar must be a WebP image.');
     }
 
     // Every cheap rejection above runs first, so malformed bytes never

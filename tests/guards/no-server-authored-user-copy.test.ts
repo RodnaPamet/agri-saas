@@ -526,7 +526,15 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // which one — and `SEASON_WINDOW_INVERTED` is deliberately separate from it:
 // both dates parsed and the window runs backwards, which is a different
 // refusal, not a variant.
-const CURRENT_BASELINE = 294;
+// 294 -> 289 (#1861). The avatar path's five bare refusals are coded now —
+// AVATAR_FILE_MISSING, AVATAR_EMPTY, AVATAR_TOO_LARGE, AVATAR_NOT_WEBP and
+// the WebP magic-number one — and a coded throw is exempt from this count.
+//
+// Lowered rather than left at 294 with the slack absorbed by
+// DRIFT_ALLOWANCE: a downward ratchet that is not tightened when the gain is
+// earned silently buys room for the next five uncoded strings, which is the
+// opposite of what it is for.
+const CURRENT_BASELINE = 289;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

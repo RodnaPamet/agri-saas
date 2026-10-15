@@ -323,6 +323,27 @@ const PersonalDataExportSchema = z
             + 'exported but not erased \u2014 or erased but never shown \u2014 is not reachable.',
     });
 
+const AvatarUploadSchema = z
+    .object({
+        file: z
+            .string()
+            .openapi({ format: 'binary', description: 'The WebP bytes, at most 512 KB.' }),
+    })
+    .openapi('AvatarUpload', {
+        description:
+            'multipart/form-data body for an avatar upload. One part, named `file`.',
+    });
+
+const AvatarUploadResultSchema = z
+    .object({
+        imageUrl: z.string().openapi({
+            description:
+                'The caller’s new effective avatar, as a ROOT-RELATIVE path — the same shape `getCurrentUser` returns for an uploaded photo, so a client can set it straight into the field it already renders.',
+            example: '/api/account/avatar/clx8k2p9a0000qwer',
+        }),
+    })
+    .openapi('AvatarUploadResult');
+
 export function registerAccountPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -727,4 +748,48 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
         },
     });
 
+
+    op(registry, {
+        method: 'post',
+        path: '/api/account/avatar',
+        operationId: 'uploadOwnAvatar',
+        summary: 'Upload the caller’s own avatar',
+        description:
+            'MULTIPART, one part named `file`. Undocumented until #1861, which is how the three `UPLOAD_*` scan codes ended up on `UNDOCUMENTED_BASELINE` with no operation to name them on — the spec described this endpoint\u2019s EFFECTS, in `getUserAvatar`\u2019s description, without describing the endpoint.\n\n'
+            + 'The caller\u2019s OWN avatar only; there is no parameter for whose it is. `getUserCtx` refuses an `iflk_` API key presented as a person credential, an MFA-pending session, and the operator-only persona (#1579).\n\n'
+            + '**WebP only, 512 KB.** The client canvas emits WebP, so anything else means the canvas step was bypassed — and unprocessed bytes may still carry EXIF, including GPS. That is a privacy refusal rather than a format preference, which is why it is checked on the MAGIC NUMBER and not on a declared content type a caller controls.\n\n'
+            + 'AV-scanned before the write, so the bytes a later `GET` streams have passed that gate. The size is checked twice on purpose: once on `file.size` before buffering, so an oversized upload never reaches memory, and once on the buffer.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `AVATAR_FILE_MISSING` — no `file` part in the form data.\n'
+            + '- `AVATAR_EMPTY` — the part was present and zero bytes.\n'
+            + '- `AVATAR_TOO_LARGE` — over 512 KB. Raised at either check.\n'
+            + '- `AVATAR_NOT_WEBP` — the magic number is not WebP. Re-run the client canvas rather than retrying the same bytes.\n'
+            + '- `UPLOAD_INFECTED` — the malware scanner identified something. Refused in every scan mode.\n'
+            + '- `UPLOAD_SCANNER_UNAVAILABLE` — a scanner IS configured, it errored, and the deployment asked to fail closed. Transient; retrying later is reasonable.\n\n'
+            + '`UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE` is NOT reachable here: this surface declares `exposure: private`, and that code fires only for a public one. No caller in the product passes `public` today.',
+        tags: ['Account'],
+        body: AvatarUploadSchema,
+        bodyContentType: 'multipart/form-data',
+        success: {
+            status: 200,
+            description: 'The stored avatar’s URL.',
+            schema: AvatarUploadResultSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/account/avatar',
+        operationId: 'removeOwnAvatar',
+        summary: 'Remove the caller’s uploaded avatar',
+        description:
+            'Clears `User.image`. `GET /api/account/avatar/{userId}` then 404s, which that operation already documents as its ORDINARY answer — so a client should expect initials, not an error.\n\n'
+            + 'Idempotent: removing an avatar that is already absent succeeds. A later OAuth sign-in may re-populate the provider photo, because that is not an uploaded avatar and this endpoint never stored it.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description: 'Removed, or already absent.',
+            schema: z.object({ success: z.literal(true) }).openapi('AvatarRemoveResult'),
+        },
+    });
 }
