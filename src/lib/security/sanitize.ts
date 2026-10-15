@@ -140,6 +140,48 @@ export function sanitizeRichTextHtml(input: string | null | undefined): string {
  * runtime, an email body), the literal `<script>` reappears. Decoding
  * here means the caller stores exactly what a user reading the field
  * verbatim would see.
+ *
+ * ## It TRIMS, and that is load-bearing (#1825)
+ *
+ * It did not until 2026-10-15, and the repo's standard blank check is
+ *
+ *     const name = sanitizePlainText(input.name);
+ *     if (!name) throw codedBadRequest('…_NAME_REQUIRED', '…');
+ *
+ * so `'   '` was truthy and a name of three spaces passed a check whose own
+ * code says it is required. The check worked for the attack it was written
+ * against — `'<b></b>'` sanitises to `''` and is refused — and failed for the
+ * typo. 28 of this function's call sites are that shape and none trimmed.
+ *
+ * The cost was not only the refusal. A parcel, contract or crop plan named
+ * «   » renders as an empty cell in the ДНЕВНИК and cannot be found by name,
+ * and because the row was ACCEPTED nothing anywhere reported a problem. The
+ * quieter half is that `' a '` was STORED as `' a '`, so leading whitespace
+ * reached the register and the search index at all 139 call sites, not just
+ * the 28 that blank-check.
+ *
+ * Trimming HERE rather than at each caller was the owner's ruling
+ * (2026-10-15), over a `sanitizePlainTextRequired` helper and over 28 local
+ * `.trim()` calls: it fixes both halves at every site at once, and the 140th
+ * caller is correct without knowing this exists. A per-site fix is 28 chances
+ * to forget and leaves 111 sites still storing whitespace.
+ *
+ * Only the ENDS. A multi-line description keeps its internal newlines, so
+ * nothing about the notes or rich-text surfaces changes shape.
+ *
+ * What trim covers, MEASURED rather than assumed — I wrote the opposite
+ * here first. `String.prototype.trim` strips the spec's WhiteSpace, which
+ * includes every Unicode space separator, so U+00A0 (nbsp), U+2007, U+3000
+ * and U+FEFF all go. A non-breaking-space-only name is refused too.
+ *
+ * **U+200B, the zero-width space, is NOT WhiteSpace and survives**, so a
+ * name of one zero-width space is still truthy and still accepted. Same
+ * class as the defect this fixes, for a far rarer input, and left alone
+ * deliberately: widening past `String.trim` means deciding which characters
+ * count as blank, and U+200B is used as a line-break hint in some scripts.
+ * That is a different call from discarding incidental whitespace and not one
+ * to take while fixing 28 typo-shaped sites. Asserted in
+ * `tests/unit/security/sanitize.test.ts` so the residual stays visible.
  */
 export function sanitizePlainText(input: string | null | undefined): string {
     if (input == null) return '';
@@ -161,7 +203,10 @@ export function sanitizePlainText(input: string | null | undefined): string {
         .replace(/&#47;/g, '/')
         // Decode `&amp;` LAST: a value like `&amp;lt;` then resolves to the
         // literal text `&lt;` rather than being double-unescaped into `<`.
-        .replace(/&amp;/g, '&');
+        .replace(/&amp;/g, '&')
+        // AFTER decoding (#1825): `'&#x20;'` is a space once decoded, and
+        // trimming first would leave it.
+        .trim();
 }
 
 // ─── Convenience helpers ────────────────────────────────────────────
