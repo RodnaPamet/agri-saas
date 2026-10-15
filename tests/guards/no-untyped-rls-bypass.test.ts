@@ -48,6 +48,41 @@ function callersOf(symbol: string): string[] {
     return FILES.filter((f) => re.test(f.code)).map((f) => f.rel);
 }
 
+/**
+ * One entry per CALL, as `file:line` — not one per file.
+ *
+ * `callersOf` answers "which files bypass", which is a different question
+ * from "how many reads bypass", and the ceiling below used to be set on the
+ * first. Measured when P6.6 added `farm-handle-availability` to
+ * `public-farm-profile.ts`, a file that already held
+ * `public-projection-read`: the number did not move and the guard stayed
+ * green while another query started reading across tenants (#1864).
+ *
+ * The two reasons in that one file are not the same risk, which is what
+ * makes the distinction matter rather than merely tidy. The ceiling's own
+ * docblock argues `public-projection-read` is safe because
+ * `PublicFarmProfile` has no PII columns and no `tenantId`, so "a mistake at
+ * the call site cannot widen its reach" — bounded by the TABLE.
+ * `farm-handle-availability` reads `FarmBrand`, which is tenant-scoped; its
+ * reach is bounded by the QUERY, and a later edit to that query can widen it
+ * with nothing structural objecting.
+ *
+ * Counts MATCHES, not lines: two calls on one line are two sites. Reads
+ * `f.code`, which `blankNonCode` has already blanked, so a comment naming
+ * the function is not a site.
+ */
+function callSitesOf(symbol: string): string[] {
+    const re = new RegExp('\\b' + symbol + '\\s*\\(', 'g');
+    const out: string[] = [];
+    for (const f of FILES) {
+        f.code.split('\n').forEach((line, i) => {
+            const hits = [...line.matchAll(re)].length;
+            for (let k = 0; k < hits; k += 1) out.push(`${f.rel}:${i + 1}`);
+        });
+    }
+    return out;
+}
+
 describe('the untyped RLS bypass is gone', () => {
     it('reports the population, so a zero would be visible', () => {
         expect(FILES.length).toBeGreaterThan(500);
@@ -101,6 +136,36 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // exempted, so the fourth caller is a visible diff — which is the
         // whole purpose of the number.
         expect(callers.length).toBeLessThanOrEqual(4);
+
+        // ── and the SITES, because the file count hid five of them ──
+        //
+        // Measured 2026-10-15: 9 call sites across those 4 files. The file
+        // ceiling was green at 4 the whole time, including when P6.6 added a
+        // second reason to `public-farm-profile.ts` and a new query started
+        // reading `FarmBrand` across tenants (#1864).
+        //
+        //   PortfolioRepository.ts   3   org-portfolio-read
+        //   public-farm-profile.ts   4   public-projection-read x3,
+        //                                farm-handle-availability
+        //   exchange.ts              1
+        //   org-tenants.ts           1
+        //
+        // BOTH numbers are asserted rather than one replacing the other,
+        // because they answer different questions: how much of the product
+        // may read across tenants, and how many reads actually do. A cap on
+        // files alone lets an existing bypasser grow without limit; a cap on
+        // sites alone stops reporting when the bypass spreads to a new
+        // module. Printed above either way, so a reader of CI output sees
+        // the denominators instead of inferring them from a tick.
+        const sites = callSitesOf('runWithoutRls').filter(
+            (rel) => !rel.startsWith('src/lib/db/rls-middleware.ts'),
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+            `[rls-bypass] files=${callers.length} sites=${sites.length}\n  ` +
+                sites.join('\n  '),
+        );
+        expect(sites.length).toBeLessThanOrEqual(9);
     });
 
     it('every bypass site names a reason from the union', () => {
