@@ -38,7 +38,12 @@ import * as path from 'node:path';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
 import { CSP_REPORT_PATH } from '@/lib/security/csp';
-import { PUBLIC_PATH_PREFIXES, isPublicPath, matchesPublicPrefix } from '@/lib/auth/guard';
+import {
+    PUBLIC_PATH_EXACT,
+    PUBLIC_PATH_PREFIXES,
+    isPublicPath,
+    matchesPublicPrefix,
+} from '@/lib/auth/guard';
 
 /**
  * The live entry list — the array itself, not a parse of its source.
@@ -92,15 +97,25 @@ describe('a public prefix stops at a segment boundary', () => {
     // empty", and two empty inputs produce that too.
 
     it('control: the entry list and the route population both parsed', () => {
-        expect(ENTRIES.length).toBeGreaterThanOrEqual(20);
+        // Lowered from 20 when #1838 narrowed 17 single-path entries out of
+        // this list — the population is deliberately 16 now, not truncated.
+        // The floor also means less than it did: it used to guard a PARSE
+        // that could return a short population silently, and this is a direct
+        // read of the array, so what remains is a check that the import
+        // resolved at all.
+        expect(ENTRIES.length).toBeGreaterThanOrEqual(10);
         expect(REAL_PATHS.length).toBeGreaterThanOrEqual(350); // measured 464
         // The entry this whole rule is named after is still spelled with its
         // slash. If someone "tidies" it away, the docblock above stops being
         // true and this fails rather than the suite quietly agreeing.
         expect(ENTRIES).toContain('/api/scim/');
         // #1848 regression: the one entry spelled as a constant rather than a
-        // literal. The old source-parsing population could not see it.
-        expect(ENTRIES).toContain(CSP_REPORT_PATH);
+        // literal, which the old source-parsing population could not see.
+        // #1838 moved it to the EXACT set, so the assertion follows it —
+        // the property under test is that a constant-valued entry is VISIBLE
+        // because both lists are read as values, not which list holds it.
+        expect(PUBLIC_PATH_EXACT.has(CSP_REPORT_PATH)).toBe(true);
+        expect(ENTRIES).not.toContain(CSP_REPORT_PATH);
     });
 
     it('control: real public routes ARE still public', () => {
@@ -140,18 +155,31 @@ describe('a public prefix stops at a segment boundary', () => {
         // The predicate only ever narrows, so the risk of this change is a
         // route that WAS reachable becoming gated. Derived from the route tree
         // rather than a list, so a route added later is covered.
+        // `isPublicPath`, not `matchesPublicPrefix` over ENTRIES. Since #1838
+        // a path can be public through the EXACT set instead, and the claim
+        // here is about losing ACCESS, not about which list grants it.
+        //
+        // Measured consequence of getting this wrong: `/forgot-password`
+        // starts with `/f`, so the bare test matches it, the boundary test
+        // correctly does not, and it is now public via its own exact entry.
+        // Asking only the prefix list reported it as lost when nothing had
+        // changed for it.
+        //
+        // Teeth are kept: deleting an entry from BOTH lists still leaves
+        // `bare` true via some other entry and `isPublicPath` false.
         const lost = REAL_PATHS.filter((p) => {
-            const boundary = ENTRIES.some((e) => matchesPublicPrefix(p, e));
             const bare = ENTRIES.some((e) => p.startsWith(e));
-            return bare && !boundary;
+            return bare && !isPublicPath(p);
         });
         expect(lost).toEqual([]);
     });
 
     it('every bare entry refuses its shared-spelling sibling — the hazard half', () => {
         const bare = ENTRIES.filter((e) => !e.endsWith('/'));
-        // Non-empty or the loop below asserts nothing.
-        expect(bare.length).toBeGreaterThanOrEqual(15);
+        // Lowered from 15: #1838 narrowed most bare entries out of this list,
+        // leaving 7. Still a real control — the loop below asserts nothing on
+        // an empty set — but calibrated to the population that now exists.
+        expect(bare.length).toBeGreaterThanOrEqual(5);
         for (const entry of bare) {
             const sibling = `${entry}-internal`;
             expect(matchesPublicPrefix(sibling, entry)).toBe(false);
