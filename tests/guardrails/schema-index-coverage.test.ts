@@ -369,6 +369,9 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // ─── Public profile (P6.6) — is this public address free? ───
+    FarmBrand:
+        "suggestFreeHandles findMany filters `handle IN (candidates)` across ALL tenants (deliberately unscoped, under runWithoutRls({ reason: 'farm-handle-availability' }) — the handle namespace is global and under the asker's own context every name would look free) and selects only { handle }. Served by the index behind `handle String? @unique`, where `handle` is the leading and only column, so the IN is an index scan. The list is bounded at MAX_HANDLE_SUGGESTIONS (3) by `suggestHandles` before the query runs, and the candidates are derived strings the caller already holds rather than user-supplied — so this cannot become an open-ended IN. Every other read on this model is a findFirst on the @unique tenantId.",
     // ─── Exchange — the seller-side module opt-out list ───
     TenantModuleSettings:
         "ExchangeRepository.listTenantIdsWithModuleDisabled findMany filters `NOT (enabledModules has 'EXCHANGE')` across ALL tenants (deliberately unscoped — it answers \"who opted out?\" for the cross-tenant marketplace feed) and selects only { tenantId }, take:1000. No index helps: a NOT-contains over an enum[] cannot use a GIN index, and the predicate is anti-selective by nature. It stays cheap because a row exists ONLY for a tenant that customised its module list — the table is one row per customising tenant, not one per tenant. If it ever grows past the take, the fix is a denormalised flag on ExchangeListing, not an index here. Every other read on this model is a findUnique on the @unique tenantId.",
