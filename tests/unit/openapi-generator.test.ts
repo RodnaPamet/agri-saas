@@ -21,6 +21,8 @@
  *   3. If unexpected, walk back to the schema annotation that
  *      changed.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -60,11 +62,35 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
 
     it('has info.title + info.version + info.description', () => {
         expect(spec.info?.title).toBe('Agrent API');
-        // version mirrors package.json — match the X.Y.Z shape, not
-        // the literal value (which moves with semantic-release).
         expect(spec.info?.version).toMatch(/^\d+\.\d+\.\d+$/);
         expect(spec.info?.description).toBeTruthy();
         expect(spec.info?.description?.length).toBeGreaterThan(50);
+    });
+
+    it('pins info.version, and it is NOT the package version (#1916)', () => {
+        // The exact value, not just the shape. It used to mirror
+        // `package.json::version`, which semantic-release bumps ~8x a day —
+        // making this the one line of a COMMITTED artifact that changed every
+        // release. Every open PR that regenerated the spec then conflicted
+        // with main, and a conflicting PR gets no workflow run at all, which
+        // is indistinguishable from "CI has not started yet". #1910 lived its
+        // whole life untested that way.
+        expect(spec.info?.version).toBe('0.0.0');
+
+        // And the discriminator: assert it DIFFERS from the package version,
+        // so this cannot pass again by coincidence the day package.json
+        // happens to read 0.0.0 — and so re-wiring it to the package version
+        // fails here rather than quietly returning the churn.
+        const pkg = JSON.parse(
+            readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'),
+        ) as { version: string };
+        expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+        expect(spec.info?.version).not.toBe(pkg.version);
+
+        // The version that MEANS something is published separately, and this
+        // is what a client should read. `contract-version.ts` records why it
+        // had to be a different field.
+        expect((spec as Record<string, unknown>)['x-api-version']).toEqual(expect.any(Number));
     });
 
     it('declares at least one server', () => {
