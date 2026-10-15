@@ -1476,7 +1476,9 @@
             "visibilityHelp": "Off by default. Turning it on asks for your consent first.",
             "consentConfirm": "I agree — publish",
             "consentCancel": "Cancel",
-            "consentStale": "The consent text has been updated since you confirmed it. Please read it again before the page becomes public."
+            "consentStale": "The consent text has been updated since you confirmed it. Please read it again before the page becomes public.",
+            "downloadCard": "Download a printable card (A6)",
+            "downloadCardHint": "A PDF, 105 × 148 mm, with a QR code to the page. Made to be printed and handed out at the market."
         }
     },
     "ui": {

@@ -346,6 +346,40 @@ describe('the public-profile editor', () => {
         });
     });
 
+    it('offers the printable A6 card only once the page is public', async () => {
+        // #1908: the card shipped in #1910 with nothing linking to it. The
+        // link is NOT disabled when unpublished — it is absent, because the
+        // share block is gated on the same `published && handle` the route
+        // requires. Both halves asserted, because "the link exists" alone
+        // would pass for a link that is always there and sometimes 400s.
+        mockFetch([{ ok: true, body: DRAFT }]);
+        const { unmount } = render(<PublicProfileClient baseUrl={BASE} />);
+        await visibilitySwitch();
+        expect(screen.queryByRole('link', { name: 'downloadCard' })).not.toBeInTheDocument();
+        unmount();
+
+        mockFetch([
+            {
+                ok: true,
+                body: {
+                    ...DRAFT,
+                    published: true,
+                    publishedAt: '2026-10-15T00:00:00Z',
+                    consentedAt: '2026-10-15T00:00:00Z',
+                    consentTextVersion: 'v2',
+                },
+            },
+        ]);
+        render(<PublicProfileClient baseUrl={BASE} />);
+
+        const link = await screen.findByRole('link', { name: 'downloadCard' });
+        // The tenant-scoped route, and `download` so the browser takes the
+        // `Content-Disposition` filename the route already sends rather than
+        // navigating to the PDF.
+        expect(link).toHaveAttribute('href', '/api/t/acme/farm-brand/share-card');
+        expect(link).toHaveAttribute('download');
+    });
+
     it.each([
         ['mobile', 390],
         ['desktop', 1280],
