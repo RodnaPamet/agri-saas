@@ -20,9 +20,9 @@ import * as path from 'path';
 
 const SCRIPT = path.resolve(__dirname, '../../../scripts/ci/lighthouse-median.mjs');
 
-function lhr(lcp: number, fcp: number, cls: number, score: number) {
+function lhr(lcp: number, fcp: number, cls: number, score: number, url = 'http://localhost:3006/login') {
     return {
-        finalDisplayedUrl: 'http://localhost:3006/login',
+        finalDisplayedUrl: url,
         categories: { performance: { score } },
         audits: {
             'largest-contentful-paint': { numericValue: lcp },
@@ -138,5 +138,56 @@ describe('lighthouse-median', () => {
         const { code, out } = run(dir, { GITHUB_STEP_SUMMARY: '/proc/nonexistent/x' });
         expect(code).toBe(0);
         expect(out).toContain('| LCP | 4000 ms | 1 |');
+    });
+
+    it('gives each url its OWN table, never one median across pages', () => {
+        // #1814 made this a multi-url run. The first one reported
+        // "6 run(s) — .../login" with an LCP of 4960 ms: three runs of a slow
+        // page and three of a fast one averaged together and attributed to
+        // one of them. The gate was fine — assertMatrix evaluates per url —
+        // so an untrustworthy number sat beside a trustworthy verdict.
+        const LOGIN = 'http://localhost:3006/login';
+        const PUBLIC = 'http://localhost:3006/f/lighthouse';
+        const dir = makeDir({
+            'lhr-1.json': JSON.stringify(lhr(6100, 2000, 0.01, 0.5, LOGIN)),
+            'lhr-2.json': JSON.stringify(lhr(6150, 2000, 0.01, 0.5, LOGIN)),
+            'lhr-3.json': JSON.stringify(lhr(6900, 2000, 0.01, 0.5, LOGIN)),
+            'lhr-4.json': JSON.stringify(lhr(1200, 700, 0.00, 0.95, PUBLIC)),
+            'lhr-5.json': JSON.stringify(lhr(1250, 700, 0.00, 0.95, PUBLIC)),
+            'lhr-6.json': JSON.stringify(lhr(1400, 700, 0.00, 0.95, PUBLIC)),
+        });
+        const { code, out } = run(dir);
+        expect(code).toBe(0);
+
+        // Two tables, each naming its own url and its own run count.
+        expect(out).toContain(`3 run(s) — ${LOGIN}`);
+        expect(out).toContain(`3 run(s) — ${PUBLIC}`);
+        expect(out).not.toContain('6 run(s)');
+
+        // Each median is its own page's, not the pooled one. The pooled
+        // median of all six would be 3675 ms, which appears nowhere.
+        expect(out).toContain('| LCP | 6150 ms | 3 |');
+        expect(out).toContain('| LCP | 1250 ms | 3 |');
+        expect(out).not.toContain('3675');
+    });
+
+    it('orders the tables by url, so the output does not follow the filesystem', () => {
+        const dir = makeDir({
+            'lhr-1.json': JSON.stringify(lhr(1200, 700, 0, 0.95, 'http://localhost:3006/zzz')),
+            'lhr-2.json': JSON.stringify(lhr(6100, 2000, 0, 0.5, 'http://localhost:3006/aaa')),
+        });
+        const { out } = run(dir);
+        expect(out.indexOf('/aaa')).toBeLessThan(out.indexOf('/zzz'));
+    });
+
+    it('does not drop a report whose url is missing', () => {
+        // A malformed report must still be counted somewhere rather than
+        // vanishing into a group nobody renders.
+        const noUrl = { categories: { performance: { score: 0.5 } }, audits: {} };
+        const dir = makeDir({ 'lhr-1.json': JSON.stringify(noUrl) });
+        const { code, out } = run(dir);
+        expect(code).toBe(0);
+        expect(out).toContain('(unknown url)');
+        expect(out).toContain('1 run(s)');
     });
 });

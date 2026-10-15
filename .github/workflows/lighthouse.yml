@@ -90,6 +90,47 @@ jobs:
       - name: Apply Prisma migrations
         run: ./node_modules/.bin/prisma migrate deploy
 
+      # One public farm profile, so /f/lighthouse renders a real page instead
+      # of a 404 (P6.5, #1814). Without it the new budget would measure the
+      # not-found page and report a flattering number for a route nobody can
+      # reach.
+      #
+      # Inserted straight into `PublicFarmProfile` rather than through the
+      # editor: that table is the PROJECTION — global, no `tenantId`, no RLS —
+      # and the public reader queries only it, so a row here is the entire
+      # precondition. Going through `FarmBrand` + publish would need a tenant,
+      # a membership and an admin context to measure a page that reads none of
+      # them.
+      #
+      # Cyrillic content on purpose. The page's LCP element is its heading, and
+      # the Cyrillic glyphs are what the font actually has to deliver — Latin
+      # placeholder text would measure a font subset this page never serves.
+      - name: Seed one public farm profile
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          INSERT INTO "PublicFarmProfile"
+            ("handle", "displayName", "tagline", "about", "oblast", "crops", "displayNameLatin", "indexable", "projectedAt")
+          VALUES
+            ('lighthouse', 'Стопанство Победа', 'Зърно и слънчоглед от Добруджа',
+             'Семейно стопанство в Добруджа, трето поколение. Отглеждаме пшеница, слънчоглед и рапица на 1200 декара.',
+             'Добрич', ARRAY['пшеница', 'слънчоглед', 'рапица'], 'stopanstvo-pobeda', false, NOW())
+          ON CONFLICT ("handle") DO NOTHING;
+          SQL
+
+      # The row has to be THERE, not merely inserted without error. An
+      # `ON CONFLICT DO NOTHING` reports success for a row it skipped, and a
+      # migration that renamed the table would fail the step above loudly —
+      # but a silently empty table would leave the budget measuring a 404.
+      - name: Verify the seeded profile is readable
+        run: |
+          COUNT=$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+            "SELECT count(*) FROM \"PublicFarmProfile\" WHERE handle = 'lighthouse';")
+          echo "seeded rows: $COUNT"
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::/f/lighthouse has no projection row, so the Lighthouse budget would measure a 404."
+            exit 1
+          fi
+
       - name: Create upload directory
         run: mkdir -p tmp/test-uploads
 
