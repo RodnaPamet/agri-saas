@@ -61,6 +61,8 @@ export interface CreateListingInput {
     regionCode: string;
     description?: string | null;
     sellerDisplayName?: string | null;
+    /** Attribute this listing to the seller's published farm (P6.7, #1816). */
+    publishAsFarm?: boolean;
     sellerContact?: string | null;
     expiresAt?: Date | null;
 }
@@ -100,6 +102,47 @@ async function sellerTenantsWithExchangeOff(): Promise<string[]> {
 }
 
 /**
+ * Which of these seller tenants are PUBLISHED farms — P6.7 (#1816).
+ *
+ * Read RLS-FREE (`runWithoutRls`, reason `exchange-farm-attribution`) for the
+ * same reason `sellerTenantsWithExchangeOff` above is: `FarmBrand` is
+ * tenant-scoped, so under the viewer's own context this would see at most the
+ * viewer's own brand and every OTHER farm's listing would silently fall back
+ * to anonymous — a feature that works only for whoever is testing it.
+ *
+ * Resolved LIVE on every read rather than copied onto the listing when the
+ * seller ticked the box. That is the owner's ruling and it is the safer shape:
+ * a farm that renames its handle or withdraws its page changes every listing
+ * it had attributed in the same moment, where a snapshot would leave listings
+ * naming an address that stopped answering.
+ */
+async function farmAttributionFor(
+    sellerTenantIds: readonly string[],
+): Promise<Map<string, { handle: string; displayName: string }>> {
+    const ids = [...new Set(sellerTenantIds)];
+    if (ids.length === 0) return new Map();
+    const rows = await runWithoutRls({ reason: 'exchange-farm-attribution' }, (db) =>
+        ExchangeRepository.listPublishedFarmBrands(db, ids),
+    );
+    return new Map(rows.map((r) => [r.tenantId, { handle: r.handle, displayName: r.displayName }]));
+}
+
+/**
+ * Attach each listing's farm attribution, or `null` when there is none.
+ *
+ * `null` rather than `undefined`, and the distinction is load-bearing:
+ * `toPublicListing` treats an ABSENT `farm` as "nobody resolved this" and a
+ * null one as "resolved, and this seller is not a published farm". Both fall
+ * back to the typed name, but only one of them is a bug — see that function.
+ */
+async function withFarmAttribution<T extends { sellerTenantId: string }>(
+    rows: T[],
+): Promise<Array<T & { farm: { handle: string; displayName: string } | null }>> {
+    const byTenant = await farmAttributionFor(rows.map((r) => r.sellerTenantId));
+    return rows.map((r) => ({ ...r, farm: byTenant.get(r.sellerTenantId) ?? null }));
+}
+
+/**
  * Browse ACTIVE listings across ALL tenants — server-side facets + one
  * cursor page. Returns `{ rows, nextCursor }`.
  */
@@ -116,13 +159,16 @@ export async function listActiveListings(
     // PAYING buyer, and so nothing has to be restored when they pay.
     await assertNotPastDueRestricted(ctx, 'exchange');
     const excludeSellerTenantIds = await sellerTenantsWithExchangeOff();
-    return runInTenantContext(ctx, (db) =>
+    const { rows, nextCursor } = await runInTenantContext(ctx, (db) =>
         ExchangeRepository.listActiveListings(
             db,
             { ...filters, excludeSellerTenantIds },
             page,
         ),
     );
+    // Attribution is resolved for THIS page's sellers only — one extra query
+    // per page, bounded by the page size, and never an unfiltered read.
+    return { rows: await withFarmAttribution(rows), nextCursor };
 }
 
 /** Read one listing by id (any tenant's). */
@@ -162,21 +208,32 @@ export async function getListing(ctx: RequestContext, id: string) {
             : (await sellerTenantsWithExchangeOff()).includes(listing.sellerTenantId);
         if (hidden) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
     }
-    return listing;
+    // A deep link shows the same seller identity the feed does. Resolved here
+    // rather than in the route, so every surface that can display a listing
+    // gets attribution from ONE place and none of them can disagree.
+    return (await withFarmAttribution([listing]))[0];
 }
 
 /** The buyer's outbox — inquiries this tenant has sent. */
 export async function listInquiriesByInquirer(ctx: RequestContext) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) =>
+    const rows = await runInTenantContext(ctx, (db) =>
         ExchangeRepository.listInquiriesByInquirer(db, ctx.tenantId),
     );
+    // These rows carry the NESTED listing a buyer enquired about, and that
+    // listing belongs to another tenant — so this is a cross-tenant surface
+    // like the feed, not an own-tenant one like `listMyListings`.
+    const byTenant = await farmAttributionFor(rows.map((r) => r.listing.sellerTenantId));
+    return rows.map((r) => ({
+        ...r,
+        listing: { ...r.listing, farm: byTenant.get(r.listing.sellerTenantId) ?? null },
+    }));
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────
 
 /** Publish a new listing owned by the caller's tenant. */
-export async function createListing(ctx: RequestContext, input: CreateListingInput) {
+async function createListingRow(ctx: RequestContext, input: CreateListingInput) {
     assertCanWrite(ctx);
 
     const region = regionByCode(input.regionCode);
@@ -224,6 +281,12 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
             lon: region.lon,
             description: sanitizeOptional(input.description) ?? null,
             sellerDisplayName: sanitizeOptional(input.sellerDisplayName) ?? null,
+            // NOT sanitised, because it is a boolean and there is nothing to
+            // sanitise. Stored as the DECISION only: the farm name and handle
+            // it resolves to are read live from `FarmBrand` on every read, so
+            // a rename or a withdrawal reaches this listing without touching
+            // the row.
+            publishAsFarm: input.publishAsFarm ?? false,
             // Sanitised like the public fields even though it is never public:
             // it is rendered to the counterparty after a deal, and a value that
             // only one person ever sees is still a value someone typed.
@@ -247,6 +310,21 @@ export async function createListing(ctx: RequestContext, input: CreateListingInp
 
         return listing;
     });
+}
+
+/**
+ * Create a listing, and return it with its farm attribution resolved.
+ *
+ * The wrapper exists because the 201 response goes through the same
+ * `toPublicListing` as every read, and that projection reads `row.farm`. The
+ * row the transaction returns has no `farm` on it, so without this a listing
+ * created WITH `publishAsFarm: true` would come back reporting
+ * `farmHandle: null` — the attribution appearing only after a refresh, which
+ * reads as the flag not having been saved.
+ */
+export async function createListing(ctx: RequestContext, input: CreateListingInput) {
+    const listing = await createListingRow(ctx, input);
+    return (await withFarmAttribution([listing]))[0];
 }
 
 /**
@@ -725,7 +803,12 @@ async function notifyBuyerOfResponse(
 /** The caller-tenant's own listings (any status) + their inquiries. */
 export async function listMyListings(ctx: RequestContext) {
     assertCanRead(ctx);
-    return runInTenantContext(ctx, (db) =>
+    const rows = await runInTenantContext(ctx, (db) =>
         ExchangeRepository.listListingsBySeller(db, ctx.tenantId),
     );
+    // The seller's own view is attributed too. They know who they are, but
+    // this is the screen where they check what a BUYER sees — a listing shown
+    // as anonymous here while appearing named in the feed would be the more
+    // confusing of the two possible inconsistencies.
+    return withFarmAttribution(rows);
 }

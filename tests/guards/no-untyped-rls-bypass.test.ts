@@ -158,7 +158,7 @@ describe('the typed bypass is actually USED — not a control that only exists',
 
         // ── and the SITES, because the file count hid five of them ──
         //
-        // Measured 2026-10-15: 9 call sites across those 4 files. The file
+        // Measured 2026-10-15: 10 call sites across those 4 files. The file
         // ceiling was green at 4 the whole time, including when P6.6 added a
         // second reason to `public-farm-profile.ts` and a new query started
         // reading `FarmBrand` across tenants (#1864).
@@ -166,8 +166,21 @@ describe('the typed bypass is actually USED — not a control that only exists',
         //   PortfolioRepository.ts   3   org-portfolio-read
         //   public-farm-profile.ts   4   public-projection-read x3,
         //                                farm-handle-availability
-        //   exchange.ts              1
+        //   exchange.ts              2   module-availability,
+        //                                exchange-farm-attribution
         //   org-tenants.ts           1
+        //
+        // 9 -> 10 by P6.7 (#1816): `exchange-farm-attribution` resolves which
+        // seller tenants are published farms, so an exchange listing can be
+        // attributed to the farm that posted it. `FarmBrand` is tenant-scoped,
+        // so under the viewer's own context the read returns at most the
+        // VIEWER's own brand — the same argument the `module-availability`
+        // site one line above makes for the same feed.
+        //
+        // Raised rather than exempted, which is the whole purpose of the
+        // number. It also lands in the file that ALREADY bypasses, so the
+        // file ceiling stayed green at 4 and did not notice — which is
+        // precisely the hole the site count was added to cover (#1864).
         //
         // BOTH numbers are asserted rather than one replacing the other,
         // because they answer different questions: how much of the product
@@ -187,7 +200,7 @@ describe('the typed bypass is actually USED — not a control that only exists',
             `[rls-bypass] files=${callers.length} sites=${sites.length}\n  ` +
                 sites.join('\n  '),
         );
-        expect(sites.length).toBeLessThanOrEqual(9);
+        expect(sites.length).toBeLessThanOrEqual(10);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

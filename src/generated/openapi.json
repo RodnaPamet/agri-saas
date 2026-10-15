@@ -5679,6 +5679,12 @@
               "null"
             ]
           },
+          "farmHandle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "status": {
             "type": "string"
           },
@@ -5711,6 +5717,7 @@
           "lon",
           "description",
           "sellerDisplayName",
+          "farmHandle",
           "status",
           "createdAt",
           "expiresAt",
@@ -38721,7 +38728,7 @@
       "post": {
         "operationId": "createExchangeListing",
         "summary": "Борса — publish a listing",
-        "description": "Publishes a listing for the calling tenant. Requires the EXCHANGE module — 403 `module_disabled: EXCHANGE` otherwise. Rate-limited separately from ordinary writes.",
+        "description": "Publishes a listing for the calling tenant. Requires the EXCHANGE module — 403 `module_disabled: EXCHANGE` otherwise. Rate-limited separately from ordinary writes.\n\n**`publishAsFarm`** attributes the listing to the seller’s published farm (P6.7): the response’s `sellerDisplayName` becomes that farm’s verified name and `farmHandle` carries its public address. It is accepted whatever the farm’s publication state and is NOT refused when the farm has no public page — the attribution is resolved on every read, so a seller who ticks it first and publishes later has every listing they already posted attributed, with nothing to back-fill. Until then the listing reads as anonymous, or as whatever `sellerDisplayName` they typed.\n\nThe inverse holds too, and is the reason nothing is copied onto the row: withdrawing the farm’s public page returns every listing it had attributed to anonymous on the next read, so no listing is left naming an address that no longer answers.",
         "tags": [
           "Exchange"
         ],
@@ -38827,6 +38834,10 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "publishAsFarm": {
+                    "type": "boolean",
+                    "default": false
                   },
                   "sellerContact": {
                     "anyOf": [

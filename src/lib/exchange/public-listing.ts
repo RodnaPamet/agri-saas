@@ -25,6 +25,23 @@ export interface ExchangeListingRow {
     lon: number;
     description: string | null;
     sellerDisplayName: string | null;
+    /** Whether the seller asked for this listing to be attributed to the farm. */
+    publishAsFarm?: boolean;
+    /**
+     * The seller's PUBLISHED farm identity, resolved live by the usecase.
+     *
+     * Three states, and they are not the same:
+     *   - `{ handle, displayName }` — this seller is a published farm.
+     *   - `null` — resolved, and they are not (never published, or withdrawn).
+     *   - ABSENT — nobody resolved it. A bug if `publishAsFarm` is true, and
+     *     the only reason the field is optional is that `toPublicInquiry`
+     *     projects a nested listing whose shape is built by a repository.
+     *
+     * Both `null` and absent fall back to the typed name, which is the
+     * fail-closed direction: a listing never claims a farm identity it could
+     * not confirm.
+     */
+    farm?: { handle: string; displayName: string } | null;
     /**
      * Seller's private contact. Read by `toPublicInquiry`'s reveal gate and
      * DELIBERATELY absent from `ExchangePublicListing` — a listing projection
@@ -60,6 +77,17 @@ export interface ExchangePublicListing {
     expiresAt: string | null;
     /** True when the VIEWING tenant owns this listing (badge "your offer"). */
     isOwn: boolean;
+    /**
+     * The farm's public address when this listing is attributed to a published
+     * farm, else `null` — P6.7 (#1816).
+     *
+     * A HANDLE, not a tenant id and not a url: the client builds `/f/{handle}`
+     * from it, and this projection has never carried a raw owning-tenant id.
+     * `null` means "show no link", which covers a listing the seller never
+     * attributed AND one whose farm has since withdrawn its page — the client
+     * does not need to tell those apart.
+     */
+    farmHandle: string | null;
 }
 
 function iso(d: Date | string): string {
@@ -163,7 +191,18 @@ export function toPublicListing(
         lat: row.lat,
         lon: row.lon,
         description: row.description,
-        sellerDisplayName: row.sellerDisplayName,
+        // Attribution overrides the typed name, and only when BOTH halves
+        // agree: the seller asked for it AND the usecase confirmed they are a
+        // published farm. Either half alone falls back to what they typed,
+        // which is the fail-closed direction — a listing never claims a farm
+        // identity that could not be confirmed on this read.
+        //
+        // Because the confirmation is live, a farm that withdraws its page
+        // stops being named here on the very next read, with nothing to
+        // back-fill and no listing left pointing at an address that 404s.
+        sellerDisplayName:
+            row.publishAsFarm && row.farm ? row.farm.displayName : row.sellerDisplayName,
+        farmHandle: row.publishAsFarm && row.farm ? row.farm.handle : null,
         status: row.status,
         createdAt: iso(row.createdAt),
         expiresAt: row.expiresAt != null ? iso(row.expiresAt) : null,

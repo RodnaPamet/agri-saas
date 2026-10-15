@@ -25,6 +25,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { apiPost } from '@/lib/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { BULGARIA_REGION_OPTIONS } from '@/lib/geo/bulgaria-regions';
@@ -80,6 +81,7 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
     const [description, setDescription] = useState('');
     const [expiresAt, setExpiresAt] = useState<Date | null>(null);
     const [displayName, setDisplayName] = useState('');
+    const [publishAsFarm, setPublishAsFarm] = useState(false);
     const [sellerContact, setSellerContact] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
 
     const isDirty =
         commodity !== '' || regionCode !== '' || quantity !== '' || price !== '' ||
-        description !== '' || displayName !== '' || sellerContact !== '' || expiresAt !== null;
+        description !== '' || displayName !== '' || sellerContact !== '' || expiresAt !== null || publishAsFarm;
 
     function reset() {
         setSide('SELL'); setKind('CULTURE'); setCommodity(''); setQuantity('');
@@ -127,6 +129,7 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
                 regionCode,
                 description: description.trim() === '' ? null : description.trim(),
                 sellerDisplayName: displayName.trim() === '' ? null : displayName.trim(),
+                publishAsFarm,
                 // PRIVATE, unlike every other field on this form. It is not in
                 // `ExchangePublicListing`, so the response we get back never
                 // echoes it — it surfaces once, to one buyer, on accept.
@@ -263,6 +266,32 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
                                 read rather than hovered. */}
                             <FormField label={t('sellerName')} description={t('sellerNameConsent')}>
                                 <Input id="exchange-seller-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={t('sellerNamePlaceholder')} maxLength={120} />
+                            </FormField>
+                            {/* Publish AS THE FARM — P6.7 (#1816).
+                                `description`, like its two neighbours, because
+                                a statement about what strangers will see has to
+                                be read rather than hovered.
+
+                                Offered unconditionally, and the copy carries
+                                the condition instead of the control. Knowing
+                                whether this farm's page is public needs
+                                `GET /farm-brand`, which is ADMIN-gated — a
+                                member who can post a listing may not be able
+                                to read it — so a disabled switch would be
+                                disabled for the wrong people. The server is
+                                lenient for the matching reason: the flag is
+                                saved either way and starts showing the moment
+                                the page is published, so the ORDER of two
+                                unrelated decisions never matters. */}
+                            <FormField
+                                label={t('publishAsFarm')}
+                                description={t('publishAsFarmConsent')}
+                            >
+                                <Switch
+                                    id="exchange-publish-as-farm"
+                                    checked={publishAsFarm}
+                                    onCheckedChange={setPublishAsFarm}
+                                />
                             </FormField>
                         </div>
 
