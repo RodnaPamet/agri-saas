@@ -131,4 +131,140 @@ describeFn('crop-plan lifecycle + fresh-tenant bootstrap (DB)', () => {
         const raw = await globalPrisma.cropPlan.findUnique({ where: { id: plan.id }, select: { deletedAt: true } });
         expect(raw?.deletedAt).not.toBeNull();
     });
+    // ── #1826: updateSeason's window check ────────────────────────────
+    //
+    // Here and not in tests/unit/crop-planning-refusals-are-coded.test.ts
+    // because the check needs the STORED date: a PATCH of `endDate` alone
+    // cannot be judged from the request, which is the whole reason
+    // createSeason's version did not transfer unchanged. That suite has no
+    // database (its own positive control says so), so it covers the
+    // parseability half and this covers the window.
+    describe('updateSeason refuses an inverted window (#1826)', () => {
+        async function freshSeason() {
+            const id = randomUUID();
+            await globalPrisma.season.create({
+                data: {
+                    id,
+                    tenantId: TENANT_ID,
+                    key: `w-${id.slice(0, 8)}`,
+                    name: 'Window season',
+                    year: 2026,
+                    startDate: new Date('2026-03-01T00:00:00Z'),
+                    endDate: new Date('2026-09-30T00:00:00Z'),
+                },
+            });
+            return id;
+        }
+
+        it('endDate ALONE, moved before the stored startDate — the case with reach', async () => {
+            // Needs no malformed input: both values are valid dates and only
+            // their relationship is wrong. Comparing only what the request
+            // carried would accept this, and the season would then span
+            // negative time for every report, diary view and GDD sum.
+            const id = await freshSeason();
+            await expect(
+                updateSeason(ctx(), id, { endDate: '2026-01-15T00:00:00Z' }),
+            ).rejects.toThrow(/cannot end before it starts/i);
+
+            // And the row is UNCHANGED — a refusal that had already written
+            // would be worse than the gap.
+            const row = await globalPrisma.season.findUnique({
+                where: { id },
+                select: { endDate: true },
+            });
+            expect(row?.endDate?.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+        });
+
+        it('startDate ALONE, moved after the stored endDate', async () => {
+            // The mirror. A check that only looked at `endDate` would miss it.
+            const id = await freshSeason();
+            await expect(
+                updateSeason(ctx(), id, { startDate: '2026-12-01T00:00:00Z' }),
+            ).rejects.toThrow(/cannot end before it starts/i);
+        });
+
+        it('BOTH supplied and inverted', async () => {
+            const id = await freshSeason();
+            await expect(
+                updateSeason(ctx(), id, {
+                    startDate: '2026-09-01T00:00:00Z',
+                    endDate: '2026-04-01T00:00:00Z',
+                }),
+            ).rejects.toThrow(/cannot end before it starts/i);
+        });
+
+        it('EQUAL dates are accepted — `<`, not `<=`, matching create', async () => {
+            // A single-day season is a legal thing to record, and create
+            // already allows it. An off-by-one here would refuse it on
+            // update only, which is the asymmetry this change exists to
+            // remove rather than to invert.
+            const id = await freshSeason();
+            const out = await updateSeason(ctx(), id, {
+                startDate: '2026-05-05T00:00:00Z',
+                endDate: '2026-05-05T00:00:00Z',
+            });
+            expect(out.startDate?.toISOString()).toBe('2026-05-05T00:00:00.000Z');
+            expect(out.endDate?.toISOString()).toBe('2026-05-05T00:00:00.000Z');
+        });
+
+        it('POSITIVE CONTROL: a legitimate widening still succeeds', async () => {
+            // Without this, a check that refused unconditionally would
+            // satisfy every case above.
+            const id = await freshSeason();
+            const out = await updateSeason(ctx(), id, { endDate: '2026-11-30T00:00:00Z' });
+            expect(out.endDate?.toISOString()).toBe('2026-11-30T00:00:00.000Z');
+        });
+
+        it('a row ALREADY inverted stays readable — refused on write only', async () => {
+            // The deliberate limit. Rows in that state are left alone: a
+            // migration rewriting somebody's recorded dates to satisfy a new
+            // check would be a worse act than the gap. They are still
+            // listable, and an update that does not touch the dates is still
+            // accepted.
+            const id = randomUUID();
+            await globalPrisma.season.create({
+                data: {
+                    id,
+                    tenantId: TENANT_ID,
+                    key: `inv-${id.slice(0, 8)}`,
+                    name: 'Already inverted',
+                    year: 2026,
+                    startDate: new Date('2026-09-01T00:00:00Z'),
+                    endDate: new Date('2026-04-01T00:00:00Z'),
+                },
+            });
+
+            const listed = await listSeasons(ctx());
+            expect(listed.find((x) => x.id === id)).toBeDefined();
+
+            // Touching only the name is NOT refused, even though the stored
+            // window is backwards — the check guards the window this request
+            // would produce, and this request does not change it.
+            //
+            // That is a deliberate choice and the alternative is worse:
+            // refusing every edit to such a row would leave the operator
+            // unable to correct its NAME without first fixing dates they may
+            // not know are wrong.
+            const renamed = await updateSeason(ctx(), id, { name: 'Still inverted' });
+            expect(renamed.name).toBe('Still inverted');
+
+            // But a date edit that leaves it STILL inverted is refused, even
+            // though it is an improvement (Apr -> Jun, against a stored
+            // start of Sep). The RESULT is judged, not the direction of
+            // travel — so correcting such a row means sending a window that
+            // is actually valid, in one request or by fixing the start
+            // first.
+            await expect(
+                updateSeason(ctx(), id, { endDate: '2026-06-01T00:00:00Z' }),
+            ).rejects.toThrow(/cannot end before it starts/i);
+
+            // And one request that fixes BOTH is accepted, which is the way
+            // out.
+            const fixed = await updateSeason(ctx(), id, {
+                startDate: '2026-03-01T00:00:00Z',
+                endDate: '2026-06-01T00:00:00Z',
+            });
+            expect(fixed.startDate?.toISOString()).toBe('2026-03-01T00:00:00.000Z');
+        });
+    });
 });

@@ -161,23 +161,82 @@ export async function updateSeason(ctx: RequestContext, id: string, input: Updat
         data.name = name;
     }
     if (input.year !== undefined) data.year = input.year;
-    // #1826 — these two are NOT validated, where `createSeason` validates
-    // both: an unparseable date reaches Prisma as `Invalid Date`, and an
-    // update that leaves the window running backwards is accepted. Left as
-    // found because tightening it changes which requests are refused and
-    // there may be rows already in that state. `SEASON_INVALID_DATE` and
-    // `SEASON_WINDOW_INVERTED` already exist for it when someone does.
-    if (input.startDate !== undefined) data.startDate = new Date(input.startDate);
-    if (input.endDate !== undefined) data.endDate = new Date(input.endDate);
+
+    // PARSEABILITY here, WINDOW below inside the transaction (#1826).
+    //
+    // The split is forced rather than chosen. Whether a supplied string is a
+    // date needs only the request, so it is refused before a connection is
+    // taken. Whether the WINDOW runs backwards needs the STORED value for
+    // whichever endpoint the caller did not supply — a PATCH of `endDate`
+    // alone is the common case and is exactly the one that cannot be judged
+    // from the request. That is why `createSeason`'s version does not
+    // transfer unchanged.
+    //
+    // Same `params.field` shape as create: one check covers two inputs, and
+    // "a date is invalid" leaves the client guessing which to fix.
+    const nextStart = input.startDate !== undefined ? new Date(input.startDate) : undefined;
+    const nextEnd = input.endDate !== undefined ? new Date(input.endDate) : undefined;
+    const unparseable = [
+        ...(nextStart !== undefined && Number.isNaN(nextStart.getTime()) ? ['startDate'] : []),
+        ...(nextEnd !== undefined && Number.isNaN(nextEnd.getTime()) ? ['endDate'] : []),
+    ];
+    if (unparseable.length > 0) {
+        throw codedBadRequest('SEASON_INVALID_DATE', 'Season start and end must be valid dates.', {
+            field: unparseable.join(','),
+        });
+    }
+    if (nextStart !== undefined) data.startDate = nextStart;
+    if (nextEnd !== undefined) data.endDate = nextEnd;
     if (input.status !== undefined) data.status = input.status;
     if (input.notes !== undefined) data.notes = input.notes != null ? sanitizePlainText(input.notes) : null;
 
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.season.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
+            // `startDate` / `endDate` are selected for the window check
+            // below, not for the response — the update's own return value is
+            // what the caller gets.
+            select: { id: true, startDate: true, endDate: true },
         });
         if (!existing) throw codedNotFound('SEASON_NOT_FOUND', 'That season was not found.');
+
+        // The EFFECTIVE window after this update: supplied where supplied,
+        // stored otherwise (#1826). Comparing only what the request carried
+        // would miss the case with reach — a PATCH of `endDate` alone to
+        // before the stored `startDate`, which needs no malformed input at
+        // all and leaves the season spanning negative time. Anything that
+        // reasons over the window (reports, the diary, GDD) is then
+        // reasoning about a season that ends before it starts.
+        //
+        // `<` and not `<=`, matching create: a single-day season is a legal
+        // thing to record.
+        //
+        // Refused on WRITE only. Rows already inverted are left alone and
+        // stay readable — a migration that rewrote somebody's recorded dates
+        // to satisfy a new check would be a worse act than the gap.
+        //
+        // And the check is SKIPPED when this request supplies neither date,
+        // which is not an optimisation. Without the gate, `?? existing`
+        // compares the two STORED values, so every edit to an
+        // already-inverted row is refused — including a rename. That would
+        // leave an operator unable to correct the NAME of a season without
+        // first fixing dates they may not know are wrong, which is a worse
+        // outcome than the gap being fixed. Found by a test that asserted
+        // the rename still works while the code refused it.
+        //
+        // A request that supplies a date and leaves the window still
+        // inverted IS refused, even if it is an improvement: the result is
+        // what is judged, not the direction of travel.
+        if (nextStart !== undefined || nextEnd !== undefined) {
+            const effStart = nextStart ?? existing.startDate;
+            const effEnd = nextEnd ?? existing.endDate;
+            if (effEnd < effStart) {
+                throw codedBadRequest(
+                    'SEASON_WINDOW_INVERTED',
+                    'A season cannot end before it starts.',
+                );
+            }
+        }
 
         const season = await db.season.update({ where: { id }, data });
         await logEvent(db, ctx, {

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.42.3",
+    "version": "12.43.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -43571,7 +43571,7 @@
       "patch": {
         "operationId": "updateSeason",
         "summary": "Update a season",
-        "description": "**Refusal codes.**\n- `SEASON_NOT_FOUND` (404) — no season with that id in this farm. Distinct from `CROP_SEASON_NOT_FOUND`, which is a crop grown on a PARCEL in a season and lives on the parcel-history routes.\n- `SEASON_NAME_REQUIRED` — sending `name` explicitly blank. Omitting the field leaves the name unchanged; sending it empty is a request to clear a required field, which is refused.\n\nNote this operation does NOT validate dates: unlike create, an unparseable `startDate` or `endDate` is not refused here, and neither is an inverted window. That asymmetry is a known defect rather than a contract (#1826) — do not build on it.",
+        "description": "**Refusal codes.**\n- `SEASON_NOT_FOUND` (404) — no season with that id in this farm. Distinct from `CROP_SEASON_NOT_FOUND`, which is a crop grown on a PARCEL in a season and lives on the parcel-history routes.\n- `SEASON_NAME_REQUIRED` — sending `name` explicitly blank. Omitting the field leaves the name unchanged; sending it empty is a request to clear a required field, which is refused.\n\n- `SEASON_INVALID_DATE` — a supplied `startDate` or `endDate` is not a date. `params.field` names which, comma-joined when both are bad, the same shape create uses.\n- `SEASON_WINDOW_INVERTED` — the window after this update would run backwards. Judged on the EFFECTIVE window, so sending `endDate` alone is compared against the STORED `startDate` rather than being accepted because the request carries only one date. A single-day season (equal dates) is legal.\n\nDates ARE validated here as of #1826. This operation previously refused neither an unparseable date nor an inverted window, and said so in this description so no client would build on the gap; both are now refused on write. Rows already holding an inverted window are left alone and stay readable — they are not migrated.",
         "tags": [
           "Planning"
         ],
