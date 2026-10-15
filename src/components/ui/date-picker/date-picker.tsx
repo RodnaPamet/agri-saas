@@ -63,6 +63,18 @@ export interface DatePickerTriggerRenderProps {
     open: boolean;
     disabled?: boolean;
     invalid?: boolean;
+    /**
+     * The `id` the caller passed, for the custom trigger to put on its own
+     * element (#1839).
+     *
+     * Handed over rather than applied, because a render prop returns an
+     * element this component does not own. A custom trigger that drops it is
+     * the same defect the built-in one had: `FormField` wires its label's
+     * `htmlFor` to this value, so without it the label names nothing and
+     * clicking it opens nothing. No call site uses a custom trigger today —
+     * this exists so the first one does not reintroduce the bug.
+     */
+    id?: string;
 }
 
 export interface DatePickerProps
@@ -135,6 +147,18 @@ export function DatePicker({
     align = 'center',
     className,
     clearable = false,
+    // Destructured OUT of `...props` on purpose (#1839). `props` is spread
+    // onto the Calendar INSIDE the popover, so an `id` left in it landed on
+    // an element that does not exist until the popover opens — while
+    // `FormField` resolves its label's `htmlFor` from exactly this prop
+    // (`form-field.tsx:106`). The result was `<label htmlFor="x">` naming
+    // nothing: the control still had an accessible NAME, because FormField
+    // also injects `aria-labelledby` and that one IS forwarded, which is why
+    // it went unnoticed — but clicking the label opened nothing, `htmlFor`
+    // was an HTML-validity failure, and an id passed for E2E selection
+    // silently did not exist. `Combobox` already does this correctly via
+    // `triggerA11yProps`; the two components disagreed and neither said so.
+    id,
     ...props
 }: DatePickerProps) {
     const { formatDate } = useDateFormat();
@@ -220,6 +244,7 @@ export function DatePicker({
             >
                 {customTrigger ? (
                     customTrigger({
+                        id,
                         displayValue,
                         placeholder: resolvedPlaceholder,
                         open,
@@ -233,6 +258,8 @@ export function DatePicker({
                         className={className}
                         hasError={Boolean(hasError ?? invalid)}
                         aria-required={props.required || props['aria-required']}
+                        // The label's htmlFor target (#1839).
+                        id={id}
                         aria-invalid={props['aria-invalid']}
                         aria-label={props['aria-label']}
                         aria-labelledby={props['aria-labelledby']}
