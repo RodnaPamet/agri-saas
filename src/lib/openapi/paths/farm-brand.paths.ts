@@ -88,6 +88,23 @@ const ConsentResultSchema = z
     })
     .openapi('FarmBrandConsentResult');
 
+const DraftSchema = z
+    .object({
+        handle: z.string().nullable(),
+        displayName: z.string().nullable(),
+        tagline: z.string().nullable(),
+        about: z.string().nullable(),
+        oblast: z.string().nullable(),
+        crops: z.array(z.string()),
+        published: z.boolean(),
+        publishedAt: z.string().datetime({ offset: true }).nullable(),
+        consentedAt: z.string().datetime({ offset: true }).nullable(),
+        consentTextVersion: z.string().nullable(),
+        indexable: z.boolean(),
+    })
+    .nullable()
+    .openapi('FarmBrandDraft');
+
 export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'put',
@@ -182,6 +199,25 @@ export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The recorded consent.',
             schema: ConsentResultSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/farm-brand',
+        operationId: 'readFarmBrandDraft',
+        summary: 'The farm’s public-profile draft',
+        description:
+            'What the editor renders. Deliberately WIDER than the public page: it carries `published`, `consentedAt`, `consentTextVersion` and `indexable`, which no reader of `/f/{handle}` ever sees but the form has to show.\n\n'
+            + '**`200` with a `null` body when there is no draft**, not `404`. A farm that has never opened the editor is in a normal state and the form should show itself empty rather than an error — the operations that genuinely need a draft (claiming a handle, recording consent) refuse with `FARM_BRAND_NOT_FOUND` on their own.\n\n'
+            + 'Admin-gated, like every write on this model: the public face of a farm is an owner concern, and a read looser than the write would let a member see a draft they cannot edit.\n\n'
+            + '`projectedHandle` is NOT returned. It is the projection writer\u2019s bookkeeping — which public row to remove on a rename — and means nothing to an editor.',
+        tags: ['Farm profile'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description: 'The draft, or `null` when the farm has none yet.',
+            schema: DraftSchema,
         },
     });
 }

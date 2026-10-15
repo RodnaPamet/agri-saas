@@ -33,6 +33,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
 import {
+    readFarmBrandDraft,
     updateFarmBrand,
     recordFarmBrandConsent,
     claimFarmBrandHandle,
@@ -125,6 +126,49 @@ describeIfDb('the publish flow is reachable without fixtures', () => {
         expect(page?.displayName).toBe('Стопанство Победа');
         expect(page?.oblast).toBe('Добрич');
         expect(page?.crops).toEqual(['пшеница', 'слънчоглед']);
+    });
+
+    it('reads the draft back, so an editor can render what already exists', async () => {
+        // The four write endpoints shipped without a read (#1884), so nothing
+        // could show an owner what they had: the form would open blank over
+        // existing content. This asserts the editor's whole view, because a
+        // read that returned only the content fields would still leave the
+        // handle, the consent record and the publish state invisible.
+        const ctx = await aTenant();
+        const handle = aHandle();
+        handles.push(handle);
+
+        expect(await readFarmBrandDraft(ctx)).toBeNull();
+
+        await updateFarmBrand(ctx, { displayName: 'Стопанство Победа', oblast: 'Добрич', crops: ['пшеница'] });
+        await claimFarmBrandHandle(ctx, handle);
+        await recordFarmBrandConsent(ctx, { textVersion: 'v1' });
+        await setFarmBrandPublication(ctx, true);
+
+        const draft = await readFarmBrandDraft(ctx);
+        expect(draft).toMatchObject({
+            handle,
+            displayName: 'Стопанство Победа',
+            oblast: 'Добрич',
+            crops: ['пшеница'],
+            published: true,
+            consentTextVersion: 'v1',
+            indexable: false,
+        });
+        expect(draft?.consentedAt).toBeInstanceOf(Date);
+        expect(draft?.publishedAt).toBeInstanceOf(Date);
+    });
+
+    it('does not leak the projection writer’s bookkeeping', async () => {
+        // `projectedHandle` exists so a rename can remove the stale public
+        // row. It is meaningless to an editor and is a record of what the
+        // farm used to be called.
+        const ctx = await aTenant();
+        await updateFarmBrand(ctx, { displayName: 'Име' });
+        const draft = await readFarmBrandDraft(ctx);
+        expect(draft).not.toBeNull();
+        expect(Object.keys(draft!)).not.toContain('projectedHandle');
+        expect(Object.keys(draft!)).not.toContain('tenantId');
     });
 
     it('refuses to publish a draft with no consent, and says which precondition', async () => {

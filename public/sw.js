@@ -42,7 +42,7 @@ const CACHE_VERSION = 'agrent-v1';
  * `tests/guards/sw-revision-stamp.test.ts` recomputes it and prints the
  * expected value on failure, so updating it is a paste.
  */
-const SW_REVISION = 'e5c00117205d';
+const SW_REVISION = '99ab211e863e';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const DATA_CACHE = `${CACHE_VERSION}-fielddata`;
@@ -351,6 +351,31 @@ const OUTBOX_RECEIPT_STORE = 'delivered';
 const OUTBOX_STORE = 'outbox';
 const OUTBOX_MAX_ATTEMPTS = 8; // mirrors MAX_ATTEMPTS in sync.ts
 const FLUSH_OUTBOX_TAG = 'flush-outbox';
+
+/**
+ * Does a 2xx mean this item is FINISHED? (#1870)
+ *
+ * MIRRORS `responseSatisfiesExpectation` in src/lib/offline/outbox.ts. This
+ * file cannot import from `src/` — it is served as a static asset and parsed
+ * by the browser as a classic worker — so the two copies are kept in lockstep
+ * BY HAND, exactly like OUTBOX_MAX_ATTEMPTS and the 426 arm above.
+ * `tests/guards/outbox-completion-mirrors-the-sw.test.ts` is what enforces it,
+ * because the comment two hundred lines up saying "NOTHING enforces the
+ * mirror" was true and this is the half where being wrong is invisible: the
+ * page drain and this one share a queue, so a worker that drops an unfinished
+ * item undoes the page's resume with no trace but a receipt.
+ *
+ * No expectation → finished, so every other write behaves exactly as before.
+ * An expectation that cannot be evaluated → NOT finished, so the item is
+ * retained. Retaining costs a retry the Idempotency-Key dedupes; the other
+ * direction loses field work out of a compliance register.
+ */
+function swResponseSatisfiesExpectation(expectation, body) {
+    if (expectation === undefined || expectation === null) return true;
+    if (body === null || typeof body !== 'object') return false;
+    const actual = body[expectation.field];
+    return typeof actual === 'number' && actual === expectation.equals;
+}
 /** Posted to clients when the worker finds the outbox database rebuilt. */
 const OUTBOX_RECREATED_MSG = 'outbox-db-recreated';
 
@@ -1021,6 +1046,7 @@ async function flushOutbox() {
         let ok = false;
         let retryAfterHeader = null;
         let conflictBody;
+        let completionBody;
         try {
             let res;
             if (item.kind === 'photo') {
@@ -1057,11 +1083,39 @@ async function flushOutbox() {
             ok = res.ok;
             if (status === 429) retryAfterHeader = res.headers.get('Retry-After');
             if (status === 409) conflictBody = await res.json().catch(() => undefined);
+            // Only for an item that declared an expectation, so no other
+            // queued write pays a parse. Mirrors fetchSender in
+            // src/lib/offline/sync.ts.
+            if (ok && item.kind !== 'photo' && item.completeWhen !== undefined) {
+                completionBody = await res.json().catch(() => undefined);
+            }
         } catch {
             status = 0;
         }
 
-        if (ok) {
+        const finished =
+            item.kind === 'photo'
+            || swResponseSatisfiesExpectation(item.completeWhen, completionBody);
+
+        if (ok && !finished) {
+            // A 2xx that did not finish the work (#1870). Retain and re-send
+            // under the same Idempotency-Key so the remainder lands rather
+            // than duplicating what already did.
+            //
+            // The attempt IS counted — this one reached the server and got a
+            // real answer, unlike the status === 0 arm below — and at
+            // OUTBOX_MAX_ATTEMPTS it parks `exhausted` rather than being
+            // deleted, because a partly-recorded treatment is the one thing in
+            // this queue that cannot be reconstructed. Mirrors the page drain
+            // in src/lib/offline/sync.ts.
+            const next = { ...item, attempts: (item.attempts || 0) + 1 };
+            if (next.attempts >= OUTBOX_MAX_ATTEMPTS) {
+                await parkIfStillQueued(db, next, { blocked: 'exhausted' });
+            } else {
+                await parkIfStillQueued(db, next, {});
+            }
+            transientRemains = true;
+        } else if (ok) {
             // Receipt then removal — see idbNoteDelivered.
             await idbNoteDelivered(db, item.id);
             await idbWrite(db, 'delete', item.id);

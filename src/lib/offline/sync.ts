@@ -39,12 +39,30 @@
  * to achieve it. The same item id rides every retry, so a server that dedupes
  * on it sees at-least-once delivery as exactly-once.
  */
-import { isPhotoItem, outboxHeaders, type OutboxItem, type OutboxStore } from './outbox';
+import {
+    isPhotoItem,
+    outboxHeaders,
+    responseSatisfiesExpectation,
+    type OutboxItem,
+    type OutboxStore,
+} from './outbox';
 import { noteDelivered } from './delivery-receipts';
 
 export interface SendResult {
     ok: boolean;
     status: number;
+    /**
+     * The parsed 2xx body, present ONLY for an item carrying a
+     * `completeWhen` expectation (#1870).
+     *
+     * Conditional on purpose: reading a body costs a parse on every queued
+     * write, and exactly one route in this product can answer 2xx for a
+     * partly-done write. `undefined` here is indistinguishable from an
+     * unreadable body, and `responseSatisfiesExpectation` treats both as NOT
+     * finished — which is the safe direction, since retaining costs a
+     * deduped retry and dropping loses field work.
+     */
+    completionBody?: unknown;
     /** Parsed `Retry-After` (seconds) when the server sent one on a 429. */
     retryAfter?: number;
     /** Parsed 409 body (the server's current state) for a STALE_DATA conflict. */
@@ -284,7 +302,34 @@ export async function flushOutbox(
             res = { ok: false, status: 0 }; // network unreachable
         }
 
-        if (res.ok) {
+        const finished =
+            isPhotoItem(item)
+            || responseSatisfiesExpectation(item.completeWhen, res.completionBody);
+
+        if (res.ok && !finished) {
+            // A 2xx that did NOT finish the work (#1870). The server accepted
+            // the request and recorded part of it, so the item must stay
+            // queued and be re-sent under the SAME Idempotency-Key, which is
+            // what makes the remainder land rather than duplicating what
+            // already did.
+            //
+            // Counted as an ATTEMPT, unlike a dead radio: this one reached the
+            // server and got a real answer, so a treatment the server will
+            // never finish has to stop eventually rather than re-sending for
+            // ever. At MAX_ATTEMPTS it PARKS as `exhausted` like any other
+            // exhausted item — it is never deleted, because a partly-recorded
+            // treatment is the one thing here that cannot be reconstructed.
+            //
+            // No new user-facing state: a parked item already shows in the
+            // blocked count. Owner ruling 2026-10-15 was to resume SILENTLY,
+            // matching iOS, so this deliberately raises nothing.
+            const next = { ...item, attempts: item.attempts + 1 };
+            if (next.attempts >= MAX_ATTEMPTS) {
+                if (await parkIfStillQueued(store, next, { blocked: 'exhausted' })) blocked++;
+            } else {
+                if (await parkIfStillQueued(store, next, {})) failed++;
+            }
+        } else if (res.ok) {
             // Receipt FIRST, then removal. A receipt exists if and only if the
             // removal was deliberate, which is what lets the page tell a drain
             // apart from an eviction — including a drain the SERVICE WORKER
@@ -420,6 +465,11 @@ export function fetchSender(): Sender {
         if (res.status === 409) {
             conflict = await res.json().catch(() => undefined);
         }
-        return { ok: res.ok, status: res.status, retryAfter, conflict };
+        // Only for an item that asked. See SendResult.completionBody.
+        let completionBody: unknown;
+        if (res.ok && !isPhotoItem(item) && item.completeWhen !== undefined) {
+            completionBody = await res.json().catch(() => undefined);
+        }
+        return { ok: res.ok, status: res.status, retryAfter, conflict, completionBody };
     };
 }

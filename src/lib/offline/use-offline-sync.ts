@@ -21,6 +21,7 @@ import {
     enqueuePhoto,
     newOutboxId,
     outboxHeaders,
+    responseSatisfiesExpectation,
     supersedeQueuedWrites,
     type EnqueueInput,
     type EnqueuePhotoInput,
@@ -380,7 +381,39 @@ export function useOfflineSync(): OfflineSync {
                         headers: outboxHeaders({ id, ifMatch: input.ifMatch }),
                         body: input.body !== undefined ? JSON.stringify(input.body) : undefined,
                     });
-                    if (res.ok) return settle('sent');
+                    if (res.ok) {
+                        // A 2xx is delivery for every write but one (#1870).
+                        // `POST /journal/treatments` is resumable rather than
+                        // atomic, so it can answer 201 having recorded fewer
+                        // parcels than were sent — and this path used to drop
+                        // the item on exactly that answer, leaving the
+                        // remainder unrecorded in a compliance register with
+                        // no signal anywhere.
+                        //
+                        // The body is read ONLY when the caller declared an
+                        // expectation, so no other write pays a parse.
+                        if (input.completeWhen === undefined) return settle('sent');
+                        const body = await res.json().catch(() => undefined);
+                        if (responseSatisfiesExpectation(input.completeWhen, body)) {
+                            return settle('sent');
+                        }
+                        // Partly done: queue it under the SAME id, so the
+                        // replay carries the same Idempotency-Key and finishes
+                        // the remainder instead of duplicating what landed.
+                        //
+                        // 'queued', not 'sent' — the caller's optimistic row
+                        // must not claim a finished treatment. The attempt is
+                        // deliberately NOT counted, matching the 409 arm
+                        // below: both reached the server and both hand the
+                        // item to the drain with a clean budget.
+                        //
+                        // Resumes silently (owner ruling 2026-10-15, matching
+                        // iOS) — the existing pending count is the only
+                        // signal, and no new copy is introduced.
+                        await enqueue(store, input, id);
+                        enqueued = true;
+                        return settle('queued');
+                    }
                     if (res.status === 409) {
                         // Optimistic-lock conflict even while online (a concurrent
                         // edit landed first). Park it for the resolution UI rather

@@ -443,6 +443,34 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                 // NO supersede key, deliberately: every save MINTS a
                 // treatment, so an older queued one is a different
                 // treatment, not a stale version of this one.
+                //
+                // What a 2xx has to SAY before this counts as delivered
+                // (#1870). This route is resumable rather than atomic: the
+                // per-parcel mark writes each ДНЕВНИК entry, so a failure
+                // part-way answers 201 with fewer parcels recorded than were
+                // sent. Without this the outbox called that delivered and
+                // dropped the item, and the remaining applications were
+                // missing from a regulated register with nothing saying so.
+                //
+                // Compared against what we SENT, because the 201 carries no
+                // `complete` flag — that lives on
+                // `GET /journal/treatments/{handle}` by that schema's own
+                // decision. `payload.parcelIds.length` rather than
+                // `selected.size`: the payload is what the server was asked
+                // to record, and it is the sorted de-duplicated set.
+                //
+                // Absent for a free-hand entry (no parcels), where a 201 with
+                // `parcelCount: 0` is the correct finished answer and an
+                // expectation of 0 would be satisfied by it anyway — but
+                // omitting it keeps the body unparsed on that path.
+                ...(payload.parcelIds.length > 0
+                    ? {
+                          completeWhen: {
+                              field: 'parcelCount',
+                              equals: payload.parcelIds.length,
+                          } as const,
+                      }
+                    : {}),
             });
             onSaved({
                 delivery,
