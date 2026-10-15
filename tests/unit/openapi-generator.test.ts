@@ -90,7 +90,12 @@ describe('GAP-10 step 3 — generated OpenAPI 3.1 spec', () => {
         // The version that MEANS something is published separately, and this
         // is what a client should read. `contract-version.ts` records why it
         // had to be a different field.
-        expect((spec as Record<string, unknown>)['x-api-version']).toEqual(expect.any(Number));
+        // `as unknown as` — `OpenApiDoc` does not overlap
+        // `Record<string, unknown>` enough for a direct cast, and the root
+        // `x-` extensions are deliberately outside that interface.
+        expect((spec as unknown as Record<string, unknown>)['x-api-version']).toEqual(
+            expect.any(Number),
+        );
     });
 
     it('declares at least one server', () => {
