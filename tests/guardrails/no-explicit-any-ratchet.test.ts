@@ -36,6 +36,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SRC_DIR = path.join(REPO_ROOT, 'src');
 
@@ -87,19 +89,57 @@ interface Hit {
     text: string;
 }
 
+/**
+ * The source with comments and strings blanked, split into lines.
+ *
+ * Extracted so the fixture controls below run the REAL code path. The sanity
+ * test used to re-implement the line heuristic inline and assert against its
+ * own copy — a control that validates a duplicate of the logic cannot fail on
+ * a defect in the logic.
+ */
+function codeLinesOf(src: string): string[] {
+    return blankNonCode(src, { strings: true }).split('\n');
+}
+
+/** Occurrences of `as any` in real code, for one source string. */
+function countAsAnyIn(src: string): number {
+    let n = 0;
+    for (const line of codeLinesOf(src)) {
+        n += (line.match(new RegExp(AS_ANY_RE.source, 'g')) ?? []).length;
+    }
+    return n;
+}
+
 function findAsAnyHits(): Hit[] {
     const hits: Hit[] = [];
     for (const abs of listTsFiles(SRC_DIR)) {
-        const lines = fs.readFileSync(abs, 'utf8').split('\n');
+        // Through the shared stripper, not a line heuristic (#1774 batch 3).
+        //
+        // The heuristic it replaces skipped lines whose TRIMMED form starts
+        // with `*` or `//`, and its own comment admitted the limit: "would
+        // require a proper parser". Two shapes it misses, both ordinary:
+        //
+        //     const x = resolve(row);   // treat it as any other row
+        //     /* as any — see #123 */
+        //
+        // Neither line STARTS with `*` or `//`, so both counted as casts.
+        // `\bas\s+any\b` is a phrase English produces freely ("as any
+        // other", "such as any"), which is what makes this the live half of
+        // #1774's instance 2 — the pattern has since changed from `: any` to
+        // `as any`, and the prose exposure grew rather than went away.
+        //
+        // `{ strings: true }` because the subject is a type assertion: a
+        // string containing the words "as any" is not a cast. Line and column
+        // positions survive blanking, so the reported `line` is unchanged.
+        //
+        // MEASURED before converting, across all of `src/`: the heuristic and
+        // the stripper agree exactly today — 4 and 4, with zero files
+        // disagreeing. So this moves no number and `CURRENT_BASELINE` stays
+        // at 4. It removes a hand-rolled stripper and closes two leaks that
+        // had not yet been hit.
+        const lines = codeLinesOf(fs.readFileSync(abs, 'utf8'));
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            // Skip line-level matches inside block comments would require
-            // a proper parser. Heuristic: skip lines whose stripped form
-            // starts with `*` (JSDoc/block-comment continuations) or
-            // `//` (single-line comment) — these are docstring mentions
-            // of historical casts, not actual code casts.
-            const stripped = line.trim();
-            if (stripped.startsWith('*') || stripped.startsWith('//')) continue;
             // Count each occurrence on the line so a `(x as any) || (y as any)`
             // counts as 2 — the ratchet measures real cast density.
             const matches = line.match(new RegExp(AS_ANY_RE.source, 'g'));
@@ -143,24 +183,45 @@ describe('Epic C — `as any` count ratchet', () => {
         expect(files.every((f) => /\.tsx?$/.test(f) && !f.endsWith('.d.ts'))).toBe(true);
     });
 
-    it('control: findAsAnyHits agrees with an independent scan of the same tree', () => {
-        // Mirrors the documented heuristic — skip `*` and `//` continuation
-        // lines, count every occurrence on a line — computed here rather
-        // than trusted from the helper. A gutted `findAsAnyHits` returns 0
-        // while this still returns the real number, so the two disagree.
+    it('control: the counter tells a cast from prose that merely says "as any"', () => {
+        // This REPLACES a whole-tree cross-check that re-implemented the old
+        // line heuristic and compared it with `findAsAnyHits`.
         //
-        // This stays correct if the codebase ever reaches zero casts: both
-        // sides go to 0 together and still agree. It is the DIVERGENCE that
-        // is the signal, not the value.
-        let independent = 0;
-        for (const abs of listTsFiles(SRC_DIR)) {
-            for (const line of fs.readFileSync(abs, 'utf8').split('\n')) {
-                const stripped = line.trim();
-                if (stripped.startsWith('*') || stripped.startsWith('//')) continue;
-                independent += (line.match(new RegExp(AS_ANY_RE.source, 'g')) ?? []).length;
-            }
-        }
-        expect(findAsAnyHits().length).toBe(independent);
+        // Converting the primary to the shared stripper made that comparison
+        // actively harmful: the heuristic counts `x; // as any other row` and
+        // the stripper does not, so the two diverge the moment anybody writes
+        // an ordinary English sentence — and the guard would go RED on prose
+        // again, just with a different message. #1774's instance 2 is exactly
+        // that failure, and reproducing it in the control would be a poor
+        // trade for an independent implementation.
+        //
+        // A fixture answers the same question without ranging over the repo's
+        // prose, and it exercises the real code path rather than a copy.
+        const cast = 'const a = x as any;\nconst b = (y as any).foo;';
+        expect(countAsAnyIn(cast)).toBe(2);
+
+        // The two shapes the heuristic missed. Neither line STARTS with `*`
+        // or `//`, which is all the heuristic ever tested.
+        expect(countAsAnyIn('const x = resolve(row); // treat it as any other row')).toBe(0);
+        expect(countAsAnyIn('/* as any — see #123 */')).toBe(0);
+        // And a string, which `{ strings: true }` is for.
+        expect(countAsAnyIn("const s = 'treat as any other';")).toBe(0);
+        // The shapes it DID catch stay caught — but as REAL comments. A bare
+        // ` * as any in jsdoc` line with no `/*` opener is not a comment at
+        // all to a state machine, it is code, and `as any` in it is a cast.
+        // The old heuristic skipped any line starting with `*`, which was
+        // right for continuation lines only by coincidence; this is what that
+        // coincidence looks like when the fixture is honest.
+        expect(countAsAnyIn('/**\n * as any in jsdoc\n */')).toBe(0);
+        expect(countAsAnyIn('// historical: as any cast was here')).toBe(0);
+
+        // A cast on the same line as prose that mentions it — the case that
+        // decides whether blanking is positional rather than whole-line.
+        expect(countAsAnyIn('const c = d as any; // not as any other thing')).toBe(1);
+
+        // And the scan over the real tree still finds the casts the ratchet
+        // is counting, so this file is not green by scanning nothing.
+        expect(findAsAnyHits().length).toBeGreaterThan(0);
     });
 
     it(`total \`as any\` count in src/ stays at or below ${CURRENT_BASELINE}`, () => {
@@ -237,18 +298,20 @@ describe('Epic C — `as any` count ratchet', () => {
             'const b = (y as any).foo;',
             'function f(z: any) { return z as any; }',
             '// historical: as any cast was here', // commented — should NOT count
-            ' * as any in jsdoc',                  // jsdoc — should NOT count
+            // A REAL block comment. This fixture used to be the bare
+            // continuation line ` * as any in jsdoc`, which the old line
+            // heuristic skipped and a state machine correctly reads as code —
+            // so the fixture was asserting the heuristic's coincidence rather
+            // than the behaviour anybody wants.
+            '/**',
+            ' * as any in jsdoc',
+            ' */'
         ].join('\n');
 
-        // Count direct, code-level matches only — same heuristic as
-        // findAsAnyHits.
-        let count = 0;
-        for (const line of fakeSrc.split('\n')) {
-            const stripped = line.trim();
-            if (stripped.startsWith('*') || stripped.startsWith('//')) continue;
-            const matches = line.match(new RegExp(AS_ANY_RE.source, 'g'));
-            if (matches) count += matches.length;
-        }
+        // Through the real counter, not a re-implementation of it. This test
+        // previously copied the heuristic inline and asserted against its own
+        // copy, so a defect in the shipped path could not fail it.
+        const count = countAsAnyIn(fakeSrc);
         // Lines 1, 2, 3 each have exactly one `as any` (the `z: any`
         // parameter annotation on line 3 doesn't match — the regex
         // requires the literal `as any`). Lines 4 and 5 are skipped
