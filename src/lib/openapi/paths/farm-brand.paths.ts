@@ -101,6 +101,13 @@ const DraftSchema = z
         consentedAt: z.string().datetime({ offset: true }).nullable(),
         consentTextVersion: z.string().nullable(),
         indexable: z.boolean(),
+        hideTagline: z.boolean().openapi({
+            description:
+                'True when the tagline is WITHHELD from `/f/{handle}` — P6.6. The text is still stored and still returned here; only the public page omits it. Hiding is not deleting: turning the flag off restores the field with nothing retyped.',
+        }),
+        hideAbout: z.boolean(),
+        hideOblast: z.boolean(),
+        hideCrops: z.boolean(),
     })
     .nullable()
     .openapi('FarmBrandDraft');
@@ -169,6 +176,8 @@ export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
             + '**A field left out is untouched; an explicit `null` clears it.** That distinction is what an autosaving editor needs — without it, saving a tagline would wipe the description the owner wrote yesterday and never opened today. `crops` has no null form: an empty array IS the cleared state for a list.\n\n'
             + '**Publication preconditions are NOT enforced here.** A draft may be incomplete, and `displayName` is nullable even though the public page\u2019s column is NOT NULL — refusing a nameless draft would stop an owner saving a tagline before deciding what to call the farm. `PUT .../publication` is where the three refusals bite.\n\n'
             + '**Editing a PUBLISHED farm refreshes its page in the same call**, reported as `reprojected`. An edit that did not would succeed while changing nothing a visitor sees.\n\n'
+            + '**Per-field visibility (P6.6).** `hideTagline`, `hideAbout`, `hideOblast` and `hideCrops` withhold a field from `/f/{handle}` WITHOUT clearing it. They follow the same omitted-means-untouched rule as the content fields, which is what lets an autosaving editor send one flag without disturbing another — or the text it hides.\n\n'
+            + 'There is deliberately no flag for `handle` or `displayName`: both are publication preconditions, so a published farm cannot withhold them. The public projection omits a hidden field entirely, and a visitor cannot distinguish a hidden field from an unset one — which is intentional, because revealing that something is withheld is the thing hiding it is meant to avoid.\n\n'
             + '**Refusal codes.** None of its own — the bounds are schema validation, and the admin check is the usual tenant-role refusal.',
         tags: ['Farm profile'],
         params: TenantParams,

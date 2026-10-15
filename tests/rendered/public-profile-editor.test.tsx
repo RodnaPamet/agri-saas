@@ -58,6 +58,10 @@ const DRAFT = {
     consentedAt: null,
     consentTextVersion: null,
     indexable: false,
+    hideTagline: false,
+    hideAbout: false,
+    hideOblast: false,
+    hideCrops: false,
 };
 
 function mockFetch(responses: Array<{ ok: boolean; body: unknown; status?: number }>) {
@@ -378,6 +382,39 @@ describe('the public-profile editor', () => {
         // navigating to the PDF.
         expect(link).toHaveAttribute('href', '/api/t/acme/farm-brand/share-card');
         expect(link).toHaveAttribute('download');
+    });
+
+    it('offers an eye toggle per field, and saves only the one that changed', async () => {
+        // #1815: the toggle is the allowlist's user interface. Four fields are
+        // hideable; `handle` and `displayName` are publication preconditions
+        // and `indexable` is a crawler decision, so none of them gets one.
+        const calls = mockFetch([
+            { ok: true, body: DRAFT },
+            { ok: true, body: { created: false, reprojected: false } },
+            { ok: true, body: { ...DRAFT, hideAbout: true } },
+        ]);
+        render(<PublicProfileClient baseUrl={BASE} />);
+
+        const toggles = await screen.findAllByRole('switch', { name: 'shownPublicly' });
+        expect(toggles).toHaveLength(4);
+        // Labelled "shown publicly", so ON means visible — an unhidden draft
+        // shows all four ON. A toggle labelled "hidden" would make the safe
+        // state the ON state, which reads backwards beside the publish switch.
+        for (const t of toggles) expect(t).toBeChecked();
+
+        // The second field is «За стопанството».
+        await userEvent.click(toggles[1]);
+
+        await waitFor(() => {
+            expect(calls.some((c) => c.url.endsWith('/farm-brand'))).toBe(true);
+        });
+        const save = calls.find(
+            (c) => c.url.endsWith('/farm-brand') && c.init?.method === 'PUT',
+        );
+        const body = JSON.parse(String(save?.init?.body ?? '{}')) as Record<string, unknown>;
+        // ONLY the flag that changed. Sending the whole form would let hiding
+        // one field clobber another flag, or the text it hides.
+        expect(body).toEqual({ hideAbout: true });
     });
 
     it.each([

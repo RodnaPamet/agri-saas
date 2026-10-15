@@ -1478,7 +1478,8 @@
             "consentCancel": "Cancel",
             "consentStale": "The consent text has been updated since you confirmed it. Please read it again before the page becomes public.",
             "downloadCard": "Download a printable card (A6)",
-            "downloadCardHint": "A PDF, 105 × 148 mm, with a QR code to the page. Made to be printed and handed out at the market."
+            "downloadCardHint": "A PDF, 105 × 148 mm, with a QR code to the page. Made to be printed and handed out at the market.",
+            "shownPublicly": "Shown publicly"
         }
     },
     "ui": {
