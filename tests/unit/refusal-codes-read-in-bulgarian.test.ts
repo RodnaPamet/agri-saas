@@ -60,6 +60,34 @@ const BATCH: ReadonlyArray<[code: string, english: string]> = [
     ['AVATAR_FILE_MISSING', 'Missing avatar file in form data.'],
 ];
 
+/**
+ * Batch 2 — the farm-record families, which is the ДНЕВНИК path a farmer is on
+ * daily. Translations of the server's own English.
+ */
+const BATCH_2: ReadonlyArray<[code: string, english: string]> = [
+    ['FILE_EMPTY', 'File is empty'],
+    ['FILE_REQUIRED', 'No file was included in the form data.'],
+    ['JOURNAL_ENTRY_NOT_DELETED', 'Journal entry is not deleted'],
+    ['JOURNAL_ENTRY_NOT_SOFT_DELETED', 'Journal entry must be soft-deleted before purging'],
+    ['JOURNAL_FILE_LINK_NOT_FOUND', 'Journal entry file link not found'],
+    ['JOURNAL_TITLE_REQUIRED', 'Title is required'],
+    ['OPERATION_INPUT_AMBIGUOUS', 'Choose exactly one input — a product OR a fertilizer.'],
+    ['OPERATION_NOT_ASSIGNED_TO_YOU', 'You can only update field operations assigned to you.'],
+    ['OPERATION_PARCEL_NOT_FOUND', 'Operation parcel not found'],
+    ['PARCEL_LOCATION_MISMATCH', 'Parcel does not belong to the selected location'],
+    ['SEASON_INVALID_DATE', 'Season start and end must be valid dates.'],
+    ['SEASON_NAME_REQUIRED', 'A season name is required.'],
+    ['SEASON_WINDOW_INVERTED', 'The season end date must be on or after the start date.'],
+    ['TREATMENT_ABANDONED', 'This treatment was abandoned by an administrator.'],
+    ['TREATMENT_COMPLETE', 'This treatment is fully recorded.'],
+    ['TREATMENT_DATE_INVALID', 'The treatment date must be a calendar day in the form YYYY-MM-DD.'],
+    ['TREATMENT_DATE_IN_FUTURE', 'A treatment cannot be recorded for a future date.'],
+    ['TREATMENT_NO_PARCELS', 'Select at least one parcel that was treated.'],
+    ['UPLOAD_INFECTED', 'This image was rejected by the malware scanner.'],
+    ['UPLOAD_SCANNER_UNAVAILABLE', 'The malware scanner is unavailable, so the image was not stored.'],
+    ['UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE', 'This image cannot be published.'],
+];
+
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
 
 beforeEach(() => {
@@ -121,6 +149,53 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 1)', () => {
         const p = payload('TREATMENT_NOT_FOUND', 'No treatment was recorded under that handle.');
         await localizeErrorPayload(p);
         expect(p.error.message).not.toMatch(/[А-Яа-я]/);
+    });
+
+    it.each(BATCH_2.map(([c, e]) => [c, e] as const))(
+        'batch 2: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('FILE_TOO_LARGE names the cap, because a NUMBER may be interpolated', async () => {
+        // The one code in batch 2 whose sentence carries a param, and the
+        // exception `localize.ts`'s rule makes explicit: a NUMBER or a name
+        // the person typed may be interpolated; an enum on the wire may not.
+        //
+        // The cap was inside the English template and NOT on the wire, so a
+        // catalogue entry could not have named it. `ingest.ts` and
+        // `journal.ts` pass `maxBytes` now, which is what makes the Bulgarian
+        // as informative as the English it replaces.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('FILE_TOO_LARGE', 'File exceeds the maximum size of 5242880 bytes');
+        p.error.params = { maxBytes: '5242880' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).toContain('5242880');
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('FILE_TYPE_NOT_ALLOWED has NO entry, deliberately', async () => {
+        // It is raised at five sites and one of them passes a CALLER-SUPPLIED
+        // message (`extraRejection`, from `opts.extraCheck`) — so an entry
+        // would replace a bespoke reason like "avatars must be square" with a
+        // generic sentence. `localizeErrorPayload` REPLACES `message` whenever
+        // an entry exists, for every locale, so adding one flattens all five
+        // sites' wording at once.
+        //
+        // Asserted rather than left as a gap in the list: the next batch will
+        // see it untranslated and should know the omission is a decision.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const original = 'Avatars must be square.';
+        const p = payload('FILE_TYPE_NOT_ALLOWED', original);
+        await localizeErrorPayload(p);
+        expect(p.error.message).toBe(original);
     });
 
     it('a code with NO entry is left alone, which is the 109 still to do', async () => {
