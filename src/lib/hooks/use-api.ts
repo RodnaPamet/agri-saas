@@ -41,7 +41,7 @@ export function useApi<T>(
     const [loading, setLoading] = useState(!!url);
     const urlRef = useRef(url);
     // "ref-as-mailbox" — keeps fetchData reading the latest url without re-binding the listener.
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: keeps fetchData reading the latest url without re-binding
     urlRef.current = url;
 
     const fetchData = useCallback(async () => {
