@@ -1465,17 +1465,18 @@
             "consentIntro": "Read and confirm before the page becomes public.",
             "consentBody": "Publishing makes the farm’s page available to anyone on the internet, with no account and no sign-in.\n\nWhat becomes public: the public name, the short description, the “About the farm” text, the oblast and the crops. Your ЕГН, ЕИК, address, municipality and settlement are NOT published — those stay in your private profile.\n\nThe link can be forwarded, and opened by anyone who receives it.\n\nSearch-engine indexing is a separate decision and is off by default. You can turn it on later.\n\nYou can withdraw publication at any time and the page stops answering immediately. Links already shared and material already printed stay as they are — withdrawing does not call them back.",
             "consentAgree": "I have read this and agree that the page may be published.",
-            "consentRecord": "Confirm consent",
             "consentRecorded": "Consent recorded on {date}.",
-            "consentRequired": "Confirm consent before publishing.",
-            "publishHeading": "Publishing",
-            "publish": "Publish the page",
-            "unpublish": "Withdraw the page",
             "publishedAt": "Published on {date}.",
             "notPublished": "The page is not published.",
             "nameRequired": "Enter a public name before publishing.",
             "indexableLabel": "Allow search-engine indexing",
-            "indexableHelp": "Separate from publishing. Off by default."
+            "indexableHelp": "Separate from publishing. Off by default.",
+            "visibilityHeading": "Page visibility",
+            "visibilityLabel": "The page is public",
+            "visibilityHelp": "Off by default. Turning it on asks for your consent first.",
+            "consentConfirm": "I agree — publish",
+            "consentCancel": "Cancel",
+            "consentStale": "The consent text has been updated since you confirmed it. Please read it again before the page becomes public."
         }
     },
     "ui": {

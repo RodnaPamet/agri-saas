@@ -91,6 +91,13 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
     const [handleInput, setHandleInput] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [consentChecked, setConsentChecked] = useState(false);
+    /**
+     * True while the owner has asked for the page to go public and has not yet
+     * agreed to the consent text. The switch reads as ON during this window —
+     * it reflects what they asked for, with the confirmation shown underneath —
+     * and snaps back if they cancel.
+     */
+    const [consentPending, setConsentPending] = useState(false);
 
     const hydrate = useCallback((d: Draft | null) => {
         setDraft(d);
@@ -203,21 +210,87 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
         }
     };
 
-    const recordConsent = async () => {
-        const ok = await send('/farm-brand/consent', { textVersion: CONSENT_TEXT_VERSION });
-        if (ok) {
-            setSuccess(t('saved'));
-            setConsentChecked(false);
-            await load();
-        }
-    };
-
     const setPublished = async (next: boolean) => {
         const ok = await send('/farm-brand/publication', { published: next });
         if (ok) {
             setSuccess(t('saved'));
             await load();
         }
+    };
+
+    /**
+     * Whether the recorded consent still covers the text THIS build renders.
+     *
+     * A timestamp alone is not enough. `consentTextVersion` exists so that
+     * "they agreed" can be held against a specific wording, and a farm that
+     * agreed to v1 has not agreed to v2 — so a changed text re-asks rather
+     * than inheriting an older answer. That is the whole reason the version is
+     * stored alongside the timestamp.
+     */
+    const consentIsCurrent =
+        !!draft?.consentedAt && draft.consentTextVersion === CONSENT_TEXT_VERSION;
+
+    /**
+     * The visibility switch.
+     *
+     * OFF is immediate and never gated. A farm must always be able to take its
+     * page down — the usecase makes the same choice, applying the publication
+     * preconditions only to `published: true` — and asking somebody to agree
+     * to something in order to STOP publishing would be absurd.
+     *
+     * ON asks first. The consent is raised BY this action rather than standing
+     * as a separate step to have completed earlier, so the agreement is made
+     * at the moment it has an effect.
+     */
+    const setVisible = async (next: boolean) => {
+        if (!next) {
+            setConsentPending(false);
+            setConsentChecked(false);
+            await setPublished(false);
+            return;
+        }
+        if (consentIsCurrent) {
+            await setPublished(true);
+            return;
+        }
+        setConsentChecked(false);
+        setConsentPending(true);
+    };
+
+    const cancelConsent = () => {
+        setConsentPending(false);
+        setConsentChecked(false);
+    };
+
+    /**
+     * Record the consent, then publish — in that order, as two calls.
+     *
+     * Not one call, and not a field on the content save. Consent is a legal
+     * artefact rather than editor state: the content form autosaves, and an
+     * autosave that recorded consent would be claiming somebody read something
+     * they never saw.
+     *
+     * The order matters on the failure path too. If the consent is recorded and
+     * publication is then refused — no public name, say — the consent STANDS
+     * and the page stays private. That is the safe direction: a recorded
+     * agreement with nothing published is a true statement about what the owner
+     * agreed to, where a published page with no record would not be.
+     */
+    const confirmConsentAndPublish = async () => {
+        const consented = await send('/farm-brand/consent', {
+            textVersion: CONSENT_TEXT_VERSION,
+        });
+        if (!consented) return;
+
+        const published = await send('/farm-brand/publication', { published: true });
+        setConsentChecked(false);
+        if (published) {
+            setConsentPending(false);
+            setSuccess(t('saved'));
+        }
+        // Reload either way: the consent is recorded even when the publication
+        // that followed it was refused, and the form must show that.
+        await load();
     };
 
     const setIndexable = async (next: boolean) => {
@@ -352,44 +425,9 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                 </div>
             </section>
 
-            {/* ── consent ── */}
+            {/* ── visibility, and the consent it raises ── */}
             <section className={cn(cardVariants(), 'flex flex-col gap-default')}>
-                <Heading level={2}>{t('consentHeading')}</Heading>
-                <p className="text-content-muted">{t('consentIntro')}</p>
-                {/* `whitespace-pre-line`, because the text has paragraphs and
-                    a consent record should describe what was actually on
-                    screen — collapsing it would change what was agreed to. */}
-                <p className="whitespace-pre-line">{t('consentBody')}</p>
-                {draft?.consentedAt ? (
-                    <InlineNotice variant="info">
-                        {t('consentRecorded', {
-                            date: formatDate(draft.consentedAt),
-                        })}
-                    </InlineNotice>
-                ) : (
-                    <div className="flex flex-col gap-tight">
-                        <label className="flex items-center gap-tight">
-                            <Checkbox
-                                checked={consentChecked}
-                                onCheckedChange={(v) => setConsentChecked(v === true)}
-                            />
-                            <span>{t('consentAgree')}</span>
-                        </label>
-                        <div>
-                            <Button
-                                onClick={recordConsent}
-                                disabled={busy || !consentChecked}
-                            >
-                                {t('consentRecord')}
-                            </Button>
-                        </div>
-                    </div>
-                )}
-            </section>
-
-            {/* ── publish ── */}
-            <section className={cn(cardVariants(), 'flex flex-col gap-default')}>
-                <Heading level={2}>{t('publishHeading')}</Heading>
+                <Heading level={2}>{t('visibilityHeading')}</Heading>
                 <p className="text-content-muted">
                     {draft?.published && draft.publishedAt
                         ? t('publishedAt', {
@@ -397,15 +435,66 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                           })
                         : t('notPublished')}
                 </p>
-                <div>
-                    <Button
-                        onClick={() => setPublished(!draft?.published)}
+
+                <label className="flex items-center justify-between gap-default">
+                    <span className="flex flex-col">
+                        <span>{t('visibilityLabel')}</span>
+                        <span className="text-content-muted">{t('visibilityHelp')}</span>
+                    </span>
+                    {/* Reads ON while a consent is pending: the switch shows
+                        what was ASKED FOR, and the confirmation below says what
+                        is still needed. Cancelling returns it to off, and the
+                        page is private throughout. */}
+                    <Switch
+                        checked={(draft?.published ?? false) || consentPending}
+                        onCheckedChange={setVisible}
                         disabled={busy}
-                        variant={draft?.published ? 'secondary' : 'primary'}
-                    >
-                        {draft?.published ? t('unpublish') : t('publish')}
-                    </Button>
-                </div>
+                    />
+                </label>
+
+                {/* The consent, raised BY turning visibility on rather than
+                    standing as an earlier step — so the agreement is made at
+                    the moment it has an effect. */}
+                {consentPending && (
+                    <div className="flex flex-col gap-default border-t border-border-subtle pt-default">
+                        <Heading level={3}>{t('consentHeading')}</Heading>
+                        {draft?.consentedAt && (
+                            <InlineNotice variant="warning">{t('consentStale')}</InlineNotice>
+                        )}
+                        <p className="text-content-muted">{t('consentIntro')}</p>
+                        {/* `whitespace-pre-line`, because the text has
+                            paragraphs and a consent record should describe what
+                            was actually on screen — collapsing it would change
+                            what was agreed to. */}
+                        <p className="whitespace-pre-line">{t('consentBody')}</p>
+                        <label className="flex items-center gap-tight">
+                            <Checkbox
+                                checked={consentChecked}
+                                onCheckedChange={(v) => setConsentChecked(v === true)}
+                            />
+                            <span>{t('consentAgree')}</span>
+                        </label>
+                        <div className="flex gap-tight">
+                            <Button
+                                onClick={confirmConsentAndPublish}
+                                disabled={busy || !consentChecked}
+                            >
+                                {t('consentConfirm')}
+                            </Button>
+                            <Button onClick={cancelConsent} disabled={busy} variant="secondary">
+                                {t('consentCancel')}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {consentIsCurrent && !consentPending && (
+                    <InlineNotice variant="info">
+                        {t('consentRecorded', {
+                            date: formatDate(draft!.consentedAt!),
+                        })}
+                    </InlineNotice>
+                )}
 
                 <label className="flex items-center justify-between gap-default">
                     <span className="flex flex-col">

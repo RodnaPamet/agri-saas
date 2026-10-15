@@ -270,7 +270,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // 258 is this branch's own measured live count AFTER rebasing onto the main
 // that carries #1740's 255 -> 257. Choosing a number before that rebase would
 // have been arithmetic against a base that was about to move.
-const RENDERED_TEST_FLOOR = 259;
+const RENDERED_TEST_FLOOR = 260;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
