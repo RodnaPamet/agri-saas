@@ -81,18 +81,71 @@ export const SWR_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24h
  * ## What belongs here
  *
  * The lists the cold-start work (Roadmap-6 P3) was actually built for —
- * the same four that got `jsonWithETag` for conditional revalidation.
+ * the four that got `jsonWithETag` for conditional revalidation — plus
+ * the treatment form's reads (#1845, owner ruling 2026-10-15).
+ *
  * Adding an entry means deciding that this response is acceptable on a
  * phone that may be lost, sold, or handed to another worker. If it
  * carries names, contacts, identifiers, financial terms or anything from
  * `ENCRYPTED_FIELDS`, the answer is no — leave it memory-only and let it
  * refetch.
+ *
+ * ## The #1845 additions, and what each puts on disk
+ *
+ * «Нов запис» (#1740) could not be OPENED without signal while the same
+ * screen on the phone opens from cache, because its four reads were not
+ * here. The write was already queued through the outbox (#1830), which
+ * protects work typed before the signal dropped and cannot help a form
+ * that was never fillable. Two farmers at the same fence, one on a phone
+ * and one on a tablet, got different answers to "can I record this spray".
+ *
+ *   - `/items` — the tenant's product catalogue. Reference data; no
+ *     person appears in it.
+ *   - `/units` — units of measure. Reference data.
+ *   - `/parcels/by-crop` — two shapes behind one entry, because
+ *     `tenantRelativePath` strips the query. With no `crop` it is crop
+ *     names and areas and NO geometry, by that route's own design ("the
+ *     crop picker draws nothing"). With one it adds parcel `name`,
+ *     `areaHa`, `locationName` and real `geometry`, up to 5000 parcels.
+ *
+ * **The geometry is the deliberate part.** It is the first parcel
+ * geometry this cache has ever written to disk, and it was ruled on
+ * rather than defaulted: it is the operator's OWN farm rather than a
+ * third party, it is the shape step two renders and the map draws, and
+ * `/locations` — allowlisted since P3 — already writes the farm owner's
+ * `name` in plaintext, so a person's name was on disk before any of
+ * this. What is NOT here, and must not be added by analogy, is
+ * `/leases` or `/reports/rent-roll`: `ParcelLease.lessorName` and
+ * `lessorEik` are in `ENCRYPTED_FIELDS` precisely because they are
+ * personal data about somebody who never agreed to use this product.
+ * `tests/guards/swr-persist-allowlist.test.ts` names those paths so the
+ * analogy fails loudly.
+ *
+ * On a large farm the per-crop geometry will exceed `LS_BYTE_BUDGET` and
+ * the bucket spills to IndexedDB, which is the designed path for a big
+ * payload and needs no decision here.
+ *
+ * The 24h whole-bucket age is UNCHANGED (owner ruling, same date). A
+ * parcel's crop changes a few times a year, so a longer window was on
+ * the table and declined: the ETag/304 seam makes a stale entry cost one
+ * conditional request wherever there IS signal, and per-key ages are not
+ * something this bucket can express — it carries one timestamp for the
+ * whole tenant. The consequence, recorded rather than fixed, is that a
+ * farmer returning after a day off still starts cold on every path here.
  */
 const PERSISTABLE_PATHS: readonly string[] = [
     '/journal',
     '/farm-tasks',
     '/locations',
     '/exchange/listings',
+    // #1845 — the two-step treatment form. `/units` covers
+    // `/units?measure=RATE` and `/parcels/by-crop` covers `?crop=…`,
+    // because the matcher compares a query-stripped path. The cache
+    // ENTRIES stay keyed by the raw URL, so the two by-crop reads are
+    // stored separately and do not overwrite each other.
+    '/items',
+    '/units',
+    '/parcels/by-crop',
 ];
 
 /**

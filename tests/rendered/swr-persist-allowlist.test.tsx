@@ -76,6 +76,19 @@ describe('the key predicate', () => {
         ['/api/t/acme-corp/locations', true],
         ['/api/t/acme-corp/locations/loc_1/parcels', true],
         ['/api/t/acme-corp/exchange/listings', true],
+        // #1845 — the treatment form's four reads, in the exact shapes
+        // `TreatmentEntryModal` builds them. These are the assertions that
+        // fail if somebody trims the allowlist back to the P3 four.
+        ['/api/t/acme-corp/items', true],
+        ['/api/t/acme-corp/units?measure=RATE', true],
+        ['/api/t/acme-corp/parcels/by-crop', true],
+        ['/api/t/acme-corp/parcels/by-crop?crop=%D0%9F%D1%88%D0%B5%D0%BD%D0%B8%D1%86%D0%B0', true],
+        // A CONSEQUENCE of the `/items` entry rather than a separate
+        // decision, named here so it is visible: the matcher admits
+        // children, so the single-item route rides along. Same reference
+        // data, one row of it — acceptable, and better written down than
+        // discovered.
+        ['/api/t/acme-corp/items/item_1', true],
         // The reason this work exists.
         [LEASES, false],
         ['/api/t/acme-corp/leases/parcel-options', false],
@@ -95,6 +108,12 @@ describe('the key predicate', () => {
         // A prefix test that leaks a neighbour is the same bug as a denylist.
         expect(isPersistableKey('/api/t/acme-corp/journal-exports')).toBe(false);
         expect(isPersistableKey('/api/t/acme-corp/locations-archive')).toBe(false);
+        // The #1845 entries get the same treatment. `/parcels/by-crop` must
+        // NOT drag in the bare parcels list: that read is not one of the
+        // form's four and has not been through the on-disk decision.
+        expect(isPersistableKey('/api/t/acme-corp/parcels')).toBe(false);
+        expect(isPersistableKey('/api/t/acme-corp/items-import')).toBe(false);
+        expect(isPersistableKey('/api/t/acme-corp/units-of-measure')).toBe(false);
     });
 
     it('normalises a key to a tenant-relative path', () => {
@@ -108,6 +127,54 @@ describe('what actually reaches the disk', () => {
         persistThrough([[JOURNAL, [{ id: 'j1' }]]]);
         const keys = (readBucket()?.entries ?? []).map(([k]) => k);
         expect(keys).toContain(JOURNAL);
+    });
+
+    it('persists the treatment form\u2019s four reads, geometry included (#1845)', () => {
+        // The point of #1845: «Нов запис» could not be OPENED without
+        // signal, because none of its reads were allowlisted. Asserting the
+        // predicate is not enough -- `collectEntries` is the write funnel and
+        // the two by-crop shapes normalise to ONE allowlist path, so this also
+        // proves they are stored under their own raw keys rather than
+        // overwriting each other.
+        const ITEMS = '/api/t/acme-corp/items';
+        const UNITS = '/api/t/acme-corp/units?measure=RATE';
+        const CROPS = '/api/t/acme-corp/parcels/by-crop';
+        const PARCELS = '/api/t/acme-corp/parcels/by-crop?crop=Wheat';
+
+        persistThrough([
+            [ITEMS, { items: [{ id: 'i1', name: 'Karate Zeon', category: 'PESTICIDE' }] }],
+            [UNITS, { units: [{ id: 'u1', code: 'L_HA' }] }],
+            [CROPS, { crops: [{ cropType: 'Wheat', areaHa: 12.5 }] }],
+            [PARCELS, {
+                cropType: 'Wheat',
+                parcels: [{
+                    id: 'p1',
+                    name: 'North block',
+                    areaHa: 12.5,
+                    locationId: 'loc_1',
+                    locationName: 'Home farm',
+                    geometry: { type: 'Polygon', coordinates: [[[25.1, 42.1], [25.2, 42.1], [25.2, 42.2], [25.1, 42.1]]] },
+                }],
+            }],
+        ]);
+
+        const entries = readBucket()?.entries ?? [];
+        const keys = entries.map(([k]) => k);
+        // All four, and the two by-crop shapes as SEPARATE entries.
+        expect(keys).toEqual(expect.arrayContaining([ITEMS, UNITS, CROPS, PARCELS]));
+        expect(keys.filter((k) => k.includes('by-crop'))).toHaveLength(2);
+
+        // And the geometry survived the round trip rather than being
+        // stripped -- a persisted parcel with no geometry draws no map, which
+        // would be this fix shipping while still failing offline.
+        const stored = entries.find(([k]) => k === PARCELS)?.[1] as
+            | { parcels?: Array<{ geometry?: unknown; locationName?: string }> }
+            | undefined;
+        expect(stored?.parcels?.[0]?.geometry).toEqual({
+            type: 'Polygon',
+            coordinates: [[[25.1, 42.1], [25.2, 42.1], [25.2, 42.2], [25.1, 42.1]]],
+        });
+        expect(stored?.parcels?.[0]?.locationName).toBe('Home farm');
     });
 
     it('does NOT persist lease rows, even alongside an allowlisted one', () => {
