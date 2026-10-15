@@ -61,9 +61,47 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
             await localizeErrorPayload(p);
             expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
             expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
-            expect(p.error.message).toContain('EDITOR');
             expect(p.error.message).not.toBe('You do not have permission …');
+
+            // The role is named in BULGARIAN, and the wire enum does NOT
+            // appear (#1919). This case asserted `toContain('EDITOR')` when
+            // it shipped, which locked in «Вашата роля в това стопанство
+            // (EDITOR) не позволява…» — a Bulgarian sentence with an English
+            // enum inside it, breaking the rule `localize.ts` states in its
+            // own docblock: a `{param}` belongs in a sentence only if it is a
+            // NUMBER or a NAME THE PERSON TYPED.
+            //
+            // «Редактор» is agrent-ios's own `MembershipRole.label`, so the
+            // two clients do not name one role two ways.
+            expect(p.error.message).toContain('Редактор');
+            expect(p.error.message).not.toContain('EDITOR');
         }
+    });
+
+    it('a role with NO sentence falls back to the roleless default (#1919)', async () => {
+        // The variant table's own fallback. OWNER and ADMIN are never refused
+        // by these two checks, so they have no entry — and a role that
+        // somehow arrived without one must get a sentence rather than the
+        // literal key or the English. This is what `errors.<CODE>.default` is
+        // for, and it is the arm a `has`-only detector would miss.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payloadFor('ADMIN_FORBIDDEN_FOR_ROLE', 'English fallback', { role: 'OWNER' });
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).not.toContain('OWNER');
+        expect(p.error.message).not.toContain('errors.');
+        expect(p.error.message).not.toBe('English fallback');
+    });
+
+    it('an English reader gets the role in English, not the enum (#1919)', async () => {
+        // Same rule, other locale: `EDITOR` is a wire value in an English
+        // sentence too, and the table gives both locales the same treatment
+        // so the two cannot drift apart.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'en' });
+        const p = payloadFor('ADMIN_FORBIDDEN_FOR_ROLE', 'original', { role: 'MECHANISATOR' });
+        await localizeErrorPayload(p);
+        expect(p.error.message).toContain('Machine operator');
+        expect(p.error.message).not.toContain('MECHANISATOR');
     });
 
     it('and an English reader still gets English for the same two', async () => {
@@ -76,7 +114,12 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
         const p = payloadFor('ADMIN_FORBIDDEN_FOR_ROLE', 'original', { role: 'READER' });
         await localizeErrorPayload(p);
         expect(p.error.message).not.toMatch(/[А-Яа-я]/);
-        expect(p.error.message).toContain('READER');
+        // 'Reader', not 'READER' (#1919). This asserted the ENUM when it
+        // shipped — the same mistake as the Bulgarian case above, and the
+        // reason both locales get the variant table rather than only the one
+        // whose breakage was visible.
+        expect(p.error.message).toContain('Reader');
+        expect(p.error.message).not.toContain('READER');
     });
 
     it('translates a code that HAS an entry', async () => {

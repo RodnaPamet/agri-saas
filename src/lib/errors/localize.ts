@@ -56,6 +56,15 @@
  *                          conjunction failed, and naming a farm administrator
  *                          when the PLAN excludes the module is the
  *                          agrent-ios#241 defect.
+ *   `ADMIN_FORBIDDEN_FOR_ROLE` and `AUDIT_FORBIDDEN_FOR_ROLE`
+ *                          by `role` — added for #1919, which caught the
+ *                          rule below being broken by the very change that
+ *                          wrote it down. Those two shipped with `({role})`
+ *                          interpolated, so a Bulgarian farmer read «Вашата
+ *                          роля в това стопанство (EDITOR) не позволява…» —
+ *                          a Bulgarian sentence with an English enum inside
+ *                          it. Worse, the test asserted `toContain('EDITOR')`
+ *                          and locked it in.
  *
  * Separate keys rather than one ICU `select`, because a translator editing
  * Bulgarian should see whole sentences, not a nested selector.
@@ -94,8 +103,13 @@ const NS = 'errors';
  * `resource` before `reason` because no code carries both today and the order
  * has to be defined rather than incidental: if one ever does, the subject of
  * the refusal is the more specific discriminator.
+ *
+ * `role` LAST, by the same reasoning taken one step further: `resource` and
+ * `reason` describe the SUBJECT of the refusal, `role` describes the CALLER,
+ * and the subject is the more specific fact about a refusal. No code carries
+ * `role` alongside either today.
  */
-const DISCRIMINATORS = ['resource', 'reason'] as const;
+const DISCRIMINATORS = ['resource', 'reason', 'role'] as const;
 
 /** `createTranslator`'s surface, with keys known only at runtime. */
 interface DynamicTranslator {
