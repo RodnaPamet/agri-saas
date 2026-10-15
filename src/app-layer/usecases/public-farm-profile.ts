@@ -54,7 +54,7 @@ import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
-import { projectionPayload } from '../projections/public-farm-profile.allowlist';
+import { projectionPayload, HIDEABLE_FIELDS } from '../projections/public-farm-profile.allowlist';
 import type {
     RecordFarmBrandConsentInput,
     UpdateFarmBrandInput,
@@ -729,6 +729,13 @@ export async function updateFarmBrand(
     if (input.oblast !== undefined) data.oblast = input.oblast;
     if (input.crops !== undefined) data.crops = input.crops;
     if (input.indexable !== undefined) data.indexable = input.indexable;
+    // The eye toggles (P6.6, #1815). Same `!== undefined` treatment as every
+    // field above: an omitted flag is untouched, so saving a tagline cannot
+    // un-hide the «За стопанството» paragraph.
+    for (const column of Object.values(HIDEABLE_FIELDS)) {
+        const value = (input as Record<string, unknown>)[column];
+        if (value !== undefined) data[column] = value;
+    }
 
     const outcome = await runInTenantContext(ctx, async (db) => {
         const before = await db.farmBrand.findFirst({
@@ -876,6 +883,10 @@ export async function readFarmBrandDraft(ctx: RequestContext): Promise<{
     consentedAt: Date | null;
     consentTextVersion: string | null;
     indexable: boolean;
+    hideTagline: boolean;
+    hideAbout: boolean;
+    hideOblast: boolean;
+    hideCrops: boolean;
 } | null> {
     // Same gate as every write on this model: the public face of a farm is an
     // owner concern, and a read that was looser than the write would let a
@@ -897,6 +908,14 @@ export async function readFarmBrandDraft(ctx: RequestContext): Promise<{
                 consentedAt: true,
                 consentTextVersion: true,
                 indexable: true,
+                // The eye toggles, so the editor renders them in the state
+                // they were left in. Private on the PUBLIC page (they reveal
+                // that something is withheld) and necessarily visible to the
+                // owner, who is the one who set them.
+                hideTagline: true,
+                hideAbout: true,
+                hideOblast: true,
+                hideCrops: true,
                 // `projectedHandle` and `tenantId` are deliberately NOT
                 // selected. The first is this writer's bookkeeping and means
                 // nothing to an editor; the second is the coupling the

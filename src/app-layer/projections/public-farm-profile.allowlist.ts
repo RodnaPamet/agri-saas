@@ -247,6 +247,10 @@ export function projectionPayload(brand: {
     oblast: string | null;
     crops: string[];
     indexable: boolean;
+    hideTagline: boolean;
+    hideAbout: boolean;
+    hideOblast: boolean;
+    hideCrops: boolean;
 }): {
     handle: string;
     displayName: string;
@@ -262,6 +266,21 @@ export function projectionPayload(brand: {
     // violated and the failure would surface as a Prisma error with no cause.
     if (!brand.handle) throw new Error('projectionPayload called without a handle');
     if (!brand.displayName) throw new Error('projectionPayload called without a displayName');
+
+    /**
+     * Whether `field` is withheld — P6.6 (#1815).
+     *
+     * Reads the flag THROUGH `HIDEABLE_FIELDS` rather than naming the column
+     * inline, so the partition that the agreement test checks is also the
+     * thing that runs. A field whose toggle column were renamed could not
+     * silently keep publishing: there would be no entry to read it by.
+     *
+     * Hiding withholds the field from the PROJECTION only. The text stays on
+     * `FarmBrand`, which is the owner's ruling — an eye toggle must be
+     * reversible without retyping the paragraph.
+     */
+    const hidden = (field: keyof typeof HIDEABLE_FIELDS): boolean =>
+        brand[HIDEABLE_FIELDS[field]] === true;
 
     const out = {
         // NORMALISED here, and here only.
@@ -288,10 +307,19 @@ export function projectionPayload(brand: {
         // overwrite this normalisation prevents.
         handle: brand.handle.trim().toLowerCase(),
         displayName: brand.displayName,
-        tagline: brand.tagline,
-        about: brand.about,
-        oblast: brand.oblast,
-        crops: brand.crops,
+        // Withheld fields are projected as ABSENT, not as the stored text.
+        // `null` for the three nullable ones and `[]` for the list, which is
+        // the cleared state a list already has — `updateFarmBrand` records the
+        // same reasoning for why `crops` has no null form.
+        //
+        // A visitor cannot tell a hidden field from an unset one, and that is
+        // required rather than incidental: the flags are `privateField` in
+        // this very module precisely so the page never reveals that something
+        // is being withheld.
+        tagline: hidden('tagline') ? null : brand.tagline,
+        about: hidden('about') ? null : brand.about,
+        oblast: hidden('oblast') ? null : brand.oblast,
+        crops: hidden('crops') ? [] : brand.crops,
         // DERIVED, not copied — see DERIVED_PROJECTION_FIELDS. Computed from
         // the already-normalised display name so the stored Latin form and
         // the Cyrillic one describe the same string.
