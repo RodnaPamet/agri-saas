@@ -4,6 +4,8 @@ import * as path from 'node:path';
 import { ImageResponse } from 'next/og';
 
 import { readPublicFarmProfile } from '@/app-layer/usecases/public-farm-profile';
+import { notFound } from 'next/navigation';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { getAppBaseUrl } from '@/lib/auth/app-base-url';
 
 /**
@@ -60,6 +62,11 @@ interface Props {
 
 export default async function Image({ params }: Props) {
     const { handle } = await params;
+    // The third entry point on this route, gated like the other two. An
+    // ungated card would render a farm's name and oblast for a page the
+    // flag has switched off — and a social preview is the one surface that
+    // gets scraped and cached elsewhere.
+    if (!(await isFeatureEnabled('social.public-profile', null))) notFound();
     const profile = await readPublicFarmProfile(handle);
 
     // One card shape for both the found and absent cases: the absent one shows

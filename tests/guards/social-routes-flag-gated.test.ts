@@ -74,7 +74,23 @@ import { blankNonCode } from '../helpers/blank-non-code';
  * outside these roots fails the roots test below rather than being silently
  * excluded from the population.
  */
-const SOCIAL_API_ROOTS = ['src/app/api/social/'] as const;
+const SOCIAL_API_ROOTS = [
+    'src/app/api/social/',
+    // ── added when the population turned out to be zero (#1886) ──
+    //
+    // The roadmap did not build under `api/social/`. P6 landed the farm
+    // public-profile surfaces at these paths, none of which contains a
+    // `social` segment — so the roots test below never objected, this
+    // guard's population stayed at 0, and six ungated routes merged while
+    // it reported green. It said so every run ("NO SOCIAL SURFACES EXIST
+    // YET"); nobody read the banner.
+    //
+    // A root list that misses where the work landed is the defect. These
+    // are declared by PREFIX rather than by file so a fifth farm-brand
+    // route is collected the day it is added.
+    'src/app/api/t/[tenantSlug]/farm-brand/',
+    'src/app/api/public/farms/',
+] as const;
 
 /**
  * Where a social PAGE may live. Both spellings are declared up front because
@@ -82,7 +98,14 @@ const SOCIAL_API_ROOTS = ['src/app/api/social/'] as const;
  * and `src/app/social/feed/page.tsx` are different trees serving related URLs,
  * and a guard that knew only one of them would be half blind.
  */
-const SOCIAL_PAGE_ROOTS = ['src/app/social/', 'src/app/(social)/'] as const;
+const SOCIAL_PAGE_ROOTS = [
+    'src/app/social/',
+    'src/app/(social)/',
+    // The public farm profile (#1831). An anonymous page, which makes the
+    // flag matter MORE rather than less: there is no session to revoke, so
+    // the gate is the only off switch short of a deploy.
+    'src/app/f/',
+] as const;
 
 /**
  * Paths exempt from the flag rule, keyed by repo-relative file path, each with

@@ -82,6 +82,17 @@ function show(v: unknown): string {
 }
 
 /**
+ * How many of a page's own resource requests the paint diagnostic prints.
+ *
+ * 12 rather than 6: the list page prefetches one `?_rsc=` per visible row, so
+ * on an assets list with a handful of rows the prefetches alone can fill a
+ * smaller window and push the navigation's own fetch out of the report. Large
+ * enough to clear the prefetch noise, small enough that a runaway page does
+ * not bury the message.
+ */
+const REQUEST_TAIL = 12;
+
+/**
  * Render the collected state as indented lines for a failure message.
  *
  * Total by construction — `{}` must produce a readable block rather than
@@ -126,7 +137,24 @@ export function formatDetailPaintState(s: DetailPaintState): string {
         );
     } else {
         lines.push(`  requests for this URL: ${s.detailRequests.length}`);
-        for (const r of s.detailRequests.slice(0, 6)) {
+        // The TAIL, not the head. `getEntriesByType('resource')` is in
+        // start-time order and the failure is at the END, so the requests
+        // closest to it are the last ones — which a `slice(0, 6)` was
+        // dropping. Measured on run 38700294675: the header printed
+        // `requests for this URL: 8` and listed 6, hiding the two most
+        // recent. The navigation's own RSC fetch was among what survived
+        // only by luck of ordering.
+        //
+        // And the omission is NAMED. A count beside a truncated list reads
+        // as the whole list to anybody not counting rows, which is how this
+        // instrumentation came to be trusted for a month while withholding
+        // the two entries its reader most needed.
+        const shown = s.detailRequests.slice(-REQUEST_TAIL);
+        const omitted = s.detailRequests.length - shown.length;
+        if (omitted > 0) {
+            lines.push(`    (${omitted} earlier request(s) not shown — most recent ${shown.length} follow)`);
+        }
+        for (const r of shown) {
             lines.push(`    ${Math.round(r.ms)}ms  ${r.name}`);
         }
     }

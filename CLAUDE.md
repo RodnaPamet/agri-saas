@@ -576,8 +576,16 @@ Three seams keep a PWA relaunch cheap on rural LTE — see
   fallback). **Never add a second `<SWRConfig provider>`** — extend this
   one.
   - **An ALLOWLIST decides what reaches disk.** `PERSISTABLE_PATHS` in
-    `persistent-cache.ts` — currently journal / farm-tasks / locations /
-    exchange-listings. Everything else is memory-only. This is an
+    `persistent-cache.ts` — journal / farm-tasks / locations /
+    exchange-listings, plus the treatment form's reads (`items`, `units`,
+    `parcels/by-crop`) since #1845. Everything else is memory-only.
+    **`parcels/by-crop` is the first parcel GEOMETRY this cache writes to
+    disk** and was ruled on rather than defaulted (owner, 2026-10-15): it is
+    the operator's own farm, not a third party, and `/locations` already
+    wrote the farm owner's name in plaintext. Do not extend that to
+    `/leases` or `/reports/rent-roll` by analogy — `ParcelLease.lessorName`
+    / `lessorEik` are the personal-data case the allowlist exists for, and
+    the guard names those paths so the analogy fails loudly. This is an
     allowlist and not a denylist on purpose: `ParcelLease.lessorName` /
     `lessorEik` are in `ENCRYPTED_FIELDS` *because* they are personal
     data about a third party, and they still reached plaintext

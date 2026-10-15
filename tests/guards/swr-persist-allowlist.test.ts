@@ -49,7 +49,16 @@ describe('the SWR persist allowlist', () => {
         // Not a floor — a CAP. Adding an endpoint means deciding its
         // response may sit on a lost phone. Raise this number in the same
         // diff, in a PR that says why.
-        const MAX_PERSISTED_ENDPOINTS = 4;
+        // 4 until #1845 added the treatment form's three reads (`/items`,
+        // `/units`, `/parcels/by-crop` — the last covering both query
+        // shapes, since the matcher strips the query). Owner ruling
+        // 2026-10-15, with the geometry decided explicitly rather than
+        // defaulted; the reasoning is in `persistent-cache.ts`.
+        //
+        // Raised to this branch's LIVE count, not to a round number with
+        // headroom: slack in a shared cap is how the next addition arrives
+        // without the decision this cap exists to force.
+        const MAX_PERSISTED_ENDPOINTS = 7;
         const list = allowlist();
         if (list.length > MAX_PERSISTED_ENDPOINTS) {
             throw new Error(

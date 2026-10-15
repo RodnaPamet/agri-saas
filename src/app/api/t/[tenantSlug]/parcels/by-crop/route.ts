@@ -4,7 +4,7 @@ import {
     listTenantParcelsByCrop,
 } from '@/app-layer/usecases/parcel';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { jsonResponse } from '@/lib/api-response';
+import { jsonWithETag } from '@/lib/http/etag';
 import { NextRequest } from 'next/server';
 
 type Ctx = { params: Promise<{ tenantSlug: string }> };
@@ -35,7 +35,12 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const crop = req.nextUrl.searchParams.get('crop');
     if (crop == null || crop.trim().length === 0) {
         const crops = await listTenantCropTotals(ctx);
-        return jsonResponse({ crops });
+        // An ETag-bearing response rather than a plain one (#1845). This read is now
+        // on `PERSISTABLE_PATHS`, so a phone keeps it across launches and
+        // revalidates on open — and without an ETag that revalidation is a
+        // FULL body, not a 304. That is the whole cost argument the 24h age
+        // rests on, and CLAUDE.md's rule for a cacheable list GET.
+        return jsonWithETag(req, { crops });
     }
 
     // A malformed `simplify` is IGNORED rather than refused: it is a display
@@ -45,5 +50,5 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     const simplifyTolerance = Number.isFinite(raw) && raw > 0 ? raw : undefined;
 
     const parcels = await listTenantParcelsByCrop(ctx, crop, { simplifyTolerance });
-    return jsonResponse({ cropType: crop.trim(), parcels });
+    return jsonWithETag(req, { cropType: crop.trim(), parcels });
 });
