@@ -352,11 +352,11 @@ describe('population report', () => {
     it('prints the denominator', () => {
         const res = audit(path.join(REPO_ROOT, 'messages/en.json'));
         console.log(
-            `    candidate helpers (a param called with a literal): ${res.helpers}\n` +
-                `    of those, traced to a useTranslations caller   : ${res.translatorHelpers}\n` +
-                `    keys CHECKED                                  : ${res.keysChecked}\n` +
-                `    keys untraced (no resolvable caller namespace) : ${res.keysUnresolved}\n` +
-                `    findings                                      : ${res.findings.length}`,
+            `[i18n-param-keys] candidate helpers (a param called with a literal): ${res.helpers}\n` +
+                `[i18n-param-keys] of those, traced to a useTranslations caller: ${res.translatorHelpers}\n` +
+                `[i18n-param-keys] keys CHECKED: ${res.keysChecked}\n` +
+                `[i18n-param-keys] keys untraced (no resolvable caller namespace): ${res.keysUnresolved}\n` +
+                `[i18n-param-keys] findings: ${res.findings.length}`,
         );
         expect(res.keysChecked).toBeGreaterThan(0);
     });

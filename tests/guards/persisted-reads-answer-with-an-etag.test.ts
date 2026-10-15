@@ -81,9 +81,11 @@ describe('every persisted read answers with an ETag (#1845)', () => {
     const paths = allowlist();
 
     it('ranges over the real allowlist — the denominator', () => {
-        // Invisible in CI (#1879: jest's reporter drops console output above
-        // one suite), so the floor below is what actually holds. Kept for
-        // someone running this file by hand, which is when the number helps.
+        // This REACHES CI now (#1879): the `denominator-summary` reporter
+        // collects any `[tag] …` line and appends it to the step summary,
+        // because jest's default reporter drops console output entirely once
+        // a run has more than one suite. The floor below is still what FAILS
+        // the build — the summary is a reading, not a gate.
         console.log(`[persisted-etag] ${paths.length} allowlisted path(s): ${paths.join(', ')}`);
         // The P3 four are the irreducible population. A parse that stopped
         // matching would return [] and every assertion below would pass over

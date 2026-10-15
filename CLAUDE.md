@@ -1469,6 +1469,30 @@ duplicating the limits table).
 Several mechanisms in this repo let a check pass without verifying
 anything. All read as green forever, so all are named here.
 
+**A denominator goes in the step summary, and it needs a `[tag]` (#1879).**
+Many guards here print their population, for the reason
+`a-gate-narrow-enough-to-always-pass` gives: a floor separates zero from
+nonzero, and the reading is what shows a population quietly shrinking while
+still above its floor. Those prints went nowhere for as long as the
+convention existed — **jest's default reporter drops `console.log` entirely
+once a run has more than one suite** (measured: 1 suite prints, 2 print
+nothing, `--verbose` restores it), and CI shards the whole tree with no
+`--verbose`.
+
+`tests/reporters/denominator-summary.cjs` collects them now. It takes any
+console line whose first non-space characters are a kebab `[tag]` and appends
+it to `$GITHUB_STEP_SUMMARY`, labelled with the shard. So: **start the line
+with a `[tag]`, and tag EVERY line of a multi-line reading** — collection is
+per line, so an untagged continuation is silently dropped and the reading
+arrives truncated. 32 tags / 46 readings across the 750 guard + guardrail
+suites today.
+
+It is a READING, never a gate: the floor is still what fails the build. The
+reporter is wrapped so it cannot fail a run, and `formatSummary` returns an
+empty string rather than an empty heading, because a "Guard denominators"
+section with no rows reads as "the guards found nothing" when it means
+"nothing was collected".
+
 **Guards assert on source text, not behaviour.** Every file under
 `tests/guards/` — and most of `tests/guardrails/` — `readFileSync`s a
 source file and matches a regex. They execute the *test*, never the
