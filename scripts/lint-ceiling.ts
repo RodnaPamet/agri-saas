@@ -165,7 +165,17 @@ export const LIMITS: Limits = {
     // 461 on an older main, so some of that slack predates this change and
     // this is simply the first diff to close it.
     suppressionCeiling: 1582,
-    unjustifiedCeiling: 450,
+    // LOWERED 450 -> 432 (#1730). Fourteen `react-hooks` directives got the
+    // `-- reason` half they were missing; the drop is 18 rather than 14
+    // because a directive can suppress more than one finding on its line.
+    //
+    // No suppression was REMOVED, so `suppressionCeiling` is unchanged: the
+    // mutes were all deliberate and all already explained in surrounding
+    // prose — one "ref-as-mailbox" pattern, two render-time ref READS, and a
+    // test fixture whose whole point is mutating a ref between renders. What
+    // was missing was the machine-readable half, which is the only half this
+    // ceiling can see.
+    unjustifiedCeiling: 432,
     // The 13 error-severity mutes that exist today. `no-explicit-any` is
     // escalated to `error` for the security surface by the override at
     // `eslint.config.mjs:116`, so those mutes turn the repo's STRICTEST scoping

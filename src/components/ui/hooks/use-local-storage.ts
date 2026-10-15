@@ -120,7 +120,7 @@ export function useLocalStorage<T>(
     // ref is a side channel to async callbacks, not part of the
     // render output, so the React Compiler rule's caution doesn't apply.
     const latestRef = useRef(storedValue);
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: a side channel to the write effect rather than render output, so that effect can bail when hydration is about to set the same value
     latestRef.current = storedValue;
 
     // Serializer identities matter for the effects below. Wrap in refs
@@ -128,9 +128,9 @@ export function useLocalStorage<T>(
     // without triggering a re-hydrate on every render.
     const serializeRef = useRef(serialize);
     const deserializeRef = useRef(deserialize);
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: holds the caller's serializer so an inline options object does not re-trigger hydration on every render
     serializeRef.current = serialize;
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: same for the deserializer — identity stability, not render output
     deserializeRef.current = deserialize;
 
     // Hydrate from storage on mount and whenever the key changes. The

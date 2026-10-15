@@ -401,7 +401,7 @@ function PersistentPercentage({
   // React re-renders with the measured width. Acceptable double-render
   // because the alternative useState+useEffect pattern is the same
   // double-render with extra ceremony.
-  // eslint-disable-next-line react-hooks/refs
+  // eslint-disable-next-line react-hooks/refs -- reads a DOM measurement during render; the first pass is null so the pill collapses and the ref attach re-renders with the real width — the same double render useState+useEffect would cost, with less ceremony
   const textWidth = textRef.current?.getComputedTextLength() ?? 0;
   const pillWidth = textWidth + 28;
 

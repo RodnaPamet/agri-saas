@@ -360,13 +360,13 @@ export function useKeyboardShortcut(
         // eslint-disable-next-line react-hooks/purity
         idRef.current = Math.random().toString(36).slice(2) + '-' + nextOrder();
     }
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- reads the id written by the one-shot lazy initialiser directly above; the WRITE is the purity mute on that line, this is only the read
     const id = idRef.current;
 
     const handlerRef = useRef<ShortcutHandler>(handler);
     // "ref-as-mailbox" — keep the global keydown dispatcher reading the latest handler
     // without re-binding the document listener every render.
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: the global keydown dispatcher reads the latest handler without re-binding the document listener every render
     handlerRef.current = handler;
 
     const keyList = useMemo(

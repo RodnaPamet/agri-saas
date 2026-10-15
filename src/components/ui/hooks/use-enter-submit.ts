@@ -137,7 +137,7 @@ export function useEnterSubmit(
     });
     // "ref-as-mailbox" — refresh the latest opts every render so the keyDown handler
     // (kept stable via useCallback below) reads through to the freshest values.
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: the keyDown handler is kept stable by useCallback and reads opts THROUGH this ref, so it has to be refreshed during render to see the freshest values
     optsRef.current = {
         formRef,
         onSubmit,

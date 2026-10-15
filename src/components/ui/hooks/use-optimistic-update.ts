@@ -133,10 +133,10 @@ export function useOptimisticUpdate<T>(
     // not what it was when the closure captured) and matches the
     // pattern called out in React docs as the legitimate use of refs.
     const valueRef = useRef(value);
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: functional updaters and the rollback path must resolve against the freshest committed value, not the snapshot closed over when `update` was built
     valueRef.current = value;
     const overlayRef = useRef(overlay);
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: same for the overlay, which the rollback path reads from an async callback
     overlayRef.current = overlay;
 
     // When the committed value reference changes, the caller's data
@@ -144,7 +144,7 @@ export function useOptimisticUpdate<T>(
     // an effect keeps the render output deterministic (we don't try to
     // read-and-compare during render).
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- dropping the overlay when the caller's data source re-syncs; deliberately an effect so render output stays deterministic rather than comparing during render
         setOverlay(null);
     }, [value]);
 
@@ -152,7 +152,7 @@ export function useOptimisticUpdate<T>(
     // stable even when callers pass an inline arrow. Same
     // "ref-as-mailbox" pattern as the value/overlay refs above.
     const onErrorRef = useRef(onError);
-    // eslint-disable-next-line react-hooks/refs
+    // eslint-disable-next-line react-hooks/refs -- ref-as-mailbox: keeps `update`'s identity stable when callers pass an inline onError arrow
     onErrorRef.current = onError;
 
     const update = useCallback(
