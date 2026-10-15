@@ -160,7 +160,10 @@ describe('the typed bypass is actually USED — not a control that only exists',
         const sites = callSitesOf('runWithoutRls').filter(
             (rel) => !rel.startsWith('src/lib/db/rls-middleware.ts'),
         );
-        // eslint-disable-next-line no-console
+        // No eslint-disable: `no-console` does not apply under tests/, so a
+        // directive here is UNUSED — and an unused directive is itself a lint
+        // finding. `social-routes-flag-gated` records exactly this three
+        // files away; I added the directive without looking.
         console.log(
             `[rls-bypass] files=${callers.length} sites=${sites.length}\n  ` +
                 sites.join('\n  '),
