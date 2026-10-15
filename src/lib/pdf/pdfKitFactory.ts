@@ -65,12 +65,35 @@ export const PAGE_HEIGHT = 841.89;   // A4 portrait height (pt)
 export const CONTENT_WIDTH = PAGE_WIDTH - MARGINS.left - MARGINS.right;
 
 /**
+ * Page geometry, for the documents that are not A4 reports.
+ *
+ * Added by P6.7 (#1816) for the A6 share card. Every field is optional and
+ * the defaults are the values this factory has always hard-coded, so the five
+ * existing generators are byte-identical without passing anything.
+ *
+ * `size` takes pdfkit's own ISO names rather than a points pair: `'A6'`
+ * resolves to 297.64 x 419.53 pt from pdfkit's table, so the paper size is
+ * never a local constant that can drift from the ISO definition. A `[w, h]`
+ * pair stays available for a genuinely custom sheet.
+ */
+export interface PdfPageOptions {
+    /** pdfkit size name (`'A4'`, `'A6'`, ...) or an explicit `[w, h]` in points. */
+    size?: string | [number, number];
+    margins?: { top: number; bottom: number; left: number; right: number };
+    layout?: 'portrait' | 'landscape';
+}
+
+/**
  * Create a new PDFKit document with branding defaults.
  */
-export function createPdfDocument(meta: ReportMeta): PDFKit.PDFDocument {
+export function createPdfDocument(
+    meta: ReportMeta,
+    page: PdfPageOptions = {},
+): PDFKit.PDFDocument {
     const doc = new PDFDocument({
-        size: 'A4',
-        margins: { ...MARGINS },
+        size: page.size ?? 'A4',
+        margins: page.margins ? { ...page.margins } : { ...MARGINS },
+        layout: page.layout ?? 'portrait',
         bufferPages: true,  // enables page counting for footers
         info: {
             Title: meta.reportTitle,

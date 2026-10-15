@@ -265,9 +265,9 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 'reading a cached copy of this spec and your client matches on ' +
                 '`plan_limit_exceeded:` or a sibling, switch to `code` — the prefix was ' +
                 'removed once the only client depending on it had shipped the codes.\n\n' +
-                'One PERMISSION code is described here, and it is the most diffuse of all '
-                + 'of them — 106 call sites, under most mutating operations in this '
-                + 'document:\n\n'
+                'THREE PERMISSION codes are described here, and they are the most diffuse of all '
+                + 'of them — 106, 51 and 1 call sites respectively, under most mutating and '
+                + 'administrative operations in this document:\n\n'
                 + '- `WRITE_FORBIDDEN_FOR_ROLE` — the caller\'s role in THIS farm may not '
                 + 'modify records. Params: `role`. It refuses exactly three of the six roles '
                 + '— READER, MECHANISATOR and AUDITOR — and no other condition produces it: '
@@ -282,7 +282,28 @@ export function commonErrorResponses(): RouteConfig['responses'] {
                 + 'this.\n\n'
                 + '  Uncoded until #1767, which is why a client reading a cached copy of '
                 + 'this spec should treat its absence as "this server predates the code" '
-                + 'rather than "this server cannot refuse a write".\n\n'
+                + 'rather than "this server cannot refuse a write".\n\n'                + '- `ADMIN_FORBIDDEN_FOR_ROLE` — the caller\'s role in THIS farm may not '
+                + 'perform this ADMINISTRATIVE action. Params: `role`. 51 call sites, and it '
+                + 'refuses four of the six roles — EDITOR, AUDITOR, READER and '
+                + 'MECHANISATOR.\n\n'
+                + '  **Distinguish it from `ADMIN_REQUIRED` above, which is a different '
+                + 'condition and not a variant of this one.** That one comes from the Edge '
+                + 'and means the ROUTE is admin-only: the whole area is closed to this role. '
+                + 'This one comes from a usecase and means the route is NOT admin-only — the '
+                + 'caller reached the handler legitimately — and this particular OPERATION '
+                + 'needs admin. A role can pass the Edge and still meet this check, so a '
+                + 'client that shows one sentence for both will tell an EDITOR they lack '
+                + 'access to a screen they are looking at.\n\n'
+                + '  Uncoded until #1779. `ADMIN_REQUIRED` was deliberately NOT renamed to '
+                + 'make room for it: that code is one of the four reachable on every route '
+                + 'and the most likely of all of them to be live in a shipped client, and a '
+                + 'clearer name is not worth a breaking change to it.\n\n'
+                + '- `AUDIT_FORBIDDEN_FOR_ROLE` — the caller\'s role may not perform AUDIT '
+                + 'actions. Params: `role`. ONE call site, refusing EDITOR, READER and '
+                + 'MECHANISATOR. Coded in the same change as its sibling rather than on its '
+                + 'own merits: three sibling helpers raising two coded refusals and one bare '
+                + 'string is the state that invites a reader to assume the bare one is '
+                + 'deliberate.\n\n'
                 + 'Two more are described here rather than per-operation, and their scope is ' +
                 'NARROWER than the four above: they come from `getUserCtx`, so they are ' +
                 'reachable on the PERSON-scoped routes only — `/api/account/**`, ' +

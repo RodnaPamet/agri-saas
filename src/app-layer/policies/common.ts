@@ -78,12 +78,9 @@ export function assertCanRead(ctx: RequestContext) {
  * renders `message`. It also makes this one of #1712's server-authored-copy
  * sites fixable in ONE place behind 106 call sites.
  *
- * `assertCanAdmin` below is the same gap at 51 sites and is deliberately NOT
- * changed here: the Edge already raises `ADMIN_REQUIRED` for admin-only
- * ROUTES, so a usecase-level admin refusal is a DIFFERENT condition (the route
- * is not admin-only, but this operation needs admin) and giving it the same
- * code would conflate two things a client may want to tell apart. That needs a
- * decision rather than a guess, and it is filed.
+ * `assertCanAdmin` below was the same gap at 51 sites and is coded now too
+ * (#1779), with its OWN code rather than this one or the Edge's — see its
+ * docblock for why the three conditions have to stay distinguishable.
  */
 export function assertCanWrite(ctx: RequestContext) {
     if (!ctx.permissions.canWrite) {
@@ -97,19 +94,69 @@ export function assertCanWrite(ctx: RequestContext) {
 
 /**
  * Asserts the user has ADMIN permission in their current context.
+ *
+ * ## Why its own code, and not `ADMIN_REQUIRED` (#1779)
+ *
+ * THREE conditions mean "admin" in this product and a client may want to tell
+ * them apart:
+ *
+ *   • `ADMIN_REQUIRED` — raised by `src/middleware.ts` at the **Edge**: the
+ *     ROUTE is admin-only and this role is not admin. "This whole area is not
+ *     for you."
+ *   • `ADMIN_FORBIDDEN_FOR_ROLE` — raised HERE, from a usecase: the route is
+ *     NOT admin-only, the caller reached the handler legitimately, and this
+ *     particular operation needs admin. "This action, within an area you can
+ *     use, is not for you."
+ *   • `WRITE_FORBIDDEN_FOR_ROLE` — the same shape one level down (#1767).
+ *
+ * A role can pass the Edge and still meet this check, so collapsing the first
+ * two would make them indistinguishable on the wire. A client showing one
+ * sentence for both would tell an EDITOR they lack access to a screen they are
+ * currently looking at.
+ *
+ * Renaming the Edge code to `ADMIN_ROUTE_REQUIRED` and taking `ADMIN_REQUIRED`
+ * for this would read better and was rejected: `ADMIN_REQUIRED` is one of the
+ * four codes the spec singles out as reachable on EVERY route and worth
+ * switching on, which makes it the most likely of all of them to be live in a
+ * shipped client. A nicer name is not worth a breaking change to the one code
+ * most likely already in use.
+ *
+ * Symmetric with `WRITE_FORBIDDEN_FOR_ROLE`, `params.role` included for the
+ * same reason: a client can name the role the person actually holds instead of
+ * guessing.
+ *
+ * The English `message` STAYS. A bare code regresses a Bulgarian farmer to an
+ * untranslated string on any client with no entry for it — the
+ * `coded-message-is-displayed-copy` rule, and the reason #1767 kept its
+ * sentence. It also makes this one of #1712's server-authored-copy sites
+ * fixable in ONE place behind 51 call sites.
  */
 export function assertCanAdmin(ctx: RequestContext) {
     if (!ctx.permissions.canAdmin) {
-        throw forbidden('You do not have permission to perform administrative actions in this context.');
+        throw codedForbidden(
+            'ADMIN_FORBIDDEN_FOR_ROLE',
+            'You do not have permission to perform administrative actions in this context.',
+            { role: ctx.role },
+        );
     }
 }
 
 /**
  * Asserts the user has AUDIT permission in their current context.
+ *
+ * ONE call site, and coded in the same change as `assertCanAdmin` (#1779) for
+ * consistency rather than on its own merits: three sibling helpers raising two
+ * coded refusals and one bare string is the state that invites the next reader
+ * to assume the bare one is deliberate. It refuses EDITOR, READER and
+ * MECHANISATOR.
  */
 export function assertCanAudit(ctx: RequestContext) {
     if (!ctx.permissions.canAudit) {
-        throw forbidden('You do not have permission to perform audit actions in this context.');
+        throw codedForbidden(
+            'AUDIT_FORBIDDEN_FOR_ROLE',
+            'You do not have permission to perform audit actions in this context.',
+            { role: ctx.role },
+        );
     }
 }
 
