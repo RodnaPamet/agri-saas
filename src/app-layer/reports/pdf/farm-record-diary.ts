@@ -29,6 +29,7 @@ import { createPdfDocument, UNICODE_FONT, UNICODE_FONT_BOLD } from '@/lib/pdf/pd
 import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import type { ReportMeta } from '@/lib/pdf/types';
 import { techniqueLabelBg } from '@/lib/agro/application-techniques';
+import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 
 // ─────────────────────────────────────────────────────────────────────
 // Bulgarian labels (document language is BG regardless of UI locale)
@@ -1431,17 +1432,6 @@ export async function generateSeasonDiaryPdf(
 
     // NOTE: do NOT call doc.end() — the route's collectPdfBuffer finalises.
     return doc;
-}
-
-/** Collect a PDFKit document into a Buffer (listeners first, then end()). */
-function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        doc.on('data', (c: Buffer) => chunks.push(c));
-        doc.on('end', () => resolve(Buffer.concat(chunks)));
-        doc.on('error', reject);
-        doc.end();
-    });
 }
 
 /**

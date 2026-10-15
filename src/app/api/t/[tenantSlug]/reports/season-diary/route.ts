@@ -13,17 +13,7 @@ import { generateSeasonDiaryPdf } from '@/app-layer/reports/pdf/farm-record-diar
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { badRequest } from '@/lib/errors/types';
 import { contentDisposition } from '@/lib/http/content-disposition';
-
-/** Collect a PDFKit document into a Buffer (listeners first, then end()). */
-function collectPdfBuffer(pdfDoc: PDFKit.PDFDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
-        pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-        pdfDoc.on('error', reject);
-        pdfDoc.end();
-    });
-}
+import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 
 // Force Node.js runtime — PDFKit needs stream, zlib, Buffer.
 export const runtime = 'nodejs';

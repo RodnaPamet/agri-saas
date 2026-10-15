@@ -16,6 +16,7 @@ import { FEATURES } from '@/lib/entitlements';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { contentDisposition } from '@/lib/http/content-disposition';
+import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 
 // PDFKit needs the Node runtime (stream/zlib/Buffer).
 export const runtime = 'nodejs';
@@ -26,16 +27,6 @@ type Ctx = { params: Promise<{ tenantSlug: string }> };
 function csvCell(v: string | number | null): string {
     const s = v == null ? '' : String(v);
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        doc.on('data', (c: Buffer) => chunks.push(c));
-        doc.on('end', () => resolve(Buffer.concat(chunks)));
-        doc.on('error', reject);
-        doc.end();
-    });
 }
 
 export const GET = withApiErrorHandling(async (req: NextRequest, { params: paramsPromise }: Ctx) => {

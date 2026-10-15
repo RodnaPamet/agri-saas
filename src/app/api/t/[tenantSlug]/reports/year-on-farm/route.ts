@@ -16,24 +16,11 @@ import { getSeasonRecap } from '@/app-layer/usecases/season-recap';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { z } from 'zod';
 import { contentDisposition } from '@/lib/http/content-disposition';
+import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 
 const BodySchema = z.object({
     seasonId: z.string().optional(),
 }).strip();
-
-/**
- * Collect all data from a PDFKit document into a Buffer.
- * Attaches listeners first, then calls doc.end() so no events are lost.
- */
-function collectPdfBuffer(pdfDoc: PDFKit.PDFDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
-        pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-        pdfDoc.on('error', reject);
-        pdfDoc.end();
-    });
-}
 
 // Force Node.js runtime — PDFKit needs stream, zlib, Buffer.
 export const runtime = 'nodejs';
