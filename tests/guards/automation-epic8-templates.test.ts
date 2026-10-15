@@ -4,8 +4,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Comments blanked before matching (#1774). Comments only, NOT strings:
+// an assertion about a string LITERAL would pass vacuously under
+// `{ strings: true }`, which is why this stays a per-file decision.
+const read = (p: string) =>
+    blankNonCode(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('Automation Epic 8 — template library', () => {
