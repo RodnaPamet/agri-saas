@@ -24,6 +24,8 @@
 import { PrismaClient, Role, MembershipStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
@@ -144,6 +146,37 @@ describeFn('journal manual-only rule with the diary flag (DB-backed)', () => {
         expect(ids).toContain(plainManual);
         expect(ids).toContain(diaryTreatment);
         expect(ids).not.toContain(taskWritten);
+    });
+
+    it('orders by the work day and breaks ties on id, which a capped read needs', async () => {
+        // `occurredAt` on a diary entry is a DAY, so entries recorded for the
+        // same day TIE — and this branch is capped at 200. Without a tiebreak
+        // Postgres may return a different subset of a tied group between two
+        // identical requests, so an entry near the cap can be present in one
+        // read and absent from the next with nothing changed. The offline
+        // outbox replay reads this branch (#1771, the class of #1742).
+        //
+        // The four fixture entries share two timestamps at most, so this
+        // asserts the MECHANISM rather than hoping for a tie: the repository
+        // must ask for the tiebreak. Reproducing the wrong resolution needs
+        // two random cuids to sort opposite to their physical order, which is
+        // chance — the same honesty as `parcels-by-crop`'s tiebreak case.
+        const src = readFileSync(
+            join(__dirname, '..', '..', 'src/app-layer/repositories/JournalRepository.ts'),
+            'utf8',
+        );
+        expect(src).toContain("orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }]");
+
+        // And the order that IS observable: newest work first, not newest row.
+        // `diaryTreatment` and `taskWritten` were created last but share the
+        // others' day, so a `createdAt` order would put them first.
+        const ids = await idsFrom();
+        const rows = await runInTenantContext(ctx(), async (db) =>
+            JournalRepository.list(db, ctx(), {}),
+        );
+        expect(rows.map((r: { id: string }) => r.id)).toEqual(ids);
+        const days = rows.map((r: { occurredAt: Date }) => r.occurredAt.getTime());
+        expect(days).toEqual([...days].sort((a, b) => b - a));
     });
 
     it('widens to everything when a caller opts in, rather than inverting', async () => {

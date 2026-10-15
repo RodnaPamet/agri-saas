@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.39.0",
+    "version": "12.39.1",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -15940,7 +15940,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Entries, in one of THREE shapes — the query decides which, and a client that assumes one reads an absent key from another as an empty list rather than as an error.\n\n**Only the paged `{ rows, nextCursor }` shape carries `treatment`** — the folded ДНЕВНИК aggregate (#1832). The bare-array default and the `?deleted=` trash view return rows WITHOUT it, so a client that reads `treatment` must send `limit` to get the paged branch. On that branch the object is ALWAYS present, with `parcelCount: 0` on an ordinary manual entry rather than being absent, so `parcelCount > 0` is the discriminator for \"this row stands for a treatment\".",
+            "description": "Entries, in one of THREE shapes — the query decides which, and a client that assumes one reads an absent key from another as an empty list rather than as an error.\n\n**Ordering, both branches: `occurredAt` descending — the day the work HAPPENED — with a tiebreak, so the order is TOTAL** (#1771). The paged branch pairs it with `treatmentGroupId` because it folds treatments; the flat branches pair it with `id` because they return rows. `occurredAt` on a diary entry is a DAY, so entries for the same day tie, and the flat read is capped at 200 — without a tiebreak an entry near that cap could appear in one read and not the next with nothing changed.\n\n**Only the paged `{ rows, nextCursor }` shape carries `treatment`** — the folded ДНЕВНИК aggregate (#1832). The bare-array default and the `?deleted=` trash view return rows WITHOUT it, so a client that reads `treatment` must send `limit` to get the paged branch. On that branch the object is ALWAYS present, with `parcelCount: 0` on an ordinary manual entry rather than being absent, so `parcelCount > 0` is the discriminator for \"this row stands for a treatment\".",
             "content": {
               "application/json": {
                 "schema": {

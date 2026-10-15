@@ -351,6 +351,13 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                 'Entries, in one of THREE shapes — the query decides which, and a client that ' +
                 'assumes one reads an absent key from another as an empty list rather than as ' +
                 'an error.\n\n' +
+                '**Ordering, both branches: `occurredAt` descending — the day the work ' +
+                'HAPPENED — with a tiebreak, so the order is TOTAL** (#1771). The paged branch ' +
+                'pairs it with `treatmentGroupId` because it folds treatments; the flat branches ' +
+                'pair it with `id` because they return rows. `occurredAt` on a diary entry is a ' +
+                'DAY, so entries for the same day tie, and the flat read is capped at 200 — ' +
+                'without a tiebreak an entry near that cap could appear in one read and not the ' +
+                'next with nothing changed.\n\n' +
                 '**Only the paged `{ rows, nextCursor }` shape carries `treatment`** — the ' +
                 'folded ДНЕВНИК aggregate (#1832). The bare-array default and the `?deleted=` ' +
                 'trash view return rows WITHOUT it, so a client that reads `treatment` must ' +
