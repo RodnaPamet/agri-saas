@@ -12,40 +12,36 @@
  * encoding case below therefore also asserts the encoded form DIFFERS from
  * the raw one and carries percent-escapes.
  */
-const mockEnv: { APP_URL?: string; NEXTAUTH_URL?: string } = {
-    APP_URL: 'https://app.agrent.bg',
-};
-jest.mock('@/env', () => ({
-    get env() {
-        return mockEnv;
-    },
-}));
+// No env mock: these functions take the base url, because the editor imports
+// them from a CLIENT component and `getAppBaseUrl` reaches `node:async_hooks`
+// through the logger. Purity here was forced by the bundler and is worth
+// having anyway.
+const BASE = 'https://app.agrent.bg';
 
 import { publicProfileUrl, viberForwardUrl, shareKit } from '@/lib/public-profile/share-links';
 
 const NAME = 'Стопанство Победа';
 
-beforeEach(() => {
-    mockEnv.APP_URL = 'https://app.agrent.bg';
-    mockEnv.NEXTAUTH_URL = undefined;
-});
-
 describe('publicProfileUrl', () => {
     it('is the one definition every share surface uses', () => {
-        expect(publicProfileUrl('pobeda')).toBe('https://app.agrent.bg/f/pobeda');
+        expect(publicProfileUrl('pobeda', BASE)).toBe('https://app.agrent.bg/f/pobeda');
     });
 
     it('does not double the slash when the base carries one', () => {
         // `APP_URL` is operator-configured, so a trailing slash is a matter of
         // taste rather than a bug — and `//f/pobeda` would be a different path.
-        mockEnv.APP_URL = 'https://app.agrent.bg/';
-        expect(publicProfileUrl('pobeda')).toBe('https://app.agrent.bg/f/pobeda');
+        expect(publicProfileUrl('pobeda', 'https://app.agrent.bg/')).toBe(
+            'https://app.agrent.bg/f/pobeda',
+        );
     });
 
-    it('falls back to NEXTAUTH_URL, as getAppBaseUrl does', () => {
-        mockEnv.APP_URL = undefined;
-        mockEnv.NEXTAUTH_URL = 'https://staging.agrent.bg';
-        expect(publicProfileUrl('pobeda')).toBe('https://staging.agrent.bg/f/pobeda');
+    it('uses whatever base the caller resolved', () => {
+        // The fallback chain (APP_URL then NEXTAUTH_URL) belongs to
+        // `getAppBaseUrl` and is tested there; this module's contract is that
+        // it uses what it is given.
+        expect(publicProfileUrl('pobeda', 'https://staging.agrent.bg')).toBe(
+            'https://staging.agrent.bg/f/pobeda',
+        );
     });
 });
 
@@ -88,20 +84,20 @@ describe('shareKit', () => {
         // `Стопанство Победа — https://…` either opens nothing or searches
         // for the whole string, and the person holding the printed card has
         // no way to tell which.
-        const kit = shareKit('pobeda', NAME);
+        const kit = shareKit('pobeda', NAME, BASE);
         expect(kit.qrValue).toBe('https://app.agrent.bg/f/pobeda');
         expect(kit.qrValue).not.toContain(NAME);
         expect(kit.qrValue).not.toContain('—');
     });
 
     it('puts the url LAST, where chat clients preview it', () => {
-        const kit = shareKit('pobeda', NAME);
+        const kit = shareKit('pobeda', NAME, BASE);
         expect(kit.message).toBe('Стопанство Победа — https://app.agrent.bg/f/pobeda');
         expect(kit.message.endsWith(kit.url)).toBe(true);
     });
 
     it('the Viber link carries exactly the message, so a copy matches a forward', () => {
-        const kit = shareKit('pobeda', NAME);
+        const kit = shareKit('pobeda', NAME, BASE);
         const text = kit.viber.slice('viber://forward?text='.length);
         expect(decodeURIComponent(text)).toBe(kit.message);
     });
@@ -110,7 +106,7 @@ describe('shareKit', () => {
         // The whole reason this is one module: a QR, a forward and a copied
         // link that resolved differently would be three ways to reach a farm
         // and two of them wrong — and the printed one cannot be corrected.
-        const kit = shareKit('pobeda', NAME);
+        const kit = shareKit('pobeda', NAME, BASE);
         expect(kit.qrValue).toBe(kit.url);
         expect(decodeURIComponent(kit.viber)).toContain(kit.url);
         expect(kit.message).toContain(kit.url);

@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import QRCode from 'qrcode-generator';
+
+import { qrMatrix } from '@/lib/qr/matrix';
 
 /**
  * QrCode — renders a value (typically a deep-link URL) as a scannable QR code
@@ -10,8 +11,11 @@ import QRCode from 'qrcode-generator';
  * theme: a QR must stay high-contrast to scan, so the colours are intentional
  * literals, not design tokens.
  *
- * `qrcode-generator` is a zero-dependency MIT library; the matrix is computed
- * once per value and drawn as one `<rect>` run per row (kept light).
+ * The matrix itself comes from `@/lib/qr/matrix`, which this component used to
+ * compute inline. It moved out when P6.7 (#1816) needed the same code drawn
+ * into a PDF: the encoding parameters have to be one decision, or the printed
+ * A6 card and the on-screen code can end up at different QR versions for the
+ * same URL — and only the on-screen one can be re-issued.
  */
 
 interface QrCodeProps {
@@ -25,28 +29,7 @@ interface QrCodeProps {
 }
 
 export function QrCode({ value, size = 128, className, title = 'QR code' }: QrCodeProps) {
-    const { count, runs } = useMemo(() => {
-        const qr = QRCode(0, 'M'); // auto type, medium error-correction
-        qr.addData(value);
-        qr.make();
-        const n = qr.getModuleCount();
-        // Coalesce consecutive dark modules in each row into a single rect to
-        // keep the SVG node count low.
-        const rects: { x: number; y: number; w: number }[] = [];
-        for (let row = 0; row < n; row++) {
-            let start = -1;
-            for (let col = 0; col < n; col++) {
-                const dark = qr.isDark(row, col);
-                if (dark && start === -1) start = col;
-                if ((!dark || col === n - 1) && start !== -1) {
-                    const end = dark ? col : col - 1;
-                    rects.push({ x: start, y: row, w: end - start + 1 });
-                    start = -1;
-                }
-            }
-        }
-        return { count: n, runs: rects };
-    }, [value]);
+    const { count, runs } = useMemo(() => qrMatrix(value), [value]);
 
     return (
         <svg
