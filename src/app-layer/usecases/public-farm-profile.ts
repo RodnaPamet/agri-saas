@@ -190,10 +190,13 @@ export async function projectFarmBrand(ctx: RequestContext): Promise<ProjectionR
         const payload = projectionPayload(brand);
         await db.publicFarmProfile.upsert({
             where: { handle: payload.handle },
-            // `indexable` is omitted on BOTH branches, so the column keeps its
-            // `false` default on create and is left alone on update — a
-            // projection refresh must never silently change whether a farm is
-            // indexed. See the docblock: the control is P6.6's.
+            // `indexable` now crosses in `payload`, on both branches. It was
+            // omitted for one release while `FarmBrand` had no column to read
+            // it from — the brand is the source of truth now (#1850 shipped
+            // the column, v12.34.0 contains it), so a refresh REPRODUCES the
+            // owner's choice rather than preserving whatever the projection
+            // happened to hold. Leaving it alone would mean an owner turning
+            // indexing off saw it turn back on at the next content edit.
             create: { ...payload, projectedAt: new Date() },
             update: { ...payload, projectedAt: new Date() },
         });
@@ -723,6 +726,7 @@ export async function updateFarmBrand(
     if (input.about !== undefined) data.about = input.about;
     if (input.oblast !== undefined) data.oblast = input.oblast;
     if (input.crops !== undefined) data.crops = input.crops;
+    if (input.indexable !== undefined) data.indexable = input.indexable;
 
     const outcome = await runInTenantContext(ctx, async (db) => {
         const before = await db.farmBrand.findFirst({

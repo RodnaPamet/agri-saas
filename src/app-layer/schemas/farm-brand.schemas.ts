@@ -64,6 +64,15 @@ export const UpdateFarmBrandSchema = z.object({
     about: z.string().trim().max(2000).nullable().optional(),
     oblast: z.string().trim().max(80).nullable().optional(),
     crops: z.array(z.string().trim().min(1).max(80)).max(40).optional(),
+    /**
+     * Whether search engines may index the public page.
+     *
+     * Separate from publishing, and that separation is the point: an owner who
+     * shares a link with their buyers has published, which is not consent to
+     * appear in a search for their name. Omitting it leaves the current choice
+     * alone, like every other field here.
+     */
+    indexable: z.boolean().optional(),
 });
 
 export type UpdateFarmBrandInput = z.infer<typeof UpdateFarmBrandSchema>;
