@@ -62,7 +62,20 @@ farmer knows did not go. The wizard disables Send while offline and says so.
   a destroyed compliance write and a delivered one left an identical trace,
   and the receipt is precisely what suppressed the loss detector for it. Only
   a `dropped` counter differed, and nothing in `src/` reads it. `flushOutbox`
-  now has ONE removal (success); every other outcome parks. Two things ride
+  now has ONE removal (success); every other outcome parks. Since #1870 that
+  removal is guarded by a completeness VERDICT rather than by `res.ok` alone:
+  an item may carry `completeWhen: { field, equals }`, and a 2xx that does not
+  satisfy it is retained for a re-send under the same `Idempotency-Key`. The
+  one route that needs it is `POST /journal/treatments`, which is resumable
+  rather than atomic and can answer 201 having recorded fewer parcels than
+  were sent — so the generic "2xx means done" rule was dropping real field
+  work out of a compliance register. The expectation is DATA rather than a
+  predicate function because the row is replayed from IndexedDB in a later
+  context, possibly by `public/sw.js` with no page at all; an expectation that
+  cannot be evaluated counts as NOT finished, since retaining costs a deduped
+  retry and the other direction loses the work. All THREE senders honour it and
+  the worker's copy is by hand, which is what
+  `tests/guards/outbox-completion-mirrors-the-sw.test.ts` exists for. Two things ride
   with that: a park is written through `parkIfStillQueued`, because
   `store.update` is an upsert and the page and service worker drain the same
   queue, so an unguarded park RESURRECTS a row the other drain already

@@ -637,9 +637,32 @@ evict. The rules, each of which has cost something to learn:
   waiting, of which M cannot move" — never two numbers an operator has to
   reconcile in a field.
 - **A poison item is PARKED, never deleted** — `flushOutbox` has exactly ONE
-  removal (success). Park through `parkIfStillQueued`, because `store.update`
+  removal, and since #1870 it is guarded by a completeness verdict rather than
+  by `res.ok` alone. Park through `parkIfStillQueued`, because `store.update`
   is an upsert and the page and service worker drain the same queue. A
   `refused` park MUST be surfaced with a per-item discard.
+- **A 2xx is delivery for every write but one.** `POST /journal/treatments` is
+  RESUMABLE rather than atomic — the per-parcel mark writes each ДНЕВНИК entry
+  — so it can answer 201 having recorded fewer parcels than were sent. An item
+  may therefore carry `completeWhen: { field, equals }`, and a 2xx that does
+  not satisfy it RETAINS the item for a re-send under the same
+  `Idempotency-Key`. It is DATA, not a predicate function: the row is written
+  to IndexedDB and replayed later, possibly by `public/sw.js` with no page at
+  all, and a closure survives neither. An expectation that cannot be
+  evaluated — unreadable body, missing field, wrong type — counts as NOT
+  finished, because retaining costs a deduped retry while the other direction
+  drops field work out of a compliance register.
+  **THREE senders have to honour it**, and `public/sw.js` cannot import from
+  `src/`, so its copy is by hand: `use-offline-sync.ts` (`submit`, online-first),
+  `sync.ts` (`flushOutbox`, page) and `public/sw.js` (`flushOutbox`, Background
+  Sync). A sender that treats every 2xx as delivered DELETES an item the others
+  are deliberately retaining — and leaves a delivery receipt, which is the one
+  trace the page uses to tell a drain apart from an eviction, so the register
+  ends short while every signal says it is fine.
+  `tests/guards/outbox-completion-mirrors-the-sw.test.ts` enforces the mirror
+  that the 426 arm's own comment records as enforced by nothing;
+  `tests/unit/offline/outbox-completion-expectation.test.ts` executes both
+  drains, the worker included.
 - **Request `navigator.storage.persist()` at the FIRST ENQUEUE**, not on first
   paint, and read the CACHED verdict (`agri.offline.durability.v1`) rather than
   re-measuring. Installed PWA grants on iOS; Safari refuses — so Add-to-Home-
