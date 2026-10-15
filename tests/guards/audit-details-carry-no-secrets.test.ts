@@ -125,14 +125,17 @@ describe('audit details carry no secrets (#1784)', () => {
     const { calls, findings, files } = scan();
 
     it('ranges over the real population — the denominator', () => {
-        // This line is INVISIBLE IN CI and #1879 is why: jest's default
-        // reporter drops console output entirely once a run has more than
-        // one suite (measured — 1 suite prints, 2 suites print nothing,
-        // `--verbose` restores it), and CI runs hundreds per shard. So the
-        // print below serves someone running this guard by hand, and the
-        // floor is what actually holds in CI. Noted rather than worked
-        // around: 34 guards print a denominator this way and the fix is one
-        // change to the jest invocation, not 34 workarounds.
+        // This line reaches CI, and #1879 is why it did not used to: jest's
+        // default reporter drops console output entirely once a run has more
+        // than one suite (measured — 1 suite prints, 2 print nothing,
+        // `--verbose` restores it), and CI runs hundreds per shard. All 34
+        // guards that print a denominator were printing to nobody.
+        //
+        // Fixed in one place rather than 34: `tests/reporters/
+        // denominator-summary.cjs` collects any `[tag] …` line and appends it
+        // to the step summary. No guard had to change — the reporter reads the
+        // format the guards already used. The floor below is still what FAILS
+        // the build; the summary is a reading, not a gate.
         console.log(
             `[audit-details] ${files} src files, ${calls} logEvent calls scanned, ${findings.length} finding(s)`,
         );

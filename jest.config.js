@@ -442,6 +442,16 @@ const jsdomProject = {
 
 module.exports = {
     projects: [nodeProject, jsdomProject],
+    // `reporters` is TOP-LEVEL on purpose, and in this file that needs saying:
+    // several options here are silently ignored at one level or the other (see
+    // the `coveragePathIgnorePatterns` note below, and `coverageThreshold`).
+    // Reporters are the other way round -- jest warns loudly if you put them
+    // in a `projects:` entry, which is how this one was placed.
+    //
+    // 'default' FIRST and explicitly: naming any reporter REPLACES the default
+    // set, so omitting it would trade the denominators for the entire test
+    // output -- a strictly worse version of #1879.
+    reporters: ['default', '<rootDir>/tests/reporters/denominator-summary.cjs'],
     // Recycle a worker once its heap crosses this after a suite. Over a
     // ~1400-suite run a long-lived worker accumulates module + mock state
     // until GC stalls (or it OOMs), which surfaces as NON-deterministic

@@ -101,7 +101,8 @@ const SITES: ReadonlyArray<{ rel: string; consults: RegExp; label: string }> = [
 
 describe('every outbox drain honours completeWhen (#1870)', () => {
     it('ranges over all three senders — the denominator', () => {
-        // Invisible in CI (#1879), so the length assertion is what holds.
+        // Reaches the CI step summary via the `denominator-summary`
+        // reporter (#1879). The length assertion is still what FAILS.
         console.log(`[outbox-completion] ${SITES.length} drain(s): ${SITES.map((s) => s.label).join(', ')}`);
         // Three, and a fourth sender is a deliberate edit to this list rather
         // than a silent exclusion from it.
