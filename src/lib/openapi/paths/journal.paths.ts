@@ -500,6 +500,47 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}',
+        operationId: 'deleteDiaryTreatment',
+        summary: 'Abandon an unfinished treatment',
+        description:
+            'The other exit from a treatment that cannot be finished (#1777).\n\n' +
+            'The write is resumable rather than atomic: re-sending the same handle finishes a ' +
+            'partly-recorded treatment. That has one dead end — if the cause of the failure ' +
+            'REPEATS, every retry fails identically and the farmer is left with a treatment that ' +
+            'will neither complete nor go away. This clears it.\n\n' +
+            '**It soft-deletes the WHOLE treatment, including register entries already written** ' +
+            'for the lines that did complete (owner ruling 2026-10-15). Those entries record ' +
+            'applications that really happened, so the protections are deliberate: ADMIN only, ' +
+            'soft (every row stays on disk), audited as one event naming the counts, and ' +
+            'INCOMPLETE only.\n\n' +
+            '| answer | meaning |\n' +
+            '| --- | --- |\n' +
+            '| `200` | abandoned — the body reports how many tasks, entries and lines it touched |\n' +
+            '| `404` `TREATMENT_NOT_FOUND` | no treatment under that handle, or it was already abandoned |\n' +
+            '| `409` `TREATMENT_COMPLETE` | fully recorded, so it is a farm record — remove it through the journal, where a delete is reversible and separately audited |\n\n' +
+            'Afterwards the handle stops resolving and is RELEASED: sending it again mints a new ' +
+            'treatment rather than resuming the abandoned one. Unfinished lines move to `SKIPPED` ' +
+            'rather than being deleted, because `OperationParcel` has no soft-delete column and ' +
+            'the completion pass already refuses to touch that state.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'Abandoned, with what it touched.',
+            schema: z
+                .object({
+                    treatmentGroupId: z.string(),
+                    tasks: z.number().int().openapi({ description: 'Tasks soft-deleted — one per block.' }),
+                    entries: z.number().int().openapi({ description: 'ДНЕВНИК entries withdrawn.' }),
+                    lines: z.number().int().openapi({ description: 'Unfinished lines moved to SKIPPED.' }),
+                })
+                .openapi('AbandonedTreatment'),
+        },
+    });
+
+    op(registry, {
         method: 'get',
         path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/farm-record',
         operationId: 'getTreatmentFarmRecord',

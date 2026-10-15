@@ -1,5 +1,34 @@
 // Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
 
+exports[`API contract — per-schema snapshots schema: AbandonedTreatment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string"
+    },
+    "tasks": {
+      "type": "integer",
+      "description": "Tasks soft-deleted — one per block."
+    },
+    "entries": {
+      "type": "integer",
+      "description": "ДНЕВНИК entries withdrawn."
+    },
+    "lines": {
+      "type": "integer",
+      "description": "Unfinished lines moved to SKIPPED."
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "tasks",
+    "entries",
+    "lines"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AcceptTermsErrorResponse 1`] = `
 "{
   "type": "object",
