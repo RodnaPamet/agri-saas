@@ -147,32 +147,16 @@ describe('Audit Event Safety', () => {
         });
     });
 
-    it('audit details never contain secrets', () => {
-        const sensitivePatterns = [
-            /TOTP/i,           // TOTP code values (not the word itself in context)
-            /secret/i,
-            /Bearer\s+\S+/,
-            /eyJ\w+/,          // JWT
-            /otpauth:\/\//i,   // provisioning URI
-        ];
+    // REMOVED: 'audit details never contain secrets' (#1784).
+    //
+    // Five patterns against five `exampleDetails` literals commented "These
+    // are example audit details from the system" — they were not; they were
+    // typed here. Two of the five patterns were then skipped by a `continue`,
+    // so the test's own body excluded the two words it was named for.
+    //
+    // The claim is now checked at the call sites that would produce it:
+    // `tests/guards/audit-details-carry-no-secrets.test.ts`.
 
-        // These are example audit details from the system
-        const exampleDetails = [
-            'MFA challenge passed successfully.',
-            'MFA challenge failed. 3 attempts remaining.',
-            'MFA enrollment verified and activated.',
-            'Admin admin-001 revoked sessions for user target-456. New sessionVersion: 3',
-            'User revoked their own sessions. New sessionVersion: 1',
-        ];
-
-        for (const detail of exampleDetails) {
-            for (const pattern of sensitivePatterns) {
-                // Allow the word "session" contexts but not actual secrets
-                if (pattern.source === 'secret' || pattern.source === 'TOTP') continue;
-                expect(pattern.test(detail)).toBe(false);
-            }
-        }
-    });
 });
 
 describe('Revocation Permanence', () => {
