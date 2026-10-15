@@ -77,11 +77,15 @@
 import { Readable } from 'node:stream';
 
 import { env } from '@/env';
-import { badRequest, codedBadRequest } from '@/lib/errors/types';
+import { codedBadRequest } from '@/lib/errors/types';
 import { assertTenantNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { logger } from '@/lib/observability';
 
-import { isDownloadAllowed, scanUploadedBuffer } from '@/lib/storage/av-scan';
+import {
+    isDownloadAllowed,
+    scanUploadedBuffer,
+    scanUploadedBufferDetailed,
+} from '@/lib/storage/av-scan';
 import { reconcileMimeType } from '@/lib/storage/mime-sniff';
 // `@/lib/storage` — the same specifier every other consumer uses. This
 // module deliberately does NOT live under `src/lib/storage/`: from inside
@@ -148,8 +152,8 @@ export interface IngestOptions {
 /**
  * Validate, store and scan one uploaded file.
  *
- * Throws `badRequest` on any rejection — the caller never has to map error
- * shapes. Returns on success; the caller then writes its own rows.
+ * Throws a CODED `badRequest` on any rejection — the caller never has to map
+ * error shapes. Returns on success; the caller then writes its own rows.
  */
 export async function ingestUploadedFile(
     tenantId: string,
@@ -232,10 +236,17 @@ export async function ingestUploadedFile(
 /**
  * The scan gate for bytes that will be stored WITHOUT a `FileRecord`.
  *
- * Returns the verdict when the bytes may be stored, and throws
- * `badRequest` when they may not. Call it BEFORE the write: a record-less
- * object is served by key, so once the bytes are at that key nothing later
- * in the request can stop them being handed out.
+ * Returns the verdict when the bytes may be stored, and throws a coded
+ * `badRequest` when they may not — `UPLOAD_INFECTED`,
+ * `UPLOAD_SCANNER_UNAVAILABLE` or `UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE`.
+ * Coded rather than bare because `no-server-authored-user-copy` exempts a
+ * coded throw from its ratchet, so these three lower the count instead of
+ * raising it — and a client can tell "we refused your file" from "we could
+ * not check it" without parsing a sentence.
+ *
+ * Call it BEFORE the write: a record-less object is served by key, so once
+ * the bytes are at that key nothing later in the request can stop them being
+ * handed out.
  *
  * ── The policy is the download gate, not a second opinion ────────────
  *
@@ -268,9 +279,35 @@ export async function scanOrRefuse(
         component: string;
         /** Subject the bytes belong to (userId, promotionId) — logged. */
         subjectId?: string;
+        /**
+         * Who will be able to read these bytes. REQUIRED, and deliberately
+         * without a default — #1811.
+         *
+         * `public` means an unauthenticated reader can fetch them. Storing
+         * unscanned bytes there is a different proposition from storing them
+         * behind a session: the audience is everyone, and the operator who
+         * never deployed a scanner is not the one who bears it.
+         *
+         * No default, because the forcing function IS the absence of one. The
+         * first public upload surface someone adds will not compile until it
+         * says which it is, and the default that looks harmless (`private`)
+         * is exactly the one that would let unscanned bytes onto a public
+         * surface silently. Same shape as `BRAND_FIELD_DECISIONS` being
+         * `Record<keyof FarmBrand, …>`, which caught `FarmBrand.indexable`
+         * within minutes of the column existing.
+         *
+         * Note what this is NOT, today: there is no public upload surface in
+         * the product. `/f/[handle]` serves text only — neither `FarmBrand`
+         * nor `PublicFarmProfile` has an image column, and P6.5's OG image is
+         * RENDERED from those fields rather than uploaded. Both current
+         * callers are private. So the `public` branch has no caller and this
+         * is a gate waiting for one, which is the honest description.
+         */
+        exposure: 'public' | 'private';
     },
 ): Promise<'CLEAN' | 'SKIPPED' | 'PENDING'> {
-    const verdict = await scanUploadedBuffer(buffer);
+    const outcome = await scanUploadedBufferDetailed(buffer);
+    const verdict = outcome.status;
 
     // INFECTED is checked ahead of the gate deliberately. `isDownloadAllowed`
     // short-circuits on `AV_SCAN_MODE=disabled` BEFORE reaching its own
@@ -284,7 +321,10 @@ export async function scanOrRefuse(
             subjectId: opts.subjectId,
             verdict,
         });
-        throw badRequest('This image was rejected by the malware scanner.');
+        throw codedBadRequest(
+            'UPLOAD_INFECTED',
+            'This image was rejected by the malware scanner.',
+        );
     }
 
     if (!isDownloadAllowed(verdict)) {
@@ -292,9 +332,34 @@ export async function scanOrRefuse(
             component: opts.component,
             subjectId: opts.subjectId,
             verdict,
+            reason: 'reason' in outcome ? outcome.reason : undefined,
         });
-        throw badRequest(
+        throw codedBadRequest(
+            'UPLOAD_SCANNER_UNAVAILABLE',
             'The malware scanner is unavailable, so the image was not stored. Try again shortly.',
+        );
+    }
+
+    // Unscanned bytes do not go on a public surface. `isDownloadAllowed`
+    // permits SKIPPED in every mode — correctly, for a private file behind a
+    // session — and this is the one place that is not good enough.
+    //
+    // The reason is logged rather than folded into the message, because the
+    // three are different operator problems and only one of them is a fault:
+    // `scanning-disabled` and `no-scanner-configured` mean nobody deployed a
+    // scanner, `scanner-error-failed-open` means one broke. The uploader sees
+    // the same sentence either way, since none of it is their doing.
+    if (verdict === 'SKIPPED' && opts.exposure === 'public') {
+        logger.warn('upload refused: unscanned bytes on a public surface', {
+            component: opts.component,
+            subjectId: opts.subjectId,
+            verdict,
+            reason: outcome.status === 'SKIPPED' ? outcome.reason : undefined,
+            exposure: opts.exposure,
+        });
+        throw codedBadRequest(
+            'UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE',
+            'This image cannot be published because the malware scanner is unavailable.',
         );
     }
 

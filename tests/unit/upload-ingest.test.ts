@@ -43,6 +43,13 @@ jest.mock('@/lib/storage/mime-sniff', () => ({
 }));
 jest.mock('@/lib/storage/av-scan', () => ({
     scanUploadedBuffer: async () => scanVerdict,
+    // Same verdict through the other seam, so a test that sets `scanVerdict`
+    // keeps meaning what it says whichever one the code under test reads.
+    scanUploadedBufferDetailed: async () => ({
+        status: scanVerdict,
+        ...(scanVerdict === 'SKIPPED' ? { reason: 'scanning-disabled' } : {}),
+        ...(scanVerdict === 'PENDING' ? { reason: 'scanner-error-strict' } : {}),
+    }),
 }));
 
 import { ingestUploadedFile } from '@/lib/upload/ingest';
