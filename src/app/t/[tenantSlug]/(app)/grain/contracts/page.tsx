@@ -29,6 +29,7 @@ export default async function GrainContractsPage({
 
     return (
         <ContractsClient
+            fetchedAt={Date.now()}
             initialContracts={JSON.parse(JSON.stringify(rows))}
             initialTotals={JSON.parse(JSON.stringify(totals))}
             initialTotalCount={totalCount}

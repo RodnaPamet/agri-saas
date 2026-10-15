@@ -119,6 +119,7 @@ function mount(initialBins: BinRow[]) {
     return render(
         <QueryClientProvider client={client}>
             <BinsClient
+                fetchedAt={1767225600000}
                 initialBins={initialBins}
                 tenantSlug="acme"
                 permissions={{ canWrite: false }}

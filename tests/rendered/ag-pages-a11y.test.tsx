@@ -431,6 +431,7 @@ describe.each<Viewport>(['mobile', 'desktop'])(
     it('YieldClient has no accessibility violations', async () => {
         const { container } = renderWithProviders(
             <YieldClient
+                fetchedAt={1767225600000}
                 initialPayload={{ rows: YIELD_RECORDS, totalCount: YIELD_RECORDS.length, truncated: false }}
                 tenantSlug="acme"
                 permissions={{ canWrite: true }}
@@ -442,6 +443,7 @@ describe.each<Viewport>(['mobile', 'desktop'])(
     it('ContractsClient has no accessibility violations', async () => {
         const { container } = renderWithProviders(
             <ContractsClient
+                fetchedAt={1767225600000}
                 initialContracts={CONTRACTS}
                 initialTotals={CONTRACT_TOTALS}
                 initialTotalCount={CONTRACTS.length}

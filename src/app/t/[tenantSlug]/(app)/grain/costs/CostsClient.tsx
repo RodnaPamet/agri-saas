@@ -96,6 +96,21 @@ interface CostListResponse {
 }
 
 export interface CostsClientProps {
+    /**
+     * When the SERVER fetched `initialData`, as epoch millis (#1946).
+     *
+     * Passed in rather than read from the client clock. `Date.now()` during a
+     * client render asserts "fetched now", but the payload was fetched before
+     * the document was serialised, sent, parsed and hydrated — so `staleTime`
+     * was measured from HYDRATION, and the data could be
+     * `staleTime + (fetch → hydrate)` old while the cache believed it fresh.
+     * On a cold mobile connection that gap is seconds, not milliseconds.
+     *
+     * It also removes a `react-hooks/purity` suppression rather than
+     * explaining it (#1730): the client no longer calls an impure function
+     * during render.
+     */
+    fetchedAt: number;
     initialRows: CostRow[];
     initialTotalCount: number;
     initialTruncated: boolean;
@@ -113,6 +128,7 @@ export function CostsClient(props: CostsClientProps) {
 }
 
 function CostsPageInner({
+    fetchedAt,
     initialRows,
     initialTotalCount,
     initialTruncated,
@@ -168,8 +184,7 @@ function CostsPageInner({
                   truncated: initialTruncated ?? false,
               }
             : undefined,
-        // eslint-disable-next-line react-hooks/purity
-        initialDataUpdatedAt: noFacets ? Date.now() : 0,
+        initialDataUpdatedAt: noFacets ? fetchedAt : 0,
         staleTime: 30_000,
     });
 

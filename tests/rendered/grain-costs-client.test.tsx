@@ -87,6 +87,7 @@ function renderPage(rows: CostRow[] = [costRow()], canWrite = true, truncated = 
             <QueryClientProvider client={qc}>
                 <TooltipProvider>
                 <CostsClient
+                    fetchedAt={1767225600000}
                     tenantSlug="acme"
                     initialRows={rows}
                     initialTotalCount={truncated ? 900 : rows.length}

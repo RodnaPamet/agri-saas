@@ -48,6 +48,7 @@ export default async function GrainYieldPage({
 
     return (
         <YieldClient
+            fetchedAt={Date.now()}
             initialPayload={JSON.parse(JSON.stringify(payload))}
             tenantSlug={tenantSlug}
             permissions={{ canWrite: ctx.permissions.canWrite }}

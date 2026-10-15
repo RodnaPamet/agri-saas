@@ -47,6 +47,21 @@ export interface BinRow {
 }
 
 interface BinsClientProps {
+    /**
+     * When the SERVER fetched `initialData`, as epoch millis (#1946).
+     *
+     * Passed in rather than read from the client clock. `Date.now()` during a
+     * client render asserts "fetched now", but the payload was fetched before
+     * the document was serialised, sent, parsed and hydrated — so `staleTime`
+     * was measured from HYDRATION, and the data could be
+     * `staleTime + (fetch → hydrate)` old while the cache believed it fresh.
+     * On a cold mobile connection that gap is seconds, not milliseconds.
+     *
+     * It also removes a `react-hooks/purity` suppression rather than
+     * explaining it (#1730): the client no longer calls an impure function
+     * during render.
+     */
+    fetchedAt: number;
     initialBins: BinRow[];
     tenantSlug: string;
     permissions: { canWrite: boolean };
@@ -125,7 +140,7 @@ export function BinsClient(props: BinsClientProps) {
     );
 }
 
-function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps) {
+function BinsPageInner({ fetchedAt, initialBins, tenantSlug, permissions }: BinsClientProps) {
     const t = useTranslations('grain.bins');
     const router = useRouter();
     const apiUrl = useCallback(
@@ -150,8 +165,7 @@ function BinsPageInner({ initialBins, tenantSlug, permissions }: BinsClientProps
             return res.json();
         },
         initialData: initialBins,
-        // eslint-disable-next-line react-hooks/purity
-        initialDataUpdatedAt: Date.now(),
+        initialDataUpdatedAt: fetchedAt,
         staleTime: 30_000,
     });
 
