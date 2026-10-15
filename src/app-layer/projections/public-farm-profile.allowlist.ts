@@ -59,6 +59,16 @@ export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
     about: published(),
     oblast: published(),
     crops: published(),
+    // A control rather than content — it decides the page's `robots` meta and
+    // whether `sitemap.xml` lists the farm — but it crosses to the projection
+    // like any published field, because the public reader needs the value and
+    // `PublicFarmProfile` is the only thing it reads.
+    //
+    // Was `private` for exactly one release. `FarmBrand.indexable` shipped in
+    // #1850 and is contained in v12.34.0, so the phase rule is satisfied and
+    // the writer may follow: until a tag held the column, flipping this would
+    // have made a rollback of that migration break every projection refresh.
+    indexable: published(),
 
     // ── private ──
     id: privateField(
@@ -85,15 +95,6 @@ export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
         'When the farm last became public. Operational history rather than part of the '
             + 'page, and `projectedAt` on the projection already gives a reader the '
             + 'freshness they need.',
-    ),
-    indexable: privateField(
-        'Whether search engines may index the page — a control, not content. The '
-            + 'projection has carried its own `indexable` column since P6.1, and the '
-            + 'path that will copy this value into it is the editor’s (P6.6, #1815), '
-            + 'deliberately absent for one release so the migration adding this column '
-            + 'can still be rolled back without breaking a reader. Marking it '
-            + '`published` is what starts it crossing, per `projectionPayload` above, '
-            + 'so that change belongs in the PR that ships the control.',
     ),
     consentedAt: privateField(
         'When consent to publish was given (P6.6). A compliance record about the '
@@ -175,6 +176,7 @@ export function projectionPayload(brand: {
     about: string | null;
     oblast: string | null;
     crops: string[];
+    indexable: boolean;
 }): {
     handle: string;
     displayName: string;
@@ -183,6 +185,7 @@ export function projectionPayload(brand: {
     oblast: string | null;
     crops: string[];
     displayNameLatin: string;
+    indexable: boolean;
 } {
     // Narrowed by the caller's preconditions; asserted again rather than cast,
     // because a cast here would be the one place the NOT NULL columns could be
@@ -205,12 +208,14 @@ export function projectionPayload(brand: {
         // the reader agree by construction rather than by three call sites
         // remembering.
         //
-        // The canonical fix belongs further up: `FarmBrand.handle` should be
-        // normalised where it is CHOSEN (P6.6, #1815), so its `@unique`
-        // constraint is case-insensitive too. As it stands two farms could
-        // reserve `Pobeda` and `pobeda` — distinct to the index, confusable to
-        // a person, and the second to publish would overwrite the first's
-        // public row. Recorded on that issue.
+        // The canonical fix landed further up in #1865: `claimFarmBrandHandle`
+        // normalises where the handle is CHOSEN, through `checkHandleShape`,
+        // so `FarmBrand.handle` now stores the lower-cased slug and two farms
+        // can no longer reserve `Pobeda` and `pobeda` as distinct names. This
+        // stays as a belt: the column's `@unique` is still case-SENSITIVE, so
+        // the guarantee lives in application code rather than in the index,
+        // and any future writer that skips the validator would reintroduce the
+        // overwrite this normalisation prevents.
         handle: brand.handle.trim().toLowerCase(),
         displayName: brand.displayName,
         tagline: brand.tagline,
@@ -221,6 +226,10 @@ export function projectionPayload(brand: {
         // the already-normalised display name so the stored Latin form and
         // the Cyrillic one describe the same string.
         displayNameLatin: transliterate(brand.displayName),
+        // The owner's search-engine choice, carried verbatim. Not derived and
+        // not defaulted: a refresh must reproduce the decision, and defaulting
+        // it here would quietly un-index a farm on the next edit.
+        indexable: brand.indexable,
     };
 
     // The allowlist is the authority, so a private field appearing in `out`
