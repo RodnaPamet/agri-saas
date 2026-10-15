@@ -17,7 +17,10 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
-import { SetFarmBrandPublicationSchema } from '@/app-layer/schemas/farm-brand.schemas';
+import {
+    ClaimFarmBrandHandleSchema,
+    SetFarmBrandPublicationSchema,
+} from '@/app-layer/schemas/farm-brand.schemas';
 import { op } from './helpers';
 
 const TenantParams = z.object({
@@ -40,6 +43,23 @@ const ProjectionResultSchema = z
         }),
     })
     .openapi('FarmBrandProjectionResult');
+
+const HandleClaimResultSchema = z
+    .object({
+        handle: z.string().openapi({
+            description:
+                'The address the farm now holds, NORMALISED — lower-cased and transliterated from Cyrillic. This is what `/f/{handle}` will serve, and it is often not what was submitted: `Победа` is stored and served as `pobeda`. Show it back to the owner rather than echoing their input, or they will discover the difference from a link that does not work.',
+        }),
+        normalised: z.boolean().openapi({
+            description:
+                'True when the stored address differs from the submitted one. Exists so a client can say "your page will be at /f/pobeda" at the moment of choosing instead of after publishing.',
+        }),
+        reprojected: z.boolean().openapi({
+            description:
+                'True when the farm was already published and the public page moved as part of this call. The OLD address stops answering immediately — which matters because it may be printed on paper (P6.7) or shared in a chat that cannot be edited.',
+        }),
+    })
+    .openapi('FarmBrandHandleClaimResult');
 
 export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -64,6 +84,34 @@ export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The resulting projection state.',
             schema: ProjectionResultSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/t/{tenantSlug}/farm-brand/handle',
+        operationId: 'claimFarmBrandHandle',
+        summary: 'Claim the farm’s public address',
+        description:
+            'The address in `/f/{handle}`, reserved in a namespace shared with EVERY other tenant — so this is the one brand field that can be refused for a reason about somebody else.\n\n'
+            + '`PUT` because the body is the desired state: submitting the address you already hold is a success, not a collision with yourself, which makes a retry on a dropped connection safe.\n\n'
+            + '**The address is normalised, and the result tells you how.** Input is transliterated from Cyrillic and lower-cased, so `Победа` is stored as `pobeda`. The `@unique` index is case-sensitive while the public reader lower-cases, so without this normalisation `Pobeda` and `pobeda` would be two reservations collapsing onto one page — the second farm to publish would take over the first one\u2019s. Render `handle` from the response, never the submitted string.\n\n'
+            + '**A rename moves a published page immediately.** When the farm is already public, `reprojected` is true and the OLD address stops answering in the same call. Worth surfacing before the owner confirms: the old address may be printed on a card or sitting in a chat message nobody can edit.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `FARM_BRAND_NOT_FOUND` (404) — this farm has no brand record yet. Offer to create one rather than reporting an error.\n'
+            + '- `FARM_HANDLE_TAKEN` — another farm holds it. `details.suggestions` carries up to three alternatives DERIVED from this farm (its oblast and public name, e.g. `pobeda-dobrich`), because a farmer can act on that where `pobeda-2` only tells them they were second. The list may be EMPTY when nothing is derivable, and an empty list is a real answer: refuse plainly rather than inventing a counter. The suggestions are advisory — two owners can be told the same name is free in the same second, and the unique index is what actually decides.\n'
+            + '- `FARM_HANDLE_RESERVED` — reserved against platform impersonation (`support`, `admin`, `agrent`…). Checked on the TRANSLITERATED form, so the Cyrillic spelling of a reserved word is refused too.\n'
+            + '- `FARM_HANDLE_TOO_SHORT` — under three characters after normalisation. Note it is the normalised length: `я` is one character that becomes `ya`, and is still refused.\n'
+            + '- `FARM_HANDLE_TOO_LONG` — over forty characters after normalisation. Refused rather than truncated, so nobody is handed a silently cut-off address.\n'
+            + '- `FARM_HANDLE_UNUSABLE` — nothing usable survives normalisation, e.g. punctuation only.\n\n'
+            + 'This operation does NOT publish the farm. `PUT .../farm-brand/publication` does, and it refuses with `FARM_BRAND_HANDLE_REQUIRED` until this call has succeeded.',
+        tags: ['Farm profile'],
+        params: TenantParams,
+        body: ClaimFarmBrandHandleSchema,
+        success: {
+            status: 200,
+            description: 'The address the farm now holds.',
+            schema: HandleClaimResultSchema,
         },
     });
 }

@@ -142,6 +142,28 @@ export type RlsBypassReason =
      */
     | 'public-projection-read'
     /**
+     * Checking whether a public handle is free, across every tenant — P6.6
+     * (#1815).
+     *
+     * `FarmBrand.handle` is `@unique` across the whole table while `FarmBrand`
+     * is tenant-scoped, so "is this name taken?" is a question about rows the
+     * asker must never see. Under the owner's own context the read would
+     * return at most their own row and every name would look free.
+     *
+     * Selects `handle` ONLY, and only for a short list of candidate strings
+     * the caller already holds. It cannot enumerate: there is no unfiltered
+     * read, so it answers "is this specific name free" and never "what are
+     * the names". That matters because a handle is chosen by a stranger's
+     * neighbour as often as not, and the question must not become a way to
+     * list who exists.
+     *
+     * The answer is ADVISORY by construction and the code says so: two owners
+     * can ask in the same second and both be told yes. The unique index is
+     * what actually prevents the collision, so this exists to make a REFUSAL
+     * useful — suggesting names that are probably free — not to prevent one.
+     */
+    | 'farm-handle-availability'
+    /**
      * Reading tenant-scoped `TenantModuleSettings` to compute a
      * marketplace-wide exclusion — which sellers have the EXCHANGE module
      * off. Selects tenant IDs only.
@@ -257,6 +279,7 @@ export async function runWithoutRls<T>(
  */
 const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'public-projection-read': true,
+    'farm-handle-availability': true,
     'auth-tenant-discovery': true,
     'auth-credentials': true,
     'webhook-ingest': true,

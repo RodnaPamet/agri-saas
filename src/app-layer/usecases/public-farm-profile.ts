@@ -55,6 +55,11 @@ import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { projectionPayload } from '../projections/public-farm-profile.allowlist';
+import {
+    MAX_HANDLE_SUGGESTIONS,
+    checkHandleShape,
+    suggestHandles,
+} from '@/lib/public-profile/handle';
 
 export interface ProjectionResult {
     /** What the farm is published as, or null when it is not published. */
@@ -448,4 +453,221 @@ export async function searchPublicFarms(opts: {
             score: Number(r.score),
         }));
     });
+}
+
+/** The index whose violation means the name is taken. */
+const HANDLE_INDEX = 'FarmBrand_handle_key';
+
+/**
+ * Was this error the global handle index refusing a duplicate?
+ *
+ * Specifically THAT index, not any unique violation. `FarmBrand` has two
+ * unique constraints — `tenantId` and `handle` — and a test of mine once
+ * asserted `/Unique constraint|23505/`, which a `tenantId` collision in a
+ * shared fixture satisfied equally well, so it passed while proving nothing.
+ * A `tenantId` violation here would mean two brand rows for one farm: a bug
+ * to surface, not a name to offer alternatives for.
+ *
+ * ## `meta.target` is EMPTY under the driver adapter
+ *
+ * The obvious check is `err.meta.target`, and it silently never matches.
+ * Measured against the real database on this stack (`PrismaPg`), a P2002
+ * carries no `target` at all — the constraint name is nested:
+ *
+ *     meta.driverAdapterError.cause.constraint.index === 'FarmBrand_handle_key'
+ *
+ * My first version read `meta.target`, got `undefined`, and let the raw
+ * P2002 escape as a 500 instead of the refusal with suggestions this whole
+ * function exists to produce. The test caught it because it asserted on the
+ * CODE rather than merely that a rejection happened.
+ *
+ * Both shapes are read, because `target` is what Prisma documents and is
+ * populated without an adapter — a future driver change should not silently
+ * turn the refusal back into a 500. The message is the last resort and is
+ * matched on the index NAME, which is the one part of it that is not prose.
+ */
+function isHandleTaken(err: unknown): boolean {
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError)) return false;
+    if (err.code !== 'P2002') return false;
+
+    const meta = (err.meta ?? {}) as {
+        target?: unknown;
+        driverAdapterError?: {
+            cause?: { constraint?: { index?: string }; originalMessage?: string };
+        };
+    };
+
+    const target = Array.isArray(meta.target) ? meta.target.join(',') : String(meta.target ?? '');
+    const cause = meta.driverAdapterError?.cause;
+    const named = [target, cause?.constraint?.index ?? '', cause?.originalMessage ?? ''].join(' ');
+
+    // `target` is a COLUMN list when present (`['handle']`), the others name
+    // the index, so both spellings are accepted — and `tenantId` matches
+    // neither.
+    return named.includes(HANDLE_INDEX) || target.split(',').includes('handle');
+}
+
+/** Human-readable fallbacks for the shape refusals — see `checkHandleShape`. */
+const HANDLE_REFUSAL_MESSAGES: Record<string, string> = {
+    FARM_HANDLE_UNUSABLE: 'That address contains no letters or digits we can use.',
+    FARM_HANDLE_TOO_SHORT: 'That address is too short — use at least three characters.',
+    FARM_HANDLE_TOO_LONG: 'That address is too long — use at most forty characters.',
+    FARM_HANDLE_RESERVED: 'That address is reserved and cannot be used by a farm.',
+};
+
+/**
+ * Candidate addresses that are probably free, derived from this farm.
+ *
+ * ADVISORY, and the word is load-bearing: two owners can ask in the same
+ * second and both be told the same name is free. The unique index is what
+ * actually prevents the collision, so this exists to make a refusal useful
+ * rather than to prevent one.
+ */
+async function suggestFreeHandles(ctx: RequestContext, raw: string): Promise<string[]> {
+    const brand = await runInTenantContext(ctx, (db) =>
+        db.farmBrand.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: { oblast: true, displayName: true },
+        }),
+    );
+
+    const candidates = suggestHandles(raw, {
+        oblast: brand?.oblast ?? null,
+        displayName: brand?.displayName ?? null,
+    });
+    if (candidates.length === 0) return [];
+
+    // The only cross-tenant read on this path, and it answers "is each of
+    // THESE free" rather than "what exists" — see the reason's docblock.
+    const taken = await runWithoutRls({ reason: 'farm-handle-availability' }, (db) =>
+        db.farmBrand.findMany({
+            where: { handle: { in: candidates } },
+            select: { handle: true },
+        }),
+    );
+    const takenSet = new Set(taken.map((row) => row.handle).filter((h): h is string => h !== null));
+
+    return candidates.filter((c) => !takenSet.has(c)).slice(0, MAX_HANDLE_SUGGESTIONS);
+}
+
+/**
+ * Claim the public address for this farm — P6.6 (#1815).
+ *
+ * The owner ruling: a second farm wanting a taken name is REFUSED with
+ * suggestions, not silently given `pobeda-2`. Three consequences shape this
+ * function.
+ *
+ * ## Suggest-then-attempt, because a pre-check cannot be authoritative
+ *
+ * There is no availability check before the write. Two owners can submit the
+ * same name in the same second, so any pre-check is stale the moment it
+ * returns and a check-then-write would report success to both. The unique
+ * index is the only thing that actually prevents the collision, so a `P2002`
+ * on insert is a NORMAL outcome handled here rather than an error to log.
+ *
+ * ## The catch is OUTSIDE the transaction, deliberately
+ *
+ * `runInTenantContext` opens an interactive `$transaction` (it needs one for
+ * `SET LOCAL ROLE`), and a thrown `P2002` poisons the whole PostgreSQL
+ * transaction — a caught JS error does not un-poison an aborted PG
+ * transaction, as `task-due.ts` records. So the attempt is awaited, the
+ * transaction is allowed to die, and the suggestions come from a FRESH query
+ * afterwards. Catching inside and continuing would look like it worked and
+ * fail on the next statement.
+ *
+ * ## A rename re-projects, because the old address must stop answering
+ *
+ * If the farm is published, the projection is brought back into agreement
+ * through `projectFarmBrand`, which already removes the stale row via
+ * `projectedHandle`. Without it `/f/old-name` would keep serving after a
+ * rename — a page the owner believes they have moved. The re-projection is a
+ * SEPARATE transaction for the reason `setFarmBrandPublication` gives: the
+ * two are not atomic together, and this ordering leaves a stale projection
+ * that the next refresh corrects rather than a live row for a handle nobody
+ * holds.
+ */
+export async function claimFarmBrandHandle(
+    ctx: RequestContext,
+    rawHandle: string,
+): Promise<{ handle: string; normalised: boolean; reprojected: boolean }> {
+    assertCanAdmin(ctx);
+
+    const verdict = checkHandleShape(rawHandle);
+    if (!verdict.ok) {
+        throw codedBadRequest(
+            verdict.code,
+            HANDLE_REFUSAL_MESSAGES[verdict.code] ?? 'That address cannot be used.',
+        );
+    }
+    const handle = verdict.handle;
+
+    let published: boolean;
+    let changed: boolean;
+    try {
+        const outcome = await runInTenantContext(ctx, async (db) => {
+            const brand = await db.farmBrand.findFirst({
+                where: { tenantId: ctx.tenantId },
+                select: { id: true, handle: true, published: true },
+            });
+            if (!brand) {
+                throw codedNotFound(
+                    'FARM_BRAND_NOT_FOUND',
+                    'This farm has no brand record yet.',
+                );
+            }
+            if (brand.handle === handle) {
+                // Idempotent: re-submitting the address you already hold is a
+                // success, not a collision with yourself.
+                return { published: brand.published, changed: false };
+            }
+            await db.farmBrand.update({
+                where: { tenantId: ctx.tenantId },
+                data: { handle },
+            });
+            // On the caller's transaction, so the audit row is atomic with the
+            // write it describes (#1223) — and so a rolled-back claim leaves
+            // no record of an address the farm does not hold.
+            await logEvent(db, ctx, {
+                action: 'FARM_BRAND_HANDLE_CLAIMED',
+                entityType: 'FarmBrand',
+                entityId: brand.id,
+                details: 'Public address claimed',
+                detailsJson: {
+                    category: 'status_change',
+                    entityName: 'FarmBrand',
+                    // The handle is public by definition — it is the URL — so
+                    // recording it is not a disclosure. The PREVIOUS one is
+                    // recorded too, because a rename is the thing somebody
+                    // auditing a broken link needs to see.
+                    fromHandle: brand.handle,
+                    toHandle: handle,
+                },
+            });
+            return { published: brand.published, changed: true };
+        });
+        published = outcome.published;
+        changed = outcome.changed;
+    } catch (err) {
+        if (isHandleTaken(err)) {
+            const suggestions = await suggestFreeHandles(ctx, rawHandle);
+            // `details`, not `params`. `ErrorParams` values are
+            // `string | number` for message interpolation; a list of
+            // alternatives is structured data a client renders as buttons.
+            throw codedBadRequest(
+                'FARM_HANDLE_TAKEN',
+                'That address is already taken by another farm.',
+                undefined,
+                { suggestions },
+            );
+        }
+        throw err;
+    }
+
+    if (!changed) return { handle, normalised: verdict.normalised, reprojected: false };
+
+    if (published) {
+        await projectFarmBrand(ctx);
+        return { handle, normalised: verdict.normalised, reprojected: true };
+    }
+    return { handle, normalised: verdict.normalised, reprojected: false };
 }
