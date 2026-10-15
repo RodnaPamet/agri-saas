@@ -57,6 +57,43 @@ describe('formatDetailPaintState', () => {
         expect(navigated).toContain('navigationType : navigate');
     });
 
+    it('separates "nothing was aborted" from "nobody collected aborts"', () => {
+        // The distinction that makes the field worth having. #1862's live
+        // hypothesis is that the destination's flight request is ABORTED and
+        // the App Router rolls the URL back — so "NONE" refutes it and "?"
+        // means the next occurrence will not answer it either.
+        //
+        // It cannot come from inside the page: a Resource Timing entry is
+        // created on response end, so an aborted fetch leaves none.
+        const none = formatDetailPaintState({ failedRequests: [] });
+        const some = formatDetailPaintState({
+            failedRequests: ['GET /t/acme/assets/abc?_rsc=x — net::ERR_ABORTED'],
+        });
+        const unknown = formatDetailPaintState({});
+
+        expect(none).toContain('failed/aborted requests: NONE');
+        expect(none).toContain('a dropped flight request is NOT the cause');
+        expect(some).toContain('failed/aborted requests: 1');
+        expect(some).toContain('net::ERR_ABORTED');
+        expect(unknown).toContain('failed/aborted requests: ?');
+    });
+
+    it('prints the EXPECTED url, because the one at failure is the wrong page', () => {
+        // `detailRequests` is filtered on `location.pathname` read at failure
+        // time, and the measured failure has the URL back on the LIST. So
+        // "requests for this URL" is about the page the test navigated AWAY
+        // from, and without the expected URL beside it the report cannot say
+        // whether the destination was ever fetched.
+        const s = formatDetailPaintState({
+            url: 'http://localhost:3006/t/acme/assets',
+            expectedUrl: '**/t/acme/assets/abc',
+        });
+        expect(s).toContain('expected url   : **/t/acme/assets/abc');
+        expect(s).toContain('what the wait was FOR');
+        // And absent when not supplied, rather than printing a bare label.
+        expect(formatDetailPaintState({})).not.toContain('expected url');
+    });
+
     it('says NONE rather than 0 when the route was never fetched', () => {
         // "no requests for this URL" and "I did not collect requests" are
         // different answers and the issue turns on which it is: the #1076
