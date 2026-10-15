@@ -6,6 +6,16 @@
  * index pages whose owners have not been asked, and an indexed page outlives
  * its withdrawal because a cached snapshot is not ours to recall.
  */
+// The flag that gates every public-profile surface (#1886) is OFF by default,
+// which is the point of it. This suite's subject is the CONTENT of these
+// surfaces, so it runs with the gate open; the gate itself is asserted in
+// `tests/integration/p6-public-surfaces-are-gated.test.ts`.
+jest.mock('@/lib/feature-flags', () => ({
+    ...jest.requireActual('@/lib/feature-flags'),
+    isFeatureEnabled: async () => true,
+    assertFeatureEnabled: async () => undefined,
+}));
+
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';

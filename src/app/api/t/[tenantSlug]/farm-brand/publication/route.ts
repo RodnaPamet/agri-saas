@@ -18,6 +18,7 @@ import { setFarmBrandPublication } from '@/app-layer/usecases/public-farm-profil
 import { SetFarmBrandPublicationSchema } from '@/app-layer/schemas/farm-brand.schemas';
 import { withValidatedBody } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { jsonResponse } from '@/lib/api-response';
 
 export const PUT = withApiErrorHandling(
@@ -30,6 +31,15 @@ export const PUT = withApiErrorHandling(
         ) => {
             const params = await paramsPromise;
             const ctx = await getTenantCtx(params, req);
+            // #1197's standing rule: every social surface sits behind a
+            // runtime flag, default OFF. `assertFeatureEnabled` 404s rather
+            // than 403s so a dark-launched surface stays undiscoverable.
+            //
+            // The key is a LITERAL here rather than behind a shared helper:
+            // `social-routes-flag-gated` requires one, because an operator
+            // holding the flag console has to find the gate by reading the
+            // route.
+            await assertFeatureEnabled('social.public-profile', ctx.userId);
             const result = await setFarmBrandPublication(ctx, body.published);
             return jsonResponse(result);
         },

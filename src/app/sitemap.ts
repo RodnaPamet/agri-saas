@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next';
 
 import { getAppBaseUrl } from '@/lib/auth/app-base-url';
 import { listIndexableFarmHandles } from '@/app-layer/usecases/public-farm-profile';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 
 /**
  * `sitemap.xml` — the indexable public profiles (P6.5, #1814).
@@ -47,6 +48,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // literal here would have been a second source of truth that drifts on
     // the day the domain changes.
     const base = getAppBaseUrl();
+    // Flagged off means no farm is invited to be crawled (#1886). The
+    // sitemap itself still answers — it is a site-level document and a 404
+    // here would be a different claim than "no farms are indexable".
+    if (!(await isFeatureEnabled('social.public-profile', null))) return [];
+
     const profiles = await listIndexableFarmHandles();
 
     return profiles.map((p) => ({

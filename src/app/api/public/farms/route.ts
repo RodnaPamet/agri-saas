@@ -32,12 +32,17 @@ import { searchPublicFarms } from '@/app-layer/usecases/public-farm-profile';
 import { PublicFarmSearchQuerySchema } from '@/app-layer/schemas/public-farms.schemas';
 import { withValidatedQuery } from '@/lib/validation/route';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { jsonResponse } from '@/lib/api-response';
 
 export const runtime = 'nodejs';
 
 export const GET = withApiErrorHandling(
     withValidatedQuery(PublicFarmSearchQuerySchema, async (_req: NextRequest, _ctx, query) => {
+        // Anonymous surface, so a null user — see the note on the page.
+        // `assertFeatureEnabled` 404s rather than 403s, which keeps a
+        // dark-launched endpoint undiscoverable.
+        await assertFeatureEnabled('social.public-profile', null);
         const hits = await searchPublicFarms(query);
         return jsonResponse(hits);
     }),
