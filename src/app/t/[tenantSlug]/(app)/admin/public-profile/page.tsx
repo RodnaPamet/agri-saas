@@ -27,6 +27,7 @@
 import { notFound } from 'next/navigation';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { getAppBaseUrl } from '@/lib/auth/app-base-url';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 
 import { PublicProfileClient } from './PublicProfileClient';
@@ -41,5 +42,8 @@ export default async function AdminPublicProfilePage({
 
     if (!(await isFeatureEnabled('social.public-profile', ctx.userId))) notFound();
 
-    return <PublicProfileClient />;
+    // Passed as a prop because `getAppBaseUrl` is server-only: it reaches
+    // `logger` and therefore `node:async_hooks`, which webpack refuses to
+    // bundle for a browser. Resolving it here is the boundary.
+    return <PublicProfileClient baseUrl={getAppBaseUrl()} />;
 }

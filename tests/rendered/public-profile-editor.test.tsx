@@ -44,6 +44,8 @@ jest.mock('next-intl', () => {
 
 import { PublicProfileClient } from '@/app/t/[tenantSlug]/(app)/admin/public-profile/PublicProfileClient';
 
+const BASE = 'https://app.agrent.bg';
+
 const DRAFT = {
     handle: 'pobeda',
     displayName: 'Стопанство Победа',
@@ -83,7 +85,7 @@ describe('the public-profile editor', () => {
         // was stored, so an owner would have opened a blank page over their
         // own content.
         mockFetch([{ ok: true, body: DRAFT }]);
-        render(<PublicProfileClient />);
+        render(<PublicProfileClient baseUrl={BASE} />);
 
         await waitFor(() => {
             expect(screen.getByDisplayValue('Стопанство Победа')).toBeInTheDocument();
@@ -101,7 +103,7 @@ describe('the public-profile editor', () => {
         // shown a text and agreed; a confirm button that worked without the
         // checkbox would let that record be created by a stray click.
         mockFetch([{ ok: true, body: DRAFT }]);
-        render(<PublicProfileClient />);
+        render(<PublicProfileClient baseUrl={BASE} />);
 
         const confirm = await screen.findByRole('button', { name: 'consentRecord' });
         expect(confirm).toBeDisabled();
@@ -114,7 +116,7 @@ describe('the public-profile editor', () => {
         // A consent record names a text VERSION, so the text has to be on
         // screen for that record to mean anything.
         mockFetch([{ ok: true, body: DRAFT }]);
-        render(<PublicProfileClient />);
+        render(<PublicProfileClient baseUrl={BASE} />);
         expect(await screen.findByText('consentBody')).toBeInTheDocument();
     });
 
@@ -141,7 +143,7 @@ describe('the public-profile editor', () => {
             { ok: true, body: { handle: 'pobeda-dobrich', normalised: false, reprojected: false } },
             { ok: true, body: DRAFT },
         ]);
-        render(<PublicProfileClient />);
+        render(<PublicProfileClient baseUrl={BASE} />);
 
         await userEvent.click(await screen.findByRole('button', { name: 'addressClaim' }));
 
@@ -164,7 +166,7 @@ describe('the public-profile editor', () => {
         // A QR for an unpublished page encodes a 404, and it is the one
         // artefact an owner might print before noticing.
         mockFetch([{ ok: true, body: DRAFT }]);
-        const { unmount } = render(<PublicProfileClient />);
+        const { unmount } = render(<PublicProfileClient baseUrl={BASE} />);
         await screen.findByRole('button', { name: 'publish' });
         expect(screen.queryByLabelText('QR code')).not.toBeInTheDocument();
         unmount();
@@ -172,7 +174,7 @@ describe('the public-profile editor', () => {
         mockFetch([
             { ok: true, body: { ...DRAFT, published: true, publishedAt: '2026-10-15T00:00:00Z' } },
         ]);
-        render(<PublicProfileClient />);
+        render(<PublicProfileClient baseUrl={BASE} />);
         await waitFor(() => {
             expect(screen.getByLabelText('QR code')).toBeInTheDocument();
         });
@@ -188,7 +190,7 @@ describe('the public-profile editor', () => {
         Object.defineProperty(window, 'innerWidth', { writable: true, value: width });
         window.dispatchEvent(new Event('resize'));
         mockFetch([{ ok: true, body: DRAFT }]);
-        render(<PublicProfileClient />);
+        render(<PublicProfileClient baseUrl={BASE} />);
         expect(await screen.findByText('heading')).toBeInTheDocument();
     });
 });

@@ -22,11 +22,28 @@
  * that breaks silently. A mis-encoded name does not fail — it forwards
  * mojibake, and the farmer sees it only after sending.
  */
-import { getAppBaseUrl } from '@/lib/auth/app-base-url';
-
-/** Where a handle is served. The ONE definition every share surface uses. */
-export function publicProfileUrl(handle: string): string {
-    const base = getAppBaseUrl().replace(/\/+$/, '');
+/**
+ * Where a handle is served. The ONE definition every share surface uses.
+ *
+ * Takes `baseUrl` rather than calling `getAppBaseUrl()`, and that is a
+ * BUNDLING constraint, not a preference. This module is imported by the
+ * editor, which is a client component; `getAppBaseUrl` reaches `logger`,
+ * which reaches `node:async_hooks`, and webpack cannot bundle that for a
+ * browser:
+ *
+ *     UnhandledSchemeError: Reading from "node:async_hooks" is not handled
+ *     ./src/lib/public-profile/share-links.ts
+ *     ./src/app/.../admin/public-profile/PublicProfileClient.tsx
+ *
+ * `tsc` cannot see that — the types are fine and the import is legal — so it
+ * surfaced only in `next build`. Server callers pass `getAppBaseUrl()`; the
+ * editor receives the value as a prop from its server page.
+ *
+ * The side benefit is that these functions are now pure, so their tests need
+ * no env mock at all.
+ */
+export function publicProfileUrl(handle: string, baseUrl: string): string {
+    const base = baseUrl.replace(/\/+$/, '');
     // The handle is already normalised to a lower-case ASCII slug by
     // `checkHandleShape`, so it needs no encoding — and encoding it would be
     // the kind of defensive call that hides a handle that should have been
@@ -66,8 +83,8 @@ export interface ShareKit {
  * whole string. The message is for Viber and for the clipboard, where a
  * human reads it.
  */
-export function shareKit(handle: string, displayName: string): ShareKit {
-    const url = publicProfileUrl(handle);
+export function shareKit(handle: string, displayName: string, baseUrl: string): ShareKit {
+    const url = publicProfileUrl(handle, baseUrl);
     // Name then url, with an em dash. The url goes LAST because Viber and
     // most chat clients link-preview the final url in a message, and a
     // preview of the farm's own page is the point of sharing it.

@@ -63,7 +63,7 @@ interface Draft {
     indexable: boolean;
 }
 
-export function PublicProfileClient() {
+export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
     const t = useTranslations('admin.publicProfile');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
@@ -246,7 +246,7 @@ export function PublicProfileClient() {
 
     const kit =
         draft?.published && draft.handle
-            ? shareKit(draft.handle, draft.displayName ?? draft.handle)
+            ? shareKit(draft.handle, draft.displayName ?? draft.handle, baseUrl)
             : null;
 
     return (
