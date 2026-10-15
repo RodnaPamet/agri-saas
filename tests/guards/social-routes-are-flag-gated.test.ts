@@ -287,7 +287,7 @@ describe('every social route is flag-gated', () => {
     it('reports the population it is covering', () => {
         // Printed rather than implied: a reader of a green run should be able to
         // see whether this swept 0 files or 40. The count is 0 today by design.
-        console.log(`social route files swept: ${social.length} (${SOCIAL_API_DIRS.join(', ')})`);
+        console.log(`[social-routes-gated] social route files swept: ${social.length} (${SOCIAL_API_DIRS.join(', ')})`);
         expect(Array.isArray(social)).toBe(true);
     });
 

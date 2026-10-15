@@ -103,7 +103,7 @@ describe('every person-scoped route uses getUserCtx', () => {
             ),
         );
         console.log(
-            `person-scoped route files: ${files.length}, handlers: ${handlers.length}\n  ` +
+            `[person-routes] person-scoped route files: ${files.length}, handlers: ${handlers.length}\n  ` +
                 handlers.join('\n  '),
         );
 

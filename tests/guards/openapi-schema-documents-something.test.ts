@@ -246,7 +246,7 @@ describe('every documented schema describes something', () => {
         // the defect was — so the count a reader sees should say which.
         const nested = offenders.filter(isNested);
         console.log(
-            `documents-nothing sweep: ${Object.keys(schemas).length} named schemas, ` +
+            `[openapi-schema-bodies] documents-nothing sweep: ${Object.keys(schemas).length} named schemas, ` +
                 `${offenders.length} offender(s) — ${offenders.length - nested.length} top-level, ` +
                 `${nested.length} nested`,
         );
