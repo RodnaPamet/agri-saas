@@ -36,17 +36,115 @@ const EntryParams = TenantParams.extend({
  * "an object with these known fields, plus more" beats either a lie or a
  * blank, and tightening it later is additive.
  */
-const LogEntryLike = z
+/**
+ * The fields shared by the plain row and the folded one, as a SHAPE rather
+ * than a schema.
+ *
+ * Two schemas are built from this literal instead of one extending the other,
+ * and that is forced by what `.extend()` on a REGISTERED schema emits:
+ * `allOf: [{ $ref: LogEntry }, { treatment }]`. A reader that does not resolve
+ * `allOf` then sees a row with no `id`, `type` or `status` at all — the
+ * repo's own breaking-change gate reported exactly that, 38 properties
+ * "removed" across the shapes, and a client codegen would make the same
+ * mistake. Sharing the shape keeps both schemas flat and self-contained while
+ * still having one place to change a field.
+ */
+const logEntryShape = {
+    id: z.string(),
+    type: z.string(),
+    status: z.string(),
+    title: z.string().nullable().optional(),
+    occurredAt: z.string().datetime().nullable().optional(),
+    version: z.number().int().optional(),
+};
+
+const LogEntryLike = z.object(logEntryShape).passthrough().openapi('LogEntry');
+
+/**
+ * The folded treatment a ДНЕВНИК row stands for (#1740, documented by #1832).
+ *
+ * ## Why this was missing, and what it cost
+ *
+ * `LogEntry` published six properties and the fold shipped without following.
+ * Two clients read this object anyway — the web's «Изтегли дневник (PDF)»
+ * button and agrent-ios #321's entry screen both take `treatmentGroupId` from
+ * the row — so they agreed with the server by having read its source, not its
+ * spec. A reader of `LogEntry` would have concluded the fold was not shipped.
+ *
+ * Declared flat rather than as `LogEntry` plus this field: see the note on
+ * `logEntryShape` for why a `$ref` inside `allOf` is the wrong shape here.
+ *
+ * ## Which response carries it
+ *
+ * ONLY the paged `{ rows, nextCursor }` shape. `JournalRepository.listPaginated`
+ * is the single method that attaches it; the bare-array default
+ * (`listLogEntries`) and the `?deleted=` trash view (`listDeletedLogEntries`)
+ * do not. That is why this extends the row type for one branch of the union
+ * rather than being added to `LogEntry` itself — on the other two shapes the
+ * field genuinely is not there, and declaring it would be the same kind of lie
+ * in the other direction.
+ *
+ * ## Always present, including on a manual entry
+ *
+ * `parcelCount: 0` is how a free-hand entry reads, NOT an absent object. A
+ * client testing the object's truthiness therefore treats every row as a
+ * treatment; `parcelCount > 0` is the discriminator, and it is what the web
+ * gates the PDF button on, because the per-treatment PDF route answers 404
+ * `TREATMENT_NOT_FOUND` for a treatment with no lines.
+ *
+ * `completedCount` and `complete` are deliberately NOT here: they belong to
+ * `GET /journal/treatments/{treatmentGroupId}`, and documenting them on the
+ * row would invite a client to look for fields it will never receive.
+ */
+const Treatment = z
     .object({
-        id: z.string(),
-        type: z.string(),
-        status: z.string(),
-        title: z.string().nullable().optional(),
-        occurredAt: z.string().datetime().nullable().optional(),
-        version: z.number().int().optional(),
+        treatmentGroupId: z.string(),
+        occurredOn: z
+            .string()
+            .openapi({
+                description:
+                    'The day the work happened as the FARM sees it (`YYYY-MM-DD`, Europe/Sofia), ' +
+                    'not a UTC slice of `occurredAt`. For a free-hand entry typed between 00:00 ' +
+                    'and 03:00 in Sofia those two differ by a day.',
+                example: '2026-03-09',
+            }),
+        kind: z.string().nullable().openapi({ description: '`SPRAY` or `FERTILIZE`.' }),
+        productName: z.string().nullable(),
+        parcelCount: z.number().int().openapi({
+            description: '0 on an ordinary manual entry. The discriminator for "is this a treatment".',
+        }),
+        totalAreaHa: z.number().openapi({
+            description: 'HECTARES, as stored. The web renders decares; the conversion belongs where the number is shown.',
+        }),
+        blockNames: z.array(z.string()),
+        doseValue: z.number().nullable(),
+        doseUnit: z.string().nullable().openapi({ description: 'The unit SYMBOL, not its id.' }),
+        targetNote: z.string().nullable(),
+        applicationTechnique: z.string().nullable(),
+        quarantinePeriodDays: z.number().int().nullable().openapi({
+            description: "The line's own period, falling back to the product's.",
+        }),
+        earliestHarvestOn: z.string().nullable().openapi({
+            description:
+                'Computed server-side from the period that applied ON THE DAY, so every client ' +
+                'shows the same date and it matches the PDF. Null when no period was captured — ' +
+                'never the treatment day itself, which would read as "harvest today".',
+            example: '2026-03-30',
+        }),
+        recordedInDiary: z.boolean(),
     })
+    .openapi('Treatment');
+
+/**
+ * A row of the PAGED journal list: an entry plus its folded treatment.
+ *
+ * Separate from `LogEntry` because only this branch of the union carries
+ * `treatment` — see the note on `Treatment`.
+ */
+const JournalFoldedRow = z
+    .object({ ...logEntryShape, treatment: Treatment })
     .passthrough()
-    .openapi('LogEntry');
+    .openapi('JournalFoldedRow');
 
 const StaleDataError = ApiErrorResponseSchema.openapi('StaleDataError', {
     description:
@@ -252,13 +350,24 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             description:
                 'Entries, in one of THREE shapes — the query decides which, and a client that ' +
                 'assumes one reads an absent key from another as an empty list rather than as ' +
-                'an error.',
+                'an error.\n\n' +
+                '**Only the paged `{ rows, nextCursor }` shape carries `treatment`** — the ' +
+                'folded ДНЕВНИК aggregate (#1832). The bare-array default and the `?deleted=` ' +
+                'trash view return rows WITHOUT it, so a client that reads `treatment` must ' +
+                'send `limit` to get the paged branch. On that branch the object is ALWAYS ' +
+                'present, with `parcelCount: 0` on an ordinary manual entry rather than being ' +
+                'absent, so `parcelCount > 0` is the discriminator for "this row stands for a ' +
+                'treatment".',
             schema: z.union([
-                // `?deleted=…` — the recycle-bin view.
+                // `?deleted=…` — the recycle-bin view. NO `treatment`:
+                // `listDeletedLogEntries` does not fold.
                 z.object({ entries: z.array(LogEntryLike) }),
-                // paged
-                z.object({ rows: z.array(LogEntryLike), nextCursor: z.string().nullable() }),
-                // the default: a bare array, ETagged
+                // Paged — the ONLY shape carrying `treatment`, because
+                // `JournalRepository.listPaginated` is the only method that
+                // attaches it (#1832).
+                z.object({ rows: z.array(JournalFoldedRow), nextCursor: z.string().nullable() }),
+                // The default: a bare array, ETagged. NO `treatment` —
+                // `listLogEntries` does not fold either.
                 z.array(LogEntryLike),
             ]),
         },
