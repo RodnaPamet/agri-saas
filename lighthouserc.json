@@ -23,7 +23,6 @@
       }
     },
     "assert": {
-      "aggregationMethod": "median",
       "//": "TWO urls as of P6.5 (#1814), with SEPARATE budgets \u2014 a single `assertions` block would have applied /login's 7000ms LCP to the public page, which is the number this phase exists to beat rather than to inherit. Measured 2026-10-15: this gate covered ONE of 395 live routes, and the one route P6.5 promises an LCP target for was not it.\n\n/f/{handle} starts on `warn` DELIBERATELY. Its real LCP has never been measured, and the repo's rule for this file is that a budget is a REGRESSION GATE set just above a known-stable number, not an aspirational target asserted before anybody looked. The 2500ms in #1814's title is a goal; the `error` gate goes in once the three-run median is in a report. Asserting 2500 now would either pass by luck or fail a PR for a number nobody had measured.",
       "assertMatrix": [
         {
@@ -60,11 +59,12 @@
                 "maxNumericValue": 3800
               }
             ]
-          }
+          },
+          "aggregationMethod": "median"
         },
         {
           "matchingUrlPattern": ".*/f/.*",
-          "//": "The public farm page. The budget below is PENDING a trustworthy baseline and is deliberately loose \u2014 see #1878.\n\nMeasured history, each a 3-run median on a CI runner:\n  #1866  no fixes                LCP 3635 ms  FCP 1688 ms\n  #1874  client chrome removed   LCP 2730 ms  FCP 1668 ms\n  #1877  + heading font preload  LCP 3672 ms  FCP 1383 ms\n  #1877  SAME TREE, re-run       LCP 3376 ms  FCP 1076 ms\n\nThe last two measure the SAME commit and differ by 296 ms of LCP and 307 ms of FCP. So a 3-run median on this page carries roughly +/-300 ms, and no single-sample comparison below about 600 ms is a result. That retires two claims made from such comparisons: that removing the client chrome was worth 905 ms of LCP, and that the font preload cost 942 ms. Neither is supported; 2730 is as likely to have been a lucky sample as 3672 an unlucky one.\n\nFCP is the one trend that survives: 1688 -> 1668 -> 1383 -> 1076, moving monotonically and by more than the spread. The heading-face preload is an FCP improvement. Whether it helps LCP is unknown.\n\n`numberOfRuns` is 5 rather than 3 for exactly this reason, and `aggregationMethod` is now 'median' EXPLICITLY: the gate passed on an LCP of 3672 against a 3200 error budget because the default aggregation is not the per-metric median the reporter prints (#1878). A budget that does not fire 472 ms over is not a budget, and the comment I wrote next to the 3200 claimed enforcement it did not have.\n\n4200 is the loosest number any measurement of this page has stayed under. It is a holding value: once 5-run medians exist for a stable tree, it should be set from them.",
+          "//": "The public farm page. MEASURED 2026-10-15, FIVE runs with median aggregation \u2014 the first trustworthy figure for this page: LCP 3191 ms, FCP 1679 ms, Speed Index 1679 ms, TBT 286 ms, CLS 0.000, performance 87. This tree has the client chrome removed (#1874) and NOT the heading-font preload (#1877).\n\n`aggregationMethod` is set PER ENTRY and that is not a style choice: at the top level lhci refuses with 'Cannot use assertMatrix with other options', which is how the first attempt at this fix failed. Without it the gate passed an LCP of 3672 ms against a 3200 ms error budget (#1878) \u2014 the default is not the per-metric median this file's reporter prints.\n\nFive runs, not three. Two 3-run medians of the SAME commit came back 296 ms apart (3672 and 3376), so three samples cannot separate a change from the runner here. /login is documented below as stable to +/-25 ms over three; this page is not, and reading it as though it were produced two claims that had to be retracted \u2014 a 905 ms gain for #1874 and a 942 ms loss for #1877, neither supported.\n\n3600 is the 5-run median plus ~13%, matching the headroom /login's gate uses over its own measurement. P6.5 wants 2500 ms and this is 691 ms short; the gate is a regression bound, not the target.",
           "assertions": {
             "categories:performance": [
               "warn",
@@ -75,7 +75,7 @@
             "largest-contentful-paint": [
               "error",
               {
-                "maxNumericValue": 4200
+                "maxNumericValue": 3600
               }
             ],
             "total-blocking-time": [
@@ -96,7 +96,8 @@
                 "maxNumericValue": 2000
               }
             ]
-          }
+          },
+          "aggregationMethod": "median"
         }
       ]
     },
