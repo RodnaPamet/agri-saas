@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Development
 npm run dev               # Start Next.js dev server
 npm run build             # Validate env + build
-npm run typecheck         # tsc --noEmit
+npm run typecheck         # tsc --noEmit --incremental false — COLD, minutes
+npm run typecheck:fast    # warm; trustworthy ONLY for files the cache knows
 npm run lint              # ESLint + the ceiling gate (scripts/lint-ceiling.ts)
 npm run lint:raw          # Plain `eslint .`, no ceiling
 npm run lint:fix          # Plain `eslint . --fix`
@@ -2594,6 +2595,20 @@ calls `enforceRateLimit` itself. The Edge read tier is no help either:
 
 **`tsc` does NOT catch a wrong `select` key on the extended client.** Five
 column names in the export were wrong (`tenantId` for `sellerTenantId`,
+**`npm run typecheck` is COLD on purpose (#1829).** `tsconfig.json` sets
+`incremental: true`, and with a `tsconfig.tsbuildinfo` present `tsc --noEmit`
+reported **0 errors for a newly added file that had 12** — wrong props, a
+`string` where a `Date` was wanted, and an argument in the slot that takes a
+Zod schema, so an `Idempotency-Key` header was silently never sent. Deleting
+the cache reported all twelve.
+
+The only observation that separates "this file is clean" from "this file is
+not being read" is a deliberate error: inserting
+`const __probe: number = 'x';` and still seeing zero. So the default pays the
+~2–6 minutes and matches what CI runs; `typecheck:fast` keeps the warm path
+for a tight edit loop on files the cache already knows. A new file wants the
+cold one.
+
 `cohort` for `cohortKey`, …) and typechecked clean; they failed at runtime as
 `PrismaClientValidationError`. Verify column names against the DMMF, not
 against a green typecheck.
