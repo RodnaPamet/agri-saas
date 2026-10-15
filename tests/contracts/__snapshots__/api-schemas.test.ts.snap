@@ -6363,6 +6363,19 @@ exports[`API contract — per-schema snapshots schema: FarmBrandDraft 1`] = `
     },
     "indexable": {
       "type": "boolean"
+    },
+    "hideTagline": {
+      "type": "boolean",
+      "description": "True when the tagline is WITHHELD from \`/f/{handle}\` — P6.6. The text is still stored and still returned here; only the public page omits it. Hiding is not deleting: turning the flag off restores the field with nothing retyped."
+    },
+    "hideAbout": {
+      "type": "boolean"
+    },
+    "hideOblast": {
+      "type": "boolean"
+    },
+    "hideCrops": {
+      "type": "boolean"
     }
   },
   "required": [
@@ -6376,7 +6389,11 @@ exports[`API contract — per-schema snapshots schema: FarmBrandDraft 1`] = `
     "publishedAt",
     "consentedAt",
     "consentTextVersion",
-    "indexable"
+    "indexable",
+    "hideTagline",
+    "hideAbout",
+    "hideOblast",
+    "hideCrops"
   ]
 }"
 `;

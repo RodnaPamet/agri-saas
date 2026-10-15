@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agrent API",
-    "version": "12.49.0",
+    "version": "12.51.0",
     "description": "Multi-tenant agriculture-operations API. The schema layer in `src/lib/schemas/index.ts` (request bodies) and `src/lib/dto/*.dto.ts` (response shapes) is the single source of truth — this document is generated from those Zod schemas via `npm run openapi:generate`.",
     "license": {
       "name": "Proprietary"
@@ -6080,6 +6080,19 @@
           },
           "indexable": {
             "type": "boolean"
+          },
+          "hideTagline": {
+            "type": "boolean",
+            "description": "True when the tagline is WITHHELD from `/f/{handle}` — P6.6. The text is still stored and still returned here; only the public page omits it. Hiding is not deleting: turning the flag off restores the field with nothing retyped."
+          },
+          "hideAbout": {
+            "type": "boolean"
+          },
+          "hideOblast": {
+            "type": "boolean"
+          },
+          "hideCrops": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -6093,7 +6106,11 @@
           "publishedAt",
           "consentedAt",
           "consentTextVersion",
-          "indexable"
+          "indexable",
+          "hideTagline",
+          "hideAbout",
+          "hideOblast",
+          "hideCrops"
         ]
       },
       "FarmBrandHandleClaimResult": {
@@ -56492,7 +56509,7 @@
       "put": {
         "operationId": "updateFarmBrand",
         "summary": "Save the farm’s public content",
-        "description": "The farm’s own public text — name, tagline, description, oblast and crops. CREATES the draft when there is none, which is what makes the rest of this surface reachable: before this operation existed nothing in the product could write a `FarmBrand`, so `/f/{handle}` served nobody and both sibling routes refused `FARM_BRAND_NOT_FOUND` on every call (#1867).\n\n**A field left out is untouched; an explicit `null` clears it.** That distinction is what an autosaving editor needs — without it, saving a tagline would wipe the description the owner wrote yesterday and never opened today. `crops` has no null form: an empty array IS the cleared state for a list.\n\n**Publication preconditions are NOT enforced here.** A draft may be incomplete, and `displayName` is nullable even though the public page’s column is NOT NULL — refusing a nameless draft would stop an owner saving a tagline before deciding what to call the farm. `PUT .../publication` is where the three refusals bite.\n\n**Editing a PUBLISHED farm refreshes its page in the same call**, reported as `reprojected`. An edit that did not would succeed while changing nothing a visitor sees.\n\n**Refusal codes.** None of its own — the bounds are schema validation, and the admin check is the usual tenant-role refusal.",
+        "description": "The farm’s own public text — name, tagline, description, oblast and crops. CREATES the draft when there is none, which is what makes the rest of this surface reachable: before this operation existed nothing in the product could write a `FarmBrand`, so `/f/{handle}` served nobody and both sibling routes refused `FARM_BRAND_NOT_FOUND` on every call (#1867).\n\n**A field left out is untouched; an explicit `null` clears it.** That distinction is what an autosaving editor needs — without it, saving a tagline would wipe the description the owner wrote yesterday and never opened today. `crops` has no null form: an empty array IS the cleared state for a list.\n\n**Publication preconditions are NOT enforced here.** A draft may be incomplete, and `displayName` is nullable even though the public page’s column is NOT NULL — refusing a nameless draft would stop an owner saving a tagline before deciding what to call the farm. `PUT .../publication` is where the three refusals bite.\n\n**Editing a PUBLISHED farm refreshes its page in the same call**, reported as `reprojected`. An edit that did not would succeed while changing nothing a visitor sees.\n\n**Per-field visibility (P6.6).** `hideTagline`, `hideAbout`, `hideOblast` and `hideCrops` withhold a field from `/f/{handle}` WITHOUT clearing it. They follow the same omitted-means-untouched rule as the content fields, which is what lets an autosaving editor send one flag without disturbing another — or the text it hides.\n\nThere is deliberately no flag for `handle` or `displayName`: both are publication preconditions, so a published farm cannot withhold them. The public projection omits a hidden field entirely, and a visitor cannot distinguish a hidden field from an unset one — which is intentional, because revealing that something is withheld is the thing hiding it is meant to avoid.\n\n**Refusal codes.** None of its own — the bounds are schema validation, and the admin check is the usual tenant-role refusal.",
         "tags": [
           "Farm profile"
         ],
@@ -56561,6 +56578,18 @@
                     "maxItems": 40
                   },
                   "indexable": {
+                    "type": "boolean"
+                  },
+                  "hideTagline": {
+                    "type": "boolean"
+                  },
+                  "hideAbout": {
+                    "type": "boolean"
+                  },
+                  "hideOblast": {
+                    "type": "boolean"
+                  },
+                  "hideCrops": {
                     "type": "boolean"
                   }
                 }

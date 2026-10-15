@@ -73,6 +73,20 @@ export const UpdateFarmBrandSchema = z.object({
      * alone, like every other field here.
      */
     indexable: z.boolean().optional(),
+    /**
+     * Per-field visibility — P6.6 (#1815). One flag per optional published
+     * field; `true` withholds it from `/f/{handle}` while the text stays
+     * stored.
+     *
+     * `optional()` with no default, like every other field here: an omitted
+     * flag is UNTOUCHED, so an autosaving editor that sends only the field
+     * being edited cannot un-hide something the owner hid yesterday. That is
+     * the same three-state contract the content fields rely on.
+     */
+    hideTagline: z.boolean().optional(),
+    hideAbout: z.boolean().optional(),
+    hideOblast: z.boolean().optional(),
+    hideCrops: z.boolean().optional(),
 });
 
 export type UpdateFarmBrandInput = z.infer<typeof UpdateFarmBrandSchema>;

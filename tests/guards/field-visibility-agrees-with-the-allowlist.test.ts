@@ -29,8 +29,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
-import { blankNonCode } from '../helpers/blank-non-code';
 import { parseSchemaModels } from '../helpers/prisma-schema-models';
 import {
     BRAND_FIELD_DECISIONS,
@@ -99,44 +97,5 @@ describe('per-field visibility agrees with the publication allowlist', () => {
             expect(why.length).toBeGreaterThan(40);
             expect(why.toLowerCase()).not.toBe(field.toLowerCase());
         }
-    });
-
-    /**
-     * The phase control. DELETE THIS TEST in the PR that adds the writer.
-     *
-     * The columns ship one release ahead of the code that reads them, so
-     * `prisma migrate deploy` has applied them in production before anything
-     * depends on them — the split `FarmBrand.indexable` (#1850 -> #1873) and
-     * `ExchangeListing.publishAsFarm` (#1914 -> #1922) used.
-     *
-     * Before deleting it, confirm a release contains the migration's
-     * add-commit:
-     *
-     *     git tag --contains $(git log -1 --format=%H -- \
-     *       prisma/migrations/20261015210000_p6_6_farm_brand_field_visibility)
-     *
-     * Unlike its two predecessors this does NOT assert the column names are
-     * absent from `src/` — `HIDEABLE_FIELDS` names them deliberately, and that
-     * declaration is not a writer. It asserts the PROJECTION does not consult
-     * them, which is the thing that would change what a visitor sees.
-     */
-    it('nothing projects on these columns yet', () => {
-        const usecases = collectSourceFiles({
-            roots: ['src/app-layer/usecases', 'src/app-layer/projections'],
-            exclude: (rel) => /\.(test|spec)\.ts$/.test(rel),
-            floor: 10,
-        }).map((abs) => path.relative(REPO_ROOT, abs));
-
-        const columns = Object.values(HIDEABLE_FIELDS);
-        const readers = usecases.filter((rel) => {
-            const code = blankNonCode(readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
-            // The DECLARATION is allowed; a read is not. The allowlist module
-            // is where the names legitimately appear.
-            if (rel.endsWith('public-farm-profile.allowlist.ts')) return false;
-            return columns.some((c) => new RegExp(`\\b${c}\\b`).test(code));
-        });
-
-        expect(usecases.length).toBeGreaterThanOrEqual(10);
-        expect(readers).toEqual([]);
     });
 });

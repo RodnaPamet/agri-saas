@@ -46,6 +46,9 @@ import { cardVariants } from '@/components/ui/card';
 import { shareKit } from '@/lib/public-profile/share-links';
 import { cn } from '@/lib/cn';
 
+/** The four `FarmBrand` columns an eye toggle can set (P6.6, #1815). */
+type HideColumn = 'hideTagline' | 'hideAbout' | 'hideOblast' | 'hideCrops';
+
 /**
  * The version of the consent text this build renders.
  *
@@ -75,7 +78,43 @@ interface Draft {
     publishedAt: string | null;
     consentedAt: string | null;
     consentTextVersion: string | null;
+    hideTagline: boolean;
+    hideAbout: boolean;
+    hideOblast: boolean;
+    hideCrops: boolean;
     indexable: boolean;
+}
+
+/**
+ * The eye toggle shown under a field — P6.6 (#1815).
+ *
+ * A `Switch` rather than an eye ICON, deliberately. An eye is ambiguous about
+ * which state it depicts — an open eye can read as "it is visible" or as
+ * "click to make it visible" — and the two readings are opposites on a control
+ * whose whole job is to say whether strangers can see a paragraph. A labelled
+ * switch states the current state in words.
+ *
+ * Labelled "shown publicly", so ON means visible. Phrasing it as "hidden"
+ * would make the safe state the ON state, and a switch whose ON position
+ * withholds something reads backwards next to the publish switch above it.
+ */
+function VisibilityToggle({
+    label,
+    checked,
+    onChange,
+    disabled,
+}: {
+    label: string;
+    checked: boolean;
+    onChange: (next: boolean) => void;
+    disabled: boolean;
+}) {
+    return (
+        <label className="mt-tight flex items-center justify-between gap-default">
+            <span className="text-content-muted">{label}</span>
+            <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} />
+        </label>
+    );
 }
 
 export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
@@ -308,6 +347,26 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
         await load();
     };
 
+    /**
+     * The eye toggle for one field — P6.6 (#1815).
+     *
+     * Saves immediately rather than waiting for Save, like `setIndexable`
+     * below and unlike the text fields: a switch that needed a separate Save
+     * to take effect would leave the owner unsure whether a field is public
+     * right now, which is the one question this control exists to answer.
+     *
+     * Sends ONLY the flag being changed. The route treats an omitted field as
+     * untouched, so hiding the tagline cannot disturb the «За стопанството»
+     * text or another flag.
+     */
+    const setHidden = async (column: HideColumn, hidden: boolean) => {
+        const ok = await send('/farm-brand', { [column]: hidden });
+        if (ok) {
+            setSuccess(t('saved'));
+            await load();
+        }
+    };
+
     const setIndexable = async (next: boolean) => {
         const ok = await send('/farm-brand', { indexable: next });
         if (ok) {
@@ -379,6 +438,12 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                         maxLength={200}
                     />
                 </FormField>
+                <VisibilityToggle
+                    label={t('shownPublicly')}
+                    checked={!draft?.hideTagline}
+                    onChange={(shown) => setHidden('hideTagline', !shown)}
+                    disabled={busy}
+                />
                 <FormField label={t('aboutLabel')} description={t('aboutHelp')}>
                     <Textarea
                         value={about}
@@ -387,6 +452,12 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                         rows={6}
                     />
                 </FormField>
+                <VisibilityToggle
+                    label={t('shownPublicly')}
+                    checked={!draft?.hideAbout}
+                    onChange={(shown) => setHidden('hideAbout', !shown)}
+                    disabled={busy}
+                />
                 <FormField label={t('oblastLabel')}>
                     <Input
                         value={oblast}
@@ -394,9 +465,21 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                         maxLength={80}
                     />
                 </FormField>
+                <VisibilityToggle
+                    label={t('shownPublicly')}
+                    checked={!draft?.hideOblast}
+                    onChange={(shown) => setHidden('hideOblast', !shown)}
+                    disabled={busy}
+                />
                 <FormField label={t('cropsLabel')} description={t('cropsHelp')}>
                     <Input value={crops} onChange={(e) => setCrops(e.target.value)} />
                 </FormField>
+                <VisibilityToggle
+                    label={t('shownPublicly')}
+                    checked={!draft?.hideCrops}
+                    onChange={(shown) => setHidden('hideCrops', !shown)}
+                    disabled={busy}
+                />
                 <div>
                     <Button onClick={saveContent} disabled={busy}>
                         {busy ? t('saving') : t('save')}
