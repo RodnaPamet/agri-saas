@@ -105,6 +105,20 @@ jobs:
       # Cyrillic content on purpose. The page's LCP element is its heading, and
       # the Cyrillic glyphs are what the font actually has to deliver — Latin
       # placeholder text would measure a font subset this page never serves.
+      # The flag that gates /f/{handle} (#1886). Without it the page 404s,
+      # and Lighthouse ERRORS on a non-2xx main document rather than
+      # measuring it — `Run #1...failed!` with exit code 1, which is how this
+      # was found. `cohorts` is empty on purpose: a flag with cohorts is a
+      # limited rollout, and this page is anonymous so there is no user to
+      # match one against.
+      - name: Enable the public-profile flag
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          INSERT INTO "FeatureFlag" ("key", "enabled", "description", "cohorts", "updatedAt")
+          VALUES ('social.public-profile', true, 'Lighthouse budget run', '{}', NOW())
+          ON CONFLICT ("key") DO UPDATE SET "enabled" = true;
+          SQL
+
       - name: Seed one public farm profile
         run: |
           PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
@@ -128,6 +142,15 @@ jobs:
           echo "seeded rows: $COUNT"
           if [ "$COUNT" != "1" ]; then
             echo "::error::/f/lighthouse has no projection row, so the Lighthouse budget would measure a 404."
+            exit 1
+          fi
+          # BOTH preconditions, because either one missing produces the same
+          # 404 and the same Lighthouse collection error.
+          FLAG=$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+            "SELECT enabled FROM \"FeatureFlag\" WHERE key = 'social.public-profile';")
+          echo "flag enabled: $FLAG"
+          if [ "$FLAG" != "t" ]; then
+            echo "::error::social.public-profile is not enabled, so /f/lighthouse 404s and Lighthouse cannot measure it."
             exit 1
           fi
 

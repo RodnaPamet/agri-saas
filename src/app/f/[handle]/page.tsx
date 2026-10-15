@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { getTranslations } from 'next-intl/server';
 
 import { readPublicFarmProfile } from '@/app-layer/usecases/public-farm-profile';
@@ -62,6 +64,13 @@ interface PageProps {
  */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
     const { handle } = await params;
+    // Gated independently of the page below. `generateMetadata` runs on its
+    // own, so a gate only on the default export would still publish the
+    // farm's name and tagline as a <title> and description for a page that
+    // 404s — answering the question the 404 refuses to.
+    if (!(await isFeatureEnabled('social.public-profile', null))) {
+        return { robots: { index: false, follow: false } };
+    }
     const profile = await readPublicFarmProfile(handle);
     if (!profile) {
         // The same metadata a missing farm gets, for the same anti-enumeration
@@ -80,6 +89,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function PublicFarmProfilePage({ params }: PageProps) {
     const { handle } = await params;
+    // #1197's standing rule: every social surface sits behind a runtime
+    // flag, default OFF (#1886). This surface is ANONYMOUS, so the flag is
+    // resolved with a null user — a key with no cohorts then applies
+    // globally, which is what a public page needs.
+    //
+    // Gated BEFORE the read, so a flagged-off deployment does not query
+    // the projection at all.
+    if (!(await isFeatureEnabled('social.public-profile', null))) notFound();
     const profile = await readPublicFarmProfile(handle);
     if (!profile) notFound();
 

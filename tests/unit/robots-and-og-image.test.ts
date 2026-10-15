@@ -7,6 +7,16 @@
  * card that renders at all is evidence the Cyrillic font loaded and covered
  * the text.
  */
+// The flag that gates every public-profile surface (#1886) is OFF by default,
+// which is the point of it. This suite's subject is the CONTENT of these
+// surfaces, so it runs with the gate open; the gate itself is asserted in
+// `tests/integration/p6-public-surfaces-are-gated.test.ts`.
+jest.mock('@/lib/feature-flags', () => ({
+    ...jest.requireActual('@/lib/feature-flags'),
+    isFeatureEnabled: async () => true,
+    assertFeatureEnabled: async () => undefined,
+}));
+
 import robots from '@/app/robots';
 
 describe('robots.txt', () => {
