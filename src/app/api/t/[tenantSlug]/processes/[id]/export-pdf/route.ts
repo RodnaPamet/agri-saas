@@ -25,6 +25,13 @@ import { getProcessMap } from '@/app-layer/usecases/process-map';
 import { generateProcessMapPdf } from '@/app-layer/reports/pdf/processMap';
 import { badRequest } from '@/lib/errors/types';
 import { contentDisposition } from '@/lib/http/content-disposition';
+// The SHARED collector. This route held a third hand-rolled copy (#1905) of
+// the function `collect-buffer.ts` was extracted to replace — byte-identical,
+// so never a live bug, but exactly the condition that extraction existed to
+// end. Its docblock carries the property that matters: listeners attached
+// BEFORE `end()`, or pdfkit has already flushed and the buffer comes back
+// truncated rather than failing — a short PDF a client may still open.
+import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 
 // Force Node.js runtime — pdfkit needs stream / zlib / Buffer.
 export const runtime = 'nodejs';
@@ -36,16 +43,6 @@ const Body = z.object({
         .startsWith('data:image/png;base64,')
         .min('data:image/png;base64,'.length + 16),
 });
-
-function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-        doc.on('end', () => resolve(Buffer.concat(chunks)));
-        doc.on('error', reject);
-        doc.end();
-    });
-}
 
 function safeFilename(mapName: string): string {
     // See share-card.ts: the old [a-z0-9] strip deleted Cyrillic entirely, so
