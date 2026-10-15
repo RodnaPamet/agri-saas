@@ -152,7 +152,16 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // are not: the audience test. These are TENANT routes a web client already
 // calls, and their twelve refusal codes decide what a reviewer is told — not
 // an operator surface reachable only with a platform key.
-const UNDOCUMENTED_CEILING = 215;
+// 215 -> 214 (#1861). `/api/account/avatar` is documented now — `POST` and
+// `DELETE` both, where the spec previously described only the `GET` that
+// SERVES the bytes this endpoint writes.
+//
+// The ceiling must EQUAL the baseline length, not merely bound it, and this
+// guard says why a line above: slack lets entries be added silently up to
+// the gap, which is how an upward ratchet quietly becomes a denylist. I
+// shortened the baseline and left the ceiling, which is exactly the drift
+// the `toBe` is there to refuse.
+const UNDOCUMENTED_CEILING = 214;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with
