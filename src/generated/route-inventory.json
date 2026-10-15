@@ -1216,6 +1216,16 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/farm-brand",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/farm-brand/consent",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/farm-brand/handle",
       "status": "live",
       "documented": true

@@ -6217,6 +6217,27 @@ exports[`API contract — per-schema snapshots schema: ExportedAccount 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmBrandConsentResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "consentedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When consent was recorded. Moves on each call, because the record that matters is the most recent agreement to the CURRENT wording."
+    },
+    "textVersion": {
+      "type": "string",
+      "description": "The version of the consent text that was agreed to, as sent."
+    }
+  },
+  "required": [
+    "consentedAt",
+    "textVersion"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmBrandHandleClaimResult 1`] = `
 "{
   "type": "object",
@@ -6269,6 +6290,26 @@ exports[`API contract — per-schema snapshots schema: FarmBrandProjectionResult
     "handle",
     "withdrawn",
     "removedHandle"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmBrandSaveResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "created": {
+      "type": "boolean",
+      "description": "True when this call CREATED the draft rather than editing one. A client can use it to decide between \\"saved\\" and \\"your public profile has been started\\" — and it is true exactly once per farm."
+    },
+    "reprojected": {
+      "type": "boolean",
+      "description": "True when the farm was already published and the public page was refreshed as part of this save. False for a draft, because there is no page yet. If this were false on a published farm, the edit would have changed nothing a visitor can see."
+    }
+  },
+  "required": [
+    "created",
+    "reprojected"
   ]
 }"
 `;
