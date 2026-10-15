@@ -19,7 +19,9 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
 import {
     ClaimFarmBrandHandleSchema,
+    RecordFarmBrandConsentSchema,
     SetFarmBrandPublicationSchema,
+    UpdateFarmBrandSchema,
 } from '@/app-layer/schemas/farm-brand.schemas';
 import { op } from './helpers';
 
@@ -60,6 +62,31 @@ const HandleClaimResultSchema = z
         }),
     })
     .openapi('FarmBrandHandleClaimResult');
+
+const SaveResultSchema = z
+    .object({
+        created: z.boolean().openapi({
+            description:
+                'True when this call CREATED the draft rather than editing one. A client can use it to decide between "saved" and "your public profile has been started" — and it is true exactly once per farm.',
+        }),
+        reprojected: z.boolean().openapi({
+            description:
+                'True when the farm was already published and the public page was refreshed as part of this save. False for a draft, because there is no page yet. If this were false on a published farm, the edit would have changed nothing a visitor can see.',
+        }),
+    })
+    .openapi('FarmBrandSaveResult');
+
+const ConsentResultSchema = z
+    .object({
+        consentedAt: z.string().datetime({ offset: true }).openapi({
+            description:
+                'When consent was recorded. Moves on each call, because the record that matters is the most recent agreement to the CURRENT wording.',
+        }),
+        textVersion: z.string().openapi({
+            description: 'The version of the consent text that was agreed to, as sent.',
+        }),
+    })
+    .openapi('FarmBrandConsentResult');
 
 export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -112,6 +139,49 @@ export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The address the farm now holds.',
             schema: HandleClaimResultSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/t/{tenantSlug}/farm-brand',
+        operationId: 'updateFarmBrand',
+        summary: 'Save the farm’s public content',
+        description:
+            'The farm\u2019s own public text — name, tagline, description, oblast and crops. CREATES the draft when there is none, which is what makes the rest of this surface reachable: before this operation existed nothing in the product could write a `FarmBrand`, so `/f/{handle}` served nobody and both sibling routes refused `FARM_BRAND_NOT_FOUND` on every call (#1867).\n\n'
+            + '**A field left out is untouched; an explicit `null` clears it.** That distinction is what an autosaving editor needs — without it, saving a tagline would wipe the description the owner wrote yesterday and never opened today. `crops` has no null form: an empty array IS the cleared state for a list.\n\n'
+            + '**Publication preconditions are NOT enforced here.** A draft may be incomplete, and `displayName` is nullable even though the public page\u2019s column is NOT NULL — refusing a nameless draft would stop an owner saving a tagline before deciding what to call the farm. `PUT .../publication` is where the three refusals bite.\n\n'
+            + '**Editing a PUBLISHED farm refreshes its page in the same call**, reported as `reprojected`. An edit that did not would succeed while changing nothing a visitor sees.\n\n'
+            + '**Refusal codes.** None of its own — the bounds are schema validation, and the admin check is the usual tenant-role refusal.',
+        tags: ['Farm profile'],
+        params: TenantParams,
+        body: UpdateFarmBrandSchema,
+        success: {
+            status: 200,
+            description: 'Whether the draft was created, and whether the public page moved with it.',
+            schema: SaveResultSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/t/{tenantSlug}/farm-brand/consent',
+        operationId: 'recordFarmBrandConsent',
+        summary: 'Record consent to publish the farm’s public profile',
+        description:
+            'Records that somebody was shown a specific consent text and agreed to it. `PUT .../publication` refuses `FARM_BRAND_CONSENT_REQUIRED` until this has been called, so this is the operation that unblocks publishing.\n\n'
+            + '**Its own operation rather than a field on the content save, deliberately.** Consent is a legal artefact, not editor state. The content route is autosaved, and an autosave that recorded consent would be claiming somebody read something they never saw — the one thing a consent record must not be able to say.\n\n'
+            + '`textVersion` is what makes the record checkable. "They consented" is unfalsifiable once the wording changes; "they consented to v2" can be held against the v2 text. Send the version of the text the sheet actually displayed, not the newest one you know of.\n\n'
+            + '**Re-consenting MOVES the timestamp.** A first-consent-wins rule would leave a farm published against a text nobody alive agreed to.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `FARM_BRAND_NOT_FOUND` (404) — there is no draft to consent to. Consent to publish a farm with no public profile is consent to nothing, so save content first.',
+        tags: ['Farm profile'],
+        params: TenantParams,
+        body: RecordFarmBrandConsentSchema,
+        success: {
+            status: 200,
+            description: 'The recorded consent.',
+            schema: ConsentResultSchema,
         },
     });
 }
