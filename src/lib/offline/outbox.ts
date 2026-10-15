@@ -149,9 +149,75 @@ interface OutboxItemBase {
  */
 export type SupersedeTarget = `field-op-line:${string}` | `journal-entry:${string}`;
 
+/**
+ * What a 2xx has to SAY before this item counts as delivered (#1870).
+ *
+ * The outbox is generic: `res.ok` means "the server accepted it", and for every
+ * write but one that is the same thing as "it is done". `POST
+ * /journal/treatments` is the exception, because the write is RESUMABLE rather
+ * than atomic — the per-parcel mark is what writes each ДНЕВНИК entry, so a
+ * failure part-way answers 201 with fewer parcels recorded than were sent.
+ * The outbox called that delivered and dropped the item, so a farmer who
+ * ticked 12 parcels and had 5 marked got a folded row reading 5, seven real
+ * applications missing from a regulated register, and no signal at all.
+ *
+ * iOS already resends under the same handle until the treatment reports
+ * complete (agrent-ios #325). This is the web having the same behaviour.
+ *
+ * ## Why it is DATA and not a function
+ *
+ * An item is written to IndexedDB and replayed later — possibly on another
+ * launch, and possibly by `public/sw.js` in a worker with no page at all. A
+ * predicate closure cannot survive either. So the expectation is a
+ * JSON-round-trippable literal, like every other field on an item, and each
+ * drain evaluates it against the parsed response.
+ *
+ * `equals` is the count the CLIENT sent, because the 201 deliberately carries
+ * no `complete` flag — that lives on `GET /journal/treatments/{handle}`, by
+ * that schema's own decision — so completeness here is a comparison against
+ * the request rather than a field to read.
+ */
+export interface CompletionExpectation {
+    /** A top-level numeric field of the response body. */
+    field: string;
+    /** The value that means the server finished the whole request. */
+    equals: number;
+}
+
+/**
+ * Does this response mean the item is finished?
+ *
+ * No expectation → yes, which keeps every existing caller's behaviour exactly
+ * as it was: a 2xx is delivery.
+ *
+ * An expectation that cannot be evaluated → **no**. An unreadable or
+ * non-object body, a missing field, a non-number: all retain the item. That
+ * direction is deliberate and it is the only safe one here — retaining costs a
+ * duplicate request the `Idempotency-Key` already dedupes, while the other
+ * direction drops field work that a compliance register is supposed to hold.
+ * A guard pins it, because "treat an unparseable body as success" is the
+ * tidying a future reader would reach for.
+ */
+export function responseSatisfiesExpectation(
+    expectation: CompletionExpectation | undefined,
+    body: unknown,
+): boolean {
+    if (expectation === undefined) return true;
+    if (body === null || typeof body !== 'object') return false;
+    const actual = (body as Record<string, unknown>)[expectation.field];
+    return typeof actual === 'number' && actual === expectation.equals;
+}
+
 export interface MutationOutboxItem extends OutboxItemBase {
     kind?: 'mutation';
     body: unknown;
+    /**
+     * Absent unless the caller asked for one — see {@link CompletionExpectation}.
+     * ABSENT rather than `undefined`, for the reason `attribution()` gives: the
+     * row is read raw from IndexedDB by the service worker and
+     * JSON-round-tripped by the localStorage store.
+     */
+    completeWhen?: CompletionExpectation;
 }
 
 export interface PhotoOutboxItem extends OutboxItemBase {
@@ -340,6 +406,8 @@ export interface EnqueueInput {
     ifMatch?: number;
     /** Replace any unsent queued write for this row — see {@link SupersedeTarget}. */
     supersedes?: SupersedeTarget;
+    /** What a 2xx must say before this counts as delivered — see {@link CompletionExpectation}. */
+    completeWhen?: CompletionExpectation;
 }
 
 /**
@@ -390,6 +458,7 @@ export async function enqueue(
         // the row is read raw from IndexedDB by the service worker and
         // JSON-round-tripped by the localStorage store.
         ...(input.supersedes ? { supersedes: input.supersedes } : {}),
+        ...(input.completeWhen ? { completeWhen: input.completeWhen } : {}),
     };
     await store.add(item);
     return item;
