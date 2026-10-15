@@ -264,29 +264,75 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <body suppressHydrationWarning nonce={nonce}>
                 <NextIntlClientProvider messages={messages} locale={locale}>
                     {/*
-                        ServiceWorkerRegistrar renders <InstallPrompt />, and
-                        WebVitalsReporter is a client component — both must sit
-                        INSIDE NextIntlClientProvider now that InstallPrompt
-                        (and any future PWA chrome) calls useTranslations. When
-                        they lived outside the provider the T04 i18n migration
-                        500'd every page with "NextIntlClientProvider context
-                        not found" at InstallPrompt. Same provider-boundary
-                        rule as the global overlays inside <Providers>.
+                        ── The public surface gets almost none of this (#1872) ──
+
+                        `/f/{handle}` is a page a stranger opens from a shared
+                        link. It is a pure server component rendering a heading
+                        and five short text fields, and it was mounting the
+                        entire app's client tree: a ⌘K command palette, the
+                        shortcut help overlay, a toaster nothing emits into,
+                        form telemetry with no forms, view transitions,
+                        `SWRPersistenceProvider` handed a `userId` that is
+                        undefined, a cache-retention sweep for a device with
+                        nothing cached, and an offer to install a
+                        farm-management PWA.
+
+                        That is a correctness problem before it is a
+                        performance one — ⌘K on a farm's public page opened the
+                        application's search. It is also the measured lever for
+                        P6.5's missed LCP target: #1866 put the page at 3635 ms
+                        against a 2500 ms goal, with TBT 380 ms on output that
+                        is a heading and five fields, so the cost was
+                        JavaScript.
+
+                        `isPublic` comes from the header middleware sets
+                        (#1842) and already chose the slim message catalog
+                        above; this is the same decision applied to the
+                        component tree.
+
+                        ThemeProvider is NOT needed here, which is worth
+                        stating because it looks like it should be: the page
+                        uses theme tokens, and `prePaintThemeScript()` in
+                        <head> stamps `data-theme` on the documentElement
+                        before first paint. The provider exists for runtime
+                        toggling and localStorage sync, and the public page has
+                        no theme control.
+
+                        WebVitalsReporter STAYS. It needs no provider — a
+                        `useEffect` and a dynamic `web-vitals` import that
+                        never lands in the initial bundle — and dropping field
+                        data from the one page with a performance budget would
+                        be a strange trade while chasing that budget.
                     */}
-                    <ServiceWorkerRegistrar />
                     <WebVitalsReporter />
-                    {/*
-                        Bounds how long this device keeps cached farm data —
-                        field snapshots and SWR buckets that otherwise live
-                        forever, plus the tenant Cache Storage buckets. Scoped
-                        to CACHES only: it never touches the outbox, so it
-                        cannot lose unsynced work or race the flush loop. See
-                        src/lib/offline/client-data-retention.ts.
-                    */}
-                    <ClientDataRetentionSweep />
-                    <Providers userId={sessionUserId}>
-                        {children}
-                    </Providers>
+                    {isPublic ? (
+                        children
+                    ) : (
+                        <>
+                            {/*
+                                ServiceWorkerRegistrar renders <InstallPrompt
+                                />, which must sit INSIDE
+                                NextIntlClientProvider now that it calls
+                                useTranslations. When it lived outside the
+                                provider the T04 i18n migration 500'd every
+                                page with "NextIntlClientProvider context not
+                                found". Same provider-boundary rule as the
+                                global overlays inside <Providers>.
+                            */}
+                            <ServiceWorkerRegistrar />
+                            {/*
+                                Bounds how long this device keeps cached farm
+                                data — field snapshots and SWR buckets that
+                                otherwise live forever, plus the tenant Cache
+                                Storage buckets. Scoped to CACHES only: it
+                                never touches the outbox, so it cannot lose
+                                unsynced work or race the flush loop. See
+                                src/lib/offline/client-data-retention.ts.
+                            */}
+                            <ClientDataRetentionSweep />
+                            <Providers userId={sessionUserId}>{children}</Providers>
+                        </>
+                    )}
                 </NextIntlClientProvider>
             </body>
         </html>
