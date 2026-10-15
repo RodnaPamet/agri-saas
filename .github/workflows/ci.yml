@@ -2581,12 +2581,44 @@ jobs:
       # documented runner-image paths only — deliberately NOT a
       # third-party action (supply-chain surface).
       - name: Free runner disk space (issue #1005)
-        # measured max 119s over 8 successful jobs; 5m is ~2.5x (#748)
-        timeout-minutes: 5
+        # RE-MEASURED 2026-10-15 over 17 docker jobs (#1720). The old bound
+        # was set against what is now the MIDPOINT of the distribution:
+        #
+        #   min 66s | median 119s | max successful 279s | p90 311s
+        #   2 of 17 jobs hit the 5m bound and FAILED the required check
+        #
+        # "max 119s over 8 successful jobs" was the previous note, and 119s is
+        # now the MEDIAN. Eight samples could not see a tail that 17 make
+        # obvious.
+        #
+        # The distribution is RIGHT-CENSORED: a job that would have run past
+        # 300s was killed at 300s, so the true tail is unknown and "2.5x the
+        # max" cannot be computed from this data at all. 10m is chosen to sit
+        # clear of the censored region, not derived from it — which is why the
+        # step now PRINTS its own phases to the step summary. The next person
+        # to set this bound should read those numbers rather than scrape the
+        # API for them, and should not need eight samples' worth of guessing.
+        timeout-minutes: 10
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          rm_start=$SECONDS
+          # Four independent trees, and these deletes are metadata-bound
+          # rather than throughput-bound, so concurrency is most of the win.
+          # /usr/local/lib/android alone is ~9 GB of many small files.
+          sudo rm -rf /usr/share/dotnet &
+          sudo rm -rf /usr/local/lib/android &
+          sudo rm -rf /opt/ghc &
+          sudo rm -rf /opt/hostedtoolcache/CodeQL &
+          wait
+          rm_secs=$((SECONDS - rm_start))
+          prune_start=$SECONDS
           sudo docker image prune --all --force 2>/dev/null || true
+          prune_secs=$((SECONDS - prune_start))
           df -h /
+          # Per PHASE, not just a total: the measurement above is bimodal
+          # (66-186s against 279-312s) and a single total cannot say which
+          # half of the step moved. Whoever revisits this needs that split.
+          echo "[disk-cleanup] rm ${rm_secs}s, prune ${prune_secs}s, total $((rm_secs + prune_secs))s" \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Docker Buildx
         # measured max 11s (#748)
