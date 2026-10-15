@@ -51,6 +51,50 @@ const privateField = (why: string): FieldDecision => ({ decision: 'private', why
  * Prisma's model type carries scalars only, so the `tenant` relation is
  * correctly absent rather than needing an exception.
  */
+/**
+ * The published fields an owner can WITHHOLD per field — P6.6 (#1815).
+ *
+ * The eye toggle's model. Each entry names the `FarmBrand` column that hides
+ * it, and `projectFarmBrand` will omit the field when that column is true
+ * while the text stays on the row — hiding is not deleting, which is the
+ * owner's ruling of 2026-10-15.
+ *
+ * ## Why this is a PARTITION and not a list
+ *
+ * #1815: "a field visible in the editor but absent from the allowlist is a
+ * control that does nothing, and a field in the allowlist with no toggle is
+ * published with no way to withdraw it. Worth a test that enumerates both and
+ * asserts they agree."
+ *
+ * A list of hideable fields can only be checked for membership. Together with
+ * {@link NOT_HIDEABLE} this is EXHAUSTIVE over every `published()` field, so
+ * the test can assert completeness: a new public field must arrive with a
+ * toggle or with a written reason it has none. Neither half is optional, and
+ * the test fails if their union misses a published field or names one twice.
+ */
+export const HIDEABLE_FIELDS = {
+    tagline: 'hideTagline',
+    about: 'hideAbout',
+    oblast: 'hideOblast',
+    crops: 'hideCrops',
+} as const satisfies Partial<Record<keyof FarmBrand, keyof FarmBrand>>;
+
+/**
+ * Published fields that deliberately have NO toggle, each with the reason.
+ *
+ * Same shape of argument as `privateField(why)` below: the exemption is
+ * recorded where the decision is, so the agreement test can demand a reason
+ * rather than silently tolerating a gap.
+ */
+export const NOT_HIDEABLE = {
+    handle: 'A publication PRECONDITION — `/f/{handle}` has no other key, so a '
+        + 'published farm withholding it would have no page to serve.',
+    displayName: 'A publication PRECONDITION, and NOT NULL on the projection: a '
+        + 'public page with no name cannot be represented at all.',
+    indexable: 'Not a field a visitor reads — it is the decision about whether '
+        + 'search engines may index the page, and it has its own control.',
+} as const satisfies Partial<Record<keyof FarmBrand, string>>;
+
 export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
     // ── published ──
     handle: published(),
@@ -69,6 +113,32 @@ export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
     // the writer may follow: until a tag held the column, flipping this would
     // have made a rollback of that migration break every projection refresh.
     indexable: published(),
+    // The eye toggles themselves are PRIVATE, and the reason is sharper than
+    // "nobody needs them". A flag says a field was WITHHELD, so publishing it
+    // would tell a visitor that something exists they are not being shown —
+    // which is the one thing hiding a field is supposed to avoid. The absence
+    // of a tagline and a hidden tagline must look identical from outside.
+    //
+    // `Record<keyof FarmBrand, FieldDecision>` is what forced this decision:
+    // adding the columns broke the build until each had an entry, which is
+    // exactly why the allowlist is exhaustive rather than a list of the
+    // fields somebody remembered.
+    hideTagline: privateField(
+        'An editorial decision, not content. Publishing it would reveal that a '
+            + 'tagline exists and is being withheld.',
+    ),
+    hideAbout: privateField(
+        'An editorial decision, not content. Publishing it would reveal that an '
+            + '«За стопанството» text exists and is being withheld.',
+    ),
+    hideOblast: privateField(
+        'An editorial decision, not content. Publishing it would reveal that the '
+            + 'farm recorded an oblast and chose not to show it.',
+    ),
+    hideCrops: privateField(
+        'An editorial decision, not content. Publishing it would reveal that a '
+            + 'crop list exists and is being withheld.',
+    ),
 
     // ── private ──
     id: privateField(

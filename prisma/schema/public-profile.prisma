@@ -119,6 +119,38 @@ model FarmBrand {
   /// Ships one release BEFORE the editor that writes it, so a rollback in
   /// that window costs nothing — see this migration's `.down.sql`.
   indexable Boolean @default(false)
+  /// Per-field visibility — P6.6 (#1815), owner ruling 2026-10-15.
+  ///
+  /// One flag per OPTIONAL published field. The eye toggle in the editor sets
+  /// these; `projectFarmBrand` will omit a hidden field from
+  /// `PublicFarmProfile` while the text stays here.
+  ///
+  /// Hiding is NOT deleting, and that is the whole ruling. All four fields are
+  /// nullable, so before this the only way to withhold «За стопанството» was
+  /// to delete the paragraph and retype it to show it again — a destructive
+  /// action behind an icon that means "shown/hidden".
+  ///
+  /// Four explicit columns rather than a `String[]` of hidden names, because
+  /// #1815 asks for "a test that enumerates both and asserts they agree": a
+  /// column per field makes the set of toggles STRUCTURALLY comparable to the
+  /// set of published allowlist fields, so a new public field shipped without
+  /// a toggle reddens. An array could be checked for membership, never for
+  /// completeness.
+  ///
+  /// `handle` and `displayName` have no flag: both are publication
+  /// PRECONDITIONS, so a published farm cannot withhold them — there would be
+  /// no page to serve and no name on it. `indexable` has none either: it is a
+  /// decision about crawlers, not a field a visitor reads. All three are
+  /// recorded as reasoned exemptions in `NOT_HIDEABLE`, which the agreement
+  /// test requires to be exhaustive.
+  ///
+  /// NOTHING READS THESE YET — the columns ship one release ahead of their
+  /// writer, as `FarmBrand.indexable` (#1850 -> #1873) and
+  /// `ExchangeListing.publishAsFarm` (#1914 -> #1922) did.
+  hideTagline Boolean @default(false)
+  hideAbout   Boolean @default(false)
+  hideOblast  Boolean @default(false)
+  hideCrops   Boolean @default(false)
 
   /// P6.6 ships a consent sheet on publish, and consent to publish
   /// identifiable information about a farm is a legal artefact rather
