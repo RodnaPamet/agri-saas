@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
-import { assertCanRead, assertCanWrite } from '../policies/common';
-import { codedBadRequest } from '@/lib/errors/types';
+import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
+import { codedBadRequest, codedConflict, codedNotFound } from '@/lib/errors/types';
+import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { createFieldOperation, markOperationParcel } from './field-operation';
 import type { CreateFieldOperationInput } from './field-operation';
@@ -588,4 +589,166 @@ export async function recordDiaryTreatment(
     // treatment has, and the saved screen must show the treatment.
     const finalCount = await summariseTreatmentLines(ctx, taskIds);
     return { treatmentGroupId, parcelCount: finalCount.parcelCount, taskIds, replayed: false };
+}
+
+/**
+ * Abandon a treatment that cannot be finished (#1777).
+ *
+ * ## The hole this closes
+ *
+ * A treatment write is resumable, not atomic: every block's lines are
+ * created, then every line is marked DONE, and the MARK is what writes the
+ * ДНЕВНИК entry. A failure during marking leaves a treatment partly
+ * recorded, which `GET /journal/treatments/{handle}` reports as
+ * `complete: false` and a re-send under the same handle finishes — that is
+ * the designed contract, and agrent-ios preferred it to holding a
+ * transaction open across N block creations and N marks.
+ *
+ * It has one dead end. If the cause REPEATS — a task moved to a terminal
+ * status, a product soft-deleted between the create and the mark, a
+ * persistent constraint failure — every retry fails identically and the
+ * farmer is left with a treatment that will neither finish nor go away. The
+ * one input-driven cause (a sample-archetype product) is already refused
+ * before anything is written, so what remains is exactly the set a client
+ * cannot fix by trying again.
+ *
+ * ## What "delete" means here, and who decided
+ *
+ * Owner ruling 2026-10-15: **soft-delete the whole treatment**, including the
+ * register entries already written for the lines that DID complete.
+ *
+ * That is a real cost and it was put to the owner as one — a partial
+ * treatment holds true ДНЕВНИК records of applications that really happened,
+ * and this removes them. The alternatives offered were cancelling only the
+ * unfinished remainder, and abandoning the remainder while keeping what was
+ * recorded. The owner chose the whole treatment, so the protections are what
+ * make it defensible rather than the scope:
+ *
+ *   • **ADMIN only** (`assertCanAdmin`), the same posture as the journal's
+ *     own soft-delete / restore / purge, rather than the `canWrite` that
+ *     records a treatment.
+ *   • **SOFT**, so every row stays on disk with its audit history and a
+ *     restore is a database operation away.
+ *   • **Audited** as one event naming the handle and what it removed.
+ *   • **INCOMPLETE ONLY.** A complete treatment is a finished compliance
+ *     record and is refused here with a code pointing at the journal's own
+ *     ADMIN flow. Letting both through one endpoint would make this a
+ *     convenience route that drops БАБХ records, which is the thing the
+ *     issue was written to prevent.
+ *
+ * ## Why three different mechanisms
+ *
+ * `Task` and `LogEntry` both carry `deletedAt`, so they are soft-deleted.
+ * `OperationParcel` does NOT — it has only a status — so its unfinished lines
+ * move to `SKIPPED`, the existing "deliberately not done" state that the
+ * completion pass already refuses to touch (it marks `PENDING` only). A line
+ * already `DONE` is left alone: its own record of what happened stays true
+ * even though the entry it wrote is being withdrawn.
+ *
+ * The handle stops resolving because the replay arm looks up tasks with
+ * `deletedAt: null`, so a later re-send mints a fresh treatment rather than
+ * resuming this one.
+ */
+export async function deleteDiaryTreatment(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+): Promise<{ treatmentGroupId: string; tasks: number; entries: number; lines: number }> {
+    assertCanAdmin(ctx);
+
+    const tasks = await runInTenantContext(ctx, (db) =>
+        db.task.findMany({
+            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
+            select: { id: true },
+        }),
+    );
+    if (tasks.length === 0) {
+        throw codedNotFound(
+            'TREATMENT_NOT_FOUND',
+            'No treatment was recorded under that handle.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
+    const taskIds = tasks.map((t) => t.id);
+    const summary = await summariseTreatmentLines(ctx, taskIds);
+    if (summary.complete) {
+        // The compliance record case. 409 rather than 403: the caller has the
+        // right to do this, the treatment is in the wrong STATE for it.
+        throw codedConflict(
+            'TREATMENT_COMPLETE',
+            'This treatment is fully recorded, so it is a farm-record entry rather than an ' +
+                'unfinished write. Remove it through the journal, where a delete is reversible ' +
+                'and separately audited.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        const now = new Date();
+
+        // The lines that never completed. `SKIPPED` because OperationParcel
+        // has no `deletedAt`, and because the completion pass filters on
+        // PENDING — so this also makes the remainder un-markable by any
+        // path that still holds a task id.
+        const lines = await db.operationParcel.updateMany({
+            where: { tenantId: ctx.tenantId, taskId: { in: taskIds }, status: 'PENDING' },
+            data: { status: 'SKIPPED' },
+        });
+
+        // The register entries, found by the handle itself: `treatmentGroupId`
+        // is denormalised onto LogEntry for the fold, so this needs no join
+        // through OperationParcel -> Task.
+        const entries = await db.logEntry.updateMany({
+            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
+            data: { deletedAt: now, deletedByUserId: ctx.userId ?? null },
+        });
+
+        // `clientMutationId` is RELEASED along with the task, and that is not
+        // tidiness — it is what makes the handle reusable.
+        //
+        // Each block's task is created with the derived key
+        // `<handle>:<locationId>` under `@@unique([tenantId, clientMutationId])`.
+        // A soft-deleted row still occupies that key, while the replay lookup
+        // filters `deletedAt: null` and so does not find it — so re-sending
+        // the abandoned handle skipped the replay, went to create, and died on
+        // the unique constraint. A 500 where there used to be a resumable
+        // treatment: strictly worse than the dead end this endpoint exists to
+        // clear. Found by the DB-backed test, which is the only place it could
+        // have been found.
+        //
+        // `treatmentGroupId` is deliberately KEPT, so the abandoned rows still
+        // say which treatment they belonged to. Only the idempotency key goes,
+        // and it is a key rather than a record of anything.
+        const removed = await db.task.updateMany({
+            where: { tenantId: ctx.tenantId, id: { in: taskIds }, deletedAt: null },
+            data: { deletedAt: now, deletedByUserId: ctx.userId ?? null, clientMutationId: null },
+        });
+
+        await logEvent(db, ctx, {
+            action: 'ENTITY_DELETED',
+            entityType: 'Task',
+            entityId: treatmentGroupId,
+            details: `Unfinished treatment ${treatmentGroupId} abandoned`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Treatment',
+                operation: 'soft_deleted',
+                summary:
+                    `Abandoned an unfinished treatment: ${removed.count} task(s), ` +
+                    `${entries.count} journal entr(ies) and ${lines.count} unfinished line(s).`,
+                before: {
+                    parcelCount: summary.parcelCount,
+                    completedCount: summary.completedCount,
+                    complete: summary.complete,
+                },
+            },
+        });
+
+        return {
+            treatmentGroupId,
+            tasks: removed.count,
+            entries: entries.count,
+            lines: lines.count,
+        };
+    });
 }
