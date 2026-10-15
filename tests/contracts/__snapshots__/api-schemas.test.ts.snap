@@ -1749,6 +1749,56 @@ exports[`API contract — per-schema snapshots schema: AuthUiConfig 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AvatarRemoveResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "success"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AvatarUpload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary",
+      "description": "The WebP bytes, at most 512 KB."
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "description": "multipart/form-data body for an avatar upload. One part, named \`file\`."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AvatarUploadResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "imageUrl": {
+      "type": "string",
+      "description": "The caller’s new effective avatar, as a ROOT-RELATIVE path — the same shape \`getCurrentUser\` returns for an uploaded photo, so a client can set it straight into the field it already renders.",
+      "example": "/api/account/avatar/clx8k2p9a0000qwer"
+    }
+  },
+  "required": [
+    "imageUrl"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: BlendLotsResult 1`] = `
 "{
   "type": "object",

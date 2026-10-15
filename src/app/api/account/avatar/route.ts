@@ -16,7 +16,7 @@ import type { NextRequest } from 'next/server';
 import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import {badRequest } from '@/lib/errors/types';
+import { codedBadRequest } from '@/lib/errors/types';
 import {
     uploadOwnAvatar,
     removeOwnAvatar,
@@ -34,11 +34,12 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     const formData = await req.formData();
     const file = formData.get('file');
     if (!(file instanceof File)) {
-        throw badRequest('Missing avatar file in form data.');
+        throw codedBadRequest('AVATAR_FILE_MISSING', 'Missing avatar file in form data.');
     }
     // Reject oversized payloads before buffering them into memory.
     if (file.size > AVATAR_MAX_BYTES) {
-        throw badRequest(
+        throw codedBadRequest(
+            'AVATAR_TOO_LARGE',
             'Processed avatar is too large — re-select a smaller image.',
         );
     }
