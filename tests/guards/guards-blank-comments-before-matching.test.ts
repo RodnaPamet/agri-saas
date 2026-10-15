@@ -57,9 +57,18 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 /**
  * Guards that read source text and match against it WITHOUT blanking.
  *
- * Measured 2026-10-15: **433** — 457 → 449 (batch 1, 8 files) → 433 (batch 2,
- * 16 files). Shrink-only: lower it when a batch converts, never raise it. A
- * new guard that greps source must call `blankNonCode`.
+ * Measured 2026-10-16: **432** — 457 → 449 (batch 1, 8 files) → 433 (batch 2,
+ * 16 files) → 432 (batch 3, 1 file). Shrink-only: lower it when a batch
+ * converts, never raise it. A new guard that greps source must call
+ * `blankNonCode`.
+ *
+ * Batch 3 is ONE file on purpose. It is `no-explicit-any-ratchet`, the second
+ * of the two instances #1774 opened with and the one it declined to fix in
+ * place because "blanking comments LOWERS the measured count, and the cap has
+ * to come down with it". Measured before converting: it does not. The
+ * heuristic and the stripper agree exactly at 4, with zero files disagreeing
+ * across `src/`, so `CURRENT_BASELINE` did not move — the capped class turned
+ * out to be cheaper than the issue priced it, for this member at least.
  *
  * Raised to the branch's LIVE count each time rather than to a round number:
  * slack here is how the next unblanked guard arrives unnoticed, which is what
@@ -75,7 +84,7 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * move this constant, so two in flight at once is the shared-ratchet collision
  * the cap exists to prevent, one level up.
  */
-const UNBLANKED_CAP = 433;
+const UNBLANKED_CAP = 432;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -185,9 +194,13 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
         expect(UNBLANKED_CAP - unblanked.length).toBeLessThanOrEqual(DRIFT_ALLOWANCE);
     });
 
-    it('the three guards that have been converted stay converted', () => {
+    it('every guard that has been converted stays converted', () => {
         // Named, because a revert would otherwise just free a slot under the
         // cap. These are the instances #1774 records as fixed.
+        //
+        // The name said "the three guards" while the list held 27 — a count in
+        // a NAME goes stale with nothing failing, and the body is the thing
+        // that was right. Phrased without a number now.
         for (const rel of [
             'tests/guardrails/api-error-wrapper-coverage.test.ts',
             'tests/guards/swr-paths-resolve.test.ts',
@@ -227,6 +240,18 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/guards/b1-selection-header-bar.test.ts',
             'tests/guards/b5-entity-prev-next-nav.test.ts',
             'tests/guards/sharepoint-sp5.test.ts',
+            // Batch 3, #1774 — the first CAPPED guard, and the issue's own
+            // instance 2. Its cap did not move: the heuristic it replaces and
+            // the stripper agree at 4 across `src/`.
+            //
+            // The conversion also removed a whole-tree cross-check that
+            // re-implemented the old line heuristic. Keeping it would have
+            // re-introduced the defect through the back door — the heuristic
+            // counts `x; // as any other row` and the stripper does not, so
+            // the two diverge on ordinary English and the guard would go red
+            // on prose again, just with a different message. Replaced with a
+            // fixture control that runs the real counter.
+            'tests/guardrails/no-explicit-any-ratchet.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);
