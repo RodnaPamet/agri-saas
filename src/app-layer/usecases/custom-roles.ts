@@ -15,7 +15,7 @@ import { RequestContext } from '../types';
 import { assertCanManageMembers } from '../policies/admin.policies';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { codedNotFound, notFound, badRequest, forbidden } from '@/lib/errors/types';
 import { permissionsExceeding, validatePermissionsJson } from '@/lib/permissions';
 import type { Role } from '@prisma/client';
 
@@ -353,7 +353,17 @@ export async function assignCustomRole(
         });
 
         if (!membership) {
-            throw notFound('Membership not found or not active.');
+            // `requiredStatus` because the query filters on ACTIVE, so an
+            // absent membership and an inactive one both arrive here as null
+            // and the server cannot tell them apart. Same arrangement as
+            // `tenant-admin.ts`, which `membership-not-found-is-one-code`
+            // pins: one code, and the param carries the state the operation
+            // needed rather than a cause the server guessed.
+            throw codedNotFound(
+                'MEMBERSHIP_NOT_FOUND',
+                'Membership not found or not active.',
+                { requiredStatus: 'ACTIVE' },
+            );
         }
 
         // If assigning, verify the custom role exists and belongs to this tenant

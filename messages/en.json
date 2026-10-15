@@ -1479,7 +1479,10 @@
             "consentStale": "The consent text has been updated since you confirmed it. Please read it again before the page becomes public.",
             "downloadCard": "Download a printable card (A6)",
             "downloadCardHint": "A PDF, 105 × 148 mm, with a QR code to the page. Made to be printed and handed out at the market.",
-            "shownPublicly": "Shown publicly"
+            "shownPublicly": "Shown publicly",
+            "previewHeading": "Preview",
+            "previewHelp": "How the page looks to a visitor, including changes you have not saved yet.",
+            "previewNoName": "(no name)"
         }
     },
     "ui": {
@@ -6530,6 +6533,11 @@
         "MAINTENANCE_RECORD_NOT_FOUND": "That maintenance record was not found.",
         "MEMBERSHIP_NOT_FOUND": "Membership not found or not active.",
         "MESSAGE_NOT_FOUND": "That message was not found.",
+        "MFA_CODE_INVALID": "That code is not right. Attempts remaining: {attemptsRemaining}.",
+        "MFA_CODE_MALFORMED": "A six-digit code is required.",
+        "MFA_ENROLLMENT_REQUIRED": "This farm requires a second factor and this account has none set up yet. Set up an authenticator app from the web, then sign in again.",
+        "MFA_REQUIRED": "This farm requires a second factor. Confirm with a code from your authenticator app.",
+        "MFA_TICKET_INVALID": "This sign-in attempt is no longer valid. Start again from the beginning.",
         "MODULE_DISABLED": {
             "tenant": "This part of the app is switched off for this farm. A farm administrator can turn it on.",
             "plan": "This part of the app is not included in the farm’s plan."
@@ -6561,6 +6569,8 @@
         "TASK_EVIDENCE_NOT_FOUND": "That task evidence was not found.",
         "TASK_LINK_NOT_FOUND": "That task link was not found.",
         "TASK_NOT_FOUND": "That task was not found.",
+        "TENANT_IDENTIFIER_REQUIRED": "The address is missing a farm identifier. Open the farm from your list of farms.",
+        "TENANT_NOT_FOUND": "This farm was not found. It may have been removed, or your access to it may have ended.",
         "THREAD_NOT_FOUND": "That conversation was not found.",
         "THREAD_PERSON_BLOCKED": "You have blocked this person. Unblock them to continue the conversation.",
         "TREATMENT_ABANDONED": "This treatment was abandoned by an administrator. Do not send it again — record it afresh under a new key if the work still needs a register entry.",

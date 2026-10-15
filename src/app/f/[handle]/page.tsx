@@ -5,7 +5,7 @@ import { isFeatureEnabled } from '@/lib/feature-flags';
 import { getTranslations } from 'next-intl/server';
 
 import { readPublicFarmProfile } from '@/app-layer/usecases/public-farm-profile';
-import { Heading } from '@/components/ui/typography';
+import { PublicFarmBody } from '@/components/public-profile/public-farm-body';
 
 /**
  * A farm in public — `/f/[handle]` (P6.5, #1814).
@@ -104,56 +104,19 @@ export default async function PublicFarmProfilePage({ params }: PageProps) {
 
     return (
         <main className="mx-auto max-w-2xl px-4 py-10" data-testid="public-farm-profile">
-            <Heading level={1} data-testid="public-farm-name">
-                {profile.displayName}
-            </Heading>
-
-            {profile.tagline ? (
-                <p className="mt-2 text-content-muted" data-testid="public-farm-tagline">
-                    {profile.tagline}
-                </p>
-            ) : null}
-
-            {profile.oblast ? (
-                <p className="mt-4 text-sm text-content-muted" data-testid="public-farm-oblast">
-                    {t('oblast', { oblast: profile.oblast })}
-                </p>
-            ) : null}
-
-            {profile.crops.length > 0 ? (
-                <section className="mt-6" data-testid="public-farm-crops">
-                    {/* A real `<h2>` via the primitive, not an `<Eyebrow>`:
-                        `Eyebrow` renders a `<span>`, and on a PUBLIC page the
-                        document outline is read by screen readers and by
-                        crawlers once P6.6 lets a farm opt into indexing. A
-                        label that looks like a heading and is not one costs
-                        both. */}
-                    <Heading level={2}>{t('cropsTitle')}</Heading>
-                    <ul className="mt-2 flex flex-wrap gap-tight">
-                        {profile.crops.map((crop) => (
-                            <li
-                                key={crop}
-                                className="rounded-full border border-border-subtle px-3 py-1 text-sm"
-                            >
-                                {crop}
-                            </li>
-                        ))}
-                    </ul>
-                </section>
-            ) : null}
-
-            {profile.about ? (
-                <section className="mt-6" data-testid="public-farm-about">
-                    <Heading level={2}>{t('aboutTitle')}</Heading>
-                    {/* Plain text, rendered as text. The value is sanitised on
-                        the way into `FarmBrand` and the projection copies it
-                        verbatim, so there is no markup to honour here — and
-                        rendering it as HTML would make the sanitiser the only
-                        thing between a farm and an XSS on a page served to
-                        strangers. */}
-                    <p className="mt-2 whitespace-pre-line">{profile.about}</p>
-                </section>
-            ) : null}
+            {/* The body is a SHARED component (#1815): the editor's live
+                preview renders this same markup, so a preview cannot drift
+                from the page it claims to show. Labels are resolved here,
+                server-side, and passed as strings — which is what lets a
+                `'use client'` preview use the identical component. */}
+            <PublicFarmBody
+                profile={profile}
+                labels={{
+                    oblastLine: profile.oblast ? t('oblast', { oblast: profile.oblast }) : null,
+                    cropsTitle: t('cropsTitle'),
+                    aboutTitle: t('aboutTitle'),
+                }}
+            />
         </main>
     );
 }

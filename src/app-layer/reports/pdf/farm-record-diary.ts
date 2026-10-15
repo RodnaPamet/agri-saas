@@ -21,7 +21,7 @@
  */
 import type { RequestContext } from '@/app-layer/types';
 import { assertCanRead } from '@/app-layer/policies/common';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
 import { resolveOperationType } from '@/app-layer/usecases/field-operation';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -1375,7 +1375,7 @@ export async function generateSeasonDiaryPdf(
             where: { id: opts.seasonId, tenantId: ctx.tenantId },
             select: { name: true, startDate: true, endDate: true },
         });
-        if (!season) throw notFound('Season not found');
+        if (!season) throw codedNotFound('SEASON_NOT_FOUND', 'Season not found');
         const f = season.startDate.toISOString().slice(0, 10);
         const t = season.endDate.toISOString().slice(0, 10);
 

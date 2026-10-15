@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { codedNotFound, notFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { PrismaTx } from '@/lib/db-context';
 import type {
@@ -140,7 +140,7 @@ async function requireContract(db: PrismaTx, tenantId: string, contractId: strin
         where: { id: contractId, tenantId, deletedAt: null },
         select: { id: true, status: true, volumeTonnes: true, counterparty: true },
     });
-    if (!contract) throw notFound('Contract not found');
+    if (!contract) throw codedNotFound('CONTRACT_NOT_FOUND', 'Contract not found');
     return contract;
 }
 

@@ -34,7 +34,7 @@ import {
     parseVarietySoilDefaults,
     type SuitabilityResult,
 } from '@/lib/soil/suitability';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { assertCanRead } from '../policies/common';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
@@ -74,7 +74,7 @@ export async function getPlantingSoilSuitability(
                 variety: { select: { soilDefaultsJson: true } },
             },
         });
-        if (!planting) throw notFound('Planting not found');
+        if (!planting) throw codedNotFound('PLANTING_NOT_FOUND', 'Planting not found');
 
         const soil = (planting.parcel?.soilJson ?? null) as SoilProfile | null;
         const defaults = parseVarietySoilDefaults(planting.variety?.soilDefaultsJson ?? null);
