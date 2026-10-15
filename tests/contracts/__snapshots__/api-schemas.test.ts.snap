@@ -8538,6 +8538,49 @@ exports[`API contract — per-schema snapshots schema: JournalFileUpload 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: JournalFoldedRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "occurredAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "treatment": {
+      "$ref": "#/components/schemas/Treatment"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "status",
+    "treatment"
+  ],
+  "additionalProperties": {}
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: LeasePayment 1`] = `
 "{
   "type": "object",
@@ -15586,6 +15629,108 @@ exports[`API contract — per-schema snapshots schema: TraceLotResult 1`] = `
     "edges"
   ],
   "description": "A lot’s provenance in both directions. ancestors and descendants are flat arrays; \`edges\` is what makes them a graph."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string"
+    },
+    "occurredOn": {
+      "type": "string",
+      "description": "The day the work happened as the FARM sees it (\`YYYY-MM-DD\`, Europe/Sofia), not a UTC slice of \`occurredAt\`. For a free-hand entry typed between 00:00 and 03:00 in Sofia those two differ by a day.",
+      "example": "2026-03-09"
+    },
+    "kind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "\`SPRAY\` or \`FERTILIZE\`."
+    },
+    "productName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parcelCount": {
+      "type": "integer",
+      "description": "0 on an ordinary manual entry. The discriminator for \\"is this a treatment\\"."
+    },
+    "totalAreaHa": {
+      "type": "number",
+      "description": "HECTARES, as stored. The web renders decares; the conversion belongs where the number is shown."
+    },
+    "blockNames": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "doseValue": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "doseUnit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The unit SYMBOL, not its id."
+    },
+    "targetNote": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "applicationTechnique": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "quarantinePeriodDays": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "The line's own period, falling back to the product's."
+    },
+    "earliestHarvestOn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Computed server-side from the period that applied ON THE DAY, so every client shows the same date and it matches the PDF. Null when no period was captured — never the treatment day itself, which would read as \\"harvest today\\".",
+      "example": "2026-03-30"
+    },
+    "recordedInDiary": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "occurredOn",
+    "kind",
+    "productName",
+    "parcelCount",
+    "totalAreaHa",
+    "blockNames",
+    "doseValue",
+    "doseUnit",
+    "targetNote",
+    "applicationTechnique",
+    "quarantinePeriodDays",
+    "earliestHarvestOn",
+    "recordedInDiary"
+  ]
 }"
 `;
 
