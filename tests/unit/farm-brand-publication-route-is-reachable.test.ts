@@ -19,6 +19,16 @@
  * assert the value that ARRIVED, in both directions, rather than that the
  * usecase was called.
  */
+// The flag gating this route (#1886) is OFF by default, which is the point of
+// it. This suite's subject is that the route REACHES its usecase, so it runs
+// with the gate open; the gate itself is asserted in
+// `tests/integration/p6-public-surfaces-are-gated.test.ts`.
+jest.mock('@/lib/feature-flags', () => ({
+    ...jest.requireActual('@/lib/feature-flags'),
+    isFeatureEnabled: async () => true,
+    assertFeatureEnabled: async () => undefined,
+}));
+
 import { NextRequest } from 'next/server';
 
 import type { RequestContext } from '@/app-layer/types';
