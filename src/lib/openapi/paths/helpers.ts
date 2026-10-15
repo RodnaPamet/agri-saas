@@ -38,6 +38,28 @@ import type { OpenAPIRegistry, RouteConfig } from '@asteasolutions/zod-to-openap
 import type { ZodObject, ZodTypeAny } from 'zod';
 import { ApiErrorResponseSchema, RawErrorResponseSchema } from '@/lib/dto/common';
 
+/**
+ * `security: []` — this operation needs NO credential (#1843).
+ *
+ * Exported so there is ONE spelling of it. `op()` below defaults every
+ * operation to `[{sessionCookie}, {bearerToken}]` (`input.security ?? …`) —
+ * there is NO document-level `security`, so the default is applied per
+ * operation at registration. An anonymous route that omits this is therefore
+ * documented as requiring a session it does not require, a client generated
+ * from the spec sends credentials it does not have, and a stranger's browser
+ * or a signed-out phone cannot send them at all.
+ *
+ * That was live for two routes whose own descriptions said "ANONYMOUS":
+ * `searchPublicFarms` and `fileAnonymousNotice`. The second is a DSA Art 16
+ * notice form, which any person must be able to use — the same obligation
+ * #1745 found 401'd at the Edge for seven weeks. Documenting it as
+ * credentialed is a quieter version of the same mistake.
+ *
+ * Held by `tests/guards/public-operations-need-no-credential.test.ts`, which
+ * derives its population from `isPublicPath` rather than from a list here.
+ */
+export const NO_AUTH: Array<Record<string, string[]>> = [];
+
 /** The auth schemes the API actually uses. Registered once, referenced by name. */
 export function registerSecuritySchemes(registry: OpenAPIRegistry): void {
     registry.registerComponent('securitySchemes', 'sessionCookie', {

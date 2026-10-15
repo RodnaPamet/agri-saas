@@ -76,6 +76,32 @@ model ExchangeListing {
   description       String?
   /// Opt-in public seller name (a tenant may stay anonymous).
   sellerDisplayName String?
+  /// Whether this listing is published AS THE FARM — P6.7 (#1816).
+  ///
+  /// `sellerDisplayName` above is free text a seller types, so it cannot say
+  /// anything a seller could not simply claim. This flag is the verified
+  /// alternative: when it is set, the listing's seller name is resolved from
+  /// the tenant's own PUBLISHED `FarmBrand` and the listing links to
+  /// `/f/{handle}`.
+  ///
+  /// Resolved LIVE at projection time rather than snapshotted here, and that
+  /// is the whole design. A farm that renames its handle, or withdraws its
+  /// public profile entirely, changes every old listing in the same moment —
+  /// where a copied name and handle would leave listings pointing at an
+  /// address that stopped answering. So this column holds only the DECISION;
+  /// the identity it resolves to always belongs to the brand.
+  ///
+  /// Per-listing rather than per-tenant because the two are different
+  /// consents: a farm may be happy to be named selling wheat and not named
+  /// selling off equipment. Publishing a public profile is agreement to have
+  /// a page, not agreement to be identified on every offer.
+  ///
+  /// NOTHING WRITES THIS YET. The column ships one release ahead of its
+  /// writer so the migration is verified in production before any code
+  /// depends on it — the same split #1850 and #1873 used for
+  /// `FarmBrand.indexable`. `tests/guards/exchange-publish-as-farm-has-no-writer-yet.test.ts`
+  /// holds that claim and has to be deleted by the PR that adds the writer.
+  publishAsFarm     Boolean @default(false)
   /// Seller's chosen contact for THIS listing (phone / email / whatever they
   /// want a counterparty to use). NEVER public: withheld from every feed and
   /// detail projection, and revealed to ONE buyer only when the seller accepts
