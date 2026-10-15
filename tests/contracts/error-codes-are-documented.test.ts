@@ -164,6 +164,34 @@ function classCodes(src: string): string[] {
  * stops being emitted, so this list cannot outlive what it excuses.
  */
 const UNDOCUMENTED_BASELINE: readonly string[] = [
+    // `UPLOAD_INFECTED`, `UPLOAD_SCANNER_UNAVAILABLE` and
+    // `UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE` are new as of #1811 and here for
+    // the `COMPANY_NAME_TAKEN` reason below, measured the same way.
+    //
+    // All three are thrown by `scanOrRefuse`, whose ONLY caller is
+    // `uploadOwnAvatar` — so the route that can emit them is
+    // `POST /api/account/avatar`, and `src/generated/openapi.json` documents
+    // only `GET /api/account/avatar/{userId}`. The upload route exports
+    // `POST` and `DELETE` and neither is in the spec.
+    //
+    // `/api/account/avatar` is ALREADY on `openapi-undocumented-baseline.json`
+    // (one of its 215 entries), so this is not a new gap — it is the same
+    // tracked one reached from the code side instead of the route side,
+    // exactly as the task-link codes below.
+    //
+    // Documenting it means authoring two operations with accurate multipart
+    // request bodies and response shapes, which is a larger change than the
+    // one that coded the throws. Filed separately rather than invented here:
+    // a description guessed at from a route I had not fully read would be
+    // worse than a visible line on this list.
+    //
+    // Note the three were NOT introduced to raise this list. They REPLACED
+    // bare `badRequest` sentences, so the same change lowered
+    // `no-server-authored-user-copy` by two — a coded throw is exempt there.
+    'UPLOAD_INFECTED',
+    'UPLOAD_SCANNER_UNAVAILABLE',
+    'UPLOAD_UNSCANNED_ON_PUBLIC_SURFACE',
+
     // `COMPANY_NAME_TAKEN` and `PROMOTION_LEAD_ALREADY_SENT` are new as of
     // #1391's 409 work and are here for a specific reason: their ROUTES are
     // not in the spec at all (`/admin/companies/{id}`, `/offers/leads`,
