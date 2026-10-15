@@ -1,26 +1,107 @@
 {
   "ci": {
     "collect": {
-      "url": ["http://localhost:3006/login"],
+      "url": [
+        "http://localhost:3006/login",
+        "http://localhost:3006/f/lighthouse"
+      ],
       "numberOfRuns": 3,
       "settings": {
         "formFactor": "mobile",
-        "screenEmulation": { "mobile": true, "width": 390, "height": 844, "deviceScaleFactor": 3, "disabled": false },
+        "screenEmulation": {
+          "mobile": true,
+          "width": 390,
+          "height": 844,
+          "deviceScaleFactor": 3,
+          "disabled": false
+        },
         "throttlingMethod": "simulate",
-        "onlyCategories": ["performance"],
+        "onlyCategories": [
+          "performance"
+        ],
         "chromeFlags": "--no-sandbox --headless=new --disable-gpu --disable-dev-shm-usage --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --disable-background-timer-throttling"
       }
     },
     "assert": {
-      "//": "Re-baselined 2026-07-13. The /login page grew since the 2026-06-19 baseline (bundle + the ~6.3k-key i18n catalog shipped to unauthenticated pages): LCP is now a STABLE ~6.15s (3 runs 6.11-6.16s) and TBT is NOISY on shared CI runners (900-2630ms run-to-run). This stays a REGRESSION GATE, not an aspirational target — hard `error` budgets remain on the STABLE metrics (LCP 7000 = ~850ms headroom over 6.15s; CLS 0.25) so a real regression fails, while TBT is demoted to a non-failing `warn` (2500) because its run-to-run variance flaked the build by fractions of a ms (a median of 900.2 against a 900 budget). TBT is still tracked in the report. The June->July regression is real and worth a dedicated perf pass — the biggest lever is trimming the full message catalog sent to unauthenticated pages. simulate throttling is host-independent so CI matches local.",
-      "assertions": {
-        "categories:performance": ["warn", { "minScore": 0.45 }],
-        "largest-contentful-paint": ["error", { "maxNumericValue": 7000 }],
-        "total-blocking-time": ["warn", { "maxNumericValue": 2500 }],
-        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.25 }],
-        "first-contentful-paint": ["warn", { "maxNumericValue": 3800 }]
-      }
+      "//": "TWO urls as of P6.5 (#1814), with SEPARATE budgets \u2014 a single `assertions` block would have applied /login's 7000ms LCP to the public page, which is the number this phase exists to beat rather than to inherit. Measured 2026-10-15: this gate covered ONE of 395 live routes, and the one route P6.5 promises an LCP target for was not it.\n\n/f/{handle} starts on `warn` DELIBERATELY. Its real LCP has never been measured, and the repo's rule for this file is that a budget is a REGRESSION GATE set just above a known-stable number, not an aspirational target asserted before anybody looked. The 2500ms in #1814's title is a goal; the `error` gate goes in once the three-run median is in a report. Asserting 2500 now would either pass by luck or fail a PR for a number nobody had measured.",
+      "assertMatrix": [
+        {
+          "matchingUrlPattern": ".*/login$",
+          "//": "Re-baselined 2026-07-13. The /login page grew since the 2026-06-19 baseline (bundle + the ~6.3k-key i18n catalog shipped to unauthenticated pages): LCP is now a STABLE ~6.15s (3 runs 6.11-6.16s) and TBT is NOISY on shared CI runners (900-2630ms run-to-run). This stays a REGRESSION GATE, not an aspirational target \u2014 hard `error` budgets remain on the STABLE metrics (LCP 7000 = ~850ms headroom over 6.15s; CLS 0.25) so a real regression fails, while TBT is demoted to a non-failing `warn` (2500) because its run-to-run variance flaked the build by fractions of a ms (a median of 900.2 against a 900 budget). TBT is still tracked in the report. The June->July regression is real and worth a dedicated perf pass \u2014 the biggest lever is trimming the full message catalog sent to unauthenticated pages. simulate throttling is host-independent so CI matches local.",
+          "assertions": {
+            "categories:performance": [
+              "warn",
+              {
+                "minScore": 0.45
+              }
+            ],
+            "largest-contentful-paint": [
+              "error",
+              {
+                "maxNumericValue": 7000
+              }
+            ],
+            "total-blocking-time": [
+              "warn",
+              {
+                "maxNumericValue": 2500
+              }
+            ],
+            "cumulative-layout-shift": [
+              "error",
+              {
+                "maxNumericValue": 0.25
+              }
+            ],
+            "first-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 3800
+              }
+            ]
+          }
+        },
+        {
+          "matchingUrlPattern": ".*/f/.*",
+          "//": "The public farm page. MEASURED 2026-10-15, three runs on a CI runner: LCP 3635 ms, FCP 1688 ms, Speed Index 1709 ms, TBT 380 ms, CLS 0.002, performance 80.\n\nP6.5's target is LCP <= 2500 ms and this MISSES it by ~1.1 s. The numbers below are therefore a REGRESSION GATE set just above what was measured, following this file's own rule and /login's precedent (6150 measured -> 7000 gate). They are NOT the target, and writing 2500 here would fail every build for a goal nothing has yet achieved.\n\nWhat the comparison DOES show: /login measured 6562 ms LCP in the same report, so the public page is ~45% faster on the metric that matters, and the slim i18n payload (#1842, P6.4) is why \u2014 it is the only surface where the catalog was trimmed, 475 B of 404,981 B. /login's own note named that as the biggest available lever and this is the first evidence it works.\n\nThe remaining ~1.1 s has a named suspect rather than a mystery: TBT is 380 ms on a page whose server output is a heading and five short fields, which means JS is still executing. P6.4's open follow-up is the six client components that mount on every render \u2014 ServiceWorkerRegistrar, WebVitalsReporter, ClientDataRetentionSweep, Providers, InstallPrompt. Trimming those is the next measurable step, and `Providers` mounts ThemeProvider which this page's tokens use, so it needs its own measurement rather than a deletion.",
+          "assertions": {
+            "categories:performance": [
+              "warn",
+              {
+                "minScore": 0.75
+              }
+            ],
+            "largest-contentful-paint": [
+              "error",
+              {
+                "maxNumericValue": 4200
+              }
+            ],
+            "total-blocking-time": [
+              "warn",
+              {
+                "maxNumericValue": 600
+              }
+            ],
+            "cumulative-layout-shift": [
+              "error",
+              {
+                "maxNumericValue": 0.05
+              }
+            ],
+            "first-contentful-paint": [
+              "warn",
+              {
+                "maxNumericValue": 2000
+              }
+            ]
+          }
+        }
+      ]
     },
-    "upload": { "target": "filesystem", "outputDir": ".lighthouseci" }
+    "upload": {
+      "target": "filesystem",
+      "outputDir": ".lighthouseci"
+    }
   }
 }

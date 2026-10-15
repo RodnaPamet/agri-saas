@@ -55,6 +55,10 @@ import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { projectionPayload } from '../projections/public-farm-profile.allowlist';
+import type {
+    RecordFarmBrandConsentInput,
+    UpdateFarmBrandInput,
+} from '../schemas/farm-brand.schemas';
 import {
     MAX_HANDLE_SUGGESTIONS,
     checkHandleShape,
@@ -670,4 +674,167 @@ export async function claimFarmBrandHandle(
         return { handle, normalised: verdict.normalised, reprojected: true };
     }
     return { handle, normalised: verdict.normalised, reprojected: false };
+}
+
+/**
+ * Save the farm's public content — P6.6 (#1815).
+ *
+ * ## This is an UPSERT, and that is the point of it
+ *
+ * Nothing in the product could create a `FarmBrand` before this. Measured on
+ * main before this change: `farmBrand.create`, `farmBrand.upsert` and
+ * `farmBrand.createMany` appeared NOWHERE in `src/`, `scripts/` or
+ * `prisma/`, and `prisma/seed.ts` never mentioned the model — every row in
+ * existence had been written by a test fixture.
+ *
+ * So `/f/{handle}` could not serve any real farm, the sitemap was correctly
+ * empty, and both brand routes refused `FARM_BRAND_NOT_FOUND` every time
+ * they were called. Five phases shipped behind a precondition nothing
+ * satisfied (#1867). The upsert is what makes all of it reachable.
+ *
+ * ## `undefined` leaves a field alone; `null` clears it
+ *
+ * An owner fills this in over several sittings, and an editor autosaves. If
+ * absent and explicitly-cleared were the same, saving a tagline would wipe
+ * the `about` the owner wrote yesterday and never opened today. So the write
+ * is assembled from the keys actually present.
+ *
+ * ## Publication preconditions are NOT enforced here
+ *
+ * A draft may be incomplete. `displayName` is nullable in the schema even
+ * though the projection's column is NOT NULL, because refusing a nameless
+ * draft would stop an owner saving a tagline before they have decided what
+ * to call the farm. `setFarmBrandPublication` is where the three
+ * preconditions bite, which is the right place: they are conditions for
+ * being PUBLIC, not for having a draft.
+ */
+export async function updateFarmBrand(
+    ctx: RequestContext,
+    input: UpdateFarmBrandInput,
+): Promise<{ created: boolean; reprojected: boolean }> {
+    assertCanAdmin(ctx);
+
+    // Only the keys the caller sent. `crops` is absent-or-replaced rather
+    // than nullable: an empty array IS the cleared state for a list, so a
+    // separate null would be a second spelling of the same thing.
+    const data: Record<string, unknown> = {};
+    if (input.displayName !== undefined) data.displayName = input.displayName;
+    if (input.tagline !== undefined) data.tagline = input.tagline;
+    if (input.about !== undefined) data.about = input.about;
+    if (input.oblast !== undefined) data.oblast = input.oblast;
+    if (input.crops !== undefined) data.crops = input.crops;
+
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        const before = await db.farmBrand.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: { id: true, published: true },
+        });
+
+        if (!before) {
+            const row = await db.farmBrand.create({
+                data: { tenantId: ctx.tenantId, ...data },
+                select: { id: true },
+            });
+            await logEvent(db, ctx, {
+                action: 'FARM_BRAND_CREATED',
+                entityType: 'FarmBrand',
+                entityId: row.id,
+                details: 'Public profile draft created',
+                detailsJson: { category: 'status_change', entityName: 'FarmBrand' },
+            });
+            // A new draft cannot be published, so there is nothing to
+            // reproject — `published` defaults to false.
+            return { created: true, published: false };
+        }
+
+        await db.farmBrand.update({ where: { id: before.id }, data });
+        await logEvent(db, ctx, {
+            action: 'FARM_BRAND_UPDATED',
+            entityType: 'FarmBrand',
+            entityId: before.id,
+            details: 'Public profile content edited',
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'FarmBrand',
+                // WHICH fields changed, not their values. The content is
+                // destined to be public, but an audit row naming every edit
+                // of an unpublished draft would be a record of what the owner
+                // tried and withdrew.
+                fields: Object.keys(data).sort(),
+            },
+        });
+        return { created: false, published: before.published };
+    });
+
+    // A published farm's page must agree with its brand, or an edit silently
+    // changes nothing a visitor can see. Separate transaction, for the reason
+    // `setFarmBrandPublication` gives.
+    if (outcome.published) {
+        await projectFarmBrand(ctx);
+        return { created: outcome.created, reprojected: true };
+    }
+    return { created: outcome.created, reprojected: false };
+}
+
+/**
+ * Record consent to publish identifiable information about this farm — P6.6.
+ *
+ * Its own operation rather than a field on the content save. Consent is a
+ * legal artefact: it records that a person was shown a specific text and
+ * agreed to it. A content `PUT` is autosaved, and an autosave that recorded
+ * consent would be claiming somebody read something they never saw — the one
+ * thing a consent record must not be able to say.
+ *
+ * `textVersion` is what makes it checkable. "They consented" is unfalsifiable
+ * once the wording changes; "they consented to v2" can be held against the v2
+ * text.
+ *
+ * Requires the draft to exist, because consent to publish a farm that has no
+ * brand record is consent to nothing.
+ */
+export async function recordFarmBrandConsent(
+    ctx: RequestContext,
+    input: RecordFarmBrandConsentInput,
+): Promise<{ consentedAt: Date; textVersion: string }> {
+    assertCanAdmin(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const brand = await db.farmBrand.findFirst({
+            where: { tenantId: ctx.tenantId },
+            select: { id: true },
+        });
+        if (!brand) {
+            throw codedNotFound(
+                'FARM_BRAND_NOT_FOUND',
+                'This farm has no public profile draft to consent to.',
+            );
+        }
+
+        // Re-consenting MOVES the timestamp rather than being refused. The
+        // text changes, and the record that matters is the most recent
+        // agreement to the current wording — a first-consent-wins rule would
+        // leave a farm published against a text nobody alive agreed to.
+        const row = await db.farmBrand.update({
+            where: { id: brand.id },
+            data: { consentedAt: new Date(), consentTextVersion: input.textVersion },
+            select: { consentedAt: true, consentTextVersion: true },
+        });
+
+        await logEvent(db, ctx, {
+            action: 'FARM_BRAND_CONSENT_RECORDED',
+            entityType: 'FarmBrand',
+            entityId: brand.id,
+            details: `Consent recorded for text ${input.textVersion}`,
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'FarmBrand',
+                consentTextVersion: input.textVersion,
+            },
+        });
+
+        return {
+            consentedAt: row.consentedAt as Date,
+            textVersion: row.consentTextVersion as string,
+        };
+    });
 }

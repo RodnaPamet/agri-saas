@@ -28,6 +28,10 @@
  * prints a `::warning::` annotation naming what it did not find. Same
  * principle as the RLS guardrail's execution-status banner.
  *
+ * ONE TABLE PER URL. `lighthouserc.json` collects more than one page as of
+ * #1814, and medians from different pages must never share a row — see
+ * `groupByUrl`.
+ *
  * Per-METRIC median, not Lighthouse's "median run". With 3 runs they usually
  * coincide; where they differ, a per-metric median is the more honest summary
  * of a noisy metric like TBT (which `lighthouserc.json` documents as varying
@@ -54,6 +58,31 @@ export function median(values) {
     const s = [...values].sort((a, b) => a - b);
     const mid = Math.floor(s.length / 2);
     return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
+}
+
+/**
+ * Reports split by the url they measured — one group per page.
+ *
+ * Added when P6.5 (#1814) made this a MULTI-url run. Before that
+ * `lighthouserc.json` collected only `/login`, so the script medianed every
+ * report together and labelled the table with `reports[0]`'s url, which was
+ * correct by accident.
+ *
+ * With two urls that produced the exact defect this script exists to prevent:
+ * the first multi-url run reported "6 run(s) — .../login" with an LCP of
+ * 4960 ms, a figure that was three runs of a slow page and three of a fast
+ * one averaged together and then attributed to one of them. The gate itself
+ * was fine — `assertMatrix` evaluates per url — so a number nobody could
+ * trust was presented beside a verdict that was.
+ */
+export function groupByUrl(reports) {
+    const groups = new Map();
+    for (const r of reports) {
+        const url = r?.finalDisplayedUrl ?? r?.finalUrl ?? '(unknown url)';
+        if (!groups.has(url)) groups.set(url, []);
+        groups.get(url).push(r);
+    }
+    return groups;
 }
 
 export function summarise(reports) {
@@ -123,8 +152,10 @@ function main() {
         console.log(`::warning::lighthouse-median: ${unreadable} of ${files.length} report(s) unreadable.`);
     }
 
-    const summary = summarise(reports);
-    const out = render(summary, reports[0]?.finalDisplayedUrl ?? reports[0]?.finalUrl);
+    // One table per url, ordered by url so the output is stable across runs
+    // rather than following whatever order the filesystem returned.
+    const groups = [...groupByUrl(reports).entries()].sort(([a], [b]) => a.localeCompare(b));
+    const out = groups.map(([url, group]) => render(summarise(group), url)).join('\n\n');
     console.log(out);
 
     const stepSummary = process.env.GITHUB_STEP_SUMMARY;
