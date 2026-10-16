@@ -49,14 +49,19 @@ jest.mock('@/lib/prisma', () => ({
     default: { user: { update: jest.fn() } },
 }));
 
+import sharp from 'sharp';
+
 import {
     isWebp,
+    acceptedAvatarUpload,
     avatarStorageKey,
     avatarServeUrl,
     uploadOwnAvatar,
     removeOwnAvatar,
     getAvatarStream,
     AVATAR_MAX_BYTES,
+    AVATAR_UPLOAD_MAX_BYTES,
+    AVATAR_PX,
 } from '@/lib/account/avatar';
 import { getStorageProvider } from '@/lib/storage';
 import prisma from '@/lib/prisma';
@@ -65,6 +70,47 @@ const mockGetStorageProvider = getStorageProvider as jest.Mock;
 const mockUserUpdate = (prisma as unknown as {
     user: { update: jest.Mock };
 }).user.update;
+
+/**
+ * REAL encoded images, because since #1903 the server decodes what it is
+ * given rather than only sniffing it.
+ *
+ * `webpBuffer()` below is a 12-byte header with no image in it. That was
+ * enough while the check was a magic-number sniff, and it is exactly the
+ * fixture that stops being enough once bytes are decoded — a header-only
+ * buffer now fails the decode and lands on `AVATAR_UNREADABLE`, which is
+ * correct behaviour and a useless fixture for the happy path. Kept for the
+ * sniff tests, which are still only sniffing.
+ */
+let realWebp: Buffer;
+let realJpeg: Buffer;
+/** A JPEG carrying EXIF including GPS tags — the privacy case. */
+let jpegWithGps: Buffer;
+
+beforeAll(async () => {
+    realWebp = await sharp({
+        create: { width: 300, height: 200, channels: 3, background: '#4a7' },
+    })
+        .webp()
+        .toBuffer();
+    realJpeg = await sharp({
+        create: { width: 300, height: 200, channels: 3, background: '#246' },
+    })
+        .jpeg()
+        .toBuffer();
+    // Written through IFD0 rather than `GPSIFD`. libvips accepts a GPSIFD
+    // directory and sharp's TS `Exif` type models only IFD0–IFD3, so naming
+    // it needs a cast — and a cast is not worth carrying here, because GPS
+    // tags live INSIDE the EXIF block this test asserts is wholly absent.
+    // Proving the block is gone proves the GPS tags with it; proving one tag
+    // gone would be the weaker claim.
+    jpegWithGps = await sharp({
+        create: { width: 400, height: 240, channels: 3, background: '#812' },
+    })
+        .withExif({ IFD0: { Make: 'TESTCAM', Model: 'GPS-BEARING' } })
+        .jpeg()
+        .toBuffer();
+});
 
 /** A minimal byte buffer carrying the RIFF/WEBP magic number. */
 function webpBuffer(extraBytes = 32): Buffer {
@@ -143,10 +189,14 @@ describe('uploadOwnAvatar — validation branches', () => {
         expect(mockUserUpdate).not.toHaveBeenCalled();
     });
 
-    it('rejects a payload over the size cap', async () => {
+    it('rejects a payload over the UPLOAD cap', async () => {
+        // `AVATAR_UPLOAD_MAX_BYTES`, not `AVATAR_MAX_BYTES`. They were the
+        // same number until #1903; now the server re-encodes, so what
+        // arrives and what is stored have different ceilings and testing the
+        // stored one here would assert a refusal the route no longer makes.
         const tooBig = Buffer.concat([
             webpBuffer(),
-            Buffer.alloc(AVATAR_MAX_BYTES + 1),
+            Buffer.alloc(AVATAR_UPLOAD_MAX_BYTES + 1),
         ]);
         await expect(uploadOwnAvatar('u1', tooBig)).rejects.toThrow(
             /too large/i,
@@ -154,18 +204,47 @@ describe('uploadOwnAvatar — validation branches', () => {
         expect(write).not.toHaveBeenCalled();
     });
 
-    it('rejects a non-webp payload (canvas step bypassed)', async () => {
+    it('rejects a PNG — the accepted set is JPEG and WebP only', async () => {
+        // PNG stays out even though the web file input offers it: the client
+        // canvas already converts one to WebP, so nothing needs the server
+        // to decode a PNG, and every format accepted is another parser
+        // reachable with attacker-controlled bytes.
         const png = Buffer.concat([
             Buffer.from([0x89, 0x50, 0x4e, 0x47]),
             Buffer.alloc(32),
         ]);
-        await expect(uploadOwnAvatar('u1', png)).rejects.toThrow(/WebP/i);
+        await expect(uploadOwnAvatar('u1', png)).rejects.toThrow(/JPEG or WebP/i);
+        expect(write).not.toHaveBeenCalled();
+        expect(mockUserUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects HEIC, which the owner declined on 2026-10-16', async () => {
+        // `ftypheic` at offset 4 is the HEIF brand. Declined so libheif is
+        // never reached with attacker-controlled input; the phone converts
+        // to JPEG on device, which iOS can do and WebP it cannot.
+        const heic = Buffer.concat([
+            Buffer.from([0, 0, 0, 0x18]),
+            Buffer.from('ftypheic', 'ascii'),
+            Buffer.alloc(32),
+        ]);
+        expect(acceptedAvatarUpload(heic)).toBeNull();
+        await expect(uploadOwnAvatar('u1', heic)).rejects.toThrow(/JPEG or WebP/i);
+        expect(write).not.toHaveBeenCalled();
+    });
+
+    it('rejects bytes whose magic number lies about being decodable', async () => {
+        // The header says WebP and there is no image behind it. Its own
+        // code, because the remedy differs: a different photo, not the same
+        // one re-exported.
+        await expect(uploadOwnAvatar('u1', webpBuffer())).rejects.toThrow(
+            /could not be read/i,
+        );
         expect(write).not.toHaveBeenCalled();
         expect(mockUserUpdate).not.toHaveBeenCalled();
     });
 
     it('stores a valid webp and points User.image at the serve URL', async () => {
-        const result = await uploadOwnAvatar('u1', webpBuffer());
+        const result = await uploadOwnAvatar('u1', realWebp);
         expect(write).toHaveBeenCalledWith(
             'avatars/u1.webp',
             expect.any(Buffer),
@@ -192,7 +271,7 @@ describe('uploadOwnAvatar — the AV scan gate', () => {
         // The whole gap: this call did not exist. An avatar is rendered to
         // every colleague in every tenant the owner belongs to, which makes
         // it one of the few uploads with a distribution path built in.
-        const buf = webpBuffer();
+        const buf = realWebp;
         await uploadOwnAvatar('u1', buf);
         expect(mockScanVerdict).toHaveBeenCalledWith(buf);
     });
@@ -200,7 +279,7 @@ describe('uploadOwnAvatar — the AV scan gate', () => {
     it('REFUSES an infected avatar — no write, no User.image', async () => {
         mockScanVerdict.mockResolvedValue('INFECTED');
 
-        await expect(uploadOwnAvatar('u1', webpBuffer())).rejects.toThrow(
+        await expect(uploadOwnAvatar('u1', realWebp)).rejects.toThrow(
             /malware/i,
         );
         expect(write).not.toHaveBeenCalled();
@@ -213,7 +292,7 @@ describe('uploadOwnAvatar — the AV scan gate', () => {
         // anyway would put unscanned bytes at a key the serve route reads.
         mockScanVerdict.mockResolvedValue('PENDING');
 
-        await expect(uploadOwnAvatar('u1', webpBuffer())).rejects.toThrow(
+        await expect(uploadOwnAvatar('u1', realWebp)).rejects.toThrow(
             /unavailable/i,
         );
         expect(write).not.toHaveBeenCalled();
@@ -227,7 +306,7 @@ describe('uploadOwnAvatar — the AV scan gate', () => {
         // does with the identical verdict.
         mockScanVerdict.mockResolvedValue('SKIPPED');
 
-        await uploadOwnAvatar('u1', webpBuffer());
+        await uploadOwnAvatar('u1', realWebp);
         expect(write).toHaveBeenCalledTimes(1);
         expect(mockUserUpdate).toHaveBeenCalledTimes(1);
     });
@@ -246,7 +325,7 @@ describe('uploadOwnAvatar — the AV scan gate', () => {
             order.push('write');
         });
 
-        await uploadOwnAvatar('u1', webpBuffer());
+        await uploadOwnAvatar('u1', realWebp);
         expect(order).toEqual(['scan', 'write']);
     });
 
@@ -310,5 +389,94 @@ describe('getAvatarStream — serve-route resolution', () => {
 
         expect(await getAvatarStream('u1')).toBeNull();
         expect(readStream).not.toHaveBeenCalled();
+    });
+});
+
+describe('uploadOwnAvatar — the server-side re-encode (#1903)', () => {
+    const write = jest.fn();
+
+    beforeEach(() => {
+        write.mockReset();
+        mockUserUpdate.mockReset();
+        mockGetStorageProvider.mockReturnValue({ write });
+    });
+
+    /** The bytes handed to storage, which is what a later GET streams. */
+    const written = (): Buffer => write.mock.calls[0][1] as Buffer;
+
+    it('accepts a JPEG — the refusal that blocked every iPhone photo', async () => {
+        // iOS ImageIO decodes WebP but has no encoder for it
+        // (`CGImageDestinationCopyTypeIdentifiers()` omits
+        // `org.webmproject.webp`), so a WebP-only endpoint refused every
+        // photo the phone could produce. This is the whole of agrent-ios
+        // #333.
+        expect(acceptedAvatarUpload(realJpeg)).toBe('image/jpeg');
+        const result = await uploadOwnAvatar('u1', realJpeg);
+        expect(result).toEqual({ imageUrl: '/api/account/avatar/u1' });
+        expect(write).toHaveBeenCalledWith(
+            'avatars/u1.webp',
+            expect.any(Buffer),
+            expect.objectContaining({ mimeType: 'image/webp' }),
+        );
+    });
+
+    it('stores a square WebP whatever it was handed', async () => {
+        // The stored artefact is the same shape from either input format,
+        // so the serve route and every renderer keep one contract.
+        for (const source of [realJpeg, realWebp]) {
+            write.mockReset();
+            await uploadOwnAvatar('u1', source);
+            const meta = await sharp(written()).metadata();
+            expect(meta.format).toBe('webp');
+            expect(meta.width).toBe(AVATAR_PX);
+            expect(meta.height).toBe(AVATAR_PX);
+        }
+    });
+
+    it('strips the whole EXIF block, GPS tags included — with its control', async () => {
+        // The control FIRST: if the fixture carried no EXIF, the assertion
+        // below would pass on an empty subject and prove nothing. This is
+        // the shape of test this repo keeps having to fix.
+        const sourceMeta = await sharp(jpegWithGps).metadata();
+        expect(sourceMeta.exif?.length ?? 0).toBeGreaterThan(0);
+
+        await uploadOwnAvatar('u1', jpegWithGps);
+
+        const storedMeta = await sharp(written()).metadata();
+        expect(storedMeta.exif?.length ?? 0).toBe(0);
+        // And the bytes carry no trace of the tags, not merely no parsed
+        // EXIF block — a reader looking for the string would not find it.
+        expect(written().includes(Buffer.from('TESTCAM', 'ascii'))).toBe(false);
+        expect(written().includes(Buffer.from('GPS-BEARING', 'ascii'))).toBe(false);
+    });
+
+    it('re-encodes an already-valid WebP rather than passing it through', async () => {
+        // The reason this moved server-side at all: the guarantee should
+        // hold for EVERY client, not rest on the web canvas being the only
+        // path that meets it. A WebP from an unknown client can still carry
+        // EXIF, so it is decoded and re-encoded like anything else.
+        await uploadOwnAvatar('u1', realWebp);
+        // Same format, but not the same bytes — it went through the pipeline.
+        expect(written().equals(realWebp)).toBe(false);
+        const meta = await sharp(written()).metadata();
+        expect(meta.width).toBe(AVATAR_PX);
+    });
+
+    it('scans what the CALLER sent, not the re-encoded bytes', async () => {
+        // Order matters and this pins it. A signature describes the artefact
+        // somebody uploaded; scanning a re-encode would scan something no
+        // caller ever sent, and the decode is the step most worth having
+        // scanned input for.
+        await uploadOwnAvatar('u1', jpegWithGps);
+        expect(mockScanVerdict).toHaveBeenCalledWith(jpegWithGps);
+        expect(written().equals(jpegWithGps)).toBe(false);
+    });
+
+    it('keeps the stored result inside the STORED cap', async () => {
+        await uploadOwnAvatar('u1', jpegWithGps);
+        expect(written().length).toBeLessThanOrEqual(AVATAR_MAX_BYTES);
+        // And the upload it came from was allowed to be larger than that
+        // cap — the two numbers are now independent.
+        expect(AVATAR_UPLOAD_MAX_BYTES).toBeGreaterThan(AVATAR_MAX_BYTES);
     });
 });

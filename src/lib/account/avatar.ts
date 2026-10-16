@@ -38,15 +38,68 @@ import prisma from '@/lib/prisma';
 import { getStorageProvider } from '@/lib/storage';
 import { sniffMimeType } from '@/lib/storage/mime-sniff';
 import { scanOrRefuse } from '@/lib/upload/ingest';
+import sharp from 'sharp';
+
 import { codedBadRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 
 /**
- * Hard upload cap. A 256×256 webp off the client canvas is ~5–25KB;
- * 512KB is a generous safety net for the honest path that still
- * bounds what a canvas-bypassing client can store.
+ * Cap on the STORED result. A 256×256 webp is ~5–25KB, so 512KB is a
+ * generous safety net that still bounds what lands in storage.
+ *
+ * Since #1903 this is no longer the upload cap: the server re-encodes, so
+ * what arrives and what is stored are different sizes. See
+ * `AVATAR_UPLOAD_MAX_BYTES`.
  */
 export const AVATAR_MAX_BYTES = 512 * 1024;
+
+/**
+ * Cap on what a caller may UPLOAD, before re-encoding. Owner ruling
+ * 2026-10-16: 4 MB.
+ *
+ * A photo straight off an iPhone is 1–3 MB, so this clears the honest path
+ * with headroom and refuses obvious abuse before any of it reaches a
+ * decoder. The phone resizes to `AVATAR_PX` before sending to save the
+ * farmer's data allowance, so its uploads are well under this; the cap
+ * mainly bounds a web caller picking a full-size camera JPEG.
+ */
+export const AVATAR_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The stored square. Matches `AVATAR_PX` in
+ * `src/app/account/profile/AvatarUploadField.tsx`, so the web canvas and the
+ * server produce the same image rather than two conventions.
+ */
+export const AVATAR_PX = 256;
+
+/**
+ * WebP quality for the re-encode, matching the client canvas's 0.85.
+ */
+const AVATAR_WEBP_QUALITY = 85;
+
+/**
+ * Formats a caller may send. Owner ruling 2026-10-16: JPEG and WebP, NOT
+ * HEIC.
+ *
+ * iOS has no WebP encoder — `CGImageDestinationCopyTypeIdentifiers()` does
+ * not list `org.webmproject.webp` — so a WebP-only endpoint refuses every
+ * photo an iPhone takes (#1903, from agrent-ios #333). iOS CAN encode JPEG
+ * natively, so JPEG alone unblocks the phone.
+ *
+ * HEIC was considered and declined: accepting it would hand
+ * attacker-controlled HEIF containers to libheif, which has a worse CVE
+ * history than libjpeg, and the AV scan ahead of the decode catches known
+ * malware signatures rather than a malformed-container parser exploit. The
+ * phone converts HEIC to JPEG on device, which it can already do.
+ *
+ * PNG is deliberately absent even though the web file input offers it: the
+ * client canvas already converts PNG to WebP before upload, so nothing needs
+ * the server to decode one.
+ */
+const ACCEPTED_UPLOAD_TYPES = new Set(['image/webp', 'image/jpeg']);
+
+/** Pixel ceiling for the decode, independent of the byte cap. */
+const AVATAR_MAX_INPUT_PIXELS = 50 * 1000 * 1000;
 
 /** Deterministic storage key — one avatar per user, always webp. */
 export function avatarStorageKey(userId: string): string {
@@ -74,6 +127,72 @@ export function isWebp(buf: Buffer): boolean {
 }
 
 /**
+ * The accepted upload type these BYTES are, or null.
+ *
+ * Separate from `isWebp`, which stays exactly as it is: a guard pins its
+ * existence (`avatar-renderer-convergence`) and the promotions surface
+ * imports it to stay WebP-only. The owner's 2026-10-16 ruling widened
+ * AVATARS, not every image endpoint.
+ *
+ * Checked on the magic number, never on a declared content type the caller
+ * controls — the reason the original check was a privacy refusal rather than
+ * a format preference, and that reason survives the widening.
+ */
+export function acceptedAvatarUpload(buf: Buffer): string | null {
+    const sniffed = sniffMimeType(buf);
+    return sniffed !== null && ACCEPTED_UPLOAD_TYPES.has(sniffed) ? sniffed : null;
+}
+
+/**
+ * Decode, strip, square and re-encode to WebP.
+ *
+ * Run on EVERY upload including one that already is a WebP, which is the
+ * point: #1903's reason for moving this server-side is that the privacy
+ * guarantee should hold for every client rather than resting on the web
+ * canvas being the only path that meets it. A WebP from an unknown client can
+ * still carry EXIF; re-encoding it costs milliseconds and removes the
+ * question.
+ *
+ * `.rotate()` with no argument applies the EXIF orientation and then drops
+ * it. Without it a portrait phone photo stores sideways — and it has to come
+ * BEFORE `.resize`, or the square is cropped from the unrotated frame.
+ *
+ * sharp writes no metadata unless asked (`withMetadata()`), so EXIF, XMP and
+ * GPS are gone by construction rather than by a strip step that could be
+ * forgotten. `toColourspace('srgb')` makes the ICC answer explicit instead of
+ * relying on that default.
+ *
+ * `limitInputPixels` is a cap the BYTE cap cannot give: 4 MB of JPEG can
+ * decode to a far larger bitmap, and the pixel count is what the decoder
+ * allocates. 50 Mpx clears any real camera.
+ */
+async function reencodeToWebp(buf: Buffer): Promise<Buffer> {
+    try {
+        return await sharp(buf, { limitInputPixels: AVATAR_MAX_INPUT_PIXELS })
+            .rotate()
+            .resize(AVATAR_PX, AVATAR_PX, { fit: 'cover', position: 'centre' })
+            .toColourspace('srgb')
+            .webp({ quality: AVATAR_WEBP_QUALITY })
+            .toBuffer();
+    } catch (err) {
+        // The magic number said JPEG or WebP and the decoder disagreed, so
+        // the container is truncated or malformed. A coded refusal, because
+        // "we could not read your photo" is a different remedy from "wrong
+        // format" — retry with a different file, not with the same one
+        // re-exported.
+        logger.warn('account-avatar.decode_failed', {
+            component: 'account-avatar',
+            bytes: buf.length,
+            error: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
+        });
+        throw codedBadRequest(
+            'AVATAR_UNREADABLE',
+            'That image could not be read. Try a different photo.',
+        );
+    }
+}
+
+/**
  * Persist the caller's own processed avatar and point `User.image` at
  * the serve route. `userId` is always the authenticated session user
  * — the route layer never lets one user write another's avatar.
@@ -90,17 +209,21 @@ export async function uploadOwnAvatar(
     if (buf.length === 0) {
         throw codedBadRequest('AVATAR_EMPTY', 'Avatar upload was empty.');
     }
-    if (buf.length > AVATAR_MAX_BYTES) {
+    if (buf.length > AVATAR_UPLOAD_MAX_BYTES) {
         throw codedBadRequest(
             'AVATAR_TOO_LARGE',
-            'Processed avatar is too large — re-select a smaller image.',
+            'That image is too large — pick a smaller photo.',
         );
     }
-    if (!isWebp(buf)) {
-        // The client canvas emits webp; anything else means the
-        // canvas step was bypassed. Reject rather than store
-        // unprocessed (possibly EXIF-bearing) bytes.
-        throw codedBadRequest('AVATAR_NOT_WEBP', 'Avatar must be a WebP image.');
+    if (acceptedAvatarUpload(buf) === null) {
+        // Checked on the magic number. Unprocessed bytes may still carry
+        // EXIF including GPS, and the re-encode below is what removes it —
+        // so a format this server cannot decode is refused rather than
+        // stored as-is.
+        throw codedBadRequest(
+            'AVATAR_FORMAT_NOT_ALLOWED',
+            'Avatar must be a JPEG or WebP image.',
+        );
     }
 
     // Every cheap rejection above runs first, so malformed bytes never
@@ -114,7 +237,29 @@ export async function uploadOwnAvatar(
         exposure: 'private',
     });
 
-    await getStorageProvider().write(avatarStorageKey(userId), buf, {
+    // AFTER the scan, deliberately. The scanner reads the bytes the caller
+    // sent, which is the artefact a signature describes; handing it a
+    // re-encoded image would scan something nobody uploaded, and the decode
+    // itself is the step most worth having scanned input for.
+    const stored = await reencodeToWebp(buf);
+
+    // Belt to the braces: a 256×256 webp is ~5–25KB, so this cannot fire
+    // from an honest path. It is here because the STORED cap is now a
+    // different number from the upload cap, and a re-encode that somehow
+    // produced something enormous should not reach storage unremarked.
+    if (stored.length > AVATAR_MAX_BYTES) {
+        logger.warn('account-avatar.reencode_too_large', {
+            component: 'account-avatar',
+            userId,
+            bytes: stored.length,
+        });
+        throw codedBadRequest(
+            'AVATAR_TOO_LARGE',
+            'That image is too large — pick a smaller photo.',
+        );
+    }
+
+    await getStorageProvider().write(avatarStorageKey(userId), stored, {
         mimeType: 'image/webp',
         maxSizeBytes: AVATAR_MAX_BYTES,
     });
@@ -122,7 +267,12 @@ export async function uploadOwnAvatar(
     logger.info('account-avatar.stored', {
         component: 'account-avatar',
         userId,
-        bytes: buf.length,
+        // BOTH numbers: the re-encode makes them different, and a stored size
+        // alone cannot answer "was this a 3 MB phone photo or a 20KB canvas
+        // round-trip" — which is the question when someone asks whether the
+        // native path is being used.
+        uploadedBytes: buf.length,
+        bytes: stored.length,
         scanStatus,
     });
 
