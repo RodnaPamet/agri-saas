@@ -241,10 +241,10 @@ const BATCH_10: ReadonlyArray<[code: string, english: string]> = [
 /** The ten codes #2008 found: thrown, but invisible to the entry guard. */
 const BATCH_2008: ReadonlyArray<[code: string, english: string]> = [
     ['COMMODITY_NOT_OVERRIDABLE', 'That commodity is not one this platform sets a price for.'],
-    ['FARM_HANDLE_RESERVED', 'That address is reserved and cannot be used by a farm.'],
-    ['FARM_HANDLE_TOO_LONG', 'That address is too long — use at most 40 characters.'],
-    ['FARM_HANDLE_TOO_SHORT', 'That address is too short — use at least 3 characters.'],
-    ['FARM_HANDLE_UNUSABLE', 'That address contains no letters or digits we can use.'],
+    ['FARM_HANDLE_RESERVED', 'That address is reserved and cannot be used. Choose another.'],
+    ['FARM_HANDLE_TOO_LONG', 'That address may be at most 40 characters once written in Latin letters.'],
+    ['FARM_HANDLE_TOO_SHORT', 'That address must be at least 3 characters once written in Latin letters.'],
+    ['FARM_HANDLE_UNUSABLE', 'That address must contain letters or digits.'],
     ['FERTILIZER_NOT_FOUND', 'That fertiliser was not found.'],
     ['ILLEGAL_TRANSITION', 'That status change is not allowed.'],
     ['PRODUCT_NOT_FOUND', 'That product was not found.'],
@@ -1181,6 +1181,20 @@ describe('the codes the entry guard could not see (#2008)', () => {
             await localizeErrorPayload(long);
             expect(`${locale} short: ${short.error.message}`).toContain(min!);
             expect(`${locale} long: ${long.error.message}`).toContain(max!);
+            // And the clause that makes the number mean anything. The count is
+            // of the TRANSLITERATED slug, not of what was typed:
+            // `checkHandleShape` measures `toSlug(typed, …).length`. Measured —
+            // «Щ» is 3 Latin letters, «Ж» is 2, «Щастие» is 6 typed and 8
+            // Latin. So a farmer typing Cyrillic sees a limit applied to
+            // characters they never entered, and a bare "at most 40" is a
+            // number they cannot count to.
+            //
+            // agrent-ios shipped this clause first and the web now matches
+            // their wording rather than the reverse, so a farmer moving
+            // between the two reads the same sentence.
+            const clause = locale === 'bg' ? /латински букви/ : /Latin letters/;
+            expect(short.error.message).toMatch(clause);
+            expect(long.error.message).toMatch(clause);
         }
     });
 
