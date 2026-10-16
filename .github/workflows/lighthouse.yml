@@ -220,9 +220,22 @@ jobs:
         # executing under the condition it was added for. My first version
         # used 600s and that guard caught it.
         #
-        # 250s is DERIVED from measurement, not picked:
+        # 250s is DERIVED from measurement, not picked — but the
+        # measurement was taken under `throttlingMethod: simulate`, which
+        # records the trace at full speed. #1980 switched to `devtools`,
+        # which throttles for real, so EVERY number below is from the old
+        # method and the collection is expected to take longer per run.
+        # `numberOfRuns` dropped 5 -> 3 to pay for that: a measured value
+        # needs fewer samples than a modelled one (the observed LCP spread
+        # was 65ms against the simulator's 2331ms).
         #
-        #   lhci step, 10 runs, measured   137s / 143s / 165s
+        # The cap is NOT raised to compensate, and cannot be:
+        # ci-retry-loop-timeout.test.ts sets MAX_ATTEMPT_TIMEOUT_SECONDS to
+        # 300, and this job's own arithmetic below allows ~296s. If 3 runs
+        # under real throttling exceed 250s, the answer is fewer runs or one
+        # URL per job, not a bigger cap.
+        #
+        #   lhci step, 10 runs, measured   137s / 143s / 165s   (simulate)
         #   whole job, measured            414s / 430s / 451s  (budget 1200s)
         #   so the rest of the job is      ~290s
         #
@@ -255,7 +268,16 @@ jobs:
               exit "$status"
             fi
             if [ "$status" -eq 124 ]; then
-              echo "::warning::Lighthouse COLLECTION timed out after 600s (attempt ${attempt}/3) — retrying"
+              # No bound in this message, deliberately. It said "after 600s"
+              # while the cap two lines up said 250 — the message was left
+              # behind when the cap was lowered, so a timeout misreported
+              # its own limit. The cap cannot be interpolated here either:
+              # ci-retry-loop-timeout.test.ts matches
+              # /\btimeout\s+(?:-k\s+\d+\s+)?(\d+)\b/ and so REQUIRES a
+              # literal, which is what let the two drift apart. Printing
+              # the elapsed time instead is both drift-proof and more use
+              # than restating a constant that is visible above.
+              echo "::warning::Lighthouse COLLECTION timed out (attempt ${attempt}/3) after $((SECONDS - started))s elapsed — retrying"
             else
               echo "::warning::Lighthouse COLLECTION failed before assertions with exit ${status} (attempt ${attempt}/3) — retrying. A run that never navigated produced no data to keep."
             fi

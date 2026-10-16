@@ -5,7 +5,7 @@
         "http://localhost:3006/login",
         "http://localhost:3006/f/lighthouse"
       ],
-      "numberOfRuns": 5,
+      "numberOfRuns": 3,
       "settings": {
         "formFactor": "mobile",
         "screenEmulation": {
@@ -15,7 +15,7 @@
           "deviceScaleFactor": 3,
           "disabled": false
         },
-        "throttlingMethod": "simulate",
+        "throttlingMethod": "devtools",
         "onlyCategories": [
           "performance"
         ],
