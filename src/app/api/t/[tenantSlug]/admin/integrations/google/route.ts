@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
-import { badRequest } from '@/lib/errors/types';
+import { codedBadRequest } from '@/lib/errors/types';
 import { listGoogleConnections, disconnectGoogle } from '@/app-layer/integrations/providers/google';
 
 /**
@@ -31,7 +31,12 @@ export const GET = withApiErrorHandling(
 export const DELETE = withApiErrorHandling(
     requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
         const connectionId = req.nextUrl.searchParams.get('connectionId');
-        if (!connectionId) throw badRequest('connectionId is required');
+        // Unprefixed, matching FILE_REQUIRED and IDENTIFIERS_REQUIRED: the
+        // generic `*_REQUIRED` codes describe the REQUEST or the caller, the
+        // prefixed ones name the entity whose field is missing. A missing
+        // query parameter is a property of the request, and this route raises
+        // it before it knows the parameter names any Google row.
+        if (!connectionId) throw codedBadRequest('CONNECTION_ID_REQUIRED', 'A connection id is required.');
         await disconnectGoogle(ctx, connectionId);
         return new NextResponse(null, { status: 204 });
     }),
