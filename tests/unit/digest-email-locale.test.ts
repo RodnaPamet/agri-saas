@@ -16,13 +16,14 @@
  * most visible partial-wiring failure there is. The `mixed languages` test
  * below is the one that would catch it.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import {
     buildDeadlineDigestEmail,
     buildEvidenceExpiryDigestEmail,
 } from '@/app-layer/notifications/digest-templates';
 import type { DueItem } from '@/app-layer/jobs/types';
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 type Cat = Record<string, Record<string, string>>;
 const EN = (en.notificationEmail as unknown as { digest: Cat }).digest;

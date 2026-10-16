@@ -21,8 +21,7 @@
  * if a second one reappears in either catalogue.
  */
 
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
+import { readCatalogue } from '../helpers/catalogue';
 import {
     ALL_CONTRACT_STATUSES,
     ALL_CONTRACT_TYPES,
@@ -31,6 +30,8 @@ import {
     contractStatusOptions,
     contractTypeOptions,
 } from '@/app/t/[tenantSlug]/(app)/grain/contracts/filter-defs';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 type Catalogue = typeof en;
 

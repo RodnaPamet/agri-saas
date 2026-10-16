@@ -19,9 +19,10 @@
  * The RENDERED UI is a different story and deliberately out of scope: next-intl
  * runs full ICU there, so `ag.risk.quote.instalmentsOption` is correct.
  */
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
 
+import { readCatalogue } from '../helpers/catalogue';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 /** Namespaces rendered through `translateFor`, i.e. into email/outbox text. */
 const SERVER_RENDERED_NAMESPACES = ['notificationEmail'] as const;
 

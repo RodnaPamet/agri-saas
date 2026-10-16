@@ -15,10 +15,11 @@
  * strictly worse than the `foo` the old code showed.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import { commodityLabel } from '@/lib/market/commodity-label';
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
 import { CANONICAL_COMMODITIES, INPUT_COMMODITIES } from '@/lib/market/commodity-vocabulary';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 type Dict = Record<string, string>;
 
