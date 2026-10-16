@@ -222,6 +222,15 @@ const BATCH_8: ReadonlyArray<
     ['THREAD_OWN_LISTING', 'You cannot start a conversation on your own listing.'],
 ];
 
+const BATCH_9: ReadonlyArray<[code: string, english: string]> = [
+    ['FARM_BRAND_CONSENT_REQUIRED', 'Publishing needs your consent first.'],
+    ['FARM_BRAND_DISPLAY_NAME_REQUIRED', 'A public name is required before publishing.'],
+    ['FARM_BRAND_HANDLE_REQUIRED', 'Choose a public address for the farm before publishing.'],
+    ['FARM_BRAND_NOT_FOUND', 'This farm has no public profile yet.'],
+    ['FARM_BRAND_NOT_PUBLISHED', 'Publish the farm profile first — a printed address that is not published leads nowhere.'],
+    ['FARM_HANDLE_TAKEN', 'That address is already taken by another farm.'],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -589,6 +598,75 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 5)', () => {
         // ban would have been a narrower guard that broke correct copy.
         expect(catalogue).toContain('обект');
     });
+
+    it('a Parcel is «парцел», and «имот» survives only where it is not one (#1966)', async () => {
+        // The issue's SECOND half, which I closed the issue without doing:
+        // its title says "calls Location three things AND Parcel two". The
+        // entity was «парцел» in 113 strings and «имот» in 18 — «имот» being
+        // the legal real-estate term, right for a cadastral property and
+        // wrong for a worked field.
+        //
+        // Owner ruling 2026-10-16: «парцел» everywhere. The accepted cost is
+        // that the lease and cadastral surfaces now say «парцел» where a
+        // contract would say «имот» — and note the ENGLISH had already made
+        // this choice, since `terms.serviceBody` read "cadastral parcels"
+        // while the Bulgarian read «кадастрални имоти».
+        const bg = readCatalogue('bg') as { errors: Record<string, unknown> };
+        for (const code of ['PARCEL_NOT_FOUND', 'PARCEL_NOT_ON_TASK', 'PARCEL_LOCATION_MISMATCH']) {
+            expect(`${code}: ${bg.errors[code]}`).toMatch(/парцел/i);
+            expect(`${code}: ${bg.errors[code]}`).not.toMatch(/имот/i);
+        }
+
+        // And the whole catalogue, with an EXPLICIT allowlist rather than a
+        // silent exemption — so the list shrinks visibly and a new «имот»
+        // fails. `locations.detail.fitHolding` is excluded because it is
+        // neither: en reads "Back to this holding", and the string is the
+        // aria-label of a map button that returns from country scale to the
+        // farm's whole land extent («the holding's own framing», per
+        // ParcelOverviewMap.tsx). Calling that a «парцел» would be a third
+        // wrong word, so it is filed rather than renamed.
+        const ALLOWED_имот = ['locations.detail.fitHolding'];
+        const offenders: string[] = [];
+        const walk = (node: unknown, path: string): void => {
+            if (typeof node === 'string') {
+                // NO `\b` here, deliberately. JavaScript's `\b` is
+                // ASCII-only: it needs a transition involving [A-Za-z0-9_],
+                // and between a space and «и» there is none — so
+                // `/\bимот/i` never matches Cyrillic at all and this
+                // negated assertion passed VACUOUSLY. The `stillThere`
+                // cross-check below is what caught it. Python's `\b` IS
+                // Unicode-aware, which is why the measurement that found
+                // these 18 strings worked while the guard did not.
+                if (/имот/i.test(node) && !ALLOWED_имот.includes(path)) {
+                    offenders.push(`  ${path}: ${node.slice(0, 80)}`);
+                }
+                return;
+            }
+            if (node && typeof node === 'object') {
+                for (const [k, v] of Object.entries(node)) {
+                    walk(v, path ? `${path}.${k}` : k);
+                }
+            }
+        };
+        walk(readCatalogue('bg'), '');
+        expect(offenders.join('\n')).toBe('');
+
+        // The allowlist is not vacuous — if someone fixes `fitHolding`, this
+        // fails and the entry should be deleted rather than left to rot. Same
+        // rule as the #1918 BACKLOG: the list must be EXACT, not a ceiling.
+        const stillThere: string[] = [];
+        walk(readCatalogue('bg'), '');
+        for (const allowed of ALLOWED_имот) {
+            const parts = allowed.split('.');
+            let cur: unknown = readCatalogue('bg');
+            for (const seg of parts) {
+                cur = (cur as Record<string, unknown>)?.[seg];
+            }
+            if (typeof cur === 'string' && /имот/i.test(cur)) stillThere.push(allowed);
+        }
+        expect(stillThere).toEqual(ALLOWED_имот);
+        console.log(`[refusal-bg] #1966 parcel: ${ALLOWED_имот.length} allowlisted «имот» string(s) left`);
+    });
 });
 
 describe('a Bulgarian reader gets Bulgarian (#1918 batch 6)', () => {
@@ -814,5 +892,101 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 8)', () => {
         const catalogue = readCatalogue('bg') as Record<string, unknown>;
         const exchange = (catalogue.exchange as Record<string, Record<string, string>>);
         expect(exchange.messaging.blockedForYou).toContain('не приема съобщения');
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 9)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // Every untranslated code in `public-farm-profile.ts`. 46 -> 40.
+        console.log(
+            `[refusal-bg] batch 9 added ${BATCH_9.length} entries, of 46 untranslated before it, 40 after`,
+        );
+        expect(BATCH_9.length).toBeGreaterThanOrEqual(6);
+    });
+
+    it.each(BATCH_9.map(([c, e]) => [c, e] as const))(
+        'batch 9: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('follows the vocabulary the public-profile SCREEN already uses', () => {
+        // The screen these refusals come from has its own established words,
+        // and a refusal that invents different ones reads as being about
+        // something else. `admin.publicProfile.*` says «Публична страница»
+        // for the page, «Публично име» for the display name and «Адрес» for
+        // the handle — so the refusals do too.
+        //
+        // Asserted rather than merely done, because the alternative
+        // («профил», «потребителско име», «линк») is what a translator
+        // reaching for the English would naturally pick.
+        // Typed property access, no assertion: `Catalogue` is the INTERSECTION
+        // of the bundle JSON types, so these keys are known statically and a
+        // typo is a type error. `tests/helpers/catalogue.ts` says that is the
+        // point of keeping the type through the #1960 split.
+        const bg = readCatalogue('bg');
+        expect(bg.admin.publicProfile.displayNameLabel).toBe('Публично име');
+        expect(bg.errors.FARM_BRAND_DISPLAY_NAME_REQUIRED).toContain('публично име');
+        expect(bg.errors.FARM_BRAND_HANDLE_REQUIRED).toContain('адрес');
+        expect(bg.errors.FARM_BRAND_NOT_FOUND).toContain('публична страница');
+    });
+
+    it('FARM_HANDLE_TAKEN does not try to name the alternatives', async () => {
+        // The site passes the free handles it found as `details`, NOT
+        // `params`, and says why: `ErrorParams` values are `string | number`
+        // for interpolation, while a list of alternatives is structured data
+        // a client renders as buttons.
+        //
+        // So the sentence must stand on its own. A Bulgarian entry that said
+        // «опитайте {suggestions}» would leave a literal placeholder on
+        // screen — the it.each above would catch that — but one that merely
+        // IMPLIED a list the client might not render would not be caught by
+        // anything, which is why the source contract is asserted too.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/public-farm-profile.ts`,
+            'utf8',
+        );
+        const site = src.slice(src.indexOf("'FARM_HANDLE_TAKEN'"));
+        expect(site.slice(0, 220)).toContain('undefined');
+        expect(site.slice(0, 220)).toContain('{ suggestions }');
+
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('FARM_HANDLE_TAKEN', 'That address is already taken by another farm.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('is a WEB-only improvement, and the phone keys all six itself', async () => {
+        // Recorded so the batch is not described as reaching the phone. The
+        // agrent-ios peer confirmed 2026-10-16 that `UserMessage.swift`
+        // carries its own sentence for every code in this batch —
+        // FARM_BRAND_NOT_FOUND and FARM_HANDLE_TAKEN earlier, and the three
+        // FARM_BRAND_*_REQUIRED in agrent-ios #337/#339. `bulgarian[code]`
+        // is step 2 of its lookup and `message` is step 4, so the phone's
+        // wording WINS and these entries never render there.
+        //
+        // The value is the web: `api-client.ts` prints `error.message` at 142
+        // call sites with no language test, and four of five accounts are
+        // `uiLanguage: 'bg'`.
+        //
+        // Asserted as a property of the MECHANISM rather than of the phone,
+        // which this repo cannot see: an entry exists for every code here, so
+        // the web is covered whatever the phone does.
+        // `as unknown as` here and not above, because this loop indexes
+        // DYNAMICALLY. A direct `as` fails TS2352 — `Catalogue` and
+        // `Record<string, string>` do not overlap — which is what CI caught on
+        // this PR's first push, and the same two-step the other catalogue
+        // readers in `tests/unit` use.
+        const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
+        for (const [code] of BATCH_9) {
+            expect(`${code} entried: ${typeof bg.errors[code]}`).toBe(`${code} entried: string`);
+        }
     });
 });

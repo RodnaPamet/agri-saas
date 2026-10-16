@@ -27,6 +27,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(path.join(ROOT, p), 'utf-8');
 
@@ -92,6 +94,37 @@ describe('PR-C SSE notification streaming wiring', () => {
             // SSE comment line — starts with `:` per the wire format.
             expect(s).toMatch(/: hb\\n\\n/);
         });
+
+        it('gates the stream on a RUNTIME feature flag, resolved for the CALLER', () => {
+            // #1982. The channel had no server gate at all: it was
+            // authenticated but ungated, so the only "off" was the client
+            // declining to connect. A DB-backed flag read per request is the
+            // mechanism P7's standing rules require (#1198), and the one that
+            // can actually be flipped without shipping an image.
+            const s = read(PATH_ROUTE);
+            expect(s).toMatch(/isFeatureEnabled\(/);
+            expect(s).toMatch(/['"]notifications\.sse['"]/);
+            // `ctx.userId`, not `null`: `FeatureFlag.cohorts` composes with
+            // `enabled` as AND, so resolving globally would ignore cohort
+            // membership and expose the channel to the whole deployment.
+            expect(s).toMatch(
+                /isFeatureEnabled\(\s*NOTIFICATIONS_SSE_FLAG,\s*ctx\.userId\s*\)/,
+            );
+        });
+
+        it('refuses a disabled channel with a NON-stream response, before subscribing', () => {
+            // 204 so the browser fails the connection permanently instead of
+            // treating it as a blip and reconnecting in a loop. And the gate
+            // must precede the subscription, or "off" would still register a
+            // bus listener per connection.
+            const s = read(PATH_ROUTE);
+            const gate = s.indexOf('isFeatureEnabled(');
+            const subscribe = s.indexOf('subscribeToNotifications({');
+            expect(gate).toBeGreaterThan(-1);
+            expect(subscribe).toBeGreaterThan(-1);
+            expect(gate).toBeLessThan(subscribe);
+            expect(s).toMatch(/status:\s*204/);
+        });
     });
 
     describe('3. createTaskDueNotification publishes to the bus on insert', () => {
@@ -136,24 +169,25 @@ describe('PR-C SSE notification streaming wiring', () => {
             expect(s).toMatch(/typeof EventSource !== ['"]undefined['"]/);
         });
 
-        it('gates SSE client behind NEXT_PUBLIC_NOTIFICATIONS_SSE=1 feature flag', () => {
-            // Initial rollout: server-side bus + endpoint are wired
-            // but the client cutover is opt-in. Default (flag absent)
-            // keeps the 60s poll so E2E specs that wait on
-            // `networkidle` aren't blocked by a long-lived stream.
-            // Flip the env var when client integration has been
-            // manually verified end-to-end.
+        it('carries NO second, build-time gate of its own', () => {
+            // REAIMED by #1982. This used to assert the OPPOSITE — that the
+            // client reads `env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1'` — and
+            // it passed for months while the channel was dead. The thing it
+            // checked was present; the thing that mattered, whether that flag
+            // could ever be set, was not expressible as a source match on
+            // this file. `NEXT_PUBLIC_*` is inlined at `next build` and the
+            // variable reached no Dockerfile `ARG` and no `ghcr-publish.yml`
+            // build-arg, so every image baked it `undefined`.
             //
-            // The flag MUST be read via the validated `@/env` module
-            // (zod schema in `src/env.ts`), NOT raw `process.env.X` —
-            // the `no-fallbacks` ratchet bans raw access.
-            const s = read(PATH_BELL);
-            expect(s).toMatch(
-                /env\.NEXT_PUBLIC_NOTIFICATIONS_SSE === ['"]1['"]/,
-            );
-            expect(s).toMatch(
-                /import\s*\{[\s\S]{0,80}env[\s\S]{0,80}\}\s*from\s+['"]@\/env['"]/,
-            );
+            // The switch now lives in the route (see section 2). Two gates is
+            // how a surface comes to be off for a reason nobody can find, so
+            // the client must not reintroduce one.
+            //
+            // Comments stripped first: the docblock explains the retired
+            // variable by NAME, so a raw-text search finds it in the prose and
+            // reports the opposite of the truth.
+            const code = blankNonCode(read(PATH_BELL));
+            expect(code).not.toMatch(/NEXT_PUBLIC_NOTIFICATIONS_SSE/);
         });
 
         it('wires onmessage to prepend the parsed event into state', () => {
