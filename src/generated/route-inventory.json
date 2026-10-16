@@ -346,6 +346,11 @@
       "documented": false
     },
     {
+      "path": "/api/integrations/google/callback",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/integrations/sharepoint/callback",
       "status": "live",
       "documented": false
@@ -642,6 +647,16 @@
     },
     {
       "path": "/api/t/{tenantSlug}/admin/integrations/diagnostics",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/google",
+      "status": "live",
+      "documented": false
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/integrations/google/connect",
       "status": "live",
       "documented": false
     },
