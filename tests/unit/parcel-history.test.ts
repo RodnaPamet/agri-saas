@@ -119,6 +119,69 @@ describe('the harvest year', () => {
         expect(mockPrisma.parcelCropSeason.create).toHaveBeenCalled();
     });
 
+    it('every limit refusal names the limit AND carries it as a param', async () => {
+        // All four of these told the caller what it SENT and never what is
+        // allowed: "out of range", "too many weeds", "too long". A farmer who
+        // types 2001 characters of notes was left to guess at 2000.
+        //
+        // Both halves are asserted. The SENTENCE is what a person reads, and
+        // the PARAM is what a client needs to render its own hint or cap an
+        // input — and the param is the half that would quietly disappear,
+        // since nothing renders it today.
+        // THUNKS, not promises. Building the calls eagerly starts all four
+        // at once and leaves their rejections unhandled until the loop gets
+        // to them — Node reports an unhandled rejection and jest reports the
+        // whole suite as 0 tests. It passed by timing alone until a mutation
+        // shifted it, which is the kind of pass a mutation proof is for.
+        const cases: Array<[() => Promise<unknown>, RegExp, string[]]> = [
+            [
+                () => createParcelCropSeason(ctx, { parcelId: 'p1', year: 1799, cropType: 'Wheat' }),
+                /between 1900 and \d{4}/,
+                ['year', 'min', 'max'],
+            ],
+            [
+                () => createParcelWeedObservation(ctx, {
+                    parcelId: 'p1',
+                    observedAt: new Date('2026-05-14'),
+                    weeds: Array.from({ length: 51 }, (_, i) => `weed-${i}`),
+                }),
+                /at most 50/,
+                ['count', 'max'],
+            ],
+            [
+                () => createParcelWeedObservation(ctx, {
+                    parcelId: 'p1',
+                    observedAt: new Date('2026-05-14'),
+                    weeds: ['x'.repeat(121)],
+                }),
+                /at most 120 characters/,
+                ['max'],
+            ],
+            [
+                () => createParcelCropSeason(ctx, {
+                    parcelId: 'p1',
+                    year: 2026,
+                    cropType: 'Wheat',
+                    notes: 'n'.repeat(2001),
+                }),
+                /at most 2000 characters/,
+                ['max'],
+            ],
+        ];
+
+        for (const [call, namesTheLimit, wantParams] of cases) {
+            const err = await call().then(
+                () => null,
+                (e: unknown) => e as { message: string; params?: Record<string, unknown> },
+            );
+            // A control: if the call stopped refusing, every assertion below
+            // would be skipped and this test would pass on nothing.
+            expect(err).not.toBeNull();
+            expect(err!.message).toMatch(namesTheLimit);
+            expect(Object.keys(err!.params ?? {}).sort()).toEqual([...wantParams].sort());
+        }
+    });
+
     it('refuses a year outside the range', async () => {
         await expect(
             createParcelCropSeason(ctx, { parcelId: 'p1', year: 1799, cropType: 'Wheat' }),
