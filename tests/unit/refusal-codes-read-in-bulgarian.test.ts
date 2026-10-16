@@ -222,6 +222,15 @@ const BATCH_8: ReadonlyArray<
     ['THREAD_OWN_LISTING', 'You cannot start a conversation on your own listing.'],
 ];
 
+const BATCH_9: ReadonlyArray<[code: string, english: string]> = [
+    ['FARM_BRAND_CONSENT_REQUIRED', 'Publishing needs your consent first.'],
+    ['FARM_BRAND_DISPLAY_NAME_REQUIRED', 'A public name is required before publishing.'],
+    ['FARM_BRAND_HANDLE_REQUIRED', 'Choose a public address for the farm before publishing.'],
+    ['FARM_BRAND_NOT_FOUND', 'This farm has no public profile yet.'],
+    ['FARM_BRAND_NOT_PUBLISHED', 'Publish the farm profile first — a printed address that is not published leads nowhere.'],
+    ['FARM_HANDLE_TAKEN', 'That address is already taken by another farm.'],
+];
+
 const BATCH_10: ReadonlyArray<[code: string, english: string]> = [
     ['INVALID_EQUIPMENT', 'Some of the selected equipment was not found.'],
     ['INVALID_FILE', 'That file was not found.'],
@@ -893,12 +902,107 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 8)', () => {
     });
 });
 
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 9)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // Every untranslated code in `public-farm-profile.ts`. 46 -> 40.
+        console.log(
+            `[refusal-bg] batch 9 added ${BATCH_9.length} entries, of 46 untranslated before it, 40 after`,
+        );
+        expect(BATCH_9.length).toBeGreaterThanOrEqual(6);
+    });
+
+    it.each(BATCH_9.map(([c, e]) => [c, e] as const))(
+        'batch 9: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('follows the vocabulary the public-profile SCREEN already uses', () => {
+        // The screen these refusals come from has its own established words,
+        // and a refusal that invents different ones reads as being about
+        // something else. `admin.publicProfile.*` says «Публична страница»
+        // for the page, «Публично име» for the display name and «Адрес» for
+        // the handle — so the refusals do too.
+        //
+        // Asserted rather than merely done, because the alternative
+        // («профил», «потребителско име», «линк») is what a translator
+        // reaching for the English would naturally pick.
+        // Typed property access, no assertion: `Catalogue` is the INTERSECTION
+        // of the bundle JSON types, so these keys are known statically and a
+        // typo is a type error. `tests/helpers/catalogue.ts` says that is the
+        // point of keeping the type through the #1960 split.
+        const bg = readCatalogue('bg');
+        expect(bg.admin.publicProfile.displayNameLabel).toBe('Публично име');
+        expect(bg.errors.FARM_BRAND_DISPLAY_NAME_REQUIRED).toContain('публично име');
+        expect(bg.errors.FARM_BRAND_HANDLE_REQUIRED).toContain('адрес');
+        expect(bg.errors.FARM_BRAND_NOT_FOUND).toContain('публична страница');
+    });
+
+    it('FARM_HANDLE_TAKEN does not try to name the alternatives', async () => {
+        // The site passes the free handles it found as `details`, NOT
+        // `params`, and says why: `ErrorParams` values are `string | number`
+        // for interpolation, while a list of alternatives is structured data
+        // a client renders as buttons.
+        //
+        // So the sentence must stand on its own. A Bulgarian entry that said
+        // «опитайте {suggestions}» would leave a literal placeholder on
+        // screen — the it.each above would catch that — but one that merely
+        // IMPLIED a list the client might not render would not be caught by
+        // anything, which is why the source contract is asserted too.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/public-farm-profile.ts`,
+            'utf8',
+        );
+        const site = src.slice(src.indexOf("'FARM_HANDLE_TAKEN'"));
+        expect(site.slice(0, 220)).toContain('undefined');
+        expect(site.slice(0, 220)).toContain('{ suggestions }');
+
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('FARM_HANDLE_TAKEN', 'That address is already taken by another farm.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('is a WEB-only improvement, and the phone keys all six itself', async () => {
+        // Recorded so the batch is not described as reaching the phone. The
+        // agrent-ios peer confirmed 2026-10-16 that `UserMessage.swift`
+        // carries its own sentence for every code in this batch —
+        // FARM_BRAND_NOT_FOUND and FARM_HANDLE_TAKEN earlier, and the three
+        // FARM_BRAND_*_REQUIRED in agrent-ios #337/#339. `bulgarian[code]`
+        // is step 2 of its lookup and `message` is step 4, so the phone's
+        // wording WINS and these entries never render there.
+        //
+        // The value is the web: `api-client.ts` prints `error.message` at 142
+        // call sites with no language test, and four of five accounts are
+        // `uiLanguage: 'bg'`.
+        //
+        // Asserted as a property of the MECHANISM rather than of the phone,
+        // which this repo cannot see: an entry exists for every code here, so
+        // the web is covered whatever the phone does.
+        // `as unknown as` here and not above, because this loop indexes
+        // DYNAMICALLY. A direct `as` fails TS2352 — `Catalogue` and
+        // `Record<string, string>` do not overlap — which is what CI caught on
+        // this PR's first push, and the same two-step the other catalogue
+        // readers in `tests/unit` use.
+        const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
+        for (const [code] of BATCH_9) {
+            expect(`${code} entried: ${typeof bg.errors[code]}`).toBe(`${code} entried: string`);
+        }
+    });
+});
+
 describe('a Bulgarian reader gets Bulgarian (#1918 batch 10)', () => {
     it('ranges over the batch — the denominator', () => {
         // The total is printed by `a-new-code-ships-with-its-entry.test.ts`,
         // which derives it, and is deliberately NOT repeated here: a count in
-        // a second place goes stale with nothing failing, and this one would
-        // depend on whether batch 9 had merged yet.
+        // a second place goes stale with nothing failing.
         console.log(`[refusal-bg] batch 10 added ${BATCH_10.length} entries (journal.ts)`);
         expect(BATCH_10.length).toBe(4);
     });
@@ -964,10 +1068,8 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 10)', () => {
             'utf8',
         );
         expect(src).not.toMatch(/tenant: \$\{missing\[0\]\}/);
-        // All three list-based sites hand the id to the client.
         expect(src.match(/\{ id: missing\[0\] \}/g) ?? []).toHaveLength(3);
 
-        // And the id must not reappear on screen through the entry.
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
         const p = payload('INVALID_PLANTING', 'One of the selected plantings was not found.');
         p.error.params = { id: 'ckz9planting0001' };
@@ -985,7 +1087,8 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 10)', () => {
         // Plural framing on purpose: `missing` is a filtered ARRAY of ids the
         // caller submitted and only `[0]` is reported, so "one of the
         // selected" is what actually happened — «Блокът не беше намерен»
-        // would claim a single link was checked.
+        // would claim a single link was checked, and would duplicate
+        // LOCATION_NOT_FOUND, a different code for a different situation.
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
         const p = payload('INVALID_LOCATION', 'One of the selected locations was not found.');
         await localizeErrorPayload(p);
