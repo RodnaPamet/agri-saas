@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test-mock pattern, as in sharepoint-service.test.ts. */
 /**
  * Google connection-management service — #2005.
  *
@@ -28,7 +27,7 @@ const exchangeMock = jest.fn();
 
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
-    runInTenantContext: (_ctx: any, fn: (db: any) => any) => fn(mockDb),
+    runInTenantContext: (_ctx: unknown, fn: (db: typeof mockDb) => unknown) => fn(mockDb),
 }));
 // Identity crypto so the stored secret round-trips as plain JSON here.
 jest.mock('@/lib/security/encryption', () => ({
@@ -70,8 +69,14 @@ import {
     GOOGLE_CALENDAR_SCOPE,
 } from '@/app-layer/integrations/providers/google/token';
 import { Prisma } from '@prisma/client';
+import type { RequestContext } from '@/app-layer/types';
 
-const ctx = { tenantId: 't-1', userId: 'u-1' } as any;
+/**
+ * A minimal context. Cast through `unknown` rather than `any` so the file
+ * needs no `no-explicit-any` suppression — the lint ceiling ratchets those,
+ * and a file-level disable spends three of them to save two annotations.
+ */
+const ctx = { tenantId: 't-1', userId: 'u-1' } as unknown as RequestContext;
 const INPUT = { code: 'code-1', redirectUri: 'https://app.agrent.bg/api/integrations/google/callback' };
 
 const grant = (scopes: string[]) => ({
