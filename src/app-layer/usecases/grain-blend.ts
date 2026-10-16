@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { InventoryRepository } from '../repositories/InventoryRepository';
 import { appendStockTransaction, appendLotLink } from '@/lib/inventory/stock-ledger';
@@ -131,7 +131,7 @@ export async function blendLots(ctx: RequestContext, input: BlendLotsInput): Pro
         const blendInputs: Array<{ quantity: number; attributes: Record<string, unknown> | null }> = [];
         for (const s of input.sourceLots) {
             const lot = byId.get(s.lotId);
-            if (!lot) throw notFound(`Source lot not found: ${s.lotId}`);
+            if (!lot) throw codedNotFound('LOT_NOT_FOUND', 'That lot was not found.', { id: s.lotId });
             const onHand = Number((lot.quantityOnHand as unknown as { toString(): string }).toString());
             if (onHand < s.quantity) {
                 throw badRequest(`Insufficient quantity in lot ${lot.lotCode}: have ${onHand}, need ${s.quantity}`);

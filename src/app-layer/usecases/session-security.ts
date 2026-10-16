@@ -13,7 +13,7 @@
  */
 import { prisma } from '@/lib/prisma';
 import type { RequestContext } from '../types';
-import { forbidden, notFound } from '@/lib/errors/types';
+import { codedNotFound, forbidden } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ export async function revokeUserSessions(
         });
 
         if (!membership) {
-            throw notFound('Target user is not a member of this tenant');
+            throw codedNotFound('TARGET_USER_NOT_IN_TENANT', 'That person is not a member of this farm.');
         }
     }
 

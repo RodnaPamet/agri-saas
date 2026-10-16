@@ -9,7 +9,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, PrismaTx } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
-import { forbidden, notFound, badRequest, codedConflict, codedNotFound } from '@/lib/errors/types';
+import { badRequest, codedConflict, codedNotFound, forbidden } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
@@ -675,7 +675,7 @@ export async function respondToInquiry(
         // may respond; what changed is that a non-seller learns nothing from
         // the answer.
         if (!inquiry || inquiry.listing.sellerTenantId !== ctx.tenantId) {
-            throw notFound('Inquiry not found');
+            throw codedNotFound('INQUIRY_NOT_FOUND', 'That inquiry was not found.');
         }
         if (inquiry.status !== ExchangeInquiryStatus.PENDING) {
             throw badRequest('inquiry_not_pending', 'This inquiry has already been answered');

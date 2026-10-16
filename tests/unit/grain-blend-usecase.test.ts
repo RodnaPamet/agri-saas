@@ -172,7 +172,17 @@ describe('blendLots — validation', () => {
                 sourceLots: [{ lotId: 'ghost', quantity: 1 }],
                 outputItemId: 'item-out',
             }),
-        ).rejects.toThrow(/Source lot not found/i);
+            // On the CODE, and on the id having moved to `params`. The old
+            // message interpolated the cuid — `Source lot not found:
+            // ${s.lotId}` — which is useless to a farmer and is what #1712
+            // removed. `LOT_NOT_FOUND` is reused rather than a new
+            // SOURCE_LOT_NOT_FOUND minted, because this is the same
+            // InventoryLot that `inventory.ts` already names.
+        ).rejects.toMatchObject({
+            code: 'LOT_NOT_FOUND',
+            status: 404,
+            params: { id: 'ghost' },
+        });
     });
 
     it('rejects mixed units', async () => {

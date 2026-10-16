@@ -18,7 +18,7 @@
  */
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
-import { notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import {
     deriveWindowStatus,
     type SupportSchemeWindowStatus,
@@ -145,7 +145,7 @@ export async function reviewSupportScheme(
     reviewedBy: string,
 ): Promise<SupportSchemeRow> {
     const existing = await prisma.supportScheme.findUnique({ where: { id } });
-    if (!existing) throw notFound('Support scheme not found');
+    if (!existing) throw codedNotFound('SUPPORT_SCHEME_NOT_FOUND', 'That support scheme was not found.');
 
     const updated = await prisma.supportScheme.update({
         where: { id },

@@ -34,6 +34,7 @@
  */
 import { readCatalogue } from '../helpers/catalogue';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
@@ -73,6 +74,42 @@ function candidateCode(message: string): string | null {
  */
 const ALLOWED: ReadonlyArray<[file: string, message: string]> = [
     ['app-layer/usecases/org-tenants.ts', 'Tenant not found in this organization'],
+];
+
+/**
+ * Sites that must STAY bare, because the 404 is hiding existence (#1712).
+ *
+ * This issue's premise — "a bare `notFound` should carry a code so the message
+ * can be specific" — is FALSE here, and dangerously so. For a gate that
+ * answers 404 precisely to avoid revealing that something exists, a specific
+ * sentence is the defect and the uninformative one is the feature. A code like
+ * `FEATURE_NOT_ENABLED` would announce that the thing is real and withheld.
+ *
+ * Both carry their reasoning in their own docblocks, which is how they were
+ * found — `absence-may-be-the-design`: grep for the comment that EXPLAINS an
+ * absence before calling it a defect.
+ *
+ * Asserted rather than merely skipped, so the decision is visible and a future
+ * conversion fails here instead of shipping a quiet information leak. agrent-ios
+ * confirmed the phone applies the same reasoning to its P6 routes: a 404 while
+ * `social.public-profile` is off reads as "not available" and never names the
+ * feature.
+ */
+const DELIBERATELY_BARE: ReadonlyArray<
+    readonly [file: string, message: string, reason: string]
+> = [
+    [
+        'lib/feature-flags.ts',
+        'Not found',
+        '404 AND NOT 403: a dark-launched surface must not be discoverable, and 403 says ' +
+            '"this exists and you may not have it".',
+    ],
+    [
+        'lib/auth/platform-support.ts',
+        'Not found',
+        'From any other tenant the platform console genuinely does not exist; a 403 would ' +
+            'confirm a global-catalogue surface is there to be found.',
+    ],
 ];
 
 interface Site {
@@ -147,7 +184,40 @@ describe('a bare notFound() has no coded twin (#1712)', () => {
 
         // The other direction: a resource with no code must NOT be reported,
         // or the guard becomes the ban on bare notFound() it must not be.
-        expect(ENTRIED.has(candidateCode('Delivery not found') as string)).toBe(false);
+        //
+        // The fixture is INVENTED, and that is the point. It used to be
+        // 'Delivery not found', a real site — and when #1712's farmer tranche
+        // gave that one a code the control went red, because its premise
+        // ("this resource has no code") had been fixed. A negative control
+        // keyed on real data expires the moment the data improves, so it
+        // cannot be the thing that proves the detector is quiet in the
+        // negative case. `Thresher` is not an entity this product has.
+        expect(candidateCode('Thresher not found')).toBe('THRESHER_NOT_FOUND');
+        expect(ENTRIED.has('THRESHER_NOT_FOUND')).toBe(false);
+    });
+
+    it('the existence-hiding 404s are still bare, and must stay so', () => {
+        // The inverse of this guard's rule, asserted so it cannot be
+        // "fixed" into an information leak. If someone gives either of these
+        // a code, this fails and they have to argue with the reason.
+        for (const [file, message, reason] of DELIBERATELY_BARE) {
+            const full = join(REPO_ROOT, 'src', file);
+            const src = blankNonCode(readFileSync(full, 'utf8'));
+            // Still thrown, still bare, still contentless.
+            expect(`${file} throws notFound('${message}')`).toBe(
+                `${file} throws notFound('${message}')`,
+            );
+            expect(src).toContain(`notFound('${message}')`);
+            // And NOT converted: no coded variant anywhere in the file.
+            expect(`${file} has a coded throw: ${/\bcoded[A-Za-z]*\(/.test(src)}`).toBe(
+                `${file} has a coded throw: false`,
+            );
+            // The reason is not empty — an exclusion without one is a gap.
+            expect(reason.length).toBeGreaterThan(40);
+        }
+        console.log(
+            `[notfound-twin] ${DELIBERATELY_BARE.length} site(s) deliberately bare (existence hiding)`,
+        );
     });
 
     it('every allowlist entry still describes a real site', () => {

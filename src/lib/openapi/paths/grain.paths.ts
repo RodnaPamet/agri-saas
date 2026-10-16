@@ -828,7 +828,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         operationId: 'deleteGrainDelivery',
         summary: 'Delete a delivery',
         description:
-            'Removing a delivery changes the contract’s fulfilment. Re-read the contract or its deliveries afterwards rather than adjusting a cached figure.',
+            'Removing a delivery changes the contract’s fulfilment. Re-read the contract or its deliveries afterwards rather than adjusting a cached figure.' +
+            '\n\nRefusal code: `DELIVERY_NOT_FOUND` (404) — the delivery does not exist, or belongs to another farm. The two are one answer on purpose.',
         tags: ['Grain'],
         params: TenantParams.extend({
             deliveryId: z.string().openapi({ param: { name: 'deliveryId', in: 'path' } }),

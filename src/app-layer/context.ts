@@ -12,7 +12,7 @@ import {
     isApiKeyToken,
     verifyApiKey,
 } from '@/lib/auth/api-key-auth';
-import { badRequest, codedForbidden, forbidden, notFound, unauthorized } from '@/lib/errors/types';
+import { badRequest, codedForbidden, codedNotFound, forbidden, unauthorized } from '@/lib/errors/types';
 import { personSurfaceOf, type PersonSurface } from '@/lib/auth/guard';
 import prisma from '@/lib/prisma';
 import { getOrgPermissions } from '@/lib/permissions';
@@ -408,7 +408,7 @@ export async function getOrgCtx(
     // and "not a member". The internal log line below carries the
     // real reason for ops diagnostics.
     const externalNotFound = () =>
-        notFound('Organization not found or access not permitted');
+        codedNotFound('ORG_NOT_FOUND_OR_FORBIDDEN', 'Organization not found or access not permitted');
 
     const org = await prisma.organization.findUnique({
         where: { slug: orgSlug },
