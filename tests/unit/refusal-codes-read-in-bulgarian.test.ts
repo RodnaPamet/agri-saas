@@ -41,6 +41,7 @@ jest.mock('@/lib/observability/context', () => ({
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { readCatalogue } from '../helpers/catalogue';
 import { localizeErrorPayload } from '@/lib/errors/localize';
 import type { ApiErrorResponse } from '@/lib/errors/types';
 
@@ -145,6 +146,31 @@ const BATCH_4: ReadonlyArray<[code: string, english: string]> = [
     ['TASK_NOT_AWAITING_REVIEW', 'This task is not awaiting review, so it cannot be approved or sent back.'],
     ['WATER_RATE_UNIT_NOT_FOUND', 'Water-rate unit not found.'],
     ['WATER_RATE_UNIT_REQUIRED', 'A water-rate unit is required when a water rate is set.'],
+];
+
+/**
+ * Batch 5 — the planning surface, `usecases/crop-planning.ts`.
+ *
+ * Four of these said "… not found or belongs to a different tenant", which is
+ * the QUERY's predicate rather than the farmer's situation: the lookup is
+ * scoped by tenant, and merging the two cases is the right privacy behaviour.
+ * But a farmer has no concept of a tenant, and `CROP_PLAN_NOT_READY` named
+ * the `daysToMaturity` COLUMN.
+ *
+ * No source message changed. An entry replaces `message` per locale, so a
+ * clean `en` entry fixes the English reader too and the developer-facing
+ * string survives as the fallback — which is exactly the arrangement #1677's
+ * option 3 settled on. The phrase is at 33 sites across `src`, so rewriting
+ * them would be a separate sweep; giving the codes entries IS the fix.
+ */
+const BATCH_5: ReadonlyArray<[code: string, english: string]> = [
+    ['CROP_PLAN_NOT_READY', 'This plan needs a variety with daysToMaturity set before plantings can be generated.'],
+    ['CROP_TYPE_NAME_REQUIRED', 'A crop name is required.'],
+    ['INVALID_CROP_TYPE', 'Crop type not found or belongs to a different tenant'],
+    ['INVALID_PARCEL', 'Parcel not found or belongs to a different tenant'],
+    ['INVALID_SEASON', 'Season not found or belongs to a different tenant'],
+    ['INVALID_VARIETY', 'Variety not found or belongs to a different tenant'],
+    ['VARIETY_NAME_REQUIRED', 'A variety name is required.'],
 ];
 
 const REPO_ROOT = resolve(__dirname, '../..');
@@ -430,5 +456,60 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 4)', () => {
         await localizeErrorPayload(p);
         expect(p.error.message).toMatch(/[А-Яа-я]/);
         expect(p.error.message).not.toMatch(/IN_PROGRESS|PENDING_REVIEW/);
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 5)', () => {
+    it('ranges over the batch — the denominator', () => {
+        console.log(
+            `[refusal-bg] batch 5 added ${BATCH_5.length} entries, of 69 untranslated before it, 62 after`,
+        );
+        expect(BATCH_5.length).toBeGreaterThanOrEqual(7);
+    });
+
+    it.each(BATCH_5.map(([c, e]) => [c, e] as const))(
+        'batch 5: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('the tenant predicate and the column name do not survive into either locale', async () => {
+        // The point of the batch. Both halves are asserted, because an entry
+        // replaces `message` for EVERY locale — so a clean Bulgarian with a
+        // leaky English would hide half the defect from this file.
+        for (const locale of ['bg', 'en'] as const) {
+            for (const [code, english] of BATCH_5) {
+                getRequestContext.mockReturnValue({
+                    requestId: 'r1',
+                    startTime: 0,
+                    uiLanguage: locale,
+                });
+                const p = payload(code, english);
+                await localizeErrorPayload(p);
+                expect(`${locale} ${code}: ${p.error.message}`).not.toMatch(/different tenant/i);
+                expect(`${locale} ${code}: ${p.error.message}`).not.toMatch(/daysToMaturity/);
+            }
+        }
+    });
+
+    it('the error catalogue adds no FOURTH Bulgarian word for a Location (#1966)', async () => {
+        // «землище» is the land of a VILLAGE — an administrative territory,
+        // not a farm's grouping of fields — and I put it in batch 4's
+        // PARCELS_NOT_IN_LOCATION before noticing the product already had
+        // three words for this entity (Локации / Обект / Нива). Corrected to
+        // the dominant one.
+        //
+        // Pinned narrowly: this asserts the error CATALOGUE adds no new
+        // variant, not that the UI picks one — which term is canonical is
+        // #1966's ruling to make, and a guard that pre-empted it would be
+        // asserting my guess.
+        const catalogue = JSON.stringify(readCatalogue('bg'));
+        expect(catalogue).not.toContain('землище');
     });
 });
