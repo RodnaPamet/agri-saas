@@ -537,7 +537,20 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // DRIFT_ALLOWANCE: a downward ratchet that is not tightened when the gain is
 // earned silently buys room for the next five uncoded strings, which is the
 // opposite of what it is for.
-const CURRENT_BASELINE = 289;
+// 289 -> 271 for #1712's farmer tranche, and the split is worth recording
+// because the sentinel below is what demanded it rather than anyone noticing.
+// Measured by reverting the eight converted source files and re-counting:
+//
+//   with the conversions   271
+//   without them           279   <- main's live count
+//   the baseline was       289
+//
+// So 8 of the 18-string gain is this branch's (nine call sites, eight strings
+// — catalog.ts had two sites sharing one message) and 10 had ALREADY
+// accumulated on main, sitting inside DRIFT_ALLOWANCE where the sentinel
+// tolerates it. Mine tipped the total past 15, which is the only reason the
+// slack became visible. Banking both.
+const CURRENT_BASELINE = 271;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;
