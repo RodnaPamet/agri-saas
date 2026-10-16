@@ -39,13 +39,33 @@ function read(rel: string): string | null {
     const p = join(ROOT, rel);
     return existsSync(p) ? readFileSync(p, 'utf8') : null;
 }
+/**
+ * Resolve a compose value to the mode it actually produces.
+ *
+ * `${AV_SCAN_MODE:-strict}` defers to the env file and falls back to the
+ * default, so the mode the stack runs with — absent an override — is that
+ * default. Compared literally, that string is neither `strict` nor
+ * `permissive`, which made two of the assertions below useless the moment
+ * #1811 introduced the interpolation: the scanner-wiring test
+ * short-circuited on `claimsScanning === false` and stopped checking for a
+ * CLAMAV_HOST at all, and the example-env test compared a literal against an
+ * interpolation.
+ *
+ * A guard that goes quiet when the thing it guards changes shape is worse
+ * than one that fails loudly, so this resolves rather than ignores.
+ */
+function resolveMode(raw: string): string {
+    const interp = raw.match(/^\$\{[A-Z_][A-Z0-9_]*:-([^}]+)\}$/);
+    return interp ? interp[1] : raw;
+}
+
 
 describe('AV_SCAN_MODE coherence', () => {
     it.each(COMPOSE_FILES)('%s only claims a scanning mode when it wires a scanner', (rel) => {
         const content = read(rel);
         if (content === null) return; // file retired — nothing to assert
 
-        const modes = [...content.matchAll(/^\s*AV_SCAN_MODE:\s*(\S+)/gm)].map((m) => m[1]);
+        const modes = [...content.matchAll(/^\s*AV_SCAN_MODE:\s*(\S+)/gm)].map((m) => resolveMode(m[1]));
         if (modes.length === 0) return;
 
         const claimsScanning = modes.some((m) => SCANNING_MODES.includes(m));
@@ -63,7 +83,7 @@ describe('AV_SCAN_MODE coherence', () => {
         if (example === null || vm === null) return;
 
         const exampleMode = example.match(/^AV_SCAN_MODE=(\S+)/m)?.[1];
-        const vmModes = [...vm.matchAll(/^\s*AV_SCAN_MODE:\s*(\S+)/gm)].map((m) => m[1]);
+        const vmModes = [...vm.matchAll(/^\s*AV_SCAN_MODE:\s*(\S+)/gm)].map((m) => resolveMode(m[1]));
         if (!exampleMode || vmModes.length === 0) return;
 
         for (const vmMode of vmModes) {
@@ -78,7 +98,7 @@ describe('AV_SCAN_MODE coherence', () => {
         for (const rel of COMPOSE_FILES) {
             const content = read(rel);
             if (content === null) continue;
-            const modes = [...content.matchAll(/^\s*AV_SCAN_MODE:\s*(\S+)/gm)].map((m) => m[1]);
+            const modes = [...content.matchAll(/^\s*AV_SCAN_MODE:\s*(\S+)/gm)].map((m) => resolveMode(m[1]));
             expect(new Set(modes).size).toBeLessThanOrEqual(1);
         }
     });
