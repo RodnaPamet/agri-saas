@@ -31,7 +31,9 @@
  * Stage 1 rendered through `translateFor`, which supports simple `{param}`
  * only and says so deliberately. `agrent-ios` then reviewed the Bulgarian and
  * three of five sentences needed **plural agreement**: after a numeral,
- * Bulgarian differs by gender (1 локация / 5 локации, 1 потребител /
+ * Bulgarian takes a COUNT form that is not the plain plural — «блокове» is
+ * the plural of «блок», but «5 блока» is what follows a number, and the
+ * feminine and masculine endings differ again (1 потребител /
  * 5 потребителя). Those sentences through `translateFor` would have put
  * literal `{limit, plural, …}` braces in a farmer's message.
  *
@@ -40,7 +42,7 @@
  * reaching for this" — so this uses `createTranslator`. `translateFor` keeps
  * its scope for notification copy.
  *
- * String params pluralise correctly (`{ limit: '5' }` → «5 локации»), measured
+ * String params pluralise correctly (`{ limit: '5' }` → «5 блока»), measured
  * rather than assumed, so `ErrorParams`' string values need no coercion.
  *
  * ## A code may vary by a DISCRIMINATOR param
@@ -49,7 +51,7 @@
  * `DISCRIMINATORS`. Two codes need it and they use different params:
  *
  *   `PLAN_LIMIT_EXCEEDED`  by `resource` — the noun has to be translated and
- *                          declined, so «обяви в Борсата» and «локации» are
+ *                          declined, so «обяви в Борсата» and «блокове» are
  *                          separate sentences rather than one with the wire
  *                          identifier interpolated.
  *   `MODULE_DISABLED`      by `reason` — the remedy differs by which half of a
