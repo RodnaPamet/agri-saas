@@ -23,10 +23,10 @@
  * `LATIN_KEY_ALLOWLIST` with a reason. A new entry means "yes, this bg value
  * really is Latin on purpose".
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const BG = path.resolve(__dirname, '../../messages/bg.json');
 
 function flatten(obj: Record<string, unknown>, prefix = '', out = new Map<string, unknown>()): Map<string, unknown> {
     for (const [k, v] of Object.entries(obj)) {
@@ -92,7 +92,7 @@ export function findLatinCopy(value: unknown): string[] {
 }
 
 describe('i18n — bg.json is Bulgarian (Cyrillic), not English', () => {
-    const bg = flatten(JSON.parse(fs.readFileSync(BG, 'utf-8')));
+    const bg = flatten(readCatalogue('bg'));
 
     it('control: flatten yields the whole catalogue, not an empty map', () => {
         // The detector self-tests below are thorough and prove `findLatinCopy`

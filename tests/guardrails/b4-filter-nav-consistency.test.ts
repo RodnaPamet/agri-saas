@@ -13,6 +13,7 @@
  *      `orgMemberships` prop and renders an "Organizations" section
  *      in the popover when non-empty.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -48,7 +49,7 @@ describe('B4 — filter + nav consistency', () => {
             // T04 i18n — the header moved behind t('organizations'); match
             // the t() reference and cross-check the en.json copy.
             expect(switcher).toMatch(/t\(['"]organizations['"]\)/);
-            expect(JSON.parse(read('messages/en.json')).switcher.organizations).toBe('Organizations');
+            expect(readCatalogue('en').switcher.organizations).toBe('Organizations');
             expect(switcher).toMatch(/tenant-switcher-org-/);
             expect(switcher).toMatch(/href=\{`\/org\/\$\{o\.slug\}`\}/);
         });

@@ -37,6 +37,7 @@
  * same canonical visual: icon-slot Plus + bare noun label.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -45,7 +46,7 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 describe('Action-button canonical entity label', () => {
     describe('1. i18n header-action keys carry no verb prefix', () => {
-        const en = () => JSON.parse(read('messages/en.json')) as Record<string, unknown>;
+        const en = () => readCatalogue('en') as Record<string, unknown>;
 
         // Map of {namespace: header-action key}. These keys are
         // referenced by entity-page header Buttons (the `+ Entity`
@@ -143,7 +144,7 @@ describe('Action-button canonical entity label', () => {
                     textContent.match(/^\{\w+\(['"]([a-zA-Z0-9_.]+)['"]\)\}$/) ??
                     textContent.match(/^\{\w+\.([a-zA-Z0-9_.]+)\}$/);
                 if (tCall) {
-                    const en = JSON.parse(read('messages/en.json')) as Record<string, unknown>;
+                    const en = readCatalogue('en') as Record<string, unknown>;
                     // `ns` may itself be dotted (e.g. 'tasks.list' when the
                     // component calls useTranslations('tasks.list')); walk it
                     // segment-by-segment, then walk the t() key.

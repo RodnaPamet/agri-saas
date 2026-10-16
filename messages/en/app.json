@@ -5327,11 +5327,6 @@
         "staleTitle": "Your session is out of date",
         "staleBody": "You do belong to a farm — it was added after you signed in, so this sign-in does not know about it yet. Sign out and sign in again with the same email address and it will appear. You do not need an invitation."
     },
-    "notFound": {
-        "title": "Page not found",
-        "body": "Sorry, we couldn't find the page you're looking for. It might have been removed or the link is incorrect.",
-        "returnToDashboard": "Return to Dashboard"
-    },
     "tenants": {
         "title": "Choose a workspace",
         "subtitle": "You are a member of multiple workspaces. Select one to continue.",
@@ -6589,10 +6584,5 @@
         "YIELD_RECORD_INVALID_DATE": "{field} must be a valid date.",
         "YIELD_RECORD_NOT_FOUND": "That yield record was not found.",
         "YIELD_RECORD_TONNES_NEGATIVE": "Gross tonnes must be zero or positive."
-    },
-    "publicFarm": {
-        "oblast": "{oblast} oblast",
-        "cropsTitle": "Crops",
-        "aboutTitle": "About the farm"
     }
 }

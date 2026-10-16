@@ -46,6 +46,7 @@
  *   in the page, not a catalogue entry, so there is no key to pin. Recorded in
  *   the issue instead.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -59,9 +60,7 @@ const pins = JSON.parse(
 ) as Pins;
 
 function loadCatalogue(locale: 'bg' | 'en'): Record<string, string> {
-    const raw = JSON.parse(
-        readFileSync(join(REPO, `messages/${locale}.json`), 'utf8'),
-    ) as Record<string, unknown>;
+    const raw = readCatalogue(locale) as Record<string, unknown>;
     const out: Record<string, string> = {};
     const walk = (node: Record<string, unknown>, prefix: string): void => {
         for (const [k, v] of Object.entries(node)) {

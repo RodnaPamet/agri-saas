@@ -47,11 +47,11 @@
  *   - Code-comment doc bullets (✓ / ✗ in JSDoc capability lists).
  *     These never reach a user.
  */
+import { locales, readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const MESSAGES_DIR = path.join(ROOT, 'messages');
 
 // Detector — covers the three Unicode blocks plus the stragglers
 // that drove drift. Order doesn't matter; the test just needs to
@@ -112,12 +112,7 @@ describe('No decorative emoji in messages (Roadmap-4 PR-2)', () => {
         // Grounded: the real catalogues are non-trivial, so "no offences"
         // is a judgement over real keys rather than an empty traversal.
         const seen: Offence[] = [];
-        const probe = JSON.parse(
-            fs.readFileSync(
-                path.join(MESSAGES_DIR, fs.readdirSync(MESSAGES_DIR).filter((f) => f.endsWith('.json'))[0]),
-                'utf-8',
-            ),
-        );
+        const probe = readCatalogue(locales()[0]);
         let keyCount = 0;
         const count = (o: unknown): void => {
             if (o && typeof o === 'object') {
@@ -131,14 +126,13 @@ describe('No decorative emoji in messages (Roadmap-4 PR-2)', () => {
     });
 
     it('every messages/*.json is free of decorative emoji codepoints', () => {
-        const files = fs
-            .readdirSync(MESSAGES_DIR)
-            .filter((f) => f.endsWith('.json'));
+        // Locales, not files — see the sibling guard: after #1813 a locale is
+        // a directory, and the old `.json` filter would scan nothing and
+        // report a clean catalogue.
+        const files = locales();
         const offences: Offence[] = [];
         for (const f of files) {
-            const full = path.join(MESSAGES_DIR, f);
-            const obj = JSON.parse(fs.readFileSync(full, 'utf-8'));
-            walk(obj, f, '', offences);
+            walk(readCatalogue(f), f, '', offences);
         }
         if (offences.length > 0) {
             const lines = offences

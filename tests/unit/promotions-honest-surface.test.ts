@@ -19,14 +19,15 @@
  * "active", since two copies is precisely how a nav link outlives the content
  * it points at.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-const en = JSON.parse(read('messages/en.json'));
-const bg = JSON.parse(read('messages/bg.json'));
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 const SIDEBAR_SRC = read('src/components/layout/SidebarNav.tsx');
 const USECASE_SRC = read('src/app-layer/usecases/promotions.ts');
 

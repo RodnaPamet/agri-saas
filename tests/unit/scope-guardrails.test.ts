@@ -4,6 +4,7 @@
  * Scope was removed in Phase 3-5 and replaced by tenant-wide certification
  * with practice applicability. This test fails if any scope artifacts reappear.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import path from 'path';
 import fs from 'fs';
 import { readPrismaSchema } from '../helpers/prisma-schema';
@@ -99,8 +100,8 @@ describe('Scope Reintroduction Guardrails', () => {
     // ── i18n guardrails ──
 
     it('no i18n files reference scopeRisks key', () => {
-        const enJson = fs.readFileSync(path.join(ROOT, 'messages', 'en.json'), 'utf-8');
-        const bgJson = fs.readFileSync(path.join(ROOT, 'messages', 'bg.json'), 'utf-8');
+        const enJson = JSON.stringify(readCatalogue('en'));
+        const bgJson = JSON.stringify(readCatalogue('bg'));
         expect(enJson).not.toContain('"scopeRisks"');
         expect(bgJson).not.toContain('"scopeRisks"');
     });

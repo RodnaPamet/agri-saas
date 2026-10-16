@@ -18,10 +18,10 @@
  * Scans every `messages/*.json` and fails CI if any value starts
  * with `"+ "`.
  */
+import { locales, readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const MESSAGES_DIR = path.resolve(__dirname, '../../messages');
 
 function flatten(obj: unknown, prefix = ''): Array<[string, string]> {
     const out: Array<[string, string]> = [];
@@ -38,9 +38,11 @@ function flatten(obj: unknown, prefix = ''): Array<[string, string]> {
 }
 
 describe('Translation labels — no "+ " prefix antipattern', () => {
-    const files = fs
-        .readdirSync(MESSAGES_DIR)
-        .filter((f) => f.endsWith('.json'));
+    // LOCALES, not files: a locale became a bundle DIRECTORY in #1813, so a
+    // `.endsWith('.json')` filter over `messages/` now matches nothing and
+    // this suite would scan zero catalogues while still reporting no
+    // violations. The assertion below is the only thing that would notice.
+    const files = locales();
 
     it('found at least one translation file to scan', () => {
         expect(files.length).toBeGreaterThan(0);
@@ -48,11 +50,7 @@ describe('Translation labels — no "+ " prefix antipattern', () => {
 
     for (const file of files) {
         it(`${file} has no values starting with "+ "`, () => {
-            const raw = fs.readFileSync(
-                path.join(MESSAGES_DIR, file),
-                'utf8',
-            );
-            const json = JSON.parse(raw) as unknown;
+            const json = readCatalogue(file) as unknown;
             const violations = flatten(json).filter(([, v]) =>
                 /^\+\s/.test(v),
             );

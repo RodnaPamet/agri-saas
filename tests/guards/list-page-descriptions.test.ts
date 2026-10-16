@@ -23,6 +23,7 @@
  * the words — copy review owns that — but it asserts the slot
  * is filled.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -50,7 +51,7 @@ const ENTITIES = CLIENTS.map((c) => c.entity);
 
 describe('List-page editorial descriptions (Roadmap-2 PR-4)', () => {
     it('each entity section in messages/en.json carries a listDescription', () => {
-        const messages = JSON.parse(read('messages/en.json'));
+        const messages = (readCatalogue('en') as unknown as Record<string, Record<string, string>>);
         const missing: string[] = [];
         for (const entity of ENTITIES) {
             const section = messages[entity];

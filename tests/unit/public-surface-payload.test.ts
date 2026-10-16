@@ -5,6 +5,7 @@
  * cannot tell whether the subset saves a kilobyte or four hundred, and the
  * decision to do this at all rests on which.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -17,7 +18,7 @@ import {
 
 const ROOT = path.resolve(__dirname, '../..');
 const load = (locale: string): Record<string, unknown> =>
-    JSON.parse(fs.readFileSync(path.join(ROOT, `messages/${locale}.json`), 'utf8'));
+    readCatalogue(locale);
 
 const bytes = (v: unknown): number => Buffer.byteLength(JSON.stringify(v), 'utf8');
 

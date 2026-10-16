@@ -18,6 +18,7 @@
  * load-bearing facts are present, and that they are present in Bulgarian too —
  * which is the locale almost every user of this deployment reads.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -26,7 +27,7 @@ import { RETAINED_MODELS, PERSONAL_DATA_REGISTRY } from '@/lib/privacy/personal-
 const ROOT = path.resolve(__dirname, '../..');
 
 function messages(locale: 'en' | 'bg'): Record<string, Record<string, string>> {
-    return JSON.parse(fs.readFileSync(path.join(ROOT, `messages/${locale}.json`), 'utf8'));
+    return readCatalogue(locale) as unknown as Record<string, Record<string, string>>;
 }
 
 const en = messages('en').privacy;

@@ -18,6 +18,7 @@
  * Mirror of `keyboard-shortcut-provider-integration.test.ts` —
  * structural contract over an installed primitive.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -84,7 +85,7 @@ describe('Epic O-4 — org shell structural contract', () => {
         // the row 404'd on every click. The pin is now the ABSENCE — of the
         // row, of its key, and of the href — because re-adding any of the
         // three is the regression.
-        const messages = JSON.parse(read('messages/en.json'));
+        const messages = (readCatalogue('en') as unknown as Record<string, Record<string, string>>);
         const entries: [string, string][] = [
             ['portfolioOverview', 'Portfolio Overview'],
             ['allTenants', 'All Tenants'],

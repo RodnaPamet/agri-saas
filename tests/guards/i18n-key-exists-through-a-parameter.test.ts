@@ -62,6 +62,7 @@
  * lesson from the guard this one complements. An unresolvable helper is a
  * reported number, never a silent pass.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
@@ -89,7 +90,7 @@ function sourceFiles(): string[] {
     return collectSourceFiles({ roots: SCAN_DIRS, extensions: ['.ts', '.tsx'], floor: 1700 });
 }
 
-function loadMessageKeys(file: string): Set<string> {
+function loadMessageKeys(catalogue: Record<string, unknown>): Set<string> {
     const flat = new Set<string>();
     const walk = (node: unknown, prefix: string): void => {
         if (node === null || typeof node !== 'object') return;
@@ -99,7 +100,10 @@ function loadMessageKeys(file: string): Set<string> {
             else flat.add(full);
         }
     };
-    walk(JSON.parse(fs.readFileSync(file, 'utf8')), '');
+    // Takes the catalogue, not a path (#1813): the location belongs to
+    // `tests/helpers/catalogue.ts`, and a path parameter is how it leaks back
+    // out one caller at a time.
+    walk(catalogue, '');
     return flat;
 }
 
@@ -269,8 +273,8 @@ interface Audit {
     keysUnresolved: number;
 }
 
-function audit(messagesFile: string): Audit {
-    const known = loadMessageKeys(messagesFile);
+function audit(catalogue: Record<string, unknown>): Audit {
+    const known = loadMessageKeys(catalogue);
     const files = sourceFiles();
     const helpers: Helper[] = [];
     for (const f of files) helpers.push(...findHelpers(parse(f), path.relative(REPO_ROOT, f)));
@@ -305,7 +309,7 @@ function audit(messagesFile: string): Audit {
 }
 
 describe('i18n — a key reached through a parameter resolves too', () => {
-    const res = audit(path.join(REPO_ROOT, 'messages/en.json'));
+    const res = audit(readCatalogue('en') as Record<string, unknown>);
 
     it('the scanner resolved a real population through call sites', () => {
         // The positive control. Without it a scanner that traced nothing —
@@ -350,7 +354,7 @@ describe('i18n — a key reached through a parameter resolves too', () => {
 
 describe('population report', () => {
     it('prints the denominator', () => {
-        const res = audit(path.join(REPO_ROOT, 'messages/en.json'));
+        const res = audit(readCatalogue('en') as Record<string, unknown>);
         console.log(
             `[i18n-param-keys] candidate helpers (a param called with a literal): ${res.helpers}\n` +
                 `[i18n-param-keys] of those, traced to a useTranslations caller: ${res.translatorHelpers}\n` +

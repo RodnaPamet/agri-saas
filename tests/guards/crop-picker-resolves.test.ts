@@ -32,6 +32,7 @@
  * break the cost basis. The pair is pinned here because neither surface can
  * see the other's requirement.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -46,7 +47,7 @@ import { isCanonicalCommodity, normalizeCommodity } from '@/lib/market/commodity
 const ROOT = path.resolve(__dirname, '../..');
 
 const messages = (locale: string): Record<string, unknown> =>
-    JSON.parse(fs.readFileSync(path.join(ROOT, `messages/${locale}.json`), 'utf8'));
+    readCatalogue(locale);
 
 describe('every pickable crop resolves to a commodity', () => {
     it('control: the list is non-trivial', () => {

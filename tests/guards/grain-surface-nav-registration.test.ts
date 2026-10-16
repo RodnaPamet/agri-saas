@@ -31,6 +31,7 @@
  * moment it is added there — the one place a new surface is guaranteed
  * to be registered, because it is the one the author is looking at.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -105,10 +106,10 @@ describe('grain surfaces are registered in every nav registry', () => {
             // The sidebar renders `t(key)` from the `sidebarNav` namespace,
             // which is a DIFFERENT namespace from the in-page row's
             // `grain.nav` — having one is no evidence of the other.
-            const en = JSON.parse(read(path.join(ROOT, 'messages/en.json')));
-            const bg = JSON.parse(read(path.join(ROOT, 'messages/bg.json')));
-            expect(typeof en.sidebarNav[key]).toBe('string');
-            expect(typeof bg.sidebarNav[key]).toBe('string');
+            const en = readCatalogue('en');
+            const bg = readCatalogue('bg');
+            expect(typeof (en.sidebarNav as unknown as Record<string, string>)[key]).toBe('string');
+            expect(typeof (bg.sidebarNav as unknown as Record<string, string>)[key]).toBe('string');
         },
     );
 });

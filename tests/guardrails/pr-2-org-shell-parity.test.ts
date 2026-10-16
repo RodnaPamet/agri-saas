@@ -18,6 +18,7 @@
  *      structure with brand + breadcrumbs + slot stack — no second
  *      navbar style exists.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -44,7 +45,7 @@ describe('PR-2 — org shell parity', () => {
             // en.json copy so the two-section contract still holds.
             expect(src).toMatch(/t\(['"]organizations['"]\)/);
             expect(src).toMatch(/t\(['"]workspaces['"]\)/);
-            const messages = JSON.parse(read('messages/en.json'));
+            const messages = readCatalogue('en');
             expect(messages.switcher.organizations).toBe('Organizations');
             expect(messages.switcher.workspaces).toBe('Workspaces');
         });

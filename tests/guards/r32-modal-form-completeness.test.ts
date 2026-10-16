@@ -27,6 +27,7 @@
  * `assets` are the surviving migrations; every assertion below is
  * unchanged for them.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -146,7 +147,7 @@ describe("R32-task-63 — modal-form completeness", () => {
                     /window\.confirm\(\s*\w+\(['"]([a-zA-Z0-9_.]+)['"]\)/,
                 );
                 if (confirmArg) {
-                    const en = JSON.parse(read("messages/en.json")) as Record<
+                    const en = (readCatalogue('en') as unknown) as Record<
                         string,
                         unknown
                     >;

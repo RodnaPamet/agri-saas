@@ -21,6 +21,7 @@
  * picker and of that redirect, because re-adding either is the
  * regression.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 import { blankNonCode } from '../helpers/blank-non-code';
@@ -84,7 +85,7 @@ describe('Epic O-4 — OrgSwitcher structural contract', () => {
         // `t('switchOrgContext')`; the English copy is asserted below to
         // stay exactly "Switch organization context" (a11y-stable label).
         expect(src).toMatch(/aria-label=\{\w+\(['"]switchOrgContext['"]\)\}/);
-        const messages = JSON.parse(read('messages/en.json'));
+        const messages = readCatalogue('en');
         expect(messages.orgSwitcher.switchOrgContext).toBe('Switch organization context');
         expect(src).toMatch(/role="status"/);
     });

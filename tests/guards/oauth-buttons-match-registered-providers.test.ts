@@ -29,6 +29,7 @@
  * comes from `getProviders()` at runtime, and a rendered test would need the
  * whole page's effect chain; the honest statement is that the wiring exists.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -100,7 +101,7 @@ describe('every registerable OAuth provider is reachable from /login', () => {
 
     it('the Apple label exists in BOTH locales', () => {
         for (const loc of ['en', 'bg']) {
-            const messages = JSON.parse(readFileSync(join(ROOT, `messages/${loc}.json`), 'utf8'));
+            const messages = readCatalogue(loc);
             expect({ loc, label: typeof messages.login?.continueWithApple })
                 .toEqual({ loc, label: 'string' });
         }

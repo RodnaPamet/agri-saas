@@ -25,6 +25,7 @@
  * an untested path for the one case the link exists to serve, a person sent
  * here from the native sign-in sheet who has no second device to scan with.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -78,9 +79,7 @@ describe('the MFA enrolment QR is scannable (#1646)', () => {
         // A missing key renders the key name as the link text, which is worse
         // than no link: it looks like a bug the farmer caused.
         for (const loc of ['en', 'bg']) {
-            const messages = JSON.parse(
-                fs.readFileSync(path.join(REPO_ROOT, `messages/${loc}.json`), 'utf8'),
-            ) as { mfa: { enroll: Record<string, string> } };
+            const messages = readCatalogue(loc) as { mfa: { enroll: Record<string, string> } };
             expect(messages.mfa.enroll.openInAuthenticator).toBeTruthy();
         }
     });
