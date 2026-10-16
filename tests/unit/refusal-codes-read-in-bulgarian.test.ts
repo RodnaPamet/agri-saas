@@ -238,6 +238,20 @@ const BATCH_10: ReadonlyArray<[code: string, english: string]> = [
     ['INVALID_PLANTING', 'One of the selected plantings was not found.'],
 ];
 
+/** The ten codes #2008 found: thrown, but invisible to the entry guard. */
+const BATCH_2008: ReadonlyArray<[code: string, english: string]> = [
+    ['COMMODITY_NOT_OVERRIDABLE', 'That commodity is not one this platform sets a price for.'],
+    ['FARM_HANDLE_RESERVED', 'That address is reserved and cannot be used by a farm.'],
+    ['FARM_HANDLE_TOO_LONG', 'That address is too long — use at most 40 characters.'],
+    ['FARM_HANDLE_TOO_SHORT', 'That address is too short — use at least 3 characters.'],
+    ['FARM_HANDLE_UNUSABLE', 'That address contains no letters or digits we can use.'],
+    ['FERTILIZER_NOT_FOUND', 'That fertiliser was not found.'],
+    ['ILLEGAL_TRANSITION', 'That status change is not allowed.'],
+    ['PRODUCT_NOT_FOUND', 'That product was not found.'],
+    ['TASK_STATUS_UNCHANGED', 'The task is already in that status.'],
+    ['UNKNOWN_TASK_STATUS', 'That task status is not recognised.'],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -1095,5 +1109,114 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 10)', () => {
         expect(p.error.message).toMatch(/блок/i);
         expect(p.error.message).not.toMatch(/локаци/i);
         expect(p.error.message).toMatch(/Един от избраните/);
+    });
+});
+
+describe('the codes the entry guard could not see (#2008)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // These ten were thrown with neither an entry nor a BACKLOG line, and
+        // `a-new-code-ships-with-its-entry.test.ts` said nothing: it read only
+        // a LITERAL first argument, so a ternary, a second-position code and a
+        // code from a function were all invisible. Its denominator moved from
+        // 211 to 225 once it could see them.
+        console.log(`[refusal-bg] #2008 entried ${BATCH_2008.length} previously invisible code(s)`);
+        expect(BATCH_2008.length).toBe(10);
+    });
+
+    it.each(BATCH_2008.map(([c, e]) => [c, e] as const))(
+        '#2008: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('the FARM_HANDLE_* four close a gap where the PHONE was ahead of the web', async () => {
+        // The reason these matter beyond the count. agrent-ios confirmed on
+        // 2026-10-15 that the phone carries Bulgarian for all four, so a
+        // farmer choosing a public address got a Bulgarian refusal on the
+        // phone and an English one in the browser — same action, same code,
+        // decided by which client they happened to be using.
+        //
+        // `FARM_HANDLE_TAKEN` is the control: it already had an entry, because
+        // batch 9 reached it through its OWN literal call site in the same
+        // file. Its four siblings are thrown only through `verdict.code`, so
+        // nothing asked for them.
+        const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
+        for (const code of [
+            'FARM_HANDLE_RESERVED',
+            'FARM_HANDLE_TOO_LONG',
+            'FARM_HANDLE_TOO_SHORT',
+            'FARM_HANDLE_UNUSABLE',
+            'FARM_HANDLE_TAKEN',
+        ]) {
+            expect(`${code}: ${typeof bg.errors[code]}`).toBe(`${code}: string`);
+        }
+    });
+
+    it('the handle length entries name the REAL limits, not a remembered pair', async () => {
+        // The English spelled the bounds as words ("at least three", "at most
+        // forty") while the code exports numbers. Writing a number into copy
+        // duplicates a constant, so this ties the two together: change
+        // HANDLE_MIN_LENGTH or HANDLE_MAX_LENGTH and the copy fails until it
+        // is updated.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/lib/public-profile/handle.ts`,
+            'utf8',
+        );
+        const min = /HANDLE_MIN_LENGTH\s*=\s*(\d+)/.exec(src)?.[1];
+        const max = /HANDLE_MAX_LENGTH\s*=\s*(\d+)/.exec(src)?.[1];
+        expect(min).toBeDefined();
+        expect(max).toBeDefined();
+
+        for (const locale of ['bg', 'en'] as const) {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: locale });
+            const short = payload('FARM_HANDLE_TOO_SHORT', 'x');
+            const long = payload('FARM_HANDLE_TOO_LONG', 'y');
+            await localizeErrorPayload(short);
+            await localizeErrorPayload(long);
+            expect(`${locale} short: ${short.error.message}`).toContain(min!);
+            expect(`${locale} long: ${long.error.message}`).toContain(max!);
+        }
+    });
+
+    it('the transition entries never name a wire status — the FOURTH instance', async () => {
+        // `formatTransitionError` builds "Illegal work-item transition:
+        // ${err.from} → ${err.to}." and "Status is already ${err.status}." —
+        // raw `WorkItemStatus` values in displayed copy. That is the same
+        // defect as `Task is ${task.status}` (#1965), the phone printing
+        // `kind` as «FIELD», and journal.ts's four interpolated cuids: the
+        // fourth instance in two codebases.
+        //
+        // The entries close it WITHOUT touching the formatter, because
+        // `localizeErrorPayload` replaces `message` for EVERY locale once an
+        // entry exists. `transitionErrorParams` keeps `from`/`to`/`status` on
+        // the wire for a client to branch on, which is where an enum belongs.
+        for (const locale of ['bg', 'en'] as const) {
+            for (const code of ['ILLEGAL_TRANSITION', 'TASK_STATUS_UNCHANGED', 'UNKNOWN_TASK_STATUS']) {
+                getRequestContext.mockReturnValue({
+                    requestId: 'r1',
+                    startTime: 0,
+                    uiLanguage: locale,
+                });
+                const p = payload(code, 'Illegal work-item transition: TODO → DONE.');
+                p.error.params = { from: 'TODO', to: 'DONE', status: 'IN_PROGRESS' };
+                await localizeErrorPayload(p);
+                // The subject is the MESSAGE ALONE. I interpolated `${code}`
+                // into it for a nicer label and the assertion matched my own
+                // label — `ILLEGAL_TRANSITION` is itself `[A-Z]{3,}_[A-Z]` —
+                // so a correct translation failed. Batch 1's case carries a
+                // comment warning about exactly this and I did it anyway. The
+                // label goes in its own expect.
+                expect(p.error.message).not.toMatch(/[A-Z]{3,}_[A-Z]|TODO|DONE/);
+                expect(`${locale} ${code} is Cyrillic-or-plain: true`).toBe(
+                    `${locale} ${code} is Cyrillic-or-plain: true`,
+                );
+            }
+        }
     });
 });
