@@ -1,5 +1,33 @@
 /**
- * The public surface must not mount the application's client chrome — #1872.
+ * The public surface must not RENDER the application's client chrome — #1872.
+ *
+ * ## What this establishes, and what it does not — #1971
+ *
+ * The verb is load-bearing. Every assertion here is about which branch of the
+ * root layout a component sits in, which is a RENDERING property. It is not a
+ * statement about what reaches the browser, and the two differ by a measured
+ * amount: `src/app/layout.tsx:14` imports `Providers` STATICALLY, so a chunk
+ * from that subtree is in the route's client chunk set whether or not the
+ * branch renders. Measured 2026-10-16 on a local build whose chunk hashes
+ * reproduce CI's: sonner's 8,895 raw bytes arrive on `/f/{handle}`, 0.9% of
+ * the 1,023,621 raw bytes of JS that route loads.
+ *
+ * So this file previously read as "the public surface ships none of the app's
+ * chrome" while establishing only that it does not mount it. The assertions
+ * were right; the claim was wider than they could support, which is the
+ * failure mode worth naming — a guard can be correct and still describe
+ * itself as covering more than it does.
+ *
+ * Deliberately NOT asserted here: that no provider-only library appears in
+ * the route's client chunks. That property needs build output, and the cheap
+ * alternative — asserting the static import still exists, so the residue is
+ * tracked — would be a guard against a FIX: it would fail the moment somebody
+ * legitimately removed the import. #1971 holds the measurement and the two
+ * options for acting on it.
+ *
+ * What #1872 DID remove is the bulk, and that is confirmed by the same
+ * measurement: no next-intl client runtime, no SWR, no cmdk, no radix and no
+ * floating-ui appear in the public page's chunks.
  *
  * `/f/{handle}` is a page a stranger opens from a shared link. It used to
  * mount the whole app tree: a ⌘K command palette, a shortcut help overlay, a
@@ -35,7 +63,12 @@ import { REPO_ROOT } from '../helpers/collect-files';
 
 const LAYOUT = path.join(REPO_ROOT, 'src/app/layout.tsx');
 
-/** Client chrome that must never mount for an anonymous visitor. */
+/**
+ * Client chrome that must never MOUNT for an anonymous visitor.
+ *
+ * Mount, not ship — see the note at the top of this file on why the
+ * distinction is measured rather than pedantic.
+ */
 const APP_ONLY_CHROME = [
     'ServiceWorkerRegistrar',
     'ClientDataRetentionSweep',
@@ -70,7 +103,7 @@ export function splitPublicBranch(source: string): Branches | null {
     };
 }
 
-describe('the public surface skips the app’s client chrome', () => {
+describe('the public surface does not RENDER the app’s client chrome', () => {
     const source = fs.readFileSync(LAYOUT, 'utf8');
 
     it('found the branch it is asserting about', () => {
