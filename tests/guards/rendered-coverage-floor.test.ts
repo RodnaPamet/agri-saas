@@ -270,7 +270,16 @@ const ROOT = path.resolve(__dirname, '../..');
 // 258 is this branch's own measured live count AFTER rebasing onto the main
 // that carries #1740's 255 -> 257. Choosing a number before that rebase would
 // have been arithmetic against a base that was about to move.
-const RENDERED_TEST_FLOOR = 261;
+// Raised 261 -> 262 for `lease-payments-staleness` (#1952): the Rent
+// editor's settlement log had no staleness guard, so moving straight from
+// lease A to lease B left both requests in flight and let the loser paint —
+// A's payments inside B's panel, with no lease id in the row shape to reveal
+// it. The new file locks in three cases the component had none for.
+//
+// 262 is this branch's own measured live count. The guard compares against
+// THIS PR's base rather than main's tip, so a peer merging first cannot make
+// it fire — but the number still has to be measured rather than derived.
+const RENDERED_TEST_FLOOR = 262;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
