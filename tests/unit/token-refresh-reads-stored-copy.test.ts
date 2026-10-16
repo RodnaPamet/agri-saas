@@ -77,7 +77,10 @@ const staleCookieToken = () => ({
     expiresAt: EXPIRED(),
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- NextAuth's
+// jwt callback params type is not exported, and the real callback reads only
+// `token` on this path; typing the other fields would mean restating an
+// internal shape that the library can change under us.
 const callJwt = (token: Record<string, unknown>) => jwtCallback({ token } as any);
 
 describe('the jwt callback OAuth refresh', () => {
