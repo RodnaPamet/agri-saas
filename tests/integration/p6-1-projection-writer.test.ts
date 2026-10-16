@@ -137,11 +137,25 @@ describeFn('projectFarmBrand', () => {
                 'displayNameLatin',
                 'handle',
                 'indexable',
+                // P6.3 (#1812). Same intermediate state as `displayNameLatin`
+                // above: the columns exist so a released tag contains them
+                // before the image pipeline writes them, and the allowlist
+                // marks both brand fields `private` until it does. Asserted
+                // as empty below rather than merely listed here.
+                'logoMediaHash',
+                'photoMediaHashes',
                 'oblast',
                 'projectedAt',
                 'tagline',
             ].sort(),
         );
+        // The `private` decision, checked at RUNTIME and not only by the
+        // allowlist's types. A column that exists is a column a careless
+        // writer can fill, so this asserts that publishing a farm with no
+        // images crosses NOTHING into the two new columns — which is what
+        // makes the phase split real rather than nominal.
+        expect((row as { logoMediaHash: string | null }).logoMediaHash).toBeNull();
+        expect((row as { photoMediaHashes: string[] }).photoMediaHashes).toEqual([]);
         // …and now POPULATED. The column shipped a release ahead of this
         // (v12.29.0) and the writer fills it in the same PR as the search that
         // reads it, which is what the phase's ordering rule is for.

@@ -147,6 +147,27 @@ model FarmBrand {
   /// NOTHING READS THESE YET — the columns ship one release ahead of their
   /// writer, as `FarmBrand.indexable` (#1850 -> #1873) and
   /// `ExchangeListing.publishAsFarm` (#1914 -> #1922) did.
+  /// P6.3 (#1812) — the farm's logo, as the CONTENT HASH of a processed image.
+  ///
+  /// A hash rather than a `FileRecord` FK for the same reason `crops` is a
+  /// `String[]` here: `PublicFarmProfile` is tenantless and cannot hold a
+  /// foreign key into tenant-scoped `FileRecord`, so the projection must carry
+  /// something self-contained. A sha256 is, and it makes
+  /// `/api/public/media/[hash]` immutable by construction — one hash names
+  /// exactly one byte sequence, forever.
+  ///
+  /// Null means no logo. The bytes live in `FileRecord`, keyed by
+  /// `contentSha256`.
+  logoMediaHash String?
+
+  /// Gallery photographs, ordered, as content hashes.
+  ///
+  /// An array rather than a join table: the cap is small and enforced in the
+  /// usecase, order is the array order, and a join table would add a
+  /// tenant-scoped model to classify for RLS and erasure in exchange for
+  /// nothing the array does not already give.
+  photoMediaHashes String[]
+
   hideTagline Boolean @default(false)
   hideAbout   Boolean @default(false)
   hideOblast  Boolean @default(false)
@@ -265,6 +286,17 @@ model PublicFarmProfile {
   /// and the only consequence is that its Latin form does not match —
   /// its Cyrillic name still does.
   displayNameLatin String?
+
+  /// P6.3 (#1812) — the projected image hashes.
+  ///
+  /// These are the AUTHORITY for public media, not merely a copy. The media
+  /// route serves a hash only if some projection references it, and that is
+  /// what makes unpublishing revoke access: a hash is unguessable but
+  /// permanent, so "a FileRecord with this hash exists" would keep serving an
+  /// image after the farm withdrew it. Checking the projection ties the bytes'
+  /// reachability to the same row that publishes everything else.
+  logoMediaHash    String?
+  photoMediaHashes String[]
 
   /// When the projection was last rewritten. The freshness handle for
   /// P6.10's "unpublish → 404 within 60s".
