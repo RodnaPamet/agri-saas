@@ -26,7 +26,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { assertCanAdmin } from '../../../policies/common';
 import { logEvent } from '../../../events/audit';
 import { encryptField, decryptField } from '@/lib/security/encryption';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { codedNotFound, codedBadRequest } from '@/lib/errors/types';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import type { TokenRefreshResult } from '@/lib/auth/refresh';
 import {
@@ -83,7 +83,10 @@ export async function completeGoogleConnect(
         // Neither scope was granted — the user reached the consent screen and
         // ticked nothing. Refusing beats storing a connection that can do
         // nothing, which would show as connected and fail on first use.
-        throw badRequest('Google returned no usable scopes — grant Drive or Calendar access to connect');
+        throw codedBadRequest(
+            'GOOGLE_SCOPES_MISSING',
+            'Google returned no usable permissions. Grant Drive or Calendar access to connect.',
+        );
     }
 
     const config: GoogleConfigJson = {
@@ -106,7 +109,10 @@ export async function completeGoogleConnect(
             });
         } catch (e) {
             if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-                throw badRequest('A Google connection with this name already exists');
+                throw codedBadRequest(
+                    'GOOGLE_CONNECTION_NAME_TAKEN',
+                    'A Google connection with this name already exists.',
+                );
             }
             throw e;
         }
@@ -211,7 +217,7 @@ export async function disconnectGoogle(ctx: RequestContext, connectionId: string
             where: { id: connectionId, tenantId: ctx.tenantId, provider: GOOGLE_PROVIDER },
             select: { id: true },
         });
-        if (!conn) throw notFound('Google connection not found');
+        if (!conn) throw codedNotFound('GOOGLE_CONNECTION_NOT_FOUND', 'Google connection not found.');
 
         await db.integrationConnection.delete({ where: { id: conn.id } });
         await logEvent(db, ctx, {
@@ -234,7 +240,21 @@ async function loadConnection(db: PrismaTx, ctx: RequestContext, connectionId: s
     const conn = await db.integrationConnection.findFirst({
         where: { id: connectionId, tenantId: ctx.tenantId, provider: GOOGLE_PROVIDER },
     });
-    if (!conn) throw notFound('Google connection not found');
-    if (!conn.secretEncrypted) throw badRequest('Google connection has no stored credentials');
+    /**
+     * ONE code for "not yours" and "not there", deliberately.
+     *
+     * The query above filters on `tenantId`, so a connection belonging to
+     * another tenant returns null and takes this same path as one that does
+     * not exist. Splitting those into distinct codes would turn the refusal
+     * into a cross-tenant existence oracle — the same reasoning that makes
+     * `assertFeatureEnabled` answer 404 rather than 403.
+     */
+    if (!conn) throw codedNotFound('GOOGLE_CONNECTION_NOT_FOUND', 'Google connection not found.');
+    if (!conn.secretEncrypted) {
+        throw codedBadRequest(
+            'GOOGLE_CONNECTION_NO_CREDENTIALS',
+            'This Google connection has no stored credentials. Reconnect it.',
+        );
+    }
     return conn;
 }

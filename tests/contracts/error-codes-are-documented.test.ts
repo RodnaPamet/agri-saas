@@ -402,6 +402,28 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'ORG_NOT_FOUND_OR_FORBIDDEN',
     'SUPPORT_SCHEME_NOT_FOUND',
     'TARGET_USER_NOT_IN_TENANT',
+
+    // The five Google-integration codes (#2005), here for the
+    // `COMPANY_NAME_TAKEN` reason above and measured rather than assumed:
+    // `src/generated/openapi.json` holds 184 paths and NONE of them is a
+    // google path, so naming these codes means adding three operations to the
+    // spec — a bigger change than the one that coded the throws.
+    //
+    // All three routes are already on `openapi-undocumented-baseline.json`
+    // (added in #2005 with UNDOCUMENTED_CEILING 214 -> 217, matching how all
+    // four SharePoint integration routes are handled), so this is the same
+    // tracked gap reached from the code side rather than a new one.
+    //
+    // `GOOGLE_CONNECTION_NOT_FOUND` is ONE code for two sites, and must not
+    // be resolved by splitting it. `loadConnection` and `disconnectGoogle`
+    // both query on `tenantId`, so another tenant's connection returns null
+    // and takes the same path as one that does not exist — the
+    // `ORG_NOT_FOUND_OR_FORBIDDEN` note directly above is the same rule.
+    'CONNECTION_ID_REQUIRED',
+    'GOOGLE_CONNECTION_NAME_TAKEN',
+    'GOOGLE_CONNECTION_NOT_FOUND',
+    'GOOGLE_CONNECTION_NO_CREDENTIALS',
+    'GOOGLE_SCOPES_MISSING',
 ];
 
 /** Every code reachable through a `coded*()` helper, from source. */
