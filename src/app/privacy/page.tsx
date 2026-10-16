@@ -65,7 +65,11 @@ export default async function PrivacyPage() {
         // what survives has a place to be checked against rather than a
         // paragraph somebody has to remember to edit.
         { key: 'export', body: ['exportBody'] },
-        { key: 'delete', body: ['deleteRequest', 'deleteWhatHappens', 'deleteIncomplete'] },
+        // `deleteFiles` sits between what happens and what cannot be deleted,
+        // because uploaded files are the clearest case of the middle ground the
+        // section describes: they survive as the farm's record, and stop naming
+        // the person because the account that uploaded them does.
+        { key: 'delete', body: ['deleteRequest', 'deleteWhatHappens', 'deleteFiles', 'deleteIncomplete'] },
     ] as const;
 
     const retentionMonths = Math.round(PROMOTION_LEAD_RETENTION_DAYS / 30);
