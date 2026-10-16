@@ -144,7 +144,16 @@ services:
       DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STORAGE_PROVIDER: local
-      AV_SCAN_MODE: disabled
+      # #1811 — `strict` is the DEFAULT here and in src/env.ts, so an operator
+      # has to opt OUT of scanning rather than into it. It was a hardcoded
+      # `disabled` in this file, which silently overrode the .env value: a
+      # compose `environment:` entry beats `env_file`, so setting
+      # AV_SCAN_MODE=strict in /opt/agrent/.env changed nothing. The process
+      # env is the only place that tells you which won.
+      AV_SCAN_MODE: ${AV_SCAN_MODE:-strict}
+      # Explicit, so the app -> clamav wiring is visible beside the service
+      # that provides it. clamd's port, on the internal network, never published.
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav:3310}
       # P1.8 — the VM's own Redis, so budgets survive a deploy.
       # "memory" kept every counter in-process, and Watchtower
       # recreates this container on each image push.
@@ -200,7 +209,16 @@ services:
       DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STORAGE_PROVIDER: local
-      AV_SCAN_MODE: disabled
+      # #1811 — `strict` is the DEFAULT here and in src/env.ts, so an operator
+      # has to opt OUT of scanning rather than into it. It was a hardcoded
+      # `disabled` in this file, which silently overrode the .env value: a
+      # compose `environment:` entry beats `env_file`, so setting
+      # AV_SCAN_MODE=strict in /opt/agrent/.env changed nothing. The process
+      # env is the only place that tells you which won.
+      AV_SCAN_MODE: ${AV_SCAN_MODE:-strict}
+      # Explicit, so the app -> clamav wiring is visible beside the service
+      # that provides it. clamd's port, on the internal network, never published.
+      CLAMAV_HOST: ${CLAMAV_HOST:-clamav:3310}
       # P1.8 — the VM's own Redis, so budgets survive a deploy.
       # "memory" kept every counter in-process, and Watchtower
       # recreates this container on each image push.
@@ -275,6 +293,43 @@ services:
     networks:
       - internal
 
+  # ── ClamAV (P6.2, #1811) — virus scanning for uploaded files ─────
+  #
+  # Production ran with `AV_SCAN_MODE=disabled`, no `CLAMAV_HOST` and no
+  # container. That is not a flag state: `scanBuffer()` in
+  # src/lib/storage/av-scan.ts returns `status: 'CLEAN', engine: 'disabled'`
+  # when the host is unset, so every upload across ~8 routes (account avatar,
+  # task evidence, journal files, spatial import, grain invoices, evidence
+  # uploads and imports) was recorded as scanned-and-clean without being
+  # scanned. The module's own docblock calls that mode "dev/test only" and
+  # src/env.ts defaults to `strict`; production had overridden it.
+  #
+  # Mirrors the working service on inflect-compliance: same image, same
+  # definitions volume, same healthcheck script.
+  #
+  # `start_period: 180s` is not padding. clamd loads its full signature
+  # database before it answers, which takes minutes on a cold volume — and
+  # `AV_SCAN_MODE=strict` BLOCKS uploads while the scanner is unreachable, so
+  # flipping the mode before this reports healthy would break working upload
+  # paths. Order: start clamav, wait for healthy, verify a scan, then flip.
+  #
+  # No ports published. Only the app and worker talk to it, over the internal
+  # network on clamd's 3310.
+  clamav:
+    logging: *logging
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - clamav-defs:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    networks:
+      - internal
+
 networks:
   internal:
     driver: bridge
@@ -288,5 +343,7 @@ volumes:
     name: agrent-uploads
   caddy-data:
     name: agrent-caddy-data
+  clamav-defs:
+    driver: local
   caddy-config:
     name: agrent-caddy-config
