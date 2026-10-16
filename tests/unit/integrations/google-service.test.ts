@@ -133,7 +133,14 @@ describe('completeGoogleConnect', () => {
         // use.
         exchangeMock.mockResolvedValue(grant([]));
 
-        await expect(completeGoogleConnect(ctx, INPUT)).rejects.toThrow(/no usable scopes/i);
+        // Asserted on the CODE, not the copy. `ErrorResponse.error.code` is
+        // what a client switches on and what the spec publishes; the message
+        // is copy that gets reworded and translated. A test pinned to the
+        // wording fails every time the wording improves — this one did,
+        // when "no usable scopes" became "no usable permissions".
+        await expect(completeGoogleConnect(ctx, INPUT)).rejects.toMatchObject({
+            code: 'GOOGLE_SCOPES_MISSING',
+        });
         expect(mockDb.integrationConnection.create).not.toHaveBeenCalled();
     });
 
@@ -169,7 +176,9 @@ describe('completeGoogleConnect', () => {
             new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
         );
 
-        await expect(completeGoogleConnect(ctx, INPUT)).rejects.toThrow(/already exists/i);
+        await expect(completeGoogleConnect(ctx, INPUT)).rejects.toMatchObject({
+            code: 'GOOGLE_CONNECTION_NAME_TAKEN',
+        });
     });
 });
 
@@ -198,7 +207,11 @@ describe('disconnectGoogle', () => {
     it('404s for a connection belonging to another tenant or provider', async () => {
         mockDb.integrationConnection.findFirst.mockResolvedValue(null);
 
-        await expect(disconnectGoogle(ctx, 'conn-x')).rejects.toThrow(/not found/i);
+        // ONE code for "not yours" and "not there" — the query filters on
+        // tenantId, so another tenant's connection takes this same path.
+        await expect(disconnectGoogle(ctx, 'conn-x')).rejects.toMatchObject({
+            code: 'GOOGLE_CONNECTION_NOT_FOUND',
+        });
         expect(mockDb.integrationConnection.delete).not.toHaveBeenCalled();
     });
 });
