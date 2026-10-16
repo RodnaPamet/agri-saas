@@ -175,7 +175,15 @@ export const LIMITS: Limits = {
     // test fixture whose whole point is mutating a ref between renders. What
     // was missing was the machine-readable half, which is the only half this
     // ceiling can see.
-    unjustifiedCeiling: 432,
+    // LOWERED 432 -> 415 (#1730). Seventeen `set-state-in-effect` directives
+    // got their `-- reason` half: one shape, an async loader invoked by a
+    // mount effect, where the setState lands after an await and so is not the
+    // synchronous render cascade the rule is about.
+    //
+    // Exactly 17, which is the useful part — the `refs` batch moved 18 from
+    // 14 directives because some cover two findings on a line, and this one
+    // moving 1:1 says each of these governs a single `useEffect` call.
+    unjustifiedCeiling: 415,
     // The 13 error-severity mutes that exist today. `no-explicit-any` is
     // escalated to `error` for the security surface by the override at
     // `eslint.config.mjs:116`, so those mutes turn the repo's STRICTEST scoping

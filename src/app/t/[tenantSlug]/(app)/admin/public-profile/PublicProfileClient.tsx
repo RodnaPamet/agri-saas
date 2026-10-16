@@ -189,7 +189,7 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
         // on every render, which would refetch the draft each time.
     }, [apiUrl, hydrate, t]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the setState lands after an await, not the synchronous cascade this rule is about; this loader CAN re-run because its dep changes while mounted, and the missing staleness guard that makes that a defect is #1952
     useEffect(() => { load(); }, [load]);
 
     /**
