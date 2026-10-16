@@ -47,14 +47,43 @@ jest.mock('@/lib/notifications/notification-bus', () => ({
 
 import { GET } from '@/app/api/notifications/stream/route';
 
-const request = () =>
-    new NextRequest('http://localhost/api/notifications/stream', { method: 'GET' });
+/**
+ * Every request carries an AbortController, and `afterEach` fires it.
+ *
+ * Not hygiene — this suite's first version omitted it and the consequence was
+ * a 25-minute CI timeout. With the flag ON the route opens a live stream whose
+ * `start()` registers a 25s heartbeat `setInterval`, and the only release was
+ * an `abort` on the request signal. Nothing aborted, the timer outlived the
+ * test, the jest worker never exited, and shard 4 of #1984 failed by exceeding
+ * its budget. The failure named the shard, not this file, which is what makes
+ * the class worth a comment: a leaked timer reports as a timeout somewhere
+ * else entirely.
+ *
+ * The route now also releases on stream `cancel()`, so either path suffices.
+ * Both are kept: this asserts the production path (abort) while the route's
+ * own `cancel` covers the consumer that does not abort.
+ */
+const inFlight: AbortController[] = [];
+
+const request = () => {
+    const ac = new AbortController();
+    inFlight.push(ac);
+    return new NextRequest('http://localhost/api/notifications/stream', {
+        method: 'GET',
+        signal: ac.signal,
+    });
+};
 
 describe('the notifications stream route', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         getLegacyCtxMock.mockResolvedValue({ userId: 'u-1', tenantId: 't-1' });
         subscribeMock.mockReturnValue(() => {});
+    });
+
+    afterEach(() => {
+        for (const ac of inFlight) ac.abort();
+        inFlight.length = 0;
     });
 
     it('answers 204 with no body when the flag is off', async () => {
@@ -120,6 +149,28 @@ describe('the notifications stream route', () => {
             tenantId: 't-1',
             userId: 'u-1',
         });
+    });
+
+    it('releases the heartbeat and the subscription when the stream is CANCELLED', async () => {
+        // The second way out of the stream, added with this suite because this
+        // suite is what found it missing. `cleanup` was reachable only from an
+        // `abort` on the request signal, so a consumer that cancels the
+        // response without aborting left a 25s interval and a bus subscriber
+        // alive per stream.
+        //
+        // Asserting on `unsubscribe` rather than on the timer: the returned
+        // unsubscribe function is observable, a `setInterval` handle inside a
+        // closure is not, and they are released by the same `cleanup` call.
+        isFeatureEnabledMock.mockResolvedValue(true);
+        const unsubscribe = jest.fn();
+        subscribeMock.mockReturnValue(unsubscribe);
+
+        const res = await GET(request());
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        await res.body!.cancel();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
     });
 
     it('authenticates BEFORE reading the flag', async () => {

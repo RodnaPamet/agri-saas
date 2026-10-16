@@ -119,6 +119,11 @@ export async function GET(req: NextRequest): Promise<Response> {
         return new Response(null, { status: 204 });
     }
 
+    /**
+     * Hoisted so `cancel()` below can reach it — see the note there.
+     */
+    let releaseResources: (() => void) | undefined;
+
     const stream = new ReadableStream<Uint8Array>({
         start(controller) {
             let closed = false;
@@ -165,6 +170,29 @@ export async function GET(req: NextRequest): Promise<Response> {
             // network. The browser sends a TCP FIN which Next
             // surfaces as an `abort` on the request signal.
             req.signal.addEventListener('abort', cleanup);
+            releaseResources = cleanup;
+        },
+
+        /**
+         * The SECOND way out, and it was missing.
+         *
+         * `cleanup` had exactly one trigger: an `abort` on the request
+         * signal. That is the production path and it works — but a consumer
+         * that cancels the response stream without aborting the request
+         * released neither the 25s heartbeat interval nor the bus
+         * subscription, so the process kept a live timer per such stream.
+         *
+         * Found the loud way rather than by reading: the first test to call
+         * this route with the flag ON leaked the interval, the jest worker
+         * never exited, and shard 4 of #1984 failed by exceeding its
+         * 25-minute budget. A timeout, not an assertion — so the symptom
+         * named the shard and not the cause.
+         *
+         * `cleanup` is idempotent (it returns early once `closed`), so
+         * arriving here after an abort is harmless.
+         */
+        cancel() {
+            releaseResources?.();
         },
     });
 
