@@ -556,7 +556,16 @@ describe('retracting', () => {
         mockPrisma.exchangeMessage.findFirst.mockResolvedValue({
             id: 'm1', senderTenantId: SELLER, threadId: 'th1', deletedAt: null,
         });
-        await expect(deleteExchangeMessage(buyerCtx, 'm1')).rejects.toThrow(/your own/i);
+        // On the CODE, not the sentence. `types.ts` states the contract — "a
+        // CODE is what a client can translate; the message is the English
+        // fallback" — so a `/your own/i` pattern pinned the one half that is
+        // expected to change. It did: #1918 batch 8 gave this code a
+        // catalogue entry and rewrote the English to "retract messages you
+        // sent yourself", which names the PERSON the check actually compares.
+        await expect(deleteExchangeMessage(buyerCtx, 'm1')).rejects.toMatchObject({
+            code: 'MESSAGE_NOT_SENDER',
+            status: 403,
+        });
     });
 
     it('is a soft delete, not a removal', async () => {

@@ -1025,7 +1025,11 @@ async function sendExchangeMessageImpl(
     const text = sanitizePlainText(body).trim();
     if (!text) throw codedBadRequest('MESSAGE_EMPTY', 'Write a message first.');
     if (text.length > MAX_BODY_LENGTH) {
-        throw codedBadRequest('MESSAGE_TOO_LONG', 'That message is too long.');
+        throw codedBadRequest(
+            'MESSAGE_TOO_LONG',
+            'That message is too long.',
+            { max: String(MAX_BODY_LENGTH) },
+        );
     }
 
     return runInTenantContext(ctx, async (db) => {
@@ -1214,7 +1218,10 @@ export async function deleteExchangeMessage(ctx: RequestContext, messageId: stri
         // audience grants reading and replying, never editing someone else's
         // message out of a conversation they are part of.
         if (message.senderUserId !== ctx.userId) {
-            throw codedForbidden('MESSAGE_NOT_SENDER', 'You can only remove your own messages.');
+            throw codedForbidden(
+                'MESSAGE_NOT_SENDER',
+                'You can only retract messages you sent yourself.',
+            );
         }
         if (message.deletedAt) return { id: message.id };
 
