@@ -322,7 +322,6 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
         // The flat-string entries only: a variant table is exercised by the
         // PLAN_LIMIT_EXCEEDED and MODULE_DISABLED cases above, which check the
         // discriminator selection a bulk sweep cannot.
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const catalogue = readCatalogue('bg') as {
             errors: Record<string, unknown>;
         };
