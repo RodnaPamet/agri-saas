@@ -212,6 +212,16 @@ const BATCH_7: ReadonlyArray<
     ['WEED_NAME_TOO_LONG', 'That weed name is too long.', { max: '120' }],
 ];
 
+const BATCH_8: ReadonlyArray<
+    [code: string, english: string, params?: Record<string, string>]
+> = [
+    ['MESSAGE_EMPTY', 'Write a message first.'],
+    ['MESSAGE_NOT_SENDER', 'You can only retract messages you sent yourself.'],
+    ['MESSAGE_TOO_LONG', 'That message is too long — at most {max} characters.', { max: '4000' }],
+    ['THREAD_NOT_A_PARTY', 'You are not a party to that conversation.'],
+    ['THREAD_OWN_LISTING', 'You cannot start a conversation on your own listing.'],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -669,5 +679,112 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 7)', () => {
                 }
             }
         }
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 8)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // Five of the SEVEN untranslated codes in `exchange-messaging.ts`.
+        // The other two are block vocabulary and belong to the P5.7 work in
+        // the peer session's lane; the case below asserts their absence is a
+        // decision rather than an oversight.
+        console.log(
+            `[refusal-bg] batch 8 added ${BATCH_8.length} entries, of 51 untranslated before it, 46 after`,
+        );
+        expect(BATCH_8.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it.each(BATCH_8.map(([c, e, p]) => [c, e, p] as const))(
+        'batch 8: %s is replaced with Bulgarian',
+        async (code, english, params) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            if (params) p.error.params = params;
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('MESSAGE_TOO_LONG RENDERS the limit, in both locales', async () => {
+        // The limit was `MAX_BODY_LENGTH` inside the module and nowhere on
+        // the wire, so no catalogue entry could have named it — same shape as
+        // FILE_TOO_LARGE in batch 2 and the four parcel-history codes in
+        // batch 7. The site passes it now.
+        //
+        // Its own case, not folded into the it.each: an entry reading
+        // «твърде дълго» with no figure leaves no placeholder behind either,
+        // so the loop above would pass on it.
+        for (const locale of ['bg', 'en'] as const) {
+            getRequestContext.mockReturnValue({
+                requestId: 'r1',
+                startTime: 0,
+                uiLanguage: locale,
+            });
+            const p = payload('MESSAGE_TOO_LONG', 'That message is too long — at most {max} characters.');
+            p.error.params = { max: '4000' };
+            await localizeErrorPayload(p);
+            expect(`${locale}: ${p.error.message}`).toContain('4000');
+            expect(`${locale}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        }
+    });
+
+    it('MESSAGE_NOT_SENDER says the PERSON, not the farm — which is what it checks', async () => {
+        // The check is `message.senderUserId !== ctx.userId`, deliberately:
+        // its comment records that comparing `senderTenantId` would let a
+        // seller admin retract the listing creator's words under #1298's
+        // per-person conversations. "Your own messages" does not say that —
+        // on a shared farm account it reads as the farm's messages.
+        //
+        // So the English changed too, from "remove your own messages" to
+        // "retract messages you sent yourself". Both halves are asserted
+        // because an entry replaces `message` for every locale.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/exchange-messaging.ts`,
+            'utf8',
+        );
+        expect(src).toMatch(/message\.senderUserId !== ctx\.userId/);
+
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('MESSAGE_NOT_SENDER', 'You can only retract messages you sent yourself.');
+        await localizeErrorPayload(p);
+        // «Вие» is the word carrying the person-not-farm distinction.
+        expect(p.error.message).toContain('Вие');
+
+        // And the verb the UI itself uses. `ThreadClient.tsx` calls this a
+        // retraction ("A retracted message keeps its place and says so") and
+        // the OpenAPI description says "Retracting twice is not an error",
+        // while the refusal said "remove" — three words for one action.
+        expect(p.error.message).toMatch(/оттегл/);
+    });
+
+    it('the two BLOCK codes have no entry — the peer session owns that wording', async () => {
+        // `BLOCK_SELLER_ONLY` and `THREAD_BLOCKED` are the remaining two in
+        // this file. Left alone on purpose: they are P5.7 vocabulary in
+        // another session's lane, and `THREAD_BLOCKED`'s sentence ALREADY
+        // exists in this catalogue as `exchange.messaging.blockedForYou`
+        // («Този продавач не приема съобщения от Вас.»), so an entry written
+        // here would be a second Bulgarian wording for one refusal.
+        //
+        // Asserted rather than left as a gap, so the next batch sees the
+        // omission is a decision — and so that if someone does add them, this
+        // case fails and makes them reconcile the two wordings.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        for (const [code, english] of [
+            ['BLOCK_SELLER_ONLY', 'Only the seller can block a buyer.'],
+            ['THREAD_BLOCKED', 'That seller is not accepting messages from you.'],
+        ] as const) {
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toBe(`${code}: ${english}`);
+        }
+
+        // The wording that already exists, and that a future entry should
+        // reuse instead of inventing. Read from the catalogue so a rename
+        // breaks this rather than silently dropping the claim.
+        const catalogue = readCatalogue('bg') as Record<string, unknown>;
+        const exchange = (catalogue.exchange as Record<string, Record<string, string>>);
+        expect(exchange.messaging.blockedForYou).toContain('не приема съобщения');
     });
 });
