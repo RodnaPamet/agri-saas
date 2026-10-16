@@ -233,10 +233,7 @@ function RecordActualMenu({
     return (
         <Popover
             openPopover={open}
-            setOpenPopover={(next) => {
-                if (next) setOpenSeq((n) => n + 1);
-                setOpen(next);
-            }}
+            setOpenPopover={setOpen}
             align="end"
             content={
                 <Popover.Menu aria-label={t('recordMenuLabel')}>
@@ -386,7 +383,10 @@ function PlannedYieldCell({
     return (
         <Popover
             openPopover={open}
-            setOpenPopover={setOpen}
+            setOpenPopover={(next: boolean) => {
+                if (next) setOpenSeq((n: number) => n + 1);
+                setOpen(next);
+            }}
             align="end"
             content={
                 <PlannedYieldEditor
