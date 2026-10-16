@@ -283,6 +283,64 @@ function RecordActualMenu({
  * saving would write a real `0`, which is why the Popover also offers
  * "Clear" to explicitly write back `null` without going through 0.
  */
+/**
+ * The planned-yield popover's body, mounted fresh for every open (#1968).
+ *
+ * Its draft is `useState(initial)` — seeded at MOUNT. The caller passes a
+ * `key` that changes on each open, so there is no frame in which the previous
+ * value is on screen and no effect to re-run.
+ *
+ * What this replaces re-seeded on `[open, displayKgPerDca]`, which also meant
+ * a background refresh of the row discarded whatever the user had typed into
+ * the stepper. Mount-seeding drops that behaviour deliberately: a value the
+ * user is actively editing should not be overwritten underneath them.
+ */
+function PlannedYieldEditor({
+    initialKgPerDca,
+    busy,
+    onSave,
+    onClear,
+}: {
+    initialKgPerDca: number | null;
+    busy: boolean;
+    onSave: (draft: number) => void;
+    onClear: () => void;
+}) {
+    const t = useTranslations('planning.board');
+    const [draft, setDraft] = useState(initialKgPerDca ?? 0);
+    return (
+        <div className="w-52 space-y-default p-2">
+            <p className="text-xs font-medium text-content-muted">{t('plannedYield.fieldLabel')}</p>
+            <NumberStepper
+                value={draft}
+                onChange={setDraft}
+                min={0}
+                max={100_000}
+                step={10}
+                size="sm"
+                disabled={busy}
+                ariaLabel={t('plannedYield.fieldLabel')}
+            />
+            <div className="flex gap-1.5">
+                <Button
+                    variant="primary"
+                    size="xs"
+                    loading={busy}
+                    onClick={() => onSave(draft)}
+                    className="flex-1"
+                >
+                    {t('plannedYield.save')}
+                </Button>
+                {initialKgPerDca != null ? (
+                    <Button variant="ghost" size="xs" disabled={busy} onClick={onClear}>
+                        {t('plannedYield.clear')}
+                    </Button>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
 function PlannedYieldCell({
     row,
     onSaved,
@@ -299,17 +357,10 @@ function PlannedYieldCell({
     // Display/edit boundary: stored (кг/ha) → кг/дка is ÷10 (`dcaToHa` —
     // see its doc for why the "dca→ha" name is the right operation here).
     const displayKgPerDca = storedKgPerHa != null ? dcaToHa(storedKgPerHa) : null;
-    const [draft, setDraft] = useState(displayKgPerDca ?? 0);
-
-    // Reseed the draft from the current value every time the popover opens
-    // — same pattern (and same lint carve-out) as NumberStepper's own
-    // prop-resync effect.
-    useEffect(() => {
-        if (open) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setDraft(displayKgPerDca ?? 0);
-        }
-    }, [open, displayKgPerDca]);
+    // Bumped on every open so the editor below REMOUNTS and takes its draft
+    // from the current value at mount, rather than being re-seeded by an
+    // effect after paint (#1968).
+    const [openSeq, setOpenSeq] = useState(0);
 
     const patch = async (plannedYieldKgPerHa: number | null) => {
         if (busy) return;
@@ -326,44 +377,25 @@ function PlannedYieldCell({
     // Entry boundary: typed кг/дка → stored кг/ha is ×10 (`haToDca` — the
     // arithmetic is the same "×DCA_PER_HA" whether the caller means an
     // area or, as here, a per-decare RATE; see its doc).
-    const save = () => patch(haToDca(draft));
+    const save = (draft: number) => patch(haToDca(draft));
     const clear = () => patch(null);
 
     return (
         <Popover
             openPopover={open}
-            setOpenPopover={setOpen}
+            setOpenPopover={(next: boolean) => {
+                if (next) setOpenSeq((n: number) => n + 1);
+                setOpen(next);
+            }}
             align="end"
             content={
-                <div className="w-52 space-y-default p-2">
-                    <p className="text-xs font-medium text-content-muted">{t('plannedYield.fieldLabel')}</p>
-                    <NumberStepper
-                        value={draft}
-                        onChange={setDraft}
-                        min={0}
-                        max={100_000}
-                        step={10}
-                        size="sm"
-                        disabled={busy}
-                        ariaLabel={t('plannedYield.fieldLabel')}
-                    />
-                    <div className="flex gap-1.5">
-                        <Button
-                            variant="primary"
-                            size="xs"
-                            loading={busy}
-                            onClick={() => void save()}
-                            className="flex-1"
-                        >
-                            {t('plannedYield.save')}
-                        </Button>
-                        {displayKgPerDca != null ? (
-                            <Button variant="ghost" size="xs" disabled={busy} onClick={() => void clear()}>
-                                {t('plannedYield.clear')}
-                            </Button>
-                        ) : null}
-                    </div>
-                </div>
+                <PlannedYieldEditor
+                    key={openSeq}
+                    initialKgPerDca={displayKgPerDca}
+                    busy={busy}
+                    onSave={(draft) => void save(draft)}
+                    onClear={() => void clear()}
+                />
             }
         >
             <Button

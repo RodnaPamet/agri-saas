@@ -122,6 +122,11 @@ export default function KnowledgeArticleDetailPage() {
 
     // Edit-metadata modal (title / summary / category / owner / language).
     const [editOpen, setEditOpen] = useState(false);
+    // Bumped on every open so `EditArticleModal` remounts and seeds from
+    // `initial` at mount (#1968). Per-OPEN, not per-article: the effect this
+    // replaces also reset `submitting`, `error` and `isDirty` each time, so
+    // keying on the article id would skip that on a re-open after cancel.
+    const [editSeq, setEditSeq] = useState(0);
 
     const fetchArticle = useCallback(async () => {
         setLoading(true);
@@ -424,7 +429,10 @@ export default function KnowledgeArticleDetailPage() {
                         <Button
                             variant="secondary"
                             size="sm"
-                            onClick={() => setEditOpen(true)}
+                            onClick={() => {
+                                setEditSeq((n) => n + 1);
+                                setEditOpen(true);
+                            }}
                             id="edit-article-btn"
                         >
                             {t('editMetadata')}
@@ -681,6 +689,7 @@ export default function KnowledgeArticleDetailPage() {
             )}
 
             <EditArticleModal
+                key={editSeq}
                 open={editOpen}
                 setOpen={setEditOpen}
                 tenantSlug={tenant.tenantSlug}

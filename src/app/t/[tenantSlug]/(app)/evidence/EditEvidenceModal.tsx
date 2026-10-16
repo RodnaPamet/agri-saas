@@ -13,7 +13,7 @@
  * disabled-while-submitting fieldset and an unsaved-changes guard
  * on close.
  */
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -55,37 +55,40 @@ export function EditEvidenceModal({
 }: EditEvidenceModalProps) {
     const t = useTranslations('evidence');
     const apiUrl = useTenantApiUrl();
-    const [title, setTitle] = useState('');
-    const [description, setDescription] = useState('');
-    const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
+    // SEEDED AT MOUNT, not in an effect (#1968). `EvidenceClient` remounts
+    // this component for every open via a `key`, so `initial` is already the
+    // right record on the first render and these ARE its values.
+    //
+    // The effect this replaces ran AFTER paint, so opening the editor for row
+    // B directly after row A painted A's title for one frame — the wrong
+    // record's data, not an empty field. Measured in
+    // `tests/rendered/modal-seeds-after-paint.test.tsx`, which needs
+    // `flushSync` to see it at all: `render`/`rerender` wrap updates in
+    // `act()` and flush the very effect the defect lives in.
+    //
+    // The key is per-OPEN, not per-row, and that distinction is load-bearing:
+    // the effect also reset `submitting`, `error` and `isDirty` on every open,
+    // so keying on `initial.id` alone would skip the reset when the same row
+    // is re-opened after a cancel — a quieter bug than the one being fixed.
+    const seededRetention = initial?.retentionUntil
+        ? initial.retentionUntil.split('T')[0]
+        : '';
+    const [title, setTitle] = useState(initial?.title ?? '');
+    const [description, setDescription] = useState(initial?.description ?? '');
+    const [ownerUserId, setOwnerUserId] = useState<string | null>(
+        initial?.ownerUserId ?? null,
+    );
     // B8 follow-up — folder is editable post-create.
-    const [folder, setFolder] = useState('');
+    const [folder, setFolder] = useState(initial?.folder ?? '');
     // Retention date — moved here from the inline table column. Held as a
     // YMD string; the initial value is remembered so we only hit the
-    // retention endpoint when it actually changes.
-    const [retentionDate, setRetentionDate] = useState('');
-    const [initialRetention, setInitialRetention] = useState('');
+    // retention endpoint when it actually changes. It never changes after
+    // mount now, so it needs no setter.
+    const [retentionDate, setRetentionDate] = useState(seededRetention);
+    const [initialRetention] = useState(seededRetention);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
-
-    // Seed from `initial` when the modal opens; reset dirty + error
-    // each time so a re-open after cancel reads clean.
-    useEffect(() => {
-        if (open && initial) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setTitle(initial.title);
-            setDescription(initial.description ?? '');
-            setOwnerUserId(initial.ownerUserId);
-            setFolder(initial.folder ?? '');
-            const ymd = initial.retentionUntil ? initial.retentionUntil.split('T')[0] : '';
-            setRetentionDate(ymd);
-            setInitialRetention(ymd);
-            setSubmitting(false);
-            setError(null);
-            setIsDirty(false);
-        }
-    }, [open, initial]);
 
     const canSubmit = title.trim().length > 0 && !submitting;
 
