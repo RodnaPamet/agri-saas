@@ -646,7 +646,16 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 5)', () => {
         // farm's whole land extent («the holding's own framing», per
         // ParcelOverviewMap.tsx). Calling that a «парцел» would be a third
         // wrong word, so it is filed rather than renamed.
-        const ALLOWED_имот = ['locations.detail.fitHolding'];
+        // EMPTY since #1988. `locations.detail.fitHolding` was the single
+        // entry — en "Back to this holding", the aria-label of the map button
+        // that frames the farm's WHOLE landholding, so neither «парцел» nor
+        // «блок» fitted. Owner ruling 2026-10-16: «Обратно към стопанството».
+        //
+        // Emptying it was not optional: the rot check below asserts the list
+        // is EXACT, so fixing the string made the test demand the entry be
+        // deleted. That is the property an allowlist needs — it shrank because
+        // it had to, not because anyone remembered.
+        const ALLOWED_имот: readonly string[] = [];
         const offenders: string[] = [];
         const walk = (node: unknown, path: string): void => {
             if (typeof node === 'string') {
