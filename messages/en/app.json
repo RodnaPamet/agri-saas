@@ -5911,7 +5911,7 @@
         "intro": "How Agrent handles the information you enter, and what happens to a request when you ask a supplier for an offer.",
         "collectTitle": "What we hold",
         "collectAccount": "Account details: your name, email address and the language you chose for the interface.",
-        "collectFarm": "Farm records you enter: fields and parcels, crops, field operations, journal entries, documents and the other operational data the application exists to keep.",
+        "collectFarm": "Farm records you enter: fields and parcels, crops, field operations, journal entries, documents, photographs you attach to them, and the other operational data the application exists to keep.",
         "collectRequests": "Offer requests: when you ask a supplier for an offer, the message you write and the promotion it refers to, together with the moment you gave consent.",
         "useTitle": "What we use it for",
         "useOperate": "Running the application for your farm — showing your records back to you, and producing the reports and exports you ask for.",
@@ -5927,7 +5927,8 @@
         "controllerBody": "Agrent is software operated by an organisation that decides what is collected and why. That organisation is the data controller for the records in this deployment and is the party to contact about them.",
         "controllerContact": "Contact:",
         "keepTitle": "How long we keep it",
-        "keepRequests": "An offer request is kept for {months} months from the day you send it, then marked for deletion and permanently removed {graceDays} days later. Farm records and account details are kept while your account is active."
+        "keepRequests": "An offer request is kept for {months} months from the day you send it, then marked for deletion and permanently removed {graceDays} days later. Farm records and account details are kept while your account is active.",
+        "deleteFiles": "Files you uploaded stay with the farm — a photograph attached to a journal entry, a document attached to a task — for the same reason its journal entries do: they are the farm’s record of what was done in its fields, and some of them it is required to keep. After deletion they are no longer attributable to you, because the account that uploaded them no longer carries your name or your address."
     },
     "supportSchemes": {
         "title": "Support schemes",
