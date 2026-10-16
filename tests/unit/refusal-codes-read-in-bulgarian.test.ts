@@ -547,19 +547,47 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 5)', () => {
         }
     });
 
-    it('the error catalogue adds no FOURTH Bulgarian word for a Location (#1966)', async () => {
-        // «землище» is the land of a VILLAGE — an administrative territory,
-        // not a farm's grouping of fields — and I put it in batch 4's
-        // PARCELS_NOT_IN_LOCATION before noticing the product already had
-        // three words for this entity (Локации / Обект / Нива). Corrected to
-        // the dominant one.
+    it('the error catalogue uses the RULED Bulgarian word for a Location (#1966)', async () => {
+        // Owner ruling 2026-10-16, after this guard was first written as a
+        // narrow "adds no FOURTH word" check: «блок» for a group of parcels,
+        // «силоз» for a grain bin, «склад» for a warehouse — which maps 1:1
+        // onto `LocationKind` (FIELD | BIN | STORAGE). So the guard can now
+        // assert the choice instead of merely refusing new variants.
         //
-        // Pinned narrowly: this asserts the error CATALOGUE adds no new
-        // variant, not that the UI picks one — which term is canonical is
-        // #1966's ruling to make, and a guard that pre-empted it would be
-        // asserting my guess.
+        // «землище» stays forbidden: it is the land of a VILLAGE, an
+        // administrative territory rather than a farm's grouping of fields. I
+        // used it in batch 4 before noticing the product already had three
+        // words for the entity.
         const catalogue = JSON.stringify(readCatalogue('bg'));
         expect(catalogue).not.toContain('землище');
+        // The retired word, gone from the WHOLE Bulgarian catalogue and not
+        // merely from `errors.*` — it was 32 strings across the Locations
+        // index, journal, nav and billing copy.
+        expect(catalogue).not.toMatch(/локаци/i);
+
+        // And the positive half, which is what a "contains no X" assertion
+        // cannot give: the refusals that NAME the entity say «блок». Without
+        // this, deleting the entries entirely would satisfy the two checks
+        // above — `relaxing-a-caller-removes-the-teeth`.
+        const bg = readCatalogue('bg') as { errors: Record<string, unknown> };
+        const NAMES_A_LOCATION = [
+            'LOCATION_NOT_FOUND',
+            'PARCELS_NOT_IN_LOCATION',
+            'PARCEL_LOCATION_MISMATCH',
+        ];
+        for (const code of NAMES_A_LOCATION) {
+            expect(`${code}: ${bg.errors[code]}`).toMatch(/блок/i);
+        }
+        console.log(
+            `[refusal-bg] #1966: ${NAMES_A_LOCATION.length} Location refusal(s) assert «блок»`,
+        );
+
+        // «обект» is deliberately NOT forbidden. Fifteen occurrences remain
+        // and every one is a generic *object* rather than a Location — a GIS
+        // feature («неполигонален обект»), an Entra group Object ID, the
+        // command palette, the entity pickers, an accounting object. A blanket
+        // ban would have been a narrower guard that broke correct copy.
+        expect(catalogue).toContain('обект');
     });
 });
 

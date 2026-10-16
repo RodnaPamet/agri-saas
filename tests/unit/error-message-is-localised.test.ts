@@ -150,26 +150,40 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
             plan: 'FREE', resource: 'location', limit: '5', current: '5',
         });
         await localizeErrorPayload(p);
-        expect(p.error.message).toContain('локации');
+        // «блока» since the #1966 ruling — see the case below for why the
+        // count form rather than the plain plural «блокове».
+        expect(p.error.message).toContain('блока');
         // The wire identifier is GONE from the sentence, which is the point.
         expect(p.error.message).not.toContain('location');
         expect(p.error.message).not.toContain('FREE');
         expect(p.error.message).not.toMatch(/\{\w+\}/);
     });
 
-    it('the singular and plural forms AGREE — 1 локация, 5 локации', async () => {
+    it('the singular and plural forms AGREE — 1 блок, 5 блока, not 5 блокове', async () => {
         // The reason this needed ICU at all. `translateFor` would have rendered
         // the selector literally; a sentence with a bare `{limit}` would read
-        // «до 1 локации», which is wrong in a way a farmer notices.
+        // «до 1 блока», which is wrong in a way a farmer notices.
+        //
+        // This case read «1 локация / 5 локации» until the #1966 ruling made a
+        // Location a «блок». That moved the noun from FEMININE to MASCULINE,
+        // and masculine nouns after a numeral take a COUNT FORM that is not the
+        // plain plural: the plural of «блок» is «блокове», but what follows a
+        // number is «блока». So the rename did not merely change a word — it
+        // changed which of two plural forms is correct, and a `{limit}
+        // блокове` would now be wrong where `{limit} локации` had been right.
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
         const one = payloadFor('PLAN_LIMIT_EXCEEDED', 'x', { resource: 'location', limit: '1' });
         const many = payloadFor('PLAN_LIMIT_EXCEEDED', 'x', { resource: 'location', limit: '5' });
         await localizeErrorPayload(one);
         await localizeErrorPayload(many);
-        expect(one.error.message).toContain('1 локация');
-        expect(many.error.message).toContain('5 локации');
-        // Masculine nouns take the count form instead — the distinction
-        // agrent-ios supplied and I would not have known.
+        expect(one.error.message).toContain('1 блок');
+        expect(many.error.message).toContain('5 блока');
+        // The assertion the rename made possible: the plain plural must NOT
+        // appear after a numeral. `toContain('5 блока')` alone cannot catch
+        // «5 блокове», because «блокове» does not contain «блока».
+        expect(many.error.message).not.toContain('блокове');
+        // The other masculine noun, which behaved this way all along — the
+        // distinction agrent-ios supplied and I would not have known.
         const user = payloadFor('PLAN_LIMIT_EXCEEDED', 'x', { resource: 'user', limit: '3' });
         await localizeErrorPayload(user);
         expect(user.error.message).toContain('3 потребителя');
