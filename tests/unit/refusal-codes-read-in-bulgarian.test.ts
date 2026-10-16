@@ -190,6 +190,28 @@ const BATCH_6: ReadonlyArray<[code: string, english: string]> = [
     ['FARM_SLUG_UNAVAILABLE', 'Could not allocate a web address for that farm.'],
 ];
 
+/**
+ * Batch 7 — the parcel-history limits, whose entries NAME the limit.
+ *
+ * Four of the five carry a `{max}` (and the year one a `{min}` too), which is
+ * why this table has a third column: the plain `it.each` below asserts no
+ * `{placeholder}` survives, and a placeholder with no param supplied is
+ * indistinguishable from an entry that forgot to use it.
+ *
+ * #1973 added those params so these entries could exist. The year bound is
+ * COMPUTED — `currentYear + YEARS_AHEAD` — so it could never have been a
+ * literal in a sentence, in either locale.
+ */
+const BATCH_7: ReadonlyArray<
+    [code: string, english: string, params?: Record<string, string>]
+> = [
+    ['CROP_SEASON_YEAR_INVALID', 'That harvest year is out of range.', { min: '1900', max: '2028' }],
+    ['CROP_TYPE_INVALID', 'A crop is required.'],
+    ['NOTES_TOO_LONG', 'Those notes are too long.', { max: '2000' }],
+    ['WEED_ENTRIES_TOO_MANY', 'Too many weeds in one observation.', { max: '50' }],
+    ['WEED_NAME_TOO_LONG', 'That weed name is too long.', { max: '120' }],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -594,6 +616,58 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 6)', () => {
             await localizeErrorPayload(p);
             expect(`${locale}: ${p.error.message}`).not.toContain('7501020345');
             expect(`${locale}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        }
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 7)', () => {
+    it('ranges over the batch — the denominator', () => {
+        console.log(
+            `[refusal-bg] batch 7 added ${BATCH_7.length} entries, of 56 untranslated before it, 51 after`,
+        );
+        expect(BATCH_7.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it.each(BATCH_7.map(([c, e, p]) => [c, e, p] as const))(
+        'batch 7: %s is replaced with Bulgarian',
+        async (code, english, params) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            if (params) p.error.params = params;
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('each limit entry RENDERS the number, in both locales', async () => {
+        // The point of the batch, and of #1973 passing the params. An entry
+        // that said "твърде дълго" without the figure would satisfy the
+        // it.each above — it has no placeholder left either — so the number
+        // has to be asserted on its own.
+        const wanted: Array<[string, string[]]> = [
+            ['CROP_SEASON_YEAR_INVALID', ['1900', '2028']],
+            ['NOTES_TOO_LONG', ['2000']],
+            ['WEED_ENTRIES_TOO_MANY', ['50']],
+            ['WEED_NAME_TOO_LONG', ['120']],
+        ];
+        for (const locale of ['bg', 'en'] as const) {
+            for (const [code, numbers] of wanted) {
+                const row = BATCH_7.find(([c]) => c === code);
+                expect(row).toBeDefined();
+                getRequestContext.mockReturnValue({
+                    requestId: 'r1',
+                    startTime: 0,
+                    uiLanguage: locale,
+                });
+                const p = payload(code, row![1]);
+                p.error.params = row![2];
+                await localizeErrorPayload(p);
+                for (const n of numbers) {
+                    expect(`${locale} ${code}: ${p.error.message}`).toContain(n);
+                }
+            }
         }
     });
 });
