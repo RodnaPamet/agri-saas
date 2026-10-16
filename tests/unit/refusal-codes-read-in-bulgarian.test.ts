@@ -231,6 +231,13 @@ const BATCH_9: ReadonlyArray<[code: string, english: string]> = [
     ['FARM_HANDLE_TAKEN', 'That address is already taken by another farm.'],
 ];
 
+const BATCH_10: ReadonlyArray<[code: string, english: string]> = [
+    ['INVALID_EQUIPMENT', 'Some of the selected equipment was not found.'],
+    ['INVALID_FILE', 'That file was not found.'],
+    ['INVALID_LOCATION', 'One of the selected locations was not found.'],
+    ['INVALID_PLANTING', 'One of the selected plantings was not found.'],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -988,5 +995,105 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 9)', () => {
         for (const [code] of BATCH_9) {
             expect(`${code} entried: ${typeof bg.errors[code]}`).toBe(`${code} entried: string`);
         }
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 10)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // The total is printed by `a-new-code-ships-with-its-entry.test.ts`,
+        // which derives it, and is deliberately NOT repeated here: a count in
+        // a second place goes stale with nothing failing.
+        console.log(`[refusal-bg] batch 10 added ${BATCH_10.length} entries (journal.ts)`);
+        expect(BATCH_10.length).toBe(4);
+    });
+
+    it.each(BATCH_10.map(([c, e]) => [c, e] as const))(
+        'batch 10: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('the tenant predicate is gone from the SOURCE and from both locales', async () => {
+        // All four read "<thing> not found or belongs to a different tenant".
+        // That clause is the repository's WHERE condition, and it tells a
+        // farmer about multi-tenancy rather than about their own data — the
+        // same defect batch 5 fixed elsewhere, and the reason #1677's option 3
+        // pays for itself: one catalogue entry replaces the sentence for every
+        // reader, so no call site had to be rewritten.
+        //
+        // `assertLinksValid`'s own docblock says it validates that links
+        // "belong to the tenant", which is correct as a description of the
+        // CHECK and wrong as a sentence for the person who tripped it.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/journal.ts`,
+            'utf8',
+        );
+        expect(src).not.toMatch(/belongs to a different tenant/);
+
+        for (const locale of ['bg', 'en'] as const) {
+            for (const [code, english] of BATCH_10) {
+                getRequestContext.mockReturnValue({
+                    requestId: 'r1',
+                    startTime: 0,
+                    uiLanguage: locale,
+                });
+                const p = payload(code, english);
+                p.error.params = { id: 'ckz9planting0001' };
+                await localizeErrorPayload(p);
+                expect(`${locale} ${code}: ${p.error.message}`).not.toMatch(/different tenant/i);
+            }
+        }
+    });
+
+    it('the raw ID leaves the sentence but STAYS in params', async () => {
+        // Three of the four interpolated `${missing[0]}` — a cuid — into
+        // displayed copy. An id identifies nothing a farmer can act on; it is
+        // for a client to branch on, which is what `params` is for. Same
+        // family as `TASK_NOT_AWAITING_REVIEW` naming a wire enum (#1965) and
+        // the phone printing `kind` as «FIELD», which agrent-ios found on the
+        // same day. Three instances in two codebases.
+        //
+        // INVALID_PLANTING passed NO params, so removing the id from its
+        // message would have lost it entirely — it now passes the same
+        // `{ id }` its two siblings already did. Asserted on the source,
+        // because a catalogue entry cannot show that the id survived.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/journal.ts`,
+            'utf8',
+        );
+        expect(src).not.toMatch(/tenant: \$\{missing\[0\]\}/);
+        expect(src.match(/\{ id: missing\[0\] \}/g) ?? []).toHaveLength(3);
+
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('INVALID_PLANTING', 'One of the selected plantings was not found.');
+        p.error.params = { id: 'ckz9planting0001' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).not.toContain('ckz9planting0001');
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+    });
+
+    it('INVALID_LOCATION says «блок», which #1966 ruled', async () => {
+        // The tie between the two issues: this code names the Location
+        // entity, so its Bulgarian has to use the ruled word rather than the
+        // retired one. The phone made the same change for its own
+        // INVALID_LOCATION sentence (agrent-ios #349).
+        //
+        // Plural framing on purpose: `missing` is a filtered ARRAY of ids the
+        // caller submitted and only `[0]` is reported, so "one of the
+        // selected" is what actually happened — «Блокът не беше намерен»
+        // would claim a single link was checked, and would duplicate
+        // LOCATION_NOT_FOUND, a different code for a different situation.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('INVALID_LOCATION', 'One of the selected locations was not found.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/блок/i);
+        expect(p.error.message).not.toMatch(/локаци/i);
+        expect(p.error.message).toMatch(/Един от избраните/);
     });
 });

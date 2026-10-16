@@ -136,7 +136,7 @@ async function assertLinksValid(
         if (missing.length) {
             throw codedBadRequest(
                 'INVALID_LOCATION',
-                `Location not found or belongs to a different tenant: ${missing[0]}`,
+                'One of the selected locations was not found.',
                 { id: missing[0] },
             );
         }
@@ -147,7 +147,7 @@ async function assertLinksValid(
         if (missing.length) {
             throw codedBadRequest(
                 'INVALID_EQUIPMENT',
-                `Equipment not found or belongs to a different tenant: ${missing[0]}`,
+                'Some of the selected equipment was not found.',
                 { id: missing[0] },
             );
         }
@@ -298,7 +298,11 @@ async function createLogEntryImpl(
             const validIds = new Set(found.map((p) => p.id));
             const missing = ids.filter((id) => !validIds.has(id));
             if (missing.length) {
-                throw codedBadRequest('INVALID_PLANTING', `Planting not found or belongs to a different tenant: ${missing[0]}`);
+                throw codedBadRequest(
+                    'INVALID_PLANTING',
+                    'One of the selected plantings was not found.',
+                    { id: missing[0] },
+                );
             }
         }
 
@@ -807,7 +811,7 @@ export async function attachLogEntryFile(
         if (!entry) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
 
         const file = await FileRepository.getById(db, ctx, fileRecordId);
-        if (!file) throw codedBadRequest('INVALID_FILE', 'File not found or belongs to a different tenant');
+        if (!file) throw codedBadRequest('INVALID_FILE', 'That file was not found.');
 
         const existingLink = await JournalRepository.getFileLink(db, ctx, logEntryId, fileRecordId);
         if (existingLink) return existingLink;
