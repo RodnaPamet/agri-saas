@@ -62,6 +62,12 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * converts, never raise it. A new guard that greps source must call
  * `blankNonCode`.
  *
+ * Batch 4 (431) is `no-raw-skeleton-pulse`, the second CAPPED member — and
+ * its cap did not move either, measured before converting: inside that
+ * guard's own scope (`src/app`) 14 files match `animate-pulse` with or
+ * without blanking. Two capped guards in, "the cap must come down" has been
+ * false both times, which is worth knowing before pricing the remaining ten.
+ *
  * Batch 3 is ONE file on purpose. It is `no-explicit-any-ratchet`, the second
  * of the two instances #1774 opened with and the one it declined to fix in
  * place because "blanking comments LOWERS the measured count, and the cap has
@@ -84,7 +90,7 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * move this constant, so two in flight at once is the shared-ratchet collision
  * the cap exists to prevent, one level up.
  */
-const UNBLANKED_CAP = 432;
+const UNBLANKED_CAP = 431;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -252,6 +258,13 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             // on prose again, just with a different message. Replaced with a
             // fixture control that runs the real counter.
             'tests/guardrails/no-explicit-any-ratchet.test.ts',
+            // Batch 4, #1774 — the second capped guard, cap unmoved. Its own
+            // subject made the case: `src/components/ui/skeleton.tsx`, the
+            // primitive it steers people toward, names `animate-pulse` twice
+            // in prose and never in code, so an unblanked scan would count
+            // the cure as a symptom. That file is outside its scan dir, which
+            // is the only reason it had not bitten.
+            'tests/guards/no-raw-skeleton-pulse.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);

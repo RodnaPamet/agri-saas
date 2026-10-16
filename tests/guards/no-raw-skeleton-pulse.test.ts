@@ -20,6 +20,15 @@
  *
  * This ratchet is a budget on the COUNT of files in `src/app` that
  * mount raw `animate-pulse` outside the skeleton primitives.
+ *
+ * SCOPE, measured 2026-10-16 and recorded because the prose above reads
+ * wider than the guard is: `src/app` holds **14** such files, and `src`
+ * holds **26** — the figure this docblock cites as the reason for a budget.
+ * The other 12 are in `src/components` (11) and `src/lib` (1), where the UI
+ * primitives themselves live, so the argument "hand-rolled pulses bypass the
+ * tone and shape contracts" applies there at least as strongly. Widening the
+ * scope is a separate change with its own baseline, filed rather than done
+ * here.
  * Locked at the post-PR-12 baseline. Direction of travel one-way
  * down: migrations to skeleton primitives drop the count.
  *
@@ -36,6 +45,8 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+
+import { blankNonCode } from "../helpers/blank-non-code";
 
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIR = "src/app";
@@ -88,10 +99,45 @@ function walk(dir: string): string[] {
 }
 
 function hasRawPulse(content: string): boolean {
-    return /\banimate-pulse\b/.test(content);
+    // Comments blanked first (#1774). MEASURED before converting: inside this
+    // guard's own scope (`src/app`) it changes nothing — 14 files match
+    // either way — so the budget below does not move. The conversion is
+    // future-proofing, not a correction: a docblock in `src/app` that
+    // discussed `animate-pulse` would otherwise count as a file mounting it,
+    // and this guard's prose is exactly the kind that would.
+    //
+    // It is not hypothetical elsewhere: `src/components/ui/skeleton.tsx` —
+    // the primitive this guard steers people toward — names the class twice
+    // in its docblock and nowhere in its code, so an unblanked scan counts
+    // the cure as a symptom. It sits outside `SCAN_DIR` today, which is the
+    // only reason that has never mattered.
+    return /\banimate-pulse\b/.test(blankNonCode(content));
 }
 
 describe("skeleton vocabulary — no raw animate-pulse over budget", () => {
+    it("CONTROL: isExempt can actually exempt, and does not exempt everything", () => {
+        // `selector-teeth` found this predicate DEAD: forcing it to return
+        // falsy for every input left every assertion green, so nothing
+        // exercised the exclusion at all.
+        //
+        // The reason is the scope. `EXEMPT_DIR_NAMES` and
+        // `EXEMPT_FILE_PATTERNS` are written for the whole of `src` — tests,
+        // stories, mocks, and "the skeleton primitive files themselves" —
+        // and `SCAN_DIR` is `src/app`, which contains none of those. So the
+        // exclusion is correct, unexercised, and would silently stop working
+        // the moment the scope widened (#1974).
+        //
+        // Asserted directly rather than through the walk, because the walk
+        // cannot reach an input that would prove it.
+        expect(isExempt(path.join("src", "app", "__tests__", "x.tsx"))).toBe(true);
+        expect(isExempt(path.join("src", "app", "foo.test.tsx"))).toBe(true);
+        expect(isExempt(path.join("src", "app", "foo.stories.tsx"))).toBe(true);
+        // And the other direction, or an always-true version would pass the
+        // three above while exempting the entire population.
+        expect(isExempt(path.join("src", "app", "dashboard", "page.tsx"))).toBe(false);
+        expect(isExempt(path.join("src", "components", "ui", "skeleton.tsx"))).toBe(false);
+    });
+
     it("file count using raw `animate-pulse` does not exceed the budget", () => {
         let count = 0;
         const offenders: string[] = [];
