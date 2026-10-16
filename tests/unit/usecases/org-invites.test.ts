@@ -379,10 +379,29 @@ describe('redeemOrgInvite', () => {
         requestId: 'req-r',
     };
 
-    it('atomic-claim-fails + invite missing → notFound', async () => {
+    it('atomic-claim-fails + invite missing → gone, the SAME status as revoked (#2016)', async () => {
+        // The name used to say `notFound`, and that was the defect: an
+        // unknown token answered 404 while revoked/expired/redeemed answered
+        // 410, so the STATUS ALONE told a caller whether a token had ever
+        // existed. The comment above the code claimed the opposite —
+        // "callers don't get to distinguish" — which is a safety argument
+        // that was never true.
         mockPrisma.orgInvite.updateMany.mockResolvedValueOnce({ count: 0 });
         mockPrisma.orgInvite.findUnique.mockResolvedValueOnce(null);
-        await expect(redeemOrgInvite(redeemInput)).rejects.toThrow(/invite not found/i);
+        const unknown = await redeemOrgInvite(redeemInput).catch((e: unknown) => e);
+        expect(unknown).toMatchObject({ status: 410 });
+
+        // The point is the EQUALITY with a real terminal state, not the
+        // number on its own. Asserting `410` alone would still pass if the
+        // revoked branch were later changed to something else.
+        mockPrisma.orgInvite.updateMany.mockResolvedValueOnce({ count: 0 });
+        mockPrisma.orgInvite.findUnique.mockResolvedValueOnce({
+            acceptedAt: null, revokedAt: new Date(), expiresAt: new Date(Date.now() + 1_000_000),
+        });
+        const revoked = await redeemOrgInvite(redeemInput).catch((e: unknown) => e);
+        expect((unknown as { status: number }).status).toBe(
+            (revoked as { status: number }).status,
+        );
     });
 
     it('atomic-claim-fails + revoked → gone', async () => {

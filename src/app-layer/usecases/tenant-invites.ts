@@ -405,12 +405,25 @@ export async function redeemInvite(input: {
     });
 
     if (claim.count !== 1) {
-        // Look up why for a precise error message.
+        // Look up why, for a message the holder of a legitimate-but-dead link
+        // can act on.
+        //
+        // The status is UNIFORM at 410 and the message is not. An unknown
+        // token used to answer 404 while the three terminal states answered
+        // 410, so the STATUS ALONE told a caller whether a token had ever
+        // existed. #2016 found that in the org twin of this function, whose
+        // comment additionally claimed callers "don't get to distinguish" —
+        // this one never claimed it, but had the same leak.
+        //
+        // The message distinction is kept deliberately: the token is
+        // high-entropy, so guessing one is the hard part, and telling someone
+        // their invite expired is worth more than closing a channel that
+        // requires already holding a valid token to use.
         const inv = await prisma.tenantInvite.findUnique({
             where: { token: input.token },
             select: { acceptedAt: true, revokedAt: true, expiresAt: true },
         });
-        if (!inv) throw notFound('Invite not found');
+        if (!inv) throw gone('This invite link is no longer valid.');
         if (inv.revokedAt) throw gone('Invite has been revoked');
         if (inv.expiresAt < new Date()) throw gone('Invite has expired');
         if (inv.acceptedAt) throw gone('Invite has already been redeemed');

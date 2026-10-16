@@ -388,7 +388,12 @@ describe('redeemInvite — atomic claim + email binding', () => {
                 userId: 'user-1',
                 userEmail: 'a@b.com',
             }),
-        ).rejects.toThrow(/Invite not found/);
+            // 410, not 404 (#2016). An unknown token answering a DIFFERENT
+            // status from a revoked one told a caller, from the status alone,
+            // whether the token had ever existed. Asserted on `status` rather
+            // than the sentence, because the status is the half that carries
+            // the property and the sentence is expected to change.
+        ).rejects.toMatchObject({ status: 410 });
     });
 
     it('throws gone when the invite was revoked', async () => {
