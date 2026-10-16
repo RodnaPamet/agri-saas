@@ -57,21 +57,50 @@ export function LeasePaymentsPanel({
     const buildUrlRef = useRef(buildUrl);
     buildUrlRef.current = buildUrl;
 
-    const load = useCallback(async () => {
+    /**
+     * Load this lease's settlements.
+     *
+     * Takes an optional signal because `leaseId` is a PROP and this panel
+     * stays mounted when the Rent editor switches straight from lease A to
+     * lease B (#1952). Without one, both requests are in flight and whichever
+     * resolves LAST wins — so A's payments could paint inside B's panel, and
+     * nothing in the row shape would reveal it. Misattributed money in a rent
+     * register reads as authoritative, which is why this is worth a guard
+     * rather than a comment.
+     *
+     * `add` and `remove` call this with no signal: those are sequential user
+     * actions, not a race.
+     */
+    const load = useCallback(async (signal?: AbortSignal) => {
         setLoading(true);
         try {
-            const res = await fetch(buildUrlRef.current(`/leases/${leaseId}/payments`));
+            const res = await fetch(buildUrlRef.current(`/leases/${leaseId}/payments`), {
+                signal,
+            });
             const data = res.ok ? await res.json() : { payments: [] };
+            // Re-checked AFTER the await: the abort can land while the body
+            // is still being read, and by then a newer request owns the state.
+            if (signal?.aborted) return;
             setRows(data.payments ?? []);
-        } catch {
+        } catch (err) {
+            // An abort is NOT a failure. The existing catch blanked the rows
+            // on any error, which would make every lease switch flash an
+            // empty settlement log on its way to the right one.
+            if (err instanceof Error && err.name === 'AbortError') return;
             setRows([]);
         } finally {
-            setLoading(false);
+            // Likewise: the superseded request must not clear the spinner the
+            // newer one just set, or the panel claims to be idle mid-fetch.
+            if (!signal?.aborted) setLoading(false);
         }
     }, [leaseId]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the setState lands after an await, not the synchronous cascade this rule is about; this loader CAN re-run because its dep changes while mounted, and the missing staleness guard that makes that a defect is #1952
-    useEffect(() => { void load(); }, [load]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the setState lands after an await, in a later task, so this is not the synchronous render cascade the rule is about; the effect owns an AbortController so a superseded leaseId cannot win (#1952)
+    useEffect(() => {
+        const controller = new AbortController();
+        void load(controller.signal);
+        return () => controller.abort();
+    }, [load]);
 
     const add = async () => {
         const value = Number(amount);
