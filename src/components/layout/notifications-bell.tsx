@@ -165,8 +165,37 @@ export function NotificationsBell() {
     useEffect(() => {
         fetchList();
 
-        let sseHealthy = false;
         let es: EventSource | null = null;
+        let intervalId: number | undefined;
+
+        const poll = () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            void fetchList();
+        };
+
+        /**
+         * The cadence is RECREATED on each transition, not chosen once — #1982.
+         *
+         * This used to read a `sseHealthy` flag into a `const pollIntervalMs`
+         * in the same tick that constructed the `EventSource`. `onopen` cannot
+         * have fired by then, so the flag was always `false` there and the
+         * five-minute branch was unreachable: a perfectly healthy stream still
+         * polled every 60 s forever, because `setInterval` was created once
+         * and never revisited when the flag flipped.
+         *
+         * Nothing failed, which is why it survived — the bell updated either
+         * way and the only symptom was twice the intended request volume. It
+         * matters now because P7.6 (#1198) turns this stream on, and the
+         * throttle it depends on has never once taken effect.
+         */
+        const setCadence = (ms: number) => {
+            if (intervalId !== undefined) window.clearInterval(intervalId);
+            intervalId = window.setInterval(poll, ms);
+        };
+
+        // Start on the 60 s cadence: the stream has not opened yet, and until
+        // it does the poll is the only signal there is.
+        setCadence(NOTIFICATIONS_POLL_INTERVAL_MS);
         // typeof check — SSR + jsdom unit tests both lack EventSource.
         // Feature flag: NEXT_PUBLIC_NOTIFICATIONS_SSE=1 opts the
         // client into the SSE channel. Defaults OFF so the bell keeps
@@ -183,7 +212,9 @@ export function NotificationsBell() {
                     withCredentials: true,
                 });
                 es.onopen = () => {
-                    sseHealthy = true;
+                    // Healthy stream: the poll becomes a safety net for
+                    // cross-pod events rather than the primary signal.
+                    setCadence(NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS);
                 };
                 es.onmessage = (msg) => {
                     try {
@@ -202,27 +233,22 @@ export function NotificationsBell() {
                     }
                 };
                 es.onerror = () => {
-                    sseHealthy = false;
+                    // Back to the 60 s cadence. EventSource retries on its
+                    // own, and `onopen` will throttle again if it recovers.
+                    setCadence(NOTIFICATIONS_POLL_INTERVAL_MS);
                 };
             } catch {
-                sseHealthy = false;
+                // Construction threw, so there is no stream to throttle for.
+                // The 60 s cadence set above already stands.
             }
         }
 
-        const pollIntervalMs = sseHealthy
-            ? NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS
-            : NOTIFICATIONS_POLL_INTERVAL_MS;
-        const poll = () => {
-            if (typeof document !== 'undefined' && document.hidden) return;
-            void fetchList();
-        };
-        const intervalId = window.setInterval(poll, pollIntervalMs);
         const onVisibility = () => {
             if (!document.hidden) void fetchList();
         };
         document.addEventListener('visibilitychange', onVisibility);
         return () => {
-            window.clearInterval(intervalId);
+            if (intervalId !== undefined) window.clearInterval(intervalId);
             document.removeEventListener('visibilitychange', onVisibility);
             if (es) es.close();
         };

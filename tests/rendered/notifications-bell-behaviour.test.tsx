@@ -30,6 +30,25 @@ import {
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
+/**
+ * The SSE opt-in, forced ON for this file — #1982.
+ *
+ * `requireActual` and override ONE key, rather than the `env: {}` stub other
+ * suites use: the bell's import graph reads plenty of other keys and a bare
+ * stub breaks the render.
+ *
+ * This is file-wide but inert for every other test here, and that is a
+ * property of the environment rather than luck: jsdom does not implement
+ * `EventSource` (probed: `typeof EventSource === 'undefined'`), and the bell
+ * guards on `sseEnabled && typeof EventSource !== 'undefined'`. So no stream
+ * is constructed unless a test installs a double itself, as the throttle test
+ * below does.
+ */
+jest.mock('@/env', () => {
+    const actual = jest.requireActual('@/env') as typeof import('@/env');
+    return { ...actual, env: { ...actual.env, NEXT_PUBLIC_NOTIFICATIONS_SSE: '1' } };
+});
+
 import { NotificationsBell } from '@/components/layout/notifications-bell';
 
 // ─── fetch mock ────────────────────────────────────────────────────
@@ -295,6 +314,97 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             expect(fetchMock.mock.calls.length).toBeGreaterThan(afterFirstPoll);
         } finally {
             jest.useRealTimers();
+        }
+    });
+
+    it('throttles the poll to 5 minutes once the stream opens, and back to 60s on error', async () => {
+        /**
+         * #1982 — this branch was UNREACHABLE before the fix.
+         *
+         * The cadence was read from a `sseHealthy` flag in the same tick that
+         * constructed the `EventSource`, so `onopen` could not have fired and
+         * the five-minute value was never chosen. `setInterval` was created
+         * once and never revisited, so a healthy stream polled every 60s
+         * forever. Nothing failed — the bell updated either way — which is
+         * why it survived review and why the assertion below is the one that
+         * discriminates: step 3 passes on 60s-forever code only by accident,
+         * step 4 cannot.
+         */
+        class FakeEventSource {
+            static last: FakeEventSource | null = null;
+            onopen: (() => void) | null = null;
+            onmessage: ((e: { data: string }) => void) | null = null;
+            onerror: (() => void) | null = null;
+            closed = false;
+            readonly url: string;
+            constructor(url: string) {
+                this.url = url;
+                FakeEventSource.last = this;
+            }
+            close() {
+                this.closed = true;
+            }
+        }
+        const g = globalThis as unknown as { EventSource?: unknown };
+        const had = Object.prototype.hasOwnProperty.call(g, 'EventSource');
+        const prior = g.EventSource;
+        g.EventSource = FakeEventSource;
+        jest.useFakeTimers();
+        try {
+            fetchMock.mockResolvedValue({
+                ok: true,
+                status: 200,
+                json: async () => makeNotifications(),
+            });
+            render(<NotificationsBell />);
+            await act(async () => {});
+
+            // The stream is subscribed to, and to the right endpoint.
+            expect(FakeEventSource.last).not.toBeNull();
+            expect(FakeEventSource.last!.url).toBe('/api/notifications/stream');
+
+            // 1. Before the stream opens, the poll is the only signal: 60s.
+            const beforeOpen = fetchMock.mock.calls.length;
+            await act(async () => {
+                jest.advanceTimersByTime(60_000);
+            });
+            expect(fetchMock.mock.calls.length).toBeGreaterThan(beforeOpen);
+
+            // 2. The stream opens.
+            await act(async () => {
+                FakeEventSource.last!.onopen?.();
+            });
+            const afterOpen = fetchMock.mock.calls.length;
+
+            // 3. 60s no longer triggers a poll — the throttle is in effect.
+            //    This is the assertion the pre-fix code fails.
+            await act(async () => {
+                jest.advanceTimersByTime(60_000);
+            });
+            expect(fetchMock.mock.calls.length).toBe(afterOpen);
+
+            // 4. ...and it is a throttle, not a stop: the safety-net poll
+            //    still fires at five minutes, so a cross-pod notification
+            //    cannot be lost forever.
+            await act(async () => {
+                jest.advanceTimersByTime(4 * 60_000);
+            });
+            expect(fetchMock.mock.calls.length).toBeGreaterThan(afterOpen);
+
+            // 5. On error the cadence returns to 60s, because the poll is
+            //    the only signal again.
+            await act(async () => {
+                FakeEventSource.last!.onerror?.();
+            });
+            const afterError = fetchMock.mock.calls.length;
+            await act(async () => {
+                jest.advanceTimersByTime(60_000);
+            });
+            expect(fetchMock.mock.calls.length).toBeGreaterThan(afterError);
+        } finally {
+            jest.useRealTimers();
+            if (had) g.EventSource = prior;
+            else delete g.EventSource;
         }
     });
 
