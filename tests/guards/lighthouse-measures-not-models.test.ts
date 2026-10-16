@@ -65,6 +65,24 @@
  *
  * Collection took 181s of the 250s cap, so the cap did not need to move.
  *
+ * ## The cross-run variance, measured on a SECOND job
+ *
+ * One job cannot measure runner-to-runner variation, so the margin above was
+ * set without it. Run 38894573566, a different job on a different runner:
+ *
+ *   /f/lighthouse   1684ms -> 1678ms   delta  6ms
+ *   /login          6266ms -> 6247ms   delta 19ms
+ *
+ * (collection 181s then 187s, both inside the cap.)
+ *
+ * So the total observed variation on `/f/*` is **6ms**, against the 516ms of
+ * headroom 2200ms leaves. 1900ms would still carry 37x the observed spread —
+ * and it is NOT set there, deliberately. Two jobs is not a distribution, and
+ * fixing a bound from too few samples is the exact mistake this guard exists
+ * to prevent: 3600ms looked defensible for the same reason. Whoever has a
+ * dozen main-branch runs can tighten on evidence, and the ratchet below makes
+ * that free — lowering the number needs no change here.
+ *
  * `/login` stays at 7000ms against a measured 6266ms. It is not noise-bound
  * (123ms spread, 734ms headroom) — but a 6.3s LCP with FCP at 2.1s on the
  * sign-in page is a real finding now that it is MEASURED rather than modelled,
