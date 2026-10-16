@@ -22,9 +22,9 @@
  * The assertions below are about the VIEW and the SNAPSHOT, not about `mutate`
  * being called — calling it was never the problem.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import messages from '../../messages/en.json';
 
 const saveFieldSnapshot = jest.fn();
 const readFieldSnapshot = jest.fn((..._a: unknown[]) => undefined);
@@ -81,6 +81,7 @@ jest.mock('next/navigation', () => ({
 }));
 
 import { OfflineFieldPanel } from '@/components/offline/OfflineFieldPanel';
+const messages = readCatalogue('en');
 
 const OFFLINE = messages.offline as unknown as Record<string, string>;
 

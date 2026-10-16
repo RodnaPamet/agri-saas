@@ -17,11 +17,12 @@
  * for every 4xx would tell an operator to re-enter a compliance record that
  * either cannot be re-entered or already exists.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
-import messages from '../../messages/en.json';
 import { UnsyncedWorkBanner } from '@/components/offline/UnsyncedWorkBanner';
+const messages = readCatalogue('en');
 
 const discardRefused = jest.fn(async () => {});
 let refused: Array<{ id: string; label: string; refusedStatus?: number }> = [];

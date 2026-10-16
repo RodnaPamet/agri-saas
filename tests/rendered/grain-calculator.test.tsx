@@ -36,9 +36,9 @@
  * whose column layout they describe.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import enMessages from '../../messages/en.json';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
 import { foldFarmTotals } from '@/lib/grain/farm-total';
@@ -92,6 +92,7 @@ import {
     type CalculatorExclusions,
     type CalculatorRow,
 } from '@/app/t/[tenantSlug]/(app)/grain/calculator/CalculatorClient';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.grain.calculator;
 /** The commodity catalogue the refusal params are resolved through. */

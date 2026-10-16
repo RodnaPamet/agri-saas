@@ -21,10 +21,11 @@
  * The seam is the `offlineSubmit` PROP the modal already accepts, so the
  * outcome is injected directly and no hook needs faking to steer it.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import messages from '../../messages/en.json';
 import { JournalEntryModal } from '@/app/t/[tenantSlug]/(app)/journal/JournalEntryModal';
+const messages = readCatalogue('en');
 
 // The Modal primitive calls useRouter (it owns the discard-guard navigation).
 // Same shape every other rendered suite in this repo uses.

@@ -35,11 +35,11 @@
  * modal's layout differs by breakpoint. Stating it here so the next reader does
  * not have to infer which branch ran.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { render, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
-import enMessages from '../../messages/en.json';
 import { restoreViewport, setViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
@@ -65,6 +65,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CostEntryFormModal } from '@/app/t/[tenantSlug]/(app)/grain/costs/CostEntryFormModal';
+const enMessages = readCatalogue('en');
 
 const AMOUNT_INPUT_ID = 'cost-amount-input';
 

@@ -38,11 +38,11 @@
  * production output.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import enMessages from '../../messages/en.json';
 
 import { restoreViewport, setViewport } from './viewport';
 
@@ -71,6 +71,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { BinsClient, type BinRow } from '@/app/t/[tenantSlug]/(app)/grain/bins/BinsClient';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.grain.bins;
 const KIND_COPY = enMessages.ag.status.bin;

@@ -19,6 +19,9 @@
  * `RECIPIENT_FALLBACK_LOCALE` mirrors the column instead. Reading the two as
  * one number is how a Bulgarian farmer gets an English password reset.
  */
+import { readCatalogue } from '../helpers/catalogue';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 const sendEmail = jest.fn();
 class MockConsoleEmailProvider {}
@@ -63,8 +66,6 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: (...a: unknown[]) => warn(...a), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
 
 const EN = en.auth.email as unknown as Record<string, string>;
 const BG = bg.auth.email as unknown as Record<string, string>;

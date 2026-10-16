@@ -17,6 +17,7 @@
  * the assertions here verify the WIRING contract, not the runtime.
  * E2E specs cover the runtime behaviour.
  */
+import { cataloguePath } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -153,7 +154,7 @@ describe.each(FLOWS.filter((f) => f.guard !== 'native'))(
             );
             if (confirmArg) {
                 const en = JSON.parse(
-                    fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf8'),
+                    fs.readFileSync(cataloguePath('en'), 'utf8'),
                 ) as Record<string, unknown>;
                 let resolved: unknown = en[flow.label];
                 for (const part of confirmArg[1].split('.')) {

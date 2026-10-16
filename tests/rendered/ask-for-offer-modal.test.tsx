@@ -35,10 +35,10 @@
  * to production output.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import enMessages from '../../messages/en.json';
 
 import { restoreViewport, setViewport } from './viewport';
 
@@ -84,6 +84,7 @@ jest.mock('@/components/ui/hooks', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AskForOfferModal } from '@/app/t/[tenantSlug]/(app)/offers/AskForOfferModal';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.ag.offers.ask;
 const COMPANY = 'AgriChem Ltd';

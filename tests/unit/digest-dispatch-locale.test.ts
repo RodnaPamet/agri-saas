@@ -34,10 +34,11 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
+import { readCatalogue } from '../helpers/catalogue';
 import { dispatchDigest } from '@/app-layer/notifications/digest-dispatcher';
 import type { DueItem } from '@/app-layer/jobs/types';
-import bg from '../../messages/bg.json';
-import en from '../../messages/en.json';
+const bg = readCatalogue('bg');
+const en = readCatalogue('en');
 
 type Cat = Record<string, Record<string, string>>;
 const BG = (bg.notificationEmail as unknown as { digest: Cat }).digest;

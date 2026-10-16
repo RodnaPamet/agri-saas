@@ -26,6 +26,7 @@
  *   • A `noX` title containing "Add your first" or "Create one".
  *   • A `noX` title with the redundant "available yet" pattern.
  */
+import { cataloguePath } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -74,7 +75,7 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
 
     it('control: flatten returns the real en.json population and recurses into it', () => {
         const messages = JSON.parse(
-            fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf-8'),
+            fs.readFileSync(cataloguePath('en'), 'utf-8'),
         );
         const rows = flatten(messages);
 
@@ -135,7 +136,7 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
     });
     it('every noX-style title in messages/en.json follows the canonical voice', () => {
         const messages = JSON.parse(
-            fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf-8'),
+            fs.readFileSync(cataloguePath('en'), 'utf-8'),
         );
         const offenders: Hit[] = [];
         for (const { key, value } of flatten(messages)) {

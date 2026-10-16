@@ -39,6 +39,7 @@
  * `THREAD_CLOSED` was nominated for translation from a spec sentence that
  * documents its REMOVAL.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -176,7 +177,7 @@ function thrownCodes(): Map<string, Set<string>> {
     return found;
 }
 
-const bg = JSON.parse(readFileSync(join(REPO_ROOT, 'messages/bg.json'), 'utf8')) as {
+const bg = readCatalogue('bg') as {
     errors?: Record<string, unknown>;
 };
 const ENTRIED = new Set(Object.keys(bg.errors ?? {}));

@@ -14,10 +14,10 @@
  * text in `tests/guards/button-touch-target-floor.test.ts`, which is also where
  * the ToggleGroup gap this step found is now pinned.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
-import enMessages from '../../messages/en.json';
 import { restoreViewport, setViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
@@ -41,6 +41,7 @@ jest.mock('@/components/ui/hooks', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AskInsuranceModal } from '@/app/t/[tenantSlug]/(app)/farm-risk/AskInsuranceModal';
+const enMessages = readCatalogue('en');
 
 const ASK = enMessages.ag.risk.ask;
 const QUOTE = enMessages.ag.risk.quote;
