@@ -39,9 +39,11 @@
  * `THREAD_CLOSED` was nominated for translation from a spec sentence that
  * documents its REMOVAL.
  */
-import { readCatalogue } from '../helpers/catalogue';
+import { cataloguePath, readCatalogue } from '../helpers/catalogue';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { relative } from 'node:path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
@@ -80,8 +82,6 @@ const BACKLOG: ReadonlyArray<string> = [
     'CROP_SEASON_YEAR_INVALID',
     'CROP_TYPE_INVALID',
     'CROP_TYPE_NAME_REQUIRED',
-    'DOSE_UNIT_HAS_NO_BASE',
-    'DOSE_UNIT_NOT_FOUND',
     'DUPLICATE_COMMODITY',
     'EIK_INVALID',
     'EIK_LOOKS_LIKE_EGN',
@@ -96,8 +96,6 @@ const BACKLOG: ReadonlyArray<string> = [
     'FARM_NAME_TOO_LONG',
     'FARM_PROFILE_EIK_NOT_EDITABLE',
     'FARM_SLUG_UNAVAILABLE',
-    'FERTILIZER_EXPECTED',
-    'FIELD_OPERATION_NOT_FOUND',
     'FILE_VALIDATION_ERROR',
     'IDEMPOTENCY_KEY_INVALID',
     'IF_MATCH_EMPTY',
@@ -116,7 +114,6 @@ const BACKLOG: ReadonlyArray<string> = [
     'INVALID_LOCATION',
     'INVALID_PARCEL',
     'INVALID_PLANTING',
-    'INVALID_REVIEW_ACTION',
     'INVALID_SEASON',
     'INVALID_TAB_ORDER',
     'INVALID_TASK',
@@ -128,23 +125,16 @@ const BACKLOG: ReadonlyArray<string> = [
     'MESSAGE_NOT_SENDER',
     'MESSAGE_TOO_LONG',
     'NOTES_TOO_LONG',
-    'NOT_A_FIELD_OPERATION_TASK',
     'OPERATOR_SCOPE',
     'OVERRIDE_DENOMINATION_CHANGED',
-    'PARCELS_NOT_IN_LOCATION',
     'PAST_DUE_RESTRICTED',
     'PESTICIDE_REGULATORY_FIELDS_REQUIRED',
-    'PRODUCT_IS_SAMPLE_ARCHETYPE',
-    'PRODUCT_NAME_REQUIRED',
-    'TASK_NOT_AWAITING_REVIEW',
     'THREAD_BLOCKED',
     'THREAD_NOT_A_PARTY',
     'THREAD_OWN_LISTING',
     'UNKNOWN_COMMODITY',
     'UNSUPPORTED_FILE_TYPE',
     'VARIETY_NAME_REQUIRED',
-    'WATER_RATE_UNIT_NOT_FOUND',
-    'WATER_RATE_UNIT_REQUIRED',
     'WEED_ENTRIES_TOO_MANY',
     'WEED_NAME_TOO_LONG',
     'WRITE_FORBIDDEN_FOR_ROLE',
@@ -180,6 +170,17 @@ function thrownCodes(): Map<string, Set<string>> {
 const bg = readCatalogue('bg') as {
     errors?: Record<string, unknown>;
 };
+
+/**
+ * Where to ADD an entry, for the failure message — DERIVED, not written down.
+ *
+ * It said `messages/bg.json` until #1960 split the catalogue into bundles and
+ * deleted that file, so the one line a developer reads when this guard fires
+ * pointed at a path that no longer existed. `cataloguePath` exists for
+ * exactly this ("the few tests that name the path rather than the
+ * contents"), and deriving it means the next move cannot leave this stale.
+ */
+const BG_CATALOGUE = relative(REPO_ROOT, cataloguePath('bg'));
 const ENTRIED = new Set(Object.keys(bg.errors ?? {}));
 const thrown = thrownCodes();
 const unentried = [...thrown.keys()].filter((c) => !ENTRIED.has(c)).sort();
@@ -209,7 +210,7 @@ describe('a new refusal code ships with its Bulgarian entry (#1677)', () => {
     it('no NEW code lacks an entry', () => {
         const fresh = unentried
             .filter((c) => !excused.has(c))
-            .map((c) => `  ${c} — thrown at ${[...thrown.get(c)!].join(', ')}, no errors.${c} in messages/bg.json`);
+            .map((c) => `  ${c} — thrown at ${[...thrown.get(c)!].join(', ')}, no errors.${c} in ${BG_CATALOGUE}`);
         expect(fresh.join('\n')).toBe('');
     });
 
