@@ -41,6 +41,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 
+import { afterCommit } from '@/lib/db/after-commit';
 /** ms in a UTC day. */
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -204,17 +205,9 @@ export async function createTaskDueNotification(
     // and the client treats `id`-less events as "prepend then
     // refetch on next open" — graceful fallback.
     if (result.count > 0) {
-        publishNotificationEvent(task.tenantId, task.assigneeUserId, {
-            // No id — see comment above. The client uses createdAt
-            // as the dedupe seed for prepend.
-            id: row.dedupeKey,
-            type: row.type,
-            title: row.title,
-            message: row.message,
-            read: false,
-            linkUrl: row.linkUrl,
-            createdAt: now.toISOString(),
-        });
+        afterCommit('notify.task-due', () =>
+            publishNotificationEvent(task.tenantId, task.assigneeUserId, { id: row.dedupeKey }),
+        );
     }
 
     // count 0 ⇒ the dedupeKey already existed ⇒ already notified.

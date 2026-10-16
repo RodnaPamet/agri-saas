@@ -210,8 +210,12 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
         );
 
         expect(received).toHaveLength(1);
-        expect(received[0].type).toBe('TASK_ASSIGNED');
-        expect(received[0].linkUrl).toBe('/t/acme/farm-tasks/task-1');
+        // `type` and `linkUrl` left the event in #1990 (ids only); the row
+        // still carries them and the client refetches it. What remains
+        // assertable here is the id, below — which is the dedupeKey, and that
+        // is the contract worth locking because the helper has no DB-assigned
+        // id to use instead.
+
         // The publish uses the dedupeKey as the event id (the
         // helper doesn't have the DB-assigned id from createMany).
         expect(received[0].id).toBe(

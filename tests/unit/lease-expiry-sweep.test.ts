@@ -7,6 +7,11 @@
  *      the lease's parcel has a location.
  *   2. linkUrl omits the query when the parcel has no locationId.
  *   3. the per-(lease, recipient, endDate) dedupeKey shape holds.
+ *
+ * The linkUrl assertions are on the notification ROW. They used to be made
+ * against the published SSE event too, which carried a copy; the event carries
+ * ids only as of #1990, so that half now asserts the id equals the row's
+ * dedupeKey instead.
  */
 export {};
 
@@ -71,12 +76,14 @@ describe('runLeaseExpirySweep — linkUrl', () => {
         await run();
 
         expect(createdRow().linkUrl).toBe('/t/acme/rent?locationId=loc-9');
-        // The live SSE event carries the same linkUrl.
-        expect(mockPublish).toHaveBeenCalledWith(
-            't1',
-            'u1',
-            expect.objectContaining({ linkUrl: '/t/acme/rent?locationId=loc-9' }),
-        );
+        // The event carries ids ONLY as of #1990, so it no longer repeats the
+        // linkUrl — the client refetches the row over REST. What is still
+        // worth locking is that the id the event carries IS the row's
+        // dedupeKey, derived from the row rather than hardcoded so the two
+        // cannot drift apart silently.
+        expect(mockPublish).toHaveBeenCalledWith('t1', 'u1', {
+            id: createdRow().dedupeKey,
+        });
     });
 
     test('omits ?locationId when the parcel has no locationId', async () => {

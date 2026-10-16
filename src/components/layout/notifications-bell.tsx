@@ -234,21 +234,24 @@ export function NotificationsBell() {
                     // cross-pod events rather than the primary signal.
                     setCadence(NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS);
                 };
-                es.onmessage = (msg) => {
-                    try {
-                        const event = JSON.parse(msg.data) as NotificationRow;
-                        // Prepend if not already present (dedupe by id —
-                        // the server includes the row id OR the dedupeKey
-                        // as id so cross-channel duplicates collapse).
-                        setItems((prev) => {
-                            const list = prev ?? [];
-                            if (list.some((n) => n.id === event.id)) return list;
-                            return [event, ...list];
-                        });
-                    } catch {
-                        // Malformed event — refetch to recover.
-                        void fetchList();
-                    }
+                es.onmessage = () => {
+                    /**
+                     * Refetch, do not prepend — #1990.
+                     *
+                     * The event carries ids only now, so there is no row in it
+                     * to prepend. That is the phase rule (payloads carry ids;
+                     * clients fetch bodies over REST with ETag) and it also
+                     * removes a class of bug this code had: a prepended
+                     * payload is a copy, so a notification edited or deleted
+                     * between publish and render was displayed anyway, with no
+                     * version to compare against.
+                     *
+                     * The event body is deliberately not read at all. Reading
+                     * it to decide whether to refetch would reintroduce a
+                     * dependency on its shape, which is the thing that just
+                     * changed.
+                     */
+                    void fetchList();
                 };
                 es.onerror = () => {
                     // Back to the 60 s cadence. EventSource retries on its

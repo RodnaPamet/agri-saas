@@ -1,7 +1,12 @@
 /**
- * 2026-05-27 — Unit coverage for the in-process notification bus
- * (PR-C). Locks the (tenant, user) filtering contract + the
- * subscriber-cleanup invariant.
+ * 2026-05-27 — Unit coverage for the notification bus (PR-C), locking the
+ * (tenant, user) routing contract + the subscriber-cleanup invariant.
+ *
+ * These run against the IN-PROCESS fallback, which is what the bus uses when
+ * `REDIS_URL` is unset — the normal case in unit tests. That is deliberate and
+ * is also why `getNotificationBusMode()` exists: a suite that could not tell
+ * which backing it exercised would report the Redis path green without ever
+ * touching it. The Redis path has its own coverage (#1990).
  */
 
 import {
@@ -12,15 +17,12 @@ import {
     type NotificationEvent,
 } from '@/lib/notifications/notification-bus';
 
-const sampleEvent: NotificationEvent = {
-    id: 'evt-1',
-    type: 'TASK_DUE',
-    title: 'Test',
-    message: 'msg',
-    read: false,
-    linkUrl: null,
-    createdAt: '2026-05-27T12:00:00Z',
-};
+/**
+ * IDs only as of #1990. The fixture used to carry `type`, `title`, `message`,
+ * `read`, `linkUrl` and `createdAt`; the event carries an id and the client
+ * refetches the body over REST with ETag.
+ */
+const sampleEvent: NotificationEvent = { id: 'evt-1' };
 
 beforeEach(() => {
     __resetNotificationBusForTests();

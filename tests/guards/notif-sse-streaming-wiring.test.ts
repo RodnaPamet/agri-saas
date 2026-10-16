@@ -46,18 +46,35 @@ describe('PR-C SSE notification streaming wiring', () => {
             expect(s).toMatch(/export interface NotificationEvent/);
         });
 
-        it('filters publishes by both tenantId AND userId', () => {
-            // Anti-leak: a cross-tenant or cross-user fan-out would
-            // surface another user's notification text to the bell.
+        it('routes by a channel keyed on both tenantId AND userId', () => {
+            // Anti-leak, same property, different mechanism — REAIMED by
+            // #1990. This asserted `sub.tenantId !== tenantId` comparisons,
+            // which was the in-process bus iterating every subscriber. The bus
+            // is Redis pub/sub now and routing moved into the channel NAME, so
+            // the filter those regexes described no longer exists.
+            //
+            // The tenant is in the channel rather than only the payload
+            // precisely so that cross-tenant delivery is not something a
+            // filter has to get right. Keeping the id comparison would also
+            // have meant every process receiving every notification in the
+            // deployment to discard almost all of it.
+            //
+            // The behavioural half lives in
+            // tests/unit/notifications/notification-bus-redis.test.ts, routed
+            // through `publishNotificationEvent` with a positive control —
+            // which is what catches a channel key that drops the tenant. A
+            // source match cannot.
             const s = read(PATH_BUS);
-            expect(s).toMatch(/sub\.tenantId !== tenantId/);
-            expect(s).toMatch(/sub\.userId !== userId/);
+            expect(s).toMatch(/notif:\$\{tenantId\}:\$\{userId\}/);
+            expect(s).toMatch(/function channelFor\(tenantId: string, userId: string\)/);
         });
 
         it('drops a subscriber whose send() throws (poison-pill recovery)', () => {
+            // Same invariant; the set it deletes from is now per-channel
+            // (`subs`) rather than one flat `subscribers` set (#1990).
             const s = read(PATH_BUS);
             expect(s).toMatch(/try \{\s*sub\.send/);
-            expect(s).toMatch(/subscribers\.delete\(sub\)/);
+            expect(s).toMatch(/subs\.delete\(sub\)/);
         });
     });
 
@@ -190,10 +207,27 @@ describe('PR-C SSE notification streaming wiring', () => {
             expect(code).not.toMatch(/NEXT_PUBLIC_NOTIFICATIONS_SSE/);
         });
 
-        it('wires onmessage to prepend the parsed event into state', () => {
-            const s = read(PATH_BELL);
-            expect(s).toMatch(/es\.onmessage\s*=/);
-            expect(s).toMatch(/JSON\.parse\(msg\.data\)/);
+        it('wires onmessage to REFETCH, and not to read the payload', () => {
+            // REAIMED by #1990. This asserted `JSON.parse(msg.data)` — the
+            // bell prepending the event into state — and the event carries ids
+            // only now, so there is no row in it to prepend.
+            //
+            // The negative half is the point. Reading the body to decide
+            // whether to refetch would reintroduce a dependency on a shape
+            // that just changed, and it was also a bug: a prepended payload is
+            // a copy, so a notification edited or deleted between publish and
+            // render was displayed anyway with no version to compare.
+            // Whitespace collapsed, not the window widened. `blankNonCode`
+            // replaces each comment character with a space, so the docblock
+            // explaining this handler becomes ~700 characters of filler
+            // between `onmessage` and the call — and widening the window to
+            // clear it would let the match reach an unrelated `fetchList()`
+            // elsewhere in the file. Collapsing keeps the window tight around
+            // actual code.
+            const code = blankNonCode(read(PATH_BELL)).replace(/\s+/g, ' ');
+            expect(code).toMatch(/es\.onmessage\s*=/);
+            expect(code).toMatch(/es\.onmessage[^;]{0,120}?fetchList\(\)/);
+            expect(code).not.toMatch(/JSON\.parse\(msg\.data\)/);
         });
 
         it('throttles fallback poll to 5min when SSE is healthy', () => {

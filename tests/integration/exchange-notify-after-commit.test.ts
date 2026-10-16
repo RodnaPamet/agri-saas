@@ -313,7 +313,13 @@ describeFn('Exchange notify fires only after the sender transaction commits', ()
             expect(after.outbox - before.outbox).toBe(sellerUserIds.length);
             // The publish is the half that cannot be taken back once sent.
             expect(watch.events).toHaveLength(sellerUserIds.length);
-            expect(watch.events.every((e) => e.type === 'EXCHANGE_MESSAGE')).toBe(true);
+            // Was `e.type === 'EXCHANGE_MESSAGE'`. The event carries ids only
+            // as of #1990, so the type is no longer on it — the assertion
+            // becomes that every publish carries a usable id, which is what a
+            // client needs to refetch the body over REST.
+            expect(watch.events.every((e) => typeof e.id === 'string' && e.id.length > 0)).toBe(
+                true,
+            );
         } finally {
             watch.stop();
         }
