@@ -7,9 +7,12 @@
  * user can never write another's avatar. Account-level, not
  * tenant-scoped; no `requirePermission` (mirrors `/api/auth/change-password`).
  *
- * The image arrives already resized + EXIF-stripped + webp-encoded by
- * the client `<canvas>` round-trip; `uploadOwnAvatar` validates the
- * bytes and persists them.
+ * The image arrives as a JPEG or a WebP and the SERVER resizes, strips
+ * metadata and re-encodes it (#1903). It used to arrive already
+ * canvas-processed, which refused every photo an iPhone takes: iOS decodes
+ * WebP but has no encoder for it. Doing the work here puts the privacy
+ * guarantee — EXIF and GPS gone — on one code path for every client instead
+ * of on the web canvas being the only path that meets it.
  */
 import type { NextRequest } from 'next/server';
 
@@ -20,7 +23,7 @@ import { codedBadRequest } from '@/lib/errors/types';
 import {
     uploadOwnAvatar,
     removeOwnAvatar,
-    AVATAR_MAX_BYTES,
+    AVATAR_UPLOAD_MAX_BYTES,
 } from '@/lib/account/avatar';
 
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
@@ -36,11 +39,14 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     if (!(file instanceof File)) {
         throw codedBadRequest('AVATAR_FILE_MISSING', 'Missing avatar file in form data.');
     }
-    // Reject oversized payloads before buffering them into memory.
-    if (file.size > AVATAR_MAX_BYTES) {
+    // Reject oversized payloads before buffering them into memory. The
+    // UPLOAD cap, not the stored one: since #1903 the server re-encodes, so
+    // what arrives is larger than what is kept and checking the stored cap
+    // here would refuse every phone photo before it was shrunk.
+    if (file.size > AVATAR_UPLOAD_MAX_BYTES) {
         throw codedBadRequest(
             'AVATAR_TOO_LARGE',
-            'Processed avatar is too large — re-select a smaller image.',
+            'That image is too large — pick a smaller photo.',
         );
     }
 

@@ -529,6 +529,9 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // 294 -> 289 (#1861). The avatar path's five bare refusals are coded now —
 // AVATAR_FILE_MISSING, AVATAR_EMPTY, AVATAR_TOO_LARGE, AVATAR_NOT_WEBP and
 // the WebP magic-number one — and a coded throw is exempt from this count.
+// (`AVATAR_NOT_WEBP` has since been retired for `AVATAR_FORMAT_NOT_ALLOWED`
+// and `AVATAR_UNREADABLE` in #1903, which is two coded throws where there
+// was one. The count above is unaffected: coded either way.)
 //
 // Lowered rather than left at 294 with the slack absorbed by
 // DRIFT_ALLOWANCE: a downward ratchet that is not tightened when the gain is

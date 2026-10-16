@@ -54,8 +54,14 @@ const BATCH: ReadonlyArray<[code: string, english: string]> = [
     ['MESSAGE_NOT_FOUND', 'That message was not found.'],
     ['CROP_PLAN_NAME_REQUIRED', 'A crop plan name is required.'],
     ['CROP_PLAN_INVALID_DATE', 'The first sow date must be a valid date.'],
-    ['AVATAR_TOO_LARGE', 'Processed avatar is too large — re-select a smaller image.'],
-    ['AVATAR_NOT_WEBP', 'Avatar must be a WebP image.'],
+    ['AVATAR_TOO_LARGE', 'That image is too large — pick a smaller photo.'],
+    // AVATAR_NOT_WEBP was here and is RETIRED (#1903): the endpoint accepts
+    // JPEG as well now, so a code named for the one format it does not
+    // require would describe the opposite of the rule. Its two entries went
+    // with it — an entry for a code nothing throws is dead copy that reads
+    // as coverage.
+    ['AVATAR_FORMAT_NOT_ALLOWED', 'Avatar must be a JPEG or WebP image.'],
+    ['AVATAR_UNREADABLE', 'That image could not be read. Try a different photo.'],
     ['AVATAR_EMPTY', 'Avatar upload was empty.'],
     ['AVATAR_FILE_MISSING', 'Missing avatar file in form data.'],
 ];
