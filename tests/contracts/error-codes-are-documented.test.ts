@@ -371,6 +371,37 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'WATER_RATE_UNIT_REQUIRED',
     'WEED_ENTRIES_TOO_MANY',
     'WEED_NAME_TOO_LONG',
+    // ── #1712's farmer tranche: three of six codes, routes measured ──
+    //
+    // The other three ARE documented, on the operations that raise them:
+    // AVATAR_NOT_FOUND on `/api/account/avatar/{userId}`, DELIVERY_NOT_FOUND
+    // on `/grain/deliveries/{deliveryId}`, INQUIRY_NOT_FOUND on
+    // `/exchange/inquiries/{inquiryId}`. Those three routes were already in
+    // the spec and only wanted the 404 they can already answer, which is the
+    // `LISTING_INTEREST_ALREADY_SENT` precedent above.
+    //
+    // These three are here for the `COMPANY_NAME_TAKEN` reason, measured
+    // against `src/generated/openapi.json` (184 paths) rather than assumed:
+    //
+    //     ORG_NOT_FOUND_OR_FORBIDDEN   no /org/ path in the spec at all
+    //     SUPPORT_SCHEME_NOT_FOUND     no support-scheme path
+    //     TARGET_USER_NOT_IN_TENANT    no admin/sessions path
+    //
+    // ORG_NOT_FOUND_OR_FORBIDDEN is the awkward one and worth naming: it comes
+    // from `context.ts`'s org resolver, so it is raised by EVERY organisation
+    // route rather than one operation. Documenting it means documenting the
+    // org surface, which is a larger change than the one that introduced the
+    // code — and it would want the shared-envelope treatment, not a
+    // per-operation line.
+    //
+    // Note what the code does NOT distinguish, so nobody "improves" it later:
+    // `context.ts` deliberately answers the same way for "no such org" and
+    // "not a member", with the real reason going only to the internal log.
+    // Splitting it into ORG_NOT_FOUND and ORG_ACCESS_DENIED would re-open that
+    // leak, so this entry must not be resolved by adding two codes.
+    'ORG_NOT_FOUND_OR_FORBIDDEN',
+    'SUPPORT_SCHEME_NOT_FOUND',
+    'TARGET_USER_NOT_IN_TENANT',
 ];
 
 /** Every code reachable through a `coded*()` helper, from source. */

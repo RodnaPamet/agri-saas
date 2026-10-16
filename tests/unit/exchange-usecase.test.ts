@@ -371,13 +371,31 @@ describe('respondToInquiry (seller-only)', () => {
     // longer be used to enumerate other tenants' private conversations. The
     // guard itself is unchanged: the mutation still never runs.
     it('a NON-seller cannot respond → notFound, indistinguishable from a missing row', async () => {
+        // On the CODE and STATUS, not the prose. The sentence is displayed
+        // copy and now comes from the catalogue (#1712), so a `/inquiry not
+        // found/i` pattern pinned the half that is expected to change — it
+        // went red on "That inquiry was not found." being reworded, while the
+        // security property it exists to prove was untouched.
+        //
+        // That property is the point of the case: ONE oracle for "not yours"
+        // and "not there", so a non-seller cannot confirm another tenant's
+        // private conversation by enumerating ids. Asserting both branches
+        // produce the IDENTICAL code is a stronger statement of it than two
+        // regex matches were.
         repo.getInquiry.mockResolvedValue(inq({ listing: { sellerTenantId: 'tenant-9', commodity: 'Wheat', status: 'ACTIVE' } }) as never);
-        await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/inquiry not found/i);
+        const notSeller = await respondToInquiry(meCtx, 'inq-1', 'DECLINED').catch((e: unknown) => e);
+        expect(notSeller).toMatchObject({ code: 'INQUIRY_NOT_FOUND', status: 404 });
         expect(repo.updateInquiryStatus).not.toHaveBeenCalled();
 
-        // …and a genuinely missing inquiry throws the SAME error.
+        // …and a genuinely missing inquiry throws the SAME code and status.
         repo.getInquiry.mockResolvedValue(null as never);
-        await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/inquiry not found/i);
+        const missing = await respondToInquiry(meCtx, 'inq-1', 'DECLINED').catch((e: unknown) => e);
+        expect(missing).toMatchObject({ code: 'INQUIRY_NOT_FOUND', status: 404 });
+        // Indistinguishable, stated as an equality rather than implied by two
+        // assertions that happen to match the same pattern.
+        expect((missing as { message: string }).message).toBe(
+            (notSeller as { message: string }).message,
+        );
     });
 
     it('an already-answered inquiry → badRequest', async () => {

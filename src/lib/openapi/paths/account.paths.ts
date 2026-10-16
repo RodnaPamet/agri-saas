@@ -598,7 +598,8 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             'uploaded avatar returns, and `<InitialsAvatar>` falls back to initials on it. The ' +
             'bytes are written only through `POST /api/account/avatar`, which accepts the ' +
             "caller's OWN avatar only, validates the webp magic number and AV-scans before the " +
-            'write — so what streams here has passed that gate.',
+            'write — so what streams here has passed that gate.' +
+            '\n\nRefusal code: `AVATAR_NOT_FOUND` (404) — no avatar is stored for that user. A user id that does not exist answers the same way, deliberately (see above).',
         tags: ['Account'],
         params: z.object({
             userId: z

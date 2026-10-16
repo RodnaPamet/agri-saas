@@ -6544,7 +6544,7 @@
         "GRAIN_BIN_NOT_FOUND": "That grain bin was not found.",
         "IDENTIFIERS_REQUIRED": "Provide at least one identifier.",
         "ILLEGAL_TRANSITION": "That status change is not allowed.",
-        "INQUIRY_NOT_FOUND": "That enquiry was not found.",
+        "INQUIRY_NOT_FOUND": "That inquiry was not found.",
         "INVALID_BBOX": "The map bounds are not valid. Pan or zoom the map and try again.",
         "INVALID_CROP_TYPE": "That crop was not found.",
         "INVALID_EQUIPMENT": "Some of the selected equipment was not found.",

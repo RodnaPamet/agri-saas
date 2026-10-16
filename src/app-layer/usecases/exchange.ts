@@ -675,7 +675,7 @@ export async function respondToInquiry(
         // may respond; what changed is that a non-seller learns nothing from
         // the answer.
         if (!inquiry || inquiry.listing.sellerTenantId !== ctx.tenantId) {
-            throw codedNotFound('INQUIRY_NOT_FOUND', 'That enquiry was not found.');
+            throw codedNotFound('INQUIRY_NOT_FOUND', 'That inquiry was not found.');
         }
         if (inquiry.status !== ExchangeInquiryStatus.PENDING) {
             throw badRequest('inquiry_not_pending', 'This inquiry has already been answered');

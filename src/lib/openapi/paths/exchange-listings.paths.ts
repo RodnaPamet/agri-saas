@@ -350,7 +350,8 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         summary: 'Борса — accept or decline an inquiry',
         description:
             'The SELLER’s decision on an inquiry against their own listing. ACCEPTED completes the two-sided consent and is what populates `counterpartyContact` and `contactSharedAt` on both sides; DECLINED leaves both null permanently. ' +
-            '\n\nAnswers with the id and new status only.',
+            '\n\nAnswers with the id and new status only.' +
+            '\n\nRefusal code: `INQUIRY_NOT_FOUND` (404). ONE oracle for “not yours” and “not there”: a caller who is not the seller gets the same 404 as for a missing inquiry, so an outsider cannot confirm another tenant’s private buyer↔seller conversation by enumerating ids. Do not branch on it as “missing”.',
         tags: ['Exchange'],
         params: InquiryParams,
         body: RespondToInquirySchema,
