@@ -1121,7 +1121,18 @@ export async function reviewFieldOperation(
         if (task.status !== 'PENDING_REVIEW') {
             throw codedBadRequest(
                 'TASK_NOT_AWAITING_REVIEW',
-                `Task is ${task.status}, not awaiting review — only a PENDING_REVIEW task can be approved or sent back.`,
+                // The STATUS stays out of the sentence and in `params`
+                // (#1918). It was interpolated raw — "Task is PENDING_REVIEW"
+                // — which is a wire enum in displayed copy, the same defect
+                // #1919 found in the role refusals: untranslatable, and
+                // meaningless to a farmer who has never seen the enum. A
+                // client that wants to branch on it still can; a person reads
+                // a sentence that does not name it.
+                //
+                // Nothing is lost by omitting it, because the remedy does not
+                // depend on which status it is: only a task awaiting review
+                // can be approved or sent back.
+                'This task is not awaiting review, so it cannot be approved or sent back.',
                 { status: task.status },
             );
         }

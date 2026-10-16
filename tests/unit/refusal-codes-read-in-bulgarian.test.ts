@@ -38,6 +38,9 @@ jest.mock('@/lib/observability/context', () => ({
     getRequestContext: () => getRequestContext(),
 }));
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { localizeErrorPayload } from '@/lib/errors/localize';
 import type { ApiErrorResponse } from '@/lib/errors/types';
 
@@ -116,6 +119,35 @@ const BATCH_3: ReadonlyArray<[code: string, english: string]> = [
     ['TENANT_IDENTIFIER_REQUIRED', 'Tenant identifier required'],
     ['TENANT_NOT_FOUND', 'Tenant not found'],
 ];
+
+/**
+ * Batch 4 — every unentried code in `usecases/field-operation.ts`, which is
+ * the ДНЕВНИК daily path: a spraying or fertilising record. One file, one
+ * surface, so the copy can be consistent about what a "dose unit" and a
+ * "water rate" are called.
+ *
+ * Chosen by surface rather than by count, on the agrent-ios session's
+ * finding that the phone gains nothing from the remaining codes and the web
+ * is where English reaches a farmer.
+ *
+ * `PRODUCT_IS_SAMPLE_ARCHETYPE` is not in this table: it interpolates a
+ * product NAME and has its own case below.
+ */
+const BATCH_4: ReadonlyArray<[code: string, english: string]> = [
+    ['DOSE_UNIT_HAS_NO_BASE', 'That dose unit has no stock unit to create a product against. Create the product from the catalogue instead.'],
+    ['DOSE_UNIT_NOT_FOUND', 'Dose unit not found.'],
+    ['FERTILIZER_EXPECTED', 'That item is not a fertiliser. Use the product field for it, or choose a fertiliser.'],
+    ['FIELD_OPERATION_NOT_FOUND', 'Field operation not found'],
+    ['INVALID_REVIEW_ACTION', 'Invalid review action.'],
+    ['NOT_A_FIELD_OPERATION_TASK', 'Only field-operation tasks can be reviewed here.'],
+    ['PARCELS_NOT_IN_LOCATION', 'Some selected parcels do not belong to this location.'],
+    ['PRODUCT_NAME_REQUIRED', 'A product name is required.'],
+    ['TASK_NOT_AWAITING_REVIEW', 'This task is not awaiting review, so it cannot be approved or sent back.'],
+    ['WATER_RATE_UNIT_NOT_FOUND', 'Water-rate unit not found.'],
+    ['WATER_RATE_UNIT_REQUIRED', 'A water-rate unit is required when a water rate is set.'],
+];
+
+const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
 
@@ -335,5 +367,68 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 3)', () => {
         const p = payload('THREAD_CLOSED', 'This thread is closed.');
         await localizeErrorPayload(p);
         expect(p.error.message).toBe('This thread is closed.');
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 4)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // 81 codes had no entry before this batch; 69 after. One FILE's worth,
+        // which is what makes the copy reviewable: a reader can ask whether
+        // "мерна единица за доза" is the right phrase once rather than
+        // eleven times.
+        console.log(
+            `[refusal-bg] batch 4 added 12 entries (${BATCH_4.length} in this table` +
+                ` + PRODUCT_IS_SAMPLE_ARCHETYPE), of 81 untranslated before it, 69 after`,
+        );
+        expect(BATCH_4.length).toBeGreaterThanOrEqual(11);
+    });
+
+    it.each(BATCH_4.map(([c, e]) => [c, e] as const))(
+        'batch 4: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('PRODUCT_IS_SAMPLE_ARCHETYPE keeps the product NAME in the sentence', async () => {
+        // A name the person typed, which `localize.ts`'s rule permits — the
+        // refusal is about ONE product among many in a catalogue, so naming
+        // it is the difference between an actionable message and a puzzle.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('PRODUCT_IS_SAMPLE_ARCHETYPE', '"Примерен хербицид" is a sample product.');
+        p.error.params = { product: 'Примерен хербицид' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).toContain('Примерен хербицид');
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('TASK_NOT_AWAITING_REVIEW no longer names the wire status', async () => {
+        // It read `Task is ${task.status}, not awaiting review` — a raw enum
+        // in displayed copy, the same defect #1919 found in the role
+        // refusals. The status stays in `params` for a client to branch on;
+        // the sentence stops naming it, in BOTH locales.
+        //
+        // Asserted on the English too, because that half was the leak: a
+        // Bulgarian entry would have hidden it from this test while an
+        // English reader still saw `PENDING_REVIEW`.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/field-operation.ts`,
+            'utf8',
+        );
+        expect(src).not.toMatch(/Task is \$\{task\.status\}/);
+        expect(src).toMatch(/\{ status: task\.status \}/);
+
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('TASK_NOT_AWAITING_REVIEW', 'This task is not awaiting review.');
+        p.error.params = { status: 'IN_PROGRESS' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).not.toMatch(/IN_PROGRESS|PENDING_REVIEW/);
     });
 });
