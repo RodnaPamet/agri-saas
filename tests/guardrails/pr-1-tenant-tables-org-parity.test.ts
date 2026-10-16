@@ -22,6 +22,7 @@
  *   6. Every tenant rollout uses a stable testId namespace so E2E
  *      specs can target the loaded-window state.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -81,7 +82,7 @@ describe('PR-1 — tenant tables → org-level parity', () => {
             // The "Load more" label now routes through next-intl (Bulgarian
             // sweep); the org-parity invariant lives in the en.json value.
             expect(src).toMatch(/t\('loadMore'/);
-            expect(require('../../messages/en.json').ui.tableLoadMore.loadMore).toMatch(/Load more \{resourceName\}/);
+            expect(readCatalogue('en').ui.tableLoadMore.loadMore).toMatch(/Load more \{resourceName\}/);
             expect(src).toMatch(/visibleCount/);
             expect(src).toMatch(/totalCount/);
         });

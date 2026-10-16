@@ -64,7 +64,7 @@ expect.extend(toHaveNoViolations);
 // `require` inside the factory (not top-level imports) keeps
 // babel-jest's out-of-scope-variable check happy.
 jest.mock('next-intl', () => {
-    const enMessages = require('../../messages/en.json');
+    const enMessages = (require('../helpers/catalogue') as typeof import('../helpers/catalogue')).readCatalogue('en');
 
     const get = (path: string): unknown =>
         path

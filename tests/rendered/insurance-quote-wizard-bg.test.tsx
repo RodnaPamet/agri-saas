@@ -11,9 +11,9 @@
  * Bulgarian is the app's DEFAULT locale, so this is the screen most farmers
  * actually see — English is the fallback, not the main case.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import bgMessages from '../../messages/bg.json';
 import { restoreViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
@@ -26,7 +26,7 @@ jest.mock('next/navigation', () => ({
 // Bulgarian catalogue, with just enough ICU for these screens: `{var}`
 // interpolation and the `other` branch of a plural.
 jest.mock('next-intl', () => {
-    const bg = require('../../messages/bg.json');
+    const bg = (require('../helpers/catalogue') as typeof import('../helpers/catalogue')).readCatalogue('bg');
     const get = (path: string): unknown =>
         path.split('.').reduce<unknown>(
             (o, k) => (o == null ? undefined : (o as Record<string, unknown>)[k]),
@@ -83,6 +83,7 @@ jest.mock('@/components/ui/hooks', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AskInsuranceModal } from '@/app/t/[tenantSlug]/(app)/farm-risk/AskInsuranceModal';
+const bgMessages = readCatalogue('bg');
 
 const ASK = bgMessages.ag.risk.ask;
 const QUOTE = bgMessages.ag.risk.quote;

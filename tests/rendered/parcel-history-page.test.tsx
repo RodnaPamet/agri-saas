@@ -42,12 +42,13 @@ jest.mock('@/lib/api-client', () => ({
     ApiClientError: class extends Error {},
 }));
 
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import ParcelHistoryPage from '@/app/t/[tenantSlug]/(app)/parcels/[parcelId]/page';
-import enMessages from '@/../messages/en.json';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.ag.parcelHistory;
 

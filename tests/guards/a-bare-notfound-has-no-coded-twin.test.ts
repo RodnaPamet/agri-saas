@@ -32,14 +32,13 @@
  * off the same week. It fails only where the code already exists, which is
  * the case with no argument for it.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { readFileSync } from 'node:fs';
 
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
-const bg = JSON.parse(
-    readFileSync(`${REPO_ROOT}/messages/bg.json`, 'utf8'),
-) as { errors?: Record<string, unknown> };
+const bg = readCatalogue('bg') as { errors?: Record<string, unknown> };
 const ENTRIED = new Set(Object.keys(bg.errors ?? {}));
 
 /**

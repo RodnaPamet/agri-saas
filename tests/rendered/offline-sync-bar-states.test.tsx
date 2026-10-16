@@ -17,15 +17,16 @@
  * The bar has no responsive branch, so the default is the real device and
  * there is nothing to override.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen } from '@testing-library/react';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
-import en from '../../messages/en.json';
+const en = readCatalogue('en');
 
 // Real English copy, with the one ICU form these keys use evaluated — the
 // point of the test is the string an operator sees, so a mock that echoed
 // key names would assert nothing.
 jest.mock('next-intl', () => {
-    const en = require('../../messages/en.json');
+    const en = (require('../helpers/catalogue') as typeof import('../helpers/catalogue')).readCatalogue('en');
     return {
         // P2.1c — part of the module; without it `useDateFormat()` threw
         // "useLocale is not a function" in every suite stubbing this barrel.
