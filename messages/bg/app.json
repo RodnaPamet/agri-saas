@@ -5032,7 +5032,7 @@
             "zoomIn": "Приближи",
             "zoomOut": "Отдалечи",
             "fitCountry": "Покажи цялата страна",
-            "fitHolding": "Обратно към този имот",
+            "fitHolding": "Обратно към стопанството",
             "stepNextParcel": "Към следващия парцел, от север на юг",
             "stepPosition": "{name} · {index} от {total}, от север на юг"
         }
