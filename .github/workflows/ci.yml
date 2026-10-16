@@ -403,6 +403,26 @@ jobs:
       - name: "Tokens: generated files match design/tokens.json"
         run: npm run tokens:check
 
+      # Same shape as the tokens check above, for the same reason and one more.
+      #
+      # `public/maplibre/*.mjs` are checked-in copies of files in
+      # `node_modules/maplibre-gl/dist`, and a worker from the previous release
+      # running against this release's main thread surfaces as an inexplicable
+      # rendering bug months later. `tests/guards/maplibre-worker-asset-sync`
+      # enforces byte-identity — but it lands as 2 failures among 5395 tests in
+      # a sharded run, and the fix is one command.
+      #
+      # The extra reason (#1807): DEPENDABOT cannot run a copy, so this reddens
+      # on every maplibre bump and stays red until a person notices. That is
+      # the security backlog waiting on somebody reading a test name. Owner
+      # ruling 2026-10-16: fail loudly with the command here, and do NOT have
+      # CI commit the result — GitHub gives a Dependabot-triggered workflow a
+      # read-only token, so committing would need `pull_request_target` or a
+      # PAT, and a job that can write to a bot branch is a materially
+      # different trust posture.
+      - name: "maplibre: served worker matches the installed package"
+        run: npm run maplibre:check
+
       - name: i18n parity + untranslated check
         # Fails on MISSING / ORPHAN / PLACEHOLDER-DRIFT / UNTRANSLATED-COPY
         # between en.json and every locale. Rides the required "Lint" check;
