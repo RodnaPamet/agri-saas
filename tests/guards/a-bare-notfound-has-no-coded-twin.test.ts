@@ -196,6 +196,45 @@ describe('a bare notFound() has no coded twin (#1712)', () => {
         expect(ENTRIED.has('THRESHER_NOT_FOUND')).toBe(false);
     });
 
+    it('a ONE-ANSWER oracle keeps fusing its states (#1712 operator audit)', () => {
+        // Owner ruling 2026-10-16: audit the remaining 52 operator-facing
+        // sites for the security-shaped pattern ONLY — no new codes, no new
+        // copy. 54 sites audited; these are the two that carry it and were
+        // not already covered.
+        //
+        // Each answers IDENTICALLY for "absent" and for "exists but is not
+        // yours", on purpose, so an outsider cannot use the difference as an
+        // oracle. The risk is not that someone deletes the comment — it is
+        // that someone "improves" the message by splitting the branches,
+        // which reads like better UX and silently restores the oracle.
+        //
+        // Asserted on the CONDITION, not the message: a fused condition is
+        // the thing that makes the two states indistinguishable, and it
+        // survives rewording.
+        const ORACLES: ReadonlyArray<readonly [file: string, condition: RegExp, why: string]> = [
+            [
+                'app-layer/usecases/org-dashboard-widgets.ts',
+                // `findFirst` scopes by organizationId, so another org's
+                // widget comes back null and takes the same 404 as a miss.
+                /where: \{ id: widgetId, organizationId: ctx\.organizationId \}/,
+                'Cross-org id leak returns the same 404 as a real miss.',
+            ],
+            [
+                'app/api/t/[tenantSlug]/admin/sessions/route.ts',
+                // One answer for three states: missing, another tenant's, and
+                // already revoked.
+                /if \(!row \|\| row\.revokedAt\)/,
+                'Do not expose whether the id exists in another tenant.',
+            ],
+        ];
+        for (const [file, condition, why] of ORACLES) {
+            const src = blankNonCode(readFileSync(join(REPO_ROOT, 'src', file), 'utf8'));
+            expect(`${file}: ${condition.test(src)}`).toBe(`${file}: true`);
+            expect(why.length).toBeGreaterThan(30);
+        }
+        console.log(`[notfound-twin] ${ORACLES.length} one-answer oracle(s) pinned on their condition`);
+    });
+
     it('the existence-hiding 404s are still bare, and must stay so', () => {
         // The inverse of this guard's rule, asserted so it cannot be
         // "fixed" into an information leak. If someone gives either of these
