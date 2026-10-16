@@ -18,7 +18,7 @@ import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
 jest.mock('next-intl', () => {
-    const en = require('../../messages/en.json');
+    const en = (require('../helpers/catalogue') as typeof import('../helpers/catalogue')).readCatalogue('en');
     const get = (p: string): unknown =>
         p.split('.').reduce<unknown>(
             (o, k) => (o == null ? undefined : (o as Record<string, unknown>)[k]),

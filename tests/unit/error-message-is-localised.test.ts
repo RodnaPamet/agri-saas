@@ -212,9 +212,7 @@ describe('a refusal speaks the reader’s language (#1677)', () => {
         // So: take any code the catalogue does not yet carry. 124 of the
         // server's 211 were unentried when #1918 was filed, and the set
         // shrinks as batches land.
-        const bg = JSON.parse(
-            readFileSync(join(process.cwd(), 'messages/bg.json'), 'utf8'),
-        ) as { errors: Record<string, string> };
+        const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
         const unentried = ['JOURNAL_IMPORT_FAILED', 'SOME_CODE_WITHOUT_AN_ENTRY_1918']
             .find((c) => !(c in bg.errors));
 

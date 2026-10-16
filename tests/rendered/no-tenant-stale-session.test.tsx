@@ -36,10 +36,10 @@ jest.mock('@/auth', () => ({
 }));
 
 jest.mock('next-intl/server', () => {
-    const en = require('../../messages/en.json');
+    const en = (require('../helpers/catalogue') as typeof import('../helpers/catalogue')).readCatalogue('en');
     return {
         getTranslations: async (ns: string) => {
-            const dict = (en as Record<string, Record<string, string>>)[ns] ?? {};
+            const dict = (en as unknown as Record<string, Record<string, string>>)[ns] ?? {};
             const t = (key: string) => dict[key] ?? `${ns}.${key}`;
             // `t.rich` is used for `signedInAs`; the page only needs the text.
             (t as unknown as { rich: unknown }).rich = (
@@ -53,7 +53,7 @@ jest.mock('next-intl/server', () => {
 
 import NoTenantPage from '@/app/no-tenant/page';
 
-const EN = require('../../messages/en.json').noTenant as Record<string, string>;
+const EN = (require('../helpers/catalogue') as typeof import('../helpers/catalogue')).readCatalogue('en').noTenant as Record<string, string>;
 
 function signedInAs(id = 'u-1', memberships: Array<{ slug: string }> = []) {
     authMock.mockResolvedValue({

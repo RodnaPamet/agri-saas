@@ -49,15 +49,18 @@
  * SURROUNDING warning is present in the same markup. Absent hint, present
  * warning: the branch ran and the hook answered `false`.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { renderToString } from 'react-dom/server';
 
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
-import en from '../../messages/en.json';
+const en = readCatalogue('en');
 
 jest.mock('next-intl', () => ({
     useLocale: () => 'en',
     useTranslations: () => (key: string) =>
-        (en.offline as unknown as Record<string, string>)[key] ?? `offline.${key}`,
+        ((require('../helpers/catalogue') as typeof import('../helpers/catalogue'))
+            .readCatalogue('en').offline as unknown as Record<string, string>)[key] ??
+        `offline.${key}`,
 }));
 
 const WARNING = en.offline.storageUnprotected;

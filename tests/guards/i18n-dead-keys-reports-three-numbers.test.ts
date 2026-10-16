@@ -45,6 +45,7 @@
  * from outside, because a script that both computes and validates its own
  * invariant has nobody checking the checker.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -69,9 +70,7 @@ const SCRIPT = join(process.cwd(), 'scripts/i18n-dead-keys.mjs');
 /** Every key in the shipped catalogue, flattened — the population the computed
  *  discriminator below searches for a same-leaf pair. */
 function flattenCatalogue(): string[] {
-    const raw = JSON.parse(
-        readFileSync(join(process.cwd(), 'messages/en.json'), 'utf8'),
-    ) as Record<string, unknown>;
+    const raw = readCatalogue('en') as Record<string, unknown>;
     const out: string[] = [];
     const walk = (node: Record<string, unknown>, prefix: string): void => {
         for (const [k, v] of Object.entries(node)) {

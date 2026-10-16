@@ -17,9 +17,10 @@
  * hold a crop nobody has catalogued and that is allowed. What it can pin is
  * that everything the product OFFERS, the product can also NAME.
  */
-import en from '@/../messages/en.json';
-import bg from '@/../messages/bg.json';
+import { readCatalogue } from '../helpers/catalogue';
 import { CROP_OPTIONS, CROP_VALUES, cropLabel, cropSeasonLabel } from '@/lib/agriculture/crop-options';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 const enCrops = en.crops as Record<string, string>;
 const bgCrops = bg.crops as Record<string, string>;
