@@ -16,10 +16,17 @@
  * ── why not NEXT_PUBLIC_* ──
  *
  * `NEXT_PUBLIC_*` is inlined at `next build`, so a flag held there needs a
- * rebuild, an image push and a rollout to flip. `NEXT_PUBLIC_NOTIFICATIONS_SSE`
- * is the live example: a client switch that is off in production and cannot be
- * turned on without shipping. Flags are therefore DB-backed and read at request
- * time.
+ * rebuild, an image push and a rollout to flip. Flags are therefore DB-backed
+ * and read at request time.
+ *
+ * `NEXT_PUBLIC_NOTIFICATIONS_SSE` used to stand here as the live example, and
+ * it earned the description: it gated the notifications SSE channel from the
+ * client, appeared in no Dockerfile `ARG` and no `ghcr-publish.yml` build-arg,
+ * and therefore baked `undefined` into every image ever shipped. The channel
+ * was not off, it was unreachable — measured 2026-10-16, zero requests to
+ * `/api/notifications/stream` in production with a live tab. #1982 moved it to
+ * `notifications.sse` here, so the example is now a worked one rather than an
+ * outstanding problem.
  *
  * ── the cache, and what it is allowed to cost ──
  *

@@ -1877,8 +1877,12 @@ order is the design:**
 
 **Never `NEXT_PUBLIC_*` as a feature switch** — it is inlined at `next build`,
 so flipping it needs a rebuild, an image push and a rollout.
-`NEXT_PUBLIC_NOTIFICATIONS_SSE` is the live example: off in production and not
-turnable on without shipping.
+`NEXT_PUBLIC_NOTIFICATIONS_SSE` was the worked example and is now FIXED (#1982):
+it gated the notifications SSE channel from the client, reached no Dockerfile
+`ARG` and no `ghcr-publish.yml` build-arg, and so baked `undefined` into every
+image — the channel was unreachable rather than off (measured 2026-10-16: zero
+requests to `/api/notifications/stream` in production with a live tab). The
+switch is now the `notifications.sse` flag row, read per request by the route.
 
 The flag TABLE is cached in Redis for 30s under one key, so a flip propagates
 in ≤30s. **Cohort membership is NOT cached** — it is per-user, and a stale

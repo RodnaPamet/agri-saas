@@ -31,24 +31,18 @@ import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
 /**
- * The SSE opt-in, forced ON for this file — #1982.
+ * No `@/env` mock here any more — #1982.
  *
- * `requireActual` and override ONE key, rather than the `env: {}` stub other
- * suites use: the bell's import graph reads plenty of other keys and a bare
- * stub breaks the render.
+ * This file briefly mocked `NEXT_PUBLIC_NOTIFICATIONS_SSE` on, because the
+ * bell carried its own build-time gate. The gate now lives in
+ * `/api/notifications/stream` as a `FeatureFlag` row, so the client always
+ * attempts the connection and there is nothing here to switch.
  *
- * This is file-wide but inert for every other test here, and that is a
- * property of the environment rather than luck: jsdom does not implement
- * `EventSource` (probed: `typeof EventSource === 'undefined'`), and the bell
- * guards on `sseEnabled && typeof EventSource !== 'undefined'`. So no stream
- * is constructed unless a test installs a double itself, as the throttle test
- * below does.
+ * What makes every test below unaffected is the environment rather than a
+ * mock: jsdom does not implement `EventSource` (probed: `typeof EventSource
+ * === 'undefined'`), and the bell guards on that, so no stream is constructed
+ * unless a test installs a double itself — as the throttle test does.
  */
-jest.mock('@/env', () => {
-    const actual = jest.requireActual('@/env') as typeof import('@/env');
-    return { ...actual, env: { ...actual.env, NEXT_PUBLIC_NOTIFICATIONS_SSE: '1' } };
-});
-
 import { NotificationsBell } from '@/components/layout/notifications-bell';
 
 // ─── fetch mock ────────────────────────────────────────────────────

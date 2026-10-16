@@ -657,7 +657,6 @@ export const env = createEnv({
         // until the client integration is verified end-to-end in
         // a real browser. Server-side stream is wired regardless;
         // flipping this to '1' is the only step to engage SSE.
-        NEXT_PUBLIC_NOTIFICATIONS_SSE: z.enum(['0', '1']).optional(),
 
         // The VAPID public key, exposed to the browser so the client can
         // subscribe via PushManager. Mirror of VAPID_PUBLIC_KEY; absent →
@@ -838,7 +837,6 @@ export const env = createEnv({
         VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
         VAPID_SUBJECT: process.env.VAPID_SUBJECT,
 
-        NEXT_PUBLIC_NOTIFICATIONS_SSE: process.env.NEXT_PUBLIC_NOTIFICATIONS_SSE,
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
         NEXT_PUBLIC_MAPTILER_KEY: process.env.NEXT_PUBLIC_MAPTILER_KEY,
         NEXT_PUBLIC_MAP_BASEMAP_STYLE: process.env.NEXT_PUBLIC_MAP_BASEMAP_STYLE,
