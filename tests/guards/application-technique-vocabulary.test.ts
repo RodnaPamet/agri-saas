@@ -11,6 +11,7 @@
  * reachable. Two sources WITHOUT one is how `messages/` came to hold three
  * separate crop vocabularies, which is the outcome this file exists to stop.
  */
+import { cataloguePath } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
@@ -23,7 +24,7 @@ import {
 const ROOT = path.resolve(__dirname, '../..');
 
 function messagesBg(): Record<string, string> {
-    const raw = fs.readFileSync(path.join(ROOT, 'messages/bg.json'), 'utf8');
+    const raw = fs.readFileSync(cataloguePath('bg'), 'utf8');
     return JSON.parse(raw).ag?.map?.parcelSheet?.techniqueOptions ?? {};
 }
 

@@ -14,10 +14,10 @@
  *     surface that is the claim most likely to be believed.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import enMessages from '../../messages/en.json';
 
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
@@ -37,6 +37,7 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 }));
 
 import { DomainCostEntriesPanel } from '@/components/agro/DomainCostEntriesPanel';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.grain.costs;
 

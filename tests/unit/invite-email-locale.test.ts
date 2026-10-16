@@ -37,10 +37,11 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: (...a: unknown[]) => warn(...a), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+import { readCatalogue } from '../helpers/catalogue';
 import { sendInviteEmail } from '@/lib/email/invite-email';
 import { inviterLocale } from '@/lib/email/inviter-locale';
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 const EN = (en.notificationEmail as unknown as { invite: Record<string, string> }).invite;
 const BG = (bg.notificationEmail as unknown as { invite: Record<string, string> }).invite;

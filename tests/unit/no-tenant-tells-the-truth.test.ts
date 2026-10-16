@@ -12,6 +12,7 @@
  * decided by a set difference over two inputs rather than by anything the DOM
  * shows. The DOM is pinned separately.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import {
     slugsTheTokenDoesNotKnow,
     type TokenMembership,
@@ -83,8 +84,8 @@ describe('the copy exists in BOTH locales, and says different things', () => {
     // `require`, not `import`: these are read as DATA. An import would let
     // TypeScript narrow the keys to what the catalogue currently has, which is
     // exactly the absence some of these cases assert.
-    const en = require('../../messages/en.json').noTenant as Record<string, string>;
-    const bg = require('../../messages/bg.json').noTenant as Record<string, string>;
+    const en = readCatalogue('en').noTenant as Record<string, string>;
+    const bg = readCatalogue('bg').noTenant as Record<string, string>;
 
     it('has staleTitle and staleBody in en and bg', () => {
         for (const cat of [en, bg]) {

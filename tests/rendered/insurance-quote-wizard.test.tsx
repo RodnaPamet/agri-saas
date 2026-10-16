@@ -19,9 +19,9 @@
  * case for a farmer standing in a field; the last block repeats the flow on a
  * desktop so the two do not silently diverge.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, waitFor, cleanup, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import enMessages from '../../messages/en.json';
 import { restoreViewport, setViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
@@ -55,6 +55,7 @@ jest.mock('@/components/ui/async-state', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AskInsuranceModal } from '@/app/t/[tenantSlug]/(app)/farm-risk/AskInsuranceModal';
+const enMessages = readCatalogue('en');
 
 const ASK = enMessages.ag.risk.ask;
 const QUOTE = enMessages.ag.risk.quote;

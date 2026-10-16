@@ -45,6 +45,7 @@ jest.mock('@/lib/entitlements-server', () => ({
     getTenantPlan: (tenantId: string) => mockGetTenantPlan(tenantId),
 }));
 
+import { readCatalogue } from '../helpers/catalogue';
 import { ModuleSettingsRepository } from '@/app-layer/repositories/ModuleSettingsRepository';
 import { logEvent } from '@/app-layer/events/audit';
 import {
@@ -107,8 +108,8 @@ describe('pure helpers', () => {
         // it, and gained the half that matters — the invariant is not "a
         // description exists" but "a description exists in every language the
         // product ships".
-        const en = require('../../messages/en.json').admin.modules;
-        const bg = require('../../messages/bg.json').admin.modules;
+        const en = readCatalogue('en').admin.modules;
+        const bg = readCatalogue('bg').admin.modules;
         for (const key of ALL_MODULES) {
             expect(en[`desc_${key}`]).toBeTruthy();
             expect(bg[`desc_${key}`]).toBeTruthy();

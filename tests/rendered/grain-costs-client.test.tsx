@@ -16,12 +16,12 @@
  * global stub cannot silently move which branch these tests exercise.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
-import enMessages from '../../messages/en.json';
 
 import { restoreViewport, setViewport } from './viewport';
 
@@ -49,6 +49,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CostsClient, type CostRow } from '@/app/t/[tenantSlug]/(app)/grain/costs/CostsClient';
 import { CostEntryFormModal } from '@/app/t/[tenantSlug]/(app)/grain/costs/CostEntryFormModal';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.grain.costs;
 const CATS = enMessages.grainEnums.costCategory;

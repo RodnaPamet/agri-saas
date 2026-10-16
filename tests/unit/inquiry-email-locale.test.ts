@@ -31,9 +31,10 @@ jest.mock('@/lib/mailer', () => ({
     getEmailProvider: () => mockActiveProvider,
 }));
 
+import { readCatalogue } from '../helpers/catalogue';
 import { sendInquiryEmail } from '@/lib/email/inquiry-email';
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 const EN = en.exchange.email as unknown as Record<string, string>;
 const BG = bg.exchange.email as unknown as Record<string, string>;

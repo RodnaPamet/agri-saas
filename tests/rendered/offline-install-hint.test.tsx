@@ -22,10 +22,11 @@
  * `true` everywhere looks identical to a correct one in a single happy-path
  * test.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, act } from '@testing-library/react';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { UnsyncedWorkBanner } from '@/components/offline/UnsyncedWorkBanner';
-import en from '../../messages/en.json';
+const en = readCatalogue('en');
 
 const OFFLINE = en.offline as unknown as Record<string, string>;
 const HINT = OFFLINE.storageUnprotectedInstallHint;

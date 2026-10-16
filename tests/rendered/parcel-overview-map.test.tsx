@@ -30,9 +30,9 @@
  * Every `it()` names the production break it catches.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import enMessages from '../../messages/en.json';
 import { setViewport, restoreViewport } from './viewport';
 import type { ParcelOverview } from '@/app-layer/usecases/parcel-overview';
 
@@ -60,6 +60,7 @@ jest.mock('@/lib/geo/bg-geometry-client', () => ({
 }));
 
 import { ParcelOverviewMap } from '@/components/locations/ParcelOverviewMap';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.locations.detail;
 

@@ -41,10 +41,10 @@
  * — the actual regression — is asserted at BOTH.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import enMessages from '../../messages/en.json';
 
 import { restoreViewport, setViewport } from './viewport';
 
@@ -73,6 +73,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { ContractsClient, type ContractRow } from '@/app/t/[tenantSlug]/(app)/grain/contracts/ContractsClient';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.grain.contracts;
 

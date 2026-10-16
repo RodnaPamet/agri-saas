@@ -39,6 +39,7 @@
  * «пазарни тенденции»): the ban is on the whole VALUE of an `exchange*` key,
  * never on the word.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -212,8 +213,8 @@ export function findViolations(
 
 describe('nav vocabulary — derived from docs/nav-vocabulary.md', () => {
     const rows = parseVocabulary(fs.readFileSync(DOC, 'utf8'));
-    const bgFlat = flatten(JSON.parse(fs.readFileSync(path.join(ROOT, 'messages/bg.json'), 'utf8')));
-    const enFlat = flatten(JSON.parse(fs.readFileSync(path.join(ROOT, 'messages/en.json'), 'utf8')));
+    const bgFlat = flatten(readCatalogue('bg'));
+    const enFlat = flatten(readCatalogue('en'));
     const catalogues = [
         { locale: 'bg', flat: bgFlat, expected: (r: VocabularyRow) => r.bg },
         { locale: 'en', flat: enFlat, expected: (r: VocabularyRow) => r.en },

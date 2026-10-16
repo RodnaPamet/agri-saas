@@ -29,10 +29,10 @@
  * mock in `tests/rendered/setup.ts`.
  */
 
+import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import enMessages from '../../messages/en.json';
 
 import { restoreViewport, setViewport } from './viewport';
 
@@ -66,6 +66,7 @@ jest.mock('@/components/ui/hooks', () => ({
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AskInsuranceModal } from '@/app/t/[tenantSlug]/(app)/farm-risk/AskInsuranceModal';
+const enMessages = readCatalogue('en');
 
 const COPY = enMessages.ag.risk.ask;
 const RISK = { overall: 'MEDIUM', ndvi: 0.42, ndmi: 0.31 };

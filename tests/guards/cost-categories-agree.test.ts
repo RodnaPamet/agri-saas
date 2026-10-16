@@ -52,6 +52,7 @@
  * final one: the migration was verified with a `pg_enum` query showing all ten
  * values present, which is the check no test can make.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 import { COST_CATEGORIES } from '@/app-layer/schemas/grain.schemas';
@@ -117,7 +118,7 @@ describe('the three cost-category declarations agree', () => {
         // diagnosed as an i18n bug days later rather than as the enum change
         // that caused it. `i18n-diff --check` does not catch this: the key is
         // not missing from one locale, it was never added to either.
-        const bg = JSON.parse(fs.readFileSync(path.join(ROOT, 'messages/bg.json'), 'utf8'));
+        const bg = readCatalogue('bg');
         const labels = bg?.grainEnums?.costCategory ?? {};
 
         const unlabelled = COST_CATEGORIES.filter((c) => typeof labels[c] !== 'string');

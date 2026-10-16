@@ -26,6 +26,7 @@ jest.mock('../../../src/app-layer/policies/common', () => ({
 jest.mock('../../../src/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 jest.mock('@/env', () => ({ env: {} }));
 
+import { readCatalogue } from '../../helpers/catalogue';
 import {
     INSURANCE_ENGINE_VERSION,
     INSURANCE_PRODUCTS,
@@ -33,8 +34,8 @@ import {
 } from '@/lib/insurance';
 import { listInsuranceProducts } from '@/app-layer/usecases/insurance';
 import { makeRequestContext } from '../../helpers/make-context';
-import en from '../../../messages/en.json';
-import bg from '../../../messages/bg.json';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 const CTX = makeRequestContext('EDITOR', { tenantId: 't1', userId: 'u1' });
 

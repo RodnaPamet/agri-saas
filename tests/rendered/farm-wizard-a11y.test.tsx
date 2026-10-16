@@ -38,10 +38,10 @@
  * violation to prove axe can still fail in this harness. Without that, a mount
  * that silently threw would read as a clean accessibility report.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { render, screen, waitFor, cleanup, act, fireEvent } from '@testing-library/react';
 import { axe } from 'jest-axe';
 
-import enMessages from '../../messages/en.json';
 
 const mockPush = jest.fn();
 jest.mock('next/navigation', () => ({
@@ -58,6 +58,7 @@ jest.mock('@/components/auth/TurnstileWidget', () => ({
 
 import { FarmWizard } from '@/app/start/FarmWizard';
 import { TERMS_VERSION } from '@/lib/legal/terms';
+const enMessages = readCatalogue('en');
 
 const W = enMessages.farmWizard;
 
