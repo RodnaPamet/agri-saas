@@ -4,6 +4,7 @@
  * schedule), the sourceUrl column, and the evidence-modal "Import from
  * SharePoint" hook.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -51,7 +52,7 @@ describe('SP-3 SharePoint evidence import', () => {
         // the translation key.
         expect(modal).toMatch(/upload\.importFromSharePoint/);
         const en = JSON.parse(
-            read('messages/en.json'),
+            JSON.stringify(readCatalogue('en')),
         ) as { evidence: { upload: { importFromSharePoint: string } } };
         expect(en.evidence.upload.importFromSharePoint).toBe('Import from SharePoint');
         expect(modal).toMatch(/\/integrations\/sharepoint\/import/);

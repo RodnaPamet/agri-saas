@@ -21,6 +21,7 @@
  *   5. A stable `data-testid="org-dashboard"` lives on the outer
  *      wrapper so E2E specs can target it predictably.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -54,7 +55,7 @@ describe('PR-3 — org dashboard → tenant dashboard parity', () => {
         // Accept either the literal OR the next-intl call, and cross-check
         // the English value so the rendered header contract still holds.
         expect(block).toMatch(/title:\s*(['"]Portfolio Overview['"]|t\(['"]title['"]\))/);
-        const messages = JSON.parse(read('messages/en.json'));
+        const messages = readCatalogue('en');
         expect(messages.org.portfolio.title).toBe('Portfolio Overview');
         expect(block).toMatch(/description:\s*headerDescription/);
         expect(block).toMatch(/actions:\s*headerActions/);

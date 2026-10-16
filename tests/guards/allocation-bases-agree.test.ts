@@ -53,6 +53,7 @@
  * whatever the last `generate` produced. The schema file is the branch's own
  * truth.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -101,7 +102,7 @@ function formBases(): string[] {
 }
 
 function messages(locale: 'bg' | 'en'): Record<string, unknown> {
-    return JSON.parse(read(`messages/${locale}.json`)) as Record<string, unknown>;
+    return (readCatalogue(locale) as unknown) as Record<string, unknown>;
 }
 
 /** `grain.costs.form.<group>` for a locale, or `{}`. */

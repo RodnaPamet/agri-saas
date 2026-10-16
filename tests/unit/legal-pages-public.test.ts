@@ -28,6 +28,7 @@
  * same set against `bg.json`. That executes the interpolation instead of
  * guessing at it with a regex.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -223,8 +224,8 @@ describe('the draft banner is wired to the constant, not hand-placed', () => {
 });
 
 describe('every message key these pages ask for exists in both locales', () => {
-    const en = JSON.parse(read('messages/en.json')) as Record<string, Record<string, string>>;
-    const bg = JSON.parse(read('messages/bg.json')) as Record<string, Record<string, string>>;
+    const en = readCatalogue('en') as unknown as Record<string, Record<string, string>>;
+    const bg = readCatalogue('bg') as unknown as Record<string, Record<string, string>>;
 
     /**
      * Render a page with a translator that records each key and throws on one

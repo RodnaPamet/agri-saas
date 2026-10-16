@@ -26,6 +26,7 @@
  * So the two are required to be present together or absent together, and the
  * failure message says which direction tripped.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
@@ -41,7 +42,7 @@ const CLAIM_MARKERS: Record<string, RegExp> = {
 };
 
 function noticeClaimsInvisibility(locale: string): boolean {
-    const messages = JSON.parse(read(`messages/${locale}.json`));
+    const messages = (readCatalogue(locale) as unknown as Record<string, Record<string, string>>);
     const text: string = messages?.privacy?.deleteRequest ?? '';
     return CLAIM_MARKERS[locale].test(text);
 }

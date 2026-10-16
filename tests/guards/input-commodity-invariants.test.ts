@@ -34,6 +34,7 @@
  * planted violation and asserted to fire. A guard that only ever passes is
  * indistinguishable from one that cannot fail.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -190,8 +191,8 @@ describe('every price source is named in the UI, in both locales', () => {
     const job = read('src/app-layer/jobs/market-prices-pull.ts');
     const manual = read('src/app-layer/usecases/market-manual-prices.ts');
     const sources = writtenSources(job, manual);
-    const enKeys = Object.keys(JSON.parse(read('messages/en.json')).trends.sources);
-    const bgKeys = Object.keys(JSON.parse(read('messages/bg.json')).trends.sources);
+    const enKeys = Object.keys(readCatalogue('en').trends.sources);
+    const bgKeys = Object.keys(readCatalogue('bg').trends.sources);
 
     it('finds the sources actually written (the scanner works)', () => {
         // A broken scanner would make every assertion below vacuous — the

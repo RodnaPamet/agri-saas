@@ -19,6 +19,7 @@
  *   - Self-removal is disabled.
  *   - Stable test-ids for E2E targeting.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -109,7 +110,7 @@ describe('GAP O4-2 — org members page structural contract', () => {
         // AND that the English value still names the AUDITOR / child-tenant
         // fan-out so the operator-warning contract holds.
         expect(src).toMatch(/t\(['"]promotionCallout['"]\)/);
-        const messages = JSON.parse(read('messages/en.json'));
+        const messages = readCatalogue('en');
         expect(messages.org.members.promotionCallout).toMatch(
             /AUDITOR\s+membership[\s\S]*?every[\s\S]*?child\s+tenant/i,
         );
