@@ -22,7 +22,7 @@ import type { NextRequest } from 'next/server';
 
 import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import {notFound } from '@/lib/errors/types';
+import { codedNotFound } from '@/lib/errors/types';
 import { getAvatarObject } from '@/lib/account/avatar';
 
 export const GET = withApiErrorHandling(
@@ -46,7 +46,7 @@ export const GET = withApiErrorHandling(
 
         const { userId } = await params;
         const object = await getAvatarObject(userId);
-        if (!object) throw notFound('Avatar not found.');
+        if (!object) throw codedNotFound('AVATAR_NOT_FOUND', 'That avatar was not found.');
 
         // `no-cache` is NOT `no-store` (#1953): the bytes stay in the
         // browser's cache, they are just revalidated before use. A matching

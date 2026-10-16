@@ -252,6 +252,16 @@ const BATCH_2008: ReadonlyArray<[code: string, english: string]> = [
     ['UNKNOWN_TASK_STATUS', 'That task status is not recognised.'],
 ];
 
+/** #1712's farmer-facing tranche: nine bare notFound() sites, now coded. */
+const BATCH_1712: ReadonlyArray<[code: string, english: string]> = [
+    ['AVATAR_NOT_FOUND', 'That avatar was not found.'],
+    ['DELIVERY_NOT_FOUND', 'That delivery was not found.'],
+    ['INQUIRY_NOT_FOUND', 'That enquiry was not found.'],
+    ['ORG_NOT_FOUND_OR_FORBIDDEN', 'Organization not found or access not permitted'],
+    ['SUPPORT_SCHEME_NOT_FOUND', 'That support scheme was not found.'],
+    ['TARGET_USER_NOT_IN_TENANT', 'That person is not a member of this farm.'],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -1232,5 +1242,81 @@ describe('the codes the entry guard could not see (#2008)', () => {
                 );
             }
         }
+    });
+});
+
+describe('#1712 — the farmer-facing notFound() sites now speak Bulgarian', () => {
+    it('ranges over the batch — the denominator', () => {
+        console.log(
+            `[refusal-bg] #1712 coded 9 site(s) with ${BATCH_1712.length} new code(s) + 2 reused`,
+        );
+        expect(BATCH_1712.length).toBe(6);
+    });
+
+    it.each(BATCH_1712.map(([c, e]) => [c, e] as const))(
+        '#1712: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('two sites REUSE an existing code rather than minting a near-duplicate', async () => {
+        // `catalog.ts` threw 'Item not found.' for a row with `sku`,
+        // `activeIngredient` and `pppRegistrationNo` — a product, not a
+        // generic item — so it takes PRODUCT_NOT_FOUND, which #2008 had just
+        // entried. `grain-blend.ts`'s "source lot" has `quantityOnHand`,
+        // `lotCode` and `unitId`: the same InventoryLot that LOT_NOT_FOUND
+        // already names.
+        //
+        // Minting CATALOG_ITEM_NOT_FOUND and SOURCE_LOT_NOT_FOUND would have
+        // given one entity two sentences, which is the #1966 defect in a
+        // different costume.
+        const src = readFileSync(`${REPO_ROOT}/src/app-layer/usecases/catalog.ts`, 'utf8');
+        expect(src).toContain("codedNotFound('PRODUCT_NOT_FOUND'");
+        expect(src).not.toMatch(/CATALOG_ITEM_NOT_FOUND/);
+
+        const blend = readFileSync(`${REPO_ROOT}/src/app-layer/usecases/grain-blend.ts`, 'utf8');
+        expect(blend).toContain("codedNotFound('LOT_NOT_FOUND'");
+        // And the raw cuid left the sentence while staying on the wire.
+        expect(blend).toContain('{ id: s.lotId }');
+        expect(blend).not.toMatch(/Source lot not found: \$\{/);
+    });
+
+    it('ORG_NOT_FOUND_OR_FORBIDDEN keeps the ambiguity it was written for', async () => {
+        // `context.ts` carries its own note: "Generic external message — same
+        // string for both 'no such org' and 'not a member'. The internal log
+        // line below carries the real reason for ops diagnostics."
+        //
+        // So ONE code, deliberately. Splitting it into ORG_NOT_FOUND and
+        // ORG_ACCESS_DENIED would re-open the leak that line exists to close,
+        // and a Bulgarian entry that named only one cause would do the same.
+        const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
+        const sentence = bg.errors.ORG_NOT_FOUND_OR_FORBIDDEN;
+        // Names BOTH possibilities, so it reveals neither.
+        expect(sentence).toMatch(/намерена/);
+        expect(sentence).toMatch(/достъп/);
+
+        const src = readFileSync(`${REPO_ROOT}/src/app-layer/context.ts`, 'utf8');
+        expect(src).not.toMatch(/ORG_NOT_FOUND'|ORG_ACCESS_DENIED/);
+    });
+
+    it('TARGET_USER_NOT_IN_TENANT says FARM, not tenant', async () => {
+        // "Tenant" is the schema's word, not the product's. The old English
+        // read "Target user is not a member of this tenant" — the same class
+        // of leak as the repository WHERE clause batch 10 removed from
+        // journal.ts, and as "or belongs to a different tenant".
+        for (const locale of ['bg', 'en'] as const) {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: locale });
+            const p = payload('TARGET_USER_NOT_IN_TENANT', 'x');
+            await localizeErrorPayload(p);
+            expect(p.error.message).not.toMatch(/tenant/i);
+        }
+        const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
+        expect(bg.errors.TARGET_USER_NOT_IN_TENANT).toMatch(/стопанство/);
     });
 });

@@ -3,7 +3,7 @@ import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
-import { codedNotFound, notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { PrismaTx } from '@/lib/db-context';
 import type {
@@ -244,7 +244,7 @@ export async function deleteGrainDelivery(ctx: RequestContext, id: string) {
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, contractId: true, tonnes: true },
         });
-        if (!existing) throw notFound('Delivery not found');
+        if (!existing) throw codedNotFound('DELIVERY_NOT_FOUND', 'That delivery was not found.');
 
         const delivery = await db.grainDelivery.update({
             where: { id },

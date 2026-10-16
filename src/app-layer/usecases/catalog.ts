@@ -2,7 +2,7 @@ import { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
-import { badRequest, notFound, codedBadRequest, codedConflict } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, codedConflict, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { cachedListRead } from '@/lib/cache/list-cache';
 import { Prisma, ItemCategory, QuantityMeasure } from '@prisma/client';
@@ -224,7 +224,7 @@ export async function getItemDetail(ctx: RequestContext, itemId: string) {
                 pppRegistrationNo: true,
             },
         });
-        if (!item) throw notFound('Item not found.');
+        if (!item) throw codedNotFound('PRODUCT_NOT_FOUND', 'That product was not found.');
         return {
             id: item.id,
             name: item.name,
@@ -273,7 +273,7 @@ export async function updateItem(ctx: RequestContext, itemId: string, input: Upd
                 quarantinePeriodDays: true,
             },
         });
-        if (!existing) throw notFound('Item not found.');
+        if (!existing) throw codedNotFound('PRODUCT_NOT_FOUND', 'That product was not found.');
 
         // The invariant holds on the RESULT of the edit, not on the patch.
         // `undefined` means "leave alone", so it falls back to the stored
