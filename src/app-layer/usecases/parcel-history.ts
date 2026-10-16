@@ -136,8 +136,14 @@ async function requireParcel(db: PrismaTx, ctx: RequestContext, parcelId: string
 function assertYear(year: number): void {
     const max = new Date().getUTCFullYear() + YEARS_AHEAD;
     if (!Number.isInteger(year) || year < MIN_YEAR || year > max) {
-        throw codedBadRequest('CROP_SEASON_YEAR_INVALID', 'That harvest year is out of range.', {
+        // `min`/`max` alongside the rejected `year`: the refusal used to say
+        // "out of range" and name only what was sent, leaving a farmer to
+        // guess at the range. The bound is computed, so it cannot be a
+        // constant in the sentence (#1918).
+        throw codedBadRequest('CROP_SEASON_YEAR_INVALID', `That harvest year is out of range — it must be between ${MIN_YEAR} and ${max}.`, {
             year,
+            min: MIN_YEAR,
+            max,
         });
     }
 }
@@ -152,8 +158,9 @@ function assertYear(year: number): void {
  */
 function partitionWeeds(entries: string[]): { weedKeys: string[]; otherWeeds: string[] } {
     if (entries.length > MAX_WEED_ENTRIES) {
-        throw codedBadRequest('WEED_ENTRIES_TOO_MANY', 'Too many weeds in one observation.', {
+        throw codedBadRequest('WEED_ENTRIES_TOO_MANY', `Too many weeds in one observation — at most ${MAX_WEED_ENTRIES}.`, {
             count: entries.length,
+            max: MAX_WEED_ENTRIES,
         });
     }
     const weedKeys: string[] = [];
@@ -166,7 +173,9 @@ function partitionWeeds(entries: string[]): { weedKeys: string[]; otherWeeds: st
             continue;
         }
         if (value.length > MAX_OTHER_WEED_LENGTH) {
-            throw codedBadRequest('WEED_NAME_TOO_LONG', 'That weed name is too long.');
+            throw codedBadRequest('WEED_NAME_TOO_LONG', `That weed name is too long — at most ${MAX_OTHER_WEED_LENGTH} characters.`, {
+                max: MAX_OTHER_WEED_LENGTH,
+            });
         }
         if (!otherWeeds.includes(value)) otherWeeds.push(value);
     }
@@ -178,7 +187,9 @@ function cleanNotes(notes: string | null | undefined): string | null {
     const value = sanitizePlainText(notes).trim();
     if (!value) return null;
     if (value.length > MAX_NOTES_LENGTH) {
-        throw codedBadRequest('NOTES_TOO_LONG', 'Those notes are too long.');
+        throw codedBadRequest('NOTES_TOO_LONG', `Those notes are too long — at most ${MAX_NOTES_LENGTH} characters.`, {
+            max: MAX_NOTES_LENGTH,
+        });
     }
     return value;
 }
