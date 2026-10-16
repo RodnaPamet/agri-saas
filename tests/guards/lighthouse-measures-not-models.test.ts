@@ -40,6 +40,35 @@
  * measured value needs fewer samples than a modelled one, and the per-attempt
  * cap cannot grow to pay for slower runs because
  * `tests/guardrails/ci-retry-loop-timeout.test.ts` caps it at 300s.
+ *
+ * ## What the switch bought, measured on run 38892602507
+ *
+ * The first `devtools` run, three samples per URL:
+ *
+ *   /f/lighthouse   LCP 1684 / 1684 / 1683 ms   SPREAD    1ms
+ *   /login          LCP 6352 / 6266 / 6228 ms   SPREAD  123ms
+ *
+ * The simulator, on the same page:
+ *
+ *   /f/lighthouse   LCP 2765 .. 5096 ms         SPREAD 2331ms
+ *
+ * So the noise on `/f/*` fell from 2331ms to **1ms**. With `devtools` there is
+ * no simulation layer: the report's `observedLargestContentfulPaint` equals the
+ * asserted value, and for `/f/*` it also equals FCP — which is what a
+ * server-rendered paragraph should do and what the simulator was obscuring.
+ *
+ * That is why the `/f/*` budget was **tightened to 2200ms, not raised**. The
+ * old 3600ms was 2.1x the measured value and could not have caught a
+ * regression short of doubling the page's paint time. 2200ms leaves 516ms of
+ * headroom over a measurement whose within-run spread is 1ms; the margin is for
+ * runner-to-runner variation, which a single job cannot measure.
+ *
+ * Collection took 181s of the 250s cap, so the cap did not need to move.
+ *
+ * `/login` stays at 7000ms against a measured 6266ms. It is not noise-bound
+ * (123ms spread, 734ms headroom) — but a 6.3s LCP with FCP at 2.1s on the
+ * sign-in page is a real finding now that it is MEASURED rather than modelled,
+ * and it is filed separately rather than answered by moving its budget.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -52,6 +81,13 @@ interface LighthouseRc {
             url?: string[];
             numberOfRuns?: number;
             settings?: { throttlingMethod?: string };
+        };
+        assert?: {
+            assertMatrix?: Array<{
+                matchingUrlPattern?: string;
+                aggregationMethod?: string;
+                assertions?: Record<string, unknown[]>;
+            }>;
         };
     };
 }
@@ -108,6 +144,28 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         expect(echoLine).not.toMatch(/\d+s\b/);
         // And it still says something useful about duration.
         expect(echoLine).toContain('SECONDS - started');
+    });
+
+    it('the /f/* budget stays near its measured baseline — tighten freely, loosen loudly', () => {
+        // A RATCHET, not a pin. Lowering this number needs no change here;
+        // RAISING it fails — that is the direction which silently disarms a
+        // gate, and the direction the first instinct on #1980 pointed.
+        //
+        // Derived: measured median 1684ms, within-run spread 1ms. The ceiling
+        // admits runner-to-runner variation an order of magnitude larger than
+        // anything observed, while still failing on a real regression.
+        const matrix = rc.ci?.assert?.assertMatrix ?? [];
+        const publicEntry = matrix.find((m) => m.matchingUrlPattern?.includes('/f/'));
+        expect(publicEntry).toBeDefined();
+        const lcp = publicEntry?.assertions?.['largest-contentful-paint'];
+        const max = (lcp?.[1] as { maxNumericValue?: number } | undefined)?.maxNumericValue;
+        console.log(`[lighthouse-gate] /f/* LCP budget ${max}ms vs measured 1684ms`);
+        expect(typeof max).toBe('number');
+        expect(max!).toBeLessThanOrEqual(2600);
+        // And a floor, so a flake is never "fixed" by setting the budget below
+        // what the page actually does — a gate that can never pass is worse
+        // than one that is too loose, because it gets switched off entirely.
+        expect(max!).toBeGreaterThan(1684);
     });
 
     it('the cap is still a literal, which the retry guard requires', () => {
