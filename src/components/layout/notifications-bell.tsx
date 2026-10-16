@@ -44,7 +44,6 @@ import { Popover } from '@/components/ui/popover';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
-import { env } from '@/env';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -196,17 +195,36 @@ export function NotificationsBell() {
         // Start on the 60 s cadence: the stream has not opened yet, and until
         // it does the poll is the only signal there is.
         setCadence(NOTIFICATIONS_POLL_INTERVAL_MS);
-        // typeof check — SSR + jsdom unit tests both lack EventSource.
-        // Feature flag: NEXT_PUBLIC_NOTIFICATIONS_SSE=1 opts the
-        // client into the SSE channel. Defaults OFF so the bell keeps
-        // polling — the server-side bus + endpoint stay wired (so
-        // future opt-in is one env-var flip), but E2E specs that wait
-        // on `networkidle` aren't blocked by a long-lived stream that
-        // never lets the page settle. Flip when the client integration
-        // has been manually verified end-to-end (browser → bell →
-        // event arriving inside <1s).
-        const sseEnabled = env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1';
-        if (sseEnabled && typeof EventSource !== 'undefined') {
+        /**
+         * The client always ASKS; the server decides — #1982.
+         *
+         * This used to be gated on `env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1'`
+         * as well, which could not be satisfied: `NEXT_PUBLIC_*` is inlined at
+         * `next build` and that variable appears in no Dockerfile `ARG` and no
+         * `ghcr-publish.yml` build-arg, so every image baked it `undefined`.
+         * The channel was unreachable rather than off, and a client-side
+         * opt-in is a client preference in any case — the switch now lives in
+         * a `FeatureFlag` row that `/api/notifications/stream` reads per
+         * request.
+         *
+         * The `typeof` check stays: SSR and jsdom both lack `EventSource`.
+         *
+         * The E2E concern the old comment raised still holds and is still
+         * satisfied. A disabled channel answers 204, which the browser reads
+         * as a permanent failure rather than a blip, so the request completes
+         * and `networkidle` settles — and no flag row is seeded anywhere
+         * (`prisma/seed.ts` creates none, and suites that need one INSERT it
+         * explicitly, as the Lighthouse workflow does for
+         * `social.public-profile`), so the default in every test environment
+         * is off.
+         *
+         * Nothing is closed in `onerror` on purpose. `readyState` tells the
+         * two cases apart for free: CLOSED after a non-200 means the browser
+         * has given up, CONNECTING means it is retrying a real blip, and
+         * closing by hand would throw away the automatic reconnect that is
+         * most of the reason this channel is SSE.
+         */
+        if (typeof EventSource !== 'undefined') {
             try {
                 es = new EventSource('/api/notifications/stream', {
                     withCredentials: true,

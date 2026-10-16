@@ -16,10 +16,12 @@
 //
 //  WHY A TABLE AND NOT AN ENV VAR. `NEXT_PUBLIC_*` is inlined at
 //  `next build`, so a flag held there cannot be flipped without a rebuild,
-//  an image push and a rollout — and `NEXT_PUBLIC_NOTIFICATIONS_SSE` is
-//  the live example of that going wrong: it is a client switch that is off
-//  in production and cannot be turned on without shipping. Flags must be
-//  DB-backed and read at request time.
+//  an image push and a rollout. `NEXT_PUBLIC_NOTIFICATIONS_SSE` was the
+//  worked example of that going wrong — a client switch that reached no
+//  Dockerfile `ARG`, so every image baked it `undefined` and the
+//  notifications SSE channel was unreachable rather than off. #1982 moved
+//  it to the `notifications.sse` row here. Flags must be DB-backed and read
+//  at request time.
 
 /// A single runtime switch. Default OFF — a flag that does not exist is off,
 /// and a flag that exists is off until someone enables it.
