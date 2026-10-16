@@ -4,7 +4,9 @@
  *
  * WHY THIS EXISTS (#796)
  *
- * `lighthouserc.json` sets `numberOfRuns: 3` and writes `lhr-<ts>.json` per run
+ * `lighthouserc.json` sets `numberOfRuns: 5` (raised from 3 when two 3-run
+ * medians of the SAME commit came back 296 ms apart on `/f/{handle}`) and
+ * writes `lhr-<ts>.json` per run
  * into `.lighthouseci`. Nothing ever read them. The workflow's upload step
  * globbed `.lighthouseci/*`, but `.lighthouseci` is a HIDDEN directory and
  * `actions/upload-artifact@v7` defaults `include-hidden-files: false` — so the
