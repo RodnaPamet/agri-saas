@@ -79,6 +79,29 @@ describe('the web-vitals sink', () => {
         expect(loggerInfo).toHaveBeenCalled();
     });
 
+    it('records the surface, so a p75 can be taken PER surface', async () => {
+        // #1814. Without this the operator app and `/f/{handle}` land in one
+        // pool, and P6.5's budget is about the public page alone.
+        await POST(beacon(JSON.stringify({ name: 'LCP', value: 3127.4, surface: 'public-farm' })));
+        expect(loggerInfo).toHaveBeenCalledWith(
+            'web-vital',
+            expect.objectContaining({ metric: 'LCP', surface: 'public-farm' }),
+        );
+    });
+
+    it('DROPS an unrecognised surface rather than defaulting it', async () => {
+        // The endpoint is public and unauthenticated, so an echoed value would
+        // put anything a stranger posts into a log field. Dropping beats
+        // defaulting to 'app': a default silently attributes a stranger's
+        // beacon to a real surface, which corrupts the one question the field
+        // exists to answer.
+        await POST(beacon(JSON.stringify({ name: 'LCP', value: 1, surface: 'etc/passwd\n[level=50]' })));
+        expect(loggerInfo).toHaveBeenCalledTimes(1);
+        const logged = loggerInfo.mock.calls[0][1] as Record<string, unknown>;
+        expect(logged.surface).toBeUndefined();
+        expect(logged.metric).toBe('LCP');
+    });
+
     it('ignores a malformed beacon without failing the request', async () => {
         // Fail-open is correct here: a browser posting rubbish must not get an
         // error, and must not be able to make the route throw.
