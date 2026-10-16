@@ -13,7 +13,8 @@
  * So:
  *
  *   - 200 carries `Content-Type: image/webp` and `Cache-Control: private,
- *     max-age=300`. Both are in the spec now, and `private` is the one that
+ *     no-cache` with an `ETag` (#1953 — it was `max-age=300`, which left a
+ *     changed avatar stale for five minutes). `private` is the one that
  *     matters: avatars sit behind auth, so a shared cache storing one is a
  *     cross-user leak. `Cache-Control` is also a literal this repo has broken
  *     before: a project-wide entity rename mangled 39 of these header names and
@@ -43,10 +44,17 @@
 const auth = jest.fn();
 jest.mock('@/auth', () => ({ auth: () => auth() }));
 
-const getAvatarStream = jest.fn();
+const getAvatarObject = jest.fn();
 jest.mock('@/lib/account/avatar', () => ({
-    getAvatarStream: (userId: string) => getAvatarStream(userId),
+    getAvatarObject: (userId: string) => getAvatarObject(userId),
 }));
+
+/** The shape the route now reads: bytes plus the validator for them. */
+const ETAG = '"1f4-18c0a1b2c3d"';
+const avatarObject = () => ({
+    stream: Readable.from([WEBP_BYTES]),
+    etag: ETAG,
+});
 
 import { Readable } from 'node:stream';
 import { NextRequest } from 'next/server';
@@ -57,9 +65,11 @@ const SUBJECT = 'subject-2';
 
 const WEBP_BYTES = Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
 
-function call(userId: string): Promise<Response> {
+function call(userId: string, headers?: Record<string, string>): Promise<Response> {
     return GET(
-        new NextRequest(`https://app.agrent.bg/api/account/avatar/${userId}`) as never,
+        new NextRequest(`https://app.agrent.bg/api/account/avatar/${userId}`, {
+            headers,
+        }) as never,
         { params: Promise.resolve({ userId }) } as never,
     ) as Promise<Response>;
 }
@@ -67,13 +77,13 @@ function call(userId: string): Promise<Response> {
 beforeEach(() => {
     jest.clearAllMocks();
     auth.mockReset();
-    getAvatarStream.mockReset();
+    getAvatarObject.mockReset();
 });
 
 describe('GET /api/account/avatar/[userId] — the documented contract (#1299)', () => {
     it('200 streams the stored webp with the documented headers', async () => {
         auth.mockResolvedValue({ user: { id: VIEWER } });
-        getAvatarStream.mockResolvedValue(Readable.from([WEBP_BYTES]));
+        getAvatarObject.mockResolvedValue(avatarObject());
 
         const res = await call(SUBJECT);
 
@@ -84,16 +94,72 @@ describe('GET /api/account/avatar/[userId] — the documented contract (#1299)',
         expect({
             type: res.headers.get('Content-Type'),
             cache: res.headers.get('Cache-Control'),
-        }).toEqual({ type: 'image/webp', cache: 'private, max-age=300' });
+            etag: res.headers.get('ETag'),
+        }).toEqual({
+            type: 'image/webp',
+            // `no-cache` since #1953, NOT `no-store`: the bytes stay cached
+            // and are revalidated, so a changed avatar appears on the next
+            // request instead of after `max-age=300` expires.
+            cache: 'private, no-cache',
+            etag: ETAG,
+        });
 
         // The body really is the stored bytes, not an empty 200.
         const body = Buffer.from(await res.arrayBuffer());
         expect(body.equals(WEBP_BYTES)).toBe(true);
     });
 
+    it('304 for a matching If-None-Match, with no body', async () => {
+        // The half that makes `no-cache` cheap. Without it the policy would
+        // be a straight bandwidth regression: every render refetching 5–25 KB
+        // instead of keeping it for five minutes.
+        auth.mockResolvedValue({ user: { id: VIEWER } });
+        const object = avatarObject();
+        getAvatarObject.mockResolvedValue(object);
+
+        const res = await call(SUBJECT, { 'If-None-Match': ETAG });
+
+        expect(res.status).toBe(304);
+        expect(Buffer.from(await res.arrayBuffer()).length).toBe(0);
+        // The validator and the policy ride along, or a cache cannot refresh
+        // its freshness and would ask again immediately.
+        expect(res.headers.get('ETag')).toBe(ETAG);
+        expect(res.headers.get('Cache-Control')).toBe('private, no-cache');
+        // The stream was opened to answer this request and nothing read it.
+        expect(object.stream.destroyed).toBe(true);
+    });
+
+    it('200 when If-None-Match does NOT match — the changed avatar', async () => {
+        // The case the whole change exists for: a new upload changes the
+        // size/mtime validator, so the client's stale tag misses and it gets
+        // the new bytes on the very next request rather than in five minutes.
+        auth.mockResolvedValue({ user: { id: VIEWER } });
+        getAvatarObject.mockResolvedValue(avatarObject());
+
+        const res = await call(SUBJECT, { 'If-None-Match': '"something-older"' });
+
+        expect(res.status).toBe(200);
+        expect(Buffer.from(await res.arrayBuffer()).equals(WEBP_BYTES)).toBe(true);
+    });
+
+    it('parses the shapes a CACHE sends, not just the one we emit', async () => {
+        // A conditional request may carry a LIST, and an intermediary may
+        // weaken the tag to `W/"…"`. This route emits neither shape, which is
+        // exactly why they are easy to get wrong — a raw string comparison
+        // passes every test written against our own output and fails against
+        // a real client.
+        auth.mockResolvedValue({ user: { id: VIEWER } });
+
+        for (const header of [`W/${ETAG}`, `"other", ${ETAG}`, '*']) {
+            getAvatarObject.mockResolvedValue(avatarObject());
+            const res = await call(SUBJECT, { 'If-None-Match': header });
+            expect(`${header} -> ${res.status}`).toBe(`${header} -> 304`);
+        }
+    });
+
     it('404 when the user has no UPLOADED avatar — the ordinary case', async () => {
         auth.mockResolvedValue({ user: { id: VIEWER } });
-        getAvatarStream.mockResolvedValue(null);
+        getAvatarObject.mockResolvedValue(null);
 
         const res = await call(SUBJECT);
 
@@ -113,7 +179,7 @@ describe('GET /api/account/avatar/[userId] — the documented contract (#1299)',
         // The order matters: an unauthenticated caller must not be able to make
         // the server do a storage lookup. Without this the 401 could be
         // returned AFTER the probe and read identically.
-        expect(getAvatarStream).not.toHaveBeenCalled();
+        expect(getAvatarObject).not.toHaveBeenCalled();
     });
 
     it('reads the avatar of the id IN THE PATH, not the caller', async () => {
@@ -121,13 +187,13 @@ describe('GET /api/account/avatar/[userId] — the documented contract (#1299)',
         // the session user, every assertion about "any user id" would pass
         // while serving the wrong face.
         auth.mockResolvedValue({ user: { id: VIEWER } });
-        getAvatarStream.mockResolvedValue(Readable.from([WEBP_BYTES]));
+        getAvatarObject.mockResolvedValue(avatarObject());
 
         await call(SUBJECT);
 
-        expect(getAvatarStream).toHaveBeenCalledTimes(1);
-        expect(getAvatarStream).toHaveBeenCalledWith(SUBJECT);
-        expect(getAvatarStream).not.toHaveBeenCalledWith(VIEWER);
+        expect(getAvatarObject).toHaveBeenCalledTimes(1);
+        expect(getAvatarObject).toHaveBeenCalledWith(SUBJECT);
+        expect(getAvatarObject).not.toHaveBeenCalledWith(VIEWER);
     });
 
     it('ANY authenticated user may read ANY user id — deliberately not self-only', async () => {
@@ -136,13 +202,13 @@ describe('GET /api/account/avatar/[userId] — the documented contract (#1299)',
         // in every member list and people-picker — the surfaces the route
         // exists for — so it costs a change to this test.
         auth.mockResolvedValue({ user: { id: VIEWER } });
-        getAvatarStream.mockResolvedValue(Readable.from([WEBP_BYTES]));
+        getAvatarObject.mockResolvedValue(avatarObject());
 
         const other = await call('a-third-party-user');
         expect(other.status).toBe(200);
 
         // And the caller's own avatar is not a special case either.
-        getAvatarStream.mockResolvedValue(Readable.from([WEBP_BYTES]));
+        getAvatarObject.mockResolvedValue(avatarObject());
         const own = await call(VIEWER);
         expect(own.status).toBe(200);
     });

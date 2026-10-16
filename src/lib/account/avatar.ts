@@ -307,15 +307,44 @@ export async function removeOwnAvatar(userId: string): Promise<void> {
  * turns a missing object into a clean `null` (→ 404) instead of an
  * async stream error.
  */
-export async function getAvatarStream(
+/**
+ * The stored avatar plus a validator for it (#1953).
+ *
+ * The validator is `size-mtime`, which is what nginx and Apache derive their
+ * ETags from, and it costs NOTHING here: `head()` was already being called to
+ * decide whether the object exists, and its result was being thrown away.
+ *
+ * A content hash would be stronger. The upload path knows one —
+ * `provider.write()` returns a sha256 — but nothing persists it, and reading
+ * the whole object per request to recompute it would defeat the purpose. So
+ * the weakness is stated rather than hidden: two DIFFERENT avatars of
+ * identical byte length written in the same millisecond would share a
+ * validator. Uploads are seconds apart and sizes vary, and the consequence
+ * of a collision is a stale picture rather than a wrong one.
+ */
+export async function getAvatarObject(
     userId: string,
-): Promise<Readable | null> {
+): Promise<{ stream: Readable; etag: string } | null> {
     const provider = getStorageProvider();
     const key = avatarStorageKey(userId);
+    let head;
     try {
-        await provider.head(key);
+        head = await provider.head(key);
     } catch {
         return null;
     }
-    return provider.readStream(key);
+    const etag = `"${head.sizeBytes.toString(16)}-${(head.lastModified?.getTime() ?? 0).toString(16)}"`;
+    return { stream: provider.readStream(key), etag };
+}
+
+/**
+ * The stored avatar's bytes alone.
+ *
+ * Kept as the thin wrapper it now is: `avatar-renderer-convergence` pins this
+ * name, and callers that do not serve HTTP have no use for a validator.
+ */
+export async function getAvatarStream(
+    userId: string,
+): Promise<Readable | null> {
+    return (await getAvatarObject(userId))?.stream ?? null;
 }
