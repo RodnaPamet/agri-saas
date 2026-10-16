@@ -276,10 +276,25 @@ const ROOT = path.resolve(__dirname, '../..');
 // A's payments inside B's panel, with no lease id in the row shape to reveal
 // it. The new file locks in three cases the component had none for.
 //
-// 262 is this branch's own measured live count. The guard compares against
+// Raised 262 -> 263 for `modal-seeds-after-paint` (#1968): a MEASUREMENT
+// rather than a regression guard. #1730 has 56 `set-state-in-effect`
+// directives, 28 without a reason, and #1968 proposes a pattern change on the
+// strength of a claim nobody had observed — that seeding form state in an
+// effect paints a stale frame. It does: opening a modal for item B directly
+// after item A shows A's title for one frame, the wrong record's data.
+//
+// The file earns its place here by catching something `render`/`rerender`
+// structurally cannot. Both wrap updates in `act()`, which flushes passive
+// effects, so a test written with them passes whether the seed is early or
+// late. `flushSync` leaves `useEffect` queued and the DOM read in that gap is
+// the only observation that separates the two worlds — proved by mutating the
+// archetype to `useLayoutEffect`, which makes the frame show the CURRENT item
+// and the case fail.
+//
+// 263 is this branch's own measured live count. The guard compares against
 // THIS PR's base rather than main's tip, so a peer merging first cannot make
 // it fire — but the number still has to be measured rather than derived.
-const RENDERED_TEST_FLOOR = 262;
+const RENDERED_TEST_FLOOR = 263;
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
