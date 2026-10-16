@@ -222,6 +222,15 @@ const BATCH_8: ReadonlyArray<
     ['THREAD_OWN_LISTING', 'You cannot start a conversation on your own listing.'],
 ];
 
+const BATCH_9: ReadonlyArray<[code: string, english: string]> = [
+    ['FARM_BRAND_CONSENT_REQUIRED', 'Publishing needs your consent first.'],
+    ['FARM_BRAND_DISPLAY_NAME_REQUIRED', 'A public name is required before publishing.'],
+    ['FARM_BRAND_HANDLE_REQUIRED', 'Choose a public address for the farm before publishing.'],
+    ['FARM_BRAND_NOT_FOUND', 'This farm has no public profile yet.'],
+    ['FARM_BRAND_NOT_PUBLISHED', 'Publish the farm profile first — a printed address that is not published leads nowhere.'],
+    ['FARM_HANDLE_TAKEN', 'That address is already taken by another farm.'],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -883,5 +892,95 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 8)', () => {
         const catalogue = readCatalogue('bg') as Record<string, unknown>;
         const exchange = (catalogue.exchange as Record<string, Record<string, string>>);
         expect(exchange.messaging.blockedForYou).toContain('не приема съобщения');
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 9)', () => {
+    it('ranges over the batch — the denominator', () => {
+        // Every untranslated code in `public-farm-profile.ts`. 46 -> 40.
+        console.log(
+            `[refusal-bg] batch 9 added ${BATCH_9.length} entries, of 46 untranslated before it, 40 after`,
+        );
+        expect(BATCH_9.length).toBeGreaterThanOrEqual(6);
+    });
+
+    it.each(BATCH_9.map(([c, e]) => [c, e] as const))(
+        'batch 9: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('follows the vocabulary the public-profile SCREEN already uses', () => {
+        // The screen these refusals come from has its own established words,
+        // and a refusal that invents different ones reads as being about
+        // something else. `admin.publicProfile.*` says «Публична страница»
+        // for the page, «Публично име» for the display name and «Адрес» for
+        // the handle — so the refusals do too.
+        //
+        // Asserted rather than merely done, because the alternative
+        // («профил», «потребителско име», «линк») is what a translator
+        // reaching for the English would naturally pick.
+        const bg = readCatalogue('bg') as {
+            errors: Record<string, string>;
+            admin: { publicProfile: Record<string, string> };
+        };
+        expect(bg.admin.publicProfile.displayNameLabel).toBe('Публично име');
+        expect(bg.errors.FARM_BRAND_DISPLAY_NAME_REQUIRED).toContain('публично име');
+        expect(bg.errors.FARM_BRAND_HANDLE_REQUIRED).toContain('адрес');
+        expect(bg.errors.FARM_BRAND_NOT_FOUND).toContain('публична страница');
+    });
+
+    it('FARM_HANDLE_TAKEN does not try to name the alternatives', async () => {
+        // The site passes the free handles it found as `details`, NOT
+        // `params`, and says why: `ErrorParams` values are `string | number`
+        // for interpolation, while a list of alternatives is structured data
+        // a client renders as buttons.
+        //
+        // So the sentence must stand on its own. A Bulgarian entry that said
+        // «опитайте {suggestions}» would leave a literal placeholder on
+        // screen — the it.each above would catch that — but one that merely
+        // IMPLIED a list the client might not render would not be caught by
+        // anything, which is why the source contract is asserted too.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/public-farm-profile.ts`,
+            'utf8',
+        );
+        const site = src.slice(src.indexOf("'FARM_HANDLE_TAKEN'"));
+        expect(site.slice(0, 220)).toContain('undefined');
+        expect(site.slice(0, 220)).toContain('{ suggestions }');
+
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('FARM_HANDLE_TAKEN', 'That address is already taken by another farm.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('is a WEB-only improvement, and the phone keys all six itself', async () => {
+        // Recorded so the batch is not described as reaching the phone. The
+        // agrent-ios peer confirmed 2026-10-16 that `UserMessage.swift`
+        // carries its own sentence for every code in this batch —
+        // FARM_BRAND_NOT_FOUND and FARM_HANDLE_TAKEN earlier, and the three
+        // FARM_BRAND_*_REQUIRED in agrent-ios #337/#339. `bulgarian[code]`
+        // is step 2 of its lookup and `message` is step 4, so the phone's
+        // wording WINS and these entries never render there.
+        //
+        // The value is the web: `api-client.ts` prints `error.message` at 142
+        // call sites with no language test, and four of five accounts are
+        // `uiLanguage: 'bg'`.
+        //
+        // Asserted as a property of the MECHANISM rather than of the phone,
+        // which this repo cannot see: an entry exists for every code here, so
+        // the web is covered whatever the phone does.
+        const bg = readCatalogue('bg') as { errors: Record<string, string> };
+        for (const [code] of BATCH_9) {
+            expect(`${code} entried: ${typeof bg.errors[code]}`).toBe(`${code} entried: string`);
+        }
     });
 });
