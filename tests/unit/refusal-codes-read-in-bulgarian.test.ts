@@ -173,6 +173,23 @@ const BATCH_5: ReadonlyArray<[code: string, english: string]> = [
     ['VARIETY_NAME_REQUIRED', 'A variety name is required.'],
 ];
 
+/**
+ * Batch 6 — `usecases/farm-creation.ts`, the onboarding path.
+ *
+ * The first batch whose English needed no correction: two of the six already
+ * carry the Bulgarian abbreviations (ЕИК, ЕГН), because whoever wrote them
+ * knew the audience. `FARM_NAME_TOO_LONG` is the only improvement — it
+ * passes `{ max: FARM_NAME_MAX }` and never used it, so the entry now names
+ * the limit instead of leaving a farmer to guess at 120.
+ */
+const BATCH_6: ReadonlyArray<[code: string, english: string]> = [
+    ['EIK_INVALID', 'That is not a valid ЕИК — the checksum does not match.'],
+    ['EIK_LOOKS_LIKE_EGN', 'That looks like a personal identity number (ЕГН) rather than a company number (ЕИК).'],
+    ['FARM_NAME_NOT_SLUGGABLE', 'That farm name cannot be turned into a web address.'],
+    ['FARM_NAME_REQUIRED', 'A farm name is required.'],
+    ['FARM_SLUG_UNAVAILABLE', 'Could not allocate a web address for that farm.'],
+];
+
 const REPO_ROOT = resolve(__dirname, '../..');
 
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
@@ -511,5 +528,72 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 5)', () => {
         // asserting my guess.
         const catalogue = JSON.stringify(readCatalogue('bg'));
         expect(catalogue).not.toContain('землище');
+    });
+});
+
+describe('a Bulgarian reader gets Bulgarian (#1918 batch 6)', () => {
+    it('ranges over the batch — the denominator', () => {
+        console.log(
+            `[refusal-bg] batch 6 added 6 entries (${BATCH_6.length} in this table` +
+                ` + FARM_NAME_TOO_LONG), of 62 untranslated before it, 56 after`,
+        );
+        expect(BATCH_6.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it.each(BATCH_6.map(([c, e]) => [c, e] as const))(
+        'batch 6: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('FARM_NAME_TOO_LONG names the limit, which the English never did', async () => {
+        // The site passes `{ max: FARM_NAME_MAX }` and its message ignored
+        // it, so a farmer was told the name is too long without being told
+        // how long is allowed. A NUMBER, which `localize.ts`'s rule permits.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('FARM_NAME_TOO_LONG', 'That farm name is too long.');
+        p.error.params = { max: '120' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).toMatch(/[А-Яа-я]/);
+        expect(p.error.message).toContain('120');
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
+    });
+
+    it('the ЕГН refusal never echoes the number it refused', async () => {
+        // An ЕГН is personal data. The call site refuses BEFORE any handling
+        // that could persist the value — its comment says so, and it passes
+        // no params at all — so the only way the number could reach a log or
+        // a screen is an entry that interpolated it.
+        //
+        // Asserted in both locales and on the SOURCE, because the protection
+        // is the absence of a param: a future `{ eik }` added for a client to
+        // branch on would put personal data into `params`, which is the one
+        // place this codebase has ruled it must never go.
+        const src = readFileSync(
+            `${REPO_ROOT}/src/app-layer/usecases/farm-creation.ts`,
+            'utf8',
+        );
+        const site = src.slice(src.indexOf("'EIK_LOOKS_LIKE_EGN'"));
+        expect(site.slice(0, 400)).not.toMatch(/\{\s*eik/);
+
+        for (const locale of ['bg', 'en'] as const) {
+            getRequestContext.mockReturnValue({
+                requestId: 'r1',
+                startTime: 0,
+                uiLanguage: locale,
+            });
+            const p = payload('EIK_LOOKS_LIKE_EGN', 'That looks like an ЕГН.');
+            // A real-shaped 10-digit ЕГН, to prove it cannot survive.
+            p.error.params = { attempted: '7501020345' };
+            await localizeErrorPayload(p);
+            expect(`${locale}: ${p.error.message}`).not.toContain('7501020345');
+            expect(`${locale}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        }
     });
 });
