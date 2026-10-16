@@ -21,6 +21,7 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { SharePointCard } from './SharePointCard';
+import { GoogleCard } from './GoogleCard';
 
 interface ConnectionDTO {
     id: string;
@@ -202,6 +203,7 @@ export default function AdminIntegrationsPage() {
                 {/* SP-1 — SharePoint connection (delegated consent, separate
                     from the generic config-field connections below). */}
                 <SharePointCard />
+                <GoogleCard />
 
                 {/* Message banner */}
                 {message && (

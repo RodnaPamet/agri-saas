@@ -78,6 +78,9 @@ const ADMIN_ONLY_ROUTES = [
     'admin/integrations/sharepoint/connect/route.ts',
     'admin/integrations/sharepoint/sites/route.ts',
     'admin/integrations/sharepoint/test/route.ts',
+    // #2005 — Google Drive + Calendar connection management (consent OAuth)
+    'admin/integrations/google/route.ts',
+    'admin/integrations/google/connect/route.ts',
     'admin/roles/route.ts',
     'admin/roles/[roleId]/route.ts',
     // Bulk-delete custom roles (selection action-row)
