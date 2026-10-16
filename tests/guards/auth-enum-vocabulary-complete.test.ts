@@ -18,6 +18,7 @@
  * set precisely because it had been caught by a `LogEntryType` that held two
  * of ten in production.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
@@ -49,7 +50,7 @@ function prismaEnum(name: string): string[] {
 }
 
 function messages(locale: string): Record<string, Record<string, string>> {
-    const raw = fs.readFileSync(path.join(ROOT, `messages/${locale}.json`), 'utf8');
+    const raw = JSON.stringify(readCatalogue(locale));
     return JSON.parse(raw).authEnums;
 }
 

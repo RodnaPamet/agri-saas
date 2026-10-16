@@ -38,6 +38,7 @@
  * A full import-graph walk is the stronger check and a bigger piece of work;
  * recorded here rather than implied.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -133,9 +134,7 @@ describe('the public i18n payload covers what the public surface reads', () => {
         // the serialised form that `NextIntlClientProvider` puts in the RSC
         // payload.
         for (const locale of ['bg', 'en'] as const) {
-            const all = JSON.parse(
-                fs.readFileSync(path.join(REPO_ROOT, `messages/${locale}.json`), 'utf8'),
-            ) as Record<string, unknown>;
+            const all = readCatalogue(locale) as Record<string, unknown>;
             const sent = publicSurfaceMessages(all);
 
             const fullBytes = JSON.stringify(all).length;
@@ -174,9 +173,7 @@ describe('the public i18n payload covers what the public surface reads', () => {
         // typo that `publicSurfaceMessages` skips silently, so the page it was
         // added for still renders raw keys.
         for (const locale of ['bg', 'en']) {
-            const cat = JSON.parse(
-                fs.readFileSync(path.join(REPO_ROOT, `messages/${locale}.json`), 'utf8'),
-            ) as Record<string, unknown>;
+            const cat = readCatalogue(locale) as Record<string, unknown>;
             const missing = PUBLIC_SURFACE_NAMESPACES.filter((ns) => !(ns in cat));
             expect(missing).toEqual([]);
         }

@@ -71,11 +71,31 @@
  * Every limit above pushes toward calling a dead key live. So `unreferenced` is
  * a floor, and the real dead set is at least this big.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
 const REPO = process.cwd();
-const CATALOGUE = join(REPO, 'messages/en.json');
+/**
+ * The catalogue, however it is stored (#1813): one file per locale, or N
+ * bundles under `messages/<locale>/`. Merged, because this script partitions
+ * the WHOLE key population and a subset would report every unread bundle's
+ * keys as dead.
+ */
+function cataloguePath(locale) {
+    const single = join(REPO, `messages/${locale}.json`);
+    return existsSync(single) ? single : join(REPO, 'messages', locale);
+}
+
+function readCatalogue(locale) {
+    const single = join(REPO, `messages/${locale}.json`);
+    if (existsSync(single)) return JSON.parse(readFileSync(single, 'utf-8'));
+    const dir = join(REPO, 'messages', locale);
+    const merged = {};
+    for (const f of readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) {
+        Object.assign(merged, JSON.parse(readFileSync(join(dir, f), 'utf-8')));
+    }
+    return merged;
+}
 const ROOTS = ['src'];
 const EXT = new Set(['.ts', '.tsx']);
 
@@ -134,7 +154,7 @@ function walk(dir, out = []) {
     return out;
 }
 
-const keys = flatten(JSON.parse(readFileSync(CATALOGUE, 'utf8')));
+const keys = flatten(readCatalogue('en'));
 const files = ROOTS.flatMap((r) => walk(join(REPO, r)));
 
 /**
@@ -593,7 +613,7 @@ if (process.argv.includes('--json')) {
     process.exit(0);
 }
 
-console.log(`[i18n-dead-keys] catalogue: ${CATALOGUE.replace(`${REPO}/`, '')}`);
+console.log(`[i18n-dead-keys] catalogue: ${cataloguePath('en').replace(`${REPO}/`, '')}`);
 console.log(`[i18n-dead-keys] files scanned: ${files.length}`);
 console.log(
     `[i18n-dead-keys] literal call sites: ${literalCalls}  dynamic: ${dynamicCalls}` +

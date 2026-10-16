@@ -1,0 +1,12 @@
+{
+    "notFound": {
+        "title": "Page not found",
+        "body": "Sorry, we couldn't find the page you're looking for. It might have been removed or the link is incorrect.",
+        "returnToDashboard": "Return to Dashboard"
+    },
+    "publicFarm": {
+        "oblast": "{oblast} oblast",
+        "cropsTitle": "Crops",
+        "aboutTitle": "About the farm"
+    }
+}

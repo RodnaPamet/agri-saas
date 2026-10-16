@@ -15,6 +15,7 @@
  * states the direction that matters locally (every milestone has copy in
  * BOTH locales) and is where you land when you add one.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -25,7 +26,7 @@ const VALID_PRESETS = ['burst', 'rain', 'fireworks'];
 const ROOT = path.resolve(__dirname, '../..');
 
 function loadCelebrationCopy(locale: string): Record<string, { message?: string; description?: string }> {
-    const json = JSON.parse(fs.readFileSync(path.join(ROOT, `messages/${locale}.json`), 'utf8'));
+    const json = readCatalogue(locale);
     return json.celebrations ?? {};
 }
 

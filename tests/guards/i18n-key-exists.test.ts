@@ -44,12 +44,12 @@
  * if a refactor made most call sites dynamic, this guard would quietly stop
  * covering them, and the count is what makes that visible.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
-const MESSAGES = path.join(REPO_ROOT, 'messages/en.json');
 const SCAN_DIRS = ['src/app', 'src/components', 'src/lib'];
 
 /** next-intl's two namespace-binding entry points. */
@@ -74,7 +74,7 @@ function loadMessageKeys(): Set<string> {
             walk(v, full);
         }
     };
-    walk(JSON.parse(fs.readFileSync(MESSAGES, 'utf8')), '');
+    walk(readCatalogue('en'), '');
     return flat;
 }
 

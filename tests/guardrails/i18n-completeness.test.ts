@@ -37,10 +37,10 @@
  * either tsx-loading from a script or .mjs-importing from Jest;
  * neither is worth the win for a logic block this small.
  */
+import { locales, readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const MESSAGES_DIR = path.resolve(__dirname, '../../messages');
 
 type LocaleMap = Map<string, unknown>;
 
@@ -69,8 +69,7 @@ function placeholders(value: unknown): string[] {
 }
 
 function readLocale(name: string): LocaleMap {
-    const p = path.join(MESSAGES_DIR, `${name}.json`);
-    return flatten(JSON.parse(fs.readFileSync(p, 'utf-8')));
+    return flatten(readCatalogue(name));
 }
 
 // ─── Untranslated-copy detection (English pasted into bg.json) ───
@@ -192,10 +191,12 @@ function formatDrift(
 
 // ─── Locale enumeration ─────────────────────────────────────────
 
-const localeFiles = fs
-    .readdirSync(MESSAGES_DIR)
-    .filter((f) => f.endsWith('.json') && f !== 'en.json')
-    .map((f) => path.basename(f, '.json'));
+// Every locale except the canonical one. `locales()` already knows a locale
+// may be a FILE or a bundle DIRECTORY (#1813) — the old chain filtered on
+// `.endsWith('.json')`, which after the split matched nothing and left this
+// suite comparing zero locales while still reporting `missing: 0`. The
+// assertion below is what caught it.
+const localeFiles = locales().filter((name) => name !== 'en');
 
 // Sanity: there is at least one non-en locale to compare against.
 // If a future change drops bg.json without adding another locale,

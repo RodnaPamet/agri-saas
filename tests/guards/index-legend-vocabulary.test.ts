@@ -17,6 +17,7 @@
  * already carrying three separate crop vocabularies when this was written, and
  * that is the outcome being avoided.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { VEGETATION_INDICES } from '@/lib/agro/vegetation-indices';
@@ -24,7 +25,7 @@ import { VEGETATION_INDICES } from '@/lib/agro/vegetation-indices';
 const ROOT = path.resolve(__dirname, '../..');
 
 function legend(locale: string): Record<string, string> {
-    const raw = fs.readFileSync(path.join(ROOT, `messages/${locale}.json`), 'utf8');
+    const raw = JSON.stringify(readCatalogue(locale));
     return JSON.parse(raw).agroEnums?.indexLegend ?? {};
 }
 

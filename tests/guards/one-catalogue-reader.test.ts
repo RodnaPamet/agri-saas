@@ -43,6 +43,53 @@ const READ_FORMS: ReadonlyArray<{ name: string; re: RegExp }> = [
     { name: 'require', re: /require\(\s*'[^']*messages\/(?:en|bg)\.json'\s*\)/ },
     { name: 'readFileSync', re: /readFileSync\([^)]*messages\/(?:en|bg)\.json/ },
     { name: 'readFileSync (template path)', re: /readFileSync\(\s*`[^`]*messages\/(?:en|bg)\.json/ },
+    /**
+     * The INTERPOLATED locale — `messages/${locale}.json` — which the first
+     * version of this guard missed entirely.
+     *
+     * Every search behind the migration used the literal `en.json`/`bg.json`,
+     * so ten files that build the path from a variable were invisible to all
+     * three batches AND to this guard, which was mutation-proved only against
+     * a static import. They surfaced when the split deleted the single files
+     * and four suites failed with ENOENT — after the guard had reported clean.
+     *
+     * A detector anchored on one spelling of a path reads exactly like one
+     * anchored on the path.
+     */
+    {
+        name: 'interpolated locale path',
+        re: /(?:readFileSync|import|require)\([^\n]*messages\/\$\{[^}]+\}\.json/,
+    },
+    /**
+     * Building a PATH into `messages/` at all — the invariant that actually
+     * holds, arrived at after two narrower ones leaked.
+     *
+     * The forms above all look for the path inside the READ. Three suites put
+     * it in a hoisted constant instead:
+     *
+     *     const MESSAGES = path.join(REPO_ROOT, 'messages/en.json');
+     *     const BG = path.resolve(__dirname, '../../messages/bg.json');
+     *     const MESSAGES_DIR = path.resolve(__dirname, '../../messages');
+     *
+     * and read it far away. The last one does not even contain `.json`, so no
+     * amount of `readFileSync(…json)` matching could ever have seen it. All
+     * three survived the migration, reported clean by this guard, and failed
+     * with ENOENT the moment the split deleted the single files.
+     *
+     * So the rule is not "do not read the catalogue" but "do not construct a
+     * path into `messages/`" — the helper owns the location, and a path is how
+     * you take it back.
+     */
+    {
+        name: 'path construction into messages/',
+        // `[^)'"`]*` and not `[^)]*`: the first version crossed a closing
+        // paren into template text and flagged
+        // `.join(', ')}, no errors.${c} in messages/bg.json` — prose in an
+        // error message, not a path. A detector that reports a file with no
+        // reader costs exactly as much trust as one that misses a file with
+        // one.
+        re: /(?:join|resolve)\([^)'"`]*['"`][^'"`]*messages(?:\/|['"`])/,
+    },
 ];
 
 const files = collectSourceFiles({
@@ -66,7 +113,10 @@ describe('tests read the catalogue through one reader', () => {
     it('no test loads messages/<locale>.json directly', () => {
         const offenders: string[] = [];
         for (const rel of files) {
-            if (rel === CANONICAL) continue;
+            // The helper, and THIS file: a detector necessarily contains the
+            // patterns it detects, and excluding it by name is honest where
+            // contriving regexes that cannot match themselves is not.
+            if (rel === CANONICAL || rel === 'tests/guards/one-catalogue-reader.test.ts') continue;
             const code = codeOf(rel);
             for (const { name, re } of READ_FORMS) {
                 if (re.test(code)) offenders.push(`${rel} — ${name}`);

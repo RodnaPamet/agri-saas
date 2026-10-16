@@ -40,7 +40,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type EnCatalogue from '../../messages/en.json';
+// The INTERSECTION of the bundle types, now that the catalogue is split
+// (#1813). Type-only, so this module still names the files for their SHAPE
+// without depending on them for its data — and the docblock above predicted
+// exactly this edit, which is the whole reason no call site changes.
+import type EnPublicBundle from '../../messages/en/public.json';
+import type EnAppBundle from '../../messages/en/app.json';
 
 export const REPO_ROOT = path.resolve(__dirname, '../..');
 export const MESSAGES_DIR = path.join(REPO_ROOT, 'messages');
@@ -53,7 +58,7 @@ export const MESSAGES_DIR = path.join(REPO_ROOT, 'messages');
  * the other, so one shape for all locales is enforced elsewhere rather than
  * assumed here.
  */
-export type Catalogue = typeof EnCatalogue;
+export type Catalogue = typeof EnPublicBundle & typeof EnAppBundle;
 
 /**
  * Read one locale's full catalogue.
@@ -109,6 +114,24 @@ export function readCatalogue(locale: string): Catalogue {
         }
     }
     return merged as Catalogue;
+}
+
+/**
+ * Every locale the catalogue holds.
+ *
+ * Needed because the split changed what a locale LOOKS like on disk: it was a
+ * `<locale>.json` file and is now a `<locale>/` directory. A suite that
+ * enumerated locales with `readdirSync(messages).filter(endsWith('.json'))`
+ * found none after the split and still reported "no missing keys" — a parity
+ * check passing over an empty population, which is the exact failure #1813
+ * warns about.
+ */
+export function locales(): string[] {
+    return fs
+        .readdirSync(MESSAGES_DIR, { withFileTypes: true })
+        .map((e) => (e.isDirectory() ? e.name : e.name.endsWith('.json') ? e.name.slice(0, -5) : null))
+        .filter((n): n is string => n !== null)
+        .sort();
 }
 
 /**

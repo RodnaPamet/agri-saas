@@ -25,6 +25,7 @@
  * better than a thrown error inside a fail-open notification path.
  */
 import { DEFAULT_LOCALE, type Locale } from './locales';
+import { bundleFiles } from './bundles';
 
 type MessageTree = { [key: string]: string | MessageTree };
 
@@ -51,11 +52,20 @@ async function loadMessages(locale: Locale): Promise<MessageTree | null> {
     const hit = cache.get(locale);
     if (hit) return hit;
     try {
-        const mod = (await import(`../../../messages/${locale}.json`)) as {
-            default: MessageTree;
-        };
-        cache.set(locale, mod.default);
-        return mod.default;
+        // Every bundle, merged (#1813). This path serves NOTIFICATIONS in a
+        // recipient's language, which can name any namespace — so unlike
+        // `src/i18n.ts` it has no request to narrow by and must load the lot.
+        const parts = await Promise.all(
+            bundleFiles().map(
+                (bundle) =>
+                    import(`../../../messages/${locale}/${bundle}.json`) as Promise<{
+                        default: MessageTree;
+                    }>,
+            ),
+        );
+        const merged = Object.assign({}, ...parts.map((m) => m.default)) as MessageTree;
+        cache.set(locale, merged);
+        return merged;
     } catch {
         return null;
     }
