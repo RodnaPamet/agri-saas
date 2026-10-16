@@ -589,6 +589,75 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 5)', () => {
         // ban would have been a narrower guard that broke correct copy.
         expect(catalogue).toContain('обект');
     });
+
+    it('a Parcel is «парцел», and «имот» survives only where it is not one (#1966)', async () => {
+        // The issue's SECOND half, which I closed the issue without doing:
+        // its title says "calls Location three things AND Parcel two". The
+        // entity was «парцел» in 113 strings and «имот» in 18 — «имот» being
+        // the legal real-estate term, right for a cadastral property and
+        // wrong for a worked field.
+        //
+        // Owner ruling 2026-10-16: «парцел» everywhere. The accepted cost is
+        // that the lease and cadastral surfaces now say «парцел» where a
+        // contract would say «имот» — and note the ENGLISH had already made
+        // this choice, since `terms.serviceBody` read "cadastral parcels"
+        // while the Bulgarian read «кадастрални имоти».
+        const bg = readCatalogue('bg') as { errors: Record<string, unknown> };
+        for (const code of ['PARCEL_NOT_FOUND', 'PARCEL_NOT_ON_TASK', 'PARCEL_LOCATION_MISMATCH']) {
+            expect(`${code}: ${bg.errors[code]}`).toMatch(/парцел/i);
+            expect(`${code}: ${bg.errors[code]}`).not.toMatch(/имот/i);
+        }
+
+        // And the whole catalogue, with an EXPLICIT allowlist rather than a
+        // silent exemption — so the list shrinks visibly and a new «имот»
+        // fails. `locations.detail.fitHolding` is excluded because it is
+        // neither: en reads "Back to this holding", and the string is the
+        // aria-label of a map button that returns from country scale to the
+        // farm's whole land extent («the holding's own framing», per
+        // ParcelOverviewMap.tsx). Calling that a «парцел» would be a third
+        // wrong word, so it is filed rather than renamed.
+        const ALLOWED_имот = ['locations.detail.fitHolding'];
+        const offenders: string[] = [];
+        const walk = (node: unknown, path: string): void => {
+            if (typeof node === 'string') {
+                // NO `\b` here, deliberately. JavaScript's `\b` is
+                // ASCII-only: it needs a transition involving [A-Za-z0-9_],
+                // and between a space and «и» there is none — so
+                // `/\bимот/i` never matches Cyrillic at all and this
+                // negated assertion passed VACUOUSLY. The `stillThere`
+                // cross-check below is what caught it. Python's `\b` IS
+                // Unicode-aware, which is why the measurement that found
+                // these 18 strings worked while the guard did not.
+                if (/имот/i.test(node) && !ALLOWED_имот.includes(path)) {
+                    offenders.push(`  ${path}: ${node.slice(0, 80)}`);
+                }
+                return;
+            }
+            if (node && typeof node === 'object') {
+                for (const [k, v] of Object.entries(node)) {
+                    walk(v, path ? `${path}.${k}` : k);
+                }
+            }
+        };
+        walk(readCatalogue('bg'), '');
+        expect(offenders.join('\n')).toBe('');
+
+        // The allowlist is not vacuous — if someone fixes `fitHolding`, this
+        // fails and the entry should be deleted rather than left to rot. Same
+        // rule as the #1918 BACKLOG: the list must be EXACT, not a ceiling.
+        const stillThere: string[] = [];
+        walk(readCatalogue('bg'), '');
+        for (const allowed of ALLOWED_имот) {
+            const parts = allowed.split('.');
+            let cur: unknown = readCatalogue('bg');
+            for (const seg of parts) {
+                cur = (cur as Record<string, unknown>)?.[seg];
+            }
+            if (typeof cur === 'string' && /имот/i.test(cur)) stillThere.push(allowed);
+        }
+        expect(stillThere).toEqual(ALLOWED_имот);
+        console.log(`[refusal-bg] #1966 parcel: ${ALLOWED_имот.length} allowlisted «имот» string(s) left`);
+    });
 });
 
 describe('a Bulgarian reader gets Bulgarian (#1918 batch 6)', () => {
