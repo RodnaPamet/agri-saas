@@ -22,13 +22,14 @@
  * assignee, and they are routinely different people. `translateFor` takes an
  * explicit locale for exactly that reason; the assertions below pin it.
  */
+import { readCatalogue } from '../helpers/catalogue';
 import {
     buildTaskAssignedEmail,
     buildAccessReviewReminderEmail,
     buildAccessReviewOverdueEscalationEmail,
 } from '@/app-layer/notifications/templates';
-import en from '../../messages/en.json';
-import bg from '../../messages/bg.json';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 const EN = en.notificationEmail as unknown as Record<string, Record<string, string>>;
 const BG = bg.notificationEmail as unknown as Record<string, Record<string, string>>;

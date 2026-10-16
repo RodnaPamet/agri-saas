@@ -11,10 +11,11 @@
  * because the recipient is an address from configuration whose mail is written
  * in Bulgarian by default.
  */
+import { readCatalogue } from '../../helpers/catalogue';
 import { buildInsuranceLeadEmail } from '@/app-layer/notifications/templates';
 import { CreateInsuranceLeadSchema } from '@/app-layer/schemas/insurance.schemas';
-import en from '../../../messages/en.json';
-import bg from '../../../messages/bg.json';
+const en = readCatalogue('en');
+const bg = readCatalogue('bg');
 
 const QUOTE = {
     productKey: 'wheat',
