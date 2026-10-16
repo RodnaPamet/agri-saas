@@ -79,6 +79,43 @@ describe('WebVitalsReporter', () => {
         });
     });
 
+    it.each([
+        ['/f/pobeda', 'public-farm'],
+        ['/f/pobeda/', 'public-farm'],
+        ['/t/acme/assets', 'app'],
+        ['/', 'app'],
+        ['/fx/something', 'app'],
+    ])('labels %s as %s', async (pathname, expected) => {
+        // Derived with `isPublicSurface` — the SAME function the middleware
+        // uses to set the public-surface header — so the label cannot drift
+        // from what the app treats as public. `/fx/...` is the case a bare
+        // `startsWith('/f')` would get wrong, and this repo already had that
+        // bug once (#1838's prefix-vs-exact work).
+        window.history.pushState({}, '', pathname);
+        render(<WebVitalsReporter />);
+        await flush();
+        const report = onLCP.mock.calls[0][0] as (m: unknown) => void;
+        report({ name: 'LCP', value: 1, rating: 'good', id: 'x', navigationType: 'navigate' });
+
+        const [, body] = sendBeacon.mock.calls[0] as [string, string];
+        expect(JSON.parse(body).surface).toBe(expected);
+    });
+
+    it('never puts the pathname itself in the beacon', async () => {
+        // A real path carries a tenant slug and record ids, and this beacon's
+        // premise is that it says nothing about who sent it.
+        window.history.pushState({}, '', '/t/acme-corp/assets/cmvad0wlu000mxc0cjubrwb1c');
+        render(<WebVitalsReporter />);
+        await flush();
+        const report = onLCP.mock.calls[0][0] as (m: unknown) => void;
+        report({ name: 'LCP', value: 1, rating: 'good', id: 'x', navigationType: 'navigate' });
+
+        const [, body] = sendBeacon.mock.calls[0] as [string, string];
+        expect(body).not.toContain('acme-corp');
+        expect(body).not.toContain('cmvad0wlu000mxc0cjubrwb1c');
+        expect(JSON.parse(body).surface).toBe('app');
+    });
+
     it('falls back to fetch when sendBeacon is unavailable', async () => {
         const fetchMock = jest.fn().mockResolvedValue({ ok: true });
         global.fetch = fetchMock as unknown as typeof fetch;
