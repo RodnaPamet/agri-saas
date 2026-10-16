@@ -33,6 +33,7 @@ import { getProviderByName } from '@/lib/storage';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { afterCommit } from '@/lib/db/after-commit';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { identifyPhoto } from '@/app-layer/ai/vision';
 import { askKnowledgeBase } from '@/app-layer/usecases/rag';
@@ -255,6 +256,16 @@ export async function runClassifyPhoto(payload: ClassifyPhotoPayload): Promise<C
                             // announces "inconclusive" rather than naming a
                             // pest the model isn't sure about.
                             if (logEntry.createdByUserId) {
+                                // Captured, because the publish below now runs
+                                // inside an `afterCommit` closure (#1990) and
+                                // TypeScript discards the narrowing from the
+                                // guard above at a function boundary — it
+                                // cannot prove the field is still non-null when
+                                // the effect drains. The const carries the
+                                // narrowed value rather than re-asserting it
+                                // with `!`, which would be a claim about the
+                                // future rather than a fact about now.
+                                const notifyUserId = logEntry.createdByUserId;
                                 const dedupeKey = `classify-photo:${tenantId}:${logEntryId}:${fileId}`;
                                 const linkUrl = `/t/${logEntry.tenant?.slug ?? ''}/journal/${logEntryId}`;
                                 const title = stored.lowConfidence
@@ -277,15 +288,9 @@ export async function runClassifyPhoto(payload: ClassifyPhotoPayload): Promise<C
                                 // published unconditionally, so a retry
                                 // re-notified even when the row deduped.
                                 if (created.count > 0) {
-                                    publishNotificationEvent(tenantId, logEntry.createdByUserId, {
-                                        id: dedupeKey,
-                                        type: 'GENERAL',
-                                        title,
-                                        message,
-                                        read: false,
-                                        linkUrl,
-                                        createdAt: new Date().toISOString(),
-                                    });
+                                    afterCommit('notify.classify-photo', () =>
+                                        publishNotificationEvent(tenantId, notifyUserId, { id: dedupeKey }),
+                                    );
                                 }
                             }
                         });

@@ -856,18 +856,10 @@ async function notifyOtherParty(
 
                 // QUEUED, not published. The publish has to happen after this
                 // transaction COMMITS — see the block below.
-                published.push({
-                    userId,
-                    event: {
-                        id: row.id,
-                        type: 'EXCHANGE_MESSAGE' as const,
-                        title,
-                        message,
-                        read: false,
-                        linkUrl,
-                        createdAt: row.createdAt.toISOString(),
-                    },
-                });
+                // IDs only (P7.1, #1990) — the client refetches the body
+                // over REST. `title`, `message` and `linkUrl` are still built
+                // above because the EMAIL below needs them.
+                published.push({ userId, event: { id: row.id } });
             }
 
             // The email enqueue used to sit HERE, inside this transaction, and
@@ -901,7 +893,9 @@ async function notifyOtherParty(
         // existed at all. The old code carried this comment INSIDE the
         // transaction, stating the rule it was breaking.
         for (const { userId, event } of published) {
-            publishNotificationEvent(recipientTenantId, userId, event);
+            afterCommit('notify.exchange-message', () =>
+                publishNotificationEvent(recipientTenantId, userId, event),
+            );
         }
 
         // A SEPARATE transaction, so a duplicate here can only roll back

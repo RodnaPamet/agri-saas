@@ -26,6 +26,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 
+import { afterCommit } from '@/lib/db/after-commit';
 export interface AssignmentTarget {
     /** Tenant the entity belongs to. */
     tenantId: string;
@@ -129,15 +130,9 @@ export async function createAssignmentNotification(
     // when result.count === 0 — that means the dedupeKey collapsed
     // a duplicate, and we already pushed the original.
     if (result.count > 0) {
-        publishNotificationEvent(target.tenantId, target.assigneeUserId, {
-            id: row.dedupeKey,
-            type: row.type,
-            title: row.title,
-            message: row.message,
-            read: false,
-            linkUrl: row.linkUrl,
-            createdAt: now.toISOString(),
-        });
+        afterCommit('notify.assignment', () =>
+            publishNotificationEvent(target.tenantId, target.assigneeUserId, { id: row.dedupeKey }),
+        );
     }
 
     return result.count > 0

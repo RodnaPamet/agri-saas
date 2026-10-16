@@ -20,6 +20,7 @@ import prisma from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { afterCommit } from '@/lib/db/after-commit';
 import { ALERT_DAYS } from '@/lib/agro/lease-expiry';
 import type { JobRunResult } from './types';
 
@@ -132,15 +133,9 @@ export async function runLeaseExpirySweep(
                         const res = await prisma.notification.createMany({ data: fresh, skipDuplicates: true });
                         notified = res.count;
                         for (const row of fresh) {
-                            publishNotificationEvent(row.tenantId, row.userId, {
-                                id: row.dedupeKey,
-                                type: row.type,
-                                title: row.title,
-                                message: row.message,
-                                read: false,
-                                linkUrl: row.linkUrl,
-                                createdAt: now.toISOString(),
-                            });
+                            afterCommit('notify.lease-expiry', () =>
+                                publishNotificationEvent(row.tenantId, row.userId, { id: row.dedupeKey }),
+                            );
                         }
                     }
                 }
