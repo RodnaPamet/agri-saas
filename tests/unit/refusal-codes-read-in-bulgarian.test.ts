@@ -926,10 +926,11 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 9)', () => {
         // Asserted rather than merely done, because the alternative
         // («профил», «потребителско име», «линк») is what a translator
         // reaching for the English would naturally pick.
-        const bg = readCatalogue('bg') as {
-            errors: Record<string, string>;
-            admin: { publicProfile: Record<string, string> };
-        };
+        // Typed property access, no assertion: `Catalogue` is the INTERSECTION
+        // of the bundle JSON types, so these keys are known statically and a
+        // typo is a type error. `tests/helpers/catalogue.ts` says that is the
+        // point of keeping the type through the #1960 split.
+        const bg = readCatalogue('bg');
         expect(bg.admin.publicProfile.displayNameLabel).toBe('Публично име');
         expect(bg.errors.FARM_BRAND_DISPLAY_NAME_REQUIRED).toContain('публично име');
         expect(bg.errors.FARM_BRAND_HANDLE_REQUIRED).toContain('адрес');
@@ -978,7 +979,12 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 9)', () => {
         // Asserted as a property of the MECHANISM rather than of the phone,
         // which this repo cannot see: an entry exists for every code here, so
         // the web is covered whatever the phone does.
-        const bg = readCatalogue('bg') as { errors: Record<string, string> };
+        // `as unknown as` here and not above, because this loop indexes
+        // DYNAMICALLY. A direct `as` fails TS2352 — `Catalogue` and
+        // `Record<string, string>` do not overlap — which is what CI caught on
+        // this PR's first push, and the same two-step the other catalogue
+        // readers in `tests/unit` use.
+        const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
         for (const [code] of BATCH_9) {
             expect(`${code} entried: ${typeof bg.errors[code]}`).toBe(`${code} entried: string`);
         }
