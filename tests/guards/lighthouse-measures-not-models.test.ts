@@ -186,6 +186,38 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         expect(max!).toBeGreaterThan(1684);
     });
 
+    it('/login gates what a person WAITS FOR, not when a promo bar appears (#2002)', () => {
+        // Its LCP element is the PWA install banner — `InstallPrompt.tsx`, a
+        // mobile-only fixed overlay rendered after hydration. Render Delay was
+        // 6225ms of a 6266ms LCP while the sign-in FORM painted at FCP 2080ms.
+        // So an LCP budget there gated when a promotional bar appears, and
+        // would move whenever the install-prompt logic changed.
+        //
+        // Owner ruling 2026-10-16: gate FCP and TBT, drop LCP. Held here
+        // because re-adding an LCP budget to this page is the obvious future
+        // edit — the number looks like a paint time and the page looks slow.
+        const login = (rc.ci?.assert?.assertMatrix ?? []).find((m) =>
+            m.matchingUrlPattern?.includes('/login'),
+        );
+        expect(login).toBeDefined();
+        const a = login?.assertions ?? {};
+        expect(Object.keys(a).includes('largest-contentful-paint')).toBe(false);
+
+        // And the two that replaced it must be GATES, not warnings. They were
+        // both `warn` before, which is why "gate FCP and TBT" needed more than
+        // tightening a number: a warn budget fails nothing.
+        for (const metric of ['first-contentful-paint', 'total-blocking-time'] as const) {
+            const level = (a[metric] as unknown[] | undefined)?.[0];
+            expect(`${metric}: ${String(level)}`).toBe(`${metric}: error`);
+        }
+        console.log(
+            `[lighthouse-gate] /login gates ${Object.entries(a)
+                .filter(([, v]) => (v as unknown[])[0] === 'error')
+                .map(([k]) => k)
+                .join(', ')}`,
+        );
+    });
+
     it('the cap is still a literal, which the retry guard requires', () => {
         // Asserted here only because THIS change is what would be tempted to
         // parameterise it: the fix above wanted a variable and could not have
