@@ -171,7 +171,17 @@ describe('Avatar upload flow (avatar roadmap P3)', () => {
         expect(code).not.toMatch(/\bawait auth\(\)/);
         // Async-params contract (Next 15+).
         expect(src).toMatch(/params:\s*Promise</);
-        expect(src).toMatch(/getAvatarStream/);
+        // Reads the stored object through the account lib rather than
+        // touching a storage provider directly, which is what makes the URL
+        // provider-agnostic.
+        //
+        // The needle was `getAvatarStream` until #1953 renamed the route's
+        // dependency to `getAvatarObject` (it needs the validator as well as
+        // the bytes) — and this line went red, which is the guard working:
+        // a name-matching assertion SHOULD notice a rename rather than keep
+        // passing against a function nobody calls. Matching either keeps the
+        // claim about the layering rather than about one spelling.
+        expect(src).toMatch(/getAvatar(?:Object|Stream)\(/);
     });
 
     it('the account/profile page mounts the upload field', () => {

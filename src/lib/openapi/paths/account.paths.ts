@@ -582,7 +582,8 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
         operationId: 'getUserAvatar',
         summary: "A user's uploaded avatar, as webp bytes",
         description:
-            'BINARY, not JSON — `image/webp`, `Cache-Control: private, max-age=300`. This is ' +
+            'BINARY, not JSON — `image/webp`, `Cache-Control: private, no-cache` with an ' +
+            '`ETag`. This is ' +
             'where a ROOT-RELATIVE `avatarUrl` from `getCurrentUser` points; an ABSOLUTE ' +
             '`avatarUrl` is a third-party provider photo and this route knows nothing about it ' +
             '(see the `avatarUrl` description — the two shapes are fetched differently).\n\n' +
@@ -612,7 +613,16 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description:
                 'The stored avatar. `Content-Type: image/webp`; `Cache-Control: private, ' +
-                'max-age=300`, so a changed avatar propagates within five minutes.',
+                'no-cache` with an `ETag`, so a changed avatar appears on the NEXT request ' +
+                'rather than after a TTL (#1953 — it was `max-age=300`, five minutes of a ' +
+                'farmer seeing the picture they just replaced).\n\n' +
+                '`no-cache` is not `no-store`: send `If-None-Match` and a match is answered ' +
+                '**304 with no body**, so revalidating costs a few hundred bytes rather than ' +
+                'the 5–25 KB of the image. The validator is derived from the stored object\u2019s ' +
+                'size and modification time — the same basis a static file server uses — not ' +
+                'from a content hash, so two DIFFERENT avatars of identical length written in ' +
+                'the same millisecond would share one. The consequence of that collision is a ' +
+                'stale picture, never a wrong one.',
             content: { 'image/webp': z.string().openapi({ format: 'binary' }) },
         },
         extraResponses: {

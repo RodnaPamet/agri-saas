@@ -23,7 +23,7 @@ import type { NextRequest } from 'next/server';
 import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import {notFound } from '@/lib/errors/types';
-import { getAvatarStream } from '@/lib/account/avatar';
+import { getAvatarObject } from '@/lib/account/avatar';
 
 export const GET = withApiErrorHandling(
     async (
@@ -45,20 +45,48 @@ export const GET = withApiErrorHandling(
         await getUserCtx(req);
 
         const { userId } = await params;
-        const stream = await getAvatarStream(userId);
-        if (!stream) throw notFound('Avatar not found.');
+        const object = await getAvatarObject(userId);
+        if (!object) throw notFound('Avatar not found.');
+
+        // `no-cache` is NOT `no-store` (#1953): the bytes stay in the
+        // browser's cache, they are just revalidated before use. A matching
+        // `If-None-Match` is answered below with a bodyless 304 — a few
+        // hundred bytes instead of 5–25 KB — so this is cheaper than it
+        // looks AND a changed avatar appears on the next request.
+        //
+        // It replaces `max-age=300`, whose comment said "short TTL so a
+        // changed avatar propagates within minutes". Minutes is the problem:
+        // a farmer who changes their picture and sees the old one has no way
+        // to tell that waiting would fix it. The phone paid for this too —
+        // agrent-ios showed the just-uploaded image locally rather than
+        // refetching, because the URL never changes between uploads.
+        const headers = {
+            'Content-Type': 'image/webp',
+            'Cache-Control': 'private, no-cache',
+            ETag: object.etag,
+        };
+
+        // A conditional request that still matches costs no body. The header
+        // may carry a LIST, and a weak validator arrives `W/"…"` — neither
+        // shape is produced here, but both are produced by caches, so parse
+        // rather than compare the raw string.
+        const inm = req.headers.get('if-none-match');
+        if (inm !== null) {
+            const matches = inm
+                .split(',')
+                .map((candidate) => candidate.trim().replace(/^W\//, ''))
+                .some((candidate) => candidate === object.etag || candidate === '*');
+            if (matches) {
+                // The stream was opened to answer this request and nothing
+                // will read it. Destroy it rather than leaking the handle.
+                object.stream.destroy();
+                return new Response(null, { status: 304, headers });
+            }
+        }
 
         return new Response(
-            Readable.toWeb(stream) as unknown as ReadableStream,
-            {
-                status: 200,
-                headers: {
-                    'Content-Type': 'image/webp',
-                    // Private — avatars sit behind auth. Short TTL so a
-                    // changed avatar propagates within minutes.
-                    'Cache-Control': 'private, max-age=300',
-                },
-            },
+            Readable.toWeb(object.stream) as unknown as ReadableStream,
+            { status: 200, headers },
         );
     },
 );
