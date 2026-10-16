@@ -319,7 +319,7 @@ export default function MembersAdminPage() {
         }
     }, [apiUrl, t]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the setState lands after an await, in a later task, so this is not the synchronous render cascade the rule is about; the loader is an async useCallback whose deps cannot change while mounted, so it runs once
     useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
     // Bulk-revoke for the pending-invitations table — selection action-row.
