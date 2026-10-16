@@ -14,7 +14,7 @@
  * docs/implementation-notes/2026-08-07-knowledge-crud-defects.md.
  */
 
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -68,40 +68,38 @@ export function EditArticleModal({
     const tCommon = useTranslations('common');
     const apiUrl = useTenantApiUrl();
 
-    const [title, setTitle] = useState('');
-    const [category, setCategory] = useState('');
-    const [summary, setSummary] = useState('');
-    const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
-    const [language, setLanguage] = useState('');
-    const [cropTags, setCropTags] = useState('');
-    const [regions, setRegions] = useState('');
-    const [bbchEnabled, setBbchEnabled] = useState(false);
-    const [bbchMin, setBbchMin] = useState(0);
-    const [bbchMax, setBbchMax] = useState(99);
+    // SEEDED AT MOUNT, not in an effect (#1968). The article page remounts
+    // this component for every open via a `key`, so `initial` is already the
+    // right article on the first render.
+    //
+    // This one was not only a stale frame. The effect's deps were
+    // `[open, initial]` and the call site passes `initial={{ … }}` — a fresh
+    // object on EVERY parent render. The page holds seven state hooks
+    // (`article`, `tab`, `contentType`, …), so any re-render while the modal
+    // was open re-ran the seed and DISCARDED whatever the user had typed,
+    // then set `isDirty` back to false — which also disarms the
+    // unsaved-changes guard, so the loss happened without the prompt that
+    // exists to prevent it.
+    //
+    // Seeding at mount removes the dependency entirely: there is nothing to
+    // re-run.
+    const [title, setTitle] = useState(initial?.title ?? '');
+    const [category, setCategory] = useState(initial?.category ?? '');
+    const [summary, setSummary] = useState(initial?.summary ?? '');
+    const [ownerUserId, setOwnerUserId] = useState<string | null>(
+        initial?.ownerUserId ?? null,
+    );
+    const [language, setLanguage] = useState(initial?.language ?? '');
+    const [cropTags, setCropTags] = useState(initial?.cropTags.join(', ') ?? '');
+    const [regions, setRegions] = useState(initial?.regions.join(', ') ?? '');
+    const [bbchEnabled, setBbchEnabled] = useState(
+        initial?.bbchStageMin != null && initial?.bbchStageMax != null,
+    );
+    const [bbchMin, setBbchMin] = useState(initial?.bbchStageMin ?? 0);
+    const [bbchMax, setBbchMax] = useState(initial?.bbchStageMax ?? 99);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
-
-    // Seed from `initial` when the modal opens; reset dirty + error each
-    // time so a re-open after cancel reads clean.
-    useEffect(() => {
-        if (open && initial) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setTitle(initial.title);
-            setCategory(initial.category ?? '');
-            setSummary(initial.summary ?? '');
-            setOwnerUserId(initial.ownerUserId);
-            setLanguage(initial.language ?? '');
-            setCropTags(initial.cropTags.join(', '));
-            setRegions(initial.regions.join(', '));
-            setBbchEnabled(initial.bbchStageMin != null && initial.bbchStageMax != null);
-            setBbchMin(initial.bbchStageMin ?? 0);
-            setBbchMax(initial.bbchStageMax ?? 99);
-            setSubmitting(false);
-            setError(null);
-            setIsDirty(false);
-        }
-    }, [open, initial]);
 
     const canSubmit = title.trim().length > 0 && !submitting;
     const markDirty = () => setIsDirty(true);

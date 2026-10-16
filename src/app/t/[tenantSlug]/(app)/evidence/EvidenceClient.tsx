@@ -226,6 +226,15 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
     const [detailSheetOpen, setDetailSheetOpen] = useState(false);
     const [detailEvidenceId, setDetailEvidenceId] = useState<string | null>(null);
     const [editModalOpen, setEditModalOpen] = useState(false);
+    // Bumped on every open so `EditEvidenceModal` REMOUNTS and seeds its form
+    // from `initial` at mount rather than in an effect (#1968).
+    //
+    // Per-OPEN and not per-row deliberately. Keying on `editInitial.id` would
+    // look equivalent and is not: the effect this replaces also reset
+    // `submitting`, `error` and `isDirty` every time the modal opened, so a
+    // row re-opened after a cancel would keep the previous attempt's dirty
+    // flag and error. A counter reproduces the old semantics exactly.
+    const [editSeq, setEditSeq] = useState(0);
     const [editInitial, setEditInitial] = useState<{
         id: string;
         title: string;
@@ -780,6 +789,7 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
                                     folder: ev.folder ?? null,
                                     retentionUntil: ev.retentionUntil ?? null,
                                 });
+                                setEditSeq((n) => n + 1);
                                 setEditModalOpen(true);
                             }}
                         >
@@ -944,11 +954,13 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
                 canAdmin={permissions.canAdmin}
                 onEdit={(ev) => {
                     setEditInitial(ev);
+                    setEditSeq((n) => n + 1);
                     setEditModalOpen(true);
                 }}
                 onReview={(id, action) => submitReview(id, action)}
             />
             <EditEvidenceModal
+                key={editSeq}
                 open={editModalOpen}
                 setOpen={setEditModalOpen}
                 tenantSlug={tenantSlug}
