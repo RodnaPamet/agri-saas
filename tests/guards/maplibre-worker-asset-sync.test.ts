@@ -164,4 +164,40 @@ describe('maplibre worker asset is in sync with the installed package', () => {
         expect(src).toContain("'/maplibre/maplibre-gl-worker.mjs'");
         expect(src).toMatch(/workerUrl=\{MAPLIBRE_WORKER_URL\}/);
     });
+
+    it('CI answers the drift in thirty seconds, not in a test shard (#1807)', () => {
+        // This guard IS the enforcement, and it is also the wrong place to
+        // learn about the problem: it lands as two failures among 5395 tests
+        // in a sharded run, and the remedy is one command.
+        //
+        // Dependabot cannot run that command, so every maplibre bump reddens
+        // this and stays red until a person notices — which is the security
+        // backlog waiting on somebody reading a test name. The `lint` job now
+        // checks it directly, with a GitHub annotation naming the fix.
+        //
+        // Pinned here because that step is precisely what a later cleanup
+        // removes as redundant WITH this guard. It is not redundant: this one
+        // says the tree is wrong, that one says so early and says what to do.
+        const pkg = JSON.parse(
+            fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'),
+        ) as { scripts?: Record<string, string> };
+        expect(`maplibre:check: ${pkg.scripts?.['maplibre:check']}`).toContain('--check');
+        expect(`maplibre:sync: ${pkg.scripts?.['maplibre:sync']}`).toContain(
+            'scripts/sync-maplibre-worker.mjs',
+        );
+
+        const ci = fs.readFileSync(path.join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+        expect(ci).toContain('npm run maplibre:check');
+
+        // And the CHECK mode must not write. A checker that repairs the tree
+        // reports success on the second run and the drift ships — the exact
+        // shape of the `cp`-that-silently-did-nothing this script replaced.
+        const script = fs.readFileSync(
+            path.join(ROOT, 'scripts/sync-maplibre-worker.mjs'),
+            'utf8',
+        );
+        expect(script).toMatch(/CHECK_ONLY\s*=\s*process\.argv\.includes\('--check'\)/);
+        expect(script).toMatch(/if \(!CHECK_ONLY\) mkdirSync/);
+        expect(script).toMatch(/::error file=public\/maplibre\//);
+    });
 });

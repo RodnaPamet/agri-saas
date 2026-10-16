@@ -60,6 +60,7 @@
         "openapi:generate": "tsx scripts/generate-openapi.ts",
         "preflight:fanout": "tsx scripts/count-fanout-encrypted.ts",
         "routes:inventory": "tsx scripts/generate-route-inventory.ts",
+        "maplibre:check": "node scripts/sync-maplibre-worker.mjs --check",
         "maplibre:sync": "node scripts/sync-maplibre-worker.mjs",
         "tokens:generate": "node scripts/generate-tokens.mjs",
         "tokens:check": "node scripts/generate-tokens.mjs --check",
