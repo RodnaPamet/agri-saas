@@ -19,11 +19,20 @@
  * and cannot be an exact one, because the hash is part of the path and there
  * is no finite set of paths to list.
  *
- * The trailing slash is load-bearing. Without it the entry would also open a
- * future `/api/public/mediaX`, the `/api/scim` vs `/api/scimulator` hazard the
- * guard file names. With it, only children open — and only a CHILD path can
- * tell a prefix entry from an exact one, which is why the classification test
- * probes `/api/public/media/<hash>` rather than a sibling.
+ * Two different things are often collapsed here, so both are stated.
+ *
+ * Only a CHILD path can tell a prefix entry from an exact one; a sibling
+ * cannot. That is why the reachability test probes
+ * `/api/public/media/<hash>` — had this been filed in `PUBLIC_PATH_EXACT` by
+ * mistake, every image would 401 and only a child request would show it.
+ *
+ * The trailing slash is a separate matter, and does LESS here than the usual
+ * telling suggests: `matchesPublicPrefix` segment-bounds a bare entry already
+ * (#1770), so `/api/public/mediaX` stays gated either way. The slash decides
+ * only whether the BARE `/api/public/media` is public, and it keeps it gated.
+ * Where the slash does carry the sibling property is `publicMediaRateLimit`,
+ * which matches with a plain `startsWith`. Both halves are mutation-proved,
+ * each in its own file's test.
  *
  * ## A prefix opens every METHOD, so only GET exists here
  *

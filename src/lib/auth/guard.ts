@@ -35,13 +35,30 @@ export const PUBLIC_PATH_PREFIXES = [
     // page with no session, and a page whose images 401 is not a public page.
     //
     // A PREFIX and not an exact entry, because the hash is part of the path
-    // and there is no finite set of paths to list. THE TRAILING SLASH IS
-    // LOAD-BEARING: without it this would also open a future
-    // `/api/public/mediaX`, which is the `/api/scim` vs `/api/scimulator`
-    // hazard named further down this file. With it, only children open, and
-    // the bare `/api/public/media` stays gated — it has no handler, so a 401
-    // there is the honest answer for an API path rather than a redirect to a
-    // login page an anonymous visitor has no account for.
+    // and there is no finite set of paths to list.
+    //
+    // What the trailing slash does HERE is narrower than the usual story, and
+    // worth stating precisely because I first wrote the usual story and it was
+    // wrong. `matchesPublicPrefix` already segment-bounds a bare entry, so
+    // `/api/public/mediaX` stays gated with or without the slash — that is
+    // #1770's fix and it is why the `/api/scim` vs `/api/scimulator` hazard
+    // named further down no longer applies to THIS predicate.
+    //
+    // The slash decides one thing: whether the BARE `/api/public/media` is
+    // public. An explicit trailing slash is honoured verbatim, so the bare
+    // path does not match and stays gated — which is what we want, since
+    // nothing serves it and a 401 is the honest answer for an API path rather
+    // than a redirect to a login page an anonymous visitor has no account for.
+    //
+    // Measured rather than reasoned: deleting the slash fails
+    // `public-media-edge-reachability`'s bare-path case and nothing else. The
+    // sibling cases stay green, which is how I found out the rest of this
+    // comment used to be false.
+    //
+    // The slash DOES carry the sibling property one layer out, in
+    // `publicMediaRateLimit`, which matches with a plain `startsWith` — and
+    // there deleting it fails the sibling assertion instead. Two files, two
+    // mechanisms, one character.
     //
     // Only a CHILD path distinguishes a prefix entry from an exact one; a
     // sibling cannot. That is the measurement #1817 recorded the hard way, so
