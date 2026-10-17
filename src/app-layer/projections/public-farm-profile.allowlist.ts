@@ -141,6 +141,37 @@ export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
             + 'crop list exists and is being withheld.',
     ),
 
+    // ── private for exactly one release — P6.3 (#1812) ──
+    //
+    // These will be PUBLISHED. They are `private` here for the same reason
+    // `indexable` was, and the reason is a deployment one rather than a
+    // privacy one: `scripts/entrypoint.sh` applies migrations when an image
+    // ships, so a Watchtower pin reverts the CODE while leaving the SCHEMA
+    // migrated — and the inverse, rolling the MIGRATION back under running
+    // code, leaves a projection writer naming a column the database no longer
+    // has. Every refresh would then fail, for every farm, including farms with
+    // no images at all. So the columns must be contained in a released tag
+    // before this writer may copy them.
+    //
+    // Flipping either of these to `published()` is the next PR's first line,
+    // together with the sharp pipeline that writes them. The allowlist is
+    // deliberately the thing that has to change: it makes "the columns exist"
+    // and "the columns are published" two separate, reviewable decisions.
+    //
+    // Note what this does NOT defer. A farm can have no logo at all, so the
+    // page must render without one regardless — the private phase is not a
+    // period during which the surface is broken, it is a period during which
+    // the surface is exactly what it is today.
+    logoMediaHash: privateField(
+        'P6.3 (#1812) — the column ships one release ahead of its writer, so a '
+            + 'rollback of the migration cannot break projection refresh for every '
+            + 'farm. Becomes `published()` with the image pipeline.',
+    ),
+    photoMediaHashes: privateField(
+        'P6.3 (#1812) — same phase rule as `logoMediaHash`. Becomes '
+            + '`published()` with the image pipeline.',
+    ),
+
     // ── private ──
     id: privateField(
         'The brand row’s own surrogate key. The projection is keyed by `handle`, '
