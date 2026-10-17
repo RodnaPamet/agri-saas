@@ -1,7 +1,8 @@
 import { getRequestConfig } from 'next-intl/server';
 import { cookies, headers } from 'next/headers';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, isLocale } from '@/lib/i18n/locales';
-import { bundlesFor } from '@/lib/i18n/bundles';
+import { bundlesFor, type Surface } from '@/lib/i18n/bundles';
+import { AUTH_SURFACE_HEADER } from '@/lib/i18n/auth-surface';
 import { PUBLIC_SURFACE_HEADER } from '@/lib/i18n/public-surface';
 
 /**
@@ -41,16 +42,18 @@ export default getRequestConfig(async () => {
      * is the safe default: a missing header costs bytes, where a wrongly-set
      * one would strip copy from a real screen.
      */
-    let isPublic = false;
+    let surface: Surface = 'app';
     try {
-        isPublic = (await headers()).get(PUBLIC_SURFACE_HEADER) === '1';
+        const h = await headers();
+        if (h.get(PUBLIC_SURFACE_HEADER) === '1') surface = 'public';
+        else if (h.get(AUTH_SURFACE_HEADER) === '1') surface = 'auth';
     } catch {
         // No request header store (a static context) — assume the app.
     }
 
     return {
         locale,
-        messages: await loadBundles(locale, isPublic),
+        messages: await loadBundles(locale, surface),
     };
 });
 
@@ -66,9 +69,9 @@ export default getRequestConfig(async () => {
  * `tests/helpers/catalogue.ts` throws on the same condition. So the spread
  * below cannot silently drop a namespace to a later bundle's copy.
  */
-async function loadBundles(locale: string, isPublic: boolean) {
+async function loadBundles(locale: string, surface: Surface) {
     const parts = await Promise.all(
-        bundlesFor(isPublic).map(
+        bundlesFor(surface).map(
             (bundle) =>
                 import(`../messages/${locale}/${bundle}.json`) as Promise<{
                     default: Record<string, unknown>;
