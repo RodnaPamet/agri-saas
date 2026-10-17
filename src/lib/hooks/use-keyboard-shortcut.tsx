@@ -381,7 +381,7 @@ export function useKeyboardShortcut(
 
     const resolved = useMemo(
         () => resolveOptions(options),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are the option FIELDS, not the `options` object, so a caller passing a fresh literal each render does not re-resolve. The rule wants `options`; depending on its identity is what this is avoiding (#1730)
         [
             options.enabled,
             options.priority,

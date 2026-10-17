@@ -544,7 +544,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                     },
                 },
             ]),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- read 2026-10-17 for #1730: no state value is omitted. `pdfBusyFor` and `downloadTreatmentPdf` ARE listed, which is what keeps the per-row PDF button from firing a stale handler (#2033 is the sibling that was not so lucky)
         [tenantSlug, t, te, pdfBusyFor, downloadTreatmentPdf],
     );
 

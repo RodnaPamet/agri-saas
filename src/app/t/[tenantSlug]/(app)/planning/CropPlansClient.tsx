@@ -164,7 +164,7 @@ function CropPlansPageInner({
                     meta: { mobileCard: { slot: 'status', label: t('colStatus') } },
                 },
             ]),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- read 2026-10-17 for #1730: the body closes over no state value absent from these deps. Verified against the sibling column memos, one of which (`EvidenceClient`) did omit one and froze two columns pre-hydration (#2033)
         [tenantSlug, t],
     );
 

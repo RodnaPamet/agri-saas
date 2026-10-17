@@ -1080,7 +1080,7 @@ function TaskLinksTable({
                       } as Parameters<typeof createColumns<TaskLinkRow>>[0][number]]
                     : []),
             ]),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- read 2026-10-17 for #1730: the body closes over no state value absent from these deps, so the memo is one-shot per permission/translator change by design. Verified rather than assumed, because the sibling memo in `EvidenceClient` had the same shape and DID omit a changing value (#2033)
         [canWrite, onRemove, t, te],
     );
     return (

@@ -93,7 +93,7 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
     const router = useRouter();
     useEffect(() => {
         if (searchParams?.get('create') === '1') {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-shot URL->state read on mount: `?create=1` opens the modal and is then stripped from the URL, so the effect is deliberately not re-entrant. Known limit of the `[]` deps: a CLIENT-SIDE navigation back to `?create=1` will not re-open it, because the effect never runs again (#1730)
             setIsCreateOpen(true);
             const next = new URLSearchParams(searchParams.toString());
             next.delete('create');

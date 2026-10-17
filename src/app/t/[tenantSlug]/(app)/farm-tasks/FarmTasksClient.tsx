@@ -416,7 +416,7 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
                     meta: { mobileCard: { slot: 'meta' } },
                 },
             ]),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- read 2026-10-17 for #1730: `dueAt` and `title` appear in this body only as a column id, an `accessorKey` and `row.original.*`; the state variables of those names belong to the create form above and never enter the memo. No state value is omitted (#2033 is the sibling where one was)
         [t, te, canWrite, currentUserId, markingId, markDone],
     );
 
