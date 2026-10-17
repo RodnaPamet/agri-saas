@@ -20,15 +20,32 @@
  * `photoMediaHashes` columns rather than this joining back to `FarmBrand`:
  * the authority has to be the thing whose presence means "published".
  *
- * ## Both reads bypass RLS, and must
- *
  * There is no principal: an anonymous visitor has no tenant. The projection is
  * tenantless by design, so `runWithoutRls({ reason: 'public-projection-read' })`
  * is the established reason for reading it (P6.5).
  *
- * The `FileRecord` read is different and carries its own reason,
- * `public-media-read`: that table IS tenant-scoped, and this reads it with no
- * tenant. The bypass is sound only
+ * ## THE PRECONDITION THIS DEPENDS ON, stated because it is not enforced here
+ *
+ * "The row belongs to whichever tenant published that image" is true only if
+ * the WRITE path refuses to publish a hash the tenant does not own. Nothing
+ * below checks that, and nothing can: by the time a hash is in a projection,
+ * the question of who owned the bytes has already been decided.
+ *
+ * So a writer that let a farm set `photoMediaHashes` to another tenant's hash
+ * would make this route serve that tenant's file — the projection would
+ * reference it, and the read below would dutifully fetch it. The capability
+ * would be cross-tenant, and the fault would be invisible from here.
+ *
+ * At the time of writing nothing populates these columns at all
+ * (`BRAND_FIELD_DECISIONS` marks both brand fields `private`), so there is no
+ * live exposure. The surface that populates them MUST verify that each hash
+ * resolves to a `FileRecord` in the writing tenant, and must do it under the
+ * tenant's own RLS context rather than a bypass.
+ *
+ * ## Both reads bypass RLS, and must
+ *
+ * The `FileRecord` read carries its own reason, `public-media-read`: that
+ * table IS tenant-scoped, and this reads it with no tenant. The bypass is sound only
  * because the projection lookup has already answered the authorisation
  * question — the hash is one a published farm chose to publish. Reversing the
  * two reads would turn this into a cross-tenant file lookup by hash, which is
