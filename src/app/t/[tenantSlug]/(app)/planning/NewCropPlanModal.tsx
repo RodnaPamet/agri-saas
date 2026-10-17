@@ -145,7 +145,7 @@ export function NewCropPlanModal({
         setShowNewVariety(false);
         setNvName('');
         setNvMaturity('');
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- `[open]` ONLY, and the omission is load-bearing: `localSeasons` / `localCropTypes` / `localVarieties` are a WORKING SET, seeded from the props here and then APPENDED TO locally when the user creates a season, crop type or variety from inside this modal (see the three `setLocal*((prev) => [...prev, …])` calls below). Adding `seasons`/`cropTypes`/`varieties` to these deps would re-seed on any parent refresh and DISCARD what the user just created, so the naive fix is a regression (#1730)
     }, [open]);
     /* eslint-enable react-hooks/set-state-in-effect */
 

@@ -890,8 +890,8 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
             // renders it as the card's footer.
             meta: { disableTruncate: true, mobileCard: { slot: 'actions' } },
         },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    ]), [t, tr, permissions, apiUrl, tenantSlug]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `hydratedNow` IS listed deliberately (#2033). It is `null` on SSR and the first client render and becomes a `Date` once, on mount (`useHydratedNow` has `[]` deps and never ticks), so listing it costs exactly ONE extra rebuild of these column definitions per mount — not one per tick. Omitting it froze the `retention` and `freshness` cell closures on `now === null` for the lifetime of the page, and `getRetentionStatus` returns a green "Active" badge on `!now`, so expired and expiring evidence rendered as compliant. The remaining omissions are the stable setters and refs above.
+    ]), [t, tr, permissions, apiUrl, tenantSlug, hydratedNow]);
 
     return (
         <ListPageShell className="animate-fadeIn gap-section">

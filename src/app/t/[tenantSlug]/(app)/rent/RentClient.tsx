@@ -331,7 +331,7 @@ export function RentClient({
                     meta: { mobileCard: { slot: 'actions' } },
                 },
             ]),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- read 2026-10-17 for #1730: `error` matches in this body only as a Tailwind token (`text-content-error`), not as the state variable. No state value is omitted (#2033)
         [t, tc, tl, permissions.canWrite],
     );
 
