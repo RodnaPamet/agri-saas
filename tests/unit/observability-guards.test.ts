@@ -13,6 +13,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 // ─── Helpers ───
 
 function findTsFiles(dir: string, results: string[] = []): string[] {
@@ -28,8 +30,20 @@ function findTsFiles(dir: string, results: string[] = []): string[] {
     return results;
 }
 
+/**
+ * Read a source file with its COMMENTS BLANKED (#1774).
+ *
+ * `blankNonCode` preserves every character position, so the `idx + 1` line
+ * numbers the violation reports below still point at the real line. That is
+ * why this is a blanking pass and not a strip.
+ *
+ * Strings are deliberately NOT blanked: the `withApiErrorHandling` coverage
+ * check further down asks whether the wrapper is CALLED, and no call to it
+ * lives inside a string literal — whereas blanking strings would be needed
+ * only by a guard whose subject is message text.
+ */
 function readFile(filePath: string): string {
-    return fs.readFileSync(filePath, 'utf-8');
+    return blankNonCode(fs.readFileSync(filePath, 'utf-8'));
 }
 
 const SRC = path.resolve(__dirname, '../../src');
@@ -51,10 +65,6 @@ describe('Observability Guard: No raw console in app-layer', () => {
             const content = readFile(file);
             const lines = content.split('\n');
             lines.forEach((ln, idx) => {
-                // Skip comments
-                const trimmed = ln.trim();
-                if (trimmed.startsWith('//') || trimmed.startsWith('*')) return;
-
                 if (/console\.(log|warn|error)\s*\(/.test(ln)) {
                     violations.push({
                         file: path.relative(SRC, file),
@@ -96,9 +106,6 @@ describe('Observability Guard: No raw console in route handlers', () => {
             const content = readFile(file);
             const lines = content.split('\n');
             lines.forEach((ln, idx) => {
-                const trimmed = ln.trim();
-                if (trimmed.startsWith('//') || trimmed.startsWith('*')) return;
-
                 if (/console\.(log|warn|error)\s*\(/.test(ln)) {
                     violations.push({
                         file: path.relative(SRC, file),

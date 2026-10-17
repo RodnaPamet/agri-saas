@@ -54,7 +54,6 @@ import { findSourceTextScanners } from '../helpers/source-text-scanners';
  * Do not add to this list: a new guard should blank from the start.
  */
 const AWAITING_CONVERSION: readonly string[] = [
-    'tests/guardrails/admin-route-coverage.test.ts',
     'tests/guardrails/api-read-rate-limit.test.ts',
     'tests/guardrails/cva-primitives.test.ts',
     'tests/guardrails/deploy-env-parity.test.ts',
@@ -65,8 +64,6 @@ const AWAITING_CONVERSION: readonly string[] = [
     'tests/guardrails/pr-1-tenant-tables-org-parity.test.ts',
     'tests/guardrails/redis-prod-required.test.ts',
     'tests/guardrails/table-platform-drift.test.ts',
-    'tests/guards/api-key-auth-enabled.test.ts',
-    'tests/guards/audit-structured-events.test.ts',
     'tests/guards/automation-event-catalog-coherence.test.ts',
     'tests/guards/cardvariants-server-import.test.ts',
     'tests/guards/donut-chart-centering.test.ts',
@@ -85,7 +82,6 @@ const AWAITING_CONVERSION: readonly string[] = [
     'tests/guards/r31-left-palette.test.ts',
     'tests/guards/rls-coverage-skip-visibility.test.ts',
     'tests/guards/sign-out-purges.test.ts',
-    'tests/guards/slow-mode-escape-is-not-throttled.test.ts',
     'tests/guards/sw-revision-stamp.test.ts',
     'tests/unit/audit-guardrails.test.ts',
     'tests/unit/data-table.test.ts',
@@ -95,9 +91,7 @@ const AWAITING_CONVERSION: readonly string[] = [
     'tests/unit/middleware-org-route-structural.test.ts',
     'tests/unit/no-direct-prisma.test.ts',
     'tests/unit/notification-eligibility-guardrail.test.ts',
-    'tests/unit/observability-guards.test.ts',
     'tests/unit/rsc-regression.test.ts',
-    'tests/unit/tenant-isolation-structural.test.ts',
 ];
 
 describe('a source-scanning guard blanks its comments (#1774)', () => {

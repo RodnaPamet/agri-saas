@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 // ─── Configuration ───
 
 /**
@@ -146,7 +148,12 @@ describe('Admin API route authorization coverage', () => {
             // Route file must exist
             expect(fs.existsSync(fullPath)).toBe(true);
 
-            const content = fs.readFileSync(fullPath, 'utf-8');
+            // #1774 — blanked. `hasGuard` is asserted TRUE, so a route
+            // whose docblock merely NAMES `requirePermission` would have
+            // satisfied its own authorization check. Measured before
+            // converting: 48 of 48 listed routes call it in real code, so
+            // this closes a hole rather than reporting one.
+            const content = blankNonCode(fs.readFileSync(fullPath, 'utf-8'));
 
             // Must import at least one admin guard utility
             const hasGuard = ADMIN_GUARD_PATTERNS.some(pattern =>
@@ -196,7 +203,8 @@ describe('Admin API route authorization coverage', () => {
             const fullPath = path.join(BASE_DIR, routePath);
             if (!fs.existsSync(fullPath)) continue;
 
-            const content = fs.readFileSync(fullPath, 'utf-8');
+            // #1774 — blanked, as above.
+            const content = blankNonCode(fs.readFileSync(fullPath, 'utf-8'));
             const hasGuard = ADMIN_GUARD_PATTERNS.some(p => content.includes(p));
             const usesRawCtx = content.includes('getTenantCtx');
 

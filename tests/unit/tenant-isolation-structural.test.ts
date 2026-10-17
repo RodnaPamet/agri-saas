@@ -10,6 +10,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const SRC_ROOT = path.resolve(__dirname, '../../src');
 
 function walkDir(dir: string, ext = '.ts'): string[] {
@@ -47,7 +49,9 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             const relPath = filePath.replace(SRC_ROOT + path.sep, '');
 
             it(`${relPath} must NOT use session.tenantId`, () => {
-                const content = fs.readFileSync(filePath, 'utf8');
+                // #1774 — blanked: a comment naming `getLegacyCtx` must
+                // not read as a call to it.
+                const content = blankNonCode(fs.readFileSync(filePath, 'utf8'));
                 const lines = content.split('\n');
                 const violations = lines.filter((line) => {
                     const trimmed = line.trim();
@@ -394,7 +398,8 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
                 const routeFile = path.join(apiDir, dir, 'route.ts');
                 if (!fs.existsSync(routeFile)) continue;
 
-                const content = fs.readFileSync(routeFile, 'utf8');
+                // #1774 — blanked, as above.
+                const content = blankNonCode(fs.readFileSync(routeFile, 'utf8'));
                 const usesLegacyCtx = content.includes('getLegacyCtx');
                 const usesUsecase = /import.*from.*usecases/.test(content);
 
@@ -427,7 +432,8 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
                 const relPath = filePath.replace(SRC_ROOT + path.sep, '');
 
                 it(`${relPath} must NOT use flat fetch('/api/...')`, () => {
-                    const content = fs.readFileSync(filePath, 'utf8');
+                    // #1774 — blanked, as above.
+                    const content = blankNonCode(fs.readFileSync(filePath, 'utf8'));
                     const lines = content.split('\n');
                     // Global (non-tenant-scoped) API routes are allowed
                     const GLOBAL_APIS = ['/api/risk-templates', '/api/auth/'];

@@ -37,6 +37,8 @@
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = resolve(__dirname, '../..');
 
 /**
@@ -58,7 +60,11 @@ const ESCAPE_ROUTES = [
 ];
 
 function read(rel: string): string {
-    return readFileSync(resolve(ROOT, rel), 'utf8');
+    // Comments blanked (#1774): this guard asks whether the escape route
+    // CALLS the wrapper and the throttle, and a docblock explaining the
+    // exemption names both. Positions are preserved, so any index-based
+    // reader below still points at the real source.
+    return blankNonCode(readFileSync(resolve(ROOT, rel), 'utf8'));
 }
 
 describe('slow mode — the escape routes exist', () => {

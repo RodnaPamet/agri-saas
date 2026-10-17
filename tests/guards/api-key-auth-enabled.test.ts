@@ -23,8 +23,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Comments blanked (#1774): the assertions below ask whether the scope
+// enforcement is CALLED. A docblock naming `enforceApiKeyScope` must not
+// satisfy a `toBe(true)` that means "this route enforces scope".
+const read = (rel: string) =>
+    blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 /**
  * Re-read rather than imported, so the guard sees the SOURCE, not a bundle.
