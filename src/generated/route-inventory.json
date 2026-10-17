@@ -1251,6 +1251,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/farm-brand/media",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/farm-brand/publication",
       "status": "live",
       "documented": true

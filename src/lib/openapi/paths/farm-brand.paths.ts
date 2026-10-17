@@ -178,7 +178,11 @@ export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
             + '**Editing a PUBLISHED farm refreshes its page in the same call**, reported as `reprojected`. An edit that did not would succeed while changing nothing a visitor sees.\n\n'
             + '**Per-field visibility (P6.6).** `hideTagline`, `hideAbout`, `hideOblast` and `hideCrops` withhold a field from `/f/{handle}` WITHOUT clearing it. They follow the same omitted-means-untouched rule as the content fields, which is what lets an autosaving editor send one flag without disturbing another — or the text it hides.\n\n'
             + 'There is deliberately no flag for `handle` or `displayName`: both are publication preconditions, so a published farm cannot withhold them. The public projection omits a hidden field entirely, and a visitor cannot distinguish a hidden field from an unset one — which is intentional, because revealing that something is withheld is the thing hiding it is meant to avoid.\n\n'
-            + '**Refusal codes.** None of its own — the bounds are schema validation, and the admin check is the usual tenant-role refusal.',
+            + '**Media.** `logoMediaHash` and `photoMediaHashes` carry CONTENT HASHES returned by `POST /farm-brand/media`, never file ids or URLs. Array order is display order, and removing a hash is how a photograph is withdrawn — there is no visibility flag for images, because the bytes live in storage under an address that does not depend on this field, so clearing it withholds nothing it cannot restore.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `FARM_MEDIA_NOT_PUBLISHABLE` — a hash this farm may not publish. ONE code for every reason: not this tenant\u2019s file, not uploaded through `POST /farm-brand/media` (the `farm-media` storage domain), deleted, or never finished storing. They are deliberately indistinguishable, because telling them apart would say whether a hash exists elsewhere in the system. Re-upload the image.\n'
+            + '- `FARM_MEDIA_TOO_MANY` — more photographs than a profile may show. The limit is on the wire as `maxPhotos` rather than only in the sentence, so a translated message can name the figure.\n\n'
+            + 'Otherwise none of its own \u2014 the bounds are schema validation, and the admin check is the usual tenant-role refusal.',
         tags: ['Farm profile'],
         params: TenantParams,
         body: UpdateFarmBrandSchema,
@@ -235,6 +239,43 @@ export function registerFarmBrandPaths(registry: OpenAPIRegistry): void {
             content: {
                 'application/pdf': z.string().openapi({ format: 'binary' }),
             },
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/farm-brand/media',
+        operationId: 'uploadFarmBrandMedia',
+        summary: 'Upload an image for the public profile',
+        description:
+            'Stores an image and answers its CONTENT HASH. It does NOT publish anything — putting the hash on `logoMediaHash` or `photoMediaHashes` via `PATCH /farm-brand` is what decides whether an image appears, where, and as what.\n\n'
+            + 'Two steps on purpose. An upload that also published would make dropping a file onto the page a publication decision, and there would be no way to upload four photographs and then choose two. It also makes a retry safe: the same bytes give the same hash, so a dropped connection does not produce a second gallery entry.\n\n'
+            + '**EXIF, XMP and GPS are stripped** before the bytes are stored (#1812), by re-encoding. On this surface that is the point rather than a precaution: a farmer photographs a field FROM the field, so the GPS tag in that photo is the parcel\u2019s location. Format is preserved and the pixels are unchanged; orientation is baked in first, so a portrait phone photo is stored upright rather than relying on a tag that is about to be removed.\n\n'
+            + 'JPEG, PNG and WebP only \u2014 narrower than the shared upload allowlist, because only formats the strip pipeline re-encodes may be published. The bytes are AV-scanned before the decode, so a malformed container reaches a scanner before it reaches an image decoder.\n\n'
+            + 'The hash is NOT a capability. Holding one does not make an image public: `GET /api/public/media/{hash}` serves it only once a PUBLISHED profile references it, and only this tenant can put it there.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `INVALID_FILE` \u2014 no `file` part in the form data, or it was not a file.\n'
+            + '- `IMAGE_UNREADABLE` \u2014 the magic number said image and the decoder disagreed. A different photo, not the same one re-exported.\n'
+            + '- `FILE_TYPE_NOT_ALLOWED` \u2014 not a JPEG, PNG or WebP, checked on the bytes rather than the declared type.\n'
+            + '- `FILE_TOO_LARGE`, `FILE_EMPTY` \u2014 the shared upload bounds.',
+        tags: ['Farm profile'],
+        params: TenantParams,
+        bodyContentType: 'multipart/form-data',
+        body: z.object({
+            file: z.string().openapi({ format: 'binary' }),
+        }),
+        success: {
+            status: 201,
+            description:
+                'The stored image. `hash` is what `PATCH /farm-brand` accepts and what the public media route resolves.',
+            schema: z.object({
+                hash: z.string().openapi({
+                    description: 'sha256 of the STORED bytes, 64 lower-case hex characters.',
+                }),
+                mimeType: z.string(),
+                sizeBytes: z.number(),
+                fileRecordId: z.string(),
+            }),
         },
     });
 

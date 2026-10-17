@@ -144,6 +144,23 @@ export function sanitizeFileName(name: string): string {
  * domain rather than `general` so an operator can find every invoice by
  * key prefix, and so a future retention rule can treat commercial
  * paperwork differently from a field photo.
+ *
+ * `farm-media` — images a farm may publish on its profile (P6.3, #1812). This
+ * one is load-bearing rather than organisational, and the difference is worth
+ * stating because the next person may be tempted to fold it into `general`.
+ *
+ * A farm publishes an image by putting its CONTENT HASH on `FarmBrand`, and
+ * `/api/public/media/{hash}` serves any hash a published projection
+ * references. Ownership alone is not a sufficient check there: every
+ * `FileRecord` a tenant owns has a hash, so a tenant could publish the hash of
+ * an evidence photo of something private, or of a supplier invoice PDF, and
+ * the route would serve it on an indexable page with that file's own
+ * `Content-Type`.
+ *
+ * So the writer requires the domain to be `farm-media` as well as the tenant
+ * to match. That makes "uploaded in order to be published" a property of the
+ * ROW rather than a promise about which UI was used, and it means an evidence
+ * photo cannot be published by hash however the request is shaped.
  */
 export const STORAGE_DOMAINS = [
     'evidence',
@@ -153,11 +170,12 @@ export const STORAGE_DOMAINS = [
     'general',
     'spatial',
     'cost-invoice',
+    'farm-media',
 ] as const;
 
 export type StorageDomain = (typeof STORAGE_DOMAINS)[number];
 
-const VALID_DOMAINS: readonly StorageDomain[] = ['evidence', 'reports', 'exports', 'temp', 'general', 'spatial', 'cost-invoice'] as const;
+const VALID_DOMAINS: readonly StorageDomain[] = [...STORAGE_DOMAINS];
 
 // ─── Tenant Object Key Builder ───
 

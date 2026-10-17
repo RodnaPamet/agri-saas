@@ -6498,6 +6498,8 @@
         "EVIDENCE_FILE_NOT_FOUND": "That evidence file was not found.",
         "EVIDENCE_NOT_FOUND": "That evidence was not found.",
         "FARM_BRAND_CONSENT_REQUIRED": "Publishing needs your consent first.",
+        "FARM_MEDIA_NOT_PUBLISHABLE": "One of those images is no longer available. Upload it again.",
+        "FARM_MEDIA_TOO_MANY": "A profile may show up to {maxPhotos} photographs.",
         "FARM_BRAND_DISPLAY_NAME_REQUIRED": "A public name is required before publishing.",
         "FARM_BRAND_HANDLE_REQUIRED": "Choose a public address for the farm before publishing.",
         "FARM_BRAND_NOT_FOUND": "This farm has no public profile yet.",

@@ -74,6 +74,32 @@ export const UpdateFarmBrandSchema = z.object({
      */
     indexable: z.boolean().optional(),
     /**
+     * The profile's logo, as the CONTENT HASH of an uploaded image — P6.3
+     * (#1812). `null` removes it.
+     *
+     * A hash and not a file id, because the hash is what the public route
+     * resolves and what the projection carries. Validated for SHAPE here (64
+     * lower-case hex) so a malformed value is refused before any query; which
+     * hashes this tenant may actually publish is a database question and lives
+     * in `assertPublishableMediaHashes`.
+     */
+    logoMediaHash: z
+        .string()
+        .regex(/^[0-9a-f]{64}$/, 'Not a content hash')
+        .nullable()
+        .optional(),
+    /**
+     * Gallery photographs, ordered, as content hashes.
+     *
+     * Array order IS display order. No `max()` here deliberately: the cap is
+     * enforced in the usecase so the refusal can name the limit, where a Zod
+     * `max` would answer with a validation error naming an array index that an
+     * owner cannot act on.
+     */
+    photoMediaHashes: z
+        .array(z.string().regex(/^[0-9a-f]{64}$/, 'Not a content hash'))
+        .optional(),
+    /**
      * Per-field visibility — P6.6 (#1815). One flag per optional published
      * field; `true` withholds it from `/f/{handle}` while the text stays
      * stored.

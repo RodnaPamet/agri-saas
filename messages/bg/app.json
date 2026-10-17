@@ -6498,6 +6498,8 @@
         "EVIDENCE_FILE_NOT_FOUND": "Файлът към доказателството не беше намерен.",
         "EVIDENCE_NOT_FOUND": "Доказателството не беше намерено.",
         "FARM_BRAND_CONSENT_REQUIRED": "Публикуването изисква Вашето съгласие.",
+        "FARM_MEDIA_NOT_PUBLISHABLE": "Някоя от тези снимки вече не е достъпна. Качете я отново.",
+        "FARM_MEDIA_TOO_MANY": "Профилът може да показва най-много {maxPhotos} снимки.",
         "FARM_BRAND_DISPLAY_NAME_REQUIRED": "Въведете публично име, преди да публикувате.",
         "FARM_BRAND_HANDLE_REQUIRED": "Изберете адрес на страницата, преди да публикувате.",
         "FARM_BRAND_NOT_FOUND": "Това стопанство още няма публична страница.",
