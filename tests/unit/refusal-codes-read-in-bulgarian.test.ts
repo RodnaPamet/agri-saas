@@ -291,6 +291,37 @@ const BATCH_11: ReadonlyArray<[code: string, english: string]> = [
     ['UNSUPPORTED_FILE_TYPE', 'Upload a shapefile (.zip), KML (.kml/.kmz), or GeoJSON (.geojson/.json).'],
 ];
 
+/**
+ * Batch 12 — seven codes whose Bulgarian comes from the catalogue, not from me.
+ *
+ * Every term here was looked up before it was written, and two of the obvious
+ * guesses were WRONG:
+ *
+ *   • "Machine operator" is «Механизатор», not «машинен оператор» — and the
+ *     existing role refusals read «С роля „Механизатор“ не можете да …», so
+ *     OPERATOR_SCOPE follows that sentence shape rather than inventing one.
+ *   • "Listing" is «Обява», not «оферта». `exchange.offer.*` uses «оферта»
+ *     for an OFFER; a listing withdrawn is «Обявата е оттеглена».
+ *
+ * "verify/verified" is «потвърден» across the catalogue
+ * (`admin.ledgerIntegrity.verifiedIntact`), so a verified farm is «потвърдено
+ * стопанство». «дневник» for the farm record is the БАБХ term the product
+ * already uses.
+ *
+ * The three market-price codes in the backlog are deliberately NOT here: they
+ * turn on whether "commodity" is «стока» or «култура» on that surface, and on
+ * a word for "denomination" that the catalogue does not yet have.
+ */
+const BATCH_12: ReadonlyArray<[code: string, english: string]> = [
+    ['AI_BUDGET_REQUIRES_VERIFIED_FARM', 'This farm must be verified before it can use AI features.'],
+    ['FARM_PROFILE_EIK_NOT_EDITABLE', 'The EIK of a verified farm cannot be changed.'],
+    ['ITEM_NAME_ALREADY_EXISTS', 'A product with that name already exists.'],
+    ['LISTING_INTEREST_ALREADY_SENT', 'You have already expressed interest in this listing.'],
+    ['OPERATOR_SCOPE', 'A machine operator cannot use this surface.'],
+    ['PESTICIDE_REGULATORY_FIELDS_REQUIRED', 'A plant protection product needs its registration number.'],
+    ['WRITE_FORBIDDEN_FOR_ROLE', 'You do not have permission to modify records in this context.'],
+];
+
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
 
 beforeEach(() => {
@@ -1394,5 +1425,107 @@ describe('#1918 batch 11 — the protocol tranche, and one source message rewrit
         expect(src).not.toMatch(/belongs to a different tenant/);
         expect(src).not.toMatch(/INVALID_LINK[^;]*\$\{missing\[0\]\}`/);
         expect(src).toContain('{ id: missing[0] }');
+    });
+});
+
+describe('#1918 batch 12 — vocabulary taken from the catalogue, not invented', () => {
+    it('ranges over the batch — the denominator', () => {
+        console.log(`[refusal-bg] batch 12 added ${BATCH_12.length} entries`);
+        expect(BATCH_12.length).toBe(7);
+    });
+
+    it.each(BATCH_12.map(([c, e]) => [c, e] as const))(
+        'batch 12: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('OPERATOR_SCOPE uses the role name the rest of the product uses', async () => {
+        // «Механизатор», not «машинен оператор». The role already has a name
+        // in this catalogue and a refusal that invents a second one teaches a
+        // farmer that there are two things — the #1966 defect in a new place.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('OPERATOR_SCOPE', 'A machine operator cannot use this surface.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toContain('Механизатор');
+        expect(p.error.message).not.toContain('машинен оператор');
+    });
+
+    it('LISTING_INTEREST_ALREADY_SENT says «обява», the word for a listing', async () => {
+        // «оферта» is an OFFER elsewhere in the exchange surface. Using it for
+        // a listing would collide with a term already in use for something
+        // adjacent, which is worse than a plain mistranslation.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('LISTING_INTEREST_ALREADY_SENT', 'You have already expressed interest in this listing.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toContain('обява');
+    });
+});
+
+describe('#1918 batch 12b — the market-price tranche, on the owner\'s vocabulary ruling', () => {
+    /**
+     * Owner ruling 2026-10-17, and both halves needed asking.
+     *
+     * "commodity" already had TWO translations: «Стока» on the exchange
+     * surface, «Култура» on grain. This surface takes «стока», because the
+     * override table prices DIESEL (~1.95 EUR/l in its own docblock) and
+     * diesel is not a култура. One word has to cover the whole set.
+     *
+     * "denomination" had none, and the literal «деноминация» is a FALSE
+     * FRIEND — in Bulgarian it means currency redenomination, the 1999 BGN
+     * change. Ruled «мерна единица и валута», which spells out what it is.
+     *
+     * The sentences name the commodity rather than only categorising it,
+     * because all three sites already pass `{ commodity }`, and
+     * OVERRIDE_DENOMINATION_CHANGED passes `stored` and `expected` too — so
+     * "recorded in a different denomination" becomes "recorded in EUR/l
+     * rather than EUR/t", which is the fact the superuser needs.
+     */
+    const BATCH_12B: ReadonlyArray<[code: string, english: string, params: Record<string, string>]> = [
+        ['DUPLICATE_COMMODITY', 'The commodity "wheat" appears twice in one day.', { commodity: 'wheat' }],
+        ['UNKNOWN_COMMODITY', '"unobtainium" is not a commodity this platform sets a price for.', { commodity: 'unobtainium' }],
+        ['OVERRIDE_DENOMINATION_CHANGED', 'A live override is recorded in the wrong denomination.',
+            { commodity: 'diesel', stored: 'EUR l', expected: 'EUR t' }],
+    ];
+
+    it.each(BATCH_12B.map(([c, e, pr]) => [c, e, pr] as const))(
+        'batch 12b: %s is replaced with Bulgarian and interpolates',
+        async (code, english, params) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            p.error.params = params;
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            // No placeholder may survive. Every one of these entries takes a
+            // param, so an un-interpolated `{commodity}` on screen is the
+            // failure mode this batch is most exposed to.
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('«деноминация» never reaches a reader — it means currency redenomination', async () => {
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('OVERRIDE_DENOMINATION_CHANGED', 'x');
+        p.error.params = { commodity: 'diesel', stored: 'EUR l', expected: 'EUR t' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).not.toMatch(/деноминаци/i);
+        expect(p.error.message).toContain('мерна единица и валута'.split(' ')[0]);
+        // And it tells the superuser WHICH two, not merely that they differ.
+        expect(p.error.message).toContain('EUR l');
+        expect(p.error.message).toContain('EUR t');
+    });
+
+    it('the market surface says «стока», not «култура» — diesel is not a култура', async () => {
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('UNKNOWN_COMMODITY', 'x');
+        p.error.params = { commodity: 'diesel' };
+        await localizeErrorPayload(p);
+        expect(p.error.message).toContain('стока');
+        expect(p.error.message).not.toMatch(/култура/i);
     });
 });
