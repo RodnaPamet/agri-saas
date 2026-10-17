@@ -358,6 +358,7 @@
             "retentionExpired": "Изтекло",
             "retentionActive": "Активно",
             "retentionExpiring": "Изтича ({days}д)",
+            "retentionPending": "—",
             "retentionNoPolicy": "Без политика",
             "kpiTotal": "Общо доказателства",
             "kpiDraft": "Чернова",
