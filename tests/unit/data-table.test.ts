@@ -1618,6 +1618,8 @@ describe('Schema evolution resilience', () => {
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 describe('Architecture compliance — no ad-hoc tables on list pages', () => {
   const clientDir = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 
@@ -1666,7 +1668,7 @@ describe('Architecture compliance — no ad-hoc tables on list pages', () => {
     const basename = path.basename(filePath);
 
     it(`${basename} uses DataTable (not ad-hoc <table>)`, () => {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = blankNonCode(fs.readFileSync(filePath, 'utf-8'));
       const hasRawTable = /<table[\s>]/.test(content);
       const hasDataTable = /DataTable/.test(content) || /data-table/.test(content);
 
@@ -1679,7 +1681,7 @@ describe('Architecture compliance — no ad-hoc tables on list pages', () => {
     });
 
     it(`${basename} does not import SkeletonTableRow`, () => {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = blankNonCode(fs.readFileSync(filePath, 'utf-8'));
       expect(content).not.toContain('SkeletonTableRow');
     });
   }
@@ -1697,7 +1699,7 @@ describe('Architecture compliance — no ad-hoc tables on list pages', () => {
 
 describe('Table barrel export — surface completeness', () => {
   const barrelPath = path.resolve(__dirname, '../../src/components/ui/table/index.ts');
-  const barrelContent = fs.readFileSync(barrelPath, 'utf-8');
+  const barrelContent = blankNonCode(fs.readFileSync(barrelPath, 'utf-8'));
 
   // Core modules that MUST be re-exported from the barrel
   const REQUIRED_EXPORTS = [
@@ -1778,7 +1780,7 @@ describe('Page-level column definition patterns', () => {
   // Every migrated page with DataTable should use createColumns
   for (const filePath of migratedFiles) {
     const basename = path.basename(filePath);
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = blankNonCode(fs.readFileSync(filePath, 'utf-8'));
 
     if (!content.includes('DataTable')) continue; // skip pages without tables
 

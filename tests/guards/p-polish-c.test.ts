@@ -22,13 +22,28 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
+/**
+ * Read a TS/TSX source file with comments blanked (#1774).
+ *
+ * Split from `readRaw` because the old single helper also served
+ * `package.json`, and blanking JSON is not a no-op — it is damaging. JSON has
+ * no comments, so a `//` inside a string VALUE (every `https://` URL) would be
+ * blanked, and a `/*` in one would open a "comment" that runs to the next
+ * `*\/` and swallows the quotes and braces in between. `JSON.parse` then
+ * fails, or worse succeeds on a corrupted value.
+ */
+const read = (p: string) => blankNonCode(readFileSync(path.join(ROOT, p), "utf-8"));
+
+/** Read a NON-source file verbatim — JSON, and anything else without TS comments. */
+const readRaw = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
 
 describe("PR-C polish — force-directed layout via elkjs", () => {
     describe("1. Dependency", () => {
         it("elkjs is in production dependencies (not devDependencies)", () => {
-            const pkg = JSON.parse(read("package.json")) as {
+            const pkg = JSON.parse(readRaw("package.json")) as {
                 dependencies: Record<string, string>;
                 devDependencies: Record<string, string>;
             };

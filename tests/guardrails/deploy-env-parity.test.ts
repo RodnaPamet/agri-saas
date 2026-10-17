@@ -18,8 +18,14 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
-const ENV_TS = fs.readFileSync(path.join(ROOT, 'src/env.ts'), 'utf8');
+// `src/env.ts` blanked (#1774) — a docblock naming a variable must not read
+// as a declaration of it. `env.prod.example` below is NOT blanked: it is a
+// dotenv file, where `#` starts a comment and a `//` only ever appears inside
+// a URL value.
+const ENV_TS = blankNonCode(fs.readFileSync(path.join(ROOT, 'src/env.ts'), 'utf8'));
 const EXAMPLE = fs.readFileSync(path.join(ROOT, 'deploy/env.prod.example'), 'utf8');
 
 // Optional-shaped in the schema but prod-required via a NODE_ENV superRefine

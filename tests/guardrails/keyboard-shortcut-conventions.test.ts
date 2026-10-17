@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -196,7 +198,7 @@ describe('Keyboard shortcut conventions', () => {
         const violations: { file: string; snippet: string }[] = [];
         for (const file of allFiles) {
             if (ALLOWED_KEYDOWN_LISTENER_FILES.has(file)) continue;
-            const src = fs.readFileSync(file, 'utf-8');
+            const src = blankNonCode(fs.readFileSync(file, 'utf-8'));
             const match = src.match(KEYDOWN_LISTENER_RE);
             if (match) {
                 for (const snippet of match) {
@@ -233,7 +235,7 @@ describe('Keyboard shortcut conventions', () => {
                 continue;
             }
 
-            const src = fs.readFileSync(file, 'utf-8');
+            const src = blankNonCode(fs.readFileSync(file, 'utf-8'));
             if (!src.includes('useKeyboardShortcut(')) continue;
 
             for (const call of findKeyboardShortcutCalls(src)) {
@@ -268,6 +270,9 @@ describe('Keyboard shortcut conventions', () => {
         const docPath = path.join(ROOT, 'docs/keyboard-shortcuts.md');
         expect(fs.existsSync(docPath)).toBe(true);
 
+        // NOT blanked (#1774): this is the Markdown convention doc, which is
+        // prose by definition. A `//` in it is not a comment and `/* */` is not
+        // a construct Markdown has.
         const doc = fs.readFileSync(docPath, 'utf-8');
         // Canonical sections the hook + palette rely on.
         expect(doc).toMatch(/## TL;DR/i);

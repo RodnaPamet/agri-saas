@@ -90,6 +90,16 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * move this constant, so two in flight at once is the shared-ratchet collision
  * the cap exists to prevent, one level up.
  *
+ * Batch 10 moved it 409 -> 405 and finished the NARROW register: the six it
+ * converted each needed a per-read decision, because each reads something that
+ * is not TypeScript alongside something that is — a dotenv file, a Markdown
+ * doc, `package.json`, `*.prisma`, `migration.sql`. Those reads stay raw and
+ * say so at the call site.
+ *
+ * This cap is NOT finished at 405. It counts every guard reading `src/` text
+ * unblanked, which is a broader population than the narrow register ever
+ * covered; the narrow one is done, this one has 405 to go.
+ *
  * Batch 9 moved it 418 -> 409 (twelve conversions), same diff again.
  *
  * Batch 8 moved it 422 -> 418, in the same diff as its conversions. The live
@@ -109,7 +119,7 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * code-shaped literal against file CONTENT (26), which is the actionable
  * list. Two scopes, deliberately; see #1774 for which to use when.
  */
-const UNBLANKED_CAP = 409;
+const UNBLANKED_CAP = 405;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -336,6 +346,18 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/unit/audit-guardrails.test.ts',
             'tests/unit/job-scope-audit.test.ts',
             'tests/unit/job-tenant-isolation-regression.test.ts',
+            // Batch 10, #1774 — the last six of the narrow register. Each
+            // reads a NON-TypeScript file alongside its source, and that read
+            // is left raw with the reason at the call site: a dotenv file
+            // (`#` comments), a Markdown doc, `package.json` (where a `//` in
+            // a URL is data and a `/*` would eat the quotes `JSON.parse`
+            // needs), `*.prisma`, and `migration.sql` (`--` comments).
+            'tests/guardrails/deploy-env-parity.test.ts',
+            'tests/guardrails/keyboard-shortcut-conventions.test.ts',
+            'tests/guards/p-polish-c.test.ts',
+            'tests/guards/p5a-snapshots-table-sidebar.test.ts',
+            'tests/unit/data-table.test.ts',
+            'tests/unit/notification-eligibility-guardrail.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);
