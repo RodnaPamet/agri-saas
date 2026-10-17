@@ -148,6 +148,15 @@ export interface IngestOptions {
     maxBytes?: number;
     /** Component name for the mismatch log line. */
     component: string;
+    /**
+     * Fit an uploaded IMAGE inside this many pixels on its longest edge —
+     * P6.3 (#1812). Omit to keep the original dimensions, which is what every
+     * record-keeping surface wants.
+     *
+     * Passed through to `stripImageMetadata`; see its `maxDimension` for why
+     * this is opt-in rather than a default.
+     */
+    maxImageDimension?: number;
 }
 
 /**
@@ -245,6 +254,7 @@ export async function ingestUploadedFile(
     // a shapefile reaching this choke point is unaffected.
     const { bytes: toStore } = await stripImageMetadata(buffer, mimeType, {
         component: opts.component,
+        maxDimension: opts.maxImageDimension,
     });
 
     // `toStore`, not `buffer` — so `writeResult.sha256` is the digest of the

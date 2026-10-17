@@ -58,6 +58,22 @@ export const FARM_MEDIA_DOMAIN = 'farm-media' as const;
  */
 export const FARM_BRAND_MAX_PHOTOS = 6;
 
+/**
+ * Longest edge of a stored profile image, in pixels.
+ *
+ * Derived from the page rather than chosen round: `/f/{handle}` renders inside
+ * `max-w-2xl`, which is 672 CSS pixels, so 1600 covers that at better than 2x
+ * device pixel ratio with room for a wider layout later.
+ *
+ * It matters more here than it looks. `lighthouserc.json` carries an LCP gate
+ * for `/f/.*`, and that entry's own measurement notes the current LCP element
+ * is the ABOUT PARAGRAPH — text. Put a photograph on the page and the image
+ * becomes the LCP element; at 4000px off a phone camera it would be the worst
+ * possible one. The pipeline strips metadata but does not resize on its own
+ * (deliberately — an evidence photo is a record), so this surface asks.
+ */
+export const FARM_MEDIA_MAX_DIMENSION = 1600;
+
 /** Upload one image for later publication, and return its content hash. */
 export async function uploadFarmBrandMedia(
     ctx: RequestContext,
@@ -74,6 +90,10 @@ export async function uploadFarmBrandMedia(
         domain: FARM_MEDIA_DOMAIN,
         fallbackName: 'photo',
         component: 'farm-brand-media',
+        // Fitted inside 1600px on the longest edge, aspect ratio preserved and
+        // nothing cropped. See FARM_MEDIA_MAX_DIMENSION for why this surface
+        // opts in where the record-keeping surfaces do not.
+        maxImageDimension: FARM_MEDIA_MAX_DIMENSION,
         // Narrowing the shared allowlist, which `IngestOptions` permits; it
         // may not be widened. Only the formats the strip pipeline re-encodes
         // can be published, so a PDF cannot enter this domain at all — the
