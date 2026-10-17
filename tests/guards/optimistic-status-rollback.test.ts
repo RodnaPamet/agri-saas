@@ -24,9 +24,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const FILE = 'src/app/t/[tenantSlug]/(app)/farm-tasks/[taskId]/FarmTaskDetailClient.tsx';
-const SRC = fs.readFileSync(path.join(ROOT, FILE), 'utf8');
+const SRC = blankNonCode(fs.readFileSync(path.join(ROOT, FILE), 'utf8'));
 
 /** A named handler's body, from its declaration to the closing of `finally`. */
 function handlerBody(decl: string): string {
@@ -131,10 +133,10 @@ describe('a create that cannot queue must say so, not show transport vocabulary'
     // the journal entry WAS. Task creation cannot queue yet because the
     // /farm-tasks POST route ignores the Idempotency-Key the outbox sends —
     // see the issue. Until then the copy has to carry that difference.
-    const LIST = fs.readFileSync(
+    const LIST = blankNonCode(fs.readFileSync(
         path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/farm-tasks/FarmTasksClient.tsx'),
         'utf8',
-    );
+    ));
 
     it('maps an offline create failure to translated copy', () => {
         const start = LIST.indexOf('const submit = async ()');

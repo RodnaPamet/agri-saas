@@ -13,10 +13,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const SRC_DIR = path.resolve(__dirname, '../../src');
 
 function readFile(relPath: string): string {
-    return fs.readFileSync(path.resolve(SRC_DIR, relPath), 'utf8');
+    return blankNonCode(fs.readFileSync(path.resolve(SRC_DIR, relPath), 'utf8'));
 }
 
 /**
@@ -89,7 +91,7 @@ describe('Audit Guardrails — No Deprecated logAudit Usage', () => {
         for (const file of allFiles) {
             if (ALLOWED_FILES.includes(file)) continue;
 
-            const content = fs.readFileSync(file, 'utf8');
+            const content = blankNonCode(fs.readFileSync(file, 'utf8'));
             if (content.includes('logAudit(')) {
                 violations.push(path.relative(SRC_DIR, file));
             }
@@ -115,7 +117,7 @@ describe('Audit Guardrails — No Raw PrismaClient Without Middleware', () => {
         for (const file of allFiles) {
             if (ALLOWED_FILES.includes(file)) continue;
 
-            const content = fs.readFileSync(file, 'utf8');
+            const content = blankNonCode(fs.readFileSync(file, 'utf8'));
             if (content.includes('new PrismaClient(')) {
                 violations.push(path.relative(SRC_DIR, file));
             }
@@ -143,7 +145,7 @@ describe('Audit Guardrails — No Unaudited Raw SQL to Domain Tables', () => {
         for (const file of allFiles) {
             if (ALLOWED_FILES.includes(file)) continue;
 
-            const content = fs.readFileSync(file, 'utf8');
+            const content = blankNonCode(fs.readFileSync(file, 'utf8'));
             if (content.includes('$executeRaw')) {
                 // Check if the raw SQL targets a domain table (INSERT/UPDATE/DELETE)
                 for (const table of DOMAIN_TABLES) {

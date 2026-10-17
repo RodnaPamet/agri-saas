@@ -56,21 +56,9 @@ import { findSourceTextScanners } from '../helpers/source-text-scanners';
 const AWAITING_CONVERSION: readonly string[] = [
     'tests/guardrails/deploy-env-parity.test.ts',
     'tests/guardrails/keyboard-shortcut-conventions.test.ts',
-    'tests/guards/cardvariants-server-import.test.ts',
-    'tests/guards/download-route-gate-reachability.test.ts',
-    'tests/guards/epic-67-rollout-coverage.test.ts',
-    'tests/guards/invite-email-locale-wiring.test.ts',
-    'tests/guards/modal-payload-schema-parity.test.ts',
-    'tests/guards/notif-task-due-emit-coverage.test.ts',
-    'tests/guards/offline-spec-chunk-warmup.test.ts',
-    'tests/guards/optimistic-status-rollback.test.ts',
     'tests/guards/p-polish-c.test.ts',
     'tests/guards/p5a-snapshots-table-sidebar.test.ts',
-    'tests/guards/sign-out-purges.test.ts',
-    'tests/unit/audit-guardrails.test.ts',
     'tests/unit/data-table.test.ts',
-    'tests/unit/job-scope-audit.test.ts',
-    'tests/unit/job-tenant-isolation-regression.test.ts',
     'tests/unit/notification-eligibility-guardrail.test.ts',
 ];
 

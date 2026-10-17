@@ -27,6 +27,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = join(__dirname, '../..');
 
 interface Contract {
@@ -88,8 +90,8 @@ function schemaKeys(source: string, schemaName: string): Set<string> {
 
 describe('modal payload ↔ schema parity', () => {
     it.each(CONTRACTS)('$name', ({ modal, schemaName, schemaFile, sends }) => {
-        const modalSource = readFileSync(join(ROOT, modal), 'utf8');
-        const keys = schemaKeys(readFileSync(join(ROOT, schemaFile), 'utf8'), schemaName);
+        const modalSource = blankNonCode(readFileSync(join(ROOT, modal), 'utf8'));
+        const keys = schemaKeys(blankNonCode(readFileSync(join(ROOT, schemaFile), 'utf8')), schemaName);
 
         expect(keys.size).toBeGreaterThan(0); // the parser found something
 

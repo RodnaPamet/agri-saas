@@ -39,6 +39,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /** Specs that take the app offline and interact with the journal modal. */
@@ -52,7 +54,7 @@ function offlineJournalSpecs(): string[] {
             const full = path.join(dir, e.name);
             if (e.isDirectory()) walk(full);
             else if (e.name.endsWith('.spec.ts')) {
-                const src = fs.readFileSync(full, 'utf8');
+                const src = blankNonCode(fs.readFileSync(full, 'utf8'));
                 if (src.includes('setOffline(true)') && src.includes("name: 'Add entry'")) {
                     out.push(path.relative(ROOT, full));
                 }
@@ -82,7 +84,7 @@ function offlineFieldSpecs(): string[] {
             const full = path.join(dir, e.name);
             if (e.isDirectory()) walk(full);
             else if (e.name.endsWith('.spec.ts')) {
-                const src = fs.readFileSync(full, 'utf8');
+                const src = blankNonCode(fs.readFileSync(full, 'utf8'));
                 if (src.includes('setOffline(true)') && /goto\(`\/t\/\$\{[^}]*\}\/field\//.test(src)) {
                     out.push(path.relative(ROOT, full));
                 }
@@ -101,7 +103,7 @@ describe('offline FIELD specs warm the lazy map (#732)', () => {
     });
 
     it.each(offlineFieldSpecs())('%s warms the map before going offline', (rel) => {
-        const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
         // `(` for the same reason as the journal half — the bare identifier
         // also matches the import line.
         expect(src).toContain('waitForFieldMapWarm(');
@@ -110,7 +112,7 @@ describe('offline FIELD specs warm the lazy map (#732)', () => {
     });
 
     it('the helper waits on the map ROOT, not a control that renders without it', () => {
-        const src = fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8'));
         const helper = src.slice(src.indexOf('export async function waitForFieldMapWarm'));
         expect(helper).toMatch(/getByRole\('group'/);
     });
@@ -118,10 +120,10 @@ describe('offline FIELD specs warm the lazy map (#732)', () => {
     it('the field panel really does load the map lazily', () => {
         // If MapCanvas ever becomes a static import the race is gone and this
         // guard is obsolete — fail here and have that conversation.
-        const panel = fs.readFileSync(
+        const panel = blankNonCode(fs.readFileSync(
             path.join(ROOT, 'src/components/offline/OfflineFieldPanel.tsx'),
             'utf8',
-        );
+        ));
         expect(panel).toMatch(/const MapCanvas = dynamic\(/);
         expect(panel).toContain('ssr: false');
     });
@@ -135,7 +137,7 @@ describe('offline journal specs warm the lazy chunk', () => {
     });
 
     it.each(offlineJournalSpecs())('%s CALLS the shared warm-up helper', (rel) => {
-        const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
         // `(` is load-bearing: the bare identifier also appears in the import,
         // so a spec that imported it and then hand-rolled the wait anyway
         // satisfied the first version of this assertion. Found by mutation.
@@ -145,7 +147,7 @@ describe('offline journal specs warm the lazy chunk', () => {
     it.each(offlineJournalSpecs())(
         '%s does not hand-roll the warm-up with the title input',
         (rel) => {
-            const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+            const src = blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
             // The exact regression: clicking Add entry and then waiting only on
             // the title before going offline. The helper is the one place that
             // pairing is allowed to appear.
@@ -162,7 +164,7 @@ describe('offline journal specs warm the lazy chunk', () => {
         // of the mistake is identical: the parcel checkboxes render from data
         // that has already arrived, while the ~200KB map chunk is still in
         // flight — so waiting on them is what `#journal-entry-title` was.
-        const src = fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8'));
         const helper = src.slice(src.indexOf('export async function openTreatmentFormWarm'));
         expect(helper).toMatch(/getByRole\('group',\s*\{\s*name:\s*\/\^Parcel map\//);
     });
@@ -174,31 +176,31 @@ describe('offline journal specs warm the lazy chunk', () => {
         // arrives — assert that, because adding a placeholder carrying the
         // same role and label would satisfy the wait during the very window
         // it exists to close.
-        const canvas = fs.readFileSync(
+        const canvas = blankNonCode(fs.readFileSync(
             path.join(ROOT, 'src/components/ui/map/MapCanvas.tsx'),
             'utf8',
-        );
+        ));
         expect(canvas).toContain("role=\"group\"");
         expect(canvas).toContain('parcelMap');
-        const modal = fs.readFileSync(
+        const modal = blankNonCode(fs.readFileSync(
             path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/journal/TreatmentEntryModal.tsx'),
             'utf8',
-        );
+        ));
         expect(modal).not.toMatch(/import\('@\/components\/ui\/map\/MapCanvas'\)[\s\S]{0,200}loading:/);
     });
 
     it('the OLD guard subject is gone, so this is not enforcing a dead wait', () => {
         // The free-form editor warm-up it replaced: if `openJournalEntryModalWarm`
         // comes back, two warm-ups exist and a spec can satisfy the wrong one.
-        const utils = fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8');
+        const utils = blankNonCode(fs.readFileSync(path.join(ROOT, 'tests/e2e/e2e-utils.ts'), 'utf8'));
         expect(utils).not.toContain('export async function openJournalEntryModalWarm');
     });
 
     it('the skeleton does not claim the editor testid either (kept from #730)', () => {
-        const editor = fs.readFileSync(
+        const editor = blankNonCode(fs.readFileSync(
             path.join(ROOT, 'src/components/ui/RichTextEditor.tsx'),
             'utf8',
-        );
+        ));
         expect(editor).toContain("'rich-text-editor'");
         expect(editor).toContain('data-testid={dataTestId}');
 
@@ -208,7 +210,7 @@ describe('offline journal specs warm the lazy chunk', () => {
         // that cannot find its subject must fail, not shrug.
         const skeleton = path.join(ROOT, 'src/components/ui/skeleton.tsx');
         expect(fs.existsSync(skeleton)).toBe(true);
-        expect(fs.readFileSync(skeleton, 'utf8')).not.toContain('rich-text-editor');
+        expect(blankNonCode(fs.readFileSync(skeleton, 'utf8'))).not.toContain('rich-text-editor');
     });
 
     it('the form really does load the map lazily — otherwise none of this matters', () => {
@@ -220,19 +222,19 @@ describe('offline journal specs warm the lazy chunk', () => {
         // whole MapLibre bundle in the journal LIST page's chunk for every
         // farmer; the other three map sites all use `dynamic` with
         // `ssr: false`.
-        const modal = fs.readFileSync(
+        const modal = blankNonCode(fs.readFileSync(
             path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/journal/TreatmentEntryModal.tsx'),
             'utf8',
-        );
+        ));
         expect(modal).toMatch(/const MapCanvas = dynamic\(/);
         expect(modal).toContain('ssr: false');
     });
 
     it('the editor is still lazy in the EDIT form, which kept it (#730)', () => {
-        const modal = fs.readFileSync(
+        const modal = blankNonCode(fs.readFileSync(
             path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/journal/JournalEntryModal.tsx'),
             'utf8',
-        );
+        ));
         expect(modal).toMatch(/const RichTextEditor = dynamic\(/);
         expect(modal).toContain('ssr: false');
     });

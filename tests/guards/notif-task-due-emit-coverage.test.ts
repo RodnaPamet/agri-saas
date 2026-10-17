@@ -38,8 +38,10 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => readFileSync(path.join(ROOT, p), 'utf-8');
+const read = (p: string) => blankNonCode(readFileSync(path.join(ROOT, p), 'utf-8'));
 
 describe('PR-B TASK_DUE emit coverage', () => {
     const taskSrc = () => read('src/app-layer/usecases/task.ts');

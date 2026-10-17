@@ -16,6 +16,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const WRAPPER = 'src/lib/auth/sign-out.ts';
 
@@ -40,7 +42,7 @@ describe('client sign-out purges cached tenant data', () => {
     it('only the wrapper imports signOut from next-auth/react', () => {
         const offenders = files.filter((rel) => {
             if (rel === WRAPPER) return false;
-            const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+            const src = blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
             return /import\s*\{[^}]*\bsignOut\b[^}]*\}\s*from\s*['"]next-auth\/react['"]/.test(src);
         });
         if (offenders.length > 0) {
@@ -56,7 +58,7 @@ describe('client sign-out purges cached tenant data', () => {
     });
 
     it('the wrapper actually purges, and purges at full strength', () => {
-        const src = fs.readFileSync(path.join(ROOT, WRAPPER), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, WRAPPER), 'utf8'));
         // maxAgeMs: 0 is the point — a sign-out purge that honoured the
         // normal 24h window would clear nothing at all.
         expect(src).toMatch(/sweepClientStores\(\{\s*maxAgeMs:\s*0\s*\}\)/);
@@ -67,12 +69,12 @@ describe('client sign-out purges cached tenant data', () => {
         // This app is used offline by design, so a sign-out can fail to
         // complete. Purging first means the device is clean regardless,
         // which is the entire point of purging.
-        const src = fs.readFileSync(path.join(ROOT, WRAPPER), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, WRAPPER), 'utf8'));
         expect(src.indexOf('sweepClientStores')).toBeLessThan(src.indexOf('await signOut('));
     });
 
     it('a wedged purge cannot become a wedged sign-out', () => {
-        const src = fs.readFileSync(path.join(ROOT, WRAPPER), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, WRAPPER), 'utf8'));
         expect(src).toMatch(/Promise\.race/);
         expect(src).toMatch(/PURGE_BUDGET_MS/);
     });

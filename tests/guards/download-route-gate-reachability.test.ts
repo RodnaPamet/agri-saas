@@ -44,6 +44,8 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = join(__dirname, '..', '..');
 const API = join(ROOT, 'src', 'app', 'api');
 
@@ -107,7 +109,7 @@ export function findUngatedRoutes(
 describe('download routes reach the AV + tenant-key gate', () => {
     const routes = walk(API).map((full) => ({
         rel: full.replace(ROOT + '/', ''),
-        text: readFileSync(full, 'utf8'),
+        text: blankNonCode(readFileSync(full, 'utf8')),
     }));
 
     it('the route scan found a plausible tree', () => {
@@ -123,7 +125,7 @@ describe('download routes reach the AV + tenant-key gate', () => {
         for (const s of USECASE_SEAMS) {
             const p = join(ROOT, s.file);
             expect(existsSync(p)).toBe(true);
-            const src = readFileSync(p, 'utf8');
+            const src = blankNonCode(readFileSync(p, 'utf8'));
             expect(src).toContain(`export async function ${s.fn}`);
             expect(src).toContain('assertTenantKey');
             expect(s.reason.trim().length).toBeGreaterThan(20);

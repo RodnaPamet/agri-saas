@@ -23,6 +23,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const API_DIR = path.join(ROOT, 'src/app/api');
 
@@ -42,7 +44,7 @@ function routeFiles(dir: string, acc: string[] = []): string[] {
 /** Routes that actually send an invite email. */
 function inviteSenders(): Array<{ rel: string; src: string }> {
     return routeFiles(API_DIR)
-        .map((f) => ({ rel: path.relative(ROOT, f), src: fs.readFileSync(f, 'utf8') }))
+        .map((f) => ({ rel: path.relative(ROOT, f), src: blankNonCode(fs.readFileSync(f, 'utf8')) }))
         .filter((f) => f.src.includes('sendInviteEmail('));
 }
 
@@ -54,7 +56,7 @@ describe('invite emails resolve the inviter locale at every call site', () => {
     });
 
     it.each(inviteSenders().map((f) => f.rel))('%s passes an inviter-resolved locale', (rel) => {
-        const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
         expect(src).toContain('inviterLocale(');
         // AWAITED and passed as `locale` — not merely imported. A bare
         // `inviterLocale(...)` would hand a Promise to a string field.
@@ -76,7 +78,7 @@ describe('invite emails resolve the inviter locale at every call site', () => {
         // If `inviterLocale` could throw, awaiting it inside the argument list
         // would take down invite creation — an invite row that is already
         // committed, for an admin who has been told the email went out.
-        const src = fs.readFileSync(path.join(ROOT, 'src/lib/email/inviter-locale.ts'), 'utf8');
+        const src = blankNonCode(fs.readFileSync(path.join(ROOT, 'src/lib/email/inviter-locale.ts'), 'utf8'));
         expect(src).toMatch(/catch\s*\(/);
         expect(src).toContain('RECIPIENT_FALLBACK_LOCALE');
         expect(src).not.toMatch(/throw\s+err/);
