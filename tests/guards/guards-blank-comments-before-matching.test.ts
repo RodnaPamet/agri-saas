@@ -89,8 +89,19 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * Batches must SERIALISE, which is the one scheduling constraint here: both
  * move this constant, so two in flight at once is the shared-ratchet collision
  * the cap exists to prevent, one level up.
+ *
+ * Batches 5-7 (#2038, #2040, #2042) moved it 431 -> 422. They were authored
+ * without noticing this file, which is the mistake the serialisation note
+ * above is about: a second sweep ran in parallel with this one and only the
+ * cap caught it. #2040 happened to land inside the drift allowance and went
+ * green, which is the uncomfortable half — the collision was already live and
+ * invisible for one merge. Those PRs also add a NARROWER register in
+ * `a-source-scanning-guard-blanks-its-comments`: this file counts every guard
+ * reading `src/` text unblanked (422), that one counts the subset matching a
+ * code-shaped literal against file CONTENT (26), which is the actionable
+ * list. Two scopes, deliberately; see #1774 for which to use when.
  */
-const UNBLANKED_CAP = 431;
+const UNBLANKED_CAP = 422;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -265,6 +276,26 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             // the cure as a symptom. That file is outside its scan dir, which
             // is the only reason it had not bitten.
             'tests/guards/no-raw-skeleton-pulse.test.ts',
+            // Batches 5-7, #1774 (#2038 / #2040 / #2042). Two of these were
+            // not hygiene: `cva-primitives` asserted a token that existed
+            // only in the comment recording its REMOVAL, and
+            // `admin-route-coverage` asserted `hasGuard` TRUE from a match
+            // that a docblock naming `requirePermission` would satisfy.
+            'tests/guardrails/admin-route-coverage.test.ts',
+            'tests/guardrails/api-read-rate-limit.test.ts',
+            'tests/guardrails/cva-primitives.test.ts',
+            'tests/guardrails/form-primitive-adoption.test.ts',
+            'tests/guardrails/pr-1-tenant-tables-org-parity.test.ts',
+            'tests/guardrails/redis-prod-required.test.ts',
+            'tests/guards/api-key-auth-enabled.test.ts',
+            'tests/guards/audit-structured-events.test.ts',
+            'tests/guards/oi-3-backup-restore.test.ts',
+            'tests/guards/r31-left-palette.test.ts',
+            'tests/guards/slow-mode-escape-is-not-throttled.test.ts',
+            'tests/unit/filter-standardization.test.ts',
+            'tests/unit/middleware-org-route-structural.test.ts',
+            'tests/unit/observability-guards.test.ts',
+            'tests/unit/tenant-isolation-structural.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);

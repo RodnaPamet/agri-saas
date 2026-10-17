@@ -25,10 +25,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 function readRepoFile(rel: string): string {
-    return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
+    return blankNonCode(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8'));
 }
 
 describe('GAP-17 ratchet — preset', () => {

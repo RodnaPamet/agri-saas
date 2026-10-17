@@ -41,6 +41,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 /**
  * Only what this file reads out of the workflow: each job's steps, and the
  * `id` / `run` of one of them. `yaml.load` returns `unknown`, so SOMETHING has
@@ -58,7 +60,7 @@ interface WorkflowDoc {
 }
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 const stat = (rel: string) => fs.statSync(path.join(ROOT, rel));
 

@@ -24,8 +24,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 describe('GAP O4-1 — middleware org-route guard structural ratchet', () => {
     it('middleware.ts imports both isOrgPath and checkOrgAccess from the guard module', () => {

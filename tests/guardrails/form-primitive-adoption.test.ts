@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 // Modal-form P1 (2026-05-24) — the create flows were decomposed into
@@ -64,7 +66,7 @@ function readSurface(surface: FormSurface): string {
         .map((f) => {
             const full = path.join(REPO_ROOT, f);
             if (!fs.existsSync(full)) return '';
-            return fs.readFileSync(full, 'utf-8');
+            return blankNonCode(fs.readFileSync(full, 'utf-8'));
         })
         .join('\n');
 }

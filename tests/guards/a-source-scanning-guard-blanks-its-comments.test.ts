@@ -54,15 +54,9 @@ import { findSourceTextScanners } from '../helpers/source-text-scanners';
  * Do not add to this list: a new guard should blank from the start.
  */
 const AWAITING_CONVERSION: readonly string[] = [
-    'tests/guardrails/api-read-rate-limit.test.ts',
-    'tests/guardrails/cva-primitives.test.ts',
     'tests/guardrails/deploy-env-parity.test.ts',
-    'tests/guardrails/form-primitive-adoption.test.ts',
     'tests/guardrails/keyboard-shortcut-conventions.test.ts',
-    'tests/guardrails/no-client-side-filtering.test.ts',
     'tests/guardrails/no-compact-filter-bar.test.ts',
-    'tests/guardrails/pr-1-tenant-tables-org-parity.test.ts',
-    'tests/guardrails/redis-prod-required.test.ts',
     'tests/guardrails/table-platform-drift.test.ts',
     'tests/guards/automation-event-catalog-coherence.test.ts',
     'tests/guards/cardvariants-server-import.test.ts',
@@ -73,25 +67,55 @@ const AWAITING_CONVERSION: readonly string[] = [
     'tests/guards/modal-payload-schema-parity.test.ts',
     'tests/guards/notif-task-due-emit-coverage.test.ts',
     'tests/guards/offline-spec-chunk-warmup.test.ts',
-    'tests/guards/oi-3-backup-restore.test.ts',
     'tests/guards/optimistic-status-rollback.test.ts',
     'tests/guards/p-polish-a.test.ts',
     'tests/guards/p-polish-c.test.ts',
     'tests/guards/p5a-snapshots-table-sidebar.test.ts',
-    'tests/guards/postgis-image-single-source.test.ts',
-    'tests/guards/r31-left-palette.test.ts',
     'tests/guards/rls-coverage-skip-visibility.test.ts',
     'tests/guards/sign-out-purges.test.ts',
-    'tests/guards/sw-revision-stamp.test.ts',
     'tests/unit/audit-guardrails.test.ts',
     'tests/unit/data-table.test.ts',
-    'tests/unit/filter-standardization.test.ts',
     'tests/unit/job-scope-audit.test.ts',
     'tests/unit/job-tenant-isolation-regression.test.ts',
-    'tests/unit/middleware-org-route-structural.test.ts',
     'tests/unit/no-direct-prisma.test.ts',
     'tests/unit/notification-eligibility-guardrail.test.ts',
     'tests/unit/rsc-regression.test.ts',
+];
+
+
+/**
+ * Guards that must NEVER route through `blankNonCode`, with the reason.
+ *
+ * Separated from the register because the register means "not yet converted",
+ * and these are not debt — converting any of them makes the guard WRONG. The
+ * first version of this file conflated the two, which would have left three
+ * entries sitting on a shrink-only list that could never shrink: work that
+ * cannot be finished reads exactly like work nobody did.
+ *
+ * Each was found by converting it and watching what broke, which is why the
+ * reasons are specific rather than categorical.
+ */
+const SUBJECT_IS_NOT_BLANKABLE: ReadonlyArray<{ file: string; why: string }> = [
+    {
+        file: 'tests/guards/postgis-image-single-source.test.ts',
+        /** reads `.github/workflows/*.yml`. `blankNonCode` is a TS/JS scanner; YAML
+     * comments are `#` and a `//` inside a URL is not a comment at all. */
+        why: 'reads `',
+    },
+    {
+        file: 'tests/guards/sw-revision-stamp.test.ts',
+        /** its subject is the BYTES of `public/sw.js` — it compares a content hash
+     * against the stamped revision. Blanking changes the bytes, so the hash
+     * stops meaning anything. */
+        why: 'its subject is the BYTES of `public/sw',
+    },
+    {
+        file: 'tests/guardrails/no-client-side-filtering.test.ts',
+        /** the comment IS the control surface: it honours a `// guardrail-ignore`
+     * directive on the preceding line. Blanking erases the exemption
+     * mechanism and the guard then flags what it was told to allow. */
+        why: 'the comment IS the control surface: it honours a `// guardrail-ignore` directive on the preceding line',
+    },
 ];
 
 describe('a source-scanning guard blanks its comments (#1774)', () => {
@@ -100,7 +124,8 @@ describe('a source-scanning guard blanks its comments (#1774)', () => {
     it('ranges over every guard root — the denominator', () => {
         console.log(
             `[source-text-scanners] ${found.length} guard(s) match a code-shaped literal `
-                + `against unblanked file content; ${AWAITING_CONVERSION.length} on the register`,
+                + `against unblanked file content = ${AWAITING_CONVERSION.length} awaiting conversion `
+                + `+ ${SUBJECT_IS_NOT_BLANKABLE.length} that must never convert`,
         );
         // A detector that found nothing would pass the exact-match assertion
         // only when the register is empty, and would then sit green for ever
@@ -145,6 +170,10 @@ describe('a source-scanning guard blanks its comments (#1774)', () => {
     it('the register names exactly the guards still reading prose', () => {
         // Sorted joins rather than set equality: when this fails the message
         // should show WHICH line moved, not that two arrays differ.
-        expect(found.map((s) => s.file).join('\n')).toBe([...AWAITING_CONVERSION].sort().join('\n'));
+        const expected = [
+            ...AWAITING_CONVERSION,
+            ...SUBJECT_IS_NOT_BLANKABLE.map((e) => e.file),
+        ].sort();
+        expect(found.map((s) => s.file).join('\n')).toBe(expected.join('\n'));
     });
 });

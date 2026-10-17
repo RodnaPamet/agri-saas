@@ -29,8 +29,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, "../..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const read = (rel: string) => blankNonCode(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 describe("R31 (Bundle 4) — left palette", () => {
     describe("ProcessPalette — vertical column shape", () => {
