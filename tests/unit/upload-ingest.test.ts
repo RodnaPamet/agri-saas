@@ -26,6 +26,16 @@ const mockWrite = jest.fn(
     }),
 );
 const mockDelete = jest.fn();
+// Typed parameters for the same reason as `mockWrite` above: an argument-less
+// `jest.fn` types `mock.calls` as `[]`, so asserting the mime type it was
+// handed would be a compile error rather than a test.
+const mockStrip = jest.fn(
+    async (
+        bytes: Buffer,
+        _mimeType: string,
+        _opts: { component: string },
+    ): Promise<{ bytes: Buffer; stripped: boolean }> => ({ bytes, stripped: true }),
+);
 let allowedMime = true;
 let sniffResult = { resolved: 'application/pdf', detected: null as string | null, corrected: false };
 let scanVerdict: string = 'CLEAN';
@@ -40,6 +50,14 @@ jest.mock('@/lib/storage', () => ({
 }));
 jest.mock('@/lib/storage/mime-sniff', () => ({
     reconcileMimeType: () => sniffResult,
+}));
+// #1812. Recorded rather than passed through, so the cases below can assert
+// that the strip happens at all and receives the RESOLVED type — the real
+// re-encode is exercised against sharp-generated images in
+// `tests/unit/strip-image-metadata.test.ts`, which is where it belongs.
+jest.mock('@/lib/images/strip-metadata', () => ({
+    stripImageMetadata: mockStrip,
+    isStrippableImageType: (m: string) => m.startsWith('image/'),
 }));
 jest.mock('@/lib/storage/av-scan', () => ({
     scanUploadedBuffer: async () => scanVerdict,
@@ -200,15 +218,36 @@ describe('ingestUploadedFile', () => {
         expect(String(err.message)).toMatch(/Only \.zip archives/);
     });
 
-    it('writes BEFORE scanning', async () => {
-        // Deliberate ordering. Writing an infected file and recording it as
-        // INFECTED is recoverable — the download gate refuses it. Scanning
-        // first and writing second means a crash between the two leaves a
-        // stored object with no record, which nothing will ever look at.
+    it('scans, THEN strips, THEN writes', async () => {
+        // This used to assert `['write', 'scan']`, and the reversal is
+        // deliberate (#1812). Both halves of the old reasoning are worth
+        // keeping, because neither is contradicted:
+        //
+        // "Writing an infected file and recording it as INFECTED is
+        // recoverable — the download gate refuses it." Still exactly true.
+        // `scanUploadedBuffer` RETURNS a verdict rather than throwing, and
+        // nothing here branches on it, so an infected upload is written and
+        // recorded INFECTED under this ordering too. The end state is
+        // identical; only the moment of the scan moved.
+        //
+        // "A crash between the two leaves a stored object with no record."
+        // Unchanged as well — the orphan window is between the write and the
+        // caller's `markStored`, and that window is the same length whichever
+        // side of it the scan sits on.
+        //
+        // What the new order ADDS is the reason it changed: stripping EXIF
+        // means handing the caller's bytes to libvips, and a decoder fed
+        // attacker-controlled input is the step most worth having a scan in
+        // front of. `lib/account/avatar.ts` records the same ordering for the
+        // same reason, and now the two paths agree.
         const order: string[] = [];
         mockWrite.mockImplementationOnce(async () => {
             order.push('write');
             return { sha256: 'sha-1', sizeBytes: 11 };
+        });
+        mockStrip.mockImplementationOnce(async (bytes) => {
+            order.push('strip');
+            return { bytes, stripped: true };
         });
         const av = jest.requireMock('@/lib/storage/av-scan');
         av.scanUploadedBuffer = async () => {
@@ -216,7 +255,45 @@ describe('ingestUploadedFile', () => {
             return 'CLEAN';
         };
         await ingestUploadedFile('t-1', fakeFile(), OPTS);
-        expect(order).toEqual(['write', 'scan']);
+        expect(order).toEqual(['scan', 'strip', 'write']);
+    });
+
+    it('hands the stripper the RESOLVED type, never the declared one', async () => {
+        // A caller who could opt out of stripping by lying about the content
+        // type would defeat the measure entirely, which is why every upload
+        // path here sniffs. Declared `application/pdf`, bytes say PNG.
+        sniffResult = { resolved: 'image/png', detected: 'image/png', corrected: true };
+        await ingestUploadedFile('t-1', fakeFile({ type: 'application/pdf' }), OPTS);
+        expect(mockStrip.mock.calls[0][1]).toBe('image/png');
+    });
+
+    it('stores the STRIPPED bytes, so the recorded sha256 names what is served', async () => {
+        // `FileRecord.sha256` is what `/api/public/media/[hash]` resolves, so
+        // it has to digest the bytes the route actually serves rather than
+        // the ones the caller sent.
+        const strippedBytes = Buffer.from('re-encoded', 'ascii');
+        mockStrip.mockImplementationOnce(async () => ({
+            bytes: strippedBytes,
+            stripped: true,
+        }));
+        // CONSUMED, not compared by identity: the pipeline wraps the bytes in
+        // a `Readable` before handing them over, so asserting on the argument
+        // itself would only prove a stream was passed. Reading it is what
+        // proves WHICH bytes reach storage.
+        let captured: Buffer | null = null;
+        mockWrite.mockImplementationOnce(async (_pathKey, body) => {
+            const chunks: Buffer[] = [];
+            for await (const chunk of body as AsyncIterable<Buffer>) chunks.push(chunk);
+            captured = Buffer.concat(chunks);
+            return { sha256: 'sha-1', sizeBytes: captured.length };
+        });
+        await ingestUploadedFile('t-1', fakeFile(), OPTS);
+        expect(captured).not.toBeNull();
+        expect((captured as unknown as Buffer).toString('ascii')).toBe('re-encoded');
+        // The CONTROL: the caller's original bytes are 'hello world', so this
+        // would pass vacuously if the stripper were bypassed and `fakeFile`
+        // happened to carry the same string.
+        expect((captured as unknown as Buffer).toString('ascii')).not.toBe('hello world');
     });
 
     it('falls back to the surface name when the upload carries none', async () => {

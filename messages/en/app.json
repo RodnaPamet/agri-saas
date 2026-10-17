@@ -6527,6 +6527,7 @@
         "GRAIN_BIN_NOT_FOUND": "That grain bin was not found.",
         "IDENTIFIERS_REQUIRED": "Provide at least one identifier.",
         "ILLEGAL_TRANSITION": "That status change is not allowed.",
+        "IMAGE_UNREADABLE": "That image could not be read. Try a different photo.",
         "INQUIRY_NOT_FOUND": "That inquiry was not found.",
         "INVALID_BBOX": "The map bounds are not valid. Pan or zoom the map and try again.",
         "INVALID_CROP_TYPE": "That crop was not found.",

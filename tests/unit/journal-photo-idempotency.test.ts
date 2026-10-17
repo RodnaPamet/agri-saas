@@ -12,6 +12,19 @@ import { Prisma } from '@prisma/client';
 
 const mockDb = { $executeRaw: jest.fn() } as any;
 
+jest.mock('@/lib/images/strip-metadata', () => ({
+    // #1812. This suite's fixture bytes are placeholders, not real images, so
+    // the real stripper refuses them with `IMAGE_UNREADABLE` — correctly: a
+    // buffer that sniffs as an image and cannot be decoded is a corrupt file
+    // no viewer could render either. Mocked here because this suite is about the idempotency key and the audit trail,
+    // not image processing. The re-encode itself is exercised against
+    // sharp-generated images in `tests/unit/strip-image-metadata.test.ts`, and
+    // the WIRING is pinned structurally by
+    // `tests/guards/uploads-strip-image-metadata.test.ts`.
+    stripImageMetadata: async (bytes: Buffer) => ({ bytes, stripped: false }),
+    isStrippableImageType: () => false,
+}));
+
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: any, fn: (db: any) => any) => fn(mockDb)),
 }));

@@ -34,6 +34,7 @@ import { enqueue } from '../jobs/queue';
 import { trace } from '@opentelemetry/api';
 import { reconcileMimeType } from '@/lib/storage/mime-sniff';
 import { isUniqueViolation } from '@/lib/errors/prisma';
+import { stripImageMetadata } from '@/lib/images/strip-metadata';
 
 
 /**
@@ -680,11 +681,22 @@ export async function uploadLogEntryPhoto(
         });
     }
 
-    const readable = Readable.from(buffer);
-    const writeResult = await storage.write(pathKey, readable, { mimeType });
-
     // Terminal scan status before the record is usable — see evidence.ts.
+    //
+    // Ahead of the write since #1812, because the strip below decodes the
+    // caller's bytes and that decode wants scanned input.
     const scanStatus = await scanUploadedBuffer(buffer);
+
+    // EXIF/GPS stripped before the bytes land — #1812. A journal attachment
+    // is a photo taken at the operation it records, so its GPS tag is the
+    // parcel's location. Non-images pass through undecoded.
+    const { bytes: toStore } = await stripImageMetadata(buffer, mimeType, {
+        component: 'journal',
+    });
+
+    // `toStore`, so `writeResult.sha256` digests the bytes actually stored.
+    const readable = Readable.from(toStore);
+    const writeResult = await storage.write(pathKey, readable, { mimeType });
 
     const cleanCaption = caption != null ? sanitizePlainText(caption) || null : null;
 

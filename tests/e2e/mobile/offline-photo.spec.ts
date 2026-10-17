@@ -19,10 +19,21 @@
  */
 import { test, expect } from '../fixtures';
 
-// A minimal valid 1x1 PNG — small enough to pass downscale untouched, real
-// enough for createImageBitmap to decode in the browser.
+// A valid 1x1 PNG — small enough to pass downscale untouched, real enough for
+// createImageBitmap to decode in the browser.
+//
+// Produced BY sharp rather than hand-minimised, and that is now a requirement
+// rather than a preference (#1812). Uploads are re-encoded server-side to strip
+// EXIF, and the 69-byte blob that stood here could be INSPECTED by libvips but
+// not round-tripped by it: `metadata()` reported `png 1x1` and the re-encode
+// died on `vipspng: libpng read error`. So the upload was refused with
+// `IMAGE_UNREADABLE` and this test failed on both mobile projects — while the
+// browser decoded the same bytes perfectly, which is what made it confusing.
+//
+// Measured: two different hand-minimised 1x1 PNGs fail that way and sharp's own
+// 1x1 does not, so the cause is the minimised encoding and not the dimensions.
 const PNG_1x1 = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNwWVUOAAKbAWbDkga9AAAAAElFTkSuQmCC',
     'base64',
 );
 
