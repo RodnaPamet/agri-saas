@@ -17,6 +17,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const TENANT_APP_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 
 /**
@@ -36,7 +38,7 @@ const RSC_PAGES = [
 function readPageFile(pageName: string): string | null {
     const filePath = path.join(TENANT_APP_DIR, pageName, 'page.tsx');
     if (!fs.existsSync(filePath)) return null;
-    return fs.readFileSync(filePath, 'utf8');
+    return blankNonCode(fs.readFileSync(filePath, 'utf8'));
 }
 
 describe('RSC Regression Guard', () => {
@@ -114,7 +116,7 @@ describe('RSC Regression Guard', () => {
 
             for (const clientFile of clientFiles) {
                 it(`${pageName}/${clientFile} must NOT useEffect + fetch('/api/') for initial load`, () => {
-                    const content = fs.readFileSync(path.join(pageDir, clientFile), 'utf8');
+                    const content = blankNonCode(fs.readFileSync(path.join(pageDir, clientFile), 'utf8'));
                     const lines = content.split('\n');
 
                     // Check for useEffect that contains a fetch to /api/

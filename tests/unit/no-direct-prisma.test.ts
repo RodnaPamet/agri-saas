@@ -14,6 +14,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const SRC_ROOT = path.resolve(__dirname, '../../src');
 
 function readFilesInDir(dir: string, ext = '.ts'): { name: string; content: string; relPath: string }[] {
@@ -22,7 +24,10 @@ function readFilesInDir(dir: string, ext = '.ts'): { name: string; content: stri
         .filter((f) => f.endsWith(ext))
         .map((f) => ({
             name: f,
-            content: fs.readFileSync(path.join(dir, f), 'utf8'),
+            // Comments blanked (#1774): the import checks below ask whether a
+            // module IMPORTS global prisma, and a docblock explaining why a
+            // repository must not must not read as the import itself.
+            content: blankNonCode(fs.readFileSync(path.join(dir, f), 'utf8')),
             relPath: path.join(dir, f).replace(SRC_ROOT, 'src'),
         }));
 }
@@ -41,11 +46,18 @@ function walkDir(dir: string): string[] {
     return results;
 }
 
+/**
+ * Split already-blanked content into lines (#1774).
+ *
+ * This used to drop lines by PREFIX — `//`, `*`, `/*` — which misses a
+ * trailing `x(); // prisma.user.findMany()` entirely, since that line does
+ * not start with a comment marker. Callers now pass content whose comments
+ * were blanked by `blankNonCode`, so the prefix test is both redundant and
+ * weaker than what replaced it; the name is kept because the contract — lines
+ * with no comment text in them — still holds.
+ */
 function getNonCommentLines(content: string): string[] {
-    return content.split('\n').filter((line) => {
-        const trimmed = line.trim();
-        return !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*');
-    });
+    return content.split('\n');
 }
 
 describe('CI Guard: No direct prisma in tenant-scoped code', () => {
@@ -538,7 +550,7 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         );
         if (isAllowlisted) continue;
 
-        const content = fs.readFileSync(filePath, 'utf8');
+        const content = blankNonCode(fs.readFileSync(filePath, 'utf8'));
         const nonCommentLines = getNonCommentLines(content);
 
         it(`route ${relPath} must NOT call prisma directly`, () => {

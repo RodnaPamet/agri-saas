@@ -10,6 +10,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { AUTOMATION_EVENT_NAMES } from '@/app-layer/automation/events';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -32,7 +34,7 @@ describe('automation event catalog coherence', () => {
     const emitted = new Set<string>();
     for (const f of walk(SRC)) {
         if (DEFINITION_FILES.some((d) => f.endsWith(d) || f.includes(d))) continue;
-        const src = fs.readFileSync(f, 'utf8');
+        const src = blankNonCode(fs.readFileSync(f, 'utf8'));
         if (!src.includes('emitAutomationEvent')) continue;
         for (const m of src.matchAll(/event:\s*'([A-Z_]+)'/g)) emitted.add(m[1]);
     }

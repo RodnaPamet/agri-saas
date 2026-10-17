@@ -90,6 +90,12 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * move this constant, so two in flight at once is the shared-ratchet collision
  * the cap exists to prevent, one level up.
  *
+ * Batch 8 moved it 422 -> 418, in the same diff as its conversions. The live
+ * count was 418 against a cap of 422 — drift 4, INSIDE the allowance, so this
+ * would have merged green without touching the constant. That is exactly how
+ * batch 6 hid a collision, so the rule taken from it is: lower the cap every
+ * batch, never bank the slack.
+ *
  * Batches 5-7 (#2038, #2040, #2042) moved it 431 -> 422. They were authored
  * without noticing this file, which is the mistake the serialisation note
  * above is about: a second sweep ran in parallel with this one and only the
@@ -101,7 +107,7 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * code-shaped literal against file CONTENT (26), which is the actionable
  * list. Two scopes, deliberately; see #1774 for which to use when.
  */
-const UNBLANKED_CAP = 422;
+const UNBLANKED_CAP = 418;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -296,6 +302,21 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/unit/middleware-org-route-structural.test.ts',
             'tests/unit/observability-guards.test.ts',
             'tests/unit/tenant-isolation-structural.test.ts',
+            // Batch 8, #1774. Three needed care rather than the batch
+            // converter: `table-platform-drift` reads GUIDE.md among four
+            // `.ts` files and that read stays RAW, `rls-coverage-skip-
+            // visibility` names a `.sql` file in a test title but reads a
+            // `.ts` one, and `no-direct-prisma` carried a line-PREFIX comment
+            // filter that misses a trailing `// prisma.user.findMany()` — now
+            // retired in favour of the helper.
+            'tests/guardrails/no-compact-filter-bar.test.ts',
+            'tests/guardrails/table-platform-drift.test.ts',
+            'tests/guards/automation-event-catalog-coherence.test.ts',
+            'tests/guards/donut-chart-centering.test.ts',
+            'tests/guards/p-polish-a.test.ts',
+            'tests/guards/rls-coverage-skip-visibility.test.ts',
+            'tests/unit/no-direct-prisma.test.ts',
+            'tests/unit/rsc-regression.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);
