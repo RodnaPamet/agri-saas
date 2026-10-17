@@ -92,7 +92,22 @@ function getRetentionStatus(ev: any, now: Date | null, t: RetentionT): { label: 
     if (ev.isArchived) return { label: t('client.retentionArchived'), badge: 'neutral', icon: '' };
     if (ev.expiredAt) return { label: t('client.retentionExpired'), badge: 'error', icon: '' };
     if (ev.retentionUntil) {
-        if (!now) return { label: t('client.retentionActive'), badge: 'success', icon: '' };
+        // #2039 — an UNKNOWN clock must not read as a compliant one.
+        //
+        // This branch used to return a green "Active" badge, which made the
+        // `Expired` and `Expiring` cases below unreachable for any caller
+        // that passed a nil `now` — and #2033 was exactly such a caller, for
+        // the lifetime of the page. The caller is fixed; this makes the
+        // resolver safe for the next one.
+        //
+        // Falling back to `new Date()` here, the way `resolveFreshness` does,
+        // would be WRONG in this position: `getRetentionStatus` runs during
+        // render, so a server read and a client read either side of a day
+        // boundary produce different badges and a hydration mismatch — the
+        // very thing `useHydratedNow` returns null to prevent. A value that
+        // reads the clock is not available to this branch; an honest
+        // placeholder is.
+        if (!now) return { label: t('client.retentionPending'), badge: 'neutral', icon: '' };
         const until = new Date(ev.retentionUntil);
         const daysLeft = Math.ceil((until.getTime() - now.getTime()) / 86_400_000);
         if (daysLeft <= 0) return { label: t('client.retentionExpired'), badge: 'error', icon: '' };

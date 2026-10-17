@@ -358,6 +358,7 @@
             "retentionExpired": "Expired",
             "retentionActive": "Active",
             "retentionExpiring": "Expiring ({days}d)",
+            "retentionPending": "—",
             "retentionNoPolicy": "No policy",
             "kpiTotal": "Total evidence",
             "kpiDraft": "Draft",
