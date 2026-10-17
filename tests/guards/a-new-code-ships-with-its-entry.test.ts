@@ -61,6 +61,14 @@ const DELIBERATELY_UNENTRIED: ReadonlyArray<[code: string, why: string]> = [
             '`opts.extraCheck`) — an entry would replace "avatars must be square" with a generic sentence.',
     ],
     [
+        'FILE_VALIDATION_ERROR',
+        'Its message IS the validator\'s own — `err instanceof Error ? err.message : ...` — so an ' +
+            'entry would replace a specific explanation ("file exceeds 10 MB") with a generic one. ' +
+            'Same shape as FILE_TYPE_NOT_ALLOWED above, and the same fix if it is ever wanted: give ' +
+            'the validator coded sub-errors, which is a change to the upload path rather than a ' +
+            'catalogue batch. Moved here from BACKLOG in batch 11 — it was never "not yet".',
+    ],
+    [
         'INVALID_LIMIT',
         'Three sites, three sentences, and what distinguishes them is in the English template rather ' +
             'than on the wire: a caller-supplied `opts.label` plus the received value. Fixable by passing ' +
@@ -74,24 +82,15 @@ const BACKLOG: ReadonlyArray<string> = [
     'ACCOUNT_ALREADY_ERASED',
     'ACCOUNT_HAS_NO_EMAIL',
     'AI_BUDGET_REQUIRES_VERIFIED_FARM',
-    'API_KEY_FAMILY_NOT_ENABLED',
-    'API_KEY_NOT_PERSON_SCOPED',
-    'API_KEY_WRONG_SURFACE',
     'BLOCK_SELLER_ONLY',
     'DUPLICATE_COMMODITY',
     'FARM_PROFILE_EIK_NOT_EDITABLE',
-    'FILE_VALIDATION_ERROR',
-    'IDEMPOTENCY_KEY_INVALID',
-    'IF_MATCH_EMPTY',
-    'IF_MATCH_MALFORMED',
-    'IF_MATCH_WEAK_TAG',
     'IMPORT_JOB_NOT_FOUND',
     'INSURANCE_PRODUCT_UNKNOWN',
     'INSURANCE_QUOTE_INVALID',
     'INVALID_ASSET',
     'INVALID_FARM_PAYLOAD',
     'INVALID_FARM_TASK_TYPE',
-    'INVALID_LINK',
     'INVALID_TAB_ORDER',
     'INVALID_TASK',
     'ITEM_NAME_ALREADY_EXISTS',
@@ -103,7 +102,6 @@ const BACKLOG: ReadonlyArray<string> = [
     'PESTICIDE_REGULATORY_FIELDS_REQUIRED',
     'THREAD_BLOCKED',
     'UNKNOWN_COMMODITY',
-    'UNSUPPORTED_FILE_TYPE',
     'WRITE_FORBIDDEN_FOR_ROLE',
 ];
 
