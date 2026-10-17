@@ -16,6 +16,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOTS = [
     path.resolve(__dirname, '../../src'),
     path.resolve(__dirname, '../../tests'),
@@ -85,7 +87,7 @@ describe('Epic 53 — no CompactFilterBar references', () => {
             for (const file of walk(root, [])) {
                 const rel = relFromRepo(file);
                 if (ALLOWLIST.includes(rel)) continue;
-                const src = fs.readFileSync(file, 'utf-8');
+                const src = blankNonCode(fs.readFileSync(file, 'utf-8'));
                 if (src.includes('CompactFilterBar')) {
                     offenders.push(rel);
                 }

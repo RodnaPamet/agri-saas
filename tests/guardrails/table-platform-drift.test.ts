@@ -13,6 +13,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const TABLE_MODULE_DIR = path.resolve(__dirname, '../../src/components/ui/table');
 const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
 const CLIENT_DIR = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
@@ -50,7 +52,7 @@ const MIGRATED_PAGES = [
 ];
 
 function readClientFile(rel: string): string {
-    return fs.readFileSync(path.join(CLIENT_DIR, rel), 'utf-8');
+    return blankNonCode(fs.readFileSync(path.join(CLIENT_DIR, rel), 'utf-8'));
 }
 
 function findFilesRecursive(dir: string, filter: (name: string) => boolean): string[] {
@@ -162,7 +164,7 @@ describe('Convention compliance — column patterns', () => {
 
 describe('Table module integrity', () => {
     it('barrel index.ts re-exports all modules', () => {
-        const barrel = fs.readFileSync(path.join(TABLE_MODULE_DIR, 'index.ts'), 'utf-8');
+        const barrel = blankNonCode(fs.readFileSync(path.join(TABLE_MODULE_DIR, 'index.ts'), 'utf-8'));
         const tsFiles = fs.readdirSync(TABLE_MODULE_DIR)
             .filter(f => /\.(ts|tsx)$/.test(f) && f !== 'index.ts');
 
@@ -179,6 +181,9 @@ describe('Table module integrity', () => {
     it('GUIDE.md exists and is non-trivial', () => {
         const guidePath = path.join(TABLE_MODULE_DIR, 'GUIDE.md');
         expect(fs.existsSync(guidePath)).toBe(true);
+        // NOT blanked, deliberately (#1774): this asserts GUIDE.md is
+        // non-trivial, and a Markdown file is mostly prose — blanking a `//`
+        // in it would be meaningless and `/* */` is not a comment there.
         const content = fs.readFileSync(guidePath, 'utf-8');
         expect(content.length).toBeGreaterThan(500);
         expect(content).toContain('createColumns');
@@ -196,7 +201,7 @@ describe('Table module integrity', () => {
             if (migratedSet.has(basename) || excludedSet.has(basename)) continue;
 
             // Check if this unknown page has a raw <table> without DataTable
-            const src = fs.readFileSync(file, 'utf-8');
+            const src = blankNonCode(fs.readFileSync(file, 'utf-8'));
             const hasRawTable = /<table[\s>]/.test(src);
             const hasDataTable = src.includes('DataTable');
 
@@ -294,7 +299,7 @@ function countAdHocTables(): { total: number; byFile: Record<string, number> } {
     for (const full of files) {
         const rel = path.relative(CLIENT_DIR, full);
         if (RATCHET_ALLOWLIST.has(rel)) continue;
-        const src = fs.readFileSync(full, 'utf-8');
+        const src = blankNonCode(fs.readFileSync(full, 'utf-8'));
         const matches = src.match(RAW_TABLE_RE);
         if (matches && matches.length > 0) {
             byFile[rel] = matches.length;

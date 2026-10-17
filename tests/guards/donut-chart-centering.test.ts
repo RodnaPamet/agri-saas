@@ -47,11 +47,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
-const SRC = fs.readFileSync(
+const SRC = blankNonCode(fs.readFileSync(
     path.join(ROOT, 'src/components/ui/DonutChart.tsx'),
     'utf8',
-);
+));
 
 describe('DonutChart centering — visx Pie children render-prop trap', () => {
     it('wraps <Pie> in a translate(center,center) <g>', () => {

@@ -37,6 +37,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const RLS_SPEC = path.join(ROOT, 'tests/guardrails/rls-coverage.test.ts');
 
@@ -89,7 +91,11 @@ const ALWAYS_RUNNING_ASSERTIONS: readonly string[] = [
 ];
 
 describe('RLS-coverage guardrail cannot skip silently', () => {
-    const src = fs.readFileSync(RLS_SPEC, 'utf-8');
+    // Blanked (#1774): this counts `describe(` and `.skip` in the RLS spec,
+    // and a commented-out describe — or a docblock discussing one — is not a
+    // skipped suite. Reads a .ts file despite the `.sql` in the test name
+    // above, which is prose about what the spec covers.
+    const src = blankNonCode(fs.readFileSync(RLS_SPEC, 'utf-8'));
 
     it('gates the DB-backed suite on the imported DB_AVAILABLE probe', () => {
         expect(src).toMatch(
