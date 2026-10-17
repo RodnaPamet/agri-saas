@@ -11,6 +11,10 @@ import {
     isPublicReadRateLimited,
     checkPublicReadRateLimit,
 } from '@/lib/rate-limit/publicReadRateLimit';
+import {
+    isPublicMediaRateLimited,
+    checkPublicMediaRateLimit,
+} from '@/lib/rate-limit/publicMediaRateLimit';
 import { isApiKeyRateLimited, checkApiKeyRateLimit } from '@/lib/rate-limit/apiKeyRateLimit';
 import { API_KEY_AUTH_ENABLED } from '@/lib/auth/api-key-availability';
 import { env } from '@/env';
@@ -136,6 +140,20 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         // among them.
         if (isPublicReadRateLimited(req.method, pathname)) {
             const rl = await checkPublicReadRateLimit(req);
+            if (!rl.ok && rl.response) return rl.response;
+        }
+        // Farm-profile IMAGES, on their own budget — P6.3 (#1812). A separate
+        // tier rather than another prefix in the one above, because that one
+        // is sized for one-request-per-action reads and a profile page is a
+        // logo plus a few photos. `publicMediaRateLimit` carries the
+        // arithmetic; the short version is that 60/min would start breaking
+        // images, silently, around the ninth profile a visitor opened.
+        //
+        // Checked independently of the tier above rather than as an `else`:
+        // the two prefix sets are disjoint today, and an `else` would make
+        // that a requirement nothing states.
+        if (isPublicMediaRateLimited(req.method, pathname)) {
+            const rl = await checkPublicMediaRateLimit(req);
             if (!rl.ok && rl.response) return rl.response;
         }
         return NextResponse.next();

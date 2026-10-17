@@ -511,6 +511,11 @@
       "documented": true
     },
     {
+      "path": "/api/public/media/{hash}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/public/notices",
       "status": "live",
       "documented": true

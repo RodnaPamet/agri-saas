@@ -154,7 +154,28 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // mistake at the call site cannot widen its reach. Raised rather than
         // exempted, so the fourth caller is a visible diff — which is the
         // whole purpose of the number.
-        expect(callers.length).toBeLessThanOrEqual(4);
+        //
+        // 4 → 5 (#1812): `public-farm-media.ts` serves the BYTES of an image a
+        // published farm profile references, for `/api/public/media/[hash]`.
+        // Saying it out loud, as this ceiling is for: another part of the
+        // product now reads across tenants — and unlike the fourth caller, it
+        // reads a TENANT-SCOPED table.
+        //
+        // That is why it carries its own reason, `public-media-read`, rather
+        // than borrowing `public-projection-read`. The fourth caller's safety
+        // argument is the one two paragraphs up — bounded by the TABLE,
+        // because `PublicFarmProfile` has no PII columns and no `tenantId`.
+        // `FileRecord` has both, so that argument does not transfer, and
+        // reusing the reason would have made an audit of
+        // `public-projection-read`'s sites claim a bound it no longer had.
+        //
+        // What bounds the new one is the ORDER of two reads rather than the
+        // table: the projection is asked whether it references the hash, and
+        // only a yes leads to the file. The row returned therefore belongs to
+        // whichever tenant published that image. Reversed, it is a
+        // cross-tenant file lookup by hash — so the order is asserted by a
+        // test rather than left to this comment.
+        expect(callers.length).toBeLessThanOrEqual(5);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -200,7 +221,13 @@ describe('the typed bypass is actually USED — not a control that only exists',
             `[rls-bypass] files=${callers.length} sites=${sites.length}\n  ` +
                 sites.join('\n  '),
         );
-        expect(sites.length).toBeLessThanOrEqual(10);
+        //
+        // 10 → 12 by P6.3 (#1812): the two reads in `public-farm-media.ts`
+        // described above. Two sites rather than one combined block on
+        // purpose — they read different classes of table and the reason has to
+        // name which, so collapsing them would leave one reason describing a
+        // read it does not govern.
+        expect(sites.length).toBeLessThanOrEqual(12);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

@@ -269,6 +269,35 @@ export const PUBLIC_READ_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * PUBLIC farm-profile IMAGES: 300 per minute per IP. P6.3 (#1812).
+ *
+ * Five times `PUBLIC_READ_LIMIT`, and the multiplier is arithmetic rather than
+ * taste. That tier is one request per user action — a search, an invite
+ * lookup. This one is a page ASSET: a farm profile is a logo plus a few
+ * photos, so one page view is around six requests. At 60/min a visitor
+ * browsing farm profiles would start getting 429s on the ninth or tenth page,
+ * and a throttled image fails SILENTLY — a broken picture tells them nothing,
+ * so they would read it as the product being broken.
+ *
+ * `PUBLIC_READ_PREFIXES` already reasons this way about assets: `/f/` can live
+ * at 60/min precisely because its assets come from `/_next/static/*` and "do
+ * not count against the budget". Serving images through an API route makes
+ * them count, so without a separate budget this change would have
+ * retroactively broken the argument that justified that entry.
+ *
+ * 300 still refuses a flood cheaply, which is what the phase asks for: at the
+ * EDGE, before the projection query and the storage read. And carrier-grade
+ * NAT cuts the other way here as `PUBLIC_READ_LIMIT`'s docblock describes —
+ * many rural subscribers share one public IPv4, so a village behind one cell
+ * tower shares this budget, which is a second reason not to set it at six
+ * page views.
+ */
+export const PUBLIC_MEDIA_LIMIT: RateLimitConfig = {
+    maxAttempts: 300,
+    windowMs: 60 * 1000,
+};
+
+/**
  * PUBLIC DSA Art 16 notices: 10 per minute per IP. P5.2 (#1593).
  *
  * `withApiErrorHandling` already defaults every mutation to
