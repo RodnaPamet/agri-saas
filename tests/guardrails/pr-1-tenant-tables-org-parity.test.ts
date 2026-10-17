@@ -26,8 +26,10 @@ import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('PR-1 — tenant tables → org-level parity', () => {
     describe('useThresholdLoadMore primitive', () => {

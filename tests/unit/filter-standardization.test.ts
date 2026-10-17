@@ -22,6 +22,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../../');
 const PAGES_ROOT = path.join(ROOT, 'src/app/t/[tenantSlug]/(app)');
 
@@ -50,7 +52,7 @@ const MIGRATED_PAGES: Array<{
 ];
 
 function read(p: string) {
-    return fs.readFileSync(p, 'utf-8');
+    return blankNonCode(fs.readFileSync(p, 'utf-8'));
 }
 
 // ─── 1. filter-defs.ts exists and is colocated ──────────────────────

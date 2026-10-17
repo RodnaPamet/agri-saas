@@ -10,10 +10,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
 
 function read(file: string): string {
-    return fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+    return blankNonCode(fs.readFileSync(path.join(UI_DIR, file), 'utf-8'));
 }
 
 const RAW_LIGHT_COLOR_REGEX =
@@ -55,7 +57,13 @@ describe('Button primitive', () => {
     });
 
     it('uses semantic tokens for secondary variant', () => {
-        expect(variantsSrc).toContain('bg-bg-default');
+        // #1774 — WAS `toContain('bg-bg-default')`, and that passed on a
+        // COMMENT. The R24 hotfix replaced the opaque fill with a translucent
+        // one and left a line reading "opaque `bg-bg-default` replaced by
+        // translucent navy fill"; the token survived in prose and the
+        // assertion went on reporting a variant that no longer existed. The
+        // real secondary fill is the glass token below.
+        expect(variantsSrc).toContain('bg-[var(--btn-glass-fill-secondary)]');
         expect(variantsSrc).toContain('text-content-emphasis');
         // R24-PR-B — `secondary` now takes the shared liquid-glass
         // surface recipe (which replaces R19-PR-B's carbonSurface).
@@ -188,7 +196,11 @@ describe('EmptyState primitive', () => {
     });
 
     it('accepts icon, title, description, learnMore, children, className', () => {
-        expect(src).toContain('icon:');
+        // #1774 — WAS `toContain('icon:')`, satisfied only by the docblock
+        // ("Default icon:", "icon: SearchX"). The prop is OPTIONAL —
+        // `icon?: React.ElementType` — exactly like `description?:` and
+        // `learnMore?:` which this test already spells correctly.
+        expect(src).toContain('icon?:');
         expect(src).toContain('title:');
         expect(src).toContain('description?:');
         expect(src).toContain('learnMore?:');
