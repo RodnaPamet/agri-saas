@@ -47,6 +47,8 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+
+import { blankNonCode } from '../helpers/blank-non-code';
 import * as ts from 'typescript';
 import { AuditDetailsSchema } from '../../src/lib/audit/event-schema';
 
@@ -134,7 +136,12 @@ describe('Audit Structured Events — Regression Guards', () => {
         let callsSeen = 0;
 
         for (const file of files) {
-            const content = fs.readFileSync(file, 'utf-8');
+            // Comments blanked (#1774). Measured first: 224 `logEvent(`
+            // matches on raw text, 222 with comments blanked — two live in
+            // prose, and each was being checked for a `detailsJson` argument
+            // it could never have. The floor below is 150, so it holds either
+            // way; this removes a false-violation source, not a cap.
+            const content = blankNonCode(fs.readFileSync(file, 'utf-8'));
             // Cheap reject before parsing ~1900 files.
             if (!content.includes('logEvent')) continue;
             const found = assertDetailsJson(path.relative(SRC_DIR, file), content);
@@ -237,7 +244,10 @@ class Orchestrator {
             // Skip the audit writer itself (it's the ONE place that does raw INSERT)
             if (basename.includes('audit-writer') || basename.includes('audit/verify')) continue;
 
-            const content = fs.readFileSync(file, 'utf-8');
+            // Blanked (#1774): the comment two lines up says this file does
+            // raw INSERTs, and a docblock elsewhere explaining the rule would
+            // otherwise read as breaking it.
+            const content = blankNonCode(fs.readFileSync(file, 'utf-8'));
             if (/INSERT\s+INTO\s+[\"']?AuditLog[\"']?/i.test(content)) {
                 violations.push(`${basename}: contains raw INSERT INTO AuditLog`);
             }
@@ -252,7 +262,11 @@ class Orchestrator {
         const scriptPath = path.join(SCRIPTS_DIR, 'verify-audit-chain.ts');
         expect(fs.existsSync(scriptPath)).toBe(true);
 
-        const content = fs.readFileSync(scriptPath, 'utf-8');
+        // Blanked (#1774) — this is the direction that matters: the three
+        // assertions below are PRESENCE checks, so a docblock naming
+        // `verifyTenantChain` would satisfy a test meaning "the script calls
+        // it". Strings are kept, because `--tenant` is a real CLI literal.
+        const content = blankNonCode(fs.readFileSync(scriptPath, 'utf-8'));
         expect(content).toContain('verifyTenantChain');
         expect(content).toContain('verifyAllTenants');
         expect(content).toContain('--tenant');
