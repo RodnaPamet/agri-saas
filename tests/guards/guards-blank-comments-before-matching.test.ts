@@ -90,6 +90,8 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * move this constant, so two in flight at once is the shared-ratchet collision
  * the cap exists to prevent, one level up.
  *
+ * Batch 9 moved it 418 -> 409 (twelve conversions), same diff again.
+ *
  * Batch 8 moved it 422 -> 418, in the same diff as its conversions. The live
  * count was 418 against a cap of 422 — drift 4, INSIDE the allowance, so this
  * would have merged green without touching the constant. That is exactly how
@@ -107,7 +109,7 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * code-shaped literal against file CONTENT (26), which is the actionable
  * list. Two scopes, deliberately; see #1774 for which to use when.
  */
-const UNBLANKED_CAP = 418;
+const UNBLANKED_CAP = 409;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -317,6 +319,23 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/guards/rls-coverage-skip-visibility.test.ts',
             'tests/unit/no-direct-prisma.test.ts',
             'tests/unit/rsc-regression.test.ts',
+            // Batch 9, #1774 — twelve whose reads are all `.ts`/`.tsx`, found
+            // by pre-flighting the remaining eighteen for file type and for a
+            // hand-rolled skipper before converting any. The other six read
+            // `.sh`, `.md`, `.json`, `.prisma` or `.sql`, or carry their own
+            // comment filter, and are left for individual handling.
+            'tests/guards/cardvariants-server-import.test.ts',
+            'tests/guards/download-route-gate-reachability.test.ts',
+            'tests/guards/epic-67-rollout-coverage.test.ts',
+            'tests/guards/invite-email-locale-wiring.test.ts',
+            'tests/guards/modal-payload-schema-parity.test.ts',
+            'tests/guards/notif-task-due-emit-coverage.test.ts',
+            'tests/guards/offline-spec-chunk-warmup.test.ts',
+            'tests/guards/optimistic-status-rollback.test.ts',
+            'tests/guards/sign-out-purges.test.ts',
+            'tests/unit/audit-guardrails.test.ts',
+            'tests/unit/job-scope-audit.test.ts',
+            'tests/unit/job-tenant-isolation-regression.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);

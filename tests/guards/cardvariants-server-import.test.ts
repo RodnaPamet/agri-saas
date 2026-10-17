@@ -35,6 +35,8 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
 
@@ -137,7 +139,7 @@ describe("cardVariants server-import boundary", () => {
         let serverComponents = 0;
         const serverCardVariantsUsers: string[] = [];
         for (const file of scanned) {
-            const content = fs.readFileSync(file, "utf8");
+            const content = blankNonCode(fs.readFileSync(file, "utf8"));
             if (hasUseClientDirective(content)) continue;
             serverComponents += 1;
             if (content.includes("cardVariants")) {
@@ -161,7 +163,7 @@ describe("cardVariants server-import boundary", () => {
         // so the positive is a real server component with its import
         // specifier corrupted to the banned one.
         const target = path.join(ROOT, "src/components/ui/ProgressCard.tsx");
-        const pristine = fs.readFileSync(target, "utf8");
+        const pristine = blankNonCode(fs.readFileSync(target, "utf8"));
         const corrupted = pristine.replace(
             "from '@/components/ui/card-variants'",
             "from '@/components/ui/card'",
@@ -214,10 +216,10 @@ describe("cardVariants server-import boundary", () => {
         // file — once in the scan loop, once here. Each occurs exactly once
         // today, so editing the loop's pattern without editing this copy
         // drops the count to one and fails here instead of passing quietly.
-        const self = fs.readFileSync(
+        const self = blankNonCode(fs.readFileSync(
             path.join(__dirname, "cardvariants-server-import.test.ts"),
             "utf8",
-        );
+        ));
         for (const pattern of [USES_CARD_VARIANTS, FROM_CARD_MODULE]) {
             expect(self.split(String(pattern)).length - 1).toBeGreaterThanOrEqual(
                 2,
@@ -229,7 +231,7 @@ describe("cardVariants server-import boundary", () => {
         const offenders: Offender[] = [];
         for (const dir of SCAN_DIRS) {
             for (const file of walk(path.join(ROOT, dir))) {
-                const content = fs.readFileSync(file, "utf8");
+                const content = blankNonCode(fs.readFileSync(file, "utf8"));
                 if (hasUseClientDirective(content)) continue;
                 const lines = content.split("\n");
                 for (let i = 0; i < lines.length; i++) {
@@ -349,7 +351,7 @@ describe("cardVariants server-import boundary", () => {
             "src/components/ui/card-variants.ts",
         );
         expect(fs.existsSync(cardVariantsPath)).toBe(true);
-        const src = fs.readFileSync(cardVariantsPath, "utf8");
+        const src = blankNonCode(fs.readFileSync(cardVariantsPath, "utf8"));
         expect(hasUseClientDirective(src)).toBe(false);
         // Sanity: it actually exports cardVariants.
         expect(src).toMatch(/export\s+const\s+cardVariants\s*=/);

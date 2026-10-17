@@ -15,13 +15,15 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 // ═════════════════════════════════════════════════════════════════════
 // 1. Executor Registry — tenantId propagation audit
 // ═════════════════════════════════════════════════════════════════════
 
 describe('Executor Registry — tenantId propagation audit', () => {
     const registryPath = resolve(__dirname, '../../src/app-layer/jobs/executor-registry.ts');
-    const registrySource = readFileSync(registryPath, 'utf8');
+    const registrySource = blankNonCode(readFileSync(registryPath, 'utf8'));
 
     /**
      * Extract each executor registration block and verify that if the
@@ -34,7 +36,7 @@ describe('Executor Registry — tenantId propagation audit', () => {
         // evidence-import passing an async progress callback to
         // runEvidenceImport). The tenantId reference may appear AFTER
         // the inner closure (in the result/payload), so we need the
-        // full body, not just the prefix up to the first `});`.
+        // full body, not just the prefix up to the first `}));`.
         const openerRe =
             /executorRegistry\.register\('([^']+)',\s*async\s*\(([^)]*)\)\s*=>\s*\{/g;
         const violations: string[] = [];
@@ -182,14 +184,14 @@ describe('Service API — tenantId acceptance audit', () => {
 
     for (const svc of services) {
         test(`${svc.name} accepts tenantId in its options API`, () => {
-            const source = readFileSync(resolve(__dirname, '../../', svc.path), 'utf8');
+            const source = blankNonCode(readFileSync(resolve(__dirname, '../../', svc.path), 'utf8'));
             // An optional `tenantId?: string` on the options type is what makes
             // the job addressable to one tenant at all.
             expect(source).toMatch(/tenantId\?:\s*string/);
         });
 
         test(`${svc.name} applies tenantId to EVERY query it issues`, () => {
-            const source = readFileSync(resolve(__dirname, '../../', svc.path), 'utf8');
+            const source = blankNonCode(readFileSync(resolve(__dirname, '../../', svc.path), 'utf8'));
 
             // Measured on the post-teardown sources (2026-08-12):
             //   deadline-monitor       3 findMany / 3 `if (tenantId)`
@@ -217,7 +219,7 @@ describe('Schedule definitions — scope clarity', () => {
         // Tenant-scoped execution only happens via notification-dispatch or
         // direct executor calls with a specific tenantId.
         const schedulesPath = resolve(__dirname, '../../src/app-layer/jobs/schedules.ts');
-        const source = readFileSync(schedulesPath, 'utf8');
+        const source = blankNonCode(readFileSync(schedulesPath, 'utf8'));
 
         // No schedule should hardcode a specific tenantId
         expect(source).not.toMatch(/tenantId:\s*'/);

@@ -20,6 +20,8 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 interface SiteContract {
     /** Path relative to repo root. */
     file: string;
@@ -57,7 +59,7 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
 ];
 
 function loadFile(file: string): string {
-    return readFileSync(join(__dirname, '..', '..', file), 'utf8');
+    return blankNonCode(readFileSync(join(__dirname, '..', '..', file), 'utf8'));
 }
 
 /**

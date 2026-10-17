@@ -26,6 +26,8 @@ import {
     assertScopeLogged,
 } from '../helpers/tenant-scope-guard';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const TENANT_A = 'tenant-regression-a';
 const TENANT_B = 'tenant-regression-b';
 
@@ -143,7 +145,7 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     const { readFileSync } = require('fs');
     const { resolve } = require('path');
     const registryPath = resolve(__dirname, '../../src/app-layer/jobs/executor-registry.ts');
-    const registrySource = readFileSync(registryPath, 'utf8');
+    const registrySource = blankNonCode(readFileSync(registryPath, 'utf8'));
 
     // Jobs that are explicitly not tenant-scoped
     // sharepoint-delta-sync-dispatch (SP-3) is a global cross-tenant fan-out —
@@ -268,7 +270,7 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         ];
 
         for (const svc of serviceFiles) {
-            const source = readFileSync(resolve(__dirname, svc.path), 'utf8');
+            const source = blankNonCode(readFileSync(resolve(__dirname, svc.path), 'utf8'));
             expect(source).toMatch(svc.pattern);
         }
     });
@@ -282,7 +284,7 @@ describe('Payload Type Contract — tenantId field audit', () => {
     const { readFileSync } = require('fs');
     const { resolve } = require('path');
     const typesPath = resolve(__dirname, '../../src/app-layer/jobs/types.ts');
-    const typesSource = readFileSync(typesPath, 'utf8');
+    const typesSource = blankNonCode(readFileSync(typesPath, 'utf8'));
 
     // Jobs that legitimately don't need tenantId
     // SharePointDeltaSyncDispatchPayload (SP-3) is the global fan-out cron — no
