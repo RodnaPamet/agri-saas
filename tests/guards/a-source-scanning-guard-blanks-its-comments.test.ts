@@ -49,17 +49,21 @@ import { findSourceTextScanners } from '../helpers/source-text-scanners';
 /**
  * Guards that still read source text without blanking it (#1774).
  *
- * SHRINK ONLY. Converting a guard means deleting its line here in the same
- * diff — the assertion below fails either way round, which is the point.
- * Do not add to this list: a new guard should blank from the start.
+ * **EMPTY, and it stays empty.** The sweep finished in batch 10: every guard
+ * that matched a code-shaped literal against unblanked file content now routes
+ * through `blankNonCode`, except the three in `SUBJECT_IS_NOT_BLANKABLE`,
+ * where converting would make the guard wrong.
+ *
+ * This started as a debt register of 44 and is now an assertion. The
+ * difference matters: while it held names, a new unblanked guard could be
+ * "fixed" by adding a line here, and that is no longer available. A new guard
+ * that greps source either blanks, or earns a documented place among the
+ * never-blankable with a reason specific to what it reads.
+ *
+ * Emptiness is asserted separately below, so re-filling it fails even if the
+ * exact-set assertion is satisfied by a matching pair of additions.
  */
 const AWAITING_CONVERSION: readonly string[] = [
-    'tests/guardrails/deploy-env-parity.test.ts',
-    'tests/guardrails/keyboard-shortcut-conventions.test.ts',
-    'tests/guards/p-polish-c.test.ts',
-    'tests/guards/p5a-snapshots-table-sidebar.test.ts',
-    'tests/unit/data-table.test.ts',
-    'tests/unit/notification-eligibility-guardrail.test.ts',
 ];
 
 
@@ -145,6 +149,15 @@ describe('a source-scanning guard blanks its comments (#1774)', () => {
         expect(found.map((s) => s.file)).not.toContain(
             'tests/guards/a-source-scanning-guard-blanks-its-comments.test.ts',
         );
+    });
+
+    it('the register is EMPTY — the sweep finished and cannot be undone by a new line', () => {
+        // Deliberately separate from the exact-set assertion below. That one
+        // compares found against register + never-blankable, so adding a new
+        // unblanked guard AND its register line would satisfy it. This one
+        // refuses the second half: the list is not a place to put work any
+        // more.
+        expect(AWAITING_CONVERSION).toEqual([]);
     });
 
     it('the register names exactly the guards still reading prose', () => {

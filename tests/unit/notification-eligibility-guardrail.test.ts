@@ -27,6 +27,8 @@ import { readFileSync, readdirSync, statSync } from 'fs';
 import { resolve, relative } from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const SRC_ROOT = resolve(__dirname, '../../src');
 
 /**
@@ -63,7 +65,7 @@ describe('GUARDRAIL: notification eligibility enforced at every outbox write sit
 
     // Find files with outbox writes
     const outboxWriters = allFiles.filter(f => {
-        const content = readFileSync(f, 'utf8');
+        const content = blankNonCode(readFileSync(f, 'utf8'));
         return content.includes('notificationOutbox.create');
     });
 
@@ -77,7 +79,7 @@ describe('GUARDRAIL: notification eligibility enforced at every outbox write sit
         (_relPath, absPath) => {
             if (EXEMPT_FILES.some(e => absPath.includes(e))) return;
 
-            const content = readFileSync(absPath, 'utf8');
+            const content = blankNonCode(readFileSync(absPath, 'utf8'));
 
             // The file must either:
             //   a) Import isNotificationsEnabled directly, OR
@@ -111,14 +113,14 @@ describe('GUARDRAIL: notification eligibility enforced at every outbox write sit
 describe('GUARDRAIL: isNotificationsEnabled is defined in settings.ts only', () => {
     test('isNotificationsEnabled is exported from settings.ts', () => {
         const settingsPath = resolve(SRC_ROOT, 'app-layer/notifications/settings.ts');
-        const content = readFileSync(settingsPath, 'utf8');
+        const content = blankNonCode(readFileSync(settingsPath, 'utf8'));
         expect(content).toContain('export async function isNotificationsEnabled');
     });
 
     test('no other file re-defines isNotificationsEnabled', () => {
         const allFiles = walkTs(SRC_ROOT);
         const definers = allFiles.filter(f => {
-            const content = readFileSync(f, 'utf8');
+            const content = blankNonCode(readFileSync(f, 'utf8'));
             return (
                 content.includes('function isNotificationsEnabled') &&
                 !f.includes('settings.ts')
@@ -136,7 +138,7 @@ describe('GUARDRAIL: isNotificationsEnabled is defined in settings.ts only', () 
 
     test('notification module barrel re-exports isNotificationsEnabled', () => {
         const indexPath = resolve(SRC_ROOT, 'app-layer/notifications/index.ts');
-        const content = readFileSync(indexPath, 'utf8');
+        const content = blankNonCode(readFileSync(indexPath, 'utf8'));
         expect(content).toContain('isNotificationsEnabled');
     });
 });
@@ -147,18 +149,18 @@ describe('GUARDRAIL: isNotificationsEnabled is defined in settings.ts only', () 
 
 describe('GUARDRAIL: digest-dispatcher uses shared eligibility', () => {
     test('digest-dispatcher imports isNotificationsEnabled from settings', () => {
-        const content = readFileSync(
+        const content = blankNonCode(readFileSync(
             resolve(SRC_ROOT, 'app-layer/notifications/digest-dispatcher.ts'),
             'utf8',
-        );
+        ));
         expect(content).toContain("import { isNotificationsEnabled } from './settings'");
     });
 
     test('digest-dispatcher checks eligibility per tenant', () => {
-        const content = readFileSync(
+        const content = blankNonCode(readFileSync(
             resolve(SRC_ROOT, 'app-layer/notifications/digest-dispatcher.ts'),
             'utf8',
-        );
+        ));
         // Must check eligibility and skip disabled tenants
         expect(content).toContain('eligibleTenants');
         expect(content).toContain('isNotificationsEnabled(prisma, tenantId)');
@@ -193,6 +195,9 @@ describe('GUARDRAIL: EmailNotificationType schema-migration alignment', () => {
         for (const dir of dirs) {
             const sqlPath = resolve(migrationsDir, dir, 'migration.sql');
             try {
+                // NOT blanked (#1774): SQL comments are `--`, and a `/* */`
+                // in a migration is Postgres syntax a TS blanker would eat.
+                // The assertions on `allSql` are about DDL, not code shape.
                 allSql += readFileSync(sqlPath, 'utf8') + '\n';
             } catch {
                 // Some dirs may not have migration.sql
@@ -213,10 +218,10 @@ describe('GUARDRAIL: EmailNotificationType schema-migration alignment', () => {
 
     test('DigestCategory type in code is a subset of schema EmailNotificationType', () => {
         const schema = readPrismaSchema();
-        const dispatcher = readFileSync(
+        const dispatcher = blankNonCode(readFileSync(
             resolve(SRC_ROOT, 'app-layer/notifications/digest-dispatcher.ts'),
             'utf8',
-        );
+        ));
 
         const enumMatch = schema.match(
             /enum\s+EmailNotificationType\s*\{([^}]+)\}/,

@@ -27,8 +27,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, "../..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+// Blanked (#1774). `readSchema()` below is deliberately NOT: it concatenates
+// `prisma/schema/*.prisma`, where `//` IS a comment but `/* */` is not, so a
+// TS blanker is the wrong tool even though one of the two syntaxes overlaps.
+const read = (rel: string) =>
+    blankNonCode(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 /**
  * The WHOLE schema folder, concatenated.
