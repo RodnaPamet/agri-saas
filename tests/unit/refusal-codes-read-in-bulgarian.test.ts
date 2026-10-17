@@ -264,6 +264,33 @@ const BATCH_1712: ReadonlyArray<[code: string, english: string]> = [
 
 const REPO_ROOT = resolve(__dirname, '../..');
 
+/**
+ * Batch 11 — the HTTP/protocol tranche plus `INVALID_LINK`.
+ *
+ * Chosen because none of it needs a vocabulary ruling: an `If-Match` refusal
+ * is read by whoever wrote the client, not by a farmer deciding what «блок»
+ * means, so the protocol tokens stay in Latin on purpose.
+ *
+ * `API_KEY_FAMILY_NOT_ENABLED` carries `{ resource: family }`, which makes
+ * `localizeErrorPayload` look for `errors.API_KEY_FAMILY_NOT_ENABLED.<family>`
+ * before the flat key. Nothing defines a variant, so it falls through — and
+ * the param is still interpolated into the flat sentence. The test below has
+ * to SUPPLY that param: without it next-intl leaves `{resource}` in the
+ * output and the no-placeholder assertion fails, which is the correct
+ * failure for an entry whose params never arrive.
+ */
+const BATCH_11: ReadonlyArray<[code: string, english: string]> = [
+    ['API_KEY_FAMILY_NOT_ENABLED', 'API keys cannot be used for "market". That surface has not been enabled for key access.'],
+    ['API_KEY_NOT_PERSON_SCOPED', 'An API key cannot be used on a person-scoped route.'],
+    ['API_KEY_WRONG_SURFACE', 'API keys may only be used on the tenant API.'],
+    ['IDEMPOTENCY_KEY_INVALID', 'That request key is not valid.'],
+    ['IF_MATCH_EMPTY', 'If-Match was sent empty. Omit the header for no precondition, or send the version.'],
+    ['IF_MATCH_MALFORMED', 'If-Match must be the row version as a bare integer (5) or a strong entity-tag ("5").'],
+    ['IF_MATCH_WEAK_TAG', 'A weak entity-tag cannot be used with If-Match. Send the version as a bare integer or a strong tag.'],
+    ['INVALID_LINK', 'Locations not found.'],
+    ['UNSUPPORTED_FILE_TYPE', 'Upload a shapefile (.zip), KML (.kml/.kmz), or GeoJSON (.geojson/.json).'],
+];
+
 const payload = (code: string, message: string): ApiErrorResponse => ({ error: { code, message } });
 
 beforeEach(() => {
@@ -1327,5 +1354,45 @@ describe('#1712 — the farmer-facing notFound() sites now speak Bulgarian', () 
         }
         const bg = readCatalogue('bg') as unknown as { errors: Record<string, string> };
         expect(bg.errors.TARGET_USER_NOT_IN_TENANT).toMatch(/стопанство/);
+    });
+});
+
+describe('#1918 batch 11 — the protocol tranche, and one source message rewritten', () => {
+    it('ranges over the batch — the denominator', () => {
+        console.log(`[refusal-bg] batch 11 added ${BATCH_11.length} entries (http + api-key + links)`);
+        expect(BATCH_11.length).toBe(9);
+    });
+
+    it.each(BATCH_11.map(([c, e]) => [c, e] as const))(
+        'batch 11: %s is replaced with Bulgarian',
+        async (code, english) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            // Only this code takes a param, and it must be supplied — see the
+            // table's docblock for why an absent one is a real failure.
+            if (code === 'API_KEY_FAMILY_NOT_ENABLED') p.error.params = { resource: 'market' };
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+        },
+    );
+
+    it('INVALID_LINK no longer names the tenant predicate or a raw id AT SOURCE', () => {
+        // Batch 5 deliberately did NOT rewrite this phrase, and was right to:
+        // it is at 33 sites and an entry replaces the sentence for every
+        // reader, so a sweep would have bought nothing.
+        //
+        // This site is the exception for a reason that is not scale. It also
+        // interpolated `${missing[0]}` — a raw cuid — and `localizeErrorPayload`
+        // SWALLOWS its own failures by design, so on any localisation miss the
+        // original message is what ships. An entry cannot protect a string it
+        // never replaced. The id moved to `params`, where a client can read it
+        // and nobody sees it.
+        const src = readFileSync(`${REPO_ROOT}/src/app-layer/usecases/farm-task.ts`, 'utf8');
+        expect(src).toContain("codedBadRequest('INVALID_LINK'");
+        expect(src).not.toMatch(/belongs to a different tenant/);
+        expect(src).not.toMatch(/INVALID_LINK[^;]*\$\{missing\[0\]\}`/);
+        expect(src).toContain('{ id: missing[0] }');
     });
 });

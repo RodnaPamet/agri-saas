@@ -38,7 +38,13 @@ export interface CreateFarmTaskInput {
 function assertAllOwned(label: string, requested: string[], valid: Set<string>) {
     const missing = requested.filter((id) => !valid.has(id));
     if (missing.length) {
-        throw codedBadRequest('INVALID_LINK', `${label} not found or belongs to a different tenant: ${missing[0]}`);
+        // #1918 — the message used to read "... not found or belongs to a
+        // different tenant: <cuid>". Both halves were wrong to display: the
+        // predicate confirms the id EXISTS somewhere, which is the one answer
+        // a tenant boundary must not give, and the cuid is noise to a farmer.
+        // The id moves to `params`, where a client can use it and no one
+        // reads it off a screen.
+        throw codedBadRequest('INVALID_LINK', `${label} not found.`, { id: missing[0] });
     }
 }
 
