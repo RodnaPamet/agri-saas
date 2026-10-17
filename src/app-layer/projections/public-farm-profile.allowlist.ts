@@ -94,6 +94,20 @@ export const NOT_HIDEABLE = {
         + 'public page with no name cannot be represented at all.',
     indexable: 'Not a field a visitor reads — it is the decision about whether '
         + 'search engines may index the page, and it has its own control.',
+    logoMediaHash: 'An image, not a paragraph, and the difference is what makes a '
+        + 'toggle unnecessary. The eye toggles exist because hiding a text field must '
+        + 'not destroy the text — it lives only on this row, so withholding and '
+        + 'deleting had to be separated. An image does not: the bytes are in storage '
+        + 'under a content address that does not depend on this column, so clearing '
+        + 'the column withholds the logo and loses nothing. Restoring it needs the '
+        + 'hash, which the upload returns and which the editor can list from the '
+        + 'tenant\'s `farm-media` files. A toggle would be a second way to express '
+        + 'the same state, which is the control-that-does-nothing this partition '
+        + 'exists to prevent.',
+    photoMediaHashes: 'Same as `logoMediaHash`, and one thing more: the array IS '
+        + 'the gallery, so removing a hash is the act of withdrawing that photograph. '
+        + 'A flag withholding the whole gallery while the array stayed populated '
+        + 'would mean two sources of truth for "what is on the page".',
 } as const satisfies Partial<Record<keyof FarmBrand, string>>;
 
 export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
@@ -141,36 +155,14 @@ export const BRAND_FIELD_DECISIONS: Record<keyof FarmBrand, FieldDecision> = {
             + 'crop list exists and is being withheld.',
     ),
 
-    // ── private for exactly one release — P6.3 (#1812) ──
+    // ── published, as of P6.3's writer ──
     //
-    // These will be PUBLISHED. They are `private` here for the same reason
-    // `indexable` was, and the reason is a deployment one rather than a
-    // privacy one: `scripts/entrypoint.sh` applies migrations when an image
-    // ships, so a Watchtower pin reverts the CODE while leaving the SCHEMA
-    // migrated — and the inverse, rolling the MIGRATION back under running
-    // code, leaves a projection writer naming a column the database no longer
-    // has. Every refresh would then fail, for every farm, including farms with
-    // no images at all. So the columns must be contained in a released tag
-    // before this writer may copy them.
-    //
-    // Flipping either of these to `published()` is the next PR's first line,
-    // together with the sharp pipeline that writes them. The allowlist is
-    // deliberately the thing that has to change: it makes "the columns exist"
-    // and "the columns are published" two separate, reviewable decisions.
-    //
-    // Note what this does NOT defer. A farm can have no logo at all, so the
-    // page must render without one regardless — the private phase is not a
-    // period during which the surface is broken, it is a period during which
-    // the surface is exactly what it is today.
-    logoMediaHash: privateField(
-        'P6.3 (#1812) — the column ships one release ahead of its writer, so a '
-            + 'rollback of the migration cannot break projection refresh for every '
-            + 'farm. Becomes `published()` with the image pipeline.',
-    ),
-    photoMediaHashes: privateField(
-        'P6.3 (#1812) — same phase rule as `logoMediaHash`. Becomes '
-            + '`published()` with the image pipeline.',
-    ),
+    // `private` for exactly one release, which has now happened: the columns
+    // shipped in #2029 and are contained in v12.73.1, so the phase rule is
+    // satisfied and a rollback of that migration cannot leave this writer
+    // naming a column the database lacks. Same sequence as `indexable` above.
+    logoMediaHash: published(),
+    photoMediaHashes: published(),
 
     // ── private ──
     id: privateField(
@@ -283,6 +275,8 @@ export function projectionPayload(brand: {
     hideAbout: boolean;
     hideOblast: boolean;
     hideCrops: boolean;
+    logoMediaHash: string | null;
+    photoMediaHashes: string[];
 }): {
     handle: string;
     displayName: string;
@@ -292,6 +286,8 @@ export function projectionPayload(brand: {
     crops: string[];
     displayNameLatin: string;
     indexable: boolean;
+    logoMediaHash: string | null;
+    photoMediaHashes: string[];
 } {
     // Narrowed by the caller's preconditions; asserted again rather than cast,
     // because a cast here would be the one place the NOT NULL columns could be
@@ -359,6 +355,21 @@ export function projectionPayload(brand: {
         // not defaulted: a refresh must reproduce the decision, and defaulting
         // it here would quietly un-index a farm on the next edit.
         indexable: brand.indexable,
+        // P6.3 (#1812). Carried verbatim and NOT through `applyVisibility`:
+        // these are `NOT_HIDEABLE`, so there is no flag to consult, and
+        // passing them through anyway would invent one.
+        //
+        // What crosses is a content HASH, never a path or an id. That is what
+        // lets `/api/public/media/{hash}` be immutable and what keeps the
+        // tenantless projection free of a reference it could not resolve.
+        //
+        // Copied rather than filtered: whether each hash is publishable was
+        // decided by `assertPublishableMediaHashes` at WRITE time, inside the
+        // tenant's own RLS context. Re-checking here would need a
+        // cross-tenant file read from a projection writer that has no business
+        // doing one — and would still be checking a decision already made.
+        logoMediaHash: brand.logoMediaHash,
+        photoMediaHashes: [...brand.photoMediaHashes],
     };
 
     // The allowlist is the authority, so a private field appearing in `out`

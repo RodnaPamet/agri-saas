@@ -28,9 +28,44 @@ const FULL = {
     hideAbout: false,
     hideOblast: false,
     hideCrops: false,
+    // P6.3 (#1812). Present on the fixture because `projectionPayload` now
+    // requires them, and populated rather than empty so the cases below show
+    // that media crosses REGARDLESS of the eye toggles — these fields are
+    // `NOT_HIDEABLE`, so no flag can withhold them and a fixture with an empty
+    // gallery could not tell a carried value from a dropped one.
+    logoMediaHash: 'c'.repeat(64),
+    photoMediaHashes: ['d'.repeat(64), 'e'.repeat(64)],
 };
 
 describe('per-field visibility in the public projection', () => {
+    it('media crosses even with every toggle ON — it is NOT_HIDEABLE', () => {
+        // The partition's claim, executed. `logoMediaHash` and
+        // `photoMediaHashes` are in NOT_HIDEABLE, so there is no flag that
+        // withholds them; a farm withdraws a photograph by removing its hash.
+        // Hiding all four text fields must leave the gallery untouched.
+        const out = projectionPayload({
+            ...FULL,
+            hideTagline: true,
+            hideAbout: true,
+            hideOblast: true,
+            hideCrops: true,
+        });
+        expect(out.logoMediaHash).toBe('c'.repeat(64));
+        expect(out.photoMediaHashes).toEqual(['d'.repeat(64), 'e'.repeat(64)]);
+        // The control: the text fields DID get withheld, so this fixture can
+        // tell "unaffected" from "nothing happened".
+        expect(out.tagline).toBeNull();
+        expect(out.crops).toEqual([]);
+    });
+
+    it('copies the gallery rather than aliasing it', () => {
+        // `[...brand.photoMediaHashes]`. Returning the caller's array would
+        // let a later mutation of the brand row change what was projected.
+        const out = projectionPayload(FULL);
+        expect(out.photoMediaHashes).not.toBe(FULL.photoMediaHashes);
+        expect(out.photoMediaHashes).toEqual(FULL.photoMediaHashes);
+    });
+
     it('projects everything when nothing is hidden — the control', () => {
         const out = projectionPayload(FULL);
         expect(out.tagline).toBe('Зърно от Добруджа');

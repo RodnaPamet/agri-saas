@@ -55,6 +55,10 @@ import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { projectionPayload, HIDEABLE_FIELDS } from '../projections/public-farm-profile.allowlist';
+import {
+    assertPublishableMediaHashes,
+    FARM_BRAND_MAX_PHOTOS,
+} from './farm-brand-media';
 import type {
     RecordFarmBrandConsentInput,
     UpdateFarmBrandInput,
@@ -737,7 +741,35 @@ export async function updateFarmBrand(
         if (value !== undefined) data[column] = value;
     }
 
+    // Media hashes — P6.3 (#1812). Not a `!== undefined` passthrough like the
+    // fields above, because which hashes a tenant may publish is a database
+    // question: see `assertPublishableMediaHashes`, and the cap below.
+    if (input.photoMediaHashes !== undefined
+        && input.photoMediaHashes.length > FARM_BRAND_MAX_PHOTOS) {
+        throw codedBadRequest(
+            'FARM_MEDIA_TOO_MANY',
+            `A profile may show up to ${FARM_BRAND_MAX_PHOTOS} photographs.`,
+            { maxPhotos: String(FARM_BRAND_MAX_PHOTOS) },
+        );
+    }
+
     const outcome = await runInTenantContext(ctx, async (db) => {
+        // INSIDE the transaction, so the check and the write that depends on
+        // it cannot be separated by another request deleting the file.
+        //
+        // The logo and the gallery are checked together: one query, and a
+        // request that sets both is refused whole rather than half-applied.
+        const claimedHashes = [
+            ...(input.logoMediaHash ? [input.logoMediaHash] : []),
+            ...(input.photoMediaHashes ?? []),
+        ];
+        await assertPublishableMediaHashes(db, claimedHashes);
+
+        if (input.logoMediaHash !== undefined) data.logoMediaHash = input.logoMediaHash;
+        if (input.photoMediaHashes !== undefined) {
+            data.photoMediaHashes = input.photoMediaHashes;
+        }
+
         const before = await db.farmBrand.findFirst({
             where: { tenantId: ctx.tenantId },
             select: { id: true, published: true },
