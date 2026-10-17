@@ -341,14 +341,32 @@ export async function redeemOrgInvite(input: {
     });
 
     if (claim.count !== 1) {
-        // Look up why for a precise error response. Anti-enumeration:
-        // we still surface a 410 (or 404) — same response shape across
-        // all "not redeemable" states; callers don't get to distinguish.
+        // Look up why, for a message the holder of a legitimate-but-dead link
+        // can act on.
+        //
+        // THE STATUS IS UNIFORM AND THE MESSAGE IS NOT — stated precisely,
+        // because the comment this replaces claimed more than the code did
+        // (#2016). It said "callers don't get to distinguish" while an unknown
+        // token answered 404 and the three terminal states answered 410, so a
+        // caller learned from the STATUS ALONE whether a token had ever
+        // existed. That is a safety argument that was never true, which is
+        // worse than none: the next reader trusts it instead of re-deriving it.
+        //
+        // What is fixed: an unknown token now answers 410 like the rest, so
+        // the status carries no existence signal.
+        //
+        // What is NOT fixed, deliberately: the three messages still differ,
+        // and so does the generic one below, so a caller who reads the body
+        // can still tell "never existed" from "revoked". That is accepted —
+        // the token is high-entropy, so guessing one is the hard part, and
+        // telling someone their invite expired rather than "this link does not
+        // work" is worth more than closing a channel that requires already
+        // holding a valid token to use.
         const inv = await prisma.orgInvite.findUnique({
             where: { token: input.token },
             select: { acceptedAt: true, revokedAt: true, expiresAt: true },
         });
-        if (!inv) throw notFound('Invite not found');
+        if (!inv) throw gone('This invite link is no longer valid.');
         if (inv.revokedAt) throw gone('Invite has been revoked');
         if (inv.expiresAt < new Date()) throw gone('Invite has expired');
         if (inv.acceptedAt) throw gone('Invite has already been redeemed');
