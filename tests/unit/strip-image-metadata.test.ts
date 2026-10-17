@@ -131,10 +131,16 @@ describe('stripImageMetadata', () => {
         expect(bytes).toBe(pdf);
     });
 
-    it('REFUSES bytes it cannot decode rather than storing them unstripped', async () => {
+    it('REFUSES bytes it cannot re-encode rather than storing them unstripped', async () => {
         // The alternative — warn and pass the original through — fails in the
         // one direction that matters: the file keeps its GPS tags and the
         // operator learns from a log line nobody reads.
+        //
+        // Named "cannot re-encode" rather than "cannot decode" on purpose.
+        // Some VALID images reach the second state without the first: a
+        // hand-minimised 1x1 PNG passes `metadata()` and then fails the
+        // re-encode with a libpng read error. The refusal covers both, and
+        // the module's docblock records the measurement.
         const corrupt = Buffer.concat([
             jpegWithExif.subarray(0, 40),
             Buffer.alloc(200, 0xff),

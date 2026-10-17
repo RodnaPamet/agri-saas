@@ -320,13 +320,19 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'FARM_SLUG_UNAVAILABLE',
     'FIELD_OPERATION_NOT_FOUND',
     // 'FILE_EMPTY' removed in #1630 — the spatial-import 400 now names it.
-    // `FILE_TOO_LARGE` STAYS: it is emitted by upload/ingest, evidence and
-    // journal and is still undocumented. It only LOOKS documented because
-    // `documented()` is `specText.includes(code)` and
-    // `SPATIAL_UPLOAD_TOO_LARGE` would have contained it — which is why that
-    // code is named the way it is.
-    'FILE_TOO_LARGE',
-    'FILE_TYPE_NOT_ALLOWED',
+    //
+    // `FILE_TOO_LARGE`, `FILE_TYPE_NOT_ALLOWED` and `INVALID_FILE` left in
+    // #1812, which documented `POST /api/t/{tenantSlug}/journal/{id}/files` —
+    // a route that raises all three from its OWN validation (it does not go
+    // through `ingestUploadedFile`), verified at `journal.ts` lines 650, 656
+    // and its multipart branch rather than assumed from the shared helper.
+    //
+    // The note that stood here said `FILE_TOO_LARGE` "only LOOKS documented
+    // because `documented()` is `specText.includes(code)`" and
+    // `SPATIAL_UPLOAD_TOO_LARGE` contains it. That hazard is real and is why
+    // that code is named the way it is — but it is no longer what is
+    // happening: the journal operation now names the bare code, which is a
+    // word-boundary match and the thing the rule is actually about.
     'FILE_VALIDATION_ERROR',
     'IDEMPOTENCY_KEY_INVALID',
     'IDENTIFIERS_REQUIRED',
@@ -339,7 +345,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'INVALID_BBOX',
     'INVALID_EQUIPMENT',
     'INVALID_FARM_PAYLOAD',
-    'INVALID_FILE',
     'INVALID_LIMIT',
     'INVALID_LOCATION',
     'INVALID_PLANTING',

@@ -79,7 +79,8 @@ export const IMAGE_MAX_INPUT_PIXELS = 50 * 1000 * 1000;
  *   privacy problem is embedded scripts and external references, which is a
  *   sanitiser's job rather than an encoder's.
  * - **PDF** — carries author metadata and needs stripping, but it is not an
- *   image and must not be rasterised. Its own problem, tracked separately.
+ *   image and must not be rasterised, because that destroys the text layer
+ *   that for an invoice or a БАБХ form IS the content. Tracked as #2035.
  */
 const STRIPPABLE: Record<string, 'jpeg' | 'png' | 'webp' | 'tiff'> = {
     'image/jpeg': 'jpeg',
@@ -109,18 +110,28 @@ export function isStrippableImageType(mimeType: string): boolean {
  * of stripping by lying about the content type, which is the whole reason
  * every upload path in this repo sniffs.
  *
- * ## Why an undecodable image is REFUSED rather than passed through
+ * ## Why an image this cannot re-encode is REFUSED rather than passed through
  *
  * The alternative is to log a warning and store the original bytes. That
  * fails in the one direction that matters: the file keeps its GPS tags, and
  * the operator learns about it from a log line nobody reads. A privacy
- * property that degrades silently to "no privacy" is not a property.
+ * property that degrades silently to "no privacy" is not a property. So the
+ * rule is simply: if it cannot be stripped, it is not stored.
  *
- * It is also not a real behaviour change. The bytes reached here only because
- * a magic-number sniff said they ARE this image type, so a decoder failure
- * means the container is truncated or malformed — a file no viewer in the
- * product could render either. Refusing it tells the farmer to re-take the
- * photo instead of storing something that will fail to display later.
+ * What this is NOT is "the file must be corrupt". I wrote that first — that a
+ * decoder failure means a truncated container, "a file no viewer could render
+ * either" — and an E2E test disproved it. A 69-byte hand-minimised 1x1 PNG
+ * that every browser decodes (the mobile offline-photo spec relies on
+ * `createImageBitmap` reading it) passes `metadata()` here as `png 1x1` and
+ * then dies on the re-encode with `vipspng: libpng read error`. Measured: two
+ * different hand-minimised 1x1 PNGs fail that way and sharp's own 1x1 does
+ * not, so it is the minimised encoding rather than the size.
+ *
+ * So this refusal has a real cost, stated honestly: a narrow class of VALID
+ * images — ones libvips can inspect but not round-trip — is refused. The trade
+ * is deliberate, because those are synthetic files (tracking pixels, minimised
+ * fixtures) rather than anything a camera or an editor produces, and the
+ * alternative is a silent metadata leak on every file in that class.
  */
 export async function stripImageMetadata(
     bytes: Buffer,
