@@ -89,6 +89,26 @@ const STRIPPABLE: Record<string, 'jpeg' | 'png' | 'webp' | 'tiff'> = {
     'image/tiff': 'tiff',
 };
 
+export interface StripOptions {
+    /** Component name for the log line. */
+    component: string;
+    /**
+     * Longest edge, in pixels, to fit the image INSIDE. Omit to leave the
+     * dimensions alone.
+     *
+     * Opt-in rather than defaulted, and the asymmetry is deliberate. The
+     * surfaces this module was written for — evidence and journal attachments
+     * — are RECORDS: a treatment photo may be the proof an inspector reads,
+     * and quietly downscaling it would destroy detail nobody chose to lose.
+     * A profile photograph is the opposite: it exists to be looked at on a
+     * phone, and shipping a 4000px original to do that is a cost with no
+     * benefit.
+     *
+     * So the caller that wants a smaller image asks for one.
+     */
+    maxDimension?: number;
+}
+
 export interface StripResult {
     /** The bytes to store — re-encoded, or the input unchanged. */
     bytes: Buffer;
@@ -136,7 +156,7 @@ export function isStrippableImageType(mimeType: string): boolean {
 export async function stripImageMetadata(
     bytes: Buffer,
     mimeType: string,
-    opts: { component: string },
+    opts: StripOptions,
 ): Promise<StripResult> {
     const format = STRIPPABLE[mimeType];
     // Not an image this module handles. Returned untouched and WITHOUT a
@@ -176,11 +196,28 @@ export async function stripImageMetadata(
         }
 
         // `.rotate()` with no argument applies the EXIF orientation and then
-        // drops it, and it must come first.
-        const out = await sharp(bytes, { limitInputPixels: IMAGE_MAX_INPUT_PIXELS })
-            .rotate()
-            [format]()
-            .toBuffer();
+        // drops it, and it must come BEFORE any resize — otherwise a portrait
+        // photo is fitted to the box in its unrotated frame and comes out
+        // scaled wrong as well as sideways. `account/avatar.ts` records the
+        // same ordering for the same reason.
+        let pipeline = sharp(bytes, { limitInputPixels: IMAGE_MAX_INPUT_PIXELS }).rotate();
+
+        if (opts.maxDimension !== undefined) {
+            pipeline = pipeline.resize(opts.maxDimension, opts.maxDimension, {
+                // `inside` preserves the aspect ratio and fits the whole image
+                // in the box, so neither edge exceeds the cap and nothing is
+                // cropped. A farm's photograph is not a thumbnail and must not
+                // be centre-cropped to a square — the subject is often the
+                // horizon.
+                fit: 'inside',
+                // An image already smaller than the cap is left alone. Without
+                // this, sharp would UPSCALE it to the box: more bytes, no more
+                // detail, and a visible softening.
+                withoutEnlargement: true,
+            });
+        }
+
+        const out = await pipeline[format]().toBuffer();
         return { bytes: out, stripped: true };
     } catch (err) {
         logger.warn('image.strip_failed', {

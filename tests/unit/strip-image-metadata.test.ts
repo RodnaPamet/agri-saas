@@ -95,10 +95,99 @@ describe('stripImageMetadata', () => {
         expect((await sharp(png.bytes).metadata()).format).toBe('png');
     });
 
-    it('keeps the pixels — stripping is not a resize', async () => {
+    it('keeps the pixels when no cap is given — stripping is not a resize', async () => {
+        // The default, and the one the record-keeping surfaces rely on: an
+        // evidence photo may be the proof an inspector reads, so losing detail
+        // nobody asked to lose would be the wrong trade.
         const { bytes } = await stripImageMetadata(jpegWithExif, 'image/jpeg', COMPONENT);
         const after = await sharp(bytes).metadata();
         expect([after.width, after.height]).toEqual([400, 240]);
+    });
+
+    describe('maxDimension', () => {
+        it('fits the image inside the cap, aspect ratio intact', async () => {
+            // 400x240 into a 200 box → 200x120, not 200x200. `fit: inside`
+            // rather than `cover`, because a farm's photograph must not be
+            // centre-cropped — the subject is often the horizon.
+            const { bytes } = await stripImageMetadata(jpegWithExif, 'image/jpeg', {
+                ...COMPONENT,
+                maxDimension: 200,
+            });
+            const after = await sharp(bytes).metadata();
+            expect([after.width, after.height]).toEqual([200, 120]);
+        });
+
+        it('does NOT upscale an image already under the cap', async () => {
+            // `withoutEnlargement`. Upscaling would cost bytes, add no detail
+            // and visibly soften a small logo.
+            const { bytes } = await stripImageMetadata(jpegWithExif, 'image/jpeg', {
+                ...COMPONENT,
+                maxDimension: 4000,
+            });
+            const after = await sharp(bytes).metadata();
+            expect([after.width, after.height]).toEqual([400, 240]);
+        });
+
+        it('still strips the metadata — the cap does not replace the point', async () => {
+            const before = await sharp(jpegWithExif).metadata();
+            expect(before.exif?.length ?? 0).toBeGreaterThan(0);
+            const { bytes } = await stripImageMetadata(jpegWithExif, 'image/jpeg', {
+                ...COMPONENT,
+                maxDimension: 200,
+            });
+            expect((await sharp(bytes).metadata()).exif?.length ?? 0).toBe(0);
+            expect(bytes.includes(Buffer.from('GPS-BEARING', 'ascii'))).toBe(false);
+        });
+
+        it('APPLIES the orientation, so a portrait photo stays portrait', async () => {
+            // Presence, not order — and the distinction is the result of a
+            // mutation that did not fail.
+            //
+            // I first wrote this as "rotates BEFORE it resizes", inheriting the
+            // claim from `account/avatar.ts`. Moving `.rotate()` after
+            // `.resize()` changed nothing: all 11 cases stayed green. The
+            // reason is the geometry. This surface fits inside a SQUARE box
+            // with `fit: inside`, so resize-then-rotate and
+            // rotate-then-resize agree — 400x240 into a 200 box is 200x120
+            // either way, and 120x200 after the turn.
+            //
+            // Avatar's ordering claim is real because it crops to a square with
+            // `fit: cover`: there the unrotated frame produces a different
+            // crop. Carrying the claim across was borrowing a conclusion from
+            // a different configuration.
+            //
+            // `.rotate()` still comes first, for consistency with that file and
+            // because a future non-square cap would make the order matter. What
+            // this case asserts is the property that IS here: the orientation
+            // is applied at all, so a portrait phone photo is not stored
+            // sideways. Deleting `.rotate()` fails it.
+            // `withMetadata({ orientation })`, NOT `withExif({ IFD0: {
+            // Orientation } })`. The latter is the obvious spelling and it is
+            // silently ignored: measured, the produced file reads back
+            // `orientation: 1` and `.rotate()` then does nothing, so the test
+            // asserted 200x120 against 200x120 and would have passed whatever
+            // the pipeline did. The positive control below is what caught it.
+            const portrait = await sharp({
+                create: { width: 400, height: 240, channels: 3, background: '#357' },
+            })
+                // Orientation 6 = rotate 90° clockwise on display.
+                .withMetadata({ orientation: 6 })
+                .jpeg()
+                .toBuffer();
+
+            // CONTROL: the fixture really does carry an orientation that
+            // changes the frame. Without this the case cannot fail.
+            const src = await sharp(portrait).metadata();
+            expect(src.orientation).toBe(6);
+            expect([src.width, src.height]).toEqual([400, 240]);
+
+            const { bytes } = await stripImageMetadata(portrait, 'image/jpeg', {
+                ...COMPONENT,
+                maxDimension: 200,
+            });
+            const after = await sharp(bytes).metadata();
+            expect([after.width, after.height]).toEqual([120, 200]);
+        });
     });
 
     // NO TEST for the animated case, deliberately, and this comment is the
