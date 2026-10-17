@@ -109,6 +109,28 @@ export type RlsBypassReason =
     /** Tests exercising the bypass path itself. */
     | 'test'
     /**
+     * Serving the BYTES of an image a published farm profile references —
+     * P6.3 (#1812), `/api/public/media/[hash]`.
+     *
+     * Its own reason rather than `public-projection-read`, and the difference
+     * is the one the ratchet in `no-untyped-rls-bypass.test.ts` cares about.
+     * That reason's safety argument is "bounded by the TABLE":
+     * `PublicFarmProfile` has no PII columns and no `tenantId`, so a mistake
+     * at the call site cannot widen its reach. This read is of `FileRecord`,
+     * which IS tenant-scoped — so that argument does not cover it, and
+     * borrowing the reason would make an audit of `public-projection-read`'s
+     * call sites claim a bound it no longer has.
+     *
+     * What bounds THIS one is the ORDER of two reads, not the table. The
+     * caller first asks whether a `PublicFarmProfile` references the hash, and
+     * only a yes leads here. So the row it returns belongs to whichever tenant
+     * published that image, which is precisely the tenant that chose to make
+     * it public. Reverse the two reads and this becomes a cross-tenant file
+     * lookup by hash — which is why the order has its own test rather than
+     * only a comment.
+     */
+    | 'public-media-read'
+    /**
      * Request-time read across the tenants of ONE organization, for the
      * Epic O-3 portfolio summary. Reads aggregate `ComplianceSnapshot` rows
      * and tenant metadata (id/slug/name) only — never per-tenant business
@@ -311,6 +333,7 @@ export async function runWithoutRls<T>(
  */
 const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'public-projection-read': true,
+    'public-media-read': true,
     'farm-handle-availability': true,
     'exchange-farm-attribution': true,
     'auth-tenant-discovery': true,

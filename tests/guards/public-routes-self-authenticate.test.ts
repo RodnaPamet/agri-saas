@@ -140,6 +140,32 @@ describe('credential-verifying routes are reachable, and public routes verify', 
                 'data), so what it discloses is bounded to legal entities. Rate-limited with ' +
                 'PUBLIC_READ_LIMIT, which is the control here because uniformity cannot be — ' +
                 'telling a typo from an unregistered company IS the feature.',
+            '/api/public/media/[hash]':
+                'P6.3 (#1812) — anonymous by design, for the same reason as the farm '
+                + 'page it serves: a page whose images 401 is not a public page. There '
+                + 'is no credential to verify, because a stranger reading a published '
+                + 'profile has no account.\n\n'
+                + 'What it discloses is bounded by an ORDER rather than by a table, and '
+                + 'that is the difference from the sibling above. `resolvePublicMedia` '
+                + 'first asks whether any `PublicFarmProfile` references the hash, and '
+                + 'only a yes leads to the `FileRecord` read — so the bytes it can '
+                + 'return are exactly the ones some farm chose to publish. `FileRecord` '
+                + 'IS tenant-scoped, so reversing those two reads would turn this into '
+                + 'a cross-tenant file lookup by hash; the order is asserted by '
+                + '`tests/unit/public-farm-media.test.ts` and the second read carries '
+                + 'its own bypass reason, `public-media-read`, so an audit of '
+                + '`public-projection-read` is not made to vouch for it.\n\n'
+                + 'A hash is unguessable (64 hex characters from sha256) but PERMANENT, '
+                + 'which is why publication rather than existence is the test: a '
+                + 'projection row exists only while a farm is published, so '
+                + 'unpublishing stops its images resolving in the same step instead of '
+                + 'leaving a capability nobody can revoke.\n\n'
+                + 'Every negative case answers one 404 — malformed hash, not published, '
+                + 'no stored file, quarantined by the scan gate — so the response cannot '
+                + 'be used to confirm that a hash exists. Rate-limited at the Edge by '
+                + 'PUBLIC_MEDIA_LIMIT (300/min/IP) rather than PUBLIC_READ_LIMIT, '
+                + 'because a profile page is a logo plus a few photos and 60/min would '
+                + 'break images, silently, around the ninth profile a visitor opened.',
             '/api/public/farms':
                 'P6.8 — anonymous by design, and the design IS the product: a stranger '
                 + 'holding a shared link or scanning a printed QR code browses the directory '

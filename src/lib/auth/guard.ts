@@ -29,6 +29,31 @@ export const PUBLIC_PATH_PREFIXES = [
     // Anything added under `/f/` later is public by this entry. That is the
     // cost of a prefix and it is the right trade here, because every path
     // under `/f/` is by definition a published profile.
+    // P6.3 (#1812) — the bytes of an image a published farm profile
+    // references, `/api/public/media/{hash}`. Public for the same reason
+    // `/f` is: a stranger with a shared link or a printed QR code reaches the
+    // page with no session, and a page whose images 401 is not a public page.
+    //
+    // A PREFIX and not an exact entry, because the hash is part of the path
+    // and there is no finite set of paths to list. THE TRAILING SLASH IS
+    // LOAD-BEARING: without it this would also open a future
+    // `/api/public/mediaX`, which is the `/api/scim` vs `/api/scimulator`
+    // hazard named further down this file. With it, only children open, and
+    // the bare `/api/public/media` stays gated — it has no handler, so a 401
+    // there is the honest answer for an API path rather than a redirect to a
+    // login page an anonymous visitor has no account for.
+    //
+    // Only a CHILD path distinguishes a prefix entry from an exact one; a
+    // sibling cannot. That is the measurement #1817 recorded the hard way, so
+    // `tests/guards/public-media-route-classification.test.ts` probes
+    // `/api/public/media/<hash>` against the LIVE predicate rather than
+    // asserting the list contains a string.
+    //
+    // What a prefix opens is every METHOD, not just GET. The route exports
+    // only `GET`, so POST and DELETE 405 rather than reaching a handler —
+    // that is the whole defence, and it is why the route must not grow a
+    // mutating export without a different gate.
+    '/api/public/media/',
     '/f',
     '/invite/',          // Invite preview page (tenant + org) — public so unauthenticated users can see invite details
     '/api/auth',         // Auth.js callbacks, session, csrf, providers
