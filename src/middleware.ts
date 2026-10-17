@@ -37,6 +37,7 @@ import {
     isTermsAllowedPath,
 } from '@/lib/auth/guard';
 import { generateNonce, buildCspHeader, CSP_NONCE_HEADER, CSP_REPORT_PATH, CSP_REPORT_GROUP, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
+import { AUTH_SURFACE_HEADER, isAuthSurface } from '@/lib/i18n/auth-surface';
 import { isPublicSurface, PUBLIC_SURFACE_HEADER } from '@/lib/i18n/public-surface';
 import { applySecurityHeaders } from '@/lib/security/headers';
 import { resolveCorsConfig, isOriginAllowed, applyCorsHeaders, CORS_PREFLIGHT_HEADERS } from '@/lib/security/cors';
@@ -632,6 +633,18 @@ export default async function middleware(
     // bytes; a wrongly-set one would strip copy from a real screen.
     if (isPublicSurface(pathname)) {
         requestHeaders.set(PUBLIC_SURFACE_HEADER, '1');
+    }
+    // The same contract for the pre-session surface (#2011): set only when
+    // PRESENT, absent means the operator app. `/login` took the whole
+    // catalogue until now — all 5787 keys serialised into the HTML a stranger
+    // downloads before authenticating.
+    //
+    // The two are mutually exclusive by construction (`/f` and `/login` share
+    // no prefix), and `bundlesFor` refuses to merge one surface's bundle into
+    // the other regardless, so a future overlap costs bytes rather than
+    // showing farm copy on the sign-in page.
+    if (isAuthSurface(pathname)) {
+        requestHeaders.set(AUTH_SURFACE_HEADER, '1');
     }
     // 2026-05-14 — Next.js 15 reads the FULL CSP policy from the
     // request headers (NOT just our `x-csp-nonce` request header)

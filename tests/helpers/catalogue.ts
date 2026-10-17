@@ -45,6 +45,7 @@ import * as path from 'node:path';
 // without depending on them for its data — and the docblock above predicted
 // exactly this edit, which is the whole reason no call site changes.
 import type EnPublicBundle from '../../messages/en/public.json';
+import type EnAuthBundle from '../../messages/en/auth.json';
 import type EnAppBundle from '../../messages/en/app.json';
 
 export const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -58,7 +59,12 @@ export const MESSAGES_DIR = path.join(REPO_ROOT, 'messages');
  * the other, so one shape for all locales is enforced elsewhere rather than
  * assumed here.
  */
-export type Catalogue = typeof EnPublicBundle & typeof EnAppBundle;
+// Every bundle, intersected — `auth` joined for #2011 when `login` moved out
+// of `app.json` into its own file. Typecheck is what said so: a guard reading
+// `messages.login` failed with "Property 'login' does not exist on type
+// 'Catalogue'", which is precisely the protection this typed shape exists to
+// give. A new bundle that is not added here is invisible to every caller.
+export type Catalogue = typeof EnPublicBundle & typeof EnAuthBundle & typeof EnAppBundle;
 
 /**
  * Read one locale's full catalogue.

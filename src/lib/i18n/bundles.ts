@@ -27,9 +27,10 @@
  * operator catalogue to serve an anonymous page — `src/i18n.ts` loads the
  * public bundle alone when the middleware marks the request public.
  */
+import { AUTH_SURFACE_NAMESPACES } from './auth-surface';
 import { PUBLIC_SURFACE_NAMESPACES } from './public-surface';
 
-export const BUNDLES = ['public', 'shared', 'app'] as const;
+export const BUNDLES = ['public', 'auth', 'shared', 'app'] as const;
 export type Bundle = (typeof BUNDLES)[number];
 
 /**
@@ -56,6 +57,9 @@ export const SHARED_NAMESPACES: readonly string[] = [];
  */
 export function bundleFor(namespace: string): Bundle {
     if ((PUBLIC_SURFACE_NAMESPACES as readonly string[]).includes(namespace)) return 'public';
+    // `auth` before `app` for the same reason `public` is: a namespace lives
+    // in exactly ONE bundle, and the surface lists are the authority on which.
+    if ((AUTH_SURFACE_NAMESPACES as readonly string[]).includes(namespace)) return 'auth';
     if (SHARED_NAMESPACES.includes(namespace)) return 'shared';
     return 'app';
 }
@@ -64,6 +68,9 @@ export function bundleFor(namespace: string): Bundle {
 export function bundleFiles(): Bundle[] {
     return BUNDLES.filter((b) => b !== 'shared' || SHARED_NAMESPACES.length > 0);
 }
+
+/** Which surface a request is being rendered for. */
+export type Surface = 'app' | 'public' | 'auth';
 
 /**
  * The bundles a request needs.
@@ -74,7 +81,12 @@ export function bundleFiles(): Bundle[] {
  * default, because a missing header costs bytes where a wrongly-set one would
  * strip copy from a real screen.
  */
-export function bundlesFor(isPublicSurface: boolean): Bundle[] {
-    if (!isPublicSurface) return bundleFiles();
-    return bundleFiles().filter((b) => b !== 'app');
+export function bundlesFor(surface: Surface): Bundle[] {
+    // The operator app reads everything.
+    if (surface === 'app') return bundleFiles();
+    // A pre-session surface reads ITS OWN bundle plus `shared` — never `app`,
+    // which is the whole point, and never the OTHER surface's bundle, which
+    // would hand `/login` the public-farm copy and vice versa.
+    const other: Bundle = surface === 'public' ? 'auth' : 'public';
+    return bundleFiles().filter((b) => b !== 'app' && b !== other);
 }
