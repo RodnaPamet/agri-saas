@@ -18,18 +18,6 @@ model FileRecord {
   sizeBytes            Int
   sha256               String
   status               FileRecordStatus @default(PENDING)
-  /// P6.3 (#1812) — sha256 of the stored bytes, hex.
-  ///
-  /// Written by the image pipeline for processed public images; null for every
-  /// other upload, which is why it is optional rather than backfilled. It is
-  /// what `/api/public/media/[hash]` resolves, and it is indexed because that
-  /// route's only query is by this column.
-  ///
-  /// NOT unique: two tenants can legitimately upload the same image, and
-  /// deduplicating across tenants would let one farm's upload make another
-  /// farm's image reachable.
-  contentSha256        String?
-
   uploadedByUserId     String
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -58,10 +46,11 @@ model FileRecord {
   @@index([tenantId, createdAt])
   @@index([tenantId, scanStatus])
   @@index([tenantId, deletedAt])
-  /// #1812 — the media route's only query. Tenantless on purpose: that route
-  /// has no tenant in scope (it serves a public page), and the authorisation
-  /// to serve comes from a projection referencing the hash, not from this index.
-  @@index([contentSha256])
+  /// #1812 — the public media route's only query, on the hash this table has
+  /// ALWAYS carried. Tenantless on purpose: that route has no tenant in scope
+  /// (it serves a public page), and the authorisation to serve comes from a
+  /// projection referencing the hash, not from this index.
+  @@index([sha256])
   costEntries          CostEntry[]
 }
 
