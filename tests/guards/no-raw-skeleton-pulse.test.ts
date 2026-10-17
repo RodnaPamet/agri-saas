@@ -49,7 +49,35 @@ import * as path from "path";
 import { blankNonCode } from "../helpers/blank-non-code";
 
 const ROOT = path.resolve(__dirname, "../..");
-const SCAN_DIR = "src/app";
+/**
+ * The roots this budgets, each with its OWN number (#1974).
+ *
+ * It used to be one `SCAN_DIR = "src/app"` against a budget of 19, and the
+ * 19 descended from a figure of 26 that the docblock cited as the reason a
+ * budget beat an allowlist. 26 was never `src/app`: measured 2026-10-17 it is
+ * app 14 + components 10 + lib 1 = 25 after blanking. So the justification
+ * ranged over a population the guard never scanned, and 12 of those files
+ * were unwatched.
+ *
+ * One budget per root rather than one total, on the owner's ruling. A shared
+ * number lets a migration in `src/components` free a slot in `src/app`, so a
+ * win in one place silently pays for a regression in another — the
+ * cross-subsidy that let a shared lint cap hide a batch collision for a whole
+ * merge earlier the same day (#1774). Three numbers that each fail on their
+ * own cost more to maintain and cannot do that.
+ *
+ * `src/components` is also the half with the wider blast radius: a hand-
+ * rolled pulse in a shared component is inherited by every page that renders
+ * it, where one in a route harms that route only.
+ */
+const SCAN_ROOTS = [
+    { dir: "src/app", budget: 14 },
+    { dir: "src/components", budget: 10 },
+    { dir: "src/lib", budget: 1 },
+] as const;
+
+/** How far a budget may sit ABOVE reality before it is slack, per root. */
+const DRIFT_ALLOWANCE = 5;
 
 const EXEMPT_DIR_NAMES = new Set<string>([
     "node_modules",
@@ -73,8 +101,7 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
  * each migration that drops the count toward zero gets a free
  * win.
  */
-// Compliance uproot (2026-08-07): compliance uproot removed 7 animate-pulse files.
-const ANIMATE_PULSE_FILE_BUDGET = 19;
+
 
 function isExempt(rel: string): boolean {
     const segments = rel.split(path.sep);
@@ -138,38 +165,50 @@ describe("skeleton vocabulary — no raw animate-pulse over budget", () => {
         expect(isExempt(path.join("src", "components", "ui", "skeleton.tsx"))).toBe(false);
     });
 
-    it("file count using raw `animate-pulse` does not exceed the budget", () => {
-        let count = 0;
-        const offenders: string[] = [];
-        for (const file of walk(path.join(ROOT, SCAN_DIR))) {
-            const content = fs.readFileSync(file, "utf8");
-            if (hasRawPulse(content)) {
-                count += 1;
-                offenders.push(path.relative(ROOT, file));
+    /** Offending files under one root, comments already blanked. */
+    function offendersIn(dir: string): string[] {
+        const out: string[] = [];
+        for (const file of walk(path.join(ROOT, dir))) {
+            if (hasRawPulse(fs.readFileSync(file, "utf8"))) {
+                out.push(path.relative(ROOT, file));
             }
         }
-        if (count > ANIMATE_PULSE_FILE_BUDGET) {
-            const sample = offenders
-                .slice(0, 15)
-                .map((o) => `  ${o}`)
-                .join("\n");
-            throw new Error(
-                `Found ${count} file(s) using raw \`animate-pulse\` — budget is ${ANIMATE_PULSE_FILE_BUDGET}. Migrate the new offender(s) to <SkeletonLine> / <SkeletonCard> / <SkeletonRow> / <SkeletonDetailTabs> instead. The skeleton primitives own tone, shape, and motion — hand-rolled pulses bypass all three.\n\nFirst ${Math.min(15, offenders.length)} file(s):\n${sample}`,
-            );
-        }
-        expect(count).toBeLessThanOrEqual(ANIMATE_PULSE_FILE_BUDGET);
+        return out;
+    }
+
+    it("prints the per-root breakdown — the denominator", () => {
+        const parts = SCAN_ROOTS.map(
+            (r) => `${r.dir}=${offendersIn(r.dir).length}/${r.budget}`,
+        );
+        const total = SCAN_ROOTS.reduce((n, r) => n + offendersIn(r.dir).length, 0);
+        console.log(`[skeleton-pulse] ${parts.join(" ")} total=${total}`);
+        // The scope is the thing that was wrong here, so assert it rather
+        // than describing it: three roots, and `src/components` present, is
+        // what #1974 was about.
+        expect(SCAN_ROOTS.map((r) => r.dir)).toEqual([
+            "src/app",
+            "src/components",
+            "src/lib",
+        ]);
     });
 
-    it("budget tracks reality (forbids slack > 5 files)", () => {
-        // If migrations land, the count drops. The budget here
-        // must drop with them — keeps the ratchet honest. A drift
-        // > 5 files between budget and reality means a previous
-        // migration PR forgot to decrement the budget.
-        let count = 0;
-        for (const file of walk(path.join(ROOT, SCAN_DIR))) {
-            const content = fs.readFileSync(file, "utf8");
-            if (hasRawPulse(content)) count += 1;
-        }
-        expect(ANIMATE_PULSE_FILE_BUDGET).toBeLessThanOrEqual(count + 5);
-    });
+    for (const { dir, budget } of SCAN_ROOTS) {
+        it(`${dir}: raw \`animate-pulse\` files stay within ${budget}`, () => {
+            const offenders = offendersIn(dir);
+            if (offenders.length > budget) {
+                const sample = offenders.slice(0, 15).map((o) => `  ${o}`).join("\n");
+                throw new Error(
+                    `Found ${offenders.length} file(s) using raw \`animate-pulse\` under ${dir} — budget is ${budget}. Migrate the new offender(s) to <SkeletonLine> / <SkeletonCard> / <SkeletonRow> / <SkeletonDetailTabs> instead. The skeleton primitives own tone, shape, and motion — hand-rolled pulses bypass all three.\n\nFirst ${Math.min(15, offenders.length)} file(s):\n${sample}`,
+                );
+            }
+            expect(offenders.length).toBeLessThanOrEqual(budget);
+        });
+
+        it(`${dir}: its budget tracks reality (slack <= ${DRIFT_ALLOWANCE})`, () => {
+            // Per root, deliberately. A single total would let a migration
+            // here pay for a regression somewhere else, which is the whole
+            // reason these are three numbers.
+            expect(budget).toBeLessThanOrEqual(offendersIn(dir).length + DRIFT_ALLOWANCE);
+        });
+    }
 });
