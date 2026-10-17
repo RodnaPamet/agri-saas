@@ -464,6 +464,7 @@ import { nextReviewDateAfter } from '@/lib/evidence/review-cadence';
 import { reconcileMimeType } from '@/lib/storage/mime-sniff';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
+import { stripImageMetadata } from '@/lib/images/strip-metadata';
 
 /**
  * Upload a file and create an Evidence record of type FILE in one flow.
@@ -538,13 +539,28 @@ export async function uploadEvidenceFile(
         });
     }
 
-    const readable = Readable.from(buffer);
-    const writeResult = await storage.write(pathKey, readable, { mimeType });
-
     // AV scan on the buffer we already hold, BEFORE the record is marked
     // stored. Resolves to a terminal status — never PENDING unless a
     // configured scanner erred under strict mode.
+    //
+    // MOVED ahead of the write by #1812: the strip below DECODES the caller's
+    // bytes, and a decoder fed attacker-controlled input wants a scan in
+    // front of it. Same ordering, same reason, as `account/avatar.ts`.
     const scanStatus = await scanUploadedBuffer(buffer);
+
+    // EXIF/GPS stripped before the bytes land — #1812. An evidence photo is
+    // the live case for this, not a hypothetical one: a farmer photographs a
+    // field from the field, and the GPS tag in that photo is the parcel's
+    // location. Non-images pass through undecoded.
+    //
+    // The RESOLVED `mimeType`, never the declared one.
+    const { bytes: toStore } = await stripImageMetadata(buffer, mimeType, {
+        component: 'evidence',
+    });
+
+    // `toStore`, so `writeResult.sha256` digests the bytes actually stored.
+    const readable = Readable.from(toStore);
+    const writeResult = await storage.write(pathKey, readable, { mimeType });
 
     // Create FileRecord + Evidence in a transaction
     const result = await runInTenantContext(ctx, async (db) => {

@@ -87,6 +87,7 @@ import {
     scanUploadedBufferDetailed,
 } from '@/lib/storage/av-scan';
 import { reconcileMimeType } from '@/lib/storage/mime-sniff';
+import { stripImageMetadata } from '@/lib/images/strip-metadata';
 // `@/lib/storage` — the same specifier every other consumer uses. This
 // module deliberately does NOT live under `src/lib/storage/`: from inside
 // that directory the natural import is `./index`, which resolves to a
@@ -224,9 +225,33 @@ export async function ingestUploadedFile(
         throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', extraRejection);
     }
 
-    const writeResult = await storage.write(pathKey, Readable.from(buffer), { mimeType });
     // A TERMINAL scan status before the record is treated as usable.
+    //
+    // MOVED ahead of the write by #1812, and the reason is the strip below
+    // rather than the write. Stripping EXIF means DECODING the caller's bytes
+    // with libvips, and a decoder fed attacker-controlled input is the step
+    // most worth having a scan in front of — `account/avatar.ts` records the
+    // same ordering for the same reason. The verdict returned to the caller is
+    // unchanged, so this reorders work without changing what anything decides.
     const scanStatus = await scanUploadedBuffer(buffer);
+
+    // EXIF/GPS stripped before the bytes land anywhere — #1812.
+    //
+    // The RESOLVED `mimeType` is passed, never `declaredMime`: a caller who
+    // could opt out of stripping by lying about the content type would defeat
+    // the whole measure, which is why every upload path here sniffs.
+    //
+    // A non-image passes through untouched and undecoded, so a PDF, a zip or
+    // a shapefile reaching this choke point is unaffected.
+    const { bytes: toStore } = await stripImageMetadata(buffer, mimeType, {
+        component: opts.component,
+    });
+
+    // `toStore`, not `buffer` — so `writeResult.sha256` is the digest of the
+    // STRIPPED bytes. That matters beyond tidiness: `FileRecord.sha256` is
+    // what `/api/public/media/[hash]` will resolve, and it has to name the
+    // bytes the route actually serves.
+    const writeResult = await storage.write(pathKey, Readable.from(toStore), { mimeType });
 
     return {
         pathKey,
