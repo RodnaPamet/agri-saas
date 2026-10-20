@@ -1,0 +1,45 @@
+-- #2062 — pair a derived image with the original it came from.
+--
+-- ## Why this column exists, in numbers
+--
+-- Measured on #2060, the first run where the Lighthouse budget actually saw
+-- images on `/f/{handle}`: LCP 15438 ms against a 2200 ms ERROR budget, with
+-- the LCP element a gallery photograph and 2601 KB of the 3235 KB page being
+-- six 434 KB photos.
+--
+-- The cause is that the stored size is not the displayed size.
+-- `FARM_MEDIA_MAX_DIMENSION` is 1600px, which is right for a photo somebody
+-- opens full-screen; the grid renders each one about 220px wide. Every
+-- photograph is roughly 50x the pixels it needs, paid for on every page view
+-- and never seen, because there is no lightbox to open one.
+--
+-- So a photograph will be stored twice — the original the farm chose, and a
+-- display-sized thumbnail the public grid renders. This column is the only
+-- thing that says which thumbnail belongs to which original.
+--
+-- ## Nothing writes it yet, and that is the point
+--
+-- The projection writer will read it to publish thumbnail hashes instead of
+-- originals. Rolling THIS migration back under code that does so would leave
+-- `projectFarmBrand` naming a column the database lacks, and every projection
+-- refresh would fail — for every farm, including farms with no photographs at
+-- all. So the column ships one release ahead of its reader, the same sequence
+-- #2029 used before #2046.
+--
+-- ## A hash, not an id, and not a foreign key
+--
+-- The projection, the public media route and `FarmBrand.photoMediaHashes` all
+-- address images by content hash. An id here would make the one place that
+-- PAIRS them speak a different language from everywhere that identifies them.
+--
+-- And not an FK for the same reason `sha256` carries no unique constraint: two
+-- tenants may upload the same image, so a hash does not name one row. It names
+-- bytes; the pairing is scoped by whose rows are being read.
+ALTER TABLE "FileRecord" ADD COLUMN "derivedFromSha256" TEXT;
+
+-- The projection writer's lookup: every original for one tenant, in one query,
+-- under that tenant's own RLS context. Leading with `tenantId` matches every
+-- other index on this table except the deliberately tenantless `sha256` one,
+-- which exists for the public route that has no tenant to scope by.
+CREATE INDEX "FileRecord_tenantId_derivedFromSha256_idx"
+    ON "FileRecord"("tenantId", "derivedFromSha256");

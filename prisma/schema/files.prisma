@@ -18,6 +18,29 @@ model FileRecord {
   sizeBytes            Int
   sha256               String
   status               FileRecordStatus @default(PENDING)
+  /// #2062 — the ORIGINAL this row was derived from, by its `sha256`.
+  ///
+  /// Set on a thumbnail and null on everything else, which is why it is
+  /// optional rather than backfilled. A farm photograph is stored twice: the
+  /// 1600px original the farm selected, and a display-sized thumbnail the
+  /// public grid renders. This column is the only thing that says which
+  /// thumbnail belongs to which original.
+  ///
+  /// A HASH and not a `FileRecord` id, deliberately. The projection, the
+  /// public media route and `FarmBrand.photoMediaHashes` all address images by
+  /// content hash; an id here would mean the one place that pairs them spoke a
+  /// different language from everywhere else that identifies them.
+  ///
+  /// NOT a foreign key, for the same reason `sha256` is not unique: two
+  /// tenants can upload the same image, so a hash does not name one row. It
+  /// names bytes, and the pairing is scoped by the tenant whose rows are being
+  /// read.
+  ///
+  /// Generalised past photographs on purpose — `derivedFrom`, not
+  /// `thumbnailOf`. A future PDF preview or a different size wants the same
+  /// relationship, and the name should not have to be rewritten for it.
+  derivedFromSha256    String?
+
   uploadedByUserId     String
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -51,6 +74,10 @@ model FileRecord {
   /// (it serves a public page), and the authorisation to serve comes from a
   /// projection referencing the hash, not from this index.
   @@index([sha256])
+  /// #2062 — how the projection writer finds a photograph's thumbnail. It
+  /// looks up every original in one query under the tenant's own RLS context,
+  /// so the index leads with the tenant the way the others on this table do.
+  @@index([tenantId, derivedFromSha256])
   costEntries          CostEntry[]
 }
 
