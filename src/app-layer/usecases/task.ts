@@ -9,6 +9,7 @@ import { enqueueEmail } from '../notifications/enqueue';
 import { createTaskDueNotification } from '../notifications/task-due';
 import { createAssignmentNotification } from '../notifications/assignment';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
+import { sendApnsToUser } from '@/lib/notifications/apns';
 import { runInTenantContext } from '@/lib/db-context';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { env } from '@/env';
@@ -713,6 +714,31 @@ async function emitTaskAssignedNotification(
                 body: outcome.notification.message,
                 url: outcome.notification.linkUrl,
                 tag: `task-${task.id}`,
+            });
+            // ── and to the phone — #1764 step 3 ──
+            //
+            // Beside the web send rather than instead of it: a person may hold
+            // both, and an assignment should reach whichever they are looking
+            // at. Each transport reads only its own rows (`platform` filters
+            // in both), so neither sees the other's devices.
+            //
+            // `link` carries `linkUrl` unchanged, which is already
+            // root-relative everywhere it is built — `/t/{slug}/farm-tasks/{id}`
+            // and friends. That is the rule agrent-ios asked for and the same
+            // one `logoUrl` follows: the server owns the shape, so correcting
+            // it never needs a client release.
+            //
+            // `collapseId` mirrors the web `tag`, so a second assignment
+            // notification for one task replaces the first on the phone rather
+            // than stacking — the same coalescing the browser does.
+            //
+            // A no-op until a key is installed: `isApnsConfigured()` is false
+            // without all four values and the send returns before any query.
+            await sendApnsToUser(ctx, assigneeUserId, {
+                title: outcome.notification.title,
+                body: outcome.notification.message,
+                link: outcome.notification.linkUrl,
+                collapseId: `task-${task.id}`,
             });
         }
     } catch (err) {

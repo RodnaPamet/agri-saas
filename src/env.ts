@@ -644,6 +644,27 @@ export const env = createEnv({
         // `mailto:` or https contact URL embedded in the push request (push
         // services use it to reach you about delivery problems).
         VAPID_SUBJECT: z.string().optional(),
+
+        // ── APNs (iOS push) — #1764 step 3 ──
+        // All optional, and for the same reason VAPID is: iOS push is opt-in,
+        // so with any of them unset `isApnsConfigured()` is false and every
+        // send returns without touching the network. A self-hosted deploy that
+        // wants no push stays clean, and this module ships BEFORE the key
+        // exists — an unconfigured deployment has to be a no-op rather than an
+        // error.
+        //
+        // Four values, not two, because APNs authenticates with a JWT you sign
+        // yourself rather than a static secret: the Key ID goes in the token's
+        // `kid`, the Team ID in its `iss`, and the `.p8` signs it. The topic is
+        // the app's bundle id and travels as a header on every request.
+        APNS_KEY_ID: z.string().optional(),
+        APNS_TEAM_ID: z.string().optional(),
+        // The bundle id, e.g. `bg.agrent.app`. Sent as `apns-topic`; a wrong
+        // value is a 400 that names the topic, which is at least legible.
+        APNS_TOPIC: z.string().optional(),
+        // The `.p8` itself, PKCS#8 PEM. Escaped newlines are accepted, because
+        // a PEM is multi-line and `.env` is not.
+        APNS_PRIVATE_KEY: z.string().optional(),
     },
 
     /**
@@ -836,6 +857,10 @@ export const env = createEnv({
         VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY,
         VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
         VAPID_SUBJECT: process.env.VAPID_SUBJECT,
+        APNS_KEY_ID: process.env.APNS_KEY_ID,
+        APNS_TEAM_ID: process.env.APNS_TEAM_ID,
+        APNS_TOPIC: process.env.APNS_TOPIC,
+        APNS_PRIVATE_KEY: process.env.APNS_PRIVATE_KEY,
 
         NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
         NEXT_PUBLIC_MAPTILER_KEY: process.env.NEXT_PUBLIC_MAPTILER_KEY,
