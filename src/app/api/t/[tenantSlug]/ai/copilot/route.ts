@@ -33,6 +33,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { completeWithRouting, type AiTask } from '@/app-layer/ai/routing';
 import type { AiMessage } from '@/app-layer/ai/provider/types';
+import { registerOpenStream } from '@/lib/realtime/stream-drain';
 
 // Node runtime: long-lived ReadableStream + provider clients stay on
 // one process (matches the notifications SSE route).
@@ -123,6 +124,26 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
             // Client disconnect → abort upstream + tear down.
             req.signal.addEventListener('abort', cleanup, { once: true });
 
+            // SIGTERM → tear down too, with a terminal event (P7.3, #1992).
+            //
+            // This stream does end on its own, unlike the two notification
+            // streams, so the obvious reading is that a deploy can let it
+            // finish. It cannot: `routing.ts` gives a completion a PER-ATTEMPT
+            // timeout of 30s to 180s and then retries, so a copilot answer can
+            // outlive any sane container grace period. `server.close()` waits
+            // for the open connection, the wait does not finish, and docker
+            // SIGKILLs — truncating the answer anyway, with a dead socket
+            // instead of an explanation.
+            //
+            // So it is drained, and the frame is an `error` rather than
+            // `done`: `done` is this protocol's "the answer is complete", and
+            // a truncated answer reported as complete is worse than one
+            // reported as interrupted. The client already renders `error`.
+            const deregister = registerOpenStream(() => {
+                safeEnqueue(sse({ type: 'error', message: 'server_restarting' }));
+                cleanup();
+            });
+
             safeEnqueue(': connected\n\n');
 
             try {
@@ -155,6 +176,7 @@ export const POST = withApiErrorHandling(async (req: NextRequest, { params: para
                     );
                 }
             } finally {
+                deregister();
                 cleanup();
             }
         },
