@@ -273,6 +273,7 @@ function buildTreatmentSummary(
             doseValue: Prisma.Decimal | null;
             targetNote: string | null;
             quarantinePeriodDays: number | null;
+            phenophase: string | null;
             product: { name: string; quarantinePeriodDays: number | null } | null;
             doseUnit: { symbol: string } | null;
             task: { operationType: string | null; applicationTechnique: string | null } | null;
@@ -312,6 +313,10 @@ function buildTreatmentSummary(
         targetNote: line?.targetNote ?? null,
         applicationTechnique: line?.task?.applicationTechnique ?? null,
         quarantinePeriodDays,
+        // Фенофаза/BBCH as captured on the line (#2072), so an entry reopened
+        // for editing shows what was saved. Deliberately no `?? product`
+        // fallback — see the select.
+        phenophase: line?.phenophase ?? null,
         // Computed server-side from the period that applied ON THE DAY, so
         // every client shows the same date and it matches the PDF. Null when
         // no period was captured — never the treatment day itself, which
@@ -371,6 +376,11 @@ const ENTRY_LIST_INCLUDE = {
             // same source as the PDF's — two readers of one number must not
             // disagree about which number it is.
             quarantinePeriodDays: true,
+            // Фенофаза/BBCH (#2072). NO product fallback, unlike the period
+            // above: a growth stage is an observation of the CROP on a day
+            // and has no product-level analogue to fall back to, so a null
+            // here means "not captured" and nothing else can supply it.
+            phenophase: true,
             product: { select: { name: true, activeIngredient: true, quarantinePeriodDays: true } },
             doseUnit: { select: { symbol: true } },
             task: { select: { operationType: true, applicationTechnique: true } },

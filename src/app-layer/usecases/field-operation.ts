@@ -721,6 +721,8 @@ export async function markOperationParcel(
         recordedInDiary?: boolean;
         occurredAt?: Date;
         quarantinePeriodDays?: number | null;
+        /** Фенофаза/BBCH observed on the day this line was applied (#2072). */
+        phenophase?: string | null;
         treatmentGroupId?: string;
     },
 ) {
@@ -740,6 +742,8 @@ async function markOperationParcelImpl(
         recordedInDiary?: boolean;
         occurredAt?: Date;
         quarantinePeriodDays?: number | null;
+        /** Фенофаза/BBCH observed on the day this line was applied (#2072). */
+        phenophase?: string | null;
         treatmentGroupId?: string;
     },
 ) {
@@ -868,6 +872,17 @@ async function markOperationParcelImpl(
                     ? { quarantinePeriodDays: null }
                     : opts?.quarantinePeriodDays !== undefined
                       ? { quarantinePeriodDays: opts.quarantinePeriodDays }
+                      : {}),
+                // Фенофаза/BBCH, on the same terms as the period above
+                // (#2072): written only when the caller supplies one, and
+                // cleared on a revert to PENDING — a line put back into play
+                // must not carry a growth stage observed for a completion
+                // that was undone. The stage is a point-in-time observation,
+                // so a stale one is worse than an absent one.
+                ...(status === 'PENDING'
+                    ? { phenophase: null }
+                    : opts?.phenophase !== undefined
+                      ? { phenophase: opts.phenophase }
                       : {}),
                 ...(note !== undefined ? { targetNote: note } : {}),
                 // Every mutation bumps the version so the NEXT reader/replayer

@@ -1,0 +1,42 @@
+-- #2072 part A — the crop's growth stage at the moment a treatment line was
+-- applied (Фенофаза/BBCH).
+--
+-- ## Per line, not per operation
+--
+-- Following `quarantinePeriodDays` (#1775) on this same table, and for the
+-- same reason: this is an OBSERVATION MADE ON A DAY, not a property of the
+-- product or the task. A spraying is written as one task per block, and the
+-- register prints one row per parcel, so the value has to live where the row
+-- lives. Hanging it on the Task would make a reprint of one block's sheet
+-- depend on a field shared with every other block of the same treatment.
+--
+-- ## NULL means "not captured", never "no stage"
+--
+-- Every line written before this column existed is NULL, and there is
+-- deliberately NO BACKFILL. Nothing records what the crop's stage WAS when an
+-- old line was completed, and a plausible guess — the stage typical for that
+-- crop in that month — would make a regulated document look authoritative
+-- about a number nobody observed. The same argument #1775 made for the
+-- quarantine period applies with more force here, because a phenophase cannot
+-- even be re-derived from the product.
+--
+-- ## Free text, bounded
+--
+-- Not an enum and not a numeric BBCH code. The real form's column 2 is
+-- «Фенофаза/BBCH», which admits both a code and a Bulgarian stage name, and
+-- PRZ's own field is free text. An enum would reject a legitimate entry a
+-- farmer is entitled to write, and a smallint would reject «начало на
+-- цъфтеж». Bounded at 64 characters because a stage is a name or a code, not
+-- prose — the cell is one line on a landscape sheet.
+--
+-- ## What does NOT print yet
+--
+-- The 12-column «ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ» table has no phenophase column
+-- and must not gain one: its columns are fixed by заповед РД 11-3194/
+-- 31.12.2021 and the farmer submits the document. «Фенофаза/BBCH» is column 2
+-- of the SEPARATE 11-column scouting table, which #1740 Q2 ruled should be
+-- DERIVED from the treatments, like PRZ. That derivation was never built, so
+-- this column ships with its writer and its reader but with no printed cell
+-- yet — the derivation, and the disclosure that such rows are derived rather
+-- than observed, is its own change.
+ALTER TABLE "OperationParcel" ADD COLUMN "phenophase" TEXT;
