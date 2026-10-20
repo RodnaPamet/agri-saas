@@ -475,6 +475,11 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                     tenant: z
                         .object({ id: z.string(), name: z.string(), slug: z.string() })
                         .nullable(),
+                    platformAdmin: z.boolean().openapi({
+                        description:
+                            'Whether this caller is an admin of the PLATFORM tenant — use it to decide whether to render the platform console\u2019s entry (companies, promotions, the daily price override). #1587. **A rendering hint, never a capability:** every platform surface stays gated server-side by `admin.manage` plus a platform-tenant check that answers 404 rather than 403, so a client that forged `true` would see the entry and nothing behind it. It is NOT derived from the `tenant` above \u2014 that is the caller\u2019s oldest active membership, which for a superuser who also farms is their own farm, so the flag is resolved against the platform tenant separately. `false` whenever no platform tenant is configured, which is the state in production today.',
+                        example: false,
+                    }),
                     featureFlags: z
                         .record(z.string(), z.boolean())
                         .openapi({
