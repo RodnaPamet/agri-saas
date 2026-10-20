@@ -18,7 +18,32 @@ import { InstallPrompt } from './InstallPrompt';
 import { UpdateAvailableBanner } from './UpdateAvailableBanner';
 import { isChunkLoadError } from '@/lib/pwa/chunk-error';
 
-export function ServiceWorkerRegistrar() {
+export function ServiceWorkerRegistrar({
+    /**
+     * Whether to offer the A2HS banner — #2099.
+     *
+     * FALSE on the sign-in page, and the layout decides because only the
+     * server knows which surface this is. Two faults there, one of them
+     * language-independent:
+     *
+     *   1. `installPrompt` is an `app`-bundle namespace and the sign-in page
+     *      is served the `auth` bundle (`src/i18n.ts` narrows by
+     *      `AUTH_SURFACE_HEADER`), so every mobile visitor read
+     *      `installPrompt.a2hsTitle` as literal text.
+     *   2. The banner is WRONG there regardless of language. The iPhone app's
+     *      sign-in runs in `ASWebAuthenticationSession`, so it asked someone
+     *      already inside the installed app to add the website to their home
+     *      screen.
+     *
+     * Suppressing it fixes both, where adding the namespace to the auth bundle
+     * would have fixed only the first and left a correctly-translated banner
+     * in a place it should never appear.
+     *
+     * The service worker still registers here: that is this component's other
+     * job, it is wanted on every surface, and the issue is about the banner.
+     */
+    showInstallPrompt = true,
+}: { showInstallPrompt?: boolean } = {}) {
     // The new SW parked in "waiting" (a deploy landed while the app is open).
     // Surfaced as a non-blocking "Update ready — refresh" prompt; the update
     // only applies on the operator's consent (SKIP_WAITING) — never mid-session.
@@ -233,7 +258,7 @@ export function ServiceWorkerRegistrar() {
 
     return (
         <>
-            <InstallPrompt />
+            {showInstallPrompt && <InstallPrompt />}
             {waitingWorker && <UpdateAvailableBanner onApply={applyUpdate} />}
         </>
     );
