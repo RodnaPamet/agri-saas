@@ -132,7 +132,6 @@ describe('the pre-paint script', () => {
                     removeAttribute: (k: string) => { delete el[k]; },
                 },
             };
-            // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func -- running the emitted script IS the assertion
             new Function('document', 'window', 'localStorage', src)(
                 doc,
                 { matchMedia: () => ({ matches: false }) },

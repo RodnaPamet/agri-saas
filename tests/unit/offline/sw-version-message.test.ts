@@ -36,7 +36,6 @@ function loadWorker() {
         location: { origin: 'https://app.agrent.bg' },
     };
     const noop = () => undefined;
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
     const factory = new Function(
         'self', 'indexedDB', 'caches', 'fetch', 'Response', 'Request', 'URL', 'clients', 'console',
         `${SW_SRC}\nreturn { SW_REVISION: typeof SW_REVISION !== 'undefined' ? SW_REVISION : null };`,

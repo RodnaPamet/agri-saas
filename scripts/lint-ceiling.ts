@@ -69,6 +69,8 @@ export interface Measurement {
     warnings: number;
     /** Findings silenced by an inline `eslint-disable*` comment. */
     suppressed: number;
+    /** `eslint-disable` directives that suppress NOTHING (#1471). */
+    inert: number;
     /** Of those, the ones whose directive carries no `-- reason` text. */
     unjustified: number;
     /** Suppressions of rules configured at severity 2, keyed by file and rule. */
@@ -79,6 +81,7 @@ export interface Limits {
     fileFloor: number;
     warningCeiling: number;
     suppressionCeiling: number;
+    inertCeiling: number;
     unjustifiedCeiling: number;
     /** Exact expected counts. Both a new mute and a removed one fail, so the map stays true. */
     severity2: Record<Severity2Key, number>;
@@ -162,7 +165,14 @@ export const LIMITS: Limits = {
     // another session between my branch point and this rebase. 62 + 1 - 3.
     //
     // react-hooks 51 -> 48. `suppressedFindings` UNMOVED at 1580 again.
-    warningCeiling: 85,
+    //
+    // 85 -> 69, same `actual + 25` policy. Warnings 60 -> 44: three
+    // `set-state-in-effect` effects deleted in `ProcessInspector`, two inline
+    // reimplementations of `useHydratedNow` replaced by the hook itself
+    // (`GreetingHeader`, `FarmTasksClient` — nine other files already read it
+    // that way), eight stale `eslint-disable` directives deleted, and two
+    // misplaced ones relocated so they suppress what they name.
+    warningCeiling: 69,
     // Two changes landed on this line and both reasons stand.
     //
     // #1376 LOWERED it 1580 -> 1578: the retired `/api/auth/register` carried
@@ -192,7 +202,52 @@ export const LIMITS: Limits = {
     // than the four directives removed: #1730 recorded 453 against a limit of
     // 461 on an older main, so some of that slack predates this change and
     // this is simply the first diff to close it.
-    suppressionCeiling: 1582,
+    //
+    // 1582 -> 1584, and this RISES, which this gate normally treats as a cost.
+    // Stated because the hint demands it, and because the arithmetic is
+    // counter-intuitive: this counter reads eslint's `suppressedMessages` —
+    // findings ACTUALLY suppressed — not occurrences of `eslint-disable` in
+    // the text.
+    //
+    // So #1471's directive sweep moved it in two directions at once. Eight
+    // STALE directives were deleted and changed this number by ZERO: they
+    // suppressed nothing, which is exactly why eslint reported them unused.
+    // Two MISPLACED ones were relocated onto the line they govern and each
+    // added 1, because a directive that finally works suppresses a finding
+    // that was previously an unsuppressed warning. Two new documented ones in
+    // `PersistedProcessCanvas` added the other 2.
+    //
+    // Net: warnings 60 -> 44, suppressed 1580 -> 1584. The total debt did not
+    // grow; four findings moved from "reported as a warning, with a dead
+    // directive beside them claiming otherwise" to "suppressed, with a reason
+    // that is actually in force". `unjustified` is UNMOVED at 403, because
+    // every one of the four carries a `--` reason.
+    suppressionCeiling: 1584,
+    /**
+     * `eslint-disable` directives that suppress nothing. ZERO, and it stays.
+     *
+     * ESLint has always reported these — "Unused eslint-disable directive (no
+     * problems were reported from 'X')" — and nothing failed on them, so they
+     * accumulated. #1471 found TEN, and two of those were worse than dead
+     * weight: the rule they named WAS firing, two lines below, because the
+     * directive sat on the wrong line.
+     *
+     *   • `LeasePaymentsPanel` — above the `useEffect(`, while the finding is
+     *     reported on the `void load(…)` call inside it.
+     *   • `token-refresh-reads-stored-copy` — its own `--` reason wrapped over
+     *     three comment lines, so `-next-line` pointed at a comment and the
+     *     `as any` four lines down was never covered.
+     *
+     * Both carried careful, well-argued reasons doing no work at all, in files
+     * that read as though the finding were handled. That is the failure this
+     * line exists to stop: not the wasted directive, but the FALSE CLAIM
+     * beside a live finding.
+     *
+     * A ceiling of 0 rather than a count, because unlike the suppression debt
+     * there is no legitimate reason to keep one — a directive that suppresses
+     * nothing is either stale (delete it) or misplaced (move it).
+     */
+    inertCeiling: 0,
     // LOWERED 450 -> 432 (#1730). Fourteen `react-hooks` directives got the
     // `-- reason` half they were missing; the drop is 18 rather than 14
     // because a directive can suppress more than one finding on its line.
@@ -237,6 +292,7 @@ export function measure(results: ESLint.LintResult[], cwd: string): Measurement 
         errors: 0,
         warnings: 0,
         suppressed: 0,
+        inert: 0,
         unjustified: 0,
         severity2: {},
     };
@@ -246,6 +302,18 @@ export function measure(results: ESLint.LintResult[], cwd: string): Measurement 
         m.files += 1;
         m.errors += result.errorCount;
         m.warnings += result.warningCount;
+
+        // An unused directive arrives as an ordinary message with no
+        // `ruleId` — it is the linter reporting on the linting, not a rule
+        // finding — so it is invisible to a scan of `suppressedMessages`.
+        for (const msg of result.messages) {
+            if (
+                msg.ruleId === null &&
+                (msg.message ?? '').startsWith('Unused eslint-disable directive')
+            ) {
+                m.inert += 1;
+            }
+        }
 
         for (const msg of result.suppressedMessages ?? []) {
             m.suppressed += 1;
@@ -296,6 +364,16 @@ export function evaluate(m: Measurement, limits: Limits = LIMITS): string[] {
             actual: m.warnings,
             ceiling: limits.warningCeiling,
             hint: 'Fix the finding. Silencing it moves it to the suppression count below, which does NOT reduce the total.',
+        },
+        {
+            label: 'inert `eslint-disable`s',
+            actual: m.inert,
+            ceiling: limits.inertCeiling,
+            hint:
+                'A directive that suppresses nothing is stale (delete it) or MISPLACED (move it onto the '
+                + 'line the finding is reported on). Watch for the second: eslint then reports the rule '
+                + 'firing nearby AND the directive as unused, and a reason that reads as settled is doing '
+                + 'nothing (#1471).',
         },
         {
             label: 'suppressed findings',
@@ -372,6 +450,7 @@ export function report(m: Measurement, limits: Limits = LIMITS): string {
         row('files linted', m.files, limits.fileFloor, '≥'),
         row('errors', m.errors, 0, '≤'),
         row('warnings', m.warnings, limits.warningCeiling, '≤'),
+        row('inert `eslint-disable`s', m.inert, limits.inertCeiling, '≤'),
         row('suppressed findings', m.suppressed, limits.suppressionCeiling, '≤'),
         row('  ...without a `-- reason`', m.unjustified, limits.unjustifiedCeiling, '≤'),
         row('  ...of error-severity rules', Object.values(m.severity2).reduce((a, b) => a + b, 0),

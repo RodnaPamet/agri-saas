@@ -77,10 +77,17 @@ const staleCookieToken = () => ({
     expiresAt: EXPIRED(),
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- NextAuth's
-// jwt callback params type is not exported, and the real callback reads only
-// `token` on this path; typing the other fields would mean restating an
-// internal shape that the library can change under us.
+// NextAuth's jwt callback params type is not exported, and the real callback
+// reads only `token` on this path; typing the other fields would mean
+// restating an internal shape that the library can change under us.
+//
+// #1471 — the directive below used to sit ABOVE this prose. `-next-line`
+// applies to the immediately following line, so it pointed at a comment and
+// the `as any` four lines down stayed unsuppressed: eslint reported the
+// directive as unused AND reported the rule it named. A wrapped reason
+// displaced the directive it belonged to. The reason stays here as prose and
+// the directive goes on the line it governs.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
 const callJwt = (token: Record<string, unknown>) => jwtCallback({ token } as any);
 
 describe('the jwt callback OAuth refresh', () => {

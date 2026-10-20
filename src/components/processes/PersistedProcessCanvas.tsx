@@ -433,6 +433,7 @@ function Inner({
         ? processes.find((p) => p.id === activeId) ?? null
         : null;
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- DELIBERATE, and documented rather than fixed (#1471). `editedName` is a user-editable mirror of the active process name, seeded here so switching process shows that process's name. The deps are COMPLETE, so it is not the stale-closure defect #2033 was; the cost is one extra render pass and one frame showing the previous name. The clean fix is what `ProcessInspector` got — move the state into the keyed child that renders the input (`CanvasDocumentBar` already receives both `editedName` and `setEditedName`) and have `handleRenameCommit` take the name as an argument instead of reading state. Not done here because the state is CO-OWNED: the commit path both reads `editedName.trim()` and resets it on an empty or unchanged value, so moving it rewrites a user-facing rename path in a file with a size cap and three pinning guards.
         setEditedName(activeProcess?.name ?? "");
     }, [activeProcess?.name, activeProcess?.id]);
 
@@ -440,6 +441,7 @@ function Inner({
 
     useEffect(() => {
         if (!activeId) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- DELIBERATE (#1471). This is the no-selection RESET of the server-load effect: with no active map there is nothing to fetch and the graph must be emptied. Not the cascading-render smell the rule is aimed at — it runs only when `activeId` becomes falsy, and the alternative (deriving an empty graph when `activeId` is null) means every reader of `nodes`/`edges` handling a null-selection case, which spreads one condition across the file rather than settling it here.
             setNodes([]);
             setEdges([]);
             setLoadedMap(null);
