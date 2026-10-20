@@ -24,6 +24,7 @@ function atCeiling(): Measurement {
         warnings: LIMITS.warningCeiling,
         suppressed: LIMITS.suppressionCeiling,
         unjustified: LIMITS.unjustifiedCeiling,
+        inert: LIMITS.inertCeiling,
         severity2: { ...LIMITS.severity2 },
     };
 }
@@ -58,6 +59,31 @@ describe('lint ceiling — muting a finding must not buy a pass', () => {
         const text = evaluate(m).join('\n');
         expect(text).toMatch(/suppressed findings/);
         expect(text).toMatch(/no `-- reason`/);
+    });
+
+    it('FAILS on an `eslint-disable` that suppresses NOTHING', () => {
+        // #1471. A directive can be inert two ways, and the second is the one
+        // worth a gate: STALE (the rule no longer fires, so the line is dead
+        // weight) or MISPLACED (the rule fires two lines below, because
+        // `-next-line` covered the wrong line) — and in the misplaced case the
+        // file reads as though the finding were handled while the finding is
+        // still reported.
+        //
+        // ESLint has always said so. Nothing failed on it, because `measure()`
+        // walked `suppressedMessages` and an unused directive arrives as an
+        // ordinary message with a NULL `ruleId` — the linter reporting on the
+        // linting, not a rule finding.
+        //
+        // Ceiling 0 rather than a count, so this mutation is +1 from a
+        // baseline of zero: there is no legitimate reason to keep one.
+        const m = atCeiling();
+        m.inert += 1;
+
+        const text = evaluate(m).join('\n');
+        expect(text).toMatch(/inert/);
+        // And the hint has to name the misplaced case, because a reader who
+        // assumes "stale" will delete a directive that should have MOVED.
+        expect(text).toMatch(/MISPLACED/);
     });
 
     it('a justified mute still counts — a reason is not an exemption', () => {
@@ -109,6 +135,7 @@ describe('lint ceiling — an empty selection is not a pass', () => {
             warnings: 0,
             suppressed: 0,
             unjustified: 0,
+            inert: 0,
             severity2: {},
         };
         // Ceilings zeroed so ONLY the floor and the stale-map check can speak —
@@ -118,6 +145,7 @@ describe('lint ceiling — an empty selection is not a pass', () => {
             warningCeiling: 0,
             suppressionCeiling: 0,
             unjustifiedCeiling: 0,
+            inertCeiling: 0,
             severity2: {},
         };
         const text = evaluate(m, limits).join('\n');
