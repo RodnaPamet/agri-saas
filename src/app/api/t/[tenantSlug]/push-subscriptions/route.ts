@@ -52,6 +52,9 @@ export const POST = withApiErrorHandling(
         if ('deviceToken' in body) {
             const sub = await saveApnsRegistration(ctx, {
                 deviceToken: body.deviceToken,
+                // Passed through as the lower-case wire value; the usecase owns
+                // the mapping to the column's enum — #1764 step 3.
+                environment: body.environment,
                 userAgent: req.headers.get('user-agent'),
             });
             logger.warn('push.apns_registered_without_transport', {

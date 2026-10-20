@@ -130,6 +130,52 @@ describe('an APNs token registers', () => {
             expect.objectContaining({ userAgent: 'agrent-ios/1.0' }),
         );
     });
+
+    describe('the APNs environment — #1764 step 3', () => {
+        it('passes the wire value through unchanged', async () => {
+            // Lower-case on the wire, because that is what `aps-environment`
+            // in the provisioning profile says. The usecase owns the mapping
+            // to the column's enum, so the route must not pre-translate.
+            await POST(
+                req({ platform: 'IOS', deviceToken: TOKEN, environment: 'development' }),
+                CTX,
+            );
+
+            expect(saveApnsRegistration).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ environment: 'development' }),
+            );
+        });
+
+        it('accepts a registration with NO environment — the compatibility case', async () => {
+            // The build installed today does not send the field, and a phone
+            // that cannot register receives nothing. So absent must be
+            // accepted, and reach the usecase as undefined rather than as a
+            // guessed value.
+            const res = await POST(req({ platform: 'IOS', deviceToken: TOKEN }), CTX);
+
+            expect(res.status).toBe(201);
+            const arg = (saveApnsRegistration as jest.Mock).mock.calls.at(-1)?.[1] as Record<
+                string,
+                unknown
+            >;
+            expect(arg.environment).toBeUndefined();
+        });
+
+        it('REFUSES a value that is neither', async () => {
+            // The column is an enum of two members. A third spelling —
+            // "sandbox" is the obvious one, since that is what the HOST is
+            // called — must fail at the boundary rather than reach the
+            // mapping and resolve to undefined there.
+            const res = await POST(
+                req({ platform: 'IOS', deviceToken: TOKEN, environment: 'sandbox' }),
+                CTX,
+            );
+
+            expect(res.status).toBe(400);
+            expect(saveApnsRegistration).not.toHaveBeenCalled();
+        });
+    });
 });
 
 describe('the web path is unchanged', () => {
@@ -169,7 +215,12 @@ describe('the web path is unchanged', () => {
 describe('the token is validated, not just accepted', () => {
     it.each([
         ['too short', 'abc'],
-        ['too long', 'a'.repeat(65)],
+        // 65 hex was "too long" while the pin was exactly 64. It is now a
+        // VALID length, because Apple documents variable-length tokens and
+        // agrent-ios measured an 80-byte one — so the case moves to the new
+        // ceiling rather than being deleted. Deleting it would have removed
+        // the only assertion that a ceiling exists at all.
+        ['past the ceiling', 'a'.repeat(201)],
         ['non-hex', 'g'.repeat(64)],
         ['empty', ''],
         ['a url', 'https://api.push.apple.com/3/device/abc'],
@@ -179,6 +230,39 @@ describe('the token is validated, not just accepted', () => {
         // client controls — the same reasoning that pinned `endpoint`.
         expect(ApnsRegistrationSchema.safeParse({ platform: 'IOS', deviceToken }).success)
             .toBe(false);
+    });
+
+    it('accepts a LONGER token than 32 bytes — #1764, measured', () => {
+        // Apple documents device tokens as variable length, and agrent-ios
+        // measured an 80-byte one (160 hex) on a simulator. The old pin was
+        // exactly 64, so such a device would have taken a 400 on every
+        // registration — silently, because a phone that cannot register just
+        // receives nothing.
+        //
+        // What the pin exists for is the ALPHABET, not the count: hex admits
+        // no slash, CR, LF or space, so there is nothing to interpret as
+        // structure in the request path built from it.
+        const long = 'ab'.repeat(80); // 160 hex = 80 bytes
+        expect(ApnsRegistrationSchema.safeParse({ platform: 'IOS', deviceToken: long }).success)
+            .toBe(true);
+    });
+
+    it('still REFUSES a non-hex token, and one past the ceiling', () => {
+        // The controls. Widening the length must not become accepting
+        // anything: a value carrying a path separator is the shape the pin
+        // exists to stop, and an unbounded length hands a caller the size of a
+        // path we construct.
+        for (const bad of [
+            `${'ab'.repeat(31)}/x`, // a separator
+            `${'ab'.repeat(31)}\r\n`, // CRLF
+            'g'.repeat(64), // outside hex
+            'ab'.repeat(120), // 240 hex, past the 200 ceiling
+            'ab'.repeat(20), // 40 hex, under the floor
+        ]) {
+            expect(
+                ApnsRegistrationSchema.safeParse({ platform: 'IOS', deviceToken: bad }).success,
+            ).toBe(false);
+        }
     });
 
     it('accepts upper and lower case hex', () => {
