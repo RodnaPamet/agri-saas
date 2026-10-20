@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Card } from '@/components/ui/card';
@@ -13,6 +12,7 @@ import {
     type TimeOfDay,
 } from '@/lib/season';
 import type { HomeGreeting } from '@/app-layer/usecases/home-greeting';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 
 /**
  * GreetingHeader — greets the farmer like a helpful colleague, in their
@@ -47,11 +47,25 @@ export function GreetingHeader({
 }) {
     const t = useTranslations('dashboard.greeting');
 
-    const [clock, setClock] = useState<{ tod: TimeOfDay; season: CalendarSeason } | null>(null);
-    useEffect(() => {
-        const now = new Date();
-        setClock({ tod: timeOfDay(now.getHours()), season: calendarSeason(now.getMonth()) });
-    }, []);
+    // Derived from `useHydratedNow()` rather than read in an effect (#1471).
+    //
+    // This was `useState(null)` plus a mount effect calling `new Date()` — the
+    // reason being the one in that hook's docblock: a timestamp read during
+    // render differs between the server and the client and trips a hydration
+    // mismatch, so the time-dependent copy has to appear on a later frame.
+    //
+    // That is exactly what `useHydratedNow()` exists for, and it was already
+    // in the repo. Using it removes a `set-state-in-effect` finding rather
+    // than suppressing one, and the null-until-hydrated contract is unchanged:
+    // `clock` is still null on the server and the first client render, which
+    // is what the `clock ? … : t('hello')` fallbacks below depend on.
+    const hydratedNow = useHydratedNow();
+    const clock = hydratedNow
+        ? {
+              tod: timeOfDay(hydratedNow.getHours()),
+              season: calendarSeason(hydratedNow.getMonth()),
+          }
+        : null;
 
     const trimmedName = name?.trim() || null;
     const greetingWord = clock ? t(clock.tod) : t('hello');

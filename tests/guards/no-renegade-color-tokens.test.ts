@@ -67,7 +67,6 @@ interface ColourTree {
 
 /** The colour tree Tailwind actually compiles with. */
 function colourTree(): ColourTree {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- the config IS a CJS module; requiring it is the point
     const cfg = require(path.join(ROOT, 'tailwind.config.js'));
     const theme = cfg?.theme ?? {};
     return { ...(theme.colors ?? {}), ...(theme.extend?.colors ?? {}) };
@@ -83,7 +82,6 @@ function colourTree(): ColourTree {
  * guard that cries wolf is a guard that gets waived.
  */
 function boxShadowNames(): Set<string> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- same CJS config
     const cfg = require(path.join(ROOT, 'tailwind.config.js'));
     return new Set(Object.keys(cfg?.theme?.extend?.boxShadow ?? {}));
 }

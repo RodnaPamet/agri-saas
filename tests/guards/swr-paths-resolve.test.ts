@@ -130,7 +130,6 @@ describe('client SWR paths resolve to real API routes', () => {
     it('resolved a meaningful number of routes and paths', () => {
         // Anti-vacuity on BOTH axes: a broken API scan makes every path fail,
         // and a broken path scan makes the suite pass with nothing checked.
-        // eslint-disable-next-line no-console
         console.log(
             `[swr-paths-resolve] ${routes.length} tenant routes; ` +
                 `${literal.length} literal client paths checked; ${skipped.length} non-literal skipped`,

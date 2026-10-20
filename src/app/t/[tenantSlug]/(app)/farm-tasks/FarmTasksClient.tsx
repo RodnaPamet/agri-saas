@@ -54,6 +54,7 @@ import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/fi
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { useKpiFilter, type KpiFilterDef } from '@/components/ui/kpi-filter';
 import { FARM_TASK_FILTER_KEYS, buildFarmTaskFilters } from './filter-defs';
+import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import {
     FARM_TASK_TYPES,
     FARM_TASK_CATEGORIES,
@@ -140,8 +141,14 @@ function FarmTasksInner({ tenantSlug, currentUserId }: { tenantSlug: string; cur
     const { state, search, hasActive, clearAll } = useFilters();
 
     // Hydration-safe "now" for overdue / due-soon logic (avoids SSR mismatch).
-    const [now, setNow] = useState<Date | null>(null);
-    useEffect(() => setNow(new Date()), []);
+    //
+    // #1471 — this was `useState<Date | null>(null)` plus a mount effect, an
+    // inline reimplementation of `useHydratedNow()`. Same contract, same
+    // reason (a timestamp read during render differs between server and
+    // client and trips a hydration mismatch), so using the hook removes a
+    // `set-state-in-effect` finding rather than suppressing one. Nine other
+    // files already read it this way.
+    const now = useHydratedNow();
 
     // Client-side filtering over the bounded queue (mirrors the Journal page —
     // the endpoint returns a flat merged array, not a filtered query).

@@ -603,7 +603,6 @@ describe('the acknowledgement list stays honest (#1463)', () => {
             date: '2026-10-09',
             why: 'a reason long enough to pass the thinness check above',
         };
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { acknowledges } = require('./acknowledged-breaking-changes');
         expect(acknowledges(entry, finding)).toBe(true);
         expect(acknowledges({ ...entry, contractVersion: API_CONTRACT_VERSION + 1 }, finding)).toBe(false);

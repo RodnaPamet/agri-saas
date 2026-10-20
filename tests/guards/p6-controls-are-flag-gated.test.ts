@@ -86,7 +86,6 @@ describe('a P6 control in a non-social form is flag-gated (#1929)', () => {
         // A renamed field would empty this and make the rule below pass over
         // nothing. The printed list is the coverage claim: one field, and
         // however many components currently carry it.
-        // eslint-disable-next-line no-console -- the denominator belongs in CI output
         console.log(
             `[p6-controls] fields=${P6_ATTRIBUTION_FIELDS.length} `
                 + `components=${population.length}\n  `

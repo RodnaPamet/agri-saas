@@ -183,7 +183,6 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             extensions: ['.test.ts'],
             floor: 300,
         });
-        // eslint-disable-next-line no-console
         console.log(
             `[guards-blank-comments] ${all.length} guard files; ` +
                 `${unblanked.length} read src text without blanking (cap ${UNBLANKED_CAP}, ` +

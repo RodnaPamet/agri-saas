@@ -95,9 +95,9 @@ export function LeasePaymentsPanel({
         }
     }, [leaseId]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- the setState lands after an await, in a later task, so this is not the synchronous render cascade the rule is about; the effect owns an AbortController so a superseded leaseId cannot win (#1952)
     useEffect(() => {
         const controller = new AbortController();
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- the setState lands after an await, in a later task, so this is not the synchronous render cascade the rule is about; the effect owns an AbortController so a superseded leaseId cannot win (#1952). MOVED here from above the `useEffect` in #1471: `-next-line` covered the `useEffect(` line while the finding is reported on THIS call, so the directive suppressed nothing AND was itself flagged as unused — two warnings for one misplaced line, and a well-argued reason doing no work.
         void load(controller.signal);
         return () => controller.abort();
     }, [load]);
