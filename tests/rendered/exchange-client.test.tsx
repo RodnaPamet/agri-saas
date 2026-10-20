@@ -92,7 +92,7 @@ function renderClient() {
     return render(
         <QueryClientProvider client={client}>
             <TooltipProvider>
-                <main><ExchangeClient /></main>
+                <main><ExchangeClient publicProfileEnabled /></main>
             </TooltipProvider>
         </QueryClientProvider>,
     );

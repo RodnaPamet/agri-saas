@@ -2,6 +2,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { requireModule } from '@/lib/security/require-module';
 import { getPastDueState } from '@/lib/billing/entitlements';
 import { PastDueRestricted } from '@/components/billing/PastDueRestricted';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { ExchangeClient } from './ExchangeClient';
 
 /**
@@ -34,5 +35,20 @@ export default async function ExchangePage({
         return <PastDueRestricted tenantSlug={tenantSlug} surface="exchange" />;
     }
 
-    return <ExchangeClient />;
+    // P6.7 (#1929). Resolved HERE because there is no client-side flags hook —
+    // the same shape `admin/public-profile/page.tsx` and the exchange thread
+    // page use.
+    //
+    // NOT `notFound()`, unlike those pages: the exchange is not a social
+    // surface and browsing offers must keep working with the flag off. Only
+    // the ATTRIBUTION control is P6, so only it is gated, and the page it
+    // sits on is unaffected.
+    //
+    // Scoped to the VIEWER (`ctx.userId`) rather than resolved globally,
+    // because a cohort-limited flag is a limited rollout and the switch
+    // should appear for the people in it rather than for everyone the moment
+    // the flag turns on at all.
+    const publicProfileEnabled = await isFeatureEnabled('social.public-profile', ctx.userId);
+
+    return <ExchangeClient publicProfileEnabled={publicProfileEnabled} />;
 }

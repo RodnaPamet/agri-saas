@@ -79,11 +79,22 @@ interface ListingPage {
     nextCursor: string | null;
 }
 
-export function ExchangeClient() {
+export function ExchangeClient({
+    /**
+     * Whether `social.public-profile` is on FOR THIS VIEWER — P6.7 (#1929).
+     *
+     * A prop rather than a hook because there is no client-side flags hook;
+     * the page resolves it server-side. Threaded rather than read here so the
+     * one place that can answer it is the one place that does.
+     */
+    publicProfileEnabled,
+}: {
+    publicProfileEnabled: boolean;
+}) {
     const filterCtx = useFilterContext([], EXCHANGE_FILTER_KEYS, {});
     return (
         <FilterProvider value={filterCtx}>
-            <ExchangeInner />
+            <ExchangeInner publicProfileEnabled={publicProfileEnabled} />
         </FilterProvider>
     );
 }
@@ -120,7 +131,7 @@ function SideDot({ side }: { side: 'SELL' | 'BUY' }) {
     );
 }
 
-function ExchangeInner() {
+function ExchangeInner({ publicProfileEnabled }: { publicProfileEnabled: boolean }) {
     const { formatDate } = useDateFormat();
     const t = useTranslations('exchange.client');
     const tMsg = useTranslations('exchange.messaging');
@@ -708,7 +719,12 @@ function ExchangeInner() {
                 </Sheet.Body>
             </Sheet>
 
-            <CreateOfferModal open={createOpen} setOpen={setCreateOpen} onCreated={handleCreated} />
+            <CreateOfferModal
+                open={createOpen}
+                setOpen={setCreateOpen}
+                onCreated={handleCreated}
+                publicProfileEnabled={publicProfileEnabled}
+            />
             <InquiryModal
                 open={inquiryOpen}
                 setOpen={setInquiryOpen}

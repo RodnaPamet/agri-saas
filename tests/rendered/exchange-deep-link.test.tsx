@@ -54,7 +54,7 @@ it('fetches the deep-linked listing and opens its detail Sheet', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
         <QueryClientProvider client={client}>
-            <TooltipProvider><main><ExchangeClient /></main></TooltipProvider>
+            <TooltipProvider><main><ExchangeClient publicProfileEnabled /></main></TooltipProvider>
         </QueryClientProvider>,
     );
 

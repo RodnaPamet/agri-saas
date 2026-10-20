@@ -62,13 +62,28 @@ interface CreateOfferModalProps {
     open: boolean;
     setOpen: Dispatch<SetStateAction<boolean>>;
     onCreated: (listing: ExchangePublicListing) => void;
+    /**
+     * Whether `social.public-profile` is on FOR THIS VIEWER — P6.7 (#1929).
+     *
+     * REQUIRED, not optional with a default. An optional flag prop defaults to
+     * one value or the other, and whichever that is would be the wrong answer
+     * somewhere: `false` silently hides the control from a farm entitled to
+     * it, `true` restores exactly the defect this fixes. A required prop makes
+     * every call site say which it means.
+     */
+    publicProfileEnabled: boolean;
 }
 
 // `defaultSellerName` is gone. It existed only to fill a hint that promised a
 // blank field would publish the farm's own name — behaviour nothing
 // implemented, and no caller ever passed the prop, so the promise was made to
 // every seller and kept for none.
-export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalProps) {
+export function CreateOfferModal({
+    open,
+    setOpen,
+    onCreated,
+    publicProfileEnabled,
+}: CreateOfferModalProps) {
     const t = useTranslations('exchange.offer');
     const buildUrl = useTenantApiUrl();
 
@@ -283,16 +298,36 @@ export function CreateOfferModal({ open, setOpen, onCreated }: CreateOfferModalP
                                 saved either way and starts showing the moment
                                 the page is published, so the ORDER of two
                                 unrelated decisions never matters. */}
-                            <FormField
-                                label={t('publishAsFarm')}
-                                description={t('publishAsFarmConsent')}
-                            >
-                                <Switch
-                                    id="exchange-publish-as-farm"
-                                    checked={publishAsFarm}
-                                    onCheckedChange={setPublishAsFarm}
-                                />
-                            </FormField>
+                            {/* GATED on `social.public-profile` — P6.7 (#1929).
+                                Not rendered at all, rather than disabled.
+
+                                With the flag off this switch cannot do
+                                anything: `/farm-brand/publication` 404s for
+                                the caller, and `/f/{handle}` checks the flag
+                                globally, so a ticked switch attributes nothing
+                                and the link its consent text promises («…с
+                                връзка към страницата му…») cannot open. A
+                                control that silently does nothing is worse
+                                than an absent one, and this one asks for
+                                CONSENT to a thing that will not happen.
+
+                                Absent rather than disabled for the reason
+                                `assertFeatureEnabled` 404s rather than 403s: a
+                                dark-launched surface should not be
+                                discoverable, and a greyed-out switch
+                                advertises it. */}
+                            {publicProfileEnabled ? (
+                                <FormField
+                                    label={t('publishAsFarm')}
+                                    description={t('publishAsFarmConsent')}
+                                >
+                                    <Switch
+                                        id="exchange-publish-as-farm"
+                                        checked={publishAsFarm}
+                                        onCheckedChange={setPublishAsFarm}
+                                    />
+                                </FormField>
+                            ) : null}
                         </div>
 
                         {/* The one PRIVATE field on this form. `description` (not
