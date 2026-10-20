@@ -11,7 +11,7 @@
  * The panel edits the RULE (logic lives on AutomationRule, per the VR-3
  * invariant); it never writes logic back onto the node.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Switch } from '@/components/ui/switch';
@@ -64,10 +64,27 @@ export function AutomationInspectorPanel({
     const [name, setName] = useState('');
     const [sla, setSla] = useState('');
 
+    // Seeded ONCE PER RULE, not on every change to the server's copy (#1471).
+    //
+    // This used to depend on `rule?.name` and `rule?.slaWindowMinutes`, which
+    // made it a bug rather than only a lint finding. The inputs auto-save on
+    // blur and then `mutate()`, so the sequence was: type, blur, PUT in
+    // flight, type again, `mutate` resolves, `rule.name` changes, the effect
+    // re-seeds — and the keystrokes typed after the blur are gone. An SWR
+    // revalidation on focus or interval does the same thing with no save at
+    // all.
+    //
+    // The ref marks which rule the draft belongs to, so switching nodes
+    // re-seeds and a server-side change to the rule the user is editing does
+    // not. That ordering is the right way round for a draft: while someone is
+    // typing, what they typed wins.
+    const seededForRuleId = useRef<string | null>(null);
     useEffect(() => {
-        setName(rule?.name ?? '');
-        setSla(rule?.slaWindowMinutes != null ? String(rule.slaWindowMinutes) : '');
-    }, [rule?.id, rule?.name, rule?.slaWindowMinutes]);
+        if (!rule || seededForRuleId.current === rule.id) return;
+        seededForRuleId.current = rule.id;
+        setName(rule.name ?? '');
+        setSla(rule.slaWindowMinutes != null ? String(rule.slaWindowMinutes) : '');
+    }, [rule]);
 
     // Auto-save via PUT (UpdateAutomationRuleSchema accepts each field
     // optionally; its action-config superRefine only fires when actionType
