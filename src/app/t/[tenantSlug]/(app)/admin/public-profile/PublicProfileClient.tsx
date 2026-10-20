@@ -42,6 +42,7 @@ import { Input } from '@/components/ui/input';
 import { QrCode } from '@/components/ui/qr-code';
 import { PublicFarmBody } from '@/components/public-profile/public-farm-body';
 import { applyVisibility } from '@/lib/public-profile/visibility';
+import type { readFarmBrandDraft } from '@/app-layer/usecases/public-farm-profile';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cardVariants } from '@/components/ui/card';
@@ -69,23 +70,32 @@ type HideColumn = 'hideTagline' | 'hideAbout' | 'hideOblast' | 'hideCrops';
  */
 const CONSENT_TEXT_VERSION = 'v2';
 
-interface Draft {
-    handle: string | null;
-    displayName: string | null;
-    tagline: string | null;
-    about: string | null;
-    oblast: string | null;
-    crops: string[];
-    published: boolean;
+/**
+ * The draft as it arrives over the wire — DERIVED from the usecase that
+ * produces it.
+ *
+ * It was a hand-maintained copy of those fifteen fields, and it drifted the
+ * first time anything was added server-side: P6.3 (#1812) put `logoUrl` and
+ * `photoUrls` on the reader, and this file knew nothing about them until a
+ * line referenced one. A copy that only breaks when somebody happens to USE
+ * the new field is a copy that is wrong for however long nobody does.
+ *
+ * `import type` is erased at compile time, so nothing from the server module
+ * graph reaches the client bundle — the hazard `lib/billing/entitlements.ts`
+ * documents for a RUNTIME import does not apply. Three sibling client
+ * components already type-import their usecase for the same reason.
+ *
+ * The two date fields are the one thing that cannot be inherited: the usecase
+ * returns `Date`, and JSON gives this component a string. Overriding exactly
+ * those two is narrower than restating all seventeen.
+ */
+type Draft = Omit<
+    NonNullable<Awaited<ReturnType<typeof readFarmBrandDraft>>>,
+    'publishedAt' | 'consentedAt'
+> & {
     publishedAt: string | null;
     consentedAt: string | null;
-    consentTextVersion: string | null;
-    hideTagline: boolean;
-    hideAbout: boolean;
-    hideOblast: boolean;
-    hideCrops: boolean;
-    indexable: boolean;
-}
+};
 
 /**
  * The eye toggle shown under a field — P6.6 (#1815).
@@ -576,6 +586,24 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                                     // refuses it long before it could ship.
                                     displayName: displayName.trim() || t('previewNoName'),
                                     ...visible,
+                                    // P6.3 (#1812). From the SAVED draft, not
+                                    // from form state, and not through
+                                    // `applyVisibility`: images are
+                                    // NOT_HIDEABLE, so there is no toggle to
+                                    // apply and passing them through one would
+                                    // invent a flag the allowlist says does
+                                    // not exist.
+                                    //
+                                    // This previews what the page would show
+                                    // for the state on the server. Once the
+                                    // upload field lands it will have to feed
+                                    // the preview from local state too, or a
+                                    // just-uploaded photo would be missing
+                                    // from the pane that claims to show the
+                                    // page — which is this component's whole
+                                    // reason for being shared.
+                                    logoUrl: draft?.logoUrl ?? null,
+                                    photoUrls: draft?.photoUrls ?? [],
                                 }}
                                 labels={{
                                     oblastLine: visible.oblast
@@ -583,6 +611,17 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                                         : null,
                                     cropsTitle: tp('cropsTitle'),
                                     aboutTitle: tp('aboutTitle'),
+                                    // The PREVIEWED name, not the saved one,
+                                    // so alt text and heading agree while the
+                                    // owner is still typing.
+                                    logoAlt: tp('logoAlt', {
+                                        farm: displayName.trim() || t('previewNoName'),
+                                    }),
+                                    photoAlt: (n: number) =>
+                                        tp('photoAlt', {
+                                            n,
+                                            farm: displayName.trim() || t('previewNoName'),
+                                        }),
                                 }}
                             />
                         );
