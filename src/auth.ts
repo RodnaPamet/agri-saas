@@ -53,6 +53,7 @@ import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
 import { mintAppleClientSecret } from '@/lib/auth/apple-client-secret';
+import { secureCookiesEnabled } from '@/lib/auth/secure-cookies';
 import { redeemPendingInvites } from '@/lib/auth/invite-redemption';
 
 // ─── Type augmentation ──────────────────────────────────────────────
@@ -480,6 +481,74 @@ async function readInviteTokenFromCookies(): Promise<{
 // ─── NextAuthOptions ────────────────────────────────────────────────
 
 export const authOptions: NextAuthOptions = {
+    /**
+     * Apple returns by a CROSS-SITE FORM POST, and a `SameSite=Lax` cookie is
+     * not sent on one (#2096).
+     *
+     * This is why web Apple sign-in bounced to the login page with no message
+     * after a SUCCESSFUL authorisation on Apple's side, measured by the owner
+     * twice on 2026-10-20. Apple's `form_post` response mode means the
+     * callback arrives as a cross-site POST rather than a top-level GET
+     * navigation; Lax permits the latter and refuses the former. So
+     * `next-auth.pkce.code_verifier` and `next-auth.state` — both `Lax` by
+     * default (`next-auth/core/lib/cookie.js`) — simply are not there, the
+     * PKCE/state check fails, and v4 redirects to the sign-in page. Nothing
+     * was misconfigured and the error names nothing, which is why the
+     * provider being correctly registered made this look like a bad key.
+     *
+     * Deterministic rather than flaky: a Lax cookie is never sent on a
+     * cross-site POST, so it failed for every attempt and would have failed
+     * for every user.
+     *
+     * ## Only these two cookies, and only over HTTPS
+     *
+     * The session cookie keeps `Lax` — it is not part of an OAuth callback and
+     * widening it would be a real loss. These two are short-lived (15 minutes,
+     * next-auth's own `maxAge`, preserved below) and `httpOnly`.
+     *
+     * `sameSite: 'none'` REQUIRES `Secure`, and a `Secure` cookie is not sent
+     * over plain http — so on a local `http://` origin this stays `Lax`, which
+     * is correct there anyway: nothing is cross-site. Keyed off
+     * `secureCookiesEnabled()`, the same `NEXTAUTH_URL`-derived test next-auth
+     * uses for the `__Secure-` prefix, because the name and the policy must
+     * agree.
+     *
+     * ## What it does NOT weaken
+     *
+     * `state` still protects against login CSRF. An attacker can send a
+     * cross-site POST, but cannot SET our cookie, so the value in the body and
+     * the value in the cookie cannot be made to match — which is the whole
+     * check. PKCE is unaffected: the verifier stays `httpOnly` and is still
+     * compared server-side.
+     *
+     * It does apply to Google and Microsoft, which return by GET and would not
+     * have needed it. v4's cookie config is global rather than per provider,
+     * and the alternative — intercepting Apple's POST to re-issue it same-site
+     * — is far more machinery in the most security-sensitive path we have.
+     */
+    cookies: (() => {
+        const secure = secureCookiesEnabled();
+        const prefix = secure ? '__Secure-' : '';
+        // Every other option is next-auth's own default, copied so that
+        // overriding `sameSite` does not silently drop `maxAge` or `path`.
+        const crossSiteCallback = {
+            httpOnly: true,
+            sameSite: secure ? ('none' as const) : ('lax' as const),
+            path: '/',
+            secure,
+            maxAge: 60 * 15,
+        };
+        return {
+            pkceCodeVerifier: {
+                name: `${prefix}next-auth.pkce.code_verifier`,
+                options: crossSiteCallback,
+            },
+            state: {
+                name: `${prefix}next-auth.state`,
+                options: crossSiteCallback,
+            },
+        };
+    })(),
     adapter: PrismaAdapter(prisma) as NextAuthOptions['adapter'],
     providers,
     pages: {
