@@ -2370,6 +2370,7 @@ function Inner({
                     it to edges: an edge selection mounts the same
                     panel with label + variant fields. */}
                 <ProcessInspector
+                    key={selectedNode?.id ?? selectedEdge?.id ?? 'none'}
                     node={selectedNode}
                     edge={selectedEdge}
                     tenantSlug={tenantSlug}

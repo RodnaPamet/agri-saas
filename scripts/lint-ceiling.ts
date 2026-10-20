@@ -147,12 +147,22 @@ export const LIMITS: Limits = {
     // `suppressedFindings` UNMOVED at 1580, which is the figure that separates
     // a fix from a mute and the one #1471 asks for beside any claim.
     //
-    // The 62 is NOT headroom and should not read as it: 51 of it is #1471's
-    // remaining tranche — 31 `set-state-in-effect`, 9 `refs`, 5 `purity`, 2
-    // `immutability`, 4 other missing dependencies — and 11 is everything
-    // else. Those 51 are genuinely local and genuinely behavioural, which is
-    // what #1471 deferred them for.
-    warningCeiling: 87,
+    // The actual is NOT headroom and should not read as it. At 60: 48 of it is
+    // #1471's remaining tranche — 28 `set-state-in-effect`, 9 `refs`, 5
+    // `purity`, 2 `immutability`, 4 other missing dependencies — and 12 is
+    // everything else. Those 48 are genuinely local and genuinely
+    // behavioural, which is what #1471 deferred them for.
+    //
+    // 87 -> 85, same `actual + 25` policy. Warnings 62 -> 60, and the
+    // arithmetic is worth writing down because it is not 62 - 3: three
+    // `set-state-in-effect` findings went from `ProcessInspector` (keyed on
+    // the selection, so its text mirrors are initial state and the effects are
+    // DELETED), while the baseline rose by one — a no-ruleId prose diagnostic
+    // in `tests/guards/p6-controls-are-flag-gated.test.ts`, which arrived from
+    // another session between my branch point and this rebase. 62 + 1 - 3.
+    //
+    // react-hooks 51 -> 48. `suppressedFindings` UNMOVED at 1580 again.
+    warningCeiling: 85,
     // Two changes landed on this line and both reasons stand.
     //
     // #1376 LOWERED it 1580 -> 1578: the retired `/api/auth/register` carried
