@@ -277,6 +277,21 @@ export function projectionPayload(brand: {
     hideCrops: boolean;
     logoMediaHash: string | null;
     photoMediaHashes: string[];
+}, media: {
+    /**
+     * Original hash → its display-sized thumbnail — #2062.
+     *
+     * INJECTED rather than looked up here, because this function is pure and
+     * both its callers need it to stay that way: the editor's live preview
+     * renders the same component, and a projection step that queried the
+     * database could not be exercised by the unit tests that pin what crosses.
+     *
+     * A missing entry is not an error. `projectFarmBrand` falls back to the
+     * original, so photographs uploaded before thumbnails existed keep
+     * rendering — larger than they should be, which is a performance problem
+     * rather than a broken page.
+     */
+    readonly thumbFor: ReadonlyMap<string, string>;
 }): {
     handle: string;
     displayName: string;
@@ -368,8 +383,22 @@ export function projectionPayload(brand: {
         // tenant's own RLS context. Re-checking here would need a
         // cross-tenant file read from a projection writer that has no business
         // doing one — and would still be checking a decision already made.
+        // The LOGO crosses unchanged, and that is measured rather than
+        // assumed: the seeded 400px logo is 8 KB, against 432 KB for a 1600px
+        // photograph. It is already display-sized, so a derivative would add a
+        // second artefact and a second hash to save nothing.
         logoMediaHash: brand.logoMediaHash,
-        photoMediaHashes: [...brand.photoMediaHashes],
+        // The gallery crosses as THUMBNAILS. The projection is what the public
+        // page fetches, and the page renders a ~213 px cell — publishing the
+        // 1600 px original there cost LCP 15438 ms against a 2200 ms budget
+        // (#2062, measured on #2060).
+        //
+        // The original is deliberately NOT also projected. `/api/public/media`
+        // serves a hash only while a published projection references one, so
+        // leaving the originals out keeps them unservable to the public —
+        // correct while nothing can open a photograph full-screen, and the
+        // thing to change deliberately when a lightbox arrives.
+        photoMediaHashes: brand.photoMediaHashes.map((h) => media.thumbFor.get(h) ?? h),
     };
 
     // The allowlist is the authority, so a private field appearing in `out`

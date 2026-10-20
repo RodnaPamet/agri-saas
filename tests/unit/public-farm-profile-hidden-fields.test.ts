@@ -37,6 +37,15 @@ const FULL = {
     photoMediaHashes: ['d'.repeat(64), 'e'.repeat(64)],
 };
 
+/**
+ * No thumbnails — #2062.
+ *
+ * These cases are about VISIBILITY, not about media derivatives, so they use
+ * the empty map and exercise the fallback: an original with no thumbnail
+ * crosses as itself. The thumbnail mapping has its own cases below.
+ */
+const NO_THUMBS = { thumbFor: new Map<string, string>() };
+
 describe('per-field visibility in the public projection', () => {
     it('media crosses even with every toggle ON — it is NOT_HIDEABLE', () => {
         // The partition's claim, executed. `logoMediaHash` and
@@ -49,7 +58,7 @@ describe('per-field visibility in the public projection', () => {
             hideAbout: true,
             hideOblast: true,
             hideCrops: true,
-        });
+        }, NO_THUMBS);
         expect(out.logoMediaHash).toBe('c'.repeat(64));
         expect(out.photoMediaHashes).toEqual(['d'.repeat(64), 'e'.repeat(64)]);
         // The control: the text fields DID get withheld, so this fixture can
@@ -58,16 +67,60 @@ describe('per-field visibility in the public projection', () => {
         expect(out.crops).toEqual([]);
     });
 
+    describe('thumbnails cross instead of originals — #2062', () => {
+        it('maps each original to its thumbnail', () => {
+            // What the projection publishes is what the public page fetches,
+            // and the page renders a ~213 px cell. Publishing the 1600 px
+            // original there cost LCP 15438 ms against a 2200 ms budget.
+            const thumbFor = new Map([
+                ['d'.repeat(64), '1'.repeat(64)],
+                ['e'.repeat(64), '2'.repeat(64)],
+            ]);
+            const out = projectionPayload(FULL, { thumbFor });
+            expect(out.photoMediaHashes).toEqual(['1'.repeat(64), '2'.repeat(64)]);
+        });
+
+        it('FALLS BACK to the original when no thumbnail exists', () => {
+            // Photographs uploaded before thumbnails existed keep rendering —
+            // larger than they should be, which is a performance problem
+            // rather than a broken page. A projection that dropped them would
+            // make an old photo vanish from a published profile.
+            const thumbFor = new Map([['d'.repeat(64), '1'.repeat(64)]]);
+            const out = projectionPayload(FULL, { thumbFor });
+            expect(out.photoMediaHashes).toEqual(['1'.repeat(64), 'e'.repeat(64)]);
+        });
+
+        it('keeps the ORDER the owner arranged, not the map order', () => {
+            // The array is the gallery. A map iteration order leaking into the
+            // projection would shuffle somebody's page between refreshes.
+            const thumbFor = new Map([
+                ['e'.repeat(64), '2'.repeat(64)],
+                ['d'.repeat(64), '1'.repeat(64)],
+            ]);
+            const out = projectionPayload(FULL, { thumbFor });
+            expect(out.photoMediaHashes).toEqual(['1'.repeat(64), '2'.repeat(64)]);
+        });
+
+        it('leaves the LOGO unmapped — it is already display-sized', () => {
+            // Measured: the seeded 400 px logo is 8 KB against 432 KB for a
+            // 1600 px photograph, so a derivative would add an artefact and a
+            // hash to save nothing. A map entry for it must not be honoured.
+            const thumbFor = new Map([['c'.repeat(64), '9'.repeat(64)]]);
+            const out = projectionPayload(FULL, { thumbFor });
+            expect(out.logoMediaHash).toBe('c'.repeat(64));
+        });
+    });
+
     it('copies the gallery rather than aliasing it', () => {
         // `[...brand.photoMediaHashes]`. Returning the caller's array would
         // let a later mutation of the brand row change what was projected.
-        const out = projectionPayload(FULL);
+        const out = projectionPayload(FULL, NO_THUMBS);
         expect(out.photoMediaHashes).not.toBe(FULL.photoMediaHashes);
         expect(out.photoMediaHashes).toEqual(FULL.photoMediaHashes);
     });
 
     it('projects everything when nothing is hidden — the control', () => {
-        const out = projectionPayload(FULL);
+        const out = projectionPayload(FULL, NO_THUMBS);
         expect(out.tagline).toBe('Зърно от Добруджа');
         expect(out.about).toBe('Семейно стопанство от три поколения.');
         expect(out.oblast).toBe('Добрич');
@@ -80,7 +133,7 @@ describe('per-field visibility in the public projection', () => {
         ['hideOblast', 'oblast', null],
         ['hideCrops', 'crops', []],
     ] as const)('%s withholds %s and nothing else', (flag, field, absent) => {
-        const out = projectionPayload({ ...FULL, [flag]: true });
+        const out = projectionPayload({ ...FULL, [flag]: true }, NO_THUMBS);
 
         // The field is ABSENT, in the shape an unset field has: `null` for the
         // three nullable ones, `[]` for the list — which is the cleared state
@@ -104,7 +157,7 @@ describe('per-field visibility in the public projection', () => {
             hideAbout: true,
             hideOblast: true,
             hideCrops: true,
-        });
+        }, NO_THUMBS);
         expect(out).toMatchObject({
             handle: 'pobeda',
             displayName: 'Стопанство Победа',
@@ -123,7 +176,7 @@ describe('per-field visibility in the public projection', () => {
         // They are `privateField` in the allowlist. A flag on the wire would
         // tell a visitor that a field exists and is being withheld — the one
         // thing hiding it is meant to avoid.
-        const out = projectionPayload({ ...FULL, hideAbout: true });
+        const out = projectionPayload({ ...FULL, hideAbout: true }, NO_THUMBS);
         for (const key of ['hideTagline', 'hideAbout', 'hideOblast', 'hideCrops']) {
             expect(Object.keys(out)).not.toContain(key);
         }

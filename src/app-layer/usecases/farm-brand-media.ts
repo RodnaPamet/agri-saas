@@ -40,6 +40,8 @@ import type { RequestContext } from '../types';
 import { FileRepository } from '../repositories/FileRepository';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { buildTenantObjectKey, getStorageProvider } from '@/lib/storage';
+import { stripImageMetadata } from '@/lib/images/strip-metadata';
 import { codedBadRequest } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { assertCanAdmin } from '../policies/common';
@@ -73,6 +75,30 @@ export const FARM_BRAND_MAX_PHOTOS = 6;
  * (deliberately — an evidence photo is a record), so this surface asks.
  */
 export const FARM_MEDIA_MAX_DIMENSION = 1600;
+
+/**
+ * Longest edge of the THUMBNAIL the public grid renders — #2062.
+ *
+ * Derived from the cell, and from a measurement rather than a round number.
+ * `/f/{handle}` lays the gallery out `grid-cols-2 sm:grid-cols-3` inside
+ * `max-w-2xl` (672 CSS px), so a cell is about 213 px at the widest and about
+ * 160 px on a narrow phone. 440 px covers that at better than 2x everywhere.
+ *
+ * Why not larger, in the numbers that decided it. Measured on the seeded
+ * fixture, each stored at JPEG q80:
+ *
+ *     1600 px   432 KB each   six = 2601 KB   ← what blew the budget
+ *      800 px    56 KB each   six =  334 KB
+ *      640 px    29 KB each   six =  172 KB
+ *      440 px    13 KB each   six =   76 KB   ← this
+ *
+ * The headroom is tighter than the 2200 ms LCP budget suggests, which is why
+ * the smallest workable size wins: FCP on that page is already 1739 ms, and
+ * LCP cannot precede it, so everything in the first viewport has roughly
+ * 460 ms to arrive — about 92 KB at the throttled rate Lighthouse applies.
+ * 76 KB fits; 172 KB does not.
+ */
+export const FARM_MEDIA_THUMB_DIMENSION = 440;
 
 /** Upload one image for later publication, and return its content hash. */
 export async function uploadFarmBrandMedia(
@@ -135,6 +161,71 @@ export async function uploadFarmBrandMedia(
             scanStatus: ingested.scanStatus,
         });
 
+        // ── the display-sized derivative — #2062 ──
+        //
+        // Derived from `ingested.buffer`, the bytes the CALLER sent, rather
+        // than from the stored 1600px result. Both are legitimate; this one is
+        // chosen because re-encoding an already-lossy JPEG compounds the
+        // artefacts, and the caller's original is the best source available.
+        //
+        // No second AV scan, and that is a deliberate call rather than an
+        // omission: these exact bytes were scanned on arrival a few lines up,
+        // and what is written here is OUR re-encode of them, not anything the
+        // caller supplied. Scanning a buffer sharp just produced would be
+        // scanning our own output.
+        //
+        // It goes through `stripImageMetadata` like the original, so the
+        // thumbnail carries the same EXIF/GPS guarantee. A derivative that
+        // skipped the strip would be the leak the original avoided, published
+        // on the more visible of the two surfaces.
+        const { bytes: thumbBytes } = await stripImageMetadata(
+            ingested.buffer,
+            ingested.mimeType,
+            { component: 'farm-brand-media', maxDimension: FARM_MEDIA_THUMB_DIMENSION },
+        );
+        const thumbKey = buildTenantObjectKey(
+            ctx.tenantId,
+            FARM_MEDIA_DOMAIN,
+            `thumb-${ingested.originalName}`,
+        );
+        const thumbWrite = await getStorageProvider().write(thumbKey, thumbBytes, {
+            mimeType: ingested.mimeType,
+        });
+
+        const thumbRecord = await FileRepository.createPending(db, ctx, {
+            pathKey: thumbKey,
+            originalName: ingested.originalName,
+            mimeType: ingested.mimeType,
+            sizeBytes: thumbWrite.sizeBytes,
+            sha256: thumbWrite.sha256,
+            storageProvider: ingested.storageProvider,
+            bucket: ingested.bucket,
+            domain: FARM_MEDIA_DOMAIN,
+        });
+        // The pairing, and the only thing that records it. Set AFTER the row
+        // exists because `createPending` does not take it — a narrower change
+        // than widening that shared repository method for one caller.
+        await db.fileRecord.update({
+            where: { id: thumbRecord.id },
+            data: { derivedFromSha256: ingested.sha256 },
+        });
+        await FileRepository.markStored(db, ctx, thumbRecord.id, ingested.scanStatus);
+
+        logger.info('farm-brand-media.stored', {
+            component: 'farm-brand-media',
+            tenantId: ctx.tenantId,
+            // BOTH sizes: the strip re-encodes, so a stored size alone cannot
+            // answer "was this a 3 MB phone photo or an already-small image".
+            uploadedBytes: file.size,
+            bytes: ingested.sizeBytes,
+            thumbBytes: thumbWrite.sizeBytes,
+            scanStatus: ingested.scanStatus,
+        });
+
+        // The ORIGINAL's hash. That is what `FarmBrand.photoMediaHashes`
+        // holds and what the editor echoes back on save — the thumbnail is an
+        // implementation detail of how the public page renders, and a client
+        // that knew both would have to decide between them.
         return {
             hash: ingested.sha256,
             mimeType: ingested.mimeType,
@@ -142,6 +233,67 @@ export async function uploadFarmBrandMedia(
             fileRecordId: fileRecord.id,
         };
     });
+}
+
+/**
+ * Map each original hash to its thumbnail, for the projection writer — #2062.
+ *
+ * Call INSIDE the tenant context: the lookup is RLS-scoped, so it can only
+ * ever pair a tenant's own rows. A hash is not unique across tenants (two
+ * farms may upload the same image), so an unscoped read could hand one farm's
+ * projection another farm's thumbnail — which would then be publicly servable
+ * under the first farm's handle.
+ *
+ * Returns a `Map`, not a resolved array, so the caller decides what to do with
+ * a missing entry. `projectFarmBrand` falls back to the original.
+ *
+ * ## Who checked that the THUMBNAIL may be published
+ *
+ * Worth answering, because `assertPublishableMediaHashes` only ever sees the
+ * ORIGINALS the editor sends, and what reaches the projection is a hash it
+ * never examined.
+ *
+ * This query is the check. Its `where` carries the same four conditions that
+ * function enforces — the tenant (by RLS), `domain: farm-media`,
+ * `status: STORED`, `deletedAt: null` — so a row it returns would have passed
+ * that function had it been asked. The verification is structural rather than
+ * repeated, which is the right shape here: two copies of the same four
+ * conditions would be two places to forget the fifth.
+ *
+ * The scan verdict rides along too. A thumbnail is marked with its original's
+ * `scanStatus`, so `isDownloadAllowed` refuses a derivative of an infected
+ * upload exactly as it refuses the upload — and `status: STORED` here means a
+ * thumbnail whose write never completed cannot reach a public page.
+ */
+export async function thumbnailsForOriginals(
+    db: PrismaTx,
+    originals: readonly string[],
+): Promise<Map<string, string>> {
+    if (originals.length === 0) return new Map();
+
+    const rows = await db.fileRecord.findMany({
+        where: {
+            derivedFromSha256: { in: [...new Set(originals)] },
+            domain: FARM_MEDIA_DOMAIN,
+            deletedAt: null,
+            status: 'STORED',
+        },
+        select: { sha256: true, derivedFromSha256: true, createdAt: true },
+        // Oldest first, so the FIRST thumbnail derived from an original wins
+        // when several exist. Several can: a re-upload of the same bytes is
+        // the same original hash, and nothing deduplicates the derivative.
+        // Picking deterministically matters because the alternative is a
+        // projection whose contents change between refreshes with no edit.
+        orderBy: { createdAt: 'asc' },
+    });
+
+    const out = new Map<string, string>();
+    for (const r of rows) {
+        if (r.derivedFromSha256 && !out.has(r.derivedFromSha256)) {
+            out.set(r.derivedFromSha256, r.sha256);
+        }
+    }
+    return out;
 }
 
 /**

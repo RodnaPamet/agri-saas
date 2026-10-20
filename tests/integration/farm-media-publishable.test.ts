@@ -34,6 +34,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import {
     assertPublishableMediaHashes,
     FARM_MEDIA_DOMAIN,
+    thumbnailsForOriginals,
 } from '@/app-layer/usecases/farm-brand-media';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -61,7 +62,7 @@ const ctxA = () =>
 async function mkFile(
     tenantId: string,
     sha256: string,
-    opts: { domain?: string; deleted?: boolean; status?: string } = {},
+    opts: { domain?: string; deleted?: boolean; status?: string; derivedFrom?: string } = {},
 ) {
     return prisma.fileRecord.create({
         data: {
@@ -76,6 +77,7 @@ async function mkFile(
             status: (opts.status ?? 'STORED') as never,
             scanStatus: 'CLEAN' as never,
             deletedAt: opts.deleted ? new Date() : null,
+            ...(opts.derivedFrom ? { derivedFromSha256: opts.derivedFrom } : {}),
         },
         select: { id: true },
     });
@@ -124,6 +126,55 @@ afterAll(async () => {
 
 const check = (hashes: string[]) =>
     runInTenantContext(ctxA(), (db) => assertPublishableMediaHashes(db, hashes));
+
+describeFn('thumbnailsForOriginals — #2062', () => {
+    const THUMB_OF_A = 'c1'.repeat(32);
+    const THUMB_OF_B = 'c2'.repeat(32);
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        // A's thumbnail, and B's — identical rows but for the owner, which is
+        // what makes the scoping assertion below mean something.
+        await mkFile(TENANT_A, THUMB_OF_A, { derivedFrom: H.aMedia });
+        await mkFile(TENANT_B, THUMB_OF_B, { derivedFrom: H.bMedia });
+    }, 60_000);
+
+    const resolve = (originals: string[]) =>
+        runInTenantContext(ctxA(), (db) => thumbnailsForOriginals(db, originals));
+
+    it('pairs an original with its thumbnail — the positive control', async () => {
+        const map = await resolve([H.aMedia]);
+        expect(map.get(H.aMedia)).toBe(THUMB_OF_A);
+    });
+
+    it('CANNOT see another tenant’s thumbnail, even for a known original', async () => {
+        // The safety property, and the reason the lookup must run inside the
+        // tenant context. A hash is not unique across tenants — two farms may
+        // upload the same image — so an unscoped read could pair one farm's
+        // projection with another farm's thumbnail. That thumbnail would then
+        // be publicly servable under the FIRST farm's handle, because
+        // `/api/public/media` serves whatever a published projection
+        // references.
+        const map = await resolve([H.bMedia]);
+        expect(map.has(H.bMedia)).toBe(false);
+        expect([...map.values()]).not.toContain(THUMB_OF_B);
+    });
+
+    it('omits an original that has no thumbnail, rather than inventing one', async () => {
+        // `H.aEvidence` is this tenant's, in another domain, and nothing is
+        // derived from it. An absent entry is what makes the projector's
+        // fallback reachable.
+        const map = await resolve([H.aEvidence, H.aMedia]);
+        expect(map.has(H.aEvidence)).toBe(false);
+        expect(map.get(H.aMedia)).toBe(THUMB_OF_A);
+    });
+
+    it('reads nothing for an empty list', async () => {
+        // Guarded before the query: publishing a text-only profile should not
+        // cost a round trip.
+        expect([...(await resolve([])).keys()]).toEqual([]);
+    });
+});
 
 describeFn('assertPublishableMediaHashes', () => {
     it('ALLOWS this tenant’s own farm-media file — the positive control', async () => {
