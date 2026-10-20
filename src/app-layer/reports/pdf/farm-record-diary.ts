@@ -52,6 +52,16 @@ export interface DiaryLabels {
     odbh: string;
     legalLine: string;
     observationSection: string;
+    /**
+     * The footnote under the scouting table, printed only when a derived row
+     * is present (#2072, #1740 Q2).
+     *
+     * On the interface because `DiaryLabels` IS the contract the drawing code
+     * reads through — `L.derivedNote` does not compile without it. There is
+     * only one implementation (`BG_LABELS`), and rightly so: this is a
+     * Bulgarian regulatory form, not localised copy.
+     */
+    derivedNote: string;
     chemicalSection: string;
     fertilizerSection: string;
     samplingSection: string;
@@ -101,6 +111,11 @@ export const BG_LABELS: DiaryLabels = {
         'Записите в дневника се водят на основание чл. 115 а и чл. 142, ал. 3 от Закона за защита на растенията',
     observationSection:
         'ПОЯВА, РАЗВИТИЕ, ПЛЪТНОСТ ИЛИ СТЕПЕН НА НАПАДЕНИЕ ОТ ВРЕДИТЕЛИ',
+    // Printed under the scouting table, and ONLY when a derived row is
+    // present. A footnote marker with nothing marked would be noise, and a
+    // document that explains a convention it never uses reads as careless.
+    derivedNote:
+        '* Редовете, отбелязани със звездичка, са изведени от проведените химични обработки и не представляват самостоятелно обследване.',
     chemicalSection: 'ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ',
     fertilizerSection: 'УПОТРЕБЕНИ МИНЕРАЛНИ И ОРГАНИЧНИ ТОРОВЕ',
     samplingSection: 'ВЗЕТИ ПРОБИ',
@@ -260,6 +275,14 @@ export interface SprayLineData {
      * treated area would be wrong there.
      */
     treatedAreaHa: number | null;
+    /**
+     * Фенофаза/BBCH recorded on this line (#2072 part A). Not printed in the
+     * ХИМИЧНИ ОБРАБОТКИ table — that table's 12 columns are fixed by заповед
+     * РД 11-3194/31.12.2021 and include no such cell. It is here because the
+     * SCOUTING table's column 2 is «Фенофаза/BBCH», and #1740 Q2 ruled that
+     * table should be derived from the treatments.
+     */
+    phenophase: string | null;
     applicationTechnique: string | null;
     quarantineDays: number | null;
     operatorCertNo: string | null;
@@ -291,6 +314,17 @@ export interface ObservationData {
     phenophase: string | null;
     disease: string | null;
     pest: string | null;
+    /**
+     * TRUE when this row was derived from a treatment rather than recorded by
+     * a person (#2072, #1740 Q2).
+     *
+     * It exists so the document can SAY so. A regulator reads Приложение 1's
+     * «ПОЯВА, РАЗВИТИЕ…» rows as observations — somebody walked the field and
+     * wrote down what they saw. A row inferred from a spraying is a different
+     * assertion, and printing it unmarked would make the register claim an
+     * inspection that never happened.
+     */
+    derived: boolean;
 }
 
 export interface FarmRecordData {
@@ -433,7 +467,11 @@ export function buildFertilizerRows(lines: FertilizeLineData[]): string[][] {
 /** Best-effort 11-column observation rows from OBSERVATION journal entries. */
 export function buildObservationRows(obs: ObservationData[]): string[][] {
     return obs.map((o) => [
-        fmtDate(o.occurredAt),
+        // The asterisk is the form's own footnote convention — it already
+        // carries `*` and `**` markers in two column headers — and the caption
+        // under the table explains it. Marking the DATE cell rather than the
+        // phenophase because the whole ROW is derived, not one of its values.
+        o.derived ? `${fmtDate(o.occurredAt)} *` : fmtDate(o.occurredAt),
         o.phenophase ?? '',
         o.disease ?? '',
         '',
@@ -445,6 +483,52 @@ export function buildObservationRows(obs: ObservationData[]): string[][] {
         '',
         '',
     ]);
+}
+
+/**
+ * Scouting rows derived from treatments — #1740 Q2, #2072 part A.
+ *
+ * The owner's ruling was "derive the observation table from the treatments,
+ * like PRZ", and PRZ's manual says its scouting section «става изцяло
+ * автоматично и зависи пряко от проведените химични обработки». This is that
+ * derivation, which had never been built: `buildObservationRows` only ever
+ * received OBSERVATION journal entries, and a treatment-scoped document
+ * carried none at all.
+ *
+ * ## Only when there is something to say
+ *
+ * One row per spray line that HAS a phenophase. A line without one would
+ * derive a row carrying a date and nothing else — asserting that an
+ * inspection happened and found nothing worth recording, which is not what a
+ * missing field means. The table stays blank in that case, exactly as before.
+ *
+ * ## «Болест» and «Неприятел» are left BLANK, deliberately
+ *
+ * A treatment records `targetNote`, the form's «Вредител» — one free-text
+ * field naming whatever the product was applied against. The scouting table
+ * has TWO separate columns, «Болест» (3) and «Неприятел» (7), and nothing in
+ * a treatment says which one a given note belongs in. Guessing would put a
+ * fungus in the pest column half the time.
+ *
+ * The deeper reason is that they are different assertions. "A product was
+ * applied against X" is not "X was observed on this field at this density",
+ * and columns 4-6 and 8-11 — обследвана площ, нападната площ, степен,
+ * плътност — are measurements nobody took. A register that filled them from a
+ * spraying would be inventing survey data.
+ *
+ * So a derived row carries exactly what the treatment actually knows: WHEN,
+ * and the GROWTH STAGE the person recorded at the time.
+ */
+export function deriveObservationsFromSprays(lines: SprayLineData[]): ObservationData[] {
+    return lines
+        .filter((l) => l.phenophase != null && l.phenophase !== '')
+        .map((l) => ({
+            occurredAt: l.completedAt,
+            phenophase: l.phenophase,
+            disease: null,
+            pest: null,
+            derived: true,
+        }));
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -779,6 +863,17 @@ export function renderFarmRecordDiary(
         obsRows,
         Math.max(0, 8 - obsRows.length),
     );
+
+    // The disclosure (#2072, #1740 Q2). A derived row is not an observation a
+    // person made, and this document is read by a regulator who would
+    // otherwise have no way to tell. Only printed when at least one row is
+    // actually derived.
+    if (data.observations.some((o) => o.derived)) {
+        doc.fontSize(7).fillColor(MUTED).text(L.derivedNote, doc.page.margins.left, doc.y + 4, {
+            width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+        });
+        doc.fillColor(INK);
+    }
 
     // ── LANDSCAPE: chemical treatments (the core) ───────────────────
     // The register is PER FIELD: one header strip and one table each, on its
@@ -1145,6 +1240,7 @@ export async function gatherFarmRecord(
                     dose,
                     areaHa,
                     treatedAreaHa,
+                    phenophase: l.phenophase ?? null,
                     applicationTechnique:
                         cond?.applicationTechnique ?? l.task.applicationTechnique ?? null,
                     // The line's OWN period first (#1775) — what applied on
@@ -1178,12 +1274,17 @@ export async function gatherFarmRecord(
                 occurredAt: { gte: fromD, lte: toD },
                 OR: [
                     { locations: { none: {} } },
-                    // A treatment-scoped document carries no observations —
-                    // the issue asks for "only this entry's rows", and an
-                    // observation is a different entry. The section still
-                    // prints, blank, like the paper form. `''` matches no
-                    // location rather than every one, which is what dropping
-                    // the clause would do.
+                    // A treatment-scoped document carries no RECORDED
+                    // observations — the issue asks for "only this entry's
+                    // rows", and an observation is a different entry. `''`
+                    // matches no location rather than every one, which is what
+                    // dropping the clause would do.
+                    //
+                    // It is no longer blank, though: since #2072 such a
+                    // document DERIVES its own scouting rows from its
+                    // treatments (#1740 Q2), so the section shows that
+                    // treatment's growth stage and says that the row was
+                    // derived rather than observed.
                     { locations: { some: { locationId: locationId ?? '' } } },
                 ],
             },
@@ -1191,7 +1292,7 @@ export async function gatherFarmRecord(
             orderBy: { occurredAt: 'asc' },
             take: MAX_OBSERVATION_ROWS,
         });
-        const observations: ObservationData[] = obs.map((o) => ({
+        const recorded: ObservationData[] = obs.map((o) => ({
             occurredAt: o.occurredAt,
             // `title` is already plain text (sanitizePlainText at the journal
             // usecase boundary); `notes` is sanitized RICH-TEXT HTML and must
@@ -1199,7 +1300,20 @@ export async function gatherFarmRecord(
             phenophase: o.title ?? null,
             disease: htmlNotesToPlainText(o.notes),
             pest: null,
+            derived: false,
         }));
+
+        // Recorded observations and rows derived from this document's own
+        // treatments, oldest first — the section is a chronology, and
+        // interleaving by date is what makes it read as one.
+        //
+        // This is why the note above about a treatment-scoped document
+        // carrying no observations is no longer the whole story: it carries no
+        // RECORDED ones, and now derives its own.
+        const observations: ObservationData[] = [
+            ...recorded,
+            ...deriveObservationsFromSprays(sprayLines),
+        ].sort((a, b) => (a.occurredAt?.getTime() ?? 0) - (b.occurredAt?.getTime() ?? 0));
 
         // ── Per-field header data ───────────────────────────────────
         // Every field of the location gets a sheet, blank when nothing was

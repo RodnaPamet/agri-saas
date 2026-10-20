@@ -58,6 +58,7 @@ const SPRAY: SprayLineData[] = [
         dose: '0.15 л/дка',
         areaHa: 3.5,
         treatedAreaHa: null,   // the whole parcel
+        phenophase: null,
         applicationTechnique: 'Наземна пръскачка',
         quarantineDays: 30,
         operatorCertNo: 'APP-123',
@@ -72,6 +73,7 @@ const SPRAY: SprayLineData[] = [
         dose: '0.5 л/дка',
         areaHa: 2,
         treatedAreaHa: null,   // the whole parcel
+        phenophase: null,
         applicationTechnique: null,
         quarantineDays: 14,
         operatorCertNo: null,
@@ -237,6 +239,7 @@ describe('farm-record-diary — pure row builders', () => {
                 phenophase: 'BBCH 32',
                 disease: 'Брашнеста мана',
                 pest: 'Листни въшки',
+                derived: false,   // a real observation, recorded by a person
             },
         ]);
         expect(rows).toHaveLength(1);

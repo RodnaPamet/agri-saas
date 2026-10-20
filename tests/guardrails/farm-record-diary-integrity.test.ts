@@ -140,6 +140,7 @@ const SPRAY: SprayLineData = {
     dose: '0.15 л/дка',
     areaHa: 3.5,
     treatedAreaHa: null,   // the whole parcel
+    phenophase: null,
     applicationTechnique: 'Наземна пръскачка',
     quarantineDays: 30,
     operatorCertNo: 'APP-123',
@@ -161,6 +162,7 @@ const OBS: ObservationData = {
     phenophase: 'BBCH 32',
     disease: 'Брашнеста мана',
     pest: 'Листни въшки',
+    derived: false,   // a real observation, recorded by a person
 };
 
 describe('ДНЕВНИК columns — header/cell counts locked', () => {
