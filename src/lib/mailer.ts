@@ -16,6 +16,7 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { logger } from '@/lib/observability/logger';
+import { prisma } from '@/lib/prisma';
 import { selectMailProviderKind } from '@/lib/email/provider-selection';
 
 export interface EmailAttachment {
@@ -416,8 +417,13 @@ export async function sendEmail(msg: OutboundEmail): Promise<void> {
  * `failedAt` / `failureKind` are the WEBHOOK's to set when a bounce arrives
  * minutes later. Nothing on this path ever writes them.
  *
- * `require`d lazily, matching `isProductionRuntime` above: a top-level prisma
- * import here would pull the client into every module that imports the mailer.
+ * Prisma is a STATIC import. I first required it lazily, reasoning that a
+ * top-level import would pull the client into every module importing the
+ * mailer — but `logging-import-hygiene` flagged it and was right: the claim
+ * does not survive checking. Every caller of `sendEmail` already reaches
+ * prisma transitively, nothing in prisma's own import closure reaches the
+ * mailer (so there is no cycle to break — measured: 5 modules, none of them
+ * this one), and no edge or client bundle imports the mailer at all.
  */
 async function recordOutbound(
     msg: OutboundEmail,
@@ -426,8 +432,6 @@ async function recordOutbound(
 ): Promise<void> {
     if (!messageId) return;
     try {
-
-        const { prisma } = require('@/lib/prisma');
         await prisma.outboundMessage.create({
             data: {
                 messageId,

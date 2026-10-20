@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 /**
  * `OutboundPurpose` is what a delivery webhook dispatches on (#1769): it reads
@@ -22,14 +23,6 @@ import { blankNonCode } from '../helpers/blank-non-code';
 const SRC = path.join(__dirname, '..', '..', 'src');
 const MAILER = path.join(SRC, 'lib', 'mailer.ts');
 
-function walk(dir: string): string[] {
-    return readdirSync(dir).flatMap((entry) => {
-        const full = path.join(dir, entry);
-        if (statSync(full).isDirectory()) return walk(full);
-        return full.endsWith('.ts') || full.endsWith('.tsx') ? [full] : [];
-    });
-}
-
 /** The union's members, read from the declaration rather than duplicated. */
 function declaredPurposes(): string[] {
     const src = blankNonCode(readFileSync(MAILER, 'utf8'));
@@ -43,7 +36,13 @@ function declaredPurposes(): string[] {
 /** file -> purposes it passes, comments blanked so a docblock is not a sender. */
 function sendersByPurpose(): Map<string, string[]> {
     const byPurpose = new Map<string, string[]>();
-    for (const file of walk(SRC)) {
+    // `collectSourceFiles`, not a hand-rolled walk: it refuses an empty
+    // result. A collector that silently returns nothing would make every
+    // assertion below pass while checking no senders at all, which is the
+    // failure mode `file-collection-is-not-silently-empty` exists to stop.
+    // The floor is near the real population so an over-eager skip is caught
+    // too, not just a total emptiness.
+    for (const file of collectSourceFiles({ roots: ['src'], floor: 2000 })) {
         if (path.resolve(file) === path.resolve(MAILER)) continue;
         const code = blankNonCode(readFileSync(file, 'utf8'));
         for (const m of code.matchAll(/\bpurpose:\s*'([a-z-]+)'/g)) {
