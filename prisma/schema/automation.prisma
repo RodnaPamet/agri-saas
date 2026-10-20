@@ -167,6 +167,68 @@ model NotificationOutbox {
   @@index([tenantId])
 }
 
+/// A provider message id, and what sent it (#1769).
+///
+/// `sendEmail` logs the provider's id since #1759, which makes a bounce
+/// VISIBLE. It cannot make one actionable: a webhook receiving
+/// `messageId=abc` has no way to learn that `abc` was a DSA triage alert for
+/// `ContentReport` X, so it can log the failure and nothing else.
+///
+/// That is not academic. On 2026-10-13 three Art 16 alerts were sent,
+/// `notice-triage-alert` stamped `alertedAt` on each report, and all three
+/// bounced. `alertedAt` is what stops the job re-alerting, so the notices sat
+/// in the queue with the moderator believing they had been announced. With
+/// this row the webhook can clear the stamp and let the next run retry.
+///
+/// NOT tenant-scoped, deliberately. Several senders have no tenant at all —
+/// password resets, email verification, the mail canary — and a nullable
+/// `tenantId` on a table whose whole purpose is lookup-by-id would invite a
+/// tenant-filtered query that silently misses exactly those rows. Nothing
+/// here is tenant data: an opaque provider id, a purpose string, and a
+/// subject reference.
+///
+/// No recipient address column, by the same rule as `mail.sent`'s log line:
+/// the domain is the operational question and the address is the disclosure.
+model OutboundMessage {
+  id              String    @id @default(cuid())
+  /// The provider's handle, as logged by `mail.sent`. Unique because a
+  /// delivery webhook's only key is this id — two rows would make the lookup
+  /// ambiguous and the webhook's action arbitrary.
+  messageId       String    @unique
+  /// Which sender produced it: 'notice-triage-alert', 'invite', 'password-reset'…
+  /// A plain string rather than an enum so a new sender cannot be blocked on a
+  /// migration; the set is asserted in a guard instead.
+  purpose         String
+  /// What the message was ABOUT. A LIST, because a message can cover many
+  /// rows: `notice-triage-alert` sends ONE digest and stamps `alertedAt` on
+  /// every report in it with a single `updateMany`.
+  ///
+  /// #1769 proposed a scalar `subjectId`, and that cannot express a digest.
+  /// A webhook clearing one report's stamp on a bounce would leave the other
+  /// N-1 stamped — an alert that retries for one notice out of three, which
+  /// is precisely the "sometimes" state the issue says is worse than nothing.
+  /// Found by reading the sender rather than the proposal.
+  ///
+  /// Empty for sends that refer to no row, such as the canary.
+  subjectType     String?
+  subjectIds      String[]
+  /// The recipient's domain only — never the address.
+  recipientDomain String
+  createdAt       DateTime  @default(now())
+  /// Set by the delivery webhook. `failureKind` carries the provider's event
+  /// type ('bounced', 'complained') rather than its prose, so a handler
+  /// switches on a value this product controls.
+  failedAt        DateTime?
+  failureKind     String?
+
+  @@index([purpose, createdAt])
+  /// GIN, because the inverse question — "did anything we sent about THIS
+  /// report fail?" — is an array-containment query, and a btree on a
+  /// `String[]` cannot answer it.
+  @@index([subjectIds], type: Gin)
+  @@index([failedAt])
+}
+
 model TenantNotificationSettings {
   id                String   @id @default(cuid())
   tenantId          String   @unique

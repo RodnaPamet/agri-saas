@@ -56,10 +56,12 @@ import {
     sendEmail,
     setEmailProvider,
     type EmailMessage,
+    type OutboundEmail,
 } from '@/lib/mailer';
 import { emailCapabilityStatus } from '@/lib/email/provider-selection';
 
-const RESET_MSG: EmailMessage = {
+const RESET_MSG: OutboundEmail = {
+    purpose: 'password-reset',
     to: 'farmer@example.com',
     subject: 'Нулиране на паролата',
     text: 'Reset your password: https://app.agrent.bg/reset?token=SECRET-RESET-TOKEN',

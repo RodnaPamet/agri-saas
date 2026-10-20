@@ -162,6 +162,10 @@ export async function issuePasswordReset(
 
     try {
         await sendEmail({
+            // A reset is about a USER, and this product does not store a user id
+            // against an outbound message — the purpose is enough to answer "did
+            // resets stop working?".
+            purpose: 'password-reset',
             to: user.email,
             subject: await t('resetSubject'),
             text: [

@@ -191,7 +191,19 @@ export async function runNoticeTriageAlert(
     ].join('\n');
 
     try {
-        await sendEmail({ to, subject, text: body });
+        await sendEmail({
+            to,
+            subject,
+            text: body,
+            purpose: 'notice-triage-alert',
+            // EVERY report in the digest, not one (#1769). The stamp below is
+            // an `updateMany` over exactly this list, so a bounce has to be
+            // able to clear exactly this list — clearing one and leaving the
+            // rest is the "retries for one notice out of three" state #1769
+            // calls worse than none.
+            subjectType: 'ContentReport',
+            subjectIds: waiting.map((r) => r.id),
+        });
     } catch (err) {
         // Nothing marked. Every notice stays in the queue and the next run
         // tries again — the P5.4b rule: a row marked alerted on a failed send

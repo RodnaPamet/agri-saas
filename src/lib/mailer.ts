@@ -24,6 +24,26 @@ export interface EmailAttachment {
     contentType?: string;
 }
 
+/**
+ * The senders that exist. A union rather than a free string, so a typo is a
+ * compile error and the set is enumerable for the guard that checks every
+ * `sendEmail` call declares one.
+ *
+ * Deliberately NOT a Prisma enum: the column is a plain string so adding a
+ * sender needs no migration, while this type still constrains the callers.
+ * The two are kept in step by `tests/guards/every-send-declares-its-purpose`.
+ */
+export type OutboundPurpose =
+    | 'notice-triage-alert'
+    | 'statement-dispatch'
+    | 'invite'
+    | 'inquiry'
+    | 'password-reset'
+    | 'email-verification'
+    | 'registration'
+    | 'notification-outbox'
+    | 'mail-canary';
+
 export interface EmailMessage {
     to: string;
     subject: string;
@@ -81,6 +101,44 @@ function isProductionRuntime(): boolean {
 
     const { env } = require('@/env');
     return env.NODE_ENV === 'production';
+}
+
+/**
+ * What `sendEmail` takes: a transportable message PLUS who sent it and what
+ * about (#1769).
+ *
+ * Separate from `EmailMessage` on purpose. A provider only transports — it has
+ * no use for a purpose, and requiring one on the transport shape pushed the
+ * field into `ResendProvider.send` and every provider test, which is noise
+ * that teaches the wrong thing about whose concern it is.
+ *
+ * `purpose` is REQUIRED here, and that is the mechanism rather than a style
+ * choice. #1769's constraint is that partial coverage is worse than none: a
+ * correlation table written at some senders and not others gives a webhook
+ * that clears `ContentReport.alertedAt` SOMETIMES, and an alert that
+ * sometimes retries is harder to reason about than one that never does.
+ * Requiring it moves coverage from discipline at ten call sites to a compile
+ * error — which already paid for itself: it found four test fixtures a grep
+ * over `src/` had missed.
+ */
+export interface OutboundEmail extends EmailMessage {
+    purpose: OutboundPurpose;
+    /**
+     * What the message is ABOUT, when it is about rows. The pair is what lets
+     * the delivery webhook act: `ContentReport` plus ids is enough to clear
+     * the alert stamp and let `notice-triage-alert` retry.
+     */
+    subjectType?: string;
+    /**
+     * A LIST, matching `OutboundMessage.subjectIds`.
+     *
+     * #1769 proposed a scalar and the sender refuted it:
+     * `notice-triage-alert` composes ONE digest covering every waiting notice
+     * and stamps them with a single `updateMany`. A scalar would let a bounce
+     * clear one report's stamp and leave the rest — the "retries for one
+     * notice out of three" state the issue calls worse than none.
+     */
+    subjectIds?: string[];
 }
 
 export class ConsoleEmailProvider implements EmailProvider {
@@ -248,7 +306,7 @@ export function getEmailProvider(): EmailProvider {
     return provider;
 }
 
-export async function sendEmail(msg: EmailMessage): Promise<void> {
+export async function sendEmail(msg: OutboundEmail): Promise<void> {
     // Lazy, per-module-instance init from env. Next's bundler can load
     // mailer.ts in a DIFFERENT chunk for a route handler than the one
     // `instrumentation.ts` initialized at startup, leaving the route's
@@ -283,9 +341,28 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
     // is enough to tell "the DSA mailbox" from "a farmer's inbox", which is
     // the operational question.
     const recipientDomain = msg.to.includes('@') ? msg.to.slice(msg.to.lastIndexOf('@') + 1) : 'unknown';
+
+    // The correlation fields are stripped here, so the provider receives the
+    // transport shape and nothing more (#1769).
+    //
+    // Structural typing would have allowed passing `msg` straight through —
+    // the extra keys are legal and `ResendProvider` / `SmtpProvider` both read
+    // named fields, so nothing would have broken. It is still wrong, and
+    // `notice-triage-alert` is why: `subjectIds` is a list of `ContentReport`
+    // ids, and handing those to whatever a provider does with its argument is
+    // a third party learning which rows are under moderation. A transport is
+    // told where to deliver, never what the message is about.
+    //
+    // `StubEmailProvider` stores its whole argument, which is how the leak
+    // surfaced: `notification-outbox`'s exhaustive `toEqual` on the recorded
+    // message went red. That assertion is load-bearing — it is the only check
+    // that the provider sees exactly the transport fields, so widen it and
+    // this property goes unguarded.
+    const { purpose: _purpose, subjectType: _subjectType, subjectIds: _subjectIds, ...transport } = msg;
+
     const started = Date.now();
     try {
-        const id = (await provider.send(msg)) ?? null;
+        const id = (await provider.send(transport)) ?? null;
         logger.info('mail.sent', {
             component: 'mailer',
             provider: providerName(provider),
@@ -295,6 +372,7 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
             messageId: typeof id === 'string' ? id : null,
             durationMs: Date.now() - started,
         });
+        await recordOutbound(msg, id, recipientDomain);
     } catch (err) {
         // Logged AND rethrown. The callers' retry semantics depend on this
         // throwing — `notice-triage-alert` stamps `alertedAt` only after
@@ -309,6 +387,63 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
             error: err instanceof Error ? err.message : String(err),
         });
         throw err;
+    }
+}
+
+
+/**
+ * Write the correlation row that lets a delivery webhook act (#1769).
+ *
+ * **Best-effort, and that is an ordering argument rather than laziness.** By
+ * the time this runs the email has already left. Throwing would propagate out
+ * of `sendEmail`, and `notice-triage-alert` stamps `alertedAt` only AFTER
+ * `sendEmail` resolves — precisely so a send failure retries. So a failed
+ * INSERT would un-stamp a digest that was genuinely delivered and send it
+ * again: an observability gap turned into a duplicate DSA alert, which is
+ * strictly worse than the gap. The log line below is the whole remedy, and it
+ * is the right one, because the thing that went wrong is the database and the
+ * email is already fine.
+ *
+ * Success path only, and only when the provider minted an id. `messageId` is
+ * the webhook's ONLY key, so a row without one can never be looked up — and a
+ * send that produced no id can never produce a webhook to look it up with.
+ * That is why `ConsoleEmailProvider` / `SmtpProvider` / `StubEmailProvider`
+ * (all `Promise<void>`) write no row: not an omission, just nothing to
+ * correlate. It does mean a stub-provider test cannot exercise this function;
+ * `mail-correlation-record` installs a provider that returns an id for that
+ * reason.
+ *
+ * `failedAt` / `failureKind` are the WEBHOOK's to set when a bounce arrives
+ * minutes later. Nothing on this path ever writes them.
+ *
+ * `require`d lazily, matching `isProductionRuntime` above: a top-level prisma
+ * import here would pull the client into every module that imports the mailer.
+ */
+async function recordOutbound(
+    msg: OutboundEmail,
+    messageId: string | null,
+    recipientDomain: string,
+): Promise<void> {
+    if (!messageId) return;
+    try {
+
+        const { prisma } = require('@/lib/prisma');
+        await prisma.outboundMessage.create({
+            data: {
+                messageId,
+                purpose: msg.purpose,
+                subjectType: msg.subjectType ?? null,
+                subjectIds: msg.subjectIds ?? [],
+                recipientDomain,
+            },
+        });
+    } catch (err) {
+        logger.warn('mail.record_failed', {
+            component: 'mailer',
+            purpose: msg.purpose,
+            messageId,
+            error: err instanceof Error ? err.message : String(err),
+        });
     }
 }
 

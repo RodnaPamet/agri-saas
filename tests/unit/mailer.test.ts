@@ -31,16 +31,18 @@ jest.mock('nodemailer', () => ({
 import {
     ConsoleEmailProvider,
     NodemailerProvider,
+    ResendProvider,
     StubEmailProvider,
     getEmailProvider,
-    setEmailProvider,
-    sendEmail,
     initMailerFromEnv,
-    ResendProvider,
+    sendEmail,
+    setEmailProvider,
     type EmailMessage,
+    type OutboundEmail,
 } from '@/lib/mailer';
 
-const BASE_MSG: EmailMessage = {
+const BASE_MSG: OutboundEmail = {
+    purpose: 'mail-canary',
     to: 'user@example.com',
     subject: 'Hello',
     text: 'plain body',
@@ -88,7 +90,18 @@ describe('provider singleton', () => {
 
         await sendEmail(BASE_MSG);
 
-        expect(stub.sentMessages).toEqual([BASE_MSG]);
+        // Delegation now means the TRANSPORT shape, not the argument. #1769
+        // added `purpose` / `subjectType` / `subjectIds` to what `sendEmail`
+        // takes and strips them before `provider.send`, because `subjectIds`
+        // lists `ContentReport` rows and a transport has no business knowing
+        // which rows are under moderation.
+        const { purpose: _purpose, ...transport } = BASE_MSG;
+        expect(stub.sentMessages).toEqual([transport]);
+
+        // Stated positively too, so this cannot be satisfied by a stub that
+        // records nothing: the metadata must be absent, not merely unequal.
+        expect(stub.sentMessages[0]).not.toHaveProperty('purpose');
+        expect(stub.sentMessages[0]).not.toHaveProperty('subjectIds');
     });
 
     it('ConsoleEmailProvider.send resolves without throwing', async () => {

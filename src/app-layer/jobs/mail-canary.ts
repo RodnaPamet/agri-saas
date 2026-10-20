@@ -116,6 +116,9 @@ export async function runMailCanary(
     const stamp = (options.now ?? new Date()).toISOString();
     try {
         await sendEmail({
+            // Refers to no row: the canary proves the transport, not a record.
+            // `subjectIds` stays empty rather than being faked (#1769).
+            purpose: 'mail-canary',
             to,
             // The timestamp is in the subject deliberately: a reader can tell
             // a live canary from one that stopped six hours ago without

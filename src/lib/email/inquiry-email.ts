@@ -142,7 +142,11 @@ export async function sendInquiryEmail(
     ].join('');
 
     try {
-        await sendEmail({ to, subject, text, html });
+        await sendEmail({
+            // The inquiry row id is not in scope at this sender; adding it means
+            // changing the caller, which belongs with the webhook work rather than
+            // here.
+            purpose: 'inquiry', to, subject, text, html });
         // Console sink in prod = logged, not delivered — report not-sent.
         if (
             env.NODE_ENV === 'production' &&
