@@ -335,10 +335,22 @@ export async function listPendingInvites(ctx: RequestContext) {
 function inviteDeliveryToken(kind: string | null): string | null {
     if (!kind) return null;
     const suffix = kind.includes('.') ? kind.slice(kind.lastIndexOf('.') + 1) : kind;
-    const token = suffix.toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-    // A kind that is punctuation only would fold to an empty string, which
-    // would read as "no failure". Name it instead.
-    return token.replace(/^_+|_+$/g, '') || 'UNKNOWN';
+    const token = suffix.toUpperCase();
+    // VALIDATED, not stripped, and the guard that caught the first version was
+    // right to.
+    //
+    // This began as `replace(/[^A-Z0-9_]/g, '_')`, which
+    // `slug-derivation-is-converged` fails: that expression DELETES a
+    // Bulgarian name rather than sanitising it — measured at seven sites,
+    // «ЗК Победа» becoming `-m2x3k9`. A provider event type is never a name,
+    // so it could not have mangled anything here, but the guard cannot know
+    // that and this would have been the eighth site growing the expression.
+    //
+    // Testing is also the better logic. A mangled `SOME__FAILURE` was never a
+    // useful token, so an event type that is not already a clean one is simply
+    // unknown — including the empty string a punctuation-only kind produces,
+    // which would otherwise read as "no failure" at every truthiness check.
+    return /^[A-Z0-9_]+$/.test(token) ? token : 'UNKNOWN';
 }
 
 // ─── previewInviteByToken ────────────────────────────────────────────
