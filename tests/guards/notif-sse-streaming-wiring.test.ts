@@ -105,9 +105,21 @@ describe('PR-C SSE notification streaming wiring', () => {
         });
 
         it('emits an SSE heartbeat comment on a fixed cadence (proxy-keep-alive)', () => {
+            // The route still OWNS the cadence and still passes it, but the
+            // scheduling moved into `createSseResponse` with P7.2 (#1991) —
+            // so grepping this file for `setInterval(` stopped describing the
+            // system. The check follows the code rather than being deleted:
+            // the route must name the interval and hand it over, and the
+            // helper must be the thing that schedules it.
+            //
+            // A text grep is now the weaker of two checks on this property.
+            // `tests/unit/realtime/sse-lifecycle.test.ts` drives the helper
+            // with fake timers and asserts a comment lands on each tick, which
+            // is the behaviour this line can only approximate.
             const s = read(PATH_ROUTE);
             expect(s).toMatch(/HEARTBEAT_INTERVAL_MS/);
-            expect(s).toMatch(/setInterval\(/);
+            expect(s).toMatch(/heartbeatMs:\s*HEARTBEAT_INTERVAL_MS/);
+            expect(read('src/lib/realtime/sse.ts')).toMatch(/setInterval\(/);
             // SSE comment line — starts with `:` per the wire format.
             expect(s).toMatch(/: hb\\n\\n/);
         });

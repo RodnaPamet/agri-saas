@@ -34,6 +34,7 @@
 import { NextRequest } from 'next/server';
 import { getLegacyCtx } from '@/app-layer/context';
 import { isFeatureEnabled } from '@/lib/feature-flags';
+import { createSseResponse } from '@/lib/realtime/sse';
 import {
     subscribeToNotifications,
     type NotificationEvent,
@@ -120,81 +121,52 @@ export async function GET(req: NextRequest): Promise<Response> {
     }
 
     /**
-     * Hoisted so `cancel()` below can reach it — see the note there.
+     * The lifecycle lives in `createSseResponse` now — P7.2 (#1991).
+     *
+     * It was inlined here, and two leaks were found in that inlining: #1984
+     * fixed one (release was reachable only from an `abort`, so a consumer
+     * cancelling the response stream released nothing), and #1991's second
+     * leak was in the bookkeeping — one `closed` flag meant both "stop
+     * writing" and "already released", so a failed enqueue made the release
+     * path a no-op and the heartbeat plus the bus subscription lived until the
+     * process restarted.
+     *
+     * What stays here is what is actually about THIS route: the flag gate, the
+     * tenant context, the bus subscription and the headers. The helper carries
+     * the heartbeat, the write guard and the idempotent release, so a second
+     * SSE route cannot reacquire either leak by copying this file.
      */
-    let releaseResources: (() => void) | undefined;
-
-    const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-            let closed = false;
-
-            const safeEnqueue = (chunk: string) => {
-                if (closed) return;
-                try {
-                    controller.enqueue(encoder.encode(chunk));
-                } catch {
-                    // Stream already torn down (client disconnected
-                    // mid-flush). Drop the chunk silently.
-                    closed = true;
-                }
-            };
-
-            // Initial comment so the client knows the channel is
-            // open. EventSource doesn't fire `onopen` for some
-            // browsers until at least one byte has been received.
-            safeEnqueue(': connected\n\n');
-
-            const unsubscribe = subscribeToNotifications({
+    const { start, release } = createSseResponse({
+        subscribe: (send) =>
+            subscribeToNotifications({
                 tenantId: ctx.tenantId,
                 userId: ctx.userId,
-                send: (event) => safeEnqueue(sseFormat(event)),
-            });
-
-            const heartbeat = setInterval(() => {
-                safeEnqueue(': hb\n\n');
-            }, HEARTBEAT_INTERVAL_MS);
-
-            const cleanup = () => {
-                if (closed) return;
-                closed = true;
-                clearInterval(heartbeat);
-                unsubscribe();
-                try {
-                    controller.close();
-                } catch {
-                    // Already closed by upstream — fine.
-                }
-            };
-
-            // Client closed the tab, navigated away, or lost the
-            // network. The browser sends a TCP FIN which Next
-            // surfaces as an `abort` on the request signal.
-            req.signal.addEventListener('abort', cleanup);
-            releaseResources = cleanup;
-        },
-
-        /**
-         * The SECOND way out, and it was missing.
-         *
-         * `cleanup` had exactly one trigger: an `abort` on the request
-         * signal. That is the production path and it works — but a consumer
-         * that cancels the response stream without aborting the request
-         * released neither the 25s heartbeat interval nor the bus
-         * subscription, so the process kept a live timer per such stream.
-         *
-         * Found the loud way rather than by reading: the first test to call
-         * this route with the flag ON leaked the interval, the jest worker
-         * never exited, and shard 4 of #1984 failed by exceeding its
-         * 25-minute budget. A timeout, not an assertion — so the symptom
-         * named the shard and not the cause.
-         *
-         * `cleanup` is idempotent (it returns early once `closed`), so
-         * arriving here after an abort is harmless.
-         */
-        cancel() {
-            releaseResources?.();
-        },
+                send: (event) => send(sseFormat(event)),
+            }),
+        heartbeatMs: HEARTBEAT_INTERVAL_MS,
     });
+
+    const stream = new ReadableStream<Uint8Array>({
+        start,
+        /**
+         * BOTH triggers, and both are needed.
+         *
+         * `abort` fires when the client closes the tab, navigates away or
+         * loses the network. `cancel` fires when a consumer drops the response
+         * stream without aborting the request — which is what #1984 found the
+         * hard way: a test opened a stream, the 25s heartbeat outlived it, and
+         * a CI shard failed by exceeding its 25-minute budget. A timeout
+         * rather than an assertion, so the symptom named the shard and not the
+         * cause.
+         *
+         * `release` is idempotent, so arriving here after an abort is
+         * harmless — and that idempotence is now asserted rather than
+         * asserted-about, in `tests/unit/realtime/sse-lifecycle.test.ts`.
+         */
+        cancel: release,
+    });
+
+    req.signal.addEventListener('abort', release);
 
     return new Response(stream, {
         status: 200,
