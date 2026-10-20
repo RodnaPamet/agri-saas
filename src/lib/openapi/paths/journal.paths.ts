@@ -121,6 +121,10 @@ const Treatment = z
         doseUnit: z.string().nullable().openapi({ description: 'The unit SYMBOL, not its id.' }),
         targetNote: z.string().nullable(),
         applicationTechnique: z.string().nullable(),
+        phenophase: z.string().nullable().openapi({
+            description:
+                'Фенофаза/BBCH as captured on the line (#2072). No product fallback — a growth stage is an observation of the crop on a day, so null means not captured and nothing else can supply it. Not printed in the ХИМИЧНИ ОБРАБОТКИ table, which has no such column.',
+        }),
         quarantinePeriodDays: z.number().int().nullable().openapi({
             description: "The line's own period, falling back to the product's.",
         }),

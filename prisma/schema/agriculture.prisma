@@ -789,6 +789,25 @@ model OperationParcel {
   /// old line was completed, and copying today's product value would make the
   /// document look authoritative about a number nobody captured.
   quarantinePeriodDays Int?
+  /// Фенофаза/BBCH — the crop's growth stage AS OBSERVED when this line was
+  /// applied (#2072). Per line for the same reason as `quarantinePeriodDays`
+  /// above: it is an observation made on a day, not a property of the product
+  /// or of the task, and the register prints one row per parcel.
+  ///
+  /// Free text, bounded at 64 by the request schema. The form's column admits
+  /// a BBCH code OR a Bulgarian stage name, and PRZ's own field is free text,
+  /// so an enum would reject entries a farmer is entitled to write.
+  ///
+  /// NULL means "not captured", never "no stage". No backfill: nothing records
+  /// what the stage WAS on an old line, and a plausible guess would make a
+  /// regulated document authoritative about something nobody observed.
+  ///
+  /// Not printed in the ХИМИЧНИ ОБРАБОТКИ table — that table's 12 columns are
+  /// fixed by заповед РД 11-3194/31.12.2021 and include no phenophase cell.
+  /// «Фенофаза/BBCH» is column 2 of the separate scouting table, which #1740
+  /// Q2 ruled should be derived from the treatments; that derivation is its
+  /// own change.
+  phenophase           String?
   // Optimistic-lock counter — bumped on every mutation. A queued offline mark
   // captures the version it saw and sends it back as `If-Match` on replay; the
   // server rejects the write with 409 STALE_DATA if the row moved on

@@ -13994,6 +13994,12 @@ exports[`API contract — per-schema snapshots schema: RecordDiaryTreatment 1`] 
       "maximum": 365,
       "description": "Карантинен срок in days, AS IT APPLIED ON THE DAY. Stored on each line this treatment records (#1775), so a reprinted ДНЕВНИК shows the waiting period that applied then — and the «най-ранна дата за прибиране» computed from it — even after the product’s own period is later edited. Applies whether the product is one the farm already has or one this call creates; previously it reached only a newly created product’s registration and was dropped for a known product. Omit it and the line stores NULL, which means “not captured” and makes the register fall back to the product — never zero, which would print a waiting period nobody gave. When a typed \`productName\` has to CREATE a product it ALSO lands on that product’s registration; on a name that MATCHES an existing product the product is not rewritten, because an operation payload must not silently change a stored ЗЗР registration."
     },
+    "phenophase": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Фенофаза/BBCH — the crop’s growth stage as observed on the day, stored on every line this treatment records (#2072). Free text, because the register’s own column admits a BBCH code OR a Bulgarian stage name and PRZ’s field is free text; an enum would refuse an entry a farmer is entitled to write. Omit it and the line stores NULL, which means “not captured” — never a guessed stage, because this is a regulated document. Accepted on a FERTILIZE record as well as a SPRAY: the line is shared by both kinds and a fertilisation also happens at a growth stage, so refusing it there would need a coded refusal to express something that is not actually wrong. **It does not print yet.** The 12-column «ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ» table is fixed by заповед РД 11-3194/31.12.2021 and has no phenophase cell; «Фенофаза/BBCH» is column 2 of the separate scouting table, which #1740 Q2 ruled should be derived from the treatments — a derivation that is its own change."
+    },
     "newProductCategory": {
       "type": "string",
       "enum": [
@@ -15951,6 +15957,13 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
         "null"
       ]
     },
+    "phenophase": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Фенофаза/BBCH as captured on the line (#2072). No product fallback — a growth stage is an observation of the crop on a day, so null means not captured and nothing else can supply it. Not printed in the ХИМИЧНИ ОБРАБОТКИ table, which has no such column."
+    },
     "quarantinePeriodDays": {
       "type": [
         "integer",
@@ -15982,6 +15995,7 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
     "doseUnit",
     "targetNote",
     "applicationTechnique",
+    "phenophase",
     "quarantinePeriodDays",
     "earliestHarvestOn",
     "recordedInDiary"

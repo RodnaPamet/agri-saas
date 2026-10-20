@@ -95,6 +95,8 @@ export interface RecordDiaryTreatmentInput {
     newProductCategory?: 'PESTICIDE' | 'FERTILIZER';
     /** Вредител — the pest or disease treated. */
     targetNote?: string;
+    /** Фенофаза/BBCH as observed on the day, stored per line (#2072). */
+    phenophase?: string;
     doseValue: number;
     doseUnitId: string;
     /** Техника за приложение. */
@@ -211,6 +213,18 @@ export interface DiaryTreatmentSummary {
     /** The calendar day the treatment happened, `YYYY-MM-DD`. */
     occurredOn: string | null;
     /**
+     * Фенофаза/BBCH as recorded, so an entry reopened for editing shows what
+     * was saved rather than an empty field (#2072).
+     *
+     * Read from the same first stamped line as `occurredOn`, and uniform
+     * across the treatment for the same reason: one request writes one value
+     * to every line it marks.
+     *
+     * `null` means not captured — including every line written before the
+     * column existed.
+     */
+    phenophase: string | null;
+    /**
      * True only when EVERY line is DONE.
      *
      * A line is created PENDING and marked DONE afterwards, and the mark is
@@ -281,7 +295,7 @@ export async function getDiaryTreatment(
                 // at all, which is why the filter is here and not in code.
                 operationParcels: {
                     where: { completedAt: { not: null } },
-                    select: { completedAt: true },
+                    select: { completedAt: true, phenophase: true },
                     take: 1,
                 },
             },
@@ -307,6 +321,7 @@ export async function getDiaryTreatment(
         // conversion of a value already converted once, and near midnight it
         // would hand back the wrong day.
         occurredOn: stamped?.completedAt ? stamped.completedAt.toISOString().slice(0, 10) : null,
+        phenophase: stamped?.phenophase ?? null,
         complete,
     };
 }
@@ -635,6 +650,10 @@ export async function recordDiaryTreatment(
                 // Before this it only reached `newProductRegistration`, so on
                 // a product the farm already had it was silently dropped.
                 quarantinePeriodDays: input.quarantinePeriodDays ?? null,
+                // The growth stage the farmer observed, captured on the line
+                // for the same reason (#2072): it is an observation made on a
+                // day, and nothing can re-derive it later.
+                phenophase: input.phenophase ?? null,
                 // Denormalised onto each journal entry so the ДНЕВНИК list
                 // folds the treatment's N entries into one row without
                 // joining through OperationParcel -> Task (#1740).
