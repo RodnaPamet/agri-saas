@@ -172,18 +172,41 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         // Derived: measured median 1684ms, within-run spread 1ms. The ceiling
         // admits runner-to-runner variation an order of magnitude larger than
         // anything observed, while still failing on a real regression.
+        //
+        // 2600 -> 3800, and 1684 -> 3494, by P6.3 (#2062). This is the LOUD
+        // half of "tighten freely, loosen loudly": the budget could not be
+        // raised without editing this test, which is the mechanism working.
+        //
+        // What changed is the page, not the tolerance. It had no images when
+        // 1684ms was measured; it now carries a logo and up to six
+        // photographs, and three CI runs on #2060 measured the cost at
+        // 15438ms with 1600px originals, 4056ms with 440px thumbnails, and
+        // 3358ms once the gallery moved below the about text.
+        //
+        // What remains is structural. Images cannot begin loading before first
+        // paint — Load Delay was 1639ms — and FCP on this page is 1699ms, so
+        // any VISIBLE image lands at roughly 1700ms plus its own load. The LCP
+        // element is a photograph in every run, because on a short page at
+        // grid-cols-2 a cell is the largest thing on it. A 2200ms ceiling left
+        // no room for an image at all.
+        //
+        // The FLOOR moves for the reason the floor exists: the page now
+        // measures 3333/3358/3495, so a budget at or below 3494 could never
+        // pass, and this file already argues that an unpassable gate is worse
+        // than a loose one because it gets switched off. The ceiling is the
+        // live budget exactly, so the next loosening also has to come here.
         const matrix = rc.ci?.assert?.assertMatrix ?? [];
         const publicEntry = matrix.find((m) => m.matchingUrlPattern?.includes('/f/'));
         expect(publicEntry).toBeDefined();
         const lcp = publicEntry?.assertions?.['largest-contentful-paint'];
         const max = (lcp?.[1] as { maxNumericValue?: number } | undefined)?.maxNumericValue;
-        console.log(`[lighthouse-gate] /f/* LCP budget ${max}ms vs measured 1684ms`);
+        console.log(`[lighthouse-gate] /f/* LCP budget ${max}ms vs measured 3358ms (median of 3)`);
         expect(typeof max).toBe('number');
-        expect(max!).toBeLessThanOrEqual(2600);
+        expect(max!).toBeLessThanOrEqual(3800);
         // And a floor, so a flake is never "fixed" by setting the budget below
         // what the page actually does — a gate that can never pass is worse
         // than one that is too loose, because it gets switched off entirely.
-        expect(max!).toBeGreaterThan(1684);
+        expect(max!).toBeGreaterThan(3494);
     });
 
     it('/login gates what a person WAITS FOR, not when a promo bar appears (#2002)', () => {
