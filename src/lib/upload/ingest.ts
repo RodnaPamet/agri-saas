@@ -140,7 +140,21 @@ export interface IngestOptions {
      * A surface may narrow the shared allowlist. It may NOT widen it —
      * `isAllowedMime` still runs, and this is applied on top.
      */
-    extraCheck?: (args: { mimeType: string; originalName: string }) => string | null;
+    /**
+     * A domain's extra narrowing of the shared allowlist.
+     *
+     * Returns a `{ reason, message }` rather than prose (#2059). The prose
+     * version was the last thing keeping `FILE_TYPE_NOT_ALLOWED` unentriable:
+     * a caller-supplied sentence cannot be translated, so an entry would have
+     * replaced "a profile image must be a JPEG, PNG or WebP photograph" with
+     * something generic — strictly worse for the one surface that bothered to
+     * be specific. A `reason` gets its own line in the variant table instead,
+     * and the `message` stays as the English fallback.
+     */
+    extraCheck?: (args: {
+        mimeType: string;
+        originalName: string;
+    }) => { reason: string; message: string } | null;
     /**
      * Cap smaller than `FILE_MAX_SIZE_BYTES` for this surface, or larger
      * for a staged import that is parsed rather than served.
@@ -186,6 +200,8 @@ export async function ingestUploadedFile(
     if (!isAllowedMime(declaredMime)) {
         throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
             `MIME type "${declaredMime}" is not allowed`,
+            // The client's CLAIM, not the bytes (#2059).
+            { reason: 'declared' },
         );
     }
     const cap = opts.maxBytes ?? FILE_MAX_SIZE_BYTES;
@@ -219,6 +235,9 @@ export async function ingestUploadedFile(
         if (!isAllowedMime(mimeType)) {
             throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
                 `File content is "${mimeType}", which is not allowed`,
+                // The SIGNATURE beat the claim — a different refusal from
+                // `declared`, and the one worth telling a user apart (#2059).
+                { reason: 'content' },
             );
         }
         logger.warn('upload declared a MIME type its bytes contradict', {
@@ -231,7 +250,9 @@ export async function ingestUploadedFile(
 
     const extraRejection = opts.extraCheck?.({ mimeType, originalName });
     if (extraRejection) {
-        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', extraRejection);
+        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', extraRejection.message, {
+            reason: extraRejection.reason,
+        });
     }
 
     // A TERMINAL scan status before the record is treated as usable.

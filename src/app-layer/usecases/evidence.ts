@@ -5,6 +5,7 @@ import { logEvent } from '../events/audit';
 import { validateFile, uploadFile } from '@/lib/storage';
 import { scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { badRequest, codedBadRequest, forbidden, codedNotFound } from '@/lib/errors/types';
+import { isCodedFailure } from '@/lib/errors/coded-failure';
 import { runInTenantContext } from '@/lib/db-context';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { EvidenceType, ReviewCadence } from '@prisma/client';
@@ -122,6 +123,17 @@ export async function createEvidence(
             fileSize = uploadResult.size;
             content = uploadResult.fileName;
         } catch (err: unknown) {
+            // A CODED refusal from the validator is already translatable, and
+            // carries its own reason and params — pass it through rather than
+            // flattening it into this code's message (#2059). Flattening is
+            // what made `FILE_VALIDATION_ERROR` unentriable: the sentence was
+            // the validator's own, so any entry here would have replaced
+            // "max size is 20MB" with something generic.
+            //
+            // What remains for this code is the genuinely UNKNOWN failure —
+            // the storage provider refusing, a network fault mid-upload — for
+            // which a generic sentence is the honest one.
+            if (isCodedFailure(err)) throw err;
             throw codedBadRequest('FILE_VALIDATION_ERROR', err instanceof Error ? err.message : 'File upload failed');
         }
     }
@@ -505,7 +517,9 @@ export async function uploadEvidenceFile(
     // we hold them.
     const declaredMime = file.type || 'application/octet-stream';
     if (!isAllowedMime(declaredMime)) {
-        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
+        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`, {
+            reason: 'declared',   // the client's CLAIM, not the bytes (#2059)
+        });
     }
     if (!isAllowedSize(file.size)) {
         throw codedBadRequest('FILE_TOO_LARGE', `File exceeds maximum size of ${FILE_MAX_SIZE_BYTES} bytes`);
@@ -529,6 +543,9 @@ export async function uploadEvidenceFile(
         if (!isAllowedMime(mimeType)) {
             throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
                 `File content is "${mimeType}", which is not allowed`,
+                // The SIGNATURE beat the claim — a different refusal from
+                // `declared`, and the one worth telling a user apart (#2059).
+                { reason: 'content' },
             );
         }
         logger.warn('upload declared a MIME type its bytes contradict', {

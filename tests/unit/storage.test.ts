@@ -23,12 +23,36 @@ describe('Storage Security & Operations', () => {
         it('throws an error if file size exceeds the limit', () => {
             // Mock a large file size
             const file = { size: 15 * 1024 * 1024, type: 'application/pdf', name: 'large.pdf' } as unknown as File;
+            // The CODE is the contract since #2059; the English sentence is
+            // only the fallback for a client that does not recognise it.
             expect(() => validateFile(file, { maxSizeMB: 10 })).toThrow(/max size is 10MB/);
+            try {
+                validateFile(file, { maxSizeMB: 10 });
+                throw new Error('expected a refusal');
+            } catch (e) {
+                expect((e as { code?: string }).code).toBe('FILE_TOO_LARGE');
+                // The cap travels as a param so the catalogue entry can name
+                // the number rather than saying "too large".
+                expect((e as { params?: Record<string, unknown> }).params).toMatchObject({
+                    maxBytes: String(10 * 1024 * 1024),
+                });
+            }
         });
 
         it('throws an error for unapproved mime types', () => {
             const file = new File(['virus'], 'virus.exe', { type: 'application/x-msdownload' });
             expect(() => validateFile(file)).toThrow(/is not allowed/);
+            try {
+                validateFile(file);
+                throw new Error('expected a refusal');
+            } catch (e) {
+                expect((e as { code?: string }).code).toBe('FILE_TYPE_NOT_ALLOWED');
+                // `declared`, not `content`: this check reads the client's
+                // claim, and the bytes are reconciled further down the path.
+                expect((e as { params?: Record<string, unknown> }).params).toMatchObject({
+                    reason: 'declared',
+                });
+            }
         });
     });
 

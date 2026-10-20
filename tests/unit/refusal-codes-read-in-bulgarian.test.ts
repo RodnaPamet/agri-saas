@@ -415,21 +415,60 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 1)', () => {
         expect(p.error.message).not.toMatch(/\{\w+\}/);
     });
 
-    it('FILE_TYPE_NOT_ALLOWED has NO entry, deliberately', async () => {
-        // It is raised at five sites and one of them passes a CALLER-SUPPLIED
-        // message (`extraRejection`, from `opts.extraCheck`) — so an entry
-        // would replace a bespoke reason like "avatars must be square" with a
-        // generic sentence. `localizeErrorPayload` REPLACES `message` whenever
-        // an entry exists, for every locale, so adding one flattens all five
-        // sites' wording at once.
+    it('FILE_TYPE_NOT_ALLOWED reads in Bulgarian, and a CALLER can still be specific', async () => {
+        // This used to assert the opposite. The blocker was real: one of the
+        // six sites passed a CALLER-SUPPLIED sentence from `opts.extraCheck`,
+        // and since `localizeErrorPayload` replaces `message` whenever an
+        // entry exists, one entry would have flattened "a profile image must
+        // be a JPEG, PNG or WebP photograph" into something generic — making
+        // the specific surface worse in every locale.
         //
-        // Asserted rather than left as a gap in the list: the next batch will
-        // see it untranslated and should know the omission is a decision.
+        // #2059 changed `extraCheck` to return `{ reason, message }`, so a
+        // caller that bothers to be specific gets its OWN line in the variant
+        // table instead of losing its wording.
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
-        const original = 'Avatars must be square.';
-        const p = payload('FILE_TYPE_NOT_ALLOWED', original);
+        const withReason = (reason: string): ApiErrorResponse => ({
+            error: { code: 'FILE_TYPE_NOT_ALLOWED', message: 'English fallback.', params: { reason } },
+        });
+
+        // The claim and the bytes are DIFFERENT refusals, and telling them
+        // apart is the point of the discriminator: one means "we do not accept
+        // this kind of file", the other "this file is not what it says it is".
+        const declared = withReason('declared');
+        await localizeErrorPayload(declared);
+        expect(declared.error.message).toBe('Този тип файл не се приема.');
+
+        const content = withReason('content');
+        await localizeErrorPayload(content);
+        expect(content.error.message).toContain('не съответства на обявения тип');
+        expect(content.error.message).not.toBe(declared.error.message);
+
+        // The caller-specific one, which is what used to make this unentriable.
+        const profile = withReason('profile_image');
+        await localizeErrorPayload(profile);
+        expect(profile.error.message).toBe('Профилната снимка трябва да е JPEG, PNG или WebP.');
+
+        // A reason with no line yet falls through to the table's default
+        // rather than leaving English in front of a Bulgarian reader — which
+        // is what lets a new surface add an `extraCheck` before its sentence.
+        const unknown = withReason('zip_only');
+        await localizeErrorPayload(unknown);
+        expect(unknown.error.message).toBe('Този тип файл не се приема.');
+    });
+
+    it('FILE_VALIDATION_ERROR is entried now that it no longer carries the validator prose', async () => {
+        // Its message WAS the validator's own (`err.message`), which is why an
+        // entry would have replaced "max size is 20MB" with a generic
+        // sentence. #2059 made `validateFile` throw CODED, and the evidence
+        // path now passes a coded refusal through — so the specific cases
+        // arrive as `FILE_TOO_LARGE` / `FILE_TYPE_NOT_ALLOWED` with their own
+        // sentences, and what is left for this code is the genuinely unknown
+        // failure, for which a generic sentence is the honest one.
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('FILE_VALIDATION_ERROR', 'Some storage provider fault.');
         await localizeErrorPayload(p);
-        expect(p.error.message).toBe(original);
+        expect(p.error.message).toContain('не можа да бъде качен');
+        expect(p.error.message).not.toMatch(/\{\w+\}/);
     });
 
     it('a code with NO entry is left alone, which is still most of them', async () => {

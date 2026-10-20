@@ -127,7 +127,12 @@ export async function uploadFarmBrandMedia(
         extraCheck: ({ mimeType }) =>
             ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)
                 ? null
-                : 'A profile image must be a JPEG, PNG or WebP photograph.',
+                : {
+                      // Its own line in the variant table, so the Bulgarian is
+                      // as specific as the English rather than generic (#2059).
+                      reason: 'profile_image',
+                      message: 'A profile image must be a JPEG, PNG or WebP photograph.',
+                  },
     });
 
     return runInTenantContext(ctx, async (db) => {

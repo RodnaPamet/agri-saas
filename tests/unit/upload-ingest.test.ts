@@ -211,11 +211,19 @@ describe('ingestUploadedFile', () => {
         const err = await rejection(
             ingestUploadedFile('t-1', fakeFile(), {
                 ...OPTS,
-                extraCheck: () => 'Only .zip archives are accepted',
+                // A `{ reason, message }` since #2059, not prose: the reason
+                // gets its own line in the catalogue's variant table, so a
+                // surface specific enough to say "only .zip" is as specific
+                // in Bulgarian as in English.
+                extraCheck: () => ({ reason: 'zip_only', message: 'Only .zip archives are accepted' }),
             }),
         );
         expect(err.code).toBe('FILE_TYPE_NOT_ALLOWED');
         expect(String(err.message)).toMatch(/Only \.zip archives/);
+        // The reason reaches the wire, which is what makes it translatable.
+        expect((err as { params?: Record<string, unknown> }).params).toMatchObject({
+            reason: 'zip_only',
+        });
     });
 
     it('scans, THEN strips, THEN writes', async () => {
