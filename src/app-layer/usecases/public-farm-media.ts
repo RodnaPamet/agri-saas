@@ -73,6 +73,27 @@ export function isWellFormedMediaHash(hash: string): boolean {
     return SHA256_HEX.test(hash);
 }
 
+/**
+ * The stable public URL for a content hash.
+ *
+ * ONE builder, and the reason is a cross-client contract rather than tidiness.
+ * The payload carries a root-relative URL rather than a bare hash (decided
+ * with agrent-ios, 2026-10-20): the server owns the path shape, so correcting
+ * it never needs a client release. The phone already follows a server-given
+ * root-relative path for `/me`'s `avatarUrl` and refuses anything else, so a
+ * `logoUrl` of the same shape needs no new code path there.
+ *
+ * Root-relative, never absolute. An absolute URL would bake a host into the
+ * payload, and the one thing every client agrees on is the API host it is
+ * already talking to.
+ *
+ * Same shape as `avatarServeUrl` in `lib/account/avatar.ts` — a function next
+ * to the thing it addresses, so the template exists once.
+ */
+export function publicMediaUrl(hash: string): string {
+    return `/api/public/media/${hash}`;
+}
+
 export interface PublicMediaObject {
     stream: Readable;
     mimeType: string;

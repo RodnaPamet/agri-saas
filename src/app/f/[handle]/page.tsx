@@ -115,6 +115,18 @@ export default async function PublicFarmProfilePage({ params }: PageProps) {
                     oblastLine: profile.oblast ? t('oblast', { oblast: profile.oblast }) : null,
                     cropsTitle: t('cropsTitle'),
                     aboutTitle: t('aboutTitle'),
+                    // P6.3 (#1812). Alt text NAMES THE FARM rather than
+                    // saying "logo": a screen-reader user arriving from a
+                    // shared link hears which farm's page this is, and on an
+                    // indexable page the alt text is also what a crawler
+                    // reads.
+                    logoAlt: t('logoAlt', { farm: profile.displayName }),
+                    // Numbered, because the gallery has no captions — there is
+                    // no per-photo text to read out, so the index is the only
+                    // honest way to distinguish six images. Inventing
+                    // descriptions would be worse than numbering them.
+                    photoAlt: (n: number) =>
+                        t('photoAlt', { n, farm: profile.displayName }),
                 }}
             />
         </main>

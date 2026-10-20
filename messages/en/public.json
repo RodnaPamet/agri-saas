@@ -5,8 +5,10 @@
         "returnToDashboard": "Return to Dashboard"
     },
     "publicFarm": {
-        "oblast": "{oblast} oblast",
+        "aboutTitle": "About the farm",
         "cropsTitle": "Crops",
-        "aboutTitle": "About the farm"
+        "logoAlt": "{farm} logo",
+        "oblast": "{oblast} oblast",
+        "photoAlt": "Photograph {n} from {farm}"
     }
 }

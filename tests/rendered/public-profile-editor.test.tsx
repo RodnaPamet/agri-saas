@@ -62,6 +62,11 @@ const DRAFT = {
     hideAbout: false,
     hideOblast: false,
     hideCrops: false,
+    // P6.3 (#1812). The server sends URLs, not hashes — the editor holds
+    // hashes only to echo back on save. Null here; the media cases below
+    // supply their own draft.
+    logoUrl: null,
+    photoUrls: [],
 };
 
 function mockFetch(responses: Array<{ ok: boolean; body: unknown; status?: number }>) {
@@ -432,6 +437,63 @@ describe('the public-profile editor', () => {
                 'Зърно от Добруджа',
             );
             expect(screen.getByTestId('public-farm-about')).toBeInTheDocument();
+        });
+
+        it('previews the IMAGES the page would show — P6.3 (#1812)', async () => {
+            // The property this shared component exists for, applied to media.
+            // A preview that showed the text but not the pictures would be a
+            // preview that lies about the page, and it would lie in the
+            // direction nobody checks: the owner sees their photographs
+            // missing and concludes publishing is broken.
+            const logoUrl = `/api/public/media/${'a'.repeat(64)}`;
+            const photoUrls = [
+                `/api/public/media/${'b'.repeat(64)}`,
+                `/api/public/media/${'c'.repeat(64)}`,
+            ];
+            mockFetch([{ ok: true, body: { ...DRAFT, logoUrl, photoUrls } }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+
+            const logo = await screen.findByTestId('public-farm-logo');
+            expect(logo.querySelector('img')).toHaveAttribute('src', logoUrl);
+
+            const gallery = screen.getByTestId('public-farm-photos');
+            const imgs = [...gallery.querySelectorAll('img')];
+            expect(imgs.map((i) => i.getAttribute('src'))).toEqual(photoUrls);
+
+            // ALT TEXT is PRESENT and non-empty on every image. An image
+            // with no alt is an accessibility defect on any page and a
+            // reported one on a page a crawler reads.
+            //
+            // Its WORDING is deliberately not asserted here: this suite's
+            // `next-intl` mock is `t = (key) => key`, so the alt comes back as
+            // `"logoAlt"` and neither the interpolated farm name nor the
+            // gallery's numbering is observable. Asserting
+            // `stringContaining('1')` against that would be a test of the mock.
+            // The catalogue's own gate (`scripts/i18n-diff.mjs`) is what keeps
+            // bg and en agreeing on those placeholders.
+            for (const img of [logo.querySelector('img'), ...imgs]) {
+                expect(img?.getAttribute('alt') ?? '').not.toBe('');
+            }
+
+            // LOADING strategy, which is a performance contract rather than a
+            // detail: `/f/.*` is gated on LCP at 2200 ms as an ERROR. The logo
+            // is above the fold and must not be lazy; the gallery must be, or
+            // six photographs compete with the heading for that budget.
+            expect(logo.querySelector('img')).toHaveAttribute('loading', 'eager');
+            expect(imgs[0]).toHaveAttribute('loading', 'lazy');
+        });
+
+        it('renders NO image boxes when the farm has none', async () => {
+            // The control for the case above, and the default every farm is
+            // in: absent media must render nothing at all rather than an empty
+            // placeholder box, which would reserve space on a page that has
+            // nothing to put in it.
+            mockFetch([{ ok: true, body: DRAFT }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+
+            await screen.findByTestId('public-farm-name');
+            expect(screen.queryByTestId('public-farm-logo')).toBeNull();
+            expect(screen.queryByTestId('public-farm-photos')).toBeNull();
         });
 
         it('shows an UNSAVED edit, which is the point of a preview', async () => {

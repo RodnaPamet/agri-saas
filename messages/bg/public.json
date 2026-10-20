@@ -5,8 +5,10 @@
         "returnToDashboard": "Обратно към таблото"
     },
     "publicFarm": {
-        "oblast": "Област {oblast}",
+        "aboutTitle": "За стопанството",
         "cropsTitle": "Култури",
-        "aboutTitle": "За стопанството"
+        "logoAlt": "Логото на {farm}",
+        "oblast": "Област {oblast}",
+        "photoAlt": "Снимка {n} от {farm}"
     }
 }

@@ -60,6 +60,7 @@ import {
     FARM_BRAND_MAX_PHOTOS,
     thumbnailsForOriginals,
 } from './farm-brand-media';
+import { publicMediaUrl } from './public-farm-media';
 import type {
     RecordFarmBrandConsentInput,
     UpdateFarmBrandInput,
@@ -256,6 +257,17 @@ export interface PublicFarmProfileView {
     readonly crops: readonly string[];
     readonly indexable: boolean;
     readonly projectedAt: Date;
+    /**
+     * Root-relative URL of the logo, or null — P6.3 (#1812).
+     *
+     * A URL and not the hash it contains. Decided with agrent-ios
+     * (2026-10-20): the server owns the path shape, so correcting it never
+     * needs a client release, and the phone already follows a server-given
+     * root-relative path for `/me`'s `avatarUrl`.
+     */
+    readonly logoUrl: string | null;
+    /** Root-relative gallery URLs, in display order. */
+    readonly photoUrls: readonly string[];
 }
 
 /**
@@ -314,6 +326,21 @@ export async function readPublicFarmProfile(
         crops: row.crops,
         indexable: row.indexable,
         projectedAt: row.projectedAt,
+        // P6.3 (#1812) — media as root-relative URLs rather than bare hashes.
+        //
+        // Decided with agrent-ios (2026-10-20), and the deciding argument was
+        // theirs: the phone already follows a server-given root-relative path
+        // for `/me`'s `avatarUrl` and refuses anything else, so one rule for
+        // images costs it no new code — where a bare hash would put
+        // `/api/public/media/{hash}` in the build, and correcting that
+        // template would mean shipping a release.
+        //
+        // The hash is NOT also returned. It is recoverable from the URL, and
+        // two spellings of one fact is the shape this codebase keeps refusing
+        // elsewhere (`crops` has no null form; the eye toggles are a partition
+        // rather than a list).
+        logoUrl: row.logoMediaHash ? publicMediaUrl(row.logoMediaHash) : null,
+        photoUrls: row.photoMediaHashes.map(publicMediaUrl),
     };
 }
 
@@ -960,13 +987,30 @@ export async function readFarmBrandDraft(ctx: RequestContext): Promise<{
     hideAbout: boolean;
     hideOblast: boolean;
     hideCrops: boolean;
+    /**
+     * The same media URLs the PUBLIC page will show — P6.3 (#1812).
+     *
+     * URLs and not hashes, even though the editor holds the hashes to send
+     * back on save, because the live preview renders the SHARED
+     * `PublicFarmBody` and that component takes what the page takes. Handing
+     * the preview hashes and letting it build URLs itself would put a second
+     * copy of the template in the client — the thing `publicMediaUrl` exists
+     * to prevent.
+     *
+     * So the editor sends hashes UP (`PATCH /farm-brand`) and receives URLs
+     * DOWN. That asymmetry is deliberate: a hash is an identity to assign, a
+     * URL is an address to fetch, and the two directions genuinely want
+     * different things.
+     */
+    logoUrl: string | null;
+    photoUrls: string[];
 } | null> {
     // Same gate as every write on this model: the public face of a farm is an
     // owner concern, and a read that was looser than the write would let a
     // member see a draft they cannot edit.
     assertCanAdmin(ctx);
 
-    return runInTenantContext(ctx, (db) =>
+    const row = await runInTenantContext(ctx, (db) =>
         db.farmBrand.findFirst({
             where: { tenantId: ctx.tenantId },
             select: {
@@ -981,6 +1025,11 @@ export async function readFarmBrandDraft(ctx: RequestContext): Promise<{
                 consentedAt: true,
                 consentTextVersion: true,
                 indexable: true,
+                // The media HASHES, mapped to URLs below — P6.3 (#1812). The
+                // editor needs the addresses to preview and the hashes only to
+                // echo back on save, which it already holds from the upload.
+                logoMediaHash: true,
+                photoMediaHashes: true,
                 // The eye toggles, so the editor renders them in the state
                 // they were left in. Private on the PUBLIC page (they reveal
                 // that something is withheld) and necessarily visible to the
@@ -996,6 +1045,19 @@ export async function readFarmBrandDraft(ctx: RequestContext): Promise<{
             },
         }),
     );
+    if (!row) return null;
+
+    // Mapped rather than returned raw, which the hashes are the reason for.
+    // `logoMediaHash` never crosses to a client: the preview renders the
+    // SHARED `PublicFarmBody`, so what it receives must be what the page
+    // receives, or the preview could drift from the page it claims to show —
+    // the one failure that component exists to prevent.
+    const { logoMediaHash, photoMediaHashes, ...rest } = row;
+    return {
+        ...rest,
+        logoUrl: logoMediaHash ? publicMediaUrl(logoMediaHash) : null,
+        photoUrls: photoMediaHashes.map(publicMediaUrl),
+    };
 }
 
 /**

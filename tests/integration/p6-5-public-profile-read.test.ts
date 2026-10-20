@@ -15,6 +15,7 @@ import {
     readPublicFarmProfile,
     setFarmBrandPublication,
 } from '@/app-layer/usecases/public-farm-profile';
+import { publicMediaUrl } from '@/app-layer/usecases/public-farm-media';
 import { makeRequestContext } from '../helpers/make-context';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
@@ -105,8 +106,65 @@ describeFn('readPublicFarmProfile', () => {
         // …and the key set is exactly what the page may render, so a new
         // projection column shows up here rather than on a page.
         expect(Object.keys(view as object).sort()).toEqual(
-            ['about', 'crops', 'displayName', 'handle', 'indexable', 'oblast', 'projectedAt', 'tagline'].sort(),
+            [
+                'about',
+                'crops',
+                'displayName',
+                'handle',
+                'indexable',
+                // P6.3 (#1812). URLs rather than the hashes they contain,
+                // decided with agrent-ios: the server owns the path shape, so
+                // correcting it never needs a client release.
+                'logoUrl',
+                'oblast',
+                'photoUrls',
+                'projectedAt',
+                'tagline',
+            ].sort(),
         );
+    });
+
+    describe('media — P6.3 (#1812)', () => {
+        it('is ABSENT as URLs, not as nulls-with-a-shape, when a farm has none', async () => {
+            // The default state, and the one every farm is in until it
+            // uploads: `null` and `[]`, which the body component renders as
+            // nothing at all rather than as an empty box.
+            const farm = await aPublishedFarm();
+            const view = await readPublicFarmProfile(farm.raw);
+            expect(view?.logoUrl).toBeNull();
+            expect(view?.photoUrls).toEqual([]);
+        });
+
+        it('publishes URLs built by the ONE builder, and never the bare hash', async () => {
+            const hash = 'c'.repeat(64);
+            const photos = ['d'.repeat(64), 'e'.repeat(64)];
+            const farm = await aPublishedFarm();
+            await globalPrisma.publicFarmProfile.update({
+                where: { handle: farm.raw.toLowerCase() },
+                data: { logoMediaHash: hash, photoMediaHashes: photos },
+            });
+
+            const view = await readPublicFarmProfile(farm.raw);
+
+            // `publicMediaUrl` is the single template. Asserted through it
+            // rather than against a literal string, so the day the path
+            // changes this test moves with the builder instead of pinning a
+            // path the product no longer serves.
+            expect(view?.logoUrl).toBe(publicMediaUrl(hash));
+            expect(view?.photoUrls).toEqual(photos.map(publicMediaUrl));
+
+            // ORDER is display order. The array is the gallery, so a reader
+            // seeing them shuffled would be seeing a different page from the
+            // one the owner arranged.
+            expect(view?.photoUrls?.[0]).toContain(photos[0]);
+
+            // The bare hash is NOT also returned. Two spellings of one fact
+            // is the shape this codebase keeps refusing, and a client reading
+            // the hash would rebuild the URL itself — a second copy of the
+            // template.
+            expect(Object.keys(view as object)).not.toContain('logoMediaHash');
+            expect(Object.keys(view as object)).not.toContain('photoMediaHashes');
+        });
     });
 
     describe('a withdrawn farm and a missing one are the SAME absence', () => {

@@ -33,6 +33,19 @@ jobs:
       DIRECT_DATABASE_URL: postgresql://ci:ci_password@localhost:5432/ci_testdb?schema=public
       REDIS_URL: redis://localhost:6379
       RATE_LIMIT_ENABLED: "0"
+      # P6.3 (#1812). At WORKFLOW level on purpose: the media seeding writes
+      # the bytes and `next start` streams them, and the two have to agree
+      # about where they are. They already did, by both falling back to
+      # `/tmp/uploads` in `local-provider.ts` — agreement by coincident
+      # defaults, which the next person to change that default would break
+      # with nothing failing until a Lighthouse image 404'd.
+      # Inside the WORKSPACE, not /tmp. A file in the shared OS temp directory
+      # is readable and replaceable by any other user on the host, which
+      # CodeQL flags as `js/insecure-temporary-file` (high) — correctly, even
+      # though a runner is ephemeral. The provider's own default is
+      # `/tmp/uploads`; this overrides it for the job rather than relying on it.
+      FILE_STORAGE_ROOT: ${{ github.workspace }}/tmp/uploads
+      STORAGE_PROVIDER: local
       DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
 
     services:
@@ -115,7 +128,12 @@ jobs:
         run: |
           PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
           INSERT INTO "FeatureFlag" ("key", "enabled", "description", "cohorts", "updatedAt")
-          VALUES ('social.public-profile', true, 'Lighthouse budget run', '{}', NOW())
+          VALUES ('social.public-profile', true, 'Lighthouse budget run', '{}', NOW()),
+                 -- P6.3 (#1812). The media route 404s without this, so every
+                 -- image on the page would be a 404 and the budget would
+                 -- measure the text-only page it used to measure — green, and
+                 -- reporting on a page the product no longer serves.
+                 ('social.farm-media', true, 'Lighthouse budget run', '{}', NOW())
           ON CONFLICT ("key") DO UPDATE SET "enabled" = true;
           SQL
 
@@ -154,8 +172,58 @@ jobs:
             exit 1
           fi
 
+      # P6.3 (#1812) — give the page its images, so the LCP and CLS budgets
+      # bound the page the product actually serves.
+      #
+      # Until #1812 /f/{handle} was text, and both budgets were measured on
+      # text. A page that can now carry a logo and six photographs, measured
+      # without any, produces a green gate that is indistinguishable from a
+      # green gate over a fast page — the shape #2009 tracks.
+      #
+      # It seeds the CEILING (FARM_BRAND_MAX_PHOTOS), with synthetic images
+      # sized like photographs rather than flat colour: a flat fixture is 11 KB
+      # and would sail through any budget. The script's own docblock carries
+      # the measurements.
+      - name: Seed the public profile's images
+        run: node scripts/seed-lighthouse-media.mjs
+
+      # Same discipline as the profile check above: the rows have to BE there.
+      # An image that 404s does not fail the page — the browser renders a
+      # broken image and Lighthouse measures a page with no pictures, which is
+      # precisely the false green this seeding exists to prevent.
+      - name: Verify the images are published and servable
+        run: |
+          read -r LOGO PHOTOS <<<"$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+            "SELECT coalesce(\"logoMediaHash\",'none'), coalesce(array_length(\"photoMediaHashes\",1),0)
+               FROM \"PublicFarmProfile\" WHERE handle = 'lighthouse';" | tr '|' ' ')"
+          echo "logo hash: ${LOGO:0:12}…  photos: ${PHOTOS}"
+          if [ "$LOGO" = "none" ] || [ "${PHOTOS:-0}" -lt 1 ]; then
+            echo "::error::/f/lighthouse has no published media, so the LCP and CLS budgets would measure a text-only page."
+            exit 1
+          fi
+          # The FileRecord rows the media route resolves, and the bytes on disk
+          # the provider streams. Either missing is a 404 per image.
+          FILES=$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+            "SELECT count(*) FROM \"FileRecord\"
+              WHERE domain = 'farm-media' AND status = 'STORED' AND \"deletedAt\" IS NULL;")
+          # The same root the seeding wrote to and the app will stream from —
+          # `$FILE_STORAGE_ROOT`, not a repeated literal. A hardcoded path here
+          # would have gone stale the moment that moved out of /tmp, and the
+          # check would then have counted zero files and failed the job for the
+          # wrong reason.
+          ON_DISK=$(find "$FILE_STORAGE_ROOT" -type f -name '*.jpg' 2>/dev/null | wc -l)
+          echo "FileRecord rows: $FILES   files on disk: $ON_DISK"
+          if [ "$FILES" -lt 7 ] || [ "$ON_DISK" -lt 7 ]; then
+            echo "::error::expected 7 farm-media files in the database and on disk; the media route resolves both."
+            exit 1
+          fi
+
+      # `tmp/uploads`, matching FILE_STORAGE_ROOT above. It used to create
+      # `tmp/test-uploads` — a directory nothing in this job read, because the
+      # app fell through to `/tmp/uploads` instead. The seeding step made that
+      # mismatch matter, so the name is now the one the app is told to use.
       - name: Create upload directory
-        run: mkdir -p tmp/test-uploads
+        run: mkdir -m 700 -p "${{ github.workspace }}/tmp/uploads"
 
       - name: Build Next.js app
         run: npx next build --webpack
