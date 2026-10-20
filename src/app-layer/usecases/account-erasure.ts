@@ -535,7 +535,8 @@ export async function cancelAccountDeletion(
         // condition this used to test inline — and `/api/auth/me` now reads the
         // same function, so a third signal cannot reach one and miss the other.
         if (!subjectMayCancelErasure(existing)) {
-            throw codedForbidden('ACCOUNT_TERMINATED', 'ACCOUNT_TERMINATED');
+            // #1677 — the fallback was the code itself.
+            throw codedForbidden('ACCOUNT_TERMINATED', 'Your account has been closed.');
         }
 
         await tx.user.update({ where: { id: userId }, data: { deletionRequestedAt: null } });

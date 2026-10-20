@@ -48,6 +48,16 @@ beforeEach(() => {
     isAccountSuspended.mockResolvedValue(false);
 });
 
+/**
+ * The one sentence both suspension gates answer with (#1677).
+ *
+ * Shared rather than typed at each assertion: the point of this file's
+ * suspension cases is that `authRefusingSuspended` and `getSessionOrThrow`
+ * agree, and two copies of a literal can drift apart while both tests stay
+ * green — which is the #1645 defect the cases exist to catch.
+ */
+const SUSPENDED_MESSAGE = 'Your account is suspended.';
+
 describe('authRefusingSuspended', () => {
     it('returns the session unchanged for an active account', () => {
         return expect(authRefusingSuspended()).resolves.toEqual(SESSION);
@@ -56,11 +66,16 @@ describe('authRefusingSuspended', () => {
     it('throws ACCOUNT_SUSPENDED — the same code getSessionOrThrow answers', async () => {
         // The code AND the message, because two gates answering one condition
         // in two shapes is #1645, three days old at the time of writing.
+        //
+        // #1677 moved the literal: the message WAS the token, and both this
+        // gate and `getSessionOrThrow` now say 'Your account is suspended.'
+        // The assertion that matters is that they AGREE, which is why the
+        // sentence is shared below rather than typed twice.
         isAccountSuspended.mockResolvedValue(true);
         await expect(authRefusingSuspended()).rejects.toMatchObject({
             status: 403,
             code: 'ACCOUNT_SUSPENDED',
-            message: 'ACCOUNT_SUSPENDED',
+            message: SUSPENDED_MESSAGE,
         });
     });
 

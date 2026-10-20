@@ -143,7 +143,8 @@ export const GET = withApiErrorHandling(async () => {
         const cancellable = subjectMayCancelErasure(user);
         throw codedForbidden(
             'ACCOUNT_SUSPENDED',
-            'ACCOUNT_SUSPENDED',
+            // #1677 — the fallback was the code itself.
+            'Your account is suspended.',
             cancellable && user.deletionRequestedAt
                 ? {
                       erasesAt: new Date(

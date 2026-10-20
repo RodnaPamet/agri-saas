@@ -195,7 +195,12 @@ export async function getSessionOrThrow(opts?: {
         session.userId &&
         (await isAccountSuspended(session.userId))
     ) {
-        throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
+        // #1677 — the fallback was the CODE itself. `ACCOUNT_SUSPENDED` is
+        // entried, so `localizeErrorPayload` replaces this before a reader
+        // sees it; this string is reachable only when localisation fails,
+        // which that function swallows by design. A token is the worst
+        // thing to leave on the one path nobody watches.
+        throw codedForbidden('ACCOUNT_SUSPENDED', 'Your account is suspended.');
     }
 
     return session;

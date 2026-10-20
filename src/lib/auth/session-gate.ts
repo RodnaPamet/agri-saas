@@ -105,9 +105,16 @@ export async function authWithSuspension(): Promise<SessionWithSuspension> {
  * Returns the session unchanged — `null` included — so the caller's own
  * unauthenticated branch still decides what an absent session looks like.
  *
- * The code is `ACCOUNT_SUSPENDED` and the message is the same token, matching
- * `getSessionOrThrow` exactly. Two gates answering one condition in two shapes
- * is #1645, three days old at the time of writing.
+ * The code is `ACCOUNT_SUSPENDED` and the message matches `getSessionOrThrow`
+ * exactly. Two gates answering one condition in two shapes is #1645, three
+ * days old at the time of writing.
+ *
+ * The message used to BE the token, and #1677 changed both gates to
+ * 'Your account is suspended.' together — the agreement is the contract here,
+ * not the particular string. `ACCOUNT_SUSPENDED` is entried in both locales,
+ * so `localizeErrorPayload` replaces this before a reader sees it; the literal
+ * only surfaces when localisation fails, and a token is the worst thing to
+ * leave on a path that is never watched.
  */
 /**
  * @param record  When given, the refusal is appended to the moderation audit
@@ -133,7 +140,8 @@ export async function authRefusingSuspended(
         // rather than refusing differently.
         const userId = session?.user?.id;
         if (record && userId) await recordSuspendedRefusal(userId, record);
-        throw codedForbidden('ACCOUNT_SUSPENDED', 'ACCOUNT_SUSPENDED');
+        // #1677 — see `lib/auth.ts`: the fallback was the code itself.
+        throw codedForbidden('ACCOUNT_SUSPENDED', 'Your account is suspended.');
     }
     return session;
 }
