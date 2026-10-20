@@ -17,6 +17,7 @@ import {
     PUBLIC_SURFACE_HEADER,
     publicSurfaceMessages,
 } from '@/lib/i18n/public-surface';
+import { AUTH_SURFACE_HEADER } from '@/lib/i18n/auth-surface';
 import { WebVitalsReporter } from '@/components/pwa/WebVitalsReporter';
 import { CSP_NONCE_HEADER } from '@/lib/security/csp';
 import './globals.css';
@@ -104,6 +105,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
      * `src/lib/i18n/public-surface.ts`.
      */
     const isPublic = requestHeaders.get(PUBLIC_SURFACE_HEADER) === '1';
+    /**
+     * The SIGN-IN surface, from the header the middleware sets (#2099). Same
+     * bridge as `isPublic` above, and for the same reason: only the middleware
+     * config sees the pathname.
+     *
+     * Used to withhold the A2HS banner there — see `ServiceWorkerRegistrar`'s
+     * prop for the two faults that caused. An ABSENT header means the operator
+     * app, which is the safe default here too: the cost of being wrong is a
+     * banner that does not appear, not one that appears mid sign-in.
+     */
+    const isAuthSurface = requestHeaders.get(AUTH_SURFACE_HEADER) === '1';
     const messages = isPublic ? publicSurfaceMessages(allMessages) : allMessages;
 
     /**
@@ -330,7 +342,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                                 found". Same provider-boundary rule as the
                                 global overlays inside <Providers>.
                             */}
-                            <ServiceWorkerRegistrar />
+                            <ServiceWorkerRegistrar showInstallPrompt={!isAuthSurface} />
                             {/*
                                 Bounds how long this device keeps cached farm
                                 data — field snapshots and SWR buckets that
