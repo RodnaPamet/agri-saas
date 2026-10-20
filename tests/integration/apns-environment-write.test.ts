@@ -133,14 +133,46 @@ describeFn('saveApnsRegistration — the APNs environment', () => {
         expect(after?.id).toBe(before?.id);
     });
 
-    it('CORRECTS a stale value when a phone moves to TestFlight', async () => {
-        // The real transition: a development-signed install is replaced by a
-        // TestFlight build, which carries no provisioning profile and reports
-        // production. The stored sandbox value would send every notification
-        // to the wrong host, where it fails as BadDeviceToken.
+    it('CORRECTS a changed value for the SAME token', async () => {
+        // What this proves, stated accurately after agrent-ios corrected my
+        // first framing of it.
+        //
+        // I had called this "a phone moves to TestFlight". That transition
+        // does NOT look like this: APNs tokens are per environment, so moving
+        // from a Mac-installed build to TestFlight issues a DIFFERENT token
+        // and registers it as production. The old development row survives
+        // with its old token until APNs answers it 410 Unregistered, or until
+        // the person signs out and the phone DELETEs it by token.
+        //
+        // So the two-row case is real and belongs to the pruning PR (3 of 3),
+        // not here. What remains true here is narrower and still worth
+        // holding: for one token, a re-registration carrying a different
+        // environment must overwrite rather than be ignored. The NULL backfill
+        // below is the case this path actually serves in production today.
         await saveApnsRegistration(ctx(), { deviceToken: TOKEN, environment: 'development' });
         await saveApnsRegistration(ctx(), { deviceToken: TOKEN, environment: 'production' });
         expect((await storedRow())?.apnsEnvironment).toBe('PRODUCTION');
+    });
+
+    it('keeps a SECOND token as its own row, which is the real transition', async () => {
+        // The shape agrent-ios described, pinned now so the pruning PR has a
+        // starting state rather than an assumption: two tokens for one person
+        // and farm coexist, each with its own environment. Nothing here
+        // removes the stale one — 410 handling does, and it does not exist
+        // yet.
+        const newToken = 'cd'.repeat(32);
+        await saveApnsRegistration(ctx(), { deviceToken: TOKEN, environment: 'development' });
+        await saveApnsRegistration(ctx(), { deviceToken: newToken, environment: 'production' });
+
+        const rows = await prisma.pushSubscription.findMany({
+            where: { tenantId: TENANT_ID, platform: 'IOS' },
+            select: { deviceToken: true, apnsEnvironment: true },
+            orderBy: { createdAt: 'asc' },
+        });
+        expect(rows).toEqual([
+            { deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+            { deviceToken: newToken, apnsEnvironment: 'PRODUCTION' },
+        ]);
     });
 
     it('does NOT erase a stored value when a field is omitted', async () => {
