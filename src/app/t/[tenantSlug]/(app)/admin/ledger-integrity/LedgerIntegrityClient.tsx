@@ -102,7 +102,7 @@ export function LedgerIntegrityClient({ history }: { history: LedgerReconciliati
                     ),
                 },
             ]),
-        [formatDateTime],
+        [formatDateTime, t],
     );
 
     const runReconciliation = useCallback(async () => {
@@ -140,7 +140,7 @@ export function LedgerIntegrityClient({ history }: { history: LedgerReconciliati
         } finally {
             setRunning(false);
         }
-    }, [apiUrl, router, toast]);
+    }, [apiUrl, router, t, toast]);
 
     return (
         <div className="space-y-section">

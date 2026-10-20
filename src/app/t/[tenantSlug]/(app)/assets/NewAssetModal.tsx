@@ -68,7 +68,7 @@ export function NewAssetModal({
             }
             setOpen(next);
         },
-        [form.submitting, form.isDirty, setOpen],
+        [setOpen, form.submitting, form.isDirty, t],
     );
     const close = () => guardedSetOpen(false);
 

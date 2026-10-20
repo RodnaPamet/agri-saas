@@ -133,6 +133,9 @@ jest.mock('next-intl', () => {
         );
     };
 
+    /** One translator per namespace — see `useTranslations` below (#1471). */
+    const translatorCache = new Map<string, (key: string, values?: Record<string, unknown>) => string>();
+
     const makeT = (namespace?: string) => {
         const full = (key: string) => (namespace ? `${namespace}.${key}` : key);
         const t = (key: string, values?: Record<string, unknown>) => {
@@ -176,7 +179,39 @@ jest.mock('next-intl', () => {
     const PassThrough = ({ children }: { children?: unknown }) => children;
 
     return {
-        useTranslations: (namespace?: string) => makeT(namespace),
+        // Cached per namespace so the identity is STABLE across renders,
+        // which is what production does and what this mock previously did not
+        // (#1471).
+        //
+        // `use-intl`'s real `useTranslations` returns
+        // `useMemo(() => createTranslator(…), [cache, formatters,
+        // getMessageFallback, messages, namespace, onError, formats, locale,
+        // timeZone])` — every dependency context-derived, so `t` keeps one
+        // identity for as long as the provider's props do. This mock called
+        // `makeT` afresh on every render, so `t` churned.
+        //
+        // That is a FIDELITY gap, not a detail: the docblock above says this
+        // mock exists so "rendered assertions stay byte-identical to
+        // production output", and identity is part of the behaviour a
+        // component sees. #1471 declared `t` in 30 dependency arrays — safe in
+        // production, where `t` is stable — and `api-keys-page` then hung,
+        // because under the churning mock the fetch effect re-ran on every
+        // render and the list never settled. The component was right and the
+        // double was wrong.
+        //
+        // One entry per namespace is faithful here: this mock serves a single
+        // locale from a message catalogue read once at setup, so `locale` and
+        // `messages` are constants and the namespace is the only live part of
+        // the real memo key.
+        useTranslations: (namespace?: string) => {
+            const key = namespace ?? '';
+            let cached = translatorCache.get(key);
+            if (!cached) {
+                cached = makeT(namespace);
+                translatorCache.set(key, cached);
+            }
+            return cached;
+        },
         useFormatter: () => ({
             number: (v: unknown) => String(v),
             dateTime: (v: unknown) => String(v),

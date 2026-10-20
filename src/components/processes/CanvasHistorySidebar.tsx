@@ -141,7 +141,7 @@ export function CanvasHistorySidebar({
         // currentVersion changes on every save — refetch then so
         // the new snapshot lands at the top without a manual
         // refresh.
-    }, [tenantSlug, mapId, currentVersion]);
+    }, [tenantSlug, mapId, currentVersion, t]);
 
     return (
         <AsidePanel

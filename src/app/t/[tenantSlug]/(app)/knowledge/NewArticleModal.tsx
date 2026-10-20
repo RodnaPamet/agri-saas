@@ -152,7 +152,7 @@ export function NewArticleModal({ trigger, onCreated }: NewArticleModalProps) {
             }
             setOpen(next);
         },
-        [submitting, dirty],
+        [submitting, dirty, t],
     );
     const close = () => guardedSetOpen(false);
 

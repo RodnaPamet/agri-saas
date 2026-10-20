@@ -247,9 +247,24 @@ describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () 
         });
 
         it("re-fetches when currentVersion changes (so a new save lands at the top)", () => {
-            expect(src).toMatch(
-                /\}\,\s*\[tenantSlug,\s*mapId,\s*currentVersion\]\)/,
-            );
+            // Asserts the three deps are PRESENT, not that the array is
+            // exactly those three.
+            //
+            // It used to pin the whole array —
+            // `/\},\s*\[tenantSlug,\s*mapId,\s*currentVersion\]\)/` — and #1471
+            // broke it by adding `t`, which this case has no opinion about.
+            // That is a guard failing on a change it does not care about: the
+            // claim in its NAME is "currentVersion is in the deps, so a new
+            // save re-fetches", and an extra dependency cannot falsify that.
+            //
+            // Still has teeth in the direction that matters — removing any of
+            // the three fails it, which is the regression the case exists for.
+            const deps = /useEffect\([\s\S]*?\},\s*\[([^\]]*)\]\)/.exec(src);
+            expect(deps).not.toBeNull();
+            const names = deps![1].split(',').map((d) => d.trim());
+            expect(names).toContain('tenantSlug');
+            expect(names).toContain('mapId');
+            expect(names).toContain('currentVersion');
         });
     });
 

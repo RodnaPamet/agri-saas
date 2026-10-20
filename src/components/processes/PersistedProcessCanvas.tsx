@@ -576,7 +576,7 @@ function Inner({
         };
         // `reloadCounter` is bumped by the Epic-P1 STALE_DATA toast's
         // Reload action and forces a re-fetch of the same activeId.
-    }, [activeId, tenantSlug, reloadCounter]);
+    }, [activeId, tenantSlug, reloadCounter, t]);
 
     // ─── Save current canvas state ─────────────────────────────────
 
@@ -681,7 +681,7 @@ function Inner({
         } finally {
             setSaving(false);
         }
-    }, [activeId, nodes, edges, tenantSlug, processes, onProcessesChange, loadedMap, toast]);
+    }, [activeId, nodes, edges, loadedMap, tenantSlug, toast, onProcessesChange, processes, t]);
 
     // ─── R28 — Autosave. Debounced 3s after the last edit. ────────
     // `markDirty()` fires from the change handlers below; the save
@@ -816,16 +816,7 @@ function Inner({
         } finally {
             setSaving(false);
         }
-    }, [
-        activeId,
-        activeProcess,
-        editedName,
-        nodes,
-        edges,
-        tenantSlug,
-        processes,
-        onProcessesChange,
-    ]);
+    }, [activeId, activeProcess, editedName, nodes, edges, tenantSlug, onProcessesChange, processes, t]);
 
     // ─── Duplicate: clone the current graph into a new map ────────
 
@@ -912,16 +903,7 @@ function Inner({
         } finally {
             setDuplicating(false);
         }
-    }, [
-        activeId,
-        activeProcess,
-        tenantSlug,
-        nodes,
-        edges,
-        processes,
-        onProcessesChange,
-        onActiveIdChange,
-    ]);
+    }, [activeId, activeProcess, tenantSlug, nodes, edges, onProcessesChange, processes, onActiveIdChange, t]);
 
     // ─── Create new process ────────────────────────────────────────
 
@@ -968,7 +950,7 @@ function Inner({
                 setCreating(false);
             }
         },
-        [tenantSlug, processes, onProcessesChange, onActiveIdChange],
+        [processes, tenantSlug, onProcessesChange, onActiveIdChange, t],
     );
 
     // PR-B follow-up — convert the active map between process-map (DOCUMENT)
@@ -987,7 +969,7 @@ function Inner({
         } catch (err) {
             setError(err instanceof Error ? err.message : t("persistedCanvas.modeSwitchFailed"));
         }
-    }, [activeId, activeProcess, tenantSlug, processes, onProcessesChange]);
+    }, [activeId, activeProcess, tenantSlug, onProcessesChange, processes, t]);
 
     // ─── Canvas plumbing (xyflow change handlers + drop) ───────────
     //
@@ -1412,15 +1394,7 @@ function Inner({
         autosave.markDirty();
         changeEmitter.emit("node.add", { nodeIds: [groupId] });
         changeEmitter.emit("node.update", { nodeIds: Array.from(ids) });
-    }, [
-        selectionCount,
-        selectedNodeIds,
-        nodes,
-        edges,
-        history,
-        autosave,
-        changeEmitter,
-    ]);
+    }, [selectionCount, selectedNodeIds, nodes, t, history, edges, autosave, changeEmitter]);
 
     // R30 — Ungroup. Pops every child out of a selected group node:
     // adds the group's position back to each child's relative
@@ -1564,7 +1538,7 @@ function Inner({
         ]);
         setEdges((eds) => [...eds, newEdge]);
         autosave.markDirty();
-    }, [nodes, edges, history, autosave]);
+    }, [nodes, t, history, edges, autosave]);
     useKeyboardShortcut("tab", handleTabCreate, {
         description: t("persistedCanvas.scTab"),
         enabled: Boolean(activeId),

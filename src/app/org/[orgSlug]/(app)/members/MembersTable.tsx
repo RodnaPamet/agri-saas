@@ -1106,7 +1106,7 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
                 setRevokingId(null);
             }
         },
-        [orgSlug, onMutate],
+        [orgSlug, onMutate, t],
     );
 
     const inviteColumns = useMemo(

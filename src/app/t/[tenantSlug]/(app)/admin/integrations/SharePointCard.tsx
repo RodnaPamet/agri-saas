@@ -79,7 +79,7 @@ export function SharePointCard() {
         } finally {
             setBusy(false);
         }
-    }, [apiUrl]);
+    }, [apiUrl, t]);
 
     const test = useCallback(
         async (id: string) => {
@@ -97,7 +97,7 @@ export function SharePointCard() {
                 setTestResult((r) => ({ ...r, [id]: t('testFailed') }));
             }
         },
-        [apiUrl, load],
+        [apiUrl, load, t],
     );
 
     const openSites = useCallback(
@@ -151,7 +151,7 @@ export function SharePointCard() {
                 },
             });
         },
-        [apiUrl, triggerUndoToast, load],
+        [triggerUndoToast, t, apiUrl, load],
     );
 
     const siteOptions = sites.map((s) => ({ value: s.id, label: s.displayName ?? s.webUrl ?? s.id }));
