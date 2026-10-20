@@ -78,6 +78,20 @@ const TENANT_ID = 't-lighthouse-media';
 const PHOTO_COUNT = 6;
 
 /**
+ * Must match `FARM_MEDIA_THUMB_DIMENSION` in
+ * `src/app-layer/usecases/farm-brand-media.ts` (#2062).
+ *
+ * Duplicated rather than imported, because this script is plain ESM run by
+ * `node` and that module is TypeScript in the app's path-aliased graph. The
+ * cost of the copy is real, so the guard
+ * `tests/guards/lighthouse-seed-matches-the-pipeline.test.ts` asserts the two
+ * numbers agree — a seeding that generated a different size from the product
+ * would measure a page the product never serves, which is the whole failure
+ * this seeding exists to prevent.
+ */
+const THUMB_DIMENSION = 440;
+
+/**
  * A photograph-shaped image: smooth gradient plus fine grain.
  *
  * The gradient gives the large smooth regions a field or a sky has; the grain
@@ -116,6 +130,7 @@ async function store(bytes, label) {
     // by HASH rather than by key — so the key only has to be stable and
     // inside the tenant's own prefix.
     const pathKey = `tenants/${TENANT_ID}/farm-media/2026/10/${sha256.slice(0, 16)}.jpg`;
+    void label;
     const target = path.resolve(STORAGE_ROOT, pathKey);
     // 0o700 / 0o600: the directory and the file are for this process and the
     // app it seeds, not for every account on the host. Belt to the braces of
@@ -154,13 +169,41 @@ try {
         .toBuffer();
 
     const logo = await store(logoBytes, 'logo');
+
+    // Each photograph is stored TWICE, exactly as `uploadFarmBrandMedia` does
+    // it (#2062): the 1600px original the farm selected, and the
+    // display-sized thumbnail the public grid renders.
+    //
+    // Seeding only thumbnails would be the easier thing and the wrong one.
+    // The originals have to exist for the same reason they exist in
+    // production: `projectFarmBrand` maps originals to thumbnails, so a
+    // seeding with no originals would exercise a code path the product does
+    // not have.
     const photos = [];
     for (let i = 0; i < PHOTO_COUNT; i++) {
-        photos.push(await store(await photographLike(1600, 1200, i), `photo ${i + 1}`));
+        const originalBytes = await photographLike(1600, 1200, i);
+        const original = await store(originalBytes, `photo ${i + 1}`);
+        const thumbBytes = await sharp(originalBytes)
+            .resize(THUMB_DIMENSION, THUMB_DIMENSION, {
+                fit: 'inside',
+                withoutEnlargement: true,
+            })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+        const thumb = await store(thumbBytes, `  thumb ${i + 1}`);
+        photos.push({ original, thumb });
     }
 
-    const total = [logo, ...photos].reduce((n, f) => n + f.sizeBytes, 0);
-    console.log(`[seed-lighthouse-media] ${1 + PHOTO_COUNT} images, ${Math.round(total / 1024)} KB total`);
+    const stored = [logo, ...photos.flatMap((p) => [p.original, p.thumb])];
+    const total = stored.reduce((n, f) => n + f.sizeBytes, 0);
+    // What the PAGE fetches, which is the number the budget is about — the
+    // originals are stored but not published, so they cost the visitor
+    // nothing.
+    const served = logo.sizeBytes + photos.reduce((n, p) => n + p.thumb.sizeBytes, 0);
+    console.log(
+        `[seed-lighthouse-media] ${stored.length} files, ${Math.round(total / 1024)} KB stored; `
+            + `${Math.round(served / 1024)} KB will be SERVED to the page`,
+    );
 
     // A tenant and a user, because `FileRecord` is tenant-scoped and carries a
     // real relation on both. The PUBLIC read needs neither — which is why the
@@ -181,7 +224,7 @@ try {
     );
     const userId = user.rows[0].id;
 
-    for (const f of [logo, ...photos]) {
+    for (const f of stored) {
         await client.query(
             `INSERT INTO "FileRecord"
                ("id", "tenantId", "pathKey", "originalName", "mimeType", "sizeBytes",
@@ -198,13 +241,31 @@ try {
         );
     }
 
+    // The pairing, matching what `uploadFarmBrandMedia` writes (#2062).
+    // Without it `projectFarmBrand` would find no thumbnail and fall back to
+    // the original — which is the correct fallback and the wrong thing to
+    // measure, because the page would then serve 2601 KB again and the budget
+    // would fail for a reason the product has fixed.
+    for (const { original, thumb } of photos) {
+        await client.query(
+            `UPDATE "FileRecord" SET "derivedFromSha256" = $1 WHERE "sha256" = $2`,
+            [original.sha256, thumb.sha256],
+        );
+    }
+
     // The projection is what the page reads and what the media route checks
     // for authorisation, so this UPDATE is what actually publishes the images.
+    //
+    // THUMBNAIL hashes, not originals — the same thing `projectFarmBrand`
+    // publishes. This script writes the projection directly rather than going
+    // through that function (it would need a tenant, a membership and an admin
+    // context), so it has to reproduce that decision rather than inherit it.
+    // The guard named above is what keeps the reproduction honest.
     const updated = await client.query(
         `UPDATE "PublicFarmProfile"
             SET "logoMediaHash" = $1, "photoMediaHashes" = $2
           WHERE "handle" = $3`,
-        [logo.sha256, photos.map((p) => p.sha256), HANDLE],
+        [logo.sha256, photos.map((p) => p.thumb.sha256), HANDLE],
     );
     if (updated.rowCount !== 1) {
         throw new Error(
