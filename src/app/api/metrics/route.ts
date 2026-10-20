@@ -68,6 +68,40 @@ type Surface = 'public-farm' | 'app';
 const SURFACES: Record<Surface, true> = { 'public-farm': true, app: true };
 
 /**
+ * The channel reporting its OWN failure — #1940.
+ *
+ * Measured over 30 days: 1857 requests logged, **0** `web-vital` entries and
+ * **0** requests to this route. The pipeline is code-complete and has
+ * produced nothing, and the reason it went unnoticed is that it could not
+ * say so: the dynamic import's `.catch(() => {})` is silent, `sendBeacon`'s
+ * boolean return was discarded, and the reporter wraps everything in a bare
+ * `catch`. A dead RUM channel looked exactly like a healthy one with no
+ * interesting metrics.
+ *
+ * Best-effort is right for the BEACON — a visitor's page must not break
+ * because telemetry failed. It is wrong for the CHANNEL, and those are
+ * different concerns.
+ *
+ * ## Why a client-reported error can arrive when a metric cannot
+ *
+ * The two candidate causes differ exactly here. If the `web-vitals` chunk is
+ * blocked by the nonce-based strict CSP (`script-src`), the callbacks never
+ * run and no metric can ever be sent — but `connect-src` allows `'self'`, so
+ * a diagnostic POST still arrives. An `import-failed` entry in the log
+ * therefore DISCRIMINATES between the two candidates the issue lists, which
+ * no amount of server-side waiting can do.
+ *
+ * A CLOSED SET, like every other echoed field (#1964): this route is public,
+ * unauthenticated and deliberately un-rate-limited, so an open string here
+ * would be billable log ingest anyone could drive.
+ */
+type ChannelError = 'import-failed' | 'beacon-refused';
+const CHANNEL_ERRORS: Record<ChannelError, true> = {
+    'import-failed': true,
+    'beacon-refused': true,
+};
+
+/**
  * The value if it is a member of `registry`, otherwise `undefined`.
  *
  * `Object.hasOwn` rather than `registry[value]`, so an inherited key cannot
@@ -107,6 +141,26 @@ export async function POST(req: NextRequest) {
                  */
                 rating: allowed(RATINGS, m?.rating),
                 navigationType: allowed(NAVIGATION_TYPES, m?.navigationType),
+                surface: allowed(SURFACES, m?.surface),
+            });
+        }
+
+        /**
+         * Logged at WARN and under its own message, so "the channel is
+         * broken" is a query rather than an inference from an absence. It is
+         * deliberately NOT folded into `web-vital`: a dashboard counting
+         * metrics must not count failures as measurements.
+         *
+         * Checked independently of `metric` above, not in an `else` — a body
+         * carrying a channel error carries no `name`, so the two branches are
+         * disjoint by construction, and an `else` would hide a future beacon
+         * that reported both.
+         */
+        const channelError = allowed(CHANNEL_ERRORS, m?.channelError);
+        if (channelError) {
+            logger.warn('web-vital.channel_error', {
+                component: 'web-vitals',
+                channelError,
                 surface: allowed(SURFACES, m?.surface),
             });
         }

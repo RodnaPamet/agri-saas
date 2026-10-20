@@ -142,3 +142,80 @@ describe('WebVitalsReporter', () => {
         expect(onLCP).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('WebVitalsReporter reports the CHANNEL failing', () => {
+    let sendBeacon: jest.Mock;
+    let fetchMock: jest.Mock;
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        sendBeacon = jest.fn().mockReturnValue(true);
+        Object.defineProperty(navigator, 'sendBeacon', {
+            configurable: true,
+            writable: true,
+            value: sendBeacon,
+        });
+        fetchMock = jest.fn().mockResolvedValue({ ok: true });
+        Object.defineProperty(globalThis, 'fetch', {
+            configurable: true,
+            writable: true,
+            value: fetchMock,
+        });
+    });
+
+    /** Every POST body this test saw, parsed. */
+    const posted = () =>
+        fetchMock.mock.calls.map(([, init]) => JSON.parse((init as { body: string }).body));
+
+    it('falls back to fetch AND says so when sendBeacon refuses the payload', async () => {
+        // `false` means the browser would not queue it — over quota, or a
+        // payload it will not take. The return value used to be discarded, so
+        // the measurement was simply lost and the sample quietly short.
+        sendBeacon.mockReturnValue(false);
+        render(<WebVitalsReporter />);
+        await flush();
+
+        const report = onLCP.mock.calls[0][0] as (m: unknown) => void;
+        report({ name: 'LCP', value: 1234, rating: 'good', id: 'v4-1', navigationType: 'navigate' });
+        await flush();
+
+        const bodies = posted();
+        // The measurement is RECOVERED, not just mourned.
+        expect(bodies.some((b) => b.name === 'LCP')).toBe(true);
+        // And the refusal is visible, so a systematic one is a query rather
+        // than an unexplained shortfall in the sample.
+        expect(bodies.some((b) => b.channelError === 'beacon-refused')).toBe(true);
+    });
+
+    it('does NOT report a channel error when the beacon is accepted', async () => {
+        // The control. Without it the assertion above would pass against a
+        // reporter that cried failure on every successful beacon — which
+        // would be worse than the silence it replaces.
+        render(<WebVitalsReporter />);
+        await flush();
+
+        const report = onLCP.mock.calls[0][0] as (m: unknown) => void;
+        report({ name: 'LCP', value: 1234, rating: 'good', id: 'v4-1', navigationType: 'navigate' });
+        await flush();
+
+        expect(sendBeacon).toHaveBeenCalledTimes(1);
+        expect(posted().some((b) => b.channelError)).toBe(false);
+    });
+
+    it('carries the surface on the diagnostic too, so a failure is attributable', async () => {
+        // Otherwise "the channel is broken" cannot say WHICH surface, and the
+        // public profile is the one with a performance budget (#1814).
+        window.history.pushState({}, '', '/f/pobeda');
+        sendBeacon.mockReturnValue(false);
+        render(<WebVitalsReporter />);
+        await flush();
+
+        const report = onLCP.mock.calls[0][0] as (m: unknown) => void;
+        report({ name: 'LCP', value: 1234, rating: 'good', id: 'v4-1', navigationType: 'navigate' });
+        await flush();
+
+        const diag = posted().find((b) => b.channelError === 'beacon-refused');
+        expect(diag?.surface).toBe('public-farm');
+        window.history.pushState({}, '', '/');
+    });
+});
