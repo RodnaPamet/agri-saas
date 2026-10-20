@@ -157,6 +157,33 @@ export interface ProcessInspectorProps {
     ) => void;
 }
 
+/**
+ * Its local text mirrors are INITIAL state, because the caller keys it on the
+ * selection (#1471).
+ *
+ * This component and its `EdgeInspectorBody` child each kept a local mirror of
+ * the selected node's or edge's text so typing does not flush to canvas state
+ * on every keystroke — the mirror commits on blur or Enter. Those mirrors used
+ * to be re-seeded by a `useEffect` gated on the selection id, which is three
+ * `react-hooks/set-state-in-effect` findings and the archetype #1968 measured:
+ * an effect runs AFTER paint, so one frame showed the PREVIOUS selection's
+ * label.
+ *
+ * `PersistedProcessCanvas` now passes `key={selectedNode?.id ?? selectedEdge?.id}`,
+ * so a selection change remounts instead of re-seeding and the new values are
+ * the initial state. The three effects were then redundant and are DELETED
+ * rather than suppressed, which is why that change removed warnings without
+ * moving anything into the suppressed count.
+ *
+ * Two things make the remount safe, and both were checked rather than assumed:
+ * the mirrored text is the ONLY state either component holds, so a remount
+ * discards nothing else; and the key moves only when the selection does, so
+ * typing on one node is never interrupted by an unrelated re-render.
+ *
+ * If you add state here that must SURVIVE a selection change, this is the
+ * docblock that is now wrong — the key has to go, and the mirrors go back to
+ * effects with it.
+ */
 export function ProcessInspector({
     node,
     edge = null,
@@ -182,12 +209,6 @@ export function ProcessInspector({
     const [subtitle, setSubtitle] = useState(data?.subtitle ?? "");
     // VR-4 — automation-mode inspector branch (hook stays unconditional).
     const isAutomation = useIsAutomationMode();
-
-    // Sync local mirror when the selected node changes.
-    useEffect(() => {
-        setLabel(data?.label ?? "");
-        setSubtitle(data?.subtitle ?? "");
-    }, [node?.id, data?.label, data?.subtitle]);
 
     // R28 — edge-selection mode. Node wins if both are set; the
     // canvas only mirrors one slot at a time but the guard here
@@ -467,10 +488,6 @@ function EdgeInspectorBody({
         typeof edge.label === "string" ? edge.label : "";
     const [label, setLabel] = useState(initialLabel);
 
-    useEffect(() => {
-        setLabel(typeof edge.label === "string" ? edge.label : "");
-    }, [edge.id, edge.label]);
-
     // Epic P2-PR-A — practices attached to this edge. PR-A allows
     // ONE per edge in the inspector; the underlying ProcessEdgePractice
     // table supports many for future "two practices gate this edge"
@@ -497,10 +514,6 @@ function EdgeInspectorBody({
     const [practiceLabel, setPracticeLabel] = useState(
         selectedPractice?.label ?? "",
     );
-    useEffect(() => {
-        setPracticeLabel(selectedPractice?.label ?? "");
-    }, [edge.id, selectedPractice?.label]);
-
     const commitLinkedPractice = () => {
         if (!onEdgeUpdate) return;
         const trimmed = practiceLabel.trim();
