@@ -10059,6 +10059,22 @@ exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MeStreamEvent 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The notification id. Refetch the row; do not render this."
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "description": "The JSON on one \`data:\` line. IDS ONLY, by design — the row is authoritative and the event is a hint, so a client refetches under its own authorisation rather than rendering what arrived on a broadcast channel. The same id is also the SSE \`id:\` field, which is what makes replay possible."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: MyFarms 1`] = `
 "{
   "type": "object",

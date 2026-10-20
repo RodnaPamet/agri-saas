@@ -391,6 +391,11 @@
       "documented": true
     },
     {
+      "path": "/api/me/stream",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/metrics",
       "status": "live",
       "documented": false

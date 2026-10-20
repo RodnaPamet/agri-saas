@@ -334,4 +334,29 @@ export const BARE_ROUTE_EXEMPTIONS: ReadonlyArray<BareRouteExemption> = [
             'wire format. Auth via getLegacyCtx pre-stream; per-chunk ' +
             'errors close the channel via req.signal abort.',
     },
+    // The person-scoped multiplexed stream (#1991) is bare for the same
+    // mechanical reason, and refuses differently on purpose: its three
+    // pre-stream refusals — realtime off, no session lineage, at capacity —
+    // all answer 204 with no body, because per the EventSource specification a
+    // non-200 fails the connection WITHOUT scheduling a reconnect. The
+    // wrapper's `ApiErrorResponse` would make each of them a JSON 4xx, which
+    // is the same wire-format break one level up: a refused client would read
+    // an error body it cannot parse as a stream, and a 429 for the cap would
+    // have every refused tab retry into the wall the cap exists to build.
+    //
+    // Authentication still throws before any stream is constructed, and
+    // through `getUserCtx` rather than `getLegacyCtx` — a person-scoped path,
+    // so an API key, an MFA-pending session and the operator-only persona are
+    // all refused there and surface as the standard envelope.
+    {
+        file: 'me/stream/route.ts',
+        category: 'sse_stream',
+        reason:
+            'Person-scoped multiplexed SSE stream (#1991, P7.2). Long-lived ' +
+            'text/event-stream ReadableStream — cannot be wrapped without ' +
+            'breaking the EventSource wire format. Its three refusals are ' +
+            'deliberately 204-with-no-body so a client does NOT reconnect; ' +
+            'a JSON 4xx envelope would defeat that. Auth via getUserCtx ' +
+            'pre-stream; release runs on both abort and stream cancel.',
+    },
 ];

@@ -36,6 +36,7 @@ import { registerCadastreAndReportPaths } from './cadastre-reports.paths';
 import { registerFarmProfilePaths } from './farm-profile.paths';
 import { registerMeFarmsPaths } from './me-farms.paths';
 import { registerMeNewsPreferencesPaths } from './me-news-preferences.paths';
+import { registerMeStreamPaths } from './me-stream.paths';
 import { registerTrustSafetyPaths } from './trust-safety.paths';
 import { registerAccessReviewPaths } from './access-review.paths';
 import { registerModerationPaths } from './moderation.paths';
@@ -79,6 +80,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerFarmProfilePaths(registry);
     registerMeFarmsPaths(registry);
     registerMeNewsPreferencesPaths(registry);
+    registerMeStreamPaths(registry);
     registerTrustSafetyPaths(registry);
     registerModerationPaths(registry);
     registerAdminMembersPaths(registry);
