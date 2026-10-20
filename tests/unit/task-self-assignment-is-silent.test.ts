@@ -50,8 +50,15 @@ jest.mock('@/app-layer/notifications/assignment', () => ({
 }));
 
 const sendWebPushToUser = jest.fn();
+const sendApnsToUser = jest.fn();
 jest.mock('@/lib/notifications/web-push', () => ({
     sendWebPushToUser: (...a: unknown[]) => sendWebPushToUser(...a),
+}));
+// #1764 step 3 — the SECOND push sink. Mocked here for the same reason the
+// web one is: the silence guarantee below has to cover every sink, and a
+// transport added without extending it would leave the guarantee half true.
+jest.mock('@/lib/notifications/apns', () => ({
+    sendApnsToUser: (...a: unknown[]) => sendApnsToUser(...a),
 }));
 
 const logEvent = jest.fn();
@@ -141,14 +148,21 @@ describe('assigning to YOURSELF notifies nobody', () => {
         expect(createAssignmentNotification).not.toHaveBeenCalled();
     });
 
-    it('sends no web push either', async () => {
-        // The bell guard returns before the push, so this follows from it —
-        // asserted anyway because the push is a SEPARATE sink and a future
-        // refactor could move it above the guard. A notification nobody
+    it('sends no push on EITHER transport', async () => {
+        // The bell guard returns before the pushes, so this follows from it —
+        // asserted anyway because each push is a SEPARATE sink and a future
+        // refactor could move one above the guard. A notification nobody
         // needed is worse on a lock screen than in a list.
+        //
+        // "On a lock screen" is now literal: #1764 step 3 added an APNs sink
+        // beside the web one, so this case covers both. Checking one of two
+        // would be a guarantee that reads as complete and holds for half the
+        // devices — and the half it would miss is the phone, which is the one
+        // with the lock screen.
         await assignTask(makeRequestContext('EDITOR'), 't1', ME);
 
         expect(sendWebPushToUser).not.toHaveBeenCalled();
+        expect(sendApnsToUser).not.toHaveBeenCalled();
     });
 
     it('does not even look the recipient up', async () => {
