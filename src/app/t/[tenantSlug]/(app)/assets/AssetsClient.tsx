@@ -103,9 +103,17 @@ function AssetsPageInner({ initialAssets, initialFilters, tenantSlug, permission
                 { scroll: false },
             );
         }
-        // First-mount only.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        // #2036 — depends on `searchParams` rather than on mount, so a
+        // CLIENT-SIDE navigation back to `?create=1` opens the modal too.
+        // `/assets/new` redirects here; on a cold load the old `[]` worked,
+        // and a second visit without a full page load did nothing because the
+        // effect never ran again.
+        //
+        // Safe to widen precisely because the body STRIPS the param: the
+        // `router.replace` changes `searchParams`, the effect re-runs, the
+        // param is gone, and it no-ops. Idempotent by construction — which is
+        // the thing to check before widening any mount-only effect.
+    }, [searchParams, router, tenantSlug]);
 
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
     const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
