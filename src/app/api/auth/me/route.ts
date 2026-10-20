@@ -4,7 +4,9 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { codedForbidden } from '@/lib/errors/types';
 import { parseBottomTabOrder } from '@/lib/account/bottom-tabs';
-import { computePermissions } from '@/lib/tenant-context';
+import { appPermissionsFor, computePermissions } from '@/lib/tenant-context';
+import { hasPermission } from '@/lib/security/permission-middleware';
+import { env } from '@/env';
 import { resolveFlags } from '@/lib/feature-flags';
 import {
     DELETION_GRACE_DAYS,
@@ -162,6 +164,63 @@ export const GET = withApiErrorHandling(async () => {
     // makes. Cohort-gated flags are therefore already narrowed — a client never
     // sees a flag that is enabled for someone else, so it cannot accidentally
     // render a surface it is not in the cohort for.
+    /**
+     * Is this caller an admin of the PLATFORM tenant — #1587 (e).
+     *
+     * ## Why it cannot be read off `membership` above
+     *
+     * That query is `take: 1` ordered by `createdAt: 'asc'`, so it returns the
+     * caller's OLDEST active membership. A superuser who also farms would have
+     * their own farm there and the platform tenant nowhere in the payload, so
+     * deriving the flag from it would be false for exactly the person it exists
+     * for. It needs its own lookup, by slug.
+     *
+     * ## It is a UI HINT, never a capability
+     *
+     * Nothing is authorised by this field. Every platform surface stays gated
+     * server-side by `requirePermission('admin.manage')` plus
+     * `assertPlatformSupport`, which 404s rather than 403s so the console does
+     * not announce itself to other tenants. A client that forged `true` would
+     * see a «Цени» button and a 404 behind it.
+     *
+     * What it buys is the opposite problem: without it no client can tell who
+     * is superuser, so the phone would have to render the entry for everyone
+     * and let most farmers discover a dead end.
+     *
+     * ## The permission is derived the way the GATE derives it
+     *
+     * `appPermissionsFor` + `hasPermission(..., 'admin.manage')` — the same two
+     * calls `requirePermission` ends in, including a custom role's
+     * `permissionsJson`. A role allowlist here would be a second definition of
+     * "admin" and would drift from the first the day a custom role is given
+     * `admin.manage`.
+     *
+     * ## No query at all when the console does not exist
+     *
+     * `PLATFORM_TENANT_SLUG` is unset in production today, and while it is
+     * unset `assertPlatformSupport` 404s for everyone — so there is nothing to
+     * ask. Skipping the lookup keeps the launch request's cost unchanged until
+     * the var is set, and makes the flag fail CLOSED for the same reason the
+     * gate does.
+     */
+    const platformSlug = env.PLATFORM_TENANT_SLUG?.trim();
+    const platformMembership = platformSlug
+        ? await prisma.tenantMembership.findFirst({
+              where: {
+                  userId: session.user.id,
+                  status: 'ACTIVE',
+                  tenant: { slug: platformSlug, deletedAt: null },
+              },
+              select: {
+                  role: true,
+                  customRole: { select: { baseRole: true, permissionsJson: true } },
+              },
+          })
+        : null;
+    const platformAdmin = platformMembership
+        ? hasPermission(appPermissionsFor(platformMembership), 'admin.manage')
+        : false;
+
     const featureFlags = await resolveFlags(session.user.id ?? null);
 
     return jsonResponse({
@@ -297,6 +356,12 @@ export const GET = withApiErrorHandling(async () => {
                 : null,
         },
         tenant: membership?.tenant ?? null,
+        /**
+         * #1587 (e) — lets a client show the platform console's entry («Цени»)
+         * only to the platform tenant's admins. A HINT for rendering, not a
+         * grant: see the derivation above.
+         */
+        platformAdmin,
         /**
          * Runtime feature flags, already resolved for this caller.
          *

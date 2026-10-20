@@ -58,6 +58,29 @@ export function computePermissions(role: Role): Permissions {
 
 // ─── Tenant context resolver ───
 
+/**
+ * The fine-grained `PermissionSet` for one membership — custom role when it
+ * has one, the enum default otherwise.
+ *
+ * EXTRACTED rather than copied (#1587). This derivation is what every
+ * `requirePermission(...)` gate ultimately reads, and a second copy of it is
+ * how a client-facing flag comes to disagree with the server that enforces
+ * it — a button that 404s, or worse, one a user believes is a capability.
+ * `/api/auth/me` needs the same answer for a tenant that is NOT the caller's
+ * current one, which is why it cannot simply read the resolved context.
+ *
+ * Deliberately takes the two fields it uses rather than a full membership, so
+ * a caller may select only those.
+ */
+export function appPermissionsFor(membership: {
+    role: Role;
+    customRole?: { baseRole: Role; permissionsJson: unknown } | null;
+}): PermissionSet {
+    return membership.customRole
+        ? parsePermissionsJson(membership.customRole.permissionsJson, membership.customRole.baseRole)
+        : getPermissionsForRole(membership.role);
+}
+
 export async function resolveTenantContext(
     params: { tenantSlug?: string; tenantId?: string },
     userId: string
@@ -128,9 +151,7 @@ export async function resolveTenantContext(
 
     // Resolve permissions: custom role overrides enum-based defaults when present
     const effectiveRole = membership.customRole?.baseRole ?? membership.role;
-    const appPermissions = membership.customRole
-        ? parsePermissionsJson(membership.customRole.permissionsJson, membership.customRole.baseRole)
-        : getPermissionsForRole(membership.role);
+    const appPermissions = appPermissionsFor(membership);
 
     return {
         tenant,
