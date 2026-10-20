@@ -35,6 +35,11 @@
  * already covered by `notifications-stream-flag-gate`.
  */
 import { createSseResponse } from '@/lib/realtime/sse';
+import {
+    drainOpenStreams,
+    openStreamCount,
+    _resetStreamDrainForTesting,
+} from '@/lib/realtime/stream-drain';
 
 /** A controller whose `enqueue` can be made to throw on demand. */
 function harness() {
@@ -186,5 +191,105 @@ describe('createSseResponse releases its resources', () => {
         expect(h.chunks.length).toBe(afterOpen + 1);
         jest.advanceTimersByTime(50_000);
         expect(h.chunks.length).toBe(afterOpen + 3);
+    });
+});
+
+describe('createSseResponse joins the SIGTERM drain — P7.3 (#1992)', () => {
+    beforeEach(() => {
+        jest.useFakeTimers();
+        _resetStreamDrainForTesting();
+    });
+    afterEach(() => {
+        jest.clearAllTimers();
+        jest.useRealTimers();
+        _resetStreamDrainForTesting();
+    });
+
+    it('registers only once the stream is LIVE, not when it is constructed', () => {
+        // Registering at construction would put a closer in the set for a
+        // stream whose `subscribe` then threw, and the drain would close
+        // something that never opened.
+        const h = harness();
+        const { start } = createSseResponse({
+            subscribe: () => () => {},
+            heartbeatMs: 25_000,
+        });
+
+        expect(openStreamCount()).toBe(0);
+        start(h.controller);
+        expect(openStreamCount()).toBe(1);
+    });
+
+    it('sends a final comment frame and closes, so the client reconnects', () => {
+        // A COMMENT and not an `event:` — every consumer of these streams uses
+        // the default message handler, so a named event would be dropped by
+        // all of them while looking delivered.
+        const unsubscribe = jest.fn();
+        const h = harness();
+        const { start } = createSseResponse({
+            subscribe: () => unsubscribe,
+            heartbeatMs: 25_000,
+        });
+        start(h.controller);
+
+        drainOpenStreams();
+
+        expect(h.chunks.at(-1)).toBe(': draining\n\n');
+        expect(h.closeCalls).toBe(1);
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('a stream released before the signal is not in the registry', () => {
+        // The ordinary case — a tab closed before the deploy. Closing it again
+        // would decrement the reference-counted bus twice.
+        const unsubscribe = jest.fn();
+        const h = harness();
+        const { start, release } = createSseResponse({
+            subscribe: () => unsubscribe,
+            heartbeatMs: 25_000,
+        });
+        start(h.controller);
+        release();
+
+        expect(openStreamCount()).toBe(0);
+        expect(drainOpenStreams()).toBe(0);
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+        expect(h.chunks).not.toContain(': draining\n\n');
+    });
+
+    it('the drain clears the heartbeat, so the process can actually exit', () => {
+        // The reason a drain is needed at all rather than waiting: an open
+        // stream holds a 25s interval with no `unref()`, so `server.close()`
+        // waits for a connection that never ends.
+        const h = harness();
+        const { start } = createSseResponse({
+            subscribe: () => () => {},
+            heartbeatMs: 25_000,
+        });
+        start(h.controller);
+        expect(jest.getTimerCount()).toBeGreaterThan(0);
+
+        drainOpenStreams();
+
+        expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('a drained stream writes nothing further, even on a late event', () => {
+        let send: ((chunk: string) => void) | null = null;
+        const h = harness();
+        const { start } = createSseResponse({
+            subscribe: (s) => {
+                send = s;
+                return () => {};
+            },
+            heartbeatMs: 25_000,
+        });
+        start(h.controller);
+
+        drainOpenStreams();
+        const after = h.chunks.length;
+        send!('data: late\n\n');
+
+        expect(h.chunks.length).toBe(after);
     });
 });

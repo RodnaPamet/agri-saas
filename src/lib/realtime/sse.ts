@@ -58,6 +58,8 @@ export interface SseOptions {
     openingComment?: string;
 }
 
+import { registerOpenStream } from './stream-drain';
+
 interface State {
     /** False once a write has failed — stop enqueuing, but stay releasable. */
     writable: boolean;
@@ -85,6 +87,8 @@ export function createSseResponse(opts: SseOptions): SseStream {
     let heartbeat: ReturnType<typeof setInterval> | null = null;
     let unsubscribe: (() => void) | null = null;
     let close: (() => void) | null = null;
+    /** Removes this stream from the SIGTERM drain registry (P7.3, #1992). */
+    let deregister: (() => void) | null = null;
 
     const release = (): void => {
         // Guarded on `released`, NEVER on writability. That distinction is the
@@ -93,6 +97,14 @@ export function createSseResponse(opts: SseOptions): SseStream {
         if (state.released) return;
         state.released = true;
         state.writable = false;
+
+        // Out of the drain registry FIRST. A stream that has already released
+        // must not be closed again by a SIGTERM arriving a moment later, and
+        // leaving it registered is the leak #1984 fixed in the other
+        // direction — the set would grow for the life of the process.
+        const d = deregister;
+        deregister = null;
+        d?.();
 
         if (heartbeat !== null) {
             clearInterval(heartbeat);
@@ -138,6 +150,19 @@ export function createSseResponse(opts: SseOptions): SseStream {
 
         unsubscribe = opts.subscribe(send);
         heartbeat = setInterval(() => send(': hb\n\n'), opts.heartbeatMs);
+
+        // Registered LAST, once the stream is actually live. Registering
+        // before `subscribe` would put a closer in the set for a stream whose
+        // subscription then threw, and the drain would close something that
+        // never opened.
+        //
+        // The final frame is sent by the drain, not here, so a stream that
+        // ends for any other reason does not announce a shutdown that is not
+        // happening.
+        deregister = registerOpenStream(() => {
+            send(': draining\n\n');
+            release();
+        });
     };
 
     return { start, release };

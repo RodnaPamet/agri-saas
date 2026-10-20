@@ -128,6 +128,27 @@ services:
     image: ghcr.io/rodnapamet/agri-saas:latest
     container_name: agrent-app
     restart: always
+    # ── P7.3 (#1992) — the window SIGTERM gets before SIGKILL ──
+    #
+    # Docker's default is 10s. Next's own self-hosting guidance for the App
+    # Router is to send the signal and "allow a configurable drain period
+    # (10-30 seconds is recommended)", because `next start` answers SIGTERM
+    # with `server.close()` — stop accepting connections, then WAIT for the
+    # open ones, deliberately without forcing them closed.
+    #
+    # Must AGREE with watchtower's `--stop-timeout` below. Watchtower stops the
+    # containers it recreates, so ITS timeout governs the ~8 recreations a day
+    # that are the only thing that ever interrupts a live stream; this one
+    # governs a manual `docker compose stop`. One without the other buys a
+    # drain that works when an operator stops the stack by hand and not when
+    # the deploy pipeline does.
+    #
+    # APPLYING THIS NEEDS A RECREATE, for the same reason the `x-logging`
+    # block above says so: `stop_grace_period` is read when a container is
+    # CREATED. Watchtower's next image pull recreates `app` and `worker`, so
+    # those two pick it up on the next deploy; `watchtower` itself is not
+    # watchtower-enabled and needs a manual `up -d` to adopt its new flag.
+    stop_grace_period: 30s
     # Watchtower only touches containers carrying this label.
     labels:
       - com.centurylinklabs.watchtower.enable=true
@@ -183,6 +204,19 @@ services:
     image: ghcr.io/rodnapamet/agri-saas:latest
     container_name: agrent-worker
     restart: always
+    # Matches `app`, for a different reason: this process owns its own SIGTERM
+    # handler (`scripts/worker.ts`) and answers it with `worker.close()`, which
+    # BullMQ implements as "stop taking new jobs, finish the ones in hand". A
+    # soil-pipeline job calling SoilGrids is not reliably 10 seconds of work,
+    # and a job SIGKILLed after its side effects but before its completion is
+    # the one that gets retried.
+    #
+    # Whether that happens today is NOT knowable yet: the line that would say
+    # so, `worker shut down gracefully`, comes from worker.ts's own pino
+    # instance, which omits `requestId` and is therefore dropped by this VM's
+    # ops-agent content filter (#2101). Set on the mechanism's merits; #2101 is
+    # what makes the measurement possible afterwards.
+    stop_grace_period: 30s
     labels:
       - com.centurylinklabs.watchtower.enable=true
     entrypoint: ["/bin/sh", "-c"]
@@ -271,7 +305,13 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /root/.docker/config.json:/config.json:ro
-    command: --label-enable --cleanup --interval 300
+    # `--stop-timeout 30s` is the other half of the drain and must agree with
+    # the two `stop_grace_period` settings above — see the note on `app`.
+    #
+    # On the `command` line, where the other three flags already live, rather
+    # than as `WATCHTOWER_STOP_TIMEOUT`: the image reads both, and splitting
+    # four settings across two mechanisms is how one of them gets missed.
+    command: --label-enable --cleanup --interval 300 --stop-timeout 30s
     networks:
       - internal
 
