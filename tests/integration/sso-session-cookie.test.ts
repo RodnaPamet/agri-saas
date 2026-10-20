@@ -35,7 +35,8 @@
  */
 import { encode, getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
-import { sessionCookieName, secureCookiesEnabled } from '@/lib/auth/sso-session';
+import { sessionCookieName } from '@/lib/auth/sso-session';
+import { secureCookiesEnabled } from '@/lib/auth/secure-cookies';
 
 const SECRET = 'sso-test-secret-at-least-32-characters-long'; // pragma: allowlist secret -- local encode/decode input, never a credential
 
@@ -94,15 +95,23 @@ describe('the cookie NAME must be the one v4 reads', () => {
         try {
             process.env.NEXTAUTH_URL = 'https://app.example.com';
             jest.resetModules();
-            const https = require('@/lib/auth/sso-session');
-            expect(https.secureCookiesEnabled()).toBe(true);
-            expect(https.sessionCookieName()).toBe('__Secure-next-auth.session-token');
+            // `secureCookiesEnabled` moved to a LEAF module (#2096): `auth.ts`
+            // needs it to set the Apple cookie policy and cannot import
+            // `sso-session`, which imports `@/auth`. The NAME still comes from
+            // `sso-session`, so both are re-required here — the point of the
+            // test is that the two agree, and reading them from one module
+            // would no longer prove that.
+            expect(require('@/lib/auth/secure-cookies').secureCookiesEnabled()).toBe(true);
+            expect(require('@/lib/auth/sso-session').sessionCookieName()).toBe(
+                '__Secure-next-auth.session-token',
+            );
 
             process.env.NEXTAUTH_URL = 'http://localhost:3000';
             jest.resetModules();
-            const http = require('@/lib/auth/sso-session');
-            expect(http.secureCookiesEnabled()).toBe(false);
-            expect(http.sessionCookieName()).toBe('next-auth.session-token');
+            expect(require('@/lib/auth/secure-cookies').secureCookiesEnabled()).toBe(false);
+            expect(require('@/lib/auth/sso-session').sessionCookieName()).toBe(
+                'next-auth.session-token',
+            );
         } finally {
             process.env.NEXTAUTH_URL = original;
             jest.resetModules();
