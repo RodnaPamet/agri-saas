@@ -11770,6 +11770,21 @@
               "id",
               "name"
             ]
+          },
+          "inviteDelivery": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Whether this invite’s email came back undeliverable (#1769). `null` means NOTHING HAS COME BACK, which is not the same as delivered — only invites sent after #1769’s recorder shipped have a correlation row to join a bounce to, and older ones stay null for ever. Otherwise a token derived from the provider’s event: `BOUNCED`, `COMPLAINED`, `FAILED`. **Treat any value you do not recognise as undeliverable of an unknown kind, never as null** — an unrecognised event rendering as “still pending” is the exact bug this field exists to fix."
+          },
+          "inviteDeliveryAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the failure was learned, not when the invite was sent."
           }
         },
         "required": [
@@ -11780,7 +11795,9 @@
           "expiresAt",
           "createdAt",
           "updatedAt",
-          "invitedBy"
+          "invitedBy",
+          "inviteDelivery",
+          "inviteDeliveryAt"
         ],
         "description": "A pending invite. Deliberately carries NO acceptance token: the token is a bearer credential and belongs only in the `url` the create response returns (#1450)."
       },

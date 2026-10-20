@@ -40,6 +40,18 @@ export interface InviteEmailParams {
     /** Stamped at the send site (Date.now() is unavailable in some sandboxes). */
     now?: Date;
     /**
+     * The `TenantInvite` this email is about, so a bounce can mark THAT invite
+     * undeliverable (#1769).
+     *
+     * Optional rather than required, deliberately. The org-invite path and the
+     * two tenant-admin paths all have the id to hand, but a caller that does
+     * not is better served sending the email with no correlation than not
+     * sending it — an invite that arrives and cannot be tracked beats an
+     * invite that was never sent. The webhook treats a missing subject as
+     * "nothing to act on", which is the honest reading.
+     */
+    inviteId?: string;
+    /**
      * The language to write in — the INVITER's, by product decision (#722).
      *
      * Every other outbound email reads the recipient's `User.uiLanguage`. An
@@ -87,6 +99,7 @@ export async function sendInviteEmail(
         expiresAt,
         locale,
         now = new Date(),
+        inviteId,
     } = params;
 
     const days = daysUntil(expiresAt, now);
@@ -138,11 +151,32 @@ export async function sendInviteEmail(
 
     try {
         await sendEmail({
-            // `sendInviteEmail` takes no invite id — only an acceptUrl — so marking a
-            // TenantInvite undeliverable needs a signature change across its callers.
-            // Deliberately deferred to the webhook PR, where it is the thing being
-            // built; recording a purpose without a subject here is honest about that.
-            purpose: 'invite', to, subject, text, html });
+            purpose: 'invite',
+            to,
+            subject,
+            text,
+            html,
+            // The subject #1769 PR 1 recorded a purpose without, because the
+            // signature had no id to give it. Now it does: a bounce resolves
+            // through `OutboundMessage` to this invite and marks it
+            // undeliverable, so the admin screen stops showing «Поканен» for
+            // an email that never arrived.
+            //
+            // Omitted entirely when the caller has no id, so an empty list
+            // cannot look like "an invite with no rows".
+            // The subject TYPE is derived from `kind`, which this function
+            // already requires, because the two invite kinds are two MODELS:
+            // the org path creates an `OrgInvite` and the tenant-admin paths a
+            // `TenantInvite`. Recording one type for both would have made the
+            // webhook's `updateMany` match zero rows for every org invite, and
+            // an `updateMany` reports a count nobody was reading.
+            ...(inviteId
+                ? {
+                      subjectType: kind === 'organization' ? 'OrgInvite' : 'TenantInvite',
+                      subjectIds: [inviteId],
+                  }
+                : {}),
+        });
         // The mailer falls back to a console sink when no SMTP is configured;
         // in production that means the message was LOGGED, not delivered.
         // Report it as not-sent so the caller surfaces the copy-link fallback

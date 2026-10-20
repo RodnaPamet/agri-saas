@@ -55,6 +55,50 @@ describe('sendInviteEmail', () => {
         expect(msg.text).toContain('7 days');
     });
 
+    // ── The correlation subject (#1769) ──────────────────────────────
+    //
+    // `kind` decides which MODEL the invite id belongs to, and the two are
+    // different tables: the org path creates an `OrgInvite`, the tenant-admin
+    // paths a `TenantInvite`. The webhook dispatches on the recorded
+    // subjectType, so getting this wrong makes its `updateMany` match zero
+    // rows — silently, because nothing reads the count. These assertions are
+    // the only place that mapping is checked.
+
+    it('records an OrgInvite subject for an organization invite', async () => {
+        sendEmailMock.mockResolvedValue(undefined);
+        await sendInviteEmail({ ...baseParams, kind: 'organization', inviteId: 'inv_org_1' });
+
+        expect(sendEmailMock).toHaveBeenCalledTimes(1);
+        expect(sendEmailMock.mock.calls[0][0]).toMatchObject({
+            purpose: 'invite',
+            subjectType: 'OrgInvite',
+            subjectIds: ['inv_org_1'],
+        });
+    });
+
+    it('records a TenantInvite subject for a workspace invite', async () => {
+        sendEmailMock.mockResolvedValue(undefined);
+        await sendInviteEmail({ ...baseParams, kind: 'workspace', inviteId: 'inv_ten_1' });
+
+        expect(sendEmailMock.mock.calls[0][0]).toMatchObject({
+            purpose: 'invite',
+            subjectType: 'TenantInvite',
+            subjectIds: ['inv_ten_1'],
+        });
+    });
+
+    it('omits the subject entirely when no invite id is given', async () => {
+        sendEmailMock.mockResolvedValue(undefined);
+        await sendInviteEmail(baseParams);
+
+        const sent = sendEmailMock.mock.calls[0][0];
+        expect(sent.purpose).toBe('invite');
+        // ABSENT, not an empty list: an empty `subjectIds` would read to the
+        // webhook as "an invite with no rows" rather than "no correlation".
+        expect(sent).not.toHaveProperty('subjectType');
+        expect(sent).not.toHaveProperty('subjectIds');
+    });
+
     it('is fail-open: a mailer error returns { sent: false } and does not throw', async () => {
         sendEmailMock.mockRejectedValue(new Error('SMTP down'));
         await expect(sendInviteEmail(baseParams)).resolves.toEqual({

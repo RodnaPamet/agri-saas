@@ -297,6 +297,14 @@ model OrgInvite {
   expiresAt      DateTime
   acceptedAt     DateTime?
   revokedAt      DateTime?
+  /// As `TenantInvite` above (#1769). An org invite and a workspace invite are
+  /// separate MODELS reached through the same `sendInviteEmail`, so a bounce
+  /// handler that knew only one of them would silently no-op for half the
+  /// invites the product sends — the partial coverage #1769 exists to prevent.
+  /// `sendInviteEmail` derives which to record from its existing `kind` param
+  /// rather than taking a second one.
+  deliveryFailureKind String?
+  deliveryFailedAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -1388,6 +1396,24 @@ model TenantInvite {
   expiresAt   DateTime
   acceptedAt  DateTime?
   revokedAt   DateTime?
+  /// Set by the Resend delivery webhook when THIS invite's email came back
+  /// undeliverable (#1769). Before this, a bounced invite and an unopened one
+  /// were the same row, so the admin screen's main question — "has my invite
+  /// actually gone out?" — was answered wrongly by showing «Поканен».
+  ///
+  /// The provider's event type ('email.bounced', 'email.complained'), not a
+  /// boolean: a complaint is not a bounce and a client that needs to tell them
+  /// apart should not need a second column to do it. A plain string rather
+  /// than an enum so a new provider event cannot be blocked on a migration —
+  /// the same choice `OutboundMessage.failureKind` makes, and the API maps
+  /// whatever arrives rather than filtering to a known set.
+  ///
+  /// NULL means "nothing has come back", which is genuinely different from
+  /// "delivered": only invites sent after #1769's recorder shipped have a
+  /// correlation row to join a bounce to, and there is nothing to backfill
+  /// older ones from.
+  deliveryFailureKind String?
+  deliveryFailedAt    DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   invitedBy   User      @relation(fields: [invitedById], references: [id])
