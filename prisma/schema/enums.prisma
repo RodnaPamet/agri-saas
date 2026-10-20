@@ -100,6 +100,24 @@ enum OrgDashboardWidgetType {
 }
 
 
+/**
+ * The two APNs environments — #1764 step 3.
+ *
+ * Not a boolean, and not a free string. A boolean (`isSandbox`) reads
+ * backwards half the time and gives the absent case no spelling; a string
+ * invites `"sandbox"`, `"dev"` and `"Development"` to mean the same thing in
+ * three rows. Apple's own names are these two.
+ *
+ * The WIRE form is lower-case — a client sends `"development"` or
+ * `"production"` — because that is what `aps-environment` in a provisioning
+ * profile says, and translating at the boundary is cheaper than asking every
+ * client to shout.
+ */
+enum ApnsEnvironment {
+    DEVELOPMENT
+    PRODUCTION
+}
+
 enum AssetType {
   TRACTOR
   HARVESTER

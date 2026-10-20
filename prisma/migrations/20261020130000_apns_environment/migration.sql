@@ -1,0 +1,55 @@
+-- #1764 step 3 — which APNs host a device token is valid against.
+--
+-- ## Why a column and not a setting
+--
+-- APNs has two separate environments and a token is only valid in the one it
+-- was issued for: api.sandbox.push.apple.com for a development-signed build,
+-- api.push.apple.com for TestFlight and the App Store. Send to the wrong one
+-- and APNs answers BadDeviceToken, so this is part of the address rather than
+-- a preference.
+--
+-- It is PER DEVICE because one deployment serves both. The owner's
+-- development-signed install and a TestFlight build of the same app register
+-- against the same server, so a deployment-wide setting would be wrong for one
+-- of them. agrent-ios reads it from the app's embedded.mobileprovision
+-- (aps-environment); that key is absent in TestFlight and App Store builds,
+-- and the absence IS production.
+--
+-- ## Nullable, no default, no backfill
+--
+-- Measured on production 2026-10-20: PushSubscription holds ZERO rows, of
+-- either platform. So there is nothing to backfill, and the question of what
+-- existing tokens should default to does not arise.
+--
+-- The HOW matters here, because this table is FORCE ROW LEVEL SECURITY and a
+-- count run under the wrong role returns 0 whatever it holds — agrent-ios
+-- challenged the first version of this number on exactly that grounds, and was
+-- right to. The count was taken as current_user=postgres with
+-- rolbypassrls=true, which defeats forced RLS, with app.tenant_id unset.
+--
+-- Corroborated two further ways, both independent of RLS: zero occurrences of
+-- the route's own WARN (push.apns_registered_without_transport, logged on every
+-- accepted registration) in a log window reaching back to 2026-10-07, which
+-- predates the phone's registration shipping on 2026-10-14; and zero requests
+-- to any push-subscriptions route, against a positive control proving agrent's
+-- routes do appear in the field queried.
+--
+-- And the absence is not "nobody used the app": 579 requests on 2026-10-19 and
+-- 321 on 2026-10-20, with the native sign-in flow exercised on 2026-10-18.
+--
+-- No default on purpose. NULL means "the client did not say", and the sender
+-- must refuse such a row and log it rather than guess. A guess is wrong half
+-- the time and fails as BadDeviceToken — which is indistinguishable from a
+-- revoked token, so the pruning step would delete a perfectly good
+-- registration. Defaulting to either value trades a visible absence for a
+-- silent misdelivery.
+--
+-- ## Nothing writes it yet
+--
+-- The registration path and the sender are the next PRs. Rolling this back
+-- under code that writes it would fail every iOS registration — a phone that
+-- cannot register receives nothing, and the failure is on the launch path. So
+-- the column ships one release ahead of its writer, as #2029 did before #2046.
+CREATE TYPE "ApnsEnvironment" AS ENUM ('DEVELOPMENT', 'PRODUCTION');
+
+ALTER TABLE "PushSubscription" ADD COLUMN "apnsEnvironment" "ApnsEnvironment";
