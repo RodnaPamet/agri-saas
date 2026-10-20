@@ -1010,6 +1010,18 @@ export const RecordDiaryTreatmentSchema = z
             description:
                 'The parcels treated, as one flat list that may span blocks. The server groups them and writes one field operation per block — the ДНЕВНИК resolves a treatment\u2019s block through the task\u2019s location link, so a single task spanning blocks would print a parcel under a block it was never on. Empty is refused with `TREATMENT_NO_PARCELS`; a parcel of another farm with `REFERENCE_NOT_IN_TENANT` and `params.reference: parcels`, as a 400 rather than a 404 so the refusal does not confirm the row exists somewhere.',
         }),
+        parcels: z
+            .array(
+                z.object({
+                    parcelId: z.string().min(1),
+                    treatedAreaHa: z.number().positive(),
+                }),
+            )
+            .optional()
+            .openapi({
+                description:
+                    'Per-parcel TREATED area in hectares, for parcels only partly covered (#2072). A REFINEMENT of `parcelIds`, not a replacement: `parcelIds` still says which parcels were treated, and any parcel absent from this list means the WHOLE parcel — which is what the register printed before this field existed. Every `parcelId` here must appear in `parcelIds`, and none may repeat, or the request is refused as a validation error naming the index. Bounded server-side at the parcel\u2019s own area with `TREATMENT_AREA_EXCEEDS_PARCEL`, because only the server holds the parcel row. A parcel whose own `areaHa` is unrecorded has nothing to bound against, so any positive value is accepted and printed for it.',
+            }),
         productItemId: z.string().min(1).optional(),
         productName: z.string().min(1).max(255).optional().openapi({
             description:
@@ -1041,6 +1053,38 @@ export const RecordDiaryTreatmentSchema = z
             description: 'Техника за приложение — one rig per treatment, as the field reality is.',
         }),
         title: z.string().min(1).max(255).optional(),
+    })
+    .superRefine((val, ctx) => {
+        // Structural only. The AREA bound lives in the usecase, because it
+        // needs the parcel row; these two checks need nothing but the request,
+        // so refusing here keeps them out of the coded-refusal vocabulary and
+        // names the offending INDEX rather than just the request.
+        if (!val.parcels) return;
+        const allowed = new Set(val.parcelIds);
+        const seen = new Set<string>();
+        val.parcels.forEach((p, i) => {
+            if (!allowed.has(p.parcelId)) {
+                // Silently dropping it would lose an area the user typed, and
+                // print the whole parcel instead — a bigger number than they
+                // recorded, on a document they submit.
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['parcels', i, 'parcelId'],
+                    message: 'Every parcels[].parcelId must also appear in parcelIds',
+                });
+            }
+            if (seen.has(p.parcelId)) {
+                // Two areas for one parcel has no defined meaning, and
+                // whichever won would be an arbitrary choice over a number
+                // that reaches the register.
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['parcels', i, 'parcelId'],
+                    message: 'A parcel may carry only one treated area',
+                });
+            }
+            seen.add(p.parcelId);
+        });
     })
     .openapi('RecordDiaryTreatment', {
         description:

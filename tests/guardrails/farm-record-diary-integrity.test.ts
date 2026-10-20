@@ -139,6 +139,7 @@ const SPRAY: SprayLineData = {
     productName: 'Карате Зеон',
     dose: '0.15 л/дка',
     areaHa: 3.5,
+    treatedAreaHa: null,   // the whole parcel
     applicationTechnique: 'Наземна пръскачка',
     quarantineDays: 30,
     operatorCertNo: 'APP-123',
@@ -152,6 +153,7 @@ const FERT: FertilizeLineData = {
     activeIngredient: 'N 34.4%',
     dose: '25 кг/дка',
     areaHa: 3.5,
+    treatedAreaHa: null,   // the whole parcel
 };
 
 const OBS: ObservationData = {

@@ -57,6 +57,7 @@ const SPRAY: SprayLineData[] = [
         productName: 'Карате Зеон',
         dose: '0.15 л/дка',
         areaHa: 3.5,
+        treatedAreaHa: null,   // the whole parcel
         applicationTechnique: 'Наземна пръскачка',
         quarantineDays: 30,
         operatorCertNo: 'APP-123',
@@ -70,6 +71,7 @@ const SPRAY: SprayLineData[] = [
         productName: 'Топас 100 ЕК',
         dose: '0.5 л/дка',
         areaHa: 2,
+        treatedAreaHa: null,   // the whole parcel
         applicationTechnique: null,
         quarantineDays: 14,
         operatorCertNo: null,
@@ -114,6 +116,7 @@ const FERT: FertilizeLineData[] = [
         activeIngredient: 'N 34.4%',
         dose: '25 кг/дка',
         areaHa: 3.5,
+        treatedAreaHa: null,   // the whole parcel
     },
 ];
 
@@ -172,6 +175,27 @@ describe('farm-record-diary — pure row builders', () => {
         // Row 2: area 2 ha → 20 дка; blank certs.
         expect(rows[1][5]).toBe('20');
         expect(rows[1][9]).toBe('');
+    });
+
+    it('«Третирани площи» prints the TREATED area, falling back to the parcel (#2072)', () => {
+        const line = SPRAY[0];
+        // Column 6 of the 12-column ХИМИЧНИ ОБРАБОТКИ table, in декари.
+        const AREA_COL = 5;
+
+        // areaHa 3.5 ha = 35 дка, and the fixture treats the whole parcel.
+        const [whole] = buildChemicalRows([{ ...line, treatedAreaHa: null }]);
+        expect(whole[AREA_COL]).toBe('35');
+
+        // Partly treated: 1.2 ha = 12 дка. The PARCEL is still 3.5 ha, so a
+        // row printing 35 here would overstate what was sprayed on a document
+        // the farmer submits to БАБХ.
+        const [part] = buildChemicalRows([{ ...line, treatedAreaHa: 1.2 }]);
+        expect(part[AREA_COL]).toBe('12');
+
+        // The whole parcel stated explicitly must read the same as null —
+        // otherwise the fallback and the explicit value disagree.
+        const [exact] = buildChemicalRows([{ ...line, treatedAreaHa: 3.5 }]);
+        expect(exact[AREA_COL]).toBe(whole[AREA_COL]);
     });
 
     it('the Техника column renders a slug in Bulgarian and passes anything else through', () => {

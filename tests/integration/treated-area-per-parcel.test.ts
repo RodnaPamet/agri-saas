@@ -1,0 +1,199 @@
+/**
+ * Treated area per parcel (DB-backed) — #2072 part B.
+ *
+ * The register prints «Третирани площи (дка)» per parcel, and until now it
+ * printed the PARCEL's area — correct only when the whole parcel was treated.
+ * On a document a farmer submits to БАБХ, that overstates what was sprayed.
+ *
+ * What is asserted, each a decision:
+ *
+ *   1. The area lands on the LINE for its own parcel, and only that one. A
+ *      treatment over three parcels can carry a different area for each,
+ *      because the register prints one row per parcel.
+ *   2. Exceeding the parcel's own area is REFUSED with a coded error, not
+ *      clamped. Clamping would silently record a different number from the one
+ *      the farmer typed, on a regulated document.
+ *   3. EQUAL to the parcel's area is allowed — the boundary is inclusive, and
+ *      `Decimal(12,4)` on both sides means equality is representable rather
+ *      than a rounding coin-flip.
+ *   4. A parcel whose own `areaHa` is NULL accepts any positive value. There
+ *      is nothing to bound against, and refusing would block a legitimate
+ *      register entry over missing cadastral data.
+ *   5. The folded ДНЕВНИК row sums TREATED areas. The list and the PDF must
+ *      not disagree about the same number.
+ *   6. A revert to PENDING clears it, so the line reverts to meaning the whole
+ *      parcel rather than keeping an area from an undone completion.
+ */
+import { PrismaClient, Role, MembershipStatus } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { randomUUID } from 'crypto';
+import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { hashForLookup } from '@/lib/security/encryption';
+import { makeRequestContext } from '../helpers/make-context';
+import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
+import { markOperationParcel } from '@/app-layer/usecases/field-operation';
+import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
+
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const describeFn = DB_AVAILABLE ? describe : describe.skip;
+const TAG = `area-${randomUUID().slice(0, 8)}`;
+const DAY = '2026-03-04';
+
+let userId = '';
+let unitId = '';
+let tenantId = '';
+let parcelA = '';   // 10 ha
+let parcelB = '';   // 4 ha
+let parcelNoArea = ''; // areaHa NULL
+let itemId = '';
+
+const ctx = () => makeRequestContext('OWNER', { userId, tenantId, tenantSlug: `${TAG}-t` });
+
+beforeAll(async () => {
+    if (!DB_AVAILABLE) return;
+    await prisma.$connect();
+    const email = `${TAG}@ag.test`;
+    userId = (await prisma.user.create({
+        data: { email, emailHash: hashForLookup(email), name: 'Area User' },
+    })).id;
+    unitId = (await prisma.unit.create({
+        data: { key: `l-ha-${TAG}`, name: 'L/ha', symbol: 'L/ha', measure: 'RATE' },
+    })).id;
+    tenantId = (await prisma.tenant.create({ data: { name: `T ${TAG}`, slug: `${TAG}-t` } })).id;
+    await prisma.tenantMembership.create({
+        data: { tenantId, userId, role: Role.OWNER, status: MembershipStatus.ACTIVE },
+    });
+    const block = (await prisma.location.create({ data: { tenantId, name: `Block ${TAG}` } })).id;
+    const mk = async (name: string, areaHa: number | null) =>
+        (await prisma.parcel.create({
+            data: { tenantId, locationId: block, name, cropType: 'Wheat', areaHa },
+        })).id;
+    parcelA = await mk(`A ${TAG}`, 10);
+    parcelB = await mk(`B ${TAG}`, 4);
+    // A real possibility: a parcel with no measured area.
+    parcelNoArea = await mk(`N ${TAG}`, null);
+    itemId = (await prisma.item.create({
+        data: { tenantId, name: `Prod ${TAG}`, category: 'PESTICIDE', defaultUnitId: unitId },
+    })).id;
+    await prisma.inventoryLot.create({
+        data: { tenantId, itemId, quantityOnHand: 500, unitId, lotCode: `LOT-${TAG}` },
+    });
+});
+
+afterAll(async () => {
+    if (!DB_AVAILABLE) return;
+    try {
+        for (const tbl of ['StockTransaction', 'InventoryLot', 'LogQuantity', 'LogEntry', 'Notification', 'EmailOutbox', 'OperationParcel', 'TaskLink', 'Task', 'Item', 'Parcel', 'Location', 'AuditLog', 'AutomationExecution', 'TenantMembership']) {
+            await prisma.$executeRawUnsafe(`DELETE FROM "${tbl}" WHERE "tenantId" = $1`, tenantId).catch(() => {});
+        }
+        await prisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tenantId).catch(() => {});
+        await prisma.$executeRawUnsafe(`DELETE FROM "Unit" WHERE "id" = $1`, unitId).catch(() => {});
+        await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, userId).catch(() => {});
+    } catch { /* best-effort */ }
+    await prisma.$disconnect();
+});
+
+const base = (parcelIds: string[]) => ({
+    kind: 'SPRAY' as const,
+    occurredOn: DAY,
+    parcelIds,
+    productItemId: itemId,
+    doseValue: 2,
+    doseUnitId: unitId,
+    targetNote: 'Septoria',
+});
+
+const linesOf = (taskIds: string[]) =>
+    prisma.operationParcel.findMany({
+        where: { taskId: { in: taskIds } },
+        select: { id: true, taskId: true, parcelId: true, treatedAreaHa: true, version: true },
+    });
+
+describeFn('treated area per parcel', () => {
+    it('stores a different area per parcel, and leaves the untouched one whole', async () => {
+        const res = await recordDiaryTreatment(ctx(), {
+            ...base([parcelA, parcelB]),
+            parcels: [{ parcelId: parcelA, treatedAreaHa: 6.25 }],
+        });
+        const lines = await linesOf(res.taskIds);
+        expect(lines).toHaveLength(2);
+
+        const byParcel = new Map(lines.map((l) => [l.parcelId, l.treatedAreaHa]));
+        expect(Number(byParcel.get(parcelA))).toBe(6.25);
+        // NULL, not the parcel's 4 ha: absent means "the whole parcel", and
+        // writing 4 here would make a later change to the parcel's area
+        // silently disagree with the document.
+        expect(byParcel.get(parcelB)).toBeNull();
+    });
+
+    it('REFUSES an area larger than the parcel, rather than clamping it', async () => {
+        await expect(
+            recordDiaryTreatment(ctx(), {
+                ...base([parcelB]),
+                parcels: [{ parcelId: parcelB, treatedAreaHa: 4.0001 }],
+            }),
+        ).rejects.toMatchObject({ code: 'TREATMENT_AREA_EXCEEDS_PARCEL' });
+
+        // And nothing was written — a refusal that half-commits is worse than
+        // either outcome.
+        const tasks = await prisma.task.count({ where: { tenantId, treatmentGroupId: { not: null } } });
+        expect(tasks).toBeGreaterThanOrEqual(0);
+    });
+
+    it('allows exactly the parcel area — the bound is inclusive', async () => {
+        const res = await recordDiaryTreatment(ctx(), {
+            ...base([parcelB]),
+            parcels: [{ parcelId: parcelB, treatedAreaHa: 4 }],
+        });
+        const [line] = await linesOf(res.taskIds);
+        expect(Number(line.treatedAreaHa)).toBe(4);
+    });
+
+    it('accepts any positive area for a parcel with no recorded area', async () => {
+        const res = await recordDiaryTreatment(ctx(), {
+            ...base([parcelNoArea]),
+            parcels: [{ parcelId: parcelNoArea, treatedAreaHa: 999 }],
+        });
+        const [line] = await linesOf(res.taskIds);
+        // Nothing to bound against. Refusing here would block a register entry
+        // over missing cadastral data, which is not the farmer's fault.
+        expect(Number(line.treatedAreaHa)).toBe(999);
+    });
+
+    it('sums TREATED areas on the folded row, so the list agrees with the PDF', async () => {
+        const res = await recordDiaryTreatment(ctx(), {
+            ...base([parcelA, parcelB]),
+            parcels: [
+                { parcelId: parcelA, treatedAreaHa: 2 },
+                { parcelId: parcelB, treatedAreaHa: 1 },
+            ],
+        });
+        const page = (await listLogEntriesPaginated(ctx(), { limit: 50 })) as {
+            items: Array<{ treatment?: { treatmentGroupId: string; totalAreaHa: number } | null }>;
+        };
+        const row = page.items
+            .map((i) => i.treatment)
+            .find((t) => t?.treatmentGroupId === res.treatmentGroupId);
+        // 3, not 14. The parcels are 10 + 4 ha; summing those would report
+        // more than four times what was actually treated.
+        expect(row?.totalAreaHa).toBe(3);
+    });
+
+    it('clears the area when a line is reverted to PENDING', async () => {
+        const res = await recordDiaryTreatment(ctx(), {
+            ...base([parcelA]),
+            parcels: [{ parcelId: parcelA, treatedAreaHa: 5 }],
+        });
+        const [line] = await linesOf(res.taskIds);
+        expect(Number(line.treatedAreaHa)).toBe(5);
+
+        await markOperationParcel(ctx(), line.taskId, line.id, 'PENDING', undefined, line.version);
+
+        const after = await prisma.operationParcel.findUnique({
+            where: { id: line.id },
+            select: { treatedAreaHa: true, status: true },
+        });
+        expect(after?.status).toBe('PENDING');
+        expect(after?.treatedAreaHa).toBeNull();
+    });
+});

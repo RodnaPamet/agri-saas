@@ -13963,6 +13963,27 @@ exports[`API contract — per-schema snapshots schema: RecordDiaryTreatment 1`] 
       "minItems": 1,
       "description": "The parcels treated, as one flat list that may span blocks. The server groups them and writes one field operation per block — the ДНЕВНИК resolves a treatment’s block through the task’s location link, so a single task spanning blocks would print a parcel under a block it was never on. Empty is refused with \`TREATMENT_NO_PARCELS\`; a parcel of another farm with \`REFERENCE_NOT_IN_TENANT\` and \`params.reference: parcels\`, as a 400 rather than a 404 so the refusal does not confirm the row exists somewhere."
     },
+    "parcels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "parcelId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "treatedAreaHa": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "parcelId",
+          "treatedAreaHa"
+        ]
+      },
+      "description": "Per-parcel TREATED area in hectares, for parcels only partly covered (#2072). A REFINEMENT of \`parcelIds\`, not a replacement: \`parcelIds\` still says which parcels were treated, and any parcel absent from this list means the WHOLE parcel — which is what the register printed before this field existed. Every \`parcelId\` here must appear in \`parcelIds\`, and none may repeat, or the request is refused as a validation error naming the index. Bounded server-side at the parcel’s own area with \`TREATMENT_AREA_EXCEEDS_PARCEL\`, because only the server holds the parcel row. A parcel whose own \`areaHa\` is unrecorded has nothing to bound against, so any positive value is accepted and printed for it."
+    },
     "productItemId": {
       "type": "string",
       "minLength": 1

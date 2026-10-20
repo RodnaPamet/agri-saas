@@ -97,6 +97,8 @@ export interface RecordDiaryTreatmentInput {
     targetNote?: string;
     /** Фенофаза/BBCH as observed on the day, stored per line (#2072). */
     phenophase?: string;
+    /** Per-parcel treated area in hectares; absent means the whole parcel (#2072). */
+    parcels?: Array<{ parcelId: string; treatedAreaHa: number }>;
     doseValue: number;
     doseUnitId: string;
     /** Техника за приложение. */
@@ -472,7 +474,7 @@ export async function recordDiaryTreatment(
     const parcels = await runInTenantContext(ctx, (db) =>
         db.parcel.findMany({
             where: { id: { in: input.parcelIds }, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, locationId: true },
+            select: { id: true, locationId: true, areaHa: true },
         }),
     );
     if (parcels.length !== input.parcelIds.length) {
@@ -485,6 +487,33 @@ export async function recordDiaryTreatment(
             'One or more chosen parcels were not found or belong to a different tenant',
             { reference: 'parcels' },
         );
+    }
+
+    // ── Treated area, bounded by the parcel itself (#2072 part B) ──────
+    //
+    // Here rather than in the request schema because only this point holds the
+    // parcel row. The structural half — every `parcels[].parcelId` appearing in
+    // `parcelIds`, and no parcel twice — is already refused by the schema.
+    //
+    // A parcel whose own `areaHa` is NULL has nothing to bound against. Such a
+    // line accepts any positive value rather than being refused for a fact
+    // nobody recorded: `Parcel.areaHa` is nullable and a farm can hold parcels
+    // with no measured area, and refusing there would block a legitimate
+    // register entry over missing cadastral data.
+    const treatedByParcel = new Map<string, number>();
+    if (input.parcels?.length) {
+        const areaOf = new Map(parcels.map((p) => [p.id, p.areaHa]));
+        for (const entry of input.parcels) {
+            const area = areaOf.get(entry.parcelId);
+            if (area != null && entry.treatedAreaHa > Number(area)) {
+                throw codedBadRequest(
+                    'TREATMENT_AREA_EXCEEDS_PARCEL',
+                    'The treated area cannot exceed the parcel\u2019s own area',
+                    { reference: 'parcels' },
+                );
+            }
+            treatedByParcel.set(entry.parcelId, entry.treatedAreaHa);
+        }
     }
 
     const byBlock = new Map<string, string[]>();
@@ -632,7 +661,9 @@ export async function recordDiaryTreatment(
             // and worth knowing which layer is load-bearing before someone
             // removes the wrong one.
             where: { taskId: { in: taskIds }, tenantId: ctx.tenantId, status: 'PENDING' },
-            select: { id: true, taskId: true, version: true },
+            // `parcelId` so the per-parcel treated area can be matched to
+            // the line it belongs to (#2072 part B).
+            select: { id: true, taskId: true, version: true, parcelId: true },
         }),
     );
     for (const line of lines) {
@@ -654,6 +685,12 @@ export async function recordDiaryTreatment(
                 // for the same reason (#2072): it is an observation made on a
                 // day, and nothing can re-derive it later.
                 phenophase: input.phenophase ?? null,
+                // Per LINE and per PARCEL, so a treatment covering three
+                // parcels can record a different area for each — which is the
+                // whole point, since the register prints one row per parcel.
+                // `undefined` (not null) when the caller gave none, so the
+                // mark leaves the column alone rather than clearing it.
+                treatedAreaHa: treatedByParcel.get(line.parcelId),
                 // Denormalised onto each journal entry so the ДНЕВНИК list
                 // folds the treatment's N entries into one row without
                 // joining through OperationParcel -> Task (#1740).

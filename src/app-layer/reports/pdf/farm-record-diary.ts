@@ -249,6 +249,17 @@ export interface SprayLineData {
     productName: string;
     dose: string;
     areaHa: number | null;
+    /**
+     * Третирани/Наторени площи — how much of the parcel this line covered
+     * (#2072 part B). NULL means THE WHOLE PARCEL, so a row prints
+     * `treatedAreaHa ?? areaHa` and every line written before the column
+     * existed renders exactly as it did before.
+     *
+     * Kept separate from `areaHa` rather than overwriting it: `areaHa` is
+     * the PARCEL's area, which the per-field header strips print, and a
+     * treated area would be wrong there.
+     */
+    treatedAreaHa: number | null;
     applicationTechnique: string | null;
     quarantineDays: number | null;
     operatorCertNo: string | null;
@@ -262,6 +273,17 @@ export interface FertilizeLineData {
     activeIngredient: string | null;
     dose: string;
     areaHa: number | null;
+    /**
+     * Третирани/Наторени площи — how much of the parcel this line covered
+     * (#2072 part B). NULL means THE WHOLE PARCEL, so a row prints
+     * `treatedAreaHa ?? areaHa` and every line written before the column
+     * existed renders exactly as it did before.
+     *
+     * Kept separate from `areaHa` rather than overwriting it: `areaHa` is
+     * the PARCEL's area, which the per-field header strips print, and a
+     * treated area would be wrong there.
+     */
+    treatedAreaHa: number | null;
 }
 
 export interface ObservationData {
@@ -365,6 +387,12 @@ export function htmlNotesToPlainText(html: string | null | undefined): string | 
 }
 
 /** One 12-column row per completed spray line (химични обработки). */
+/**
+ * «Третирани площи (дка)» prints the LINE's treated area, falling back to the
+ * parcel's (#2072 part B). The fallback is not a default for missing data — it
+ * is the correct value for a line that covered the whole parcel, which is what
+ * every line meant before the column existed.
+ */
 export function buildChemicalRows(lines: SprayLineData[]): string[][] {
     return lines.map((l, i) => {
         const earliestHarvest =
@@ -380,7 +408,7 @@ export function buildChemicalRows(lines: SprayLineData[]): string[][] {
             l.targetNote ?? '',
             l.productName,
             l.dose,
-            toDka(l.areaHa),
+            toDka(l.treatedAreaHa ?? l.areaHa),
             techniqueLabelBg(l.applicationTechnique),
             l.quarantineDays != null ? String(l.quarantineDays) : '',
             earliestHarvest,
@@ -398,7 +426,7 @@ export function buildFertilizerRows(lines: FertilizeLineData[]): string[][] {
         fmtDate(l.completedAt),
         [l.productName, l.activeIngredient].filter(Boolean).join('; '),
         l.dose,
-        toDka(l.areaHa),
+        toDka(l.treatedAreaHa ?? l.areaHa),
     ]);
 }
 
@@ -1097,6 +1125,7 @@ export async function gatherFarmRecord(
             const fb = l.task.assigneeUserId ? memberByUser.get(l.task.assigneeUserId) : undefined;
             const dose = `${Number(l.doseValue)} ${l.doseUnit?.symbol ?? ''}`.trim();
             const areaHa = l.parcel?.areaHa != null ? Number(l.parcel.areaHa) : null;
+            const treatedAreaHa = l.treatedAreaHa != null ? Number(l.treatedAreaHa) : null;
 
             if (opType === 'FERTILIZE') {
                 fertilizeLines.push({
@@ -1105,6 +1134,7 @@ export async function gatherFarmRecord(
                     activeIngredient: l.product?.activeIngredient ?? null,
                     dose,
                     areaHa,
+                    treatedAreaHa,
                 });
             } else {
                 sprayLines.push({
@@ -1114,6 +1144,7 @@ export async function gatherFarmRecord(
                     productName: l.product?.name ?? '',
                     dose,
                     areaHa,
+                    treatedAreaHa,
                     applicationTechnique:
                         cond?.applicationTechnique ?? l.task.applicationTechnique ?? null,
                     // The line's OWN period first (#1775) — what applied on
