@@ -19,8 +19,6 @@
     },
     "Tasks/FieldOperationStore": {
         "ag.map.fieldOp.done": "Готово",
-        "ag.map.fieldOp.markForbidden": "Можете да отбелязвате само задания, възложени на вас. Потърсете отговорника за това задание.",
-        "ag.map.fieldOp.notFound": "Земеделската операция не е намерена.",
         "ag.map.fieldOp.parcelsComplete": "{done} / {total} парцела завършени",
         "ag.map.fieldOp.reopen": "Отвори отново",
         "ag.map.fieldOp.skip": "Пропусни",
@@ -31,6 +29,8 @@
         "tasks.detail.fieldOperation": "Земеделска операция"
     },
     "Core/UserMessage": {
+        "ag.map.fieldOp.markForbidden": "Можете да отбелязвате само задания, възложени на вас. Потърсете отговорника за това задание.",
+        "ag.map.fieldOp.notFound": "Земеделската операция не е намерена.",
         "grain.calculator.costPerDcaNoArea": "Няма парцел, записан с тази култура, затова разходът на декар не се изчислява. Укажете културата върху парцелите, където е засета.",
         "grain.calculator.perAreaNoArea": "Няма площ с прогноза за добив, затова стойността и маржът на декар не се изчисляват.",
         "grain.calculator.refusal.COST_PRICE_CURRENCY_MISMATCH": "Разходите са в {costCurrency}, а пазарната цена е в {priceCurrency}; не се извършва конвертиране на валута.",
@@ -96,7 +96,7 @@
         "trends.commodities.urea": "Уреа (карбамид)",
         "trends.commodities.wheat": "Пшеница"
     },
-    "admin/AdminModels": {
+    "API/AdminModels": {
         "authEnums.membershipStatus.ACTIVE": "Активен",
         "authEnums.membershipStatus.DEACTIVATED": "Деактивиран",
         "authEnums.membershipStatus.INVITED": "Поканен",
