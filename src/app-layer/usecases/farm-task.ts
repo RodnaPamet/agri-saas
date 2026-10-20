@@ -96,7 +96,17 @@ export async function createFarmTask(
     await assertNotPastDueRestricted(ctx, 'task.create');
 
     const typeDef = getFarmTaskType(input.farmTaskType);
-    if (!typeDef) throw codedBadRequest('INVALID_FARM_TASK_TYPE', `Unknown farm task type: ${input.farmTaskType}`);
+    if (!typeDef) {
+        // #1918 — `{ type }` added so the catalogue entry can NAME the type.
+        // Interpolating it into the English only would force a Bulgarian entry
+        // to drop it, trading the useful half of the sentence for the readable
+        // half.
+        throw codedBadRequest(
+            'INVALID_FARM_TASK_TYPE',
+            `Unknown farm task type: ${input.farmTaskType}`,
+            { type: String(input.farmTaskType) },
+        );
+    }
 
     const locationIds = input.locationIds ?? [];
     const parcelIds = input.parcelIds ?? [];

@@ -55,7 +55,16 @@ export const POST = withApiErrorHandling(
         if (!result.applied) {
             // Already pseudonymised, or gone. There is nothing left to request
             // and saying so is better than pretending it worked.
-            throw codedNotFound('ACCOUNT_ALREADY_ERASED', 'ACCOUNT_ALREADY_ERASED');
+            // #1918 — the second argument was the CODE, repeated. The comment
+            // above says telling the caller is deliberate ("saying so is better
+            // than pretending it worked"), and that intent was never delivered:
+            // what a farmer got was the token `ACCOUNT_ALREADY_ERASED`.
+            // Specific on purpose — `getUserCtx` means the caller is asking
+            // about their OWN account, so there is no existence to hide.
+            throw codedNotFound(
+                'ACCOUNT_ALREADY_ERASED',
+                'This account has already been erased, so there is nothing left to delete.',
+            );
         }
 
         return jsonResponse({
@@ -107,7 +116,16 @@ export const DELETE = withApiErrorHandling(
 
         if (!result.applied) {
             // Past the point of no return.
-            throw codedNotFound('ACCOUNT_ALREADY_ERASED', 'ACCOUNT_ALREADY_ERASED');
+            // #1918 — the second argument was the CODE, repeated. The comment
+            // above says telling the caller is deliberate ("saying so is better
+            // than pretending it worked"), and that intent was never delivered:
+            // what a farmer got was the token `ACCOUNT_ALREADY_ERASED`.
+            // Specific on purpose — `getUserCtx` means the caller is asking
+            // about their OWN account, so there is no existence to hide.
+            throw codedNotFound(
+                'ACCOUNT_ALREADY_ERASED',
+                'This account has already been erased, so there is nothing left to delete.',
+            );
         }
 
         return jsonResponse({ requested: false, wasRequested: result.wasRequested });

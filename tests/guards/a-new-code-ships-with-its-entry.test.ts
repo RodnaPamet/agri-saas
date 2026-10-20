@@ -69,6 +69,19 @@ const DELIBERATELY_UNENTRIED: ReadonlyArray<[code: string, why: string]> = [
             'catalogue batch. Moved here from BACKLOG in batch 11 — it was never "not yet".',
     ],
     [
+        'BLOCK_SELLER_ONLY',
+        'P5.7 vocabulary in another session\'s lane, so not mine to word. Asserted as absent in ' +
+            '`refusal-codes-read-in-bulgarian`, which is the case that caught batch 13 adding it.',
+    ],
+    [
+        'THREAD_BLOCKED',
+        'Same lane as BLOCK_SELLER_ONLY, AND its sentence already exists in this catalogue as ' +
+            '`exchange.messaging.blockedForYou` («Този продавач не приема съобщения от Вас.»). An ' +
+            'entry here would be a SECOND Bulgarian wording for one refusal — the #1966 defect. ' +
+            'Batch 13 wrote one that differed only in «вас» vs «Вас», which is the subtlest possible ' +
+            'version of that mistake.',
+    ],
+    [
         'INVALID_LIMIT',
         'Three sites, three sentences, and what distinguishes them is in the English template rather ' +
             'than on the wire: a caller-supplied `opts.label` plus the received value. Fixable by passing ' +
@@ -77,22 +90,24 @@ const DELIBERATELY_UNENTRIED: ReadonlyArray<[code: string, why: string]> = [
     ],
 ];
 
-/** Codes with no entry yet. SHRINK ONLY — delete a name when you add its entry. */
+/**
+ * Codes with no entry yet.
+ *
+ * **EMPTY as of batch 13, and it stays empty.** Every code thrown in `src/`
+ * now has a Bulgarian entry except the three in `DELIBERATELY_UNENTRIED`,
+ * each of which carries the reason an entry would make things worse.
+ *
+ * This held 124 names when #1918 opened and is now an assertion rather than a
+ * list. The difference matters: while it had names, a new code shipped without
+ * an entry could be "fixed" by adding a line here, and that is no longer
+ * available. A new code either ships with its entry, or earns a documented
+ * place in `DELIBERATELY_UNENTRIED` — which takes a reason, not a name, and
+ * has its own minimum-length assertion.
+ *
+ * Emptiness is checked separately below, because the `no NEW code lacks an
+ * entry` test is satisfied by a code AND its backlog line arriving together.
+ */
 const BACKLOG: ReadonlyArray<string> = [
-    'ACCOUNT_ALREADY_ERASED',
-    'ACCOUNT_HAS_NO_EMAIL',
-    'BLOCK_SELLER_ONLY',
-    'IMPORT_JOB_NOT_FOUND',
-    'INSURANCE_PRODUCT_UNKNOWN',
-    'INSURANCE_QUOTE_INVALID',
-    'INVALID_ASSET',
-    'INVALID_FARM_PAYLOAD',
-    'INVALID_FARM_TASK_TYPE',
-    'INVALID_TAB_ORDER',
-    'INVALID_TASK',
-    'LEASE_PAYMENT_NOT_FOUND',
-    'PAST_DUE_RESTRICTED',
-    'THREAD_BLOCKED',
 ];
 
 /**
@@ -420,6 +435,15 @@ describe('a new refusal code ships with its Bulgarian entry (#1677)', () => {
             .filter((c) => !excused.has(c))
             .map((c) => `  ${c} — thrown at ${[...thrown.get(c)!].join(', ')}, no errors.${c} in ${BG_CATALOGUE}`);
         expect(fresh.join('\n')).toBe('');
+    });
+
+    it('the BACKLOG is EMPTY — #1918 finished and cannot be reopened by a line', () => {
+        // Deliberately separate from `no NEW code lacks an entry`, which
+        // passes when a new code and its backlog entry land in the same diff.
+        // This refuses that: the list is not a place to defer work any more.
+        // If a code genuinely should not be entried, it belongs in
+        // DELIBERATELY_UNENTRIED with a reason.
+        expect(BACKLOG).toEqual([]);
     });
 
     it('both lists are exact — no name outlives what it excuses', () => {
