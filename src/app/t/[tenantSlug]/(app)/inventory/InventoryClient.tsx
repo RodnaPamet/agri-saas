@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -239,11 +239,34 @@ export function InventoryClient({ tenantSlug }: { tenantSlug: string }) {
     // Deep-link entry (QR codes on lots): `?lotId` opens that lot's detail
     // modal. Read once on mount.
     const searchParams = useSearchParams();
+    const handledLotParam = useRef<string | null>(null);
     useEffect(() => {
+        // #2036 — depends on `searchParams` rather than on mount, so a SECOND
+        // scanned QR code opens its lot. The old `[]` meant only the first
+        // one worked: a client-side navigation to another `?lotId` left the
+        // component mounted and the effect never ran again, which is exactly
+        // the sequence a warehouse user produces.
+        //
+        // NOT the same fix as the Assets deep link, though the two look
+        // identical. That one strips the param, so wider deps are idempotent
+        // on their own. This one keeps `?lotId` in the URL deliberately — a
+        // refresh should reopen the scanned lot — so wider deps alone would
+        // reopen the modal on ANY unrelated param change, including after the
+        // user closed it. The marker makes the open happen once per DISTINCT
+        // lot instead of once per `searchParams` identity.
+        //
+        // No `set-state-in-effect` directive needed, and that surprised me: I
+        // added one and the new `inert eslint-disable` gate caught it as
+        // suppressing nothing. Guarding the write behind the marker takes it
+        // out of the rule's reach — the rule is about an unconditional
+        // setState in an effect body, and this one is now conditional on state
+        // the effect itself owns.
         const lotId = searchParams.get('lotId');
-        if (lotId) setActiveLotId(lotId);
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- deep-link read on mount only
-    }, []);
+        if (lotId && handledLotParam.current !== lotId) {
+            handledLotParam.current = lotId;
+            setActiveLotId(lotId);
+        }
+    }, [searchParams]);
     const { data: lotDetail, mutate: mutateLot } = useTenantSWR<LotDetail>(
         activeLotId ? `/inventory/lots/${activeLotId}` : null,
     );
