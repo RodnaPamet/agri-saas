@@ -506,24 +506,49 @@ describe('a Bulgarian reader gets Bulgarian (#1918 batch 3)', () => {
         expect(p.error.message).not.toMatch(/\{\w+\}/);
     });
 
-    it('INVALID_LIMIT has NO entry, deliberately', async () => {
-        // Three sites, three DIFFERENT sentences, and both of the things that
-        // distinguish them live in the English template rather than on the
-        // wire: a caller-supplied `opts.label` (so the same code says "Invalid
-        // limit" or "Invalid radius" depending on who called it) and the
-        // received value. One entry would flatten all three and lose the
-        // label, in every locale — rule 3.
-        //
-        // It is not unfixable, and the fix is a separate change: pass
-        // `{ reason: 'empty' | 'not_an_integer' }` and the label as params,
-        // then write a variant TABLE, which `DISCRIMINATORS` already supports
-        // because `reason` is one. Recorded on #1918 rather than half-done
-        // here, because the validator is shared by every list endpoint.
+    it('INVALID_LIMIT reads in Bulgarian, by reason, with the parameter NAME quoted', async () => {
+        // This used to assert the opposite — that the code was deliberately
+        // unentried, because what distinguished its three sentences lived in
+        // the English template rather than on the wire. #2059 moved it onto
+        // the wire: `{ reason, label }`, and `reason` was already a
+        // DISCRIMINATOR, so a variant table was all that was missing.
         getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
-        const original = 'Invalid radius: must be a positive integer; received "x".';
-        const p = payload('INVALID_LIMIT', original);
-        await localizeErrorPayload(p);
-        expect(p.error.message).toBe(original);
+        const withReason = (reason: string, label: string): ApiErrorResponse => ({
+            error: {
+                code: 'INVALID_LIMIT',
+                message: `Invalid ${label}: must be a positive integer; received "x".`,
+                params: { reason, label },
+            },
+        });
+
+        const empty = withReason('empty', 'limit');
+        await localizeErrorPayload(empty);
+        expect(empty.error.message).toContain('Липсва стойност');
+
+        const bad = withReason('not_an_integer', 'radius');
+        await localizeErrorPayload(bad);
+        expect(bad.error.message).toContain('цяло положително число');
+        // `radius` is a WIRE PARAMETER NAME, quoted as an identifier rather
+        // than inlined as prose — which is what lets one Bulgarian sentence
+        // serve every caller without «Невалиден radius» reading as broken
+        // Bulgarian.
+        expect(bad.error.message).toContain('„radius“');
+
+        // An unknown reason falls through to the table's own `default` rather
+        // than leaving English prose in front of a Bulgarian reader — the
+        // property that makes adding a reason later a safe change.
+        const unknown = withReason('something_added_later', 'limit');
+        await localizeErrorPayload(unknown);
+        expect(unknown.error.message).toBe('Невалидна стойност за параметъра „limit“.');
+
+        for (const p of [empty, bad, unknown]) {
+            expect(p.error.message).not.toMatch(/\{\w+\}/);
+            // The RECEIVED VALUE is deliberately absent: `params` must never
+            // carry arbitrary client input, and `?limit=` is set by client
+            // code rather than typed by a person, so quoting it back in a
+            // translated sentence would help nobody.
+            expect(p.error.message).not.toContain('"x"');
+        }
     });
 
     it('THREAD_CLOSED gets no entry because the code is RETIRED', async () => {
