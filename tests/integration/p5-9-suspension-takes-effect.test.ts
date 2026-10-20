@@ -17,6 +17,20 @@
  * database is real because `suspendedAt`, the session rows and the cache
  * invalidation are.
  */
+/**
+ * #1677 — these cases assert the CODE, not the message.
+ *
+ * They used `rejects.toThrow('ACCOUNT_SUSPENDED')`, which matches against the
+ * message, and passed only because the message WAS the token. When #1677 gave
+ * it an English sentence all six went red at once — looking like a suspension
+ * regression and actually being six tests pinned to prose.
+ *
+ * What they mean is "this is the suspension refusal", and the code is the
+ * stable subject for that: a client can translate a code, while the message is
+ * the English fallback and is replaced per-locale by `localizeErrorPayload`
+ * before any reader sees it. Asserting the code tests the contract; asserting
+ * the message tested the wording.
+ */
 const auth = jest.fn();
 jest.mock('@/auth', () => ({
     auth: () => auth(),
@@ -99,7 +113,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         await suspendAccount({ userId, generation: 'current', reason: 'measured' });
 
         // After. No refresh, no re-login, no waiting — the very next call.
-        await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
+        await expect(getSessionOrThrow()).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
     });
 
     it('refuses with a DISTINCT code, not unauthorized', async () => {
@@ -110,7 +124,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         // A suspended person must be told their account was suspended, not
         // that they are signed out — a 401 would send them to a login page
         // that signs them back in and refuses again, naming nothing.
-        await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
+        await expect(getSessionOrThrow()).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
         await expect(getSessionOrThrow()).rejects.not.toThrow('Unauthorized');
     });
 
@@ -163,7 +177,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         const userId = await makeUser();
         signedInAs(userId);
         await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
-        await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
+        await expect(getSessionOrThrow()).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
 
         await liftSuspension({ userId, generation: 'current' });
 
@@ -216,8 +230,8 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
 
         await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
 
-        await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
-        await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
+        await expect(getSessionOrThrow()).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
+        await expect(getSessionOrThrow()).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
     });
 
     it('a stale cached SUSPENDED verdict is dropped by an explicit invalidation', async () => {
@@ -226,7 +240,7 @@ describeFn('P5.9 — a suspension takes effect on the next request (#1600)', () 
         const userId = await makeUser();
         signedInAs(userId);
         await suspendAccount({ userId, generation: 'current', reason: 'repeat abuse' });
-        await expect(getSessionOrThrow()).rejects.toThrow('ACCOUNT_SUSPENDED');
+        await expect(getSessionOrThrow()).rejects.toMatchObject({ code: 'ACCOUNT_SUSPENDED' });
 
         await globalPrisma.$executeRawUnsafe(
             `UPDATE "User" SET "suspendedAt" = NULL WHERE "id" = $1`, userId);

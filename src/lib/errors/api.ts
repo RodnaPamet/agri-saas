@@ -402,7 +402,8 @@ export function withApiErrorHandling<Context = unknown>(
                                 // prefix rule above keeps reachable.
                                 throw codedForbidden(
                                     'ACCOUNT_DELETION_PENDING',
-                                    'ACCOUNT_DELETION_PENDING',
+                                    // #1677 — the fallback was the code itself.
+                                    'Your account is scheduled for deletion, so new records cannot be created.',
                                 );
                             }
                         }
