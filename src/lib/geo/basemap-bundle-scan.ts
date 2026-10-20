@@ -104,7 +104,11 @@ const INLINED_EMPTY = /NEXT_PUBLIC_MAPTILER_KEY:""/;
 /**
  * The key NOT inlined: the object falls through to a `…env.NEXT_PUBLIC_MAPTILER_KEY`
  * property read. Measured alongside the other shapes in the same live object
- * (`NEXT_PUBLIC_VAPID_PUBLIC_KEY:nf.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY`).
+ * (measured 2026-10-16 as
+ * `NEXT_PUBLIC_VAPID_PUBLIC_KEY:nf.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY` — that
+ * variable is gone as of P7.4/#1993, which this measurement is part of the
+ * reason for: the shape recorded here WAS the defect, noticed in passing while
+ * solving the same problem for MapTiler).
  */
 const NOT_INLINED = /NEXT_PUBLIC_MAPTILER_KEY:[A-Za-z_$][\w$]*\.env\.NEXT_PUBLIC_MAPTILER_KEY/;
 

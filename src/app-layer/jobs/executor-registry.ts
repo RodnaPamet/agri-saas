@@ -335,6 +335,28 @@ executorRegistry.register('reindex-knowledge-article', async (payload) => {
     );
 });
 
+// ── push-send ────────────────────────────────────────────────────────
+//
+// One recipient, both transports. Runs on the dedicated push queue
+// (`PUSH_QUEUE_JOBS`) so a fan-out cannot consume the main worker's 50/min
+// budget — see `push-send.ts` for why that budget matters.
+
+executorRegistry.register('push-send', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runPushSend } = await import('../jobs/push-send');
+    const r = await runPushSend(payload);
+    // scanned = transports attempted, actioned = transports that accepted.
+    // `skipped` is the difference rather than a third count: a transport that
+    // is unconfigured returns without throwing, so it is attempted-and-not-
+    // delivered, which is exactly "skipped" here.
+    return makeResult(
+        'push-send', startedAt, startMs,
+        r.attempted, r.delivered, r.attempted - r.delivered,
+        { attempted: r.attempted, delivered: r.delivered },
+    );
+});
+
 // ── process-outbox ───────────────────────────────────────────────────
 //
 // Kept separate from `daily-evidence-expiry`, which also flushes: that job's

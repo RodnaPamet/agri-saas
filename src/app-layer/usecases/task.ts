@@ -8,9 +8,8 @@ import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { enqueueEmail } from '../notifications/enqueue';
 import { createTaskDueNotification } from '../notifications/task-due';
 import { createAssignmentNotification } from '../notifications/assignment';
-import { sendWebPushToUser } from '@/lib/notifications/web-push';
-import { sendApnsToUser } from '@/lib/notifications/apns';
 import { runInTenantContext } from '@/lib/db-context';
+import { enqueue } from '@/app-layer/jobs/queue';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { env } from '@/env';
 import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
@@ -704,41 +703,45 @@ async function emitTaskAssignedNotification(
                 tenantSlug,
             }),
         );
-        // Fan the fresh assignment out to Web Push (no-op when push isn't
-        // configured or the assignee hasn't subscribed). Awaited but
-        // best-effort — done OUTSIDE the notification tx so the network send
-        // never holds a transaction open. Skip duplicates (already pushed).
+        // ── push leaves on a QUEUE, not on this request — P7.4 (#1993) ──
+        //
+        // This awaited both transports until now: `sendWebPushToUser` then
+        // `sendApnsToUser`, each fanning out to every device the assignee
+        // holds. Both are HTTP calls to third parties, so the person doing the
+        // assigning paid for the latency of the person being assigned to, and
+        // an Apple outage presented as a slow "Assign" button.
+        //
+        // Nothing transactional changes: this whole function already runs
+        // after the task's transaction has committed and swallows its own
+        // failures. What changes is who waits.
+        //
+        // ONE job carrying BOTH transports rather than two jobs. A person may
+        // hold a phone and a browser and the assignment should reach whichever
+        // they are looking at, which is a property of the delivery rather than
+        // of either transport — and `runPushSend` only throws when BOTH fail,
+        // so a retry cannot re-send the one that already arrived.
+        //
+        // `collapseKey` is the Web Push `tag` AND the APNs `apns-collapse-id`,
+        // so a second assignment notification for one task replaces the first
+        // on either surface instead of stacking.
+        //
+        // `linkUrl` is passed unchanged: it is root-relative everywhere it is
+        // built (`/t/{slug}/farm-tasks/{id}` and friends), which is the rule
+        // agrent-ios asked for — the server owns the shape, so correcting it
+        // never needs a client release.
+        //
+        // Still a no-op when neither transport is configured: each
+        // `isXConfigured()` gate lives inside its own sender, so an
+        // unconfigured deployment enqueues a job that returns having attempted
+        // two transports and delivered two no-ops.
         if (outcome.status === 'created' && outcome.notification) {
-            await sendWebPushToUser(ctx, assigneeUserId, {
-                title: outcome.notification.title,
-                body: outcome.notification.message,
-                url: outcome.notification.linkUrl,
-                tag: `task-${task.id}`,
-            });
-            // ── and to the phone — #1764 step 3 ──
-            //
-            // Beside the web send rather than instead of it: a person may hold
-            // both, and an assignment should reach whichever they are looking
-            // at. Each transport reads only its own rows (`platform` filters
-            // in both), so neither sees the other's devices.
-            //
-            // `link` carries `linkUrl` unchanged, which is already
-            // root-relative everywhere it is built — `/t/{slug}/farm-tasks/{id}`
-            // and friends. That is the rule agrent-ios asked for and the same
-            // one `logoUrl` follows: the server owns the shape, so correcting
-            // it never needs a client release.
-            //
-            // `collapseId` mirrors the web `tag`, so a second assignment
-            // notification for one task replaces the first on the phone rather
-            // than stacking — the same coalescing the browser does.
-            //
-            // A no-op until a key is installed: `isApnsConfigured()` is false
-            // without all four values and the send returns before any query.
-            await sendApnsToUser(ctx, assigneeUserId, {
+            await enqueue('push-send', {
+                tenantId: task.tenantId,
+                recipientUserId: assigneeUserId,
                 title: outcome.notification.title,
                 body: outcome.notification.message,
                 link: outcome.notification.linkUrl,
-                collapseId: `task-${task.id}`,
+                collapseKey: `task-${task.id}`,
             });
         }
     } catch (err) {

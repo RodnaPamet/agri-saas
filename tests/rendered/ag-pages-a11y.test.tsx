@@ -457,7 +457,7 @@ describe.each<Viewport>(['mobile', 'desktop'])(
 
     it('OfflineFieldPanel has no accessibility violations', async () => {
         const { container } = renderWithProviders(
-            <OfflineFieldPanel taskId="op-1" />,
+            <OfflineFieldPanel taskId="op-1" vapidPublicKey={null} />,
         );
         expect(await axe(container)).toHaveNoViolations();
     });

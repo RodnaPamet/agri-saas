@@ -26,6 +26,7 @@ import { beat } from '../src/app-layer/jobs/worker-heartbeat';
 import {
     QUEUE_NAME,
     SOIL_QUEUE_NAME,
+    PUSH_QUEUE_NAME,
     type JobName,
 } from '../src/app-layer/jobs/types';
 import { assertProductionEncryptionReady } from '../src/lib/security/startup-gate';
@@ -197,6 +198,7 @@ async function processJob(job: Job) {
 
 let worker: Worker;
 let soilWorker: Worker;
+let pushWorker: Worker | undefined;
 
 /**
  * Construct both workers and attach their event handlers.
@@ -235,6 +237,30 @@ function startWorkers(): void {
         },
     );
 
+    // Dedicated push worker — P7.4 (#1993). Its own queue and limiter so a
+    // fan-out cannot consume the main worker's 50/min budget and starve every
+    // other job type, `process-outbox` (the email path) included.
+    //
+    // Higher concurrency than soil and a looser limiter, because the
+    // constraint is different in kind: soil's 5/min mirrors an external
+    // fair-use budget, while APNs and the Web Push services expect sustained
+    // traffic and signal overload per-request (429) rather than by contract.
+    // So this limiter exists to bound what we take from Redis and the event
+    // loop, not to respect a quota — 120/min at concurrency 10 is comfortably
+    // above any volume this product produces today and still a ceiling.
+    pushWorker = new Worker(
+        PUSH_QUEUE_NAME,
+        processJob,
+        {
+            connection: createWorkerConnection(),
+            concurrency: 10,
+            limiter: {
+                max: 120,
+                duration: 60000,
+            },
+        },
+    );
+
     attachWorkerEvents();
 }
 
@@ -257,6 +283,16 @@ soilWorker.on('failed', (job, error) => {
 });
 soilWorker.on('error', (error) => {
     log.error({ err: error }, 'soil worker error');
+});
+
+pushWorker?.on('ready', () => {
+    log.info({ queueName: PUSH_QUEUE_NAME, note: 'rate-limited 120/min, concurrency 10' }, 'push worker ready');
+});
+pushWorker?.on('failed', (job, error) => {
+    log.error({ jobName: job?.name, jobId: job?.id, err: error }, 'push job failed');
+});
+pushWorker?.on('error', (error) => {
+    log.error({ err: error }, 'push worker error');
 });
 
 // The heartbeat, written from a BullMQ event rather than a timer — a
@@ -302,7 +338,7 @@ async function shutdown(signal: string) {
         // were constructed at module scope so they were always defined by the
         // time a handler could fire; now they are not, and a shutdown that
         // threw here would exit 1 on an orderly stop.
-        await Promise.all([worker?.close(), soilWorker?.close()]);
+        await Promise.all([worker?.close(), soilWorker?.close(), pushWorker?.close()]);
         await connection?.quit();
         log.info('worker shut down gracefully');
         process.exit(0);

@@ -679,10 +679,21 @@ export const env = createEnv({
         // a real browser. Server-side stream is wired regardless;
         // flipping this to '1' is the only step to engage SSE.
 
-        // The VAPID public key, exposed to the browser so the client can
-        // subscribe via PushManager. Mirror of VAPID_PUBLIC_KEY; absent →
-        // the push opt-in UI stays hidden (feature-detected + key-gated).
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().optional(),
+        // NEXT_PUBLIC_VAPID_PUBLIC_KEY was HERE and is deliberately gone
+        // (P7.4, #1993). It was a build-time mirror of VAPID_PUBLIC_KEY, and
+        // the mirror never worked: a `NEXT_PUBLIC_*` value is inlined by
+        // `next build`, this one reached no Dockerfile `ARG`, so every image
+        // baked `undefined` and the key-gated opt-in UI rendered as
+        // unsupported in production for its whole life. Measured 2026-10-20 —
+        // neither VAPID variable set in the container, zero `platform='WEB'`
+        // subscription rows ever created.
+        //
+        // The public key now travels as a PROP from a server component that
+        // reads `VAPID_PUBLIC_KEY` at request time, so configuring web push is
+        // an env change plus a restart rather than a rebuild. Re-adding a
+        // `NEXT_PUBLIC_` mirror would restore the trap, which is why
+        // `tests/guards/vapid-key-is-served-at-runtime.test.ts` forbids the
+        // identifier outright.
 
         // MapTiler basemap (parcel map). The key is fetched by MapLibre
         // in the browser, so it is necessarily public — restrict it by
@@ -862,7 +873,6 @@ export const env = createEnv({
         APNS_TOPIC: process.env.APNS_TOPIC,
         APNS_PRIVATE_KEY: process.env.APNS_PRIVATE_KEY,
 
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
         NEXT_PUBLIC_MAPTILER_KEY: process.env.NEXT_PUBLIC_MAPTILER_KEY,
         NEXT_PUBLIC_MAP_BASEMAP_STYLE: process.env.NEXT_PUBLIC_MAP_BASEMAP_STYLE,
         NEXT_PUBLIC_MAP_BASEMAP_FIXTURE: process.env.NEXT_PUBLIC_MAP_BASEMAP_FIXTURE,

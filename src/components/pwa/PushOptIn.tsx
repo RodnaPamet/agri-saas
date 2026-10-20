@@ -4,7 +4,23 @@
  * PushOptIn — opt-in toggle for Web Push field alerts (task assignment,
  * spray-window). Permission-graceful at every step:
  *   - Hidden unless the browser supports SW + PushManager AND the server
- *     published a VAPID public key (NEXT_PUBLIC_VAPID_PUBLIC_KEY).
+ *     published a VAPID public key.
+ *
+ * ## The key arrives as a PROP, read at request time — P7.4 (#1993)
+ *
+ * It was read off `process.env` under the `NEXT_PUBLIC_` prefix, which
+ * `next build` inlines. That value reached no Dockerfile `ARG`, so every
+ * image baked `undefined`, so `supported` was false, so this control rendered as
+ * unsupported in production for its whole life — measured 2026-10-20: neither
+ * VAPID variable set in the container, and zero `platform='WEB'` rows ever
+ * created. The same trap #1982 found for the SSE flag, in the same shape.
+ *
+ * A prop from a server component rather than a fetch, because this panel is
+ * the OFFLINE surface: a fetched key is unavailable exactly when the operator
+ * is in a field with no signal, while a prop travels in the payload the
+ * service worker already caches with the page. It also means configuring web
+ * push is an env change and a container restart, with no rebuild — which is
+ * what "served at runtime" has to mean for it not to rot again.
  *   - Requests Notification permission only on an explicit tap.
  *   - A denied permission shows a quiet "blocked" state, never nags.
  */
@@ -13,8 +29,6 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiPost } from '@/lib/api-client';
-
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
 /** VAPID public key (base64url) → Uint8Array for `applicationServerKey`. */
 function urlBase64ToUint8Array(base64: string): Uint8Array {
@@ -31,7 +45,22 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 
 type Status = 'idle' | 'subscribing' | 'subscribed' | 'denied' | 'error';
 
-export function PushOptIn({ className }: { className?: string }) {
+export function PushOptIn({
+    className,
+    vapidPublicKey,
+}: {
+    className?: string;
+    /**
+     * The server's VAPID public key, or null when web push is unconfigured.
+     *
+     * Required rather than optional, and nullable rather than absent: an
+     * optional prop would let a caller forget it and get the old silent
+     * "unsupported" behaviour back, which is the defect this change exists to
+     * remove. Passing `null` is how a deployment says "off", and it has to be
+     * said explicitly.
+     */
+    vapidPublicKey: string | null;
+}) {
     const t = useTranslations('pushOptIn');
     const buildUrl = useTenantApiUrl();
     const [supported, setSupported] = useState(false);
@@ -43,7 +72,7 @@ export function PushOptIn({ className }: { className?: string }) {
             'serviceWorker' in navigator &&
             'PushManager' in window &&
             typeof Notification !== 'undefined' &&
-            !!VAPID_PUBLIC_KEY;
+            !!vapidPublicKey;
         setSupported(ok);
         if (!ok) return;
         if (Notification.permission === 'denied') {
@@ -57,10 +86,10 @@ export function PushOptIn({ className }: { className?: string }) {
                 if (sub) setStatus('subscribed');
             })
             .catch(() => {});
-    }, []);
+    }, [vapidPublicKey]);
 
     const enable = useCallback(async () => {
-        if (!VAPID_PUBLIC_KEY) return;
+        if (!vapidPublicKey) return;
         setStatus('subscribing');
         try {
             const permission = await Notification.requestPermission();
@@ -73,7 +102,7 @@ export function PushOptIn({ className }: { className?: string }) {
                 userVisibleOnly: true,
                 // Cast: the bytes are a valid BufferSource at runtime; the
                 // lib's Uint8Array<ArrayBuffer> narrowing is overly strict.
-                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
+                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
             });
             const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
             await apiPost(buildUrl('/push-subscriptions'), {

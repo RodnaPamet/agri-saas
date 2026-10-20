@@ -212,6 +212,37 @@ export interface DailyEvidenceExpiryPayload {
  * few minutes, so anything left over goes out on the next tick rather than
  * making a single run unbounded.
  */
+/**
+ * One push delivery, to ONE person, over every transport they hold — P7.4.
+ *
+ * Deliberately not a list of recipients. BullMQ retries a whole job, so a
+ * multi-recipient payload would re-send to everyone when one person's device
+ * failed. One job per recipient keeps a retry honest; see `push-send.ts`.
+ *
+ * Carries the prose rather than a notification id, because the row is written
+ * by the producer in its own short transaction and the two are not ordered
+ * against each other — a job that re-read the row could find it not yet
+ * visible. The prose is already server-authored copy (`title`/`message` on
+ * `Notification`), so nothing is lost by passing it.
+ */
+export interface PushSendPayload {
+    tenantId: string;
+    /** The person being notified — never the actor. */
+    recipientUserId: string;
+    title: string;
+    body: string;
+    /** Root-relative, or null for a notification with no target. */
+    link: string | null;
+    /**
+     * One key for both transports: the Web Push `tag` and the APNs
+     * `apns-collapse-id`. Both mean "replace my previous one", so a second
+     * notification about the same subject supersedes the first rather than
+     * stacking — and giving them one field is what keeps the two platforms
+     * coalescing on the same boundary.
+     */
+    collapseKey: string;
+}
+
 export interface ProcessOutboxPayload {
     /** Max rows to drain in one sweep. Default: 100. */
     limit?: number;
@@ -856,6 +887,7 @@ export interface JobPayloadMap {
     'reindex-knowledge-article': ReindexKnowledgeArticlePayload;
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
     'process-outbox': ProcessOutboxPayload;
+    'push-send': PushSendPayload;
     'zero-success-route-check': ZeroSuccessRouteCheckPayload;
     'data-lifecycle': DataLifecyclePayload;
     'retention-sweep': RetentionSweepPayload;
@@ -978,6 +1010,26 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'push-send': {
+        // Three attempts with a short exponential backoff. A push is worth
+        // retrying — a transient 503 from a push service or Apple is common —
+        // but it is worth retrying SOON or not at all: a notification about a
+        // task assignment that arrives twenty minutes late has been overtaken
+        // by the person opening the app.
+        //
+        // Both transports are idempotent against a duplicate in the way that
+        // matters: `collapseKey` is the Web Push `tag` and the APNs
+        // `apns-collapse-id`, so a retry that re-sends a notification the
+        // device already has REPLACES it rather than stacking a second banner.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        // Kept shallower than the sweeps: these are high-frequency and
+        // individually uninteresting once delivered. Failures are kept longer
+        // than successes, because a failed push is the only record that
+        // somebody was not told something.
+        removeOnComplete: 100,
         removeOnFail: 500,
     },
     'process-outbox': {
@@ -1391,3 +1443,30 @@ export const SOIL_QUEUE_NAME = 'inflect-soil';
 
 /** Job names that run on the dedicated soil queue (rate-limited Worker). */
 export const SOIL_QUEUE_JOBS: ReadonlySet<JobName> = new Set(['soil-fetch']);
+
+/**
+ * Dedicated queue for push delivery — P7.4 (#1993).
+ *
+ * Separate from the main queue for the reason the soil queue is: its Worker
+ * carries an independent limiter, so a fan-out cannot consume the main
+ * worker's `max: 50 / 60s` budget and starve every other job type for the rest
+ * of the minute. The jobs it would starve include `process-outbox`, which is
+ * how a notification reaches email — so the failure would be "the push was
+ * slow AND the email never went".
+ *
+ * ## Why `agrent-` while its siblings are `inflect-`
+ *
+ * `QUEUE_NAME` and `SOIL_QUEUE_NAME` are `inflect-jobs` and `inflect-soil`,
+ * and they stay that way: a queue name is a live Redis key, so renaming one
+ * orphans whatever is enqueued under the old name at the moment of the deploy.
+ * That is a real migration, not a rename.
+ *
+ * A NEW queue has nothing to orphan, so it carries the current brand —
+ * `tests/guards/no-legacy-brand.test.ts` is a ratchet, and adding a legacy
+ * reference to satisfy a cosmetic symmetry would be moving it backwards. The
+ * inconsistency is the honest record of when each queue was added.
+ */
+export const PUSH_QUEUE_NAME = 'agrent-push';
+
+/** Job names that run on the dedicated push queue. */
+export const PUSH_QUEUE_JOBS: ReadonlySet<JobName> = new Set(['push-send']);

@@ -37,8 +37,14 @@
  * `createdAt` is `timestamp(3)` — millisecond precision — and notifications
  * arrive in BATCHES. Measured in production on 2026-10-20: 8,778 of 8,815
  * rows, 99.6%, share their `(userId, createdAt)` with at least one other row;
- * 399 such groups, the largest 22, almost all stamped `09:00:00.xxx` by the
- * scheduled due-date run.
+ * 399 such groups, the largest 22, almost all stamped `09:00:00.xxx`.
+ *
+ * The producer is the LOW_STOCK sweep, not the due-date run this comment first
+ * named: by type, `LOW_STOCK` is 8,778 of the 8,815 rows, `TASK_ASSIGNED` 16,
+ * `GENERAL` 13 and `EXCHANGE_MESSAGE` 8. Worth having right, because it says
+ * what shape the ties take — one sweep writing every affected row for one
+ * person in a single statement, rather than unrelated notifications happening
+ * to collide on a millisecond.
  *
  * So a tie is not an edge case here, it is the normal shape of the data. With
  * a strict `>` a client reconnecting with any member of a batch as its cursor
