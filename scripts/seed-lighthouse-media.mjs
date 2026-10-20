@@ -51,8 +51,28 @@ import path from 'node:path';
 import pg from 'pg';
 import sharp from 'sharp';
 
-/** Matches the app's own default — `local-provider.ts` reads these in order. */
-const STORAGE_ROOT = process.env.FILE_STORAGE_ROOT || process.env.UPLOAD_DIR || '/tmp/uploads';
+/**
+ * Where the bytes go. `local-provider.ts` reads these two in order.
+ *
+ * There is NO `/tmp` fallback, deliberately. The provider's own default is
+ * `/tmp/uploads`, and following it here earned a high-severity CodeQL alert —
+ * `js/insecure-temporary-file`: a file created in the shared OS temp
+ * directory with default permissions is readable, and replaceable, by any
+ * other user on the machine.
+ *
+ * On an ephemeral single-tenant runner that is a small risk, but "it is only
+ * CI" is a premise that goes stale quietly, and the fix is cheaper than the
+ * argument: the caller passes a path inside the workspace. Refusing to guess
+ * is what keeps it that way — a default would be followed, and the default
+ * that suggests itself is the temp directory again.
+ */
+const STORAGE_ROOT = process.env.FILE_STORAGE_ROOT || process.env.UPLOAD_DIR;
+if (!STORAGE_ROOT) {
+    throw new Error(
+        'FILE_STORAGE_ROOT (or UPLOAD_DIR) must be set, and must not be inside the OS temp '
+            + 'directory — see this file for why there is no fallback.',
+    );
+}
 const HANDLE = 'lighthouse';
 const TENANT_ID = 't-lighthouse-media';
 const PHOTO_COUNT = 6;
@@ -97,8 +117,11 @@ async function store(bytes, label) {
     // inside the tenant's own prefix.
     const pathKey = `tenants/${TENANT_ID}/farm-media/2026/10/${sha256.slice(0, 16)}.jpg`;
     const target = path.resolve(STORAGE_ROOT, pathKey);
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, bytes);
+    // 0o700 / 0o600: the directory and the file are for this process and the
+    // app it seeds, not for every account on the host. Belt to the braces of
+    // keeping the root out of the temp directory in the first place.
+    await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    await writeFile(target, bytes, { mode: 0o600 });
     console.log(
         `  ${label.padEnd(8)} ${String(Math.round(bytes.length / 1024)).padStart(4)} KB  ${sha256.slice(0, 12)}…  ${pathKey}`,
     );

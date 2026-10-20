@@ -39,7 +39,12 @@ jobs:
       # `/tmp/uploads` in `local-provider.ts` — agreement by coincident
       # defaults, which the next person to change that default would break
       # with nothing failing until a Lighthouse image 404'd.
-      FILE_STORAGE_ROOT: /tmp/uploads
+      # Inside the WORKSPACE, not /tmp. A file in the shared OS temp directory
+      # is readable and replaceable by any other user on the host, which
+      # CodeQL flags as `js/insecure-temporary-file` (high) — correctly, even
+      # though a runner is ephemeral. The provider's own default is
+      # `/tmp/uploads`; this overrides it for the job rather than relying on it.
+      FILE_STORAGE_ROOT: ${{ github.workspace }}/tmp/uploads
       STORAGE_PROVIDER: local
       DATA_ENCRYPTION_KEY: ci-test-data-encryption-key-32-chars-or-more-deterministic-x
 
@@ -201,15 +206,24 @@ jobs:
           FILES=$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
             "SELECT count(*) FROM \"FileRecord\"
               WHERE domain = 'farm-media' AND status = 'STORED' AND \"deletedAt\" IS NULL;")
-          ON_DISK=$(find /tmp/uploads -type f -name '*.jpg' 2>/dev/null | wc -l)
+          # The same root the seeding wrote to and the app will stream from —
+          # `$FILE_STORAGE_ROOT`, not a repeated literal. A hardcoded path here
+          # would have gone stale the moment that moved out of /tmp, and the
+          # check would then have counted zero files and failed the job for the
+          # wrong reason.
+          ON_DISK=$(find "$FILE_STORAGE_ROOT" -type f -name '*.jpg' 2>/dev/null | wc -l)
           echo "FileRecord rows: $FILES   files on disk: $ON_DISK"
           if [ "$FILES" -lt 7 ] || [ "$ON_DISK" -lt 7 ]; then
             echo "::error::expected 7 farm-media files in the database and on disk; the media route resolves both."
             exit 1
           fi
 
+      # `tmp/uploads`, matching FILE_STORAGE_ROOT above. It used to create
+      # `tmp/test-uploads` — a directory nothing in this job read, because the
+      # app fell through to `/tmp/uploads` instead. The seeding step made that
+      # mismatch matter, so the name is now the one the app is told to use.
       - name: Create upload directory
-        run: mkdir -p tmp/test-uploads
+        run: mkdir -m 700 -p "${{ github.workspace }}/tmp/uploads"
 
       - name: Build Next.js app
         run: npx next build --webpack
