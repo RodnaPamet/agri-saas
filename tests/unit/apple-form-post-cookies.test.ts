@@ -58,10 +58,16 @@ function optionsFor(nextAuthUrl: string): Cookies {
     process.env.NEXTAUTH_URL = nextAuthUrl;
     jest.resetModules();
     jest.isolateModules(() => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports -- the
-        // whole point is a FRESH module: `authOptions` is a module-level const
-        // and reads the URL at import, so a static import would pin whichever
+        // A FRESH module on purpose: `authOptions` is a module-level const
+        // that reads the URL at import, so a static import would pin whichever
         // value the first test happened to set.
+        //
+        // No `eslint-disable` here. The first version carried one for
+        // `no-require-imports`, and `lint-ceiling`'s inert-directive counter
+        // failed CI on it: the rule is not enabled for test files, so the
+        // directive suppressed nothing. It was also MISPLACED — the reason ran
+        // onto following lines, so `eslint-disable-next-line` pointed at my own
+        // comment rather than at the `require`.
         const { authOptions } = require('@/auth');
         cookies = (authOptions.cookies ?? {}) as Cookies;
     });
