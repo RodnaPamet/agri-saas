@@ -557,7 +557,15 @@ export class JournalRepository {
         >(Prisma.sql`
             SELECT le."treatmentGroupId"                        AS "handle",
                    COUNT(op."id")::int                          AS "parcelCount",
-                   COALESCE(SUM(p."areaHa"), 0)::float8          AS "totalAreaHa",
+                   -- The TREATED area per line, falling back to the parcel's
+                   -- (#2072 part B). The register prints the same expression
+                   -- per row, and this file already records why that matters:
+                   -- two readers of one number must not disagree about which
+                   -- number it is. Summing the parcel area here while the PDF
+                   -- prints the treated area would make the list report more
+                   -- hectares than the document a farmer submits.
+                   COALESCE(SUM(COALESCE(op."treatedAreaHa", p."areaHa")), 0)::float8
+                                                                AS "totalAreaHa",
                    COALESCE(
                        ARRAY_AGG(DISTINCT loc."name")
                            FILTER (WHERE loc."name" IS NOT NULL),

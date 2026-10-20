@@ -808,6 +808,20 @@ model OperationParcel {
   /// Q2 ruled should be derived from the treatments; that derivation is its
   /// own change.
   phenophase           String?
+  /// Третирани/Наторени площи (дка) — how much of the parcel this line
+  /// actually covered, in HECTARES as everything else is stored (#2072 part B).
+  ///
+  /// NULL means THE WHOLE PARCEL, which is both the default and the only
+  /// honest reading of every line written before this column existed. The
+  /// register prints `treatedAreaHa ?? parcel.areaHa`, so an absent value
+  /// behaves exactly as the document did before.
+  ///
+  /// Bounded at write time by the parcel's own `areaHa`, not here: a CHECK
+  /// constraint cannot see the parcel row. Note `Parcel.areaHa` is itself
+  /// nullable — a parcel with no recorded area has nothing to bound against
+  /// and nothing to default to, so such a line accepts any positive value and
+  /// prints it.
+  treatedAreaHa        Decimal? @db.Decimal(12, 4)
   // Optimistic-lock counter — bumped on every mutation. A queued offline mark
   // captures the version it saw and sends it back as `If-Match` on replay; the
   // server rejects the write with 409 STALE_DATA if the row moved on

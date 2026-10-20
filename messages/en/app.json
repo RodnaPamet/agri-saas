@@ -6640,6 +6640,7 @@
         "THREAD_OWN_LISTING": "You cannot start a conversation on your own listing.",
         "THREAD_PERSON_BLOCKED": "You have blocked this person. Unblock them to continue the conversation.",
         "TREATMENT_ABANDONED": "This treatment was abandoned by an administrator. Do not send it again — record it afresh under a new key if the work still needs a register entry.",
+        "TREATMENT_AREA_EXCEEDS_PARCEL": "The treated area cannot exceed the parcel's own area. Enter an area no larger than the parcel, or leave it empty to record the whole parcel.",
         "TREATMENT_COMPLETE": "This treatment is fully recorded, so it is a farm-record entry rather than an unfinished write. Remove it through the journal, where a delete is reversible and separately audited.",
         "TREATMENT_DATE_INVALID": "The treatment date must be a calendar day in the form YYYY-MM-DD.",
         "TREATMENT_DATE_IN_FUTURE": "A treatment cannot be recorded for a future date.",

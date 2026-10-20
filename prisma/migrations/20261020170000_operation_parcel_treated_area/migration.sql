@@ -1,0 +1,29 @@
+-- #2072 part B — how much of a parcel a treatment actually covered.
+--
+-- ## The column the register already has
+--
+-- Unlike part A, this one PRINTS. «Третирани площи (дка)» is column 6 of the
+-- 12-column «ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ» table (and «Наторени площи» its
+-- fertiliser equivalent), and the generator fills it from the PARCEL's area
+-- today — correct only when the whole parcel was treated.
+--
+-- ## NULL means the whole parcel
+--
+-- Which is the default AND the only honest reading of every line written
+-- before this column existed. The register prints
+-- `treatedAreaHa ?? parcel.areaHa`, so an absent value behaves exactly as the
+-- document did before and no backfill is needed or possible.
+--
+-- ## Hectares, bounded in the usecase
+--
+-- Stored in hectares like every other area in this schema; the register
+-- renders decares, which is a presentation concern. Decimal(12,4) matches
+-- `Parcel.areaHa` exactly, so a treated area can equal a parcel's area
+-- without a rounding artefact making it look larger.
+--
+-- The bound — 0 < treatedAreaHa <= the parcel's areaHa — is enforced where the
+-- parcel row is in hand, because a CHECK constraint cannot reach it. And
+-- `Parcel.areaHa` is itself NULLABLE: a parcel with no recorded area has
+-- nothing to bound against, so such a line accepts any positive value rather
+-- than being refused for a fact nobody recorded.
+ALTER TABLE "OperationParcel" ADD COLUMN "treatedAreaHa" DECIMAL(12,4);

@@ -723,6 +723,8 @@ export async function markOperationParcel(
         quarantinePeriodDays?: number | null;
         /** Фенофаза/BBCH observed on the day this line was applied (#2072). */
         phenophase?: string | null;
+        /** Третирани площи in HECTARES; absent leaves the column alone (#2072). */
+        treatedAreaHa?: number | null;
         treatmentGroupId?: string;
     },
 ) {
@@ -744,6 +746,8 @@ async function markOperationParcelImpl(
         quarantinePeriodDays?: number | null;
         /** Фенофаза/BBCH observed on the day this line was applied (#2072). */
         phenophase?: string | null;
+        /** Третирани площи in HECTARES; absent leaves the column alone (#2072). */
+        treatedAreaHa?: number | null;
         treatmentGroupId?: string;
     },
 ) {
@@ -883,6 +887,15 @@ async function markOperationParcelImpl(
                     ? { phenophase: null }
                     : opts?.phenophase !== undefined
                       ? { phenophase: opts.phenophase }
+                      : {}),
+                // Третирани площи (#2072 part B), on the same terms: written
+                // only when supplied, and cleared on a revert to PENDING so a
+                // line put back into play reverts to meaning the whole parcel
+                // rather than keeping an area from an undone completion.
+                ...(status === 'PENDING'
+                    ? { treatedAreaHa: null }
+                    : opts?.treatedAreaHa !== undefined
+                      ? { treatedAreaHa: opts.treatedAreaHa }
                       : {}),
                 ...(note !== undefined ? { targetNote: note } : {}),
                 // Every mutation bumps the version so the NEXT reader/replayer
