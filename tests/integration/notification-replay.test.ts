@@ -96,6 +96,52 @@ describeFn('replayNotificationIdsAfter', () => {
         expect(await replayNotificationIdsAfter(ctx(), only)).toEqual([]);
     });
 
+    it('replays the REST of the cursor’s millisecond — the batch case', async () => {
+        // Not an edge case: measured in production on 2026-10-20, 8,778 of
+        // 8,815 notification rows (99.6%) share their (userId, createdAt) with
+        // at least one other row — 399 groups, the largest 22, almost all
+        // stamped 09:00:00.xxx by the scheduled due-date run. `createdAt` is
+        // timestamp(3), so one batch written in a millisecond is one timestamp.
+        //
+        // With a strict `>` a client reconnecting with any member of a batch
+        // as its cursor is told nothing happened, while the other 21 are never
+        // mentioned again. A silent loss, on the dominant producer, in the one
+        // query whose whole job is "what did I miss".
+        const batch = [
+            await notify(me, at(0), 'b1'),
+            await notify(me, at(0), 'b2'),
+            await notify(me, at(0), 'b3'),
+        ];
+        const later = await notify(me, at(1), 'later');
+
+        const ids = await replayNotificationIdsAfter(ctx(), batch[0]);
+
+        // The cursor's siblings AND everything after, with the cursor itself
+        // the only row removed.
+        expect(ids.slice().sort()).toEqual([batch[1], batch[2], later].sort());
+        expect(ids).not.toContain(batch[0]);
+    });
+
+    it('a repeated id is the ACCEPTED cost, and is bounded to one millisecond', async () => {
+        // Taking the cursor's whole millisecond can re-send ids the client
+        // already holds. That is the deliberate trade and the asymmetry is the
+        // reason: the frame carries an id and the row is authoritative, so a
+        // repeat costs a refetch of something the client has, while a loss
+        // costs a notification nobody ever sees.
+        //
+        // What must NOT happen is the repeat being unbounded — a client that
+        // reconnects mid-batch should see that batch again, not the history.
+        const old1 = await notify(me, at(-10), 'old1');
+        const old2 = await notify(me, at(-5), 'old2');
+        const batch = [await notify(me, at(0), 'b1'), await notify(me, at(0), 'b2')];
+
+        const ids = await replayNotificationIdsAfter(ctx(), batch[1]);
+
+        expect(ids).toEqual([batch[0]]);
+        expect(ids).not.toContain(old1);
+        expect(ids).not.toContain(old2);
+    });
+
     it('never returns ANOTHER person’s notifications', async () => {
         const mine = await notify(me, at(0));
         await notify(other, at(1));

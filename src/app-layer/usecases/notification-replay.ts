@@ -31,6 +31,34 @@
  * since been deleted. Both are "I cannot tell you what you missed", and
  * silence is the right answer to that — a client that receives nothing simply
  * refetches, which is what it does on a cold open anyway.
+ *
+ * ## The window is `>=` the cursor's time, and that is not sloppiness
+ *
+ * `createdAt` is `timestamp(3)` — millisecond precision — and notifications
+ * arrive in BATCHES. Measured in production on 2026-10-20: 8,778 of 8,815
+ * rows, 99.6%, share their `(userId, createdAt)` with at least one other row;
+ * 399 such groups, the largest 22, almost all stamped `09:00:00.xxx` by the
+ * scheduled due-date run.
+ *
+ * So a tie is not an edge case here, it is the normal shape of the data. With
+ * a strict `>` a client reconnecting with any member of a batch as its cursor
+ * would be told nothing happened while the other TWENTY-ONE were never
+ * mentioned again — a silent loss, on the dominant producer, for the one query
+ * whose whole job is "what did I miss".
+ *
+ * The fix is to take the cursor's whole millisecond and exclude the cursor row
+ * itself by id. That can repeat ids the client already has, bounded by one
+ * millisecond's worth of rows, and the asymmetry is the point: a repeated id
+ * costs a refetch of a row the client already holds, because the frame carries
+ * an id and "the row is authoritative and the event is a hint". A lost id
+ * costs a notification nobody ever sees.
+ *
+ * A total order on `(createdAt, id)` would be the tidier-looking answer and is
+ * NOT loss-free here: cuids are only roughly time-ordered, so within a tie the
+ * id order and the order events were published in need not agree, and any row
+ * whose id sorts below the cursor's would be dropped exactly as before. The
+ * ordering would have to be the one the emitter used, and the emitter's order
+ * is publication order, which is not stored.
  */
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -46,7 +74,8 @@ import { runInTenantContext } from '@/lib/db-context';
 export const REPLAY_LIMIT = 50;
 
 /**
- * Ids created after the cursor, oldest first, for this tenant and user.
+ * Ids from the cursor's millisecond onward excluding the cursor itself, oldest
+ * first, for this tenant and user.
  *
  * Oldest first so a client applying them in order ends at the newest, and so
  * the LAST id it sees is the one worth sending back as the next cursor.
@@ -72,7 +101,11 @@ export async function replayNotificationIdsAfter(
         const rows = await db.notification.findMany({
             where: {
                 userId: ctx.userId ?? undefined,
-                createdAt: { gt: cursor.createdAt },
+                // `gte`, with the cursor row removed by id. See the docblock:
+                // a strict `gt` drops the rest of the cursor's millisecond,
+                // and 99.6% of these rows share a millisecond with another.
+                createdAt: { gte: cursor.createdAt },
+                id: { not: lastEventId },
             },
             select: { id: true },
             orderBy: { createdAt: 'asc' },
