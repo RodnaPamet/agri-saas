@@ -84,6 +84,32 @@ model PushSubscription {
   /// leave the deliverer's dispatch ambiguous.
   deviceToken String?
 
+  /// Which APNs host this token is valid against — #1764 step 3.
+  ///
+  /// APNs has two completely separate environments, and a token is only valid
+  /// in the one it was issued for: `api.sandbox.push.apple.com` for a
+  /// development-signed build, `api.push.apple.com` for TestFlight and the App
+  /// Store. Send to the wrong one and APNs answers `BadDeviceToken` — so this
+  /// is not a preference, it is part of the address.
+  ///
+  /// PER DEVICE rather than per deployment, which is the whole reason it is a
+  /// column. One deployment serves both: the owner's development-signed
+  /// install and a TestFlight build of the same app register against the same
+  /// server, so a deployment-wide setting would be wrong for one of them.
+  /// agrent-ios reads it from the app's `embedded.mobileprovision`
+  /// (`aps-environment`), which is absent in TestFlight and App Store builds —
+  /// that absence IS production.
+  ///
+  /// NULLABLE with NO DEFAULT, and that is deliberate. Null means "this row
+  /// predates the field or the client did not say", and the sender must refuse
+  /// such a row and log it rather than guess: a guess is wrong half the time
+  /// and fails as `BadDeviceToken`, which looks like a revoked token and would
+  /// get the row pruned. Defaulting to either value would make a forgetful
+  /// client's rows silently undeliverable instead of visibly unregistered.
+  ///
+  /// Null on every WEB row by construction — Web Push has no such split.
+  apnsEnvironment ApnsEnvironment?
+
   userAgent String?
   createdAt DateTime @default(now())
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
