@@ -1529,3 +1529,78 @@ describe('#1918 batch 12b — the market-price tranche, on the owner\'s vocabula
         expect(p.error.message).not.toMatch(/култура/i);
     });
 });
+
+describe('#1918 batch 13 — the last fourteen, and the backlog reaches zero', () => {
+    /**
+     * Two were defects rather than translations.
+     *
+     * `ACCOUNT_ALREADY_ERASED` passed the CODE as its own message, at both of
+     * its two sites: `codedNotFound('ACCOUNT_ALREADY_ERASED',
+     * 'ACCOUNT_ALREADY_ERASED')`. The comment above it says telling the caller
+     * is deliberate — "saying so is better than pretending it worked" — and
+     * that intent was never delivered. What shipped was the token. Being
+     * specific is safe there because `getUserCtx` means the caller is asking
+     * about their OWN account, so there is no existence to hide.
+     *
+     * `INVALID_FARM_TASK_TYPE` interpolated the type into the English with no
+     * param, so a Bulgarian entry would have had to drop it. `{ type }` added
+     * at the throw, and the entry names it.
+     *
+     * Vocabulary looked up, not translated. «Оставащо» is what the catalogue
+     * says for a bare "Outstanding", and it is the WRONG sense here — the
+     * payment meaning is «не е получено», which is how the existing past-due
+     * email reads. Taking the first match would have produced "the payment is
+     * remaining".
+     */
+    const BATCH_13: ReadonlyArray<[code: string, english: string, params?: Record<string, string>]> = [
+        ['ACCOUNT_ALREADY_ERASED', 'This account has already been erased.'],
+        ['ACCOUNT_HAS_NO_EMAIL', 'Your account has no email address.'],
+        ['IMPORT_JOB_NOT_FOUND', 'No such import job.'],
+        ['INSURANCE_PRODUCT_UNKNOWN', 'Unknown insurance product.'],
+        ['INSURANCE_QUOTE_INVALID', 'That quote cannot be calculated.'],
+        ['INVALID_ASSET', 'Asset not found or belongs to a different tenant'],
+        ['INVALID_FARM_PAYLOAD', 'Invalid farm payload.'],
+        ['INVALID_FARM_TASK_TYPE', 'Unknown farm task type: spraying', { type: 'spraying' }],
+        ['INVALID_TAB_ORDER', 'order must be an array of up to 5 ids.', { max: '5' }],
+        ['INVALID_TASK', 'Task not found or belongs to a different tenant'],
+        ['LEASE_PAYMENT_NOT_FOUND', 'Payment not found'],
+        ['PAST_DUE_RESTRICTED', 'Account payment is outstanding.'],
+    ];
+
+    it('ranges over the batch — the denominator', () => {
+        console.log(`[refusal-bg] batch 13 added ${BATCH_13.length} entries; backlog now 0, 5 deliberate`);
+        expect(BATCH_13.length).toBe(12);
+    });
+
+    it.each(BATCH_13.map(([c, e, pr]) => [c, e, pr] as const))(
+        'batch 13: %s is replaced with Bulgarian',
+        async (code, english, params) => {
+            getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+            const p = payload(code, english);
+            if (params) p.error.params = params;
+            await localizeErrorPayload(p);
+            expect(`${code}: ${p.error.message}`).toMatch(/[А-Яа-я]/);
+            expect(p.error.message).not.toBe(english);
+            expect(`${code}: ${p.error.message}`).not.toMatch(/\{\w+\}/);
+            // And never the token itself, which is what ACCOUNT_ALREADY_ERASED
+            // actually shipped before this batch.
+            expect(p.error.message).not.toBe(code);
+        },
+    );
+
+    it('ACCOUNT_ALREADY_ERASED no longer passes its own code as the message', () => {
+        const src = readFileSync(`${REPO_ROOT}/src/app/api/account/deletion/route.ts`, 'utf8');
+        // Both sites. A count, not a boolean: the first fix I wrote asserted
+        // uniqueness and failed, which is how I learned there were two.
+        expect(src).not.toMatch(/'ACCOUNT_ALREADY_ERASED',\s*'ACCOUNT_ALREADY_ERASED'/);
+        expect(src.match(/ACCOUNT_ALREADY_ERASED/g)?.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('the past-due wording is «не е получено», not the «Оставащо» sense', async () => {
+        getRequestContext.mockReturnValue({ requestId: 'r1', startTime: 0, uiLanguage: 'bg' });
+        const p = payload('PAST_DUE_RESTRICTED', 'Account payment is outstanding.');
+        await localizeErrorPayload(p);
+        expect(p.error.message).toContain('не е получено');
+        expect(p.error.message).not.toContain('Оставащо');
+    });
+});
