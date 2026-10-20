@@ -123,6 +123,60 @@ describeFn('searchPublicFarms', () => {
             expect(hits.every((x) => x.crops.includes('пшеница'))).toBe(true);
         });
 
+        it('crop matches regardless of CASE — #1909', async () => {
+            // The defect this fixes, and the reason the case above could not
+            // see it: that one seeds and queries the SAME lowercase spelling.
+            // `crops` is free text stored as typed, so a visitor picking
+            // «пшеница» was not shown the farm that typed «Пшеница» — half the
+            // wheat farms missing from a filter that looked like it worked.
+            const upper = await seed('Главно Поле', { crops: ['Пшеница', 'Ечемик'] });
+
+            const lower = mine(await searchPublicFarms({ q: 'Поле', crop: 'пшеница' }));
+            expect(lower.map((x) => x.handle)).toContain(upper);
+
+            // And the other direction, so the fix is not one-sided: a visitor
+            // whose filter carries the capitalised spelling finds the farm
+            // that typed it lowercase.
+            const lowerFarm = await seed('Долно Поле', { crops: ['овес'] });
+            const upperQuery = mine(await searchPublicFarms({ q: 'Поле', crop: 'ОВЕС' }));
+            expect(upperQuery.map((x) => x.handle)).toContain(lowerFarm);
+        });
+
+        it('oblast matches regardless of CASE — #1909', async () => {
+            // The same exact-match problem, and it bites harder than it looks:
+            // the web editor's oblast is free text while the phone stores one
+            // of the 28 `BULGARIA_REGIONS` names, so the two clients can hold
+            // different spellings of the same oblast. Tracked separately as a
+            // UI change; this makes the FILTER tolerant either way.
+            const h = await seed('Казанлъшко', { oblast: 'Стара Загора' });
+            const hits = mine(await searchPublicFarms({ oblast: 'стара загора' }));
+            expect(hits.map((x) => x.handle)).toContain(h);
+        });
+
+        it('a crop filter still EXCLUDES a different crop — the control', async () => {
+            // Case-insensitivity must not become "matches anything". Without
+            // this, replacing the comparison with `true` would pass every
+            // assertion above.
+            await seed('Само Слънчоглед', { crops: ['слънчоглед'] });
+            const hits = mine(await searchPublicFarms({ crop: 'пшеница' }));
+            expect(hits.every((x) => x.crops.some((c) => c.toLowerCase() === 'пшеница'))).toBe(
+                true,
+            );
+        });
+
+        it('a NAMED VARIANT is still a different crop — not fixed here, by design', async () => {
+            // «Пшеница (мека)» is not «пшеница», and case-folding does not and
+            // should not merge them. Deciding that two spellings name one crop
+            // is a catalogue question — what the product lets a farmer call a
+            // crop — and #1909 flags it as the larger, separate option.
+            //
+            // Asserted so the limit is recorded rather than discovered: a
+            // reader of this fix should know what it does not claim.
+            const variant = await seed('Мека Пшеница', { crops: ['Пшеница (мека)'] });
+            const hits = mine(await searchPublicFarms({ crop: 'пшеница' }));
+            expect(hits.map((x) => x.handle)).not.toContain(variant);
+        });
+
         it('a filter with no query still works — browse within an oblast', async () => {
             const h = await seed('Само Област', { oblast: 'Русе' });
             const hits = mine(await searchPublicFarms({ oblast: 'Русе' }));

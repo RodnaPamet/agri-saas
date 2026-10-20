@@ -458,8 +458,41 @@ export async function searchPublicFarms(opts: {
                         OR "displayName" % ${q}
                         OR COALESCE("displayNameLatin", '') % ${q}
                     )
-                    AND (${oblast}::text IS NULL OR "oblast" = ${oblast})
-                    AND (${crop}::text IS NULL OR ${crop} = ANY("crops"))
+                    -- CASE-INSENSITIVE, both of them -- #1909.
+                    --
+                    -- crops and oblast on FarmBrand are free text, trimmed and
+                    -- stored exactly as the farmer typed them. So an exact
+                    -- comparison meant a visitor picking «пшеница» did not see
+                    -- the farm that typed «Пшеница» -- half the wheat farms
+                    -- missing from a filter that looked like it worked.
+                    --
+                    -- lower() follows the database's ctype, measured as
+                    -- en_US.utf8 in #1817, under which Cyrillic lower-casing is
+                    -- correct. That was the one thing worth checking before
+                    -- reaching for it.
+                    --
+                    -- NO BACKTICKS ANYWHERE IN THIS BLOCK, and that is not a
+                    -- style choice: this is a Prisma.sql template literal, so a
+                    -- backtick in a SQL comment ends the literal. The first
+                    -- draft of this comment quoted identifiers the way the rest
+                    -- of the file's prose does and produced six TS1005s in a
+                    -- query that had been valid.
+                    --
+                    -- The index on oblast is not usable through lower(); a
+                    -- functional index would be needed to use one again.
+                    -- Deliberately not added -- PublicFarmProfile holds zero
+                    -- rows in production today and is bounded by how many farms
+                    -- publish a page, so a sequential scan is cheaper than a
+                    -- migration nobody needs yet. Watch the row count, not the
+                    -- query plan.
+                    AND (${oblast}::text IS NULL OR lower("oblast") = lower(${oblast}))
+                    AND (
+                        ${crop}::text IS NULL
+                        OR EXISTS (
+                            SELECT 1 FROM unnest("crops") AS c
+                             WHERE lower(c) = lower(${crop})
+                        )
+                    )
                 ORDER BY "score" DESC, "handle" ASC
                 LIMIT ${limit}
             `,
