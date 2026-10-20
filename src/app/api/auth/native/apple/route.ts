@@ -150,6 +150,23 @@ async function resolveAppleUser(
                 // Apple asserts this, and `verifyAppleIdentityToken` has
                 // already proved the assertion came from Apple.
                 emailVerified: identity.emailVerified ? new Date() : null,
+                // Apple's `is_private_email` claim, kept rather than
+                // discarded (#1675).
+                //
+                // The signal is otherwise unrecoverable: `email` is stored
+                // encrypted, so no later query can ask which recipients are
+                // behind the relay, and the claim arrives only here. That is
+                // why it is captured on the way past even though nothing reads
+                // it yet — a window that closes, not a feature waiting for a
+                // caller.
+                //
+                // On CREATE only. A relay address is unique per app and never
+                // matches an existing row (see this file's docblock), so a
+                // relay user always lands here; the account-LINK path above
+                // keeps a user whose stored address is their real one, and
+                // relabelling it would be a lie about which address we hold.
+                isPrivateRelay: identity.isPrivateRelay,
+
                 // Explicitly null: the consent gate is what asks, and the
                 // file docblock says why this route must not stamp it.
                 acceptedTermsAt: null,

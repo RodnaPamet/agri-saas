@@ -655,6 +655,28 @@ model User {
   passwordHash                  String?
   name                          String?                      @map("nameEncrypted")
   emailVerified                 DateTime?
+  /// Apple told us this address is a PRIVATE RELAY (#1675).
+  ///
+  /// From the `is_private_email` claim on a verified Apple identity token —
+  /// Apple's own assertion, not a guess from the domain. That distinction is
+  /// the point: a domain check is a heuristic that breaks the day Apple
+  /// changes `privaterelay.appleid.com`, and the claim does not.
+  ///
+  /// It has to be PERSISTED because the signal is otherwise unrecoverable.
+  /// `email` is `@map("emailEncrypted")` — ciphertext at rest — so no later
+  /// query can ask which recipients are behind the relay, and the claim
+  /// arrives only at sign-in. Before this it was computed in
+  /// `src/lib/auth/apple.ts` and discarded.
+  ///
+  /// NULL means NEVER TOLD, which is every Google, Microsoft and password
+  /// user — not "we checked and it is not a relay". `false` is reserved for an
+  /// Apple sign-in that said so.
+  ///
+  /// Set on CREATE only. A relay address is unique per app and so never
+  /// matches an existing row (this route's own docblock), which means a relay
+  /// user always takes the create path; on the account-LINK path the stored
+  /// address is the user's real one and must not be relabelled.
+  isPrivateRelay                Boolean?
   image                         String?
   createdAt                     DateTime                     @default(now())
   updatedAt                     DateTime                     @updatedAt

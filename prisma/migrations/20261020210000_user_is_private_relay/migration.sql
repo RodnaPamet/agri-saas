@@ -1,0 +1,28 @@
+-- #1675 — persist Apple's private-relay claim, because the window closes.
+--
+-- ## Why a column rather than a query
+--
+-- `User.email` is stored encrypted (`@map("emailEncrypted")`), so no later
+-- query can ask which recipients are behind Apple's relay: the domain is
+-- ciphertext. And the claim itself — `is_private_email` on a verified Apple
+-- identity token — arrives only at sign-in. It was being computed in
+-- `src/lib/auth/apple.ts` and thrown away, which means the signal was
+-- unrecoverable for every user who had already signed in.
+--
+-- Apple's ASSERTION, not a domain heuristic. A check for
+-- `privaterelay.appleid.com` would be a guess that breaks the day Apple
+-- changes the domain; the claim does not.
+--
+-- ## Nullable, and NULL is not false
+--
+-- NULL means "never told" — every Google, Microsoft and password user, and
+-- every Apple user who signed in before this shipped. `false` is reserved for
+-- an Apple sign-in that positively said the address is not a relay.
+--
+-- A `DEFAULT false` would have been the easy choice and the wrong one: it
+-- would assert, for thousands of rows nobody asked about, that we had checked.
+-- Reporting "how many of our users are on a relay" would then be a count of
+-- what we know rather than of what is true, with no way to tell the two apart.
+--
+-- No backfill, for the same reason — there is nothing to backfill FROM.
+ALTER TABLE "User" ADD COLUMN "isPrivateRelay" BOOLEAN;
