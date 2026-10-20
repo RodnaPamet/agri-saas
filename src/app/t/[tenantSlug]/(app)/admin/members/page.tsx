@@ -568,7 +568,7 @@ export default function MembersAdminPage() {
         } finally {
             setSessionsLoading(false);
         }
-    }, [apiUrl]);
+    }, [apiUrl, t]);
 
     const closeSessionsModal = useCallback(() => {
         setSessionsModalUser(null);
@@ -618,7 +618,7 @@ export default function MembersAdminPage() {
         } finally {
             setSavingCerts(false);
         }
-    }, [apiUrl, certsModalMember, certApplicator, certAgronomistName, certAgronomistNo, fetchMembers]);
+    }, [certsModalMember, apiUrl, certApplicator, certAgronomistName, certAgronomistNo, t, fetchMembers]);
 
     const handleRevokeSession = useCallback(async (sessionId: string) => {
         if (!sessionsModalUser) return;
@@ -643,7 +643,7 @@ export default function MembersAdminPage() {
         } finally {
             setRevokingSessionId(null);
         }
-    }, [apiUrl, fetchMembers, sessionsModalUser]);
+    }, [apiUrl, fetchMembers, sessionsModalUser, t]);
 
     // ─── Filter (R14-PR7 — search retired; full list shown) ───
     const filteredMembers = members;
@@ -888,7 +888,7 @@ export default function MembersAdminPage() {
                 ),
             },
         ]),
-        [formatDate],
+        [formatDate, t],
     );
 
     // ─── Loading state ───

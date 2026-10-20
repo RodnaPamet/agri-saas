@@ -82,7 +82,7 @@ export default function EntraProviderWizard() {
         } finally {
             setSaving(false);
         }
-    }, [apiUrl, config]);
+    }, [apiUrl, config, t]);
 
     return (
         <div className="space-y-section">

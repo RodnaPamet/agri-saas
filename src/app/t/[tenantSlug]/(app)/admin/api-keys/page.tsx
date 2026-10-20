@@ -202,7 +202,7 @@ export default function ApiKeysPage() {
         } finally {
             setLoading(false);
         }
-    }, [apiUrl]);
+    }, [apiUrl, t]);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the setState lands after an await, in a later task, so this is not the synchronous render cascade the rule is about; the loader is an async useCallback whose deps cannot change while mounted, so it runs once
     useEffect(() => { fetchKeys(); }, [fetchKeys]);
@@ -399,7 +399,7 @@ export default function ApiKeysPage() {
         // include it so an eslint-exhaustive-deps warning doesn't slip in
         // if someone refactors it into a useCallback later.
 
-        [formatDateTime],
+        [formatDateTime, t],
     );
 
     const inactiveKeyColumns = useMemo(
@@ -437,7 +437,7 @@ export default function ApiKeysPage() {
                     ),
                 },
             ]),
-        [formatDateTime],
+        [formatDateTime, t],
     );
 
     if (loading) {

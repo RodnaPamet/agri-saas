@@ -134,7 +134,25 @@ export const LIMITS: Limits = {
     //
     // Lower toward 81 as warnings are fixed; the sentinel forces the issue
     // again the moment the gap exceeds 25.
-    warningCeiling: 106,
+    //
+    // 106 -> 87, and 87 rather than the 62 the failure message suggests. Same
+    // departure as the two above, for the same measured reason: 62 + 25 is the
+    // most `slack` sanctions, the ratchet moves DOWN 19 points and cannot move
+    // back up without a visible line in a diff.
+    //
+    // What closed the gap was #1471's largest group: 30 of its 81 react-hooks
+    // findings were one missing dependency — the i18n translator — and
+    // `use-intl` wraps the translator in a `useMemo` keyed on context-derived
+    // values, so adding it is behaviour-preserving. Warnings 92 -> 62 with
+    // `suppressedFindings` UNMOVED at 1580, which is the figure that separates
+    // a fix from a mute and the one #1471 asks for beside any claim.
+    //
+    // The 62 is NOT headroom and should not read as it: 51 of it is #1471's
+    // remaining tranche — 31 `set-state-in-effect`, 9 `refs`, 5 `purity`, 2
+    // `immutability`, 4 other missing dependencies — and 11 is everything
+    // else. Those 51 are genuinely local and genuinely behavioural, which is
+    // what #1471 deferred them for.
+    warningCeiling: 87,
     // Two changes landed on this line and both reasons stand.
     //
     // #1376 LOWERED it 1580 -> 1578: the retired `/api/auth/register` carried

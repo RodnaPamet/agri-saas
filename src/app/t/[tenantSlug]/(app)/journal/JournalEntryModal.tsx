@@ -508,7 +508,7 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
             }
             setOpen(next);
         },
-        [submitting, dirty, isEdit, setOpen],
+        [setOpen, submitting, isEdit, dirty, t],
     );
     const close = () => setOpen(false);
 
