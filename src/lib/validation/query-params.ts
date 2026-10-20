@@ -313,7 +313,15 @@ export function parseDateRangeParam(
  * server-authored prose is on a downward ratchet.
  *
  * @throws `codedBadRequest('INVALID_LIMIT')` (400) when present and not a
- *         positive integer.
+ *         positive integer, carrying `{ reason, label }` so the sentence is
+ *         translated (#2059).
+ *
+ * The RECEIVED VALUE is deliberately not a param, though it stays in the
+ * English template. `params` must never carry arbitrary client input: this
+ * value is whatever a caller put in the query string, it reaches logs through
+ * the error payload, and `?limit=` is set by client CODE rather than typed by
+ * a person — so a translated sentence quoting it would help nobody while
+ * widening what the product echoes back.
  */
 export function parseLimitParam(
     raw: string | null,
@@ -326,12 +334,21 @@ export function parseLimitParam(
         throw codedBadRequest(
             'INVALID_LIMIT',
             `Invalid ${label}: it was empty. Omit it for the default, or send a positive integer.`,
+            // `reason` is already a DISCRIMINATOR in `localizeErrorPayload`, so
+            // this selects `errors.INVALID_LIMIT.empty` and the sentence is
+            // translated rather than served as English prose (#2059).
+            //
+            // `label` is a WIRE PARAMETER NAME, not prose — the entry quotes it
+            // as an identifier, so «параметъра „radius“» reads correctly
+            // without the catalogue needing a sentence per caller.
+            { reason: 'empty', label },
         );
     }
     if (!/^\d+$/.test(trimmed)) {
         throw codedBadRequest(
             'INVALID_LIMIT',
             `Invalid ${label}: must be a positive integer; received ${JSON.stringify(raw)}.`,
+            { reason: 'not_an_integer', label },
         );
     }
     const n = Number(trimmed);
@@ -339,6 +356,7 @@ export function parseLimitParam(
         throw codedBadRequest(
             'INVALID_LIMIT',
             `Invalid ${label}: must be a positive integer; received ${JSON.stringify(raw)}.`,
+            { reason: 'not_an_integer', label },
         );
     }
     return opts.max === undefined ? n : Math.min(n, opts.max);

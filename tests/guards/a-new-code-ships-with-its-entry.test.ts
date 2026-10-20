@@ -81,13 +81,6 @@ const DELIBERATELY_UNENTRIED: ReadonlyArray<[code: string, why: string]> = [
             'Batch 13 wrote one that differed only in «вас» vs «Вас», which is the subtlest possible ' +
             'version of that mistake.',
     ],
-    [
-        'INVALID_LIMIT',
-        'Three sites, three sentences, and what distinguishes them is in the English template rather ' +
-            'than on the wire: a caller-supplied `opts.label` plus the received value. Fixable by passing ' +
-            '`{ reason }` as a param and writing a variant table — a change to a validator every list ' +
-            'endpoint shares, so not a catalogue batch.',
-    ],
 ];
 
 /**

@@ -6554,6 +6554,11 @@
         "INVALID_FARM_PAYLOAD": "The farm details sent are not valid.",
         "INVALID_FARM_TASK_TYPE": "Unknown farm task type: {type}.",
         "INVALID_FILE": "That file was not found.",
+        "INVALID_LIMIT": {
+            "empty": "No value for the \"{label}\" parameter. Omit it for the default, or send a positive integer.",
+            "not_an_integer": "Invalid \"{label}\": must be a positive integer.",
+            "default": "Invalid \"{label}\"."
+        },
         "INVALID_LINK": "One of the linked records was not found.",
         "INVALID_LOCATION": "One of the selected locations was not found.",
         "INVALID_NEWS_PREFERENCES": "Those news preferences are not valid. Check the selected topics and sources.",
