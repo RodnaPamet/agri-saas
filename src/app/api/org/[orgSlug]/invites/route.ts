@@ -58,6 +58,8 @@ export const POST = withApiErrorHandling(
             // fails creation — the `url` below is the copy-paste fallback
             // and `emailSent` tells the admin whether it went out.
             const { sent } = await sendInviteEmail({
+            // #1769: lets a bounce mark THIS invite undeliverable.
+            inviteId: result.invite.id,
             // The INVITER's language (#722). An invitee has no `User` row, so
             // this email has no recipient locale to read and must pick a
             // proxy; the inviter's is right for the common case — a Bulgarian

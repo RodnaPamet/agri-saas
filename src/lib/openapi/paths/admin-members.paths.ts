@@ -176,6 +176,13 @@ const PendingInviteSchema = z
         createdAt: z.string().datetime(),
         updatedAt: z.string().datetime(),
         invitedBy: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
+        inviteDelivery: z.string().nullable().openapi({
+            description:
+                'Whether this invite\u2019s email came back undeliverable (#1769). `null` means NOTHING HAS COME BACK, which is not the same as delivered \u2014 only invites sent after #1769\u2019s recorder shipped have a correlation row to join a bounce to, and older ones stay null for ever. Otherwise a token derived from the provider\u2019s event: `BOUNCED`, `COMPLAINED`, `FAILED`. **Treat any value you do not recognise as undeliverable of an unknown kind, never as null** \u2014 an unrecognised event rendering as \u201cstill pending\u201d is the exact bug this field exists to fix.',
+        }),
+        inviteDeliveryAt: z.string().datetime().nullable().openapi({
+            description: 'When the failure was learned, not when the invite was sent.',
+        }),
     })
     .openapi('PendingInvite', {
         description:

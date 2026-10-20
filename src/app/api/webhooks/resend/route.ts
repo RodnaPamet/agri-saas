@@ -37,13 +37,22 @@
  * signature covers the bytes, so any reserialisation invalidates it — the same
  * constraint the Stripe route records.
  *
- * ## What it does NOT do yet
+ * ## It now UNDOES one too (#1769)
  *
- * It makes a failure VISIBLE. It does not yet undo one: linking a bounce back
- * to the `ContentReport` whose alert it was needs outbound message ids
- * persisted against what sent them, so `alertedAt` can be cleared and the next
- * run retries. That is a schema change and its own issue — half-building it
- * here would leave a correlation nobody can rely on.
+ * This used to end here, making a failure visible and nothing more, because
+ * linking a bounce back to the `ContentReport` whose alert it was needed
+ * outbound message ids persisted against what sent them. #1769 PR 1 built that
+ * table; `applyDeliveryFailure` is the action.
+ *
+ * ## Why a failed ACTION answers non-2xx, when an ignored event answers 200
+ *
+ * The rule above — 200 for every verified event — is about events this route
+ * deliberately does not act on, where a retry is load with no outcome. An
+ * event it DOES act on is the opposite case: every action is idempotent, and
+ * Resend retrying is a second chance to re-queue a DSA alert that bounced. So
+ * a database failure answers 500 and is retried, while an UNCORRELATED message
+ * still answers 200 — no retry will conjure a row for an email sent before the
+ * recorder shipped.
  */
 import { NextRequest } from 'next/server';
 
@@ -51,6 +60,7 @@ import { logger } from '@/lib/observability/logger';
 import { jsonResponse } from '@/lib/api-response';
 import { env } from '@/env';
 import { verifyResendSignature, parseDeliveryEvent } from '@/lib/email/resend-webhook';
+import { applyDeliveryFailure } from '@/app-layer/notifications/apply-delivery-failure';
 
 export async function POST(req: NextRequest) {
     const rawBody = await req.text();
@@ -111,6 +121,36 @@ export async function POST(req: NextRequest) {
             recipientDomain: event.recipientDomain,
             reason: event.reason,
         });
+
+        // No id, nothing to correlate — and no retry would help, so 200.
+        if (event.messageId) {
+            try {
+                const outcome = await applyDeliveryFailure({
+                    messageId: event.messageId,
+                    kind: event.type,
+                });
+                logger.info('mail.bounce_action', {
+                    component: 'resend-webhook',
+                    messageId: event.messageId,
+                    // The discriminator between "acted" and "found nothing to
+                    // act on". Without it both render as one info line.
+                    correlated: outcome.correlated,
+                    purpose: outcome.purpose ?? null,
+                    reportsRequeued: outcome.reportsRequeued ?? 0,
+                    invitesMarked: outcome.invitesMarked ?? 0,
+                });
+            } catch (err) {
+                logger.error('mail.bounce_action_failed', {
+                    component: 'resend-webhook',
+                    messageId: event.messageId,
+                    event: event.type,
+                    error: err instanceof Error ? err.message : String(err),
+                });
+                // 500 so Resend retries. Every action is idempotent, and a
+                // silently dropped bounce is the gap #1753 measured.
+                return jsonResponse({ error: 'action-failed' }, { status: 500 });
+            }
+        }
     } else {
         logger.info('mail.delivery_event', {
             component: 'resend-webhook',

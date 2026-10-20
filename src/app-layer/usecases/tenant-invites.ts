@@ -261,7 +261,7 @@ export async function bulkRevokeInvite(
 export async function listPendingInvites(ctx: RequestContext) {
     assertCanViewAdminSettings(ctx);
 
-    return runInTenantContext(ctx, (db) =>
+    const rows = await runInTenantContext(ctx, (db) =>
         db.tenantInvite.findMany({
             where: {
                 tenantId: ctx.tenantId,
@@ -294,10 +294,63 @@ export async function listPendingInvites(ctx: RequestContext) {
                 createdAt: true,
                 updatedAt: true,
                 invitedBy: { select: { id: true, name: true } },
+                deliveryFailureKind: true,
+                deliveryFailedAt: true,
             },
             orderBy: { createdAt: 'desc' },
         })
     );
+
+    // Mapped, not passed through (#1769).
+    //
+    // The column holds the PROVIDER's event type ('email.bounced'), and
+    // Resend's vocabulary is not this API's. `inviteDelivery` is the token a
+    // client switches on; the raw kind stays server-side so a provider change
+    // is not a client change.
+    //
+    // An ENUM-SHAPED STRING, not a boolean, at agrent-ios's request: a
+    // complaint is not a bounce, and a client that needs to tell them apart
+    // should not need a second field added to do it.
+    //
+    // An UNRECOGNISED kind still maps to a token rather than to null, because
+    // null means "nothing has come back" — a materially different thing from
+    // "something came back that we cannot name". Collapsing the two would make
+    // an unknown provider event render as "still pending", which is the exact
+    // bug this field exists to fix.
+    return rows.map(({ deliveryFailureKind, deliveryFailedAt, ...rest }) => ({
+        ...rest,
+        inviteDelivery: inviteDeliveryToken(deliveryFailureKind),
+        inviteDeliveryAt: deliveryFailedAt,
+    }));
+}
+
+/**
+ * 'email.bounced' -> 'BOUNCED'. Null stays null, and only null.
+ *
+ * The suffix after the last dot, upper-cased, with anything outside
+ * `[A-Z0-9_]` folded to `_` — so an event type nobody has seen yet still
+ * produces a stable token a client can display as "undeliverable" rather than
+ * crashing or reading as delivered.
+ */
+function inviteDeliveryToken(kind: string | null): string | null {
+    if (!kind) return null;
+    const suffix = kind.includes('.') ? kind.slice(kind.lastIndexOf('.') + 1) : kind;
+    const token = suffix.toUpperCase();
+    // VALIDATED, not stripped, and the guard that caught the first version was
+    // right to.
+    //
+    // This began as `replace(/[^A-Z0-9_]/g, '_')`, which
+    // `slug-derivation-is-converged` fails: that expression DELETES a
+    // Bulgarian name rather than sanitising it — measured at seven sites,
+    // «ЗК Победа» becoming `-m2x3k9`. A provider event type is never a name,
+    // so it could not have mangled anything here, but the guard cannot know
+    // that and this would have been the eighth site growing the expression.
+    //
+    // Testing is also the better logic. A mangled `SOME__FAILURE` was never a
+    // useful token, so an event type that is not already a clean one is simply
+    // unknown — including the empty string a punctuation-only kind produces,
+    // which would otherwise read as "no failure" at every truthiness check.
+    return /^[A-Z0-9_]+$/.test(token) ? token : 'UNKNOWN';
 }
 
 // ─── previewInviteByToken ────────────────────────────────────────────
