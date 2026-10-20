@@ -58,6 +58,7 @@ import { projectionPayload, HIDEABLE_FIELDS } from '../projections/public-farm-p
 import {
     assertPublishableMediaHashes,
     FARM_BRAND_MAX_PHOTOS,
+    thumbnailsForOriginals,
 } from './farm-brand-media';
 import type {
     RecordFarmBrandConsentInput,
@@ -193,7 +194,14 @@ export async function projectFarmBrand(ctx: RequestContext): Promise<ProjectionR
             await db.publicFarmProfile.deleteMany({ where: { handle: stale } });
         }
 
-        const payload = projectionPayload(brand);
+        // The thumbnail map, resolved INSIDE the tenant context and inside
+        // this transaction — #2062. RLS-scoped, which is the safety property:
+        // a hash is not unique across tenants, so an unscoped lookup could
+        // pair one farm's projection with another farm's thumbnail, and that
+        // thumbnail would then be publicly servable under the first farm's
+        // handle.
+        const thumbFor = await thumbnailsForOriginals(db, brand.photoMediaHashes);
+        const payload = projectionPayload(brand, { thumbFor });
         await db.publicFarmProfile.upsert({
             where: { handle: payload.handle },
             // `indexable` now crosses in `payload`, on both branches. It was
