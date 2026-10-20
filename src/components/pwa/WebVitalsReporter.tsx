@@ -17,6 +17,39 @@ import { isPublicSurface } from '@/lib/i18n/public-surface';
 export function WebVitalsReporter() {
     useEffect(() => {
         let cancelled = false;
+
+        /** The coarse label, derived once — see the note on `surface` below. */
+        const surfaceOf = () =>
+            isPublicSurface(window.location.pathname) ? 'public-farm' : 'app';
+
+        /**
+         * Tell the sink that the CHANNEL failed (#1940).
+         *
+         * Over 30 days this pipeline produced 1857 requests and zero vitals,
+         * and the reason nobody noticed is that it could not report its own
+         * failure: the import's catch was empty and `sendBeacon`'s boolean
+         * return was discarded, so a dead channel looked like a healthy one
+         * with nothing interesting to say.
+         *
+         * `fetch`, never `sendBeacon` — one of the two things this reports is
+         * `sendBeacon` refusing, so using it here would be asking the broken
+         * part to carry the news. Still best-effort: a visitor's page must
+         * not break because telemetry failed. The difference is that the
+         * failure now lands in a log someone can query, instead of nowhere.
+         */
+        const reportChannelError = (reason: 'import-failed' | 'beacon-refused') => {
+            try {
+                void fetch('/api/metrics', {
+                    method: 'POST',
+                    body: JSON.stringify({ channelError: reason, surface: surfaceOf() }),
+                    headers: { 'Content-Type': 'application/json' },
+                    keepalive: true,
+                }).catch(() => {});
+            } catch {
+                /* ignore */
+            }
+        };
+
         const report = (metric: Metric) => {
             try {
                 const body = JSON.stringify({
@@ -50,12 +83,25 @@ export function WebVitalsReporter() {
                      * trimmed message catalogue come to disagree about what
                      * counts as public.
                      */
-                    surface: isPublicSurface(window.location.pathname)
-                        ? 'public-farm'
-                        : 'app',
+                    surface: surfaceOf(),
                 });
                 if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-                    navigator.sendBeacon('/api/metrics', body);
+                    // The RETURN VALUE, which used to be discarded (#1940).
+                    // `false` means the browser refused to queue it — over
+                    // quota, or a payload it will not take — and the
+                    // measurement was simply lost. Falling back to `fetch`
+                    // recovers it, and the diagnostic says it happened so a
+                    // systematic refusal is visible rather than a quiet
+                    // shortfall in the sample.
+                    if (!navigator.sendBeacon('/api/metrics', body)) {
+                        reportChannelError('beacon-refused');
+                        void fetch('/api/metrics', {
+                            method: 'POST',
+                            body,
+                            headers: { 'Content-Type': 'application/json' },
+                            keepalive: true,
+                        }).catch(() => {});
+                    }
                 } else {
                     void fetch('/api/metrics', {
                         method: 'POST',
@@ -77,7 +123,13 @@ export function WebVitalsReporter() {
                 onFCP(report);
                 onTTFB(report);
             })
-            .catch(() => {});
+            .catch(() => {
+                // The candidate this distinguishes: the chunk being blocked by
+                // the nonce-based strict CSP. `script-src` would stop the
+                // import while `connect-src` still allows `'self'`, so this
+                // POST arrives even when no metric ever can (#1940).
+                if (!cancelled) reportChannelError('import-failed');
+            });
         return () => {
             cancelled = true;
         };

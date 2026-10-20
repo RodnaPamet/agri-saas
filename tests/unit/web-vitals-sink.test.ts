@@ -28,11 +28,12 @@
 import { NextRequest } from 'next/server';
 
 const loggerInfo = jest.fn();
+const loggerWarn = jest.fn();
 jest.mock('@/lib/observability/logger', () => ({
     __esModule: true,
     logger: {
         info: (...a: unknown[]) => loggerInfo(...a),
-        warn: jest.fn(),
+        warn: (...a: unknown[]) => loggerWarn(...a),
         error: jest.fn(),
     },
 }));
@@ -235,5 +236,62 @@ describe('the web-vitals sink only logs values from a closed set', () => {
             const res = await POST(beacon(body));
             expect(res.status).toBe(204);
         }
+    });
+});
+
+describe('the channel can report its OWN failure', () => {
+    beforeEach(() => jest.clearAllMocks());
+
+    // The gap #1940 is really about. 1857 requests, zero vitals, and nobody
+    // noticed because every failure path was silent: a dead RUM channel and a
+    // healthy one with no interesting metrics were the same observable.
+
+    it('records an import failure, which is what DISCRIMINATES the two causes', async () => {
+        // If the `web-vitals` chunk is blocked by the nonce-based strict CSP,
+        // the callbacks never run and no metric can ever be sent — but
+        // `connect-src` allows 'self', so this arrives. That is the whole
+        // point: an entry here tells a blocked import apart from callbacks
+        // that never fired, which no amount of waiting on the server can do.
+        const res = await POST(beacon(JSON.stringify({ channelError: 'import-failed', surface: 'app' })));
+        expect(res.status).toBe(204);
+        expect(loggerWarn).toHaveBeenCalledTimes(1);
+        expect(loggerWarn.mock.calls[0][0]).toBe('web-vital.channel_error');
+        expect(loggerWarn.mock.calls[0][1]).toMatchObject({
+            channelError: 'import-failed',
+            surface: 'app',
+        });
+    });
+
+    it('records a refused beacon', async () => {
+        await POST(beacon(JSON.stringify({ channelError: 'beacon-refused', surface: 'public-farm' })));
+        expect(loggerWarn.mock.calls[0][1]).toMatchObject({
+            channelError: 'beacon-refused',
+            surface: 'public-farm',
+        });
+    });
+
+    it('is NOT logged as a measurement — a failure must not count as a data point', async () => {
+        await POST(beacon(JSON.stringify({ channelError: 'import-failed' })));
+        // The discriminator for this suite: a dashboard counting `web-vital`
+        // must not be fed by failures, or the channel being broken would read
+        // as traffic.
+        expect(loggerInfo).not.toHaveBeenCalled();
+    });
+
+    it('DROPS an unrecognised reason, like every other echoed field', async () => {
+        // This route is public, unauthenticated and deliberately
+        // un-rate-limited, so an open string here is billable log ingest that
+        // anyone on the internet can drive (#1964).
+        await POST(beacon(JSON.stringify({ channelError: 'whatever-i-typed' })));
+        expect(loggerWarn).not.toHaveBeenCalled();
+    });
+
+    it('a real measurement still logs, and logs nothing at warn', async () => {
+        // The control. Without it, every assertion above would pass against a
+        // route that had stopped recording metrics altogether.
+        await POST(beacon(LCP, 'text/plain;charset=UTF-8'));
+        expect(loggerInfo).toHaveBeenCalledTimes(1);
+        expect(loggerInfo.mock.calls[0][0]).toBe('web-vital');
+        expect(loggerWarn).not.toHaveBeenCalled();
     });
 });
