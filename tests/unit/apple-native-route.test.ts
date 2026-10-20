@@ -253,6 +253,89 @@ describe('§5 a new user is created UNCONSENTED, and told so', () => {
     });
 });
 
+describe('§7 Apple\'s private-relay claim is KEPT, not discarded (#1675)', () => {
+    // The signal is unrecoverable afterwards: `User.email` is stored
+    // encrypted, so no later query can ask which recipients are behind the
+    // relay, and the claim arrives only on the identity token. It was being
+    // computed in `verifyAppleIdentityToken` and thrown away.
+    //
+    // Apple's ASSERTION, not a domain check. The fixture's address ends
+    // `@privaterelay.appleid.test` deliberately — a heuristic on the domain
+    // would pass these tests too, so the third case below separates them.
+
+    it('a relay sign-in records true', async () => {
+        const id = identity({ isPrivateRelay: true });
+        verifyAppleIdentityToken.mockResolvedValue({ ok: true, identity: id });
+        await post(VALID_BODY);
+        const userId = await trackBySub(id.appleUserId);
+        const row = await prisma.user.findUnique({
+            where: { id: userId! },
+            select: { isPrivateRelay: true },
+        });
+        expect(row?.isPrivateRelay).toBe(true);
+    });
+
+    it('an ordinary Apple address records FALSE, not null', async () => {
+        // The distinction the column exists to carry: `false` means Apple told
+        // us it is not a relay, where null means nobody ever said.
+        const id = identity({
+            isPrivateRelay: false,
+            email: `real-${randomUUID()}@example.test`,
+        });
+        verifyAppleIdentityToken.mockResolvedValue({ ok: true, identity: id });
+        await post(VALID_BODY);
+        const userId = await trackBySub(id.appleUserId);
+        const row = await prisma.user.findUnique({
+            where: { id: userId! },
+            select: { isPrivateRelay: true },
+        });
+        expect(row?.isPrivateRelay).toBe(false);
+    });
+
+    it('follows the CLAIM, not the address, when the two disagree', async () => {
+        // A relay-looking address with the claim false. A domain heuristic
+        // would record true here; Apple's claim is the authority, and this is
+        // what separates the two implementations.
+        const id = identity({
+            isPrivateRelay: false,
+            email: `looks-relay-${randomUUID()}@privaterelay.appleid.test`,
+        });
+        verifyAppleIdentityToken.mockResolvedValue({ ok: true, identity: id });
+        await post(VALID_BODY);
+        const userId = await trackBySub(id.appleUserId);
+        const row = await prisma.user.findUnique({
+            where: { id: userId! },
+            select: { isPrivateRelay: true },
+        });
+        expect(row?.isPrivateRelay).toBe(false);
+    });
+
+    it('does NOT relabel a user reached by the account-LINK path', async () => {
+        // That user's stored address is their REAL one — it is how the match
+        // happened — so calling it a relay would be a lie about which address
+        // we hold. (In practice a relay address is unique per app and never
+        // matches, which is why a relay user always takes the create path;
+        // this pins the boundary rather than relying on that.)
+        const email = `linkme-${randomUUID()}@example.test`;
+        const existing = await prisma.user.create({
+            data: { email, emailHash: hashForLookup(email), acceptedTermsAt: new Date() },
+            select: { id: true, isPrivateRelay: true },
+        });
+        madeUsers.push(existing.id);
+        expect(existing.isPrivateRelay).toBeNull();
+
+        const id = identity({ email, isPrivateRelay: true });
+        verifyAppleIdentityToken.mockResolvedValue({ ok: true, identity: id });
+        await post(VALID_BODY);
+
+        const after = await prisma.user.findUnique({
+            where: { id: existing.id },
+            select: { isPrivateRelay: true },
+        });
+        expect(after?.isPrivateRelay).toBeNull();
+    });
+});
+
 describe('§6 the token pair', () => {
     it('is bound to the session row that was just recorded', async () => {
         const id = identity();
