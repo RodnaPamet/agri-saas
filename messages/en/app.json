@@ -6531,6 +6531,13 @@
         "FILE_NOT_FOUND": "That file was not found.",
         "FILE_REQUIRED": "No file was included in the form data.",
         "FILE_TOO_LARGE": "File exceeds the maximum size of {maxBytes} bytes",
+        "FILE_TYPE_NOT_ALLOWED": {
+            "declared": "That file type is not accepted.",
+            "content": "The file's content does not match its declared type, so it is not accepted.",
+            "profile_image": "A profile image must be a JPEG, PNG or WebP photograph.",
+            "default": "That file type is not accepted."
+        },
+        "FILE_VALIDATION_ERROR": "The file could not be uploaded. Try again, or choose a different file.",
         "GOOGLE_CONNECTION_NAME_TAKEN": "A Google connection with this name already exists.",
         "GOOGLE_CONNECTION_NOT_FOUND": "That Google connection was not found.",
         "GOOGLE_CONNECTION_NO_CREDENTIALS": "This Google connection has no stored credentials. Connect Google again.",

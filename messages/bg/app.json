@@ -6531,6 +6531,13 @@
         "FILE_NOT_FOUND": "Файлът не беше намерен.",
         "FILE_REQUIRED": "Не е приложен файл.",
         "FILE_TOO_LARGE": "Файлът надвишава максималния размер от {maxBytes} байта.",
+        "FILE_TYPE_NOT_ALLOWED": {
+            "declared": "Този тип файл не се приема.",
+            "content": "Съдържанието на файла не съответства на обявения тип и не се приема.",
+            "profile_image": "Профилната снимка трябва да е JPEG, PNG или WebP.",
+            "default": "Този тип файл не се приема."
+        },
+        "FILE_VALIDATION_ERROR": "Файлът не можа да бъде качен. Опитайте отново или изберете друг файл.",
         "GOOGLE_CONNECTION_NAME_TAKEN": "Вече съществува връзка с Google с това име.",
         "GOOGLE_CONNECTION_NOT_FOUND": "Тази връзка с Google не беше намерена.",
         "GOOGLE_CONNECTION_NO_CREDENTIALS": "Тази връзка с Google няма запазени идентификационни данни. Свържете Google отново.",

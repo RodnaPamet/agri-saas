@@ -647,7 +647,9 @@ export async function uploadLogEntryPhoto(
     // contract as the evidence upload — see the note there.
     const declaredMime = file.type || 'application/octet-stream';
     if (!isAllowedMime(declaredMime)) {
-        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`);
+        throw codedBadRequest('FILE_TYPE_NOT_ALLOWED', `MIME type "${declaredMime}" is not allowed`, {
+            reason: 'declared',   // the client's CLAIM, not the bytes (#2059)
+        });
     }
     if (!isAllowedSize(file.size)) {
         // See ingest.ts: the cap travels as a param so the catalogue entry
@@ -671,6 +673,9 @@ export async function uploadLogEntryPhoto(
         if (!isAllowedMime(mimeType)) {
             throw codedBadRequest('FILE_TYPE_NOT_ALLOWED',
                 `File content is "${mimeType}", which is not allowed`,
+                // The SIGNATURE beat the claim — a different refusal from
+                // `declared`, and the one worth telling a user apart (#2059).
+                { reason: 'content' },
             );
         }
         logger.warn('journal upload declared a MIME type its bytes contradict', {

@@ -13,7 +13,7 @@
 import crypto from 'crypto';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
-import { badRequest, tenantIsolationViolation } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, tenantIsolationViolation } from '@/lib/errors/types';
 import type { StorageProvider, StorageProviderType } from './types';
 
 // Re-export types for consumers
@@ -314,11 +314,27 @@ export function validateFile(file: File, options?: { maxSizeMB?: number; allowed
     const allowedTypes = options?.allowedMimeTypes || FILE_ALLOWED_MIME;
 
     if (file.size > maxSize) {
-        throw badRequest(`File size validation failed: max size is ${options?.maxSizeMB || 10}MB`);
+        // CODED (#2059). This used to be prose, and its only caller flattened
+        // it into `FILE_VALIDATION_ERROR`'s message — which is why that code
+        // could not be entried: the sentence WAS the validator's. The cap
+        // travels as a param so the catalogue entry can name the number, the
+        // same contract `FILE_TOO_LARGE` already had at the ingest path.
+        throw codedBadRequest(
+            'FILE_TOO_LARGE',
+            `File size validation failed: max size is ${options?.maxSizeMB || 10}MB`,
+            { maxBytes: String(maxSize) },
+        );
     }
 
     if (!allowedTypes.includes(file.type)) {
-        throw badRequest(`File type validation failed: ${file.type} is not allowed`);
+        throw codedBadRequest(
+            'FILE_TYPE_NOT_ALLOWED',
+            `File type validation failed: ${file.type} is not allowed`,
+            // The DECLARED type — the client's claim, not the bytes. The
+            // type itself stays out of `params`: it is client-controlled
+            // input and would reach logs through the error payload.
+            { reason: 'declared' },
+        );
     }
 
     return true;

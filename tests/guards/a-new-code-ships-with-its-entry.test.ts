@@ -56,19 +56,6 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  */
 const DELIBERATELY_UNENTRIED: ReadonlyArray<[code: string, why: string]> = [
     [
-        'FILE_TYPE_NOT_ALLOWED',
-        'Five sites, and one passes a CALLER-SUPPLIED reason (`extraRejection` from ' +
-            '`opts.extraCheck`) — an entry would replace "avatars must be square" with a generic sentence.',
-    ],
-    [
-        'FILE_VALIDATION_ERROR',
-        'Its message IS the validator\'s own — `err instanceof Error ? err.message : ...` — so an ' +
-            'entry would replace a specific explanation ("file exceeds 10 MB") with a generic one. ' +
-            'Same shape as FILE_TYPE_NOT_ALLOWED above, and the same fix if it is ever wanted: give ' +
-            'the validator coded sub-errors, which is a change to the upload path rather than a ' +
-            'catalogue batch. Moved here from BACKLOG in batch 11 — it was never "not yet".',
-    ],
-    [
         'BLOCK_SELLER_ONLY',
         'P5.7 vocabulary in another session\'s lane, so not mine to word. Asserted as absent in ' +
             '`refusal-codes-read-in-bulgarian`, which is the case that caught batch 13 adding it.',
