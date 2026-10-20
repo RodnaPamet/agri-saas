@@ -180,6 +180,9 @@ export async function issueEmailVerification(
 
     try {
         await sendEmail({
+            // Same as password-reset: about a user, not a row this table should
+            // reference.
+            purpose: 'email-verification',
             to: identifier,
             subject: await t('verifySubject'),
             text: [

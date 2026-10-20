@@ -44,7 +44,14 @@ import {
     type EmailProvider,
 } from '@/lib/mailer';
 
-const MSG = { to: 'operator@example.test', subject: 'subj', text: 'body' };
+// `purpose` is required since #1769, so this one fixture carries it for all
+// six cases below — the correlation row is written from it.
+const MSG = {
+    to: 'operator@example.test',
+    subject: 'subj',
+    text: 'body',
+    purpose: 'mail-canary' as const,
+};
 
 beforeEach(() => {
     info.mockReset();

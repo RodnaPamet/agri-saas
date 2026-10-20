@@ -49,6 +49,9 @@ export async function sendVerificationCodeEmail(
 
     try {
         await sendEmail({
+            // About a user rather than a row this table references; the
+            // purpose answers "did registration mail stop working?".
+            purpose: 'registration',
             to: email,
             subject: await t('codeSubject'),
             text: [
@@ -96,6 +99,9 @@ export async function sendAlreadyRegisteredEmail(
 
     try {
         await sendEmail({
+            // About a user rather than a row this table references; the
+            // purpose answers "did registration mail stop working?".
+            purpose: 'registration',
             to: email,
             subject: await t('existingSubject'),
             text: [

@@ -137,7 +137,12 @@ export async function sendInviteEmail(
     ].join('');
 
     try {
-        await sendEmail({ to, subject, text, html });
+        await sendEmail({
+            // `sendInviteEmail` takes no invite id — only an acceptUrl — so marking a
+            // TenantInvite undeliverable needs a signature change across its callers.
+            // Deliberately deferred to the webhook PR, where it is the thing being
+            // built; recording a purpose without a subject here is honest about that.
+            purpose: 'invite', to, subject, text, html });
         // The mailer falls back to a console sink when no SMTP is configured;
         // in production that means the message was LOGGED, not delivered.
         // Report it as not-sent so the caller surfaces the copy-link fallback

@@ -102,6 +102,9 @@ export async function processOutbox(
             await sendEmail({
                 to: row.toEmail,
                 subject: row.subject,
+                purpose: 'notification-outbox',
+                subjectType: 'NotificationOutbox',
+                subjectIds: [row.id],
                 text: row.bodyText,
                 html: row.bodyHtml || undefined,
                 from: `${settings.defaultFromName} <${settings.defaultFromEmail}>`,

@@ -175,6 +175,10 @@ export async function runStatementDispatch(
                 to: recipient.email,
                 subject,
                 text: body,
+                purpose: 'statement-dispatch',
+                // One statement per send here, unlike the triage digest.
+                subjectType: 'StatementOfReasons',
+                subjectIds: [row.id],
                 ...(redressAddress ? { replyTo: redressAddress } : {}),
             });
 
