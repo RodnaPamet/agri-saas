@@ -152,6 +152,40 @@ export function PublicFarmBody({
                 </section>
             ) : null}
 
+            {profile.about ? (
+                <section className="mt-6" data-testid="public-farm-about">
+                    <Heading level={2}>{labels.aboutTitle}</Heading>
+                    {/* Plain text, rendered as text. The value is sanitised on
+                        the way into `FarmBrand` and the projection copies it
+                        verbatim, so there is no markup to honour — and
+                        rendering it as HTML would make the sanitiser the only
+                        thing between a farm and an XSS on a page served to
+                        strangers. */}
+                    <p className="mt-2 whitespace-pre-line">{profile.about}</p>
+                </section>
+            ) : null}
+            {/* AFTER the about text, and that position is a MEASUREMENT
+                rather than a layout preference — #2062.
+
+                It sat above `about` first. On a mobile viewport that put the
+                grid in the initial view, which defeats `loading="lazy"`
+                entirely: a lazy image that is already visible still loads, it
+                only starts later. Lighthouse measured the consequence as LCP
+                4056 ms against a 2200 ms budget, and its phase breakdown named
+                the cause — Load Delay 1623 ms, because the photographs start
+                only after first paint, then Load Time 2282 ms.
+
+                2282 ms for a 14 KB image is not transfer. It is six concurrent
+                requests, each costing a route handler and two database queries,
+                under Lighthouse's 4x CPU throttle. So the remaining lever is
+                the NUMBER of media requests in the critical path rather than
+                their size — the size was already fixed by thumbnails, which
+                took LCP from 15438 ms to 4056 ms.
+
+                Below the about paragraph the grid is off-screen on a phone, so
+                the LCP element becomes the text again and the photographs load
+                after it. First views pay for them once; repeat views pay
+                nothing, because the responses are immutable. */}
             {profile.photoUrls.length > 0 ? (
                 <section className="mt-6" data-testid="public-farm-photos">
                     {/* No heading. The gallery is not a titled section the way
@@ -184,18 +218,6 @@ export function PublicFarmBody({
                 </section>
             ) : null}
 
-            {profile.about ? (
-                <section className="mt-6" data-testid="public-farm-about">
-                    <Heading level={2}>{labels.aboutTitle}</Heading>
-                    {/* Plain text, rendered as text. The value is sanitised on
-                        the way into `FarmBrand` and the projection copies it
-                        verbatim, so there is no markup to honour — and
-                        rendering it as HTML would make the sanitiser the only
-                        thing between a farm and an XSS on a page served to
-                        strangers. */}
-                    <p className="mt-2 whitespace-pre-line">{profile.about}</p>
-                </section>
-            ) : null}
         </>
     );
 }
