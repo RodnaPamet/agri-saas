@@ -27,12 +27,26 @@ jest.mock('@/lib/api-client', () => ({ apiPost: (...a: unknown[]) => apiPost(...
 
 import { CreateOfferModal } from '@/app/t/[tenantSlug]/(app)/exchange/CreateOfferModal';
 
-function renderModal() {
+/**
+ * `publicProfileEnabled` defaults to TRUE here, and only here.
+ *
+ * The component's prop is deliberately required with no default (#1929): a
+ * default would be the wrong answer somewhere, and every call site should say
+ * which it means. A test helper is the one place a default is right — the
+ * existing cases are about the form's fields, not about the flag, and making
+ * twenty of them restate it would bury the two cases that ARE about it.
+ */
+function renderModal(publicProfileEnabled = true) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
         <QueryClientProvider client={client}>
             <TooltipProvider>
-                <CreateOfferModal open setOpen={() => {}} onCreated={jest.fn()} />
+                <CreateOfferModal
+                    open
+                    setOpen={() => {}}
+                    onCreated={jest.fn()}
+                    publicProfileEnabled={publicProfileEnabled}
+                />
             </TooltipProvider>
         </QueryClientProvider>,
     );
@@ -153,6 +167,40 @@ describe('publish as the farm', () => {
         expect(toggle).not.toBeChecked();
 
         fireEvent.click(await fillRequired());
+        await waitFor(() => expect(apiPost).toHaveBeenCalled());
+        const [, body] = apiPost.mock.calls[0] as [string, Record<string, unknown>];
+        expect(body.publishAsFarm).toBe(false);
+    });
+
+    it('is ABSENT when social.public-profile is off for the viewer — P6.7 (#1929)', async () => {
+        // The defect: this switch rendered for every web user while the flag
+        // was off by default. With the flag off it cannot do anything —
+        // `/farm-brand/publication` 404s for the caller and `/f/{handle}`
+        // checks the flag globally — so a ticked switch attributed nothing and
+        // the link its consent text promises could not open.
+        //
+        // Absent, not disabled: a greyed-out control advertises a
+        // dark-launched surface, which is the same reason
+        // `assertFeatureEnabled` answers 404 rather than 403.
+        renderModal(false);
+
+        expect(screen.queryByRole('switch', { name: /publish as the farm/i })).toBeNull();
+
+        // The CONTROL, and it is what makes the assertion above mean
+        // something: the rest of the form is untouched. The exchange is not a
+        // social surface, so gating the page would have been the wrong fix —
+        // only this one control is P6.
+        expect(screen.getByLabelText(/quantity/i)).toBeInTheDocument();
+    });
+
+    it('still posts publishAsFarm: false when the control is hidden', async () => {
+        // The server stays lenient (#1929 keeps that deliberately), so the
+        // field is still sent — as the default. What matters is that a viewer
+        // who was never shown the switch cannot have consented to anything,
+        // and `false` is the only honest value for that.
+        renderModal(false);
+        fireEvent.click(await fillRequired());
+
         await waitFor(() => expect(apiPost).toHaveBeenCalled());
         const [, body] = apiPost.mock.calls[0] as [string, Record<string, unknown>];
         expect(body.publishAsFarm).toBe(false);
