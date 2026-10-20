@@ -77,13 +77,27 @@ export const RemovePushSubscriptionSchema = z.object({
  * byte-for-byte — `tests/unit/small-schemas.test.ts` exercises it and is now
  * doing double duty as the back-compat control.
  *
- * ## 64 hex characters, pinned
+ * ## Hex, pinned; length BOUNDED rather than fixed
  *
- * An APNs token is 32 bytes hex-encoded. The pin is not cosmetic: the token
- * goes into an HTTP/2 request path to Apple, so an unvalidated value is a
- * request-splitting shape at the one field a client controls — the same
- * reasoning that pinned `endpoint` above, one transport over. Length and
- * alphabet together leave nothing to interpret.
+ * The token goes into an HTTP/2 request path to Apple, so an unvalidated value
+ * is a request-splitting shape at the one field a client controls — the same
+ * reasoning that pinned `endpoint` above, one transport over.
+ *
+ * What carries that property is the ALPHABET. Hex admits no `/`, no CR or LF
+ * and no space, so there is nothing in a conforming value to interpret as
+ * structure. The exact COUNT never carried it, and pinning it to 64 bet on a
+ * size Apple does not promise.
+ *
+ * That bet was measured and lost: agrent-ios found an 80-byte token (160 hex)
+ * on a simulator, and Apple documents device tokens as variable length. A
+ * device issuing one would have received a 400 on every registration —
+ * silent, because a phone that cannot register simply receives nothing.
+ * Today's real tokens are 32 bytes and the owner's passed the old pin, so this
+ * is a latent fault rather than a live one.
+ *
+ * 64 to 200 hex characters is 32 to 100 bytes: the known sizes with headroom,
+ * and still a hard ceiling. Unbounded would hand a caller the length of a path
+ * we construct, which is the half of the original reasoning worth keeping.
  *
  * Case-insensitive because Apple's own documentation and the iOS
  * `Data.description` path differ on it, and a token rejected for being
@@ -93,7 +107,26 @@ export const ApnsRegistrationSchema = z.object({
     platform: z.literal('IOS'),
     deviceToken: z
         .string()
-        .regex(/^[0-9a-f]{64}$/i, 'Device token must be 64 hexadecimal characters'),
+        .regex(
+            /^[0-9a-f]{64,200}$/i,
+            'Device token must be 64 to 200 hexadecimal characters',
+        ),
+    /**
+     * Which APNs host this token is valid against — #1764 step 3.
+     *
+     * LOWER-CASE on the wire because that is what `aps-environment` in the
+     * app's provisioning profile says, and the client reads it from there
+     * rather than deciding for itself. The column is the enum
+     * `ApnsEnvironment`; the mapping happens once, in the usecase.
+     *
+     * OPTIONAL, and that is a compatibility requirement rather than
+     * leniency: agrent-ios ships the field in a build that follows this one,
+     * so a required field would reject every registration from the build
+     * that is installed today — and a phone that cannot register receives
+     * nothing. An absent value stores NULL, which the sender refuses and
+     * logs rather than guessing a host.
+     */
+    environment: z.enum(['development', 'production']).optional(),
 });
 
 /**
@@ -112,7 +145,10 @@ export const PushRegistrationSchema = z.union([
 /** The unsubscribe counterpart. Looser than registration, for the reason above. */
 export const RemoveApnsRegistrationSchema = z.object({
     platform: z.literal('IOS'),
-    deviceToken: z.string().regex(/^[0-9a-f]{64}$/i),
+    // Same bound as registration. An unregister that refused a token the
+    // register accepted would strand the row it was meant to remove — and
+    // that is the direction where a phone cannot clean up after itself.
+    deviceToken: z.string().regex(/^[0-9a-f]{64,200}$/i),
 });
 
 export const RemovePushRegistrationSchema = z.union([

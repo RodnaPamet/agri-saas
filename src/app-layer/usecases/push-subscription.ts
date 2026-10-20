@@ -1,3 +1,4 @@
+import type { ApnsEnvironment } from '@prisma/client';
 /**
  * Push-registration usecase — a tenant member managing their OWN devices
  * (self-service, like MFA enrolment).
@@ -60,6 +61,19 @@ export async function removePushSubscription(ctx: RequestContext, endpoint: stri
 }
 
 /**
+ * Wire form → column enum, declared once — #1764 step 3.
+ *
+ * A `Record` of the schema's literal union rather than `toUpperCase()`: the
+ * cast version compiles for any string and would put `"SANDBOX"` in the column
+ * the day somebody widens the wire values without looking here. This fails to
+ * compile instead.
+ */
+const APNS_ENVIRONMENT_BY_WIRE = {
+    development: 'DEVELOPMENT',
+    production: 'PRODUCTION',
+} as const satisfies Record<'development' | 'production', ApnsEnvironment>;
+
+/**
  * Register THIS phone for APNs (#1764).
  *
  * Idempotent on `[tenantId, userId, deviceToken]`, which the partial unique
@@ -74,7 +88,12 @@ export async function removePushSubscription(ctx: RequestContext, endpoint: stri
  */
 export async function saveApnsRegistration(
     ctx: RequestContext,
-    input: { deviceToken: string; userAgent?: string | null },
+    input: {
+        deviceToken: string;
+        userAgent?: string | null;
+        /** Lower-case wire form; mapped to the `ApnsEnvironment` enum here. */
+        environment?: 'development' | 'production';
+    },
 ): Promise<{ id: string }> {
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.pushSubscription.findFirst({
@@ -87,10 +106,36 @@ export async function saveApnsRegistration(
             select: { id: true },
         });
         if (existing) {
-            await db.pushSubscription.update({
-                where: { id: existing.id },
-                data: { userAgent: input.userAgent ?? null },
-            });
+            // ── the widened update — #1764 step 3 ──
+            //
+            // This path used to write `userAgent` and nothing else, which made
+            // a re-registration a no-op for every other column. That is the
+            // defect agrent-ios identified: a row created before
+            // `apnsEnvironment` existed would keep it NULL for ever, the
+            // sender would refuse the row, and the phone would silently
+            // receive nothing while appearing registered. The phone
+            // re-registers on every signed-in launch, so this is the one place
+            // that can correct a stored value.
+            //
+            // Only what the caller SENT is written. An absent field leaves the
+            // stored value alone rather than nulling it, which matters in both
+            // directions: an older build that does not send `environment` must
+            // not erase a value a newer build stored, and the same reasoning
+            // applies to `userAgent`. That is the `!== undefined` convention
+            // the rest of this codebase uses for partial updates — see
+            // `updateFarmBrand`.
+            //
+            // It also fixes a smaller pre-existing version of the same bug:
+            // `userAgent: input.userAgent ?? null` erased a stored agent
+            // whenever a caller omitted one.
+            const data: Record<string, unknown> = {};
+            if (input.userAgent !== undefined) data.userAgent = input.userAgent;
+            if (input.environment !== undefined) {
+                data.apnsEnvironment = APNS_ENVIRONMENT_BY_WIRE[input.environment];
+            }
+            if (Object.keys(data).length > 0) {
+                await db.pushSubscription.update({ where: { id: existing.id }, data });
+            }
             return { id: existing.id };
         }
         return db.pushSubscription.create({
@@ -100,6 +145,9 @@ export async function saveApnsRegistration(
                 platform: 'IOS',
                 deviceToken: input.deviceToken,
                 userAgent: input.userAgent ?? null,
+                apnsEnvironment: input.environment
+                    ? APNS_ENVIRONMENT_BY_WIRE[input.environment]
+                    : null,
             },
             select: { id: true },
         });
