@@ -36,6 +36,8 @@
  * exactly the farms a capped token cannot see — the one case where the page
  * most needs to know the database holds more than the token does.
  */
+import type { Prisma } from '@prisma/client';
+
 import prisma from '@/lib/prisma';
 
 /** The shape the `memberships` claim carries (`src/auth.ts`). */
@@ -53,10 +55,55 @@ export interface TokenMembership {
  */
 export async function accessGrantingTenantSlugs(userId: string): Promise<string[]> {
     const rows = await prisma.tenantMembership.findMany({
-        where: { userId, status: 'ACTIVE', tenant: { deletedAt: null } },
+        where: accessGrantingWhere(userId),
         select: { tenant: { select: { slug: true } } },
     });
     return rows.map((r) => r.tenant.slug);
+}
+
+/**
+ * The filter both readers share, in one place.
+ *
+ * Extracted when the ids variant below was added, because two copies of this
+ * clause are two things to keep in step — and the clause is not arbitrary: it
+ * mirrors `applyMembershipClaims` exactly, and an org-removed tenant appearing
+ * here is the #1738 defect (telling somebody to sign in again to reach a farm
+ * that has been deleted).
+ */
+function accessGrantingWhere(userId: string): Prisma.TenantMembershipWhereInput {
+    // The return TYPE rather than `as const` on the literal, so the predicate
+    // stays textually identical to the producer's in `src/auth.ts`.
+    // `tests/guards/membership-filter-is-shared.test.ts` compares those two
+    // strings verbatim — TypeScript cannot express the agreement, because the
+    // producer's copy lives inside a private function's `include` — so an
+    // `as const` here would have broken the one check that keeps the reader
+    // and the claim selecting the same rows.
+    return { userId, status: 'ACTIVE', tenant: { deletedAt: null } };
+}
+
+/**
+ * Every tenant ID the database grants this person access to.
+ *
+ * The id sibling of {@link accessGrantingTenantSlugs}, for callers that key on
+ * the id rather than the URL — `/api/me/stream` subscribes to one bus channel
+ * per farm, and the channel is `notif:<tenantId>:<userId>` (#2085).
+ *
+ * Here rather than in the route because `tests/unit/tenant-isolation-structural`
+ * forbids a route calling prisma directly, and rightly: this module already
+ * owns the query and the reason for its filter, so a second copy in a route
+ * would be the clause that drifts.
+ *
+ * Read through the UNSCOPED client deliberately. `TenantMembership` is the
+ * table that answers "which tenants may I see", so scoping that read to one
+ * tenant would be circular — and the filter below is what makes it safe: one
+ * person's own ACTIVE memberships of live tenants, never anybody else's.
+ */
+export async function accessGrantingTenantIds(userId: string): Promise<string[]> {
+    const rows = await prisma.tenantMembership.findMany({
+        where: accessGrantingWhere(userId),
+        select: { tenantId: true },
+    });
+    return rows.map((r) => r.tenantId);
 }
 
 /**

@@ -82,18 +82,18 @@ describeFn('replayNotificationIdsAfter', () => {
         const second = await notify(me, at(1));
         const third = await notify(me, at(2));
 
-        const ids = await replayNotificationIdsAfter(ctx(), first);
+        const replayed = await replayNotificationIdsAfter(ctx(), first, [TENANT]);
 
         // Oldest first, so a client applying them in order ends at the newest
         // and the LAST id it sees is the next cursor.
-        expect(ids).toEqual([second, third]);
+        expect(replayed.map((r) => r.id)).toEqual([second, third]);
     });
 
     it('excludes the cursor itself — the control', async () => {
         // Off-by-one in the obvious direction: a client that was sent the
         // cursor again would render a duplicate on every reconnect.
         const only = await notify(me, at(0));
-        expect(await replayNotificationIdsAfter(ctx(), only)).toEqual([]);
+        expect(await replayNotificationIdsAfter(ctx(), only, [TENANT])).toEqual([]);
     });
 
     it('replays the REST of the cursor’s millisecond — the batch case', async () => {
@@ -114,12 +114,12 @@ describeFn('replayNotificationIdsAfter', () => {
         ];
         const later = await notify(me, at(1), 'later');
 
-        const ids = await replayNotificationIdsAfter(ctx(), batch[0]);
+        const replayed = await replayNotificationIdsAfter(ctx(), batch[0], [TENANT]);
 
         // The cursor's siblings AND everything after, with the cursor itself
         // the only row removed.
-        expect(ids.slice().sort()).toEqual([batch[1], batch[2], later].sort());
-        expect(ids).not.toContain(batch[0]);
+        expect(replayed.map((r) => r.id).sort()).toEqual([batch[1], batch[2], later].sort());
+        expect(replayed.map((r) => r.id)).not.toContain(batch[0]);
     });
 
     it('a repeated id is the ACCEPTED cost, and is bounded to one millisecond', async () => {
@@ -135,11 +135,11 @@ describeFn('replayNotificationIdsAfter', () => {
         const old2 = await notify(me, at(-5), 'old2');
         const batch = [await notify(me, at(0), 'b1'), await notify(me, at(0), 'b2')];
 
-        const ids = await replayNotificationIdsAfter(ctx(), batch[1]);
+        const replayed = await replayNotificationIdsAfter(ctx(), batch[1], [TENANT]);
 
-        expect(ids).toEqual([batch[0]]);
-        expect(ids).not.toContain(old1);
-        expect(ids).not.toContain(old2);
+        expect(replayed.map((r) => r.id)).toEqual([batch[0]]);
+        expect(replayed.map((r) => r.id)).not.toContain(old1);
+        expect(replayed.map((r) => r.id)).not.toContain(old2);
     });
 
     it('never returns ANOTHER person’s notifications', async () => {
@@ -147,7 +147,7 @@ describeFn('replayNotificationIdsAfter', () => {
         await notify(other, at(1));
         await notify(other, at(2));
 
-        expect(await replayNotificationIdsAfter(ctx(), mine)).toEqual([]);
+        expect(await replayNotificationIdsAfter(ctx(), mine, [TENANT])).toEqual([]);
     });
 
     it('cannot use another person’s id as a cursor', async () => {
@@ -158,7 +158,7 @@ describeFn('replayNotificationIdsAfter', () => {
         const theirs = await notify(other, at(1));
         await notify(me, at(2));
 
-        expect(await replayNotificationIdsAfter(ctx(), theirs)).toEqual([]);
+        expect(await replayNotificationIdsAfter(ctx(), theirs, [TENANT])).toEqual([]);
     });
 
     it('replays nothing for an unknown or malformed cursor', async () => {
@@ -167,7 +167,7 @@ describeFn('replayNotificationIdsAfter', () => {
         // cursor from a deleted notification is the same answer as nonsense:
         // "I cannot tell you what you missed", and the client refetches.
         for (const bad of ['c'.repeat(25), '', 'not-a-cuid!!', '../../etc/passwd', 'x']) {
-            expect(await replayNotificationIdsAfter(ctx(), bad)).toEqual([]);
+            expect(await replayNotificationIdsAfter(ctx(), bad, [TENANT])).toEqual([]);
         }
     });
 
@@ -175,8 +175,8 @@ describeFn('replayNotificationIdsAfter', () => {
         const cursor = await notify(me, at(0));
         for (let i = 1; i <= REPLAY_LIMIT + 10; i++) await notify(me, at(i));
 
-        const ids = await replayNotificationIdsAfter(ctx(), cursor);
-        expect(ids).toHaveLength(REPLAY_LIMIT);
+        const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT]);
+        expect(replayed).toHaveLength(REPLAY_LIMIT);
     });
 
     it('orders by TIME, not by id', async () => {
@@ -188,6 +188,147 @@ describeFn('replayNotificationIdsAfter', () => {
         const later = await notify(me, at(10));
         const middle = await notify(me, at(5));
 
-        expect(await replayNotificationIdsAfter(ctx(), cursor)).toEqual([middle, later]);
+        const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT]);
+        expect(replayed.map((r) => r.id)).toEqual([middle, later]);
+    });
+
+    describe('across farms — #2085', () => {
+        /**
+         * A second tenant the same person belongs to.
+         *
+         * Created here rather than in `beforeAll` because only these cases
+         * need it, and a tenant that exists for every case would make the
+         * single-farm assertions above pass for the wrong reason — they would
+         * be querying one farm of two rather than the only one.
+         */
+        const OTHER = `t2-${TAG}`;
+
+        beforeAll(async () => {
+            if (!DB_AVAILABLE) return;
+            await prisma.tenant.upsert({
+                where: { id: OTHER },
+                update: {},
+                create: { id: OTHER, name: OTHER, slug: `${TAG}-2` },
+            });
+            await prisma.tenantMembership.create({
+                data: {
+                    tenantId: OTHER,
+                    userId: me,
+                    role: Role.ADMIN,
+                    status: MembershipStatus.ACTIVE,
+                },
+            });
+        }, 60_000);
+
+        afterEach(async () => {
+            if (!DB_AVAILABLE) return;
+            await prisma.notification.deleteMany({ where: { tenantId: OTHER } });
+        });
+
+        /** A notification in the OTHER farm. */
+        async function notifyOther(at_: Date, title = 'o') {
+            const row = await prisma.notification.create({
+                data: { tenantId: OTHER, userId: me, title, message: 'm', createdAt: at_ },
+                select: { id: true },
+            });
+            return row.id;
+        }
+
+        it('replays rows from EVERY farm, merged by time', async () => {
+            // The point of #2085. One connection, one cursor, and a person in
+            // two farms must hear about both — which a single tenant context
+            // cannot do, because `Notification`'s RLS policy has one arm.
+            const cursor = await notify(me, at(0));
+            const mine = await notify(me, at(2));
+            const theirs = await notifyOther(at(1));
+
+            const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT, OTHER]);
+
+            // Oldest first ACROSS farms, not one farm then the other.
+            expect(replayed.map((r) => r.id)).toEqual([theirs, mine]);
+        });
+
+        it('names the farm each id came from', async () => {
+            // Without this a client cannot tell which list to refetch, which
+            // is the exact reason delivery was scoped to one farm before.
+            const cursor = await notify(me, at(0));
+            const mine = await notify(me, at(2));
+            const theirs = await notifyOther(at(1));
+
+            const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT, OTHER]);
+            const byId = new Map(replayed.map((r) => [r.id, r.tenantId]));
+
+            expect(byId.get(mine)).toBe(TENANT);
+            expect(byId.get(theirs)).toBe(OTHER);
+        });
+
+        it('resolves a cursor that lives in the OTHER farm', async () => {
+            // The cursor is one notification id, so it lives in exactly one
+            // farm — and not necessarily the active one. Resolving it only in
+            // the first farm of the list would replay nothing whenever the
+            // client's last event came from elsewhere.
+            const cursor = await notifyOther(at(0));
+            const mine = await notify(me, at(1));
+
+            const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT, OTHER]);
+
+            expect(replayed.map((r) => r.id)).toEqual([mine]);
+        });
+
+        it('replays NOTHING from a farm the caller did not list', async () => {
+            // The list is the authorisation. A farm absent from it is never
+            // queried, so a caller that resolved memberships wrongly cannot
+            // leak another farm's ids through this function.
+            const cursor = await notify(me, at(0));
+            await notifyOther(at(1));
+
+            const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT]);
+
+            expect(replayed).toEqual([]);
+        });
+
+        it('is bounded GLOBALLY, not per farm', async () => {
+            // Two farms each holding a full window must not return twice the
+            // cap — a client away for a week wants to know something changed,
+            // not 100 ids.
+            const cursor = await notify(me, at(0));
+            for (let i = 1; i <= 30; i++) await notify(me, at(i));
+            for (let i = 1; i <= 30; i++) await notifyOther(at(i));
+
+            const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT, OTHER]);
+
+            expect(replayed).toHaveLength(REPLAY_LIMIT);
+        });
+
+        it('takes the OLDEST across farms when it caps', async () => {
+            // Sorting before the cap rather than after is what makes this
+            // true. Capping each farm's query and then merging would return
+            // the oldest of one farm and nothing from the other.
+            const cursor = await notify(me, at(0));
+            // The other farm holds everything older.
+            for (let i = 1; i <= 60; i++) await notifyOther(at(i));
+            const newestMine = await notify(me, at(200));
+
+            const replayed = await replayNotificationIdsAfter(ctx(), cursor, [TENANT, OTHER]);
+
+            expect(replayed).toHaveLength(REPLAY_LIMIT);
+            // The newest row in the active farm is beyond the cap, so it is
+            // NOT in the window — which is the correct answer and the one a
+            // per-farm cap would get wrong.
+            expect(replayed.map((r) => r.id)).not.toContain(newestMine);
+            expect(replayed.every((r) => r.tenantId === OTHER)).toBe(true);
+        });
+
+        it('replays nothing when no farm is listed', async () => {
+            // Satisfied by the cursor resolution rather than by a guard: with
+            // no farm to look in, the cursor is never found and the function
+            // returns on that path. An explicit `tenantIds.length === 0`
+            // check was there and was dead — mutating it away changed no
+            // test, so it was removed rather than left reading as a check.
+            const cursor = await notify(me, at(0));
+            await notify(me, at(1));
+
+            expect(await replayNotificationIdsAfter(ctx(), cursor, [])).toEqual([]);
+        });
     });
 });
