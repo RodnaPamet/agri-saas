@@ -1082,10 +1082,32 @@ async function describeListState(page: Page): Promise<string> {
                 '[aria-label="Select row"][data-state="checked"]',
             ).length;
             const toolbar = document.querySelector('[data-testid="selection-toolbar"]');
-            // `performance.getEntriesByType('navigation')` grows by one per
-            // document navigation, so >1 proves a navigation HAPPENED and the
-            // URL wait merely missed it; ===1 proves none was ever committed.
-            const navs = performance.getEntriesByType('navigation').length;
+            // CORRECTED 2026-10-21. The line below used to be
+            // `performance.getEntriesByType('navigation').length` with a
+            // comment claiming ">1 proves a navigation HAPPENED … ===1 proves
+            // none was ever committed". The first half is true and the second
+            // is false HERE, which is the worst possible split: that list
+            // grows per DOCUMENT navigation, and the thing under test is
+            // `router.push` — an App Router client navigation through the
+            // History API, which creates no entry at all. So `1` is equally
+            // what a SUCCESSFUL row activation looks like, and the capture
+            // read "no navigation was ever committed" on every failure
+            // regardless of whether one had been.
+            //
+            // Caught by reasoning about the probe rather than by it failing:
+            // it had been reporting `1` on every #1076 capture, and `1` is
+            // what it would report if the bug were fixed.
+            //
+            // The Navigation API DOES observe SPA navigations, and Chromium is
+            // the only engine this suite drives. `historyLength` is the
+            // fallback and is weaker — a `push` grows it, a `replace` does not
+            // — so both are reported and neither is dressed up as proof.
+            const nav = (
+                window as unknown as { navigation?: { entries(): unknown[] } }
+            ).navigation;
+            const navs = nav ? nav.entries().length : -1;
+            const historyLength = history.length;
+            const docNavs = performance.getEntriesByType('navigation').length;
             return {
                 url: location.href,
                 rowCount: rows.length,
@@ -1094,6 +1116,8 @@ async function describeListState(page: Page): Promise<string> {
                 toolbarLabel: (toolbar?.textContent ?? '').trim().slice(0, 40),
                 toolbarInert: toolbar?.hasAttribute('inert') ?? null,
                 navigationEntries: navs,
+                historyLength,
+                docNavs,
                 activeElement: document.activeElement?.tagName ?? null,
                 gestures:
                     (window as unknown as { __rowGestures?: unknown[] })
@@ -1106,7 +1130,13 @@ async function describeListState(page: Page): Promise<string> {
             `  rows CHECKED       : ${snap.rowsChecked}   <- 1 selection toggle leaves 1; a cleared selection leaves 0\n` +
             `  first row          : ${snap.firstRowText}\n` +
             `  selection toolbar  : "${snap.toolbarLabel}" inert=${snap.toolbarInert}   <- label is STICKY (lastSelectedCount), not live\n` +
-            `  navigation entries : ${snap.navigationEntries}   <- 1 means no navigation was ever committed\n` +
+            `  SPA navigations    : ${
+                snap.navigationEntries === -1
+                    ? '(no Navigation API)'
+                    : `${snap.navigationEntries}   <- Navigation API; >1 means a CLIENT navigation was committed`
+            }\n` +
+            `  history length     : ${snap.historyLength}   <- a router.push grows this; a replace does not\n` +
+            `  document loads     : ${snap.docNavs}   <- >1 means a full page load or RELOAD happened\n` +
             `  activeElement      : ${snap.activeElement}\n` +
             `  row gestures       : ${
                 snap.gestures === null
