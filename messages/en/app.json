@@ -40,7 +40,8 @@
         "rent": "Rent",
         "sectionPlatform": "Platform",
         "platformPromotions": "Manage promotions",
-        "platformCompanies": "Manage suppliers"
+        "platformCompanies": "Manage suppliers",
+        "platformPrices": "Manage prices"
     },
     "common": {
         "filterGroups": {
@@ -1409,6 +1410,36 @@
             "fieldContactPhone": "Contact phone",
             "fieldNotes": "Internal notes",
             "urlPlaceholder": "https://"
+        },
+        "marketPrices": {
+            "title": "Prices",
+            "description": "Hand-entered prices that apply to every farm.",
+            "breadcrumbAdmin": "Admin",
+            "reach": "A price typed here REPLACES the feed price for every farm — in the calculator, in contracts and in net worth — until you clear it.",
+            "dayLabel": "Observation day",
+            "dayHint": "The day these prices are for. Defaults to today.",
+            "pricesHeading": "Prices for the day",
+            "pricePlaceholder": "e.g. 190.50",
+            "liveTyped": "Currently typed: {value} {unit} from {date}",
+            "liveApi": "From the feed: {value} {unit} from {date} ({source})",
+            "feedAbsentHint": "No feed exists for this commodity — a price typed here is the only source.",
+            "priceAbsentHint": "No price yet.",
+            "notANumber": "Enter a number. A decimal comma is accepted.",
+            "willSend": "{count, plural, one {# row filled} other {# rows filled}}",
+            "saveDay": "Save the day",
+            "savedToast": "{count, plural, one {# price saved} other {# prices saved}}",
+            "saveFailed": "The prices were not saved.",
+            "clearAction": "Clear",
+            "clearedToast": "Cleared the price for {commodity}.",
+            "confirmSaveTitle": "Save these prices?",
+            "confirmSaveBody": "{count, plural, one {# price} other {# prices}} for {date}. They replace the feed for every farm until cleared.",
+            "confirmClearTitle": "Clear this price?",
+            "confirmClearBody": "{commodity}: authority returns to the feed. The typed history is kept.",
+            "confirmClearNoFeed": "{commodity} has no feed. After clearing there will be no price at all for it — the calculator will have nothing for that commodity.",
+            "errDuplicate": "{commodity} appears twice in one day. Leave only one row.",
+            "errUnknown": "{commodity} is not a commodity this platform prices.",
+            "errNotOverridable": "{commodity} is not on the list of commodities a price is typed for.",
+            "errDenomination": "{commodity} already has a typed price in {stored}, but {expected} is now expected. Clear it before typing a new one."
         },
         "publicProfile": {
             "breadcrumbDashboard": "Dashboard",

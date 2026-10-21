@@ -294,7 +294,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // 263 is this branch's own measured live count. The guard compares against
 // THIS PR's base rather than main's tip, so a peer merging first cannot make
 // it fire — but the number still has to be measured rather than derived.
-const RENDERED_TEST_FLOOR = 264;
+const RENDERED_TEST_FLOOR = 265;
+// Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
+// console, where every dangerous outcome is a shape the server would accept —
+// a stale price re-asserted as today's, a comma silently dropped, a per-litre
+// figure typed against a per-tonne label. Raised to this branch's own live
+// count, measured, not a projected total.
 // Raised 246 -> 247 for `field-operation-panel-if-match.test.tsx` (#1370):
 // the online map panel marked prescription lines with no `If-Match`, a
 // silent last-write-wins on a row that stamps a regulatory date. Raised to
