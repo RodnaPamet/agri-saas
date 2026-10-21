@@ -12,14 +12,27 @@
  * any farm's owner the national register; `assertPlatformSupport(ctx)` inside
  * the usecase restricts it to `PLATFORM_TENANT_SLUG` and 404s elsewhere.
  *
- * ── No AV scan, deliberately ─────────────────────────────────────────────
+ * ── It scans, and the first draft of this file argued it should not ──────
  *
- * `evidence/imports` scans because it STAGES a tenant-supplied archive in
- * storage for a worker to open later. Nothing here is stored or served: the
- * bytes are parsed in-request and discarded, and the one real hazard of
- * opening a ZIP — decompression bombs — is bounded by `readXlsxSheet`'s own
- * `DEFAULT_MAX_XLSX_BYTES` plus the row cap. A scan would be theatre over a
- * path that never writes a file.
+ * That argument was: nothing is stored or served, the bytes are parsed
+ * in-request and discarded, and the one hazard of opening a ZIP —
+ * decompression bombs — is already bounded by `readXlsxSheet`'s byte and row
+ * caps, so a scan would be theatre.
+ *
+ * `tests/guards/upload-route-scan-reachability.test.ts` refused it, and the
+ * guard is right on both counts. Its own docblock names the failure: *"passing
+ * a file whose only mention of scanning is a docblock claiming it happens"* —
+ * a docblock explaining why a scan is unnecessary is the same artefact from
+ * the other side, and the avatar route went from launch to 2026-08-12 calling
+ * no scanner at all on reasoning of exactly this shape. And on the merits:
+ * "never stored" is not "never parsed". These bytes go through `jszip` and
+ * `fast-xml-parser` in-process, which is a larger attack surface than the
+ * storage write I was reasoning about.
+ *
+ * `exposure: 'private'` because nothing is retained or served. That is the
+ * branch which tolerates a `SKIPPED` verdict when no scanner is deployed —
+ * correct here, where the alternative is refusing an operator's upload on an
+ * infrastructure fact, and wrong only for bytes that end up public.
  *
  * @module app/api/t/[tenantSlug]/admin/ppp-register
  */
@@ -28,6 +41,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 import { assertPlatformSupport } from '@/lib/auth/platform-support';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
+import { scanOrRefuse } from '@/lib/upload/ingest';
 import { badRequest } from '@/lib/errors/types';
 import {
     parsePppRegisterText,
@@ -76,7 +90,11 @@ export const POST = withApiErrorHandling(
         const sheetField = form.get('sheet');
         const sheet = typeof sheetField === 'string' && sheetField.trim() ? sheetField.trim() : undefined;
         const sourceName = file.name.trim() || 'upload';
-        const bytes = new Uint8Array(await file.arrayBuffer());
+        const buf = Buffer.from(await file.arrayBuffer());
+        // Before the parser, not after: the point is to get a verdict on the
+        // bytes before `jszip` and `fast-xml-parser` are pointed at them.
+        await scanOrRefuse(buf, { component: 'ppp-register-import', exposure: 'private' });
+        const bytes = new Uint8Array(buf);
 
         let parsed;
         try {

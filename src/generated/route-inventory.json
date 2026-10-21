@@ -771,6 +771,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/ppp-register",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/promotions",
       "status": "live",
       "documented": false

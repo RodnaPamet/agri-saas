@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks mirroring
- * runtime contracts (NextRequest, route handler args); the file-level disable
- * is this codebase's standard pattern for these surfaces. */
-
 /**
  * The ПРЗ register upload, end to end through the route (#2077).
  *
@@ -29,7 +25,7 @@ jest.mock('@/env', () => ({
 const getTenantCtx = jest.fn();
 jest.mock('@/app-layer/context', () => ({
     ...jest.requireActual('@/app-layer/context'),
-    getTenantCtx: (...a: any[]) => getTenantCtx(...a),
+    getTenantCtx: (...a: unknown[]) => getTenantCtx(...a),
 }));
 
 const usecase = {
@@ -37,6 +33,21 @@ const usecase = {
     describePppRegister: jest.fn(),
 };
 jest.mock('@/app-layer/usecases/ppp-register-admin', () => usecase);
+
+/**
+ * Call order, so the scan's POSITION can be asserted and not just its
+ * presence. A scan after the parse would satisfy
+ * `upload-route-scan-reachability` and protect nothing — the bytes would
+ * already have been through `jszip` by then.
+ */
+const order: string[] = [];
+const scanOrRefuse = jest.fn(async () => {
+    order.push('scan');
+    return 'SKIPPED' as const;
+});
+jest.mock('@/lib/upload/ingest', () => ({
+    scanOrRefuse: (...a: unknown[]) => scanOrRefuse(...(a as [])),
+}));
 
 import { NextRequest } from 'next/server';
 import { makeRequestContext } from '../../helpers/make-context';
@@ -51,11 +62,11 @@ const CSV = [
 ].join('\n');
 
 function upload(body: BodyInit | undefined, slug = PLATFORM_SLUG) {
-    const req = new NextRequest(
-        `http://localhost:3000/api/t/${slug}/admin/ppp-register`,
-        { method: 'POST', body } as any,
-    );
-    return route.POST(req as any, { params: Promise.resolve({ tenantSlug: slug }) } as any);
+    const req = new NextRequest(`http://localhost:3000/api/t/${slug}/admin/ppp-register`, {
+        method: 'POST',
+        body,
+    });
+    return route.POST(req, { params: Promise.resolve({ tenantSlug: slug }) });
 }
 
 function form(content: string, filename: string): FormData {
@@ -66,6 +77,7 @@ function form(content: string, filename: string): FormData {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    order.length = 0;
     mockEnv.PLATFORM_TENANT_SLUG = PLATFORM_SLUG;
     usecase.importPppRegister.mockResolvedValue({
         importId: 'imp_1',
@@ -93,6 +105,7 @@ describe('POST', () => {
 
         expect(usecase.importPppRegister).toHaveBeenCalledTimes(1);
         const [, arg] = usecase.importPppRegister.mock.calls[0]!;
+        expect(arg.parsed.headers).toContain('Култура');
         expect(arg.sourceName).toBe('register-2026.csv');
         expect(arg.parsed.entries).toEqual([
             expect.objectContaining({
@@ -131,6 +144,40 @@ describe('POST', () => {
         expect(usecase.importPppRegister).not.toHaveBeenCalled();
     });
 
+    it('scans the bytes BEFORE the parser touches them', async () => {
+        // The first draft of the route argued a scan was theatre because
+        // nothing is stored. `upload-route-scan-reachability` refused that,
+        // and rightly: "never stored" is not "never parsed" — these bytes go
+        // through jszip and fast-xml-parser. Presence alone is not the
+        // property, though; a scan after the parse would pass that guard and
+        // protect nothing, so the ORDER is what this asserts.
+        usecase.importPppRegister.mockImplementation(async () => {
+            order.push('usecase');
+            return { importId: 'imp_1', entryCount: 2 };
+        });
+        await upload(form(CSV, 'r.csv'));
+        expect(order).toEqual(['scan', 'usecase']);
+        expect(scanOrRefuse).toHaveBeenCalledWith(expect.any(Buffer), {
+            component: 'ppp-register-import',
+            exposure: 'private',
+        });
+    });
+
+    it('does not scan when the gate has already refused', async () => {
+        // The gate runs before `formData()`, so a non-platform caller costs
+        // neither a scan nor a parse.
+        getTenantCtx.mockResolvedValue(
+            makeRequestContext('OWNER', {
+                userId: 'u_farm',
+                tenantId: 'tnt_farm',
+                tenantSlug: 'acme-corp',
+            }),
+        );
+        const res = await upload(form(CSV, 'r.csv'), 'acme-corp');
+        expect(res.status).toBe(404);
+        expect(scanOrRefuse).not.toHaveBeenCalled();
+    });
+
     it('refuses a request with no file', async () => {
         const res = await upload(new FormData());
         expect(res.status).toBe(400);
@@ -154,9 +201,9 @@ describe('GET', () => {
         const req = new NextRequest(
             `http://localhost:3000/api/t/${PLATFORM_SLUG}/admin/ppp-register`,
         );
-        const res = await route.GET(req as any, {
+        const res = await route.GET(req, {
             params: Promise.resolve({ tenantSlug: PLATFORM_SLUG }),
-        } as any);
+        });
         expect(res.status).toBe(200);
         await expect(res.json()).resolves.toMatchObject({ live: null, incompleteImports: 0 });
         expect(usecase.describePppRegister).toHaveBeenCalledTimes(1);

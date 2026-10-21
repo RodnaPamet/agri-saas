@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks mirror
- * runtime contracts; per-line typing has poor cost/benefit in test files
- * (the codebase's standard file-level disable). */
 /**
  * Loading the БАБХ ПРЗ register (#2077).
  *
@@ -13,6 +10,7 @@
  * Each `it()` names the production break it catches.
  */
 import { Prisma } from '@prisma/client';
+import type { PrismaTx } from '@/lib/db-context';
 import { makeRequestContext } from '../../helpers/make-context';
 import type { ParsedPppRegister, ParsedPppEntry } from '@/lib/agro/ppp-register-parse';
 
@@ -28,18 +26,23 @@ const imports = {
     count: jest.fn(),
 };
 const entries = { createMany: jest.fn(), count: jest.fn() };
-const mockDb = { pppRegisterImport: imports, pppRegisterEntry: entries } as any;
+const mockDb = {
+    pppRegisterImport: imports,
+    pppRegisterEntry: entries,
+} as unknown as PrismaTx;
 
 jest.mock('@/lib/db-context', () => ({
-    runInTenantContext: (_ctx: any, fn: any) => fn(mockDb),
+    runInTenantContext: (_ctx: unknown, fn: (db: PrismaTx) => unknown) => fn(mockDb),
 }));
 
 const logEvent = jest.fn();
-jest.mock('@/app-layer/events/audit', () => ({ logEvent: (...a: any[]) => logEvent(...a) }));
+jest.mock('@/app-layer/events/audit', () => ({
+    logEvent: (...a: unknown[]) => logEvent(...a),
+}));
 
 const assertPlatformSupport = jest.fn();
 jest.mock('@/lib/auth/platform-support', () => ({
-    assertPlatformSupport: (...a: any[]) => assertPlatformSupport(...a),
+    assertPlatformSupport: (...a: unknown[]) => assertPlatformSupport(...a),
 }));
 
 import {
