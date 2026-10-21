@@ -28,7 +28,7 @@
  * skipped without it would be the `a-control-that-cannot-express-failure`
  * shape — green for ever, by never running.
  */
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, verify as cryptoVerify } from 'node:crypto';
 
 const mockEnv: Record<string, string | undefined> = {};
 jest.mock('@/env', () => ({
@@ -45,11 +45,11 @@ jest.mock('@/lib/observability/logger', () => ({
 import { appleWebConfigured, mintAppleClientSecret } from '@/lib/auth/apple-client-secret';
 
 /** A real EC P-256 key in PKCS#8 PEM — what an Apple `.p8` is. */
-const { privateKey } = generateKeyPairSync('ec', {
+const { privateKey, publicKey } = generateKeyPairSync('ec', {
     namedCurve: 'P-256',
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     publicKeyEncoding: { type: 'spki', format: 'pem' },
-}) as unknown as { privateKey: string };
+}) as unknown as { privateKey: string; publicKey: string };
 
 const CONFIGURED = {
     APPLE_SERVICES_ID: 'bg.agrent.web',
@@ -95,16 +95,35 @@ describe('mintAppleClientSecret', () => {
     it('signs with a RAW r||s signature, not DER — the silent failure', () => {
         const jwt = mintAppleClientSecret()!;
         expect(jwt).not.toBeNull();
-        const sig = Buffer.from(parts(jwt)[2].replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+        const [header, payload, encodedSig] = parts(jwt);
+        const sig = Buffer.from(encodedSig.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+        const signedInput = Buffer.from(`${header}.${payload}`);
 
         // A P-256 JWS signature is exactly 64 bytes: r and s, 32 each.
         expect(sig).toHaveLength(64);
-        // And DER is the thing it must NOT be: a DER SEQUENCE opens with
-        // 0x30 and runs ~70-72 bytes. Both assertions, because a length
-        // check alone would admit a 64-byte buffer of the wrong shape and a
-        // tag check alone would admit a raw signature that happened to start
-        // with 0x30.
-        expect(sig[0]).not.toBe(0x30);
+
+        // ── the discriminator, which used to be a 1-in-256 coin flip ──
+        //
+        // This asserted `expect(sig[0]).not.toBe(0x30)` — a DER SEQUENCE's
+        // opening tag — under a comment that named the hazard and then took
+        // it: "a tag check alone would admit a raw signature that happened to
+        // start with 0x30". `sig[0]` is the first byte of `r`, which is
+        // uniformly random because the suite generates a fresh key per run,
+        // so the assertion failed whenever `r` began 0x30. That is 1 run in
+        // 256, and it reddened `main` on 2026-10-21 in shard 2/6 while
+        // passing 5/5 locally.
+        //
+        // Verification is the deterministic form of the same question, and it
+        // is also the real contract: Apple does not inspect the first byte,
+        // it verifies the signature. A raw signature verifies under
+        // `ieee-p1363` and NOT under `der`, whatever `r` happens to start
+        // with, and a DER signature inverts both answers.
+        expect(
+            cryptoVerify('sha256', signedInput, { key: publicKey, dsaEncoding: 'ieee-p1363' }, sig),
+        ).toBe(true);
+        expect(
+            cryptoVerify('sha256', signedInput, { key: publicKey, dsaEncoding: 'der' }, sig),
+        ).toBe(false);
     });
 
     it('builds the header Apple requires', () => {
