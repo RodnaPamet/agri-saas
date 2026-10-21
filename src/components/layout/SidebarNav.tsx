@@ -12,6 +12,7 @@ import { useCommandPalette } from '@/components/command-palette/command-palette-
 import {
     X,
     LayoutDashboard,
+    BadgeEuro,
     Building2,
     AlertTriangle,
     Paperclip,
@@ -298,6 +299,17 @@ export function useNavSections(): NavSectionDef[] {
                     href: tenantHref('/admin/companies'),
                     label: t('platformCompanies'),
                     icon: Building2,
+                    visible: tenant.isPlatformTenant === true,
+                },
+                // #1587 — the superuser daily price override. The highest-stakes
+                // entry in this section by a wide margin: the other two curate
+                // catalogues a farm can ignore, and a number typed behind this
+                // one moves every farm's calculator, contracts and net worth.
+                // Same `=== true` as its siblings, and for the same reason.
+                {
+                    href: tenantHref('/admin/market-prices'),
+                    label: t('platformPrices'),
+                    icon: BadgeEuro,
                     visible: tenant.isPlatformTenant === true,
                 },
             ]),

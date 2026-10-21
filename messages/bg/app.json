@@ -40,7 +40,8 @@
         "rent": "Ренти",
         "sectionPlatform": "Платформа",
         "platformPromotions": "Управление на промоции",
-        "platformCompanies": "Управление на доставчици"
+        "platformCompanies": "Управление на доставчици",
+        "platformPrices": "Управление на цени"
     },
     "common": {
         "filterGroups": {
@@ -1409,6 +1410,36 @@
             "fieldContactPhone": "Телефон за контакт",
             "fieldNotes": "Вътрешни бележки",
             "urlPlaceholder": "https://"
+        },
+        "marketPrices": {
+            "title": "Цени",
+            "description": "Ръчно въведени цени, които важат за всички стопанства.",
+            "breadcrumbAdmin": "Администрация",
+            "reach": "Въведена тук цена ЗАМЕНЯ цената от външните източници за всяко стопанство — в калкулатора, в договорите и в общата стойност — докато не я изчистите.",
+            "dayLabel": "Ден на наблюдението",
+            "dayHint": "Денят, за който важат въведените цени. По подразбиране днес.",
+            "pricesHeading": "Цени за деня",
+            "pricePlaceholder": "напр. 190,50",
+            "liveTyped": "Текуща въведена: {value} {unit} от {date}",
+            "liveApi": "От източник: {value} {unit} от {date} ({source})",
+            "feedAbsentHint": "Няма външен източник за тази стока — въведената тук цена е единствената.",
+            "priceAbsentHint": "Все още няма цена.",
+            "notANumber": "Въведете число. Приема се и десетична запетая.",
+            "willSend": "{count, plural, one {# попълнен ред} other {# попълнени реда}}",
+            "saveDay": "Запази деня",
+            "savedToast": "{count, plural, one {# цена е записана} other {# цени са записани}}",
+            "saveFailed": "Записът не бе успешен.",
+            "clearAction": "Изчисти",
+            "clearedToast": "Изчистена цена за {commodity}.",
+            "confirmSaveTitle": "Да се запишат ли цените?",
+            "confirmSaveBody": "{count, plural, one {# цена} other {# цени}} за {date}. Те заменят външните източници за всяко стопанство, докато не бъдат изчистени.",
+            "confirmClearTitle": "Да се изчисти ли цената?",
+            "confirmClearBody": "{commodity}: контролът се връща към външния източник. Историята на въведените цени се запазва.",
+            "confirmClearNoFeed": "{commodity} няма външен източник. След изчистване за тази стока няма да остане никаква цена — калкулаторът ще е без стойност за нея.",
+            "errDuplicate": "{commodity} е въведена два пъти за един ден. Оставете само един ред.",
+            "errUnknown": "{commodity} не е стока, за която платформата поддържа цена.",
+            "errNotOverridable": "{commodity} не е в списъка със стоки, за които се въвежда цена.",
+            "errDenomination": "За {commodity} вече има въведена цена в {stored}, а сега се очаква {expected}. Изчистете я, преди да въведете нова."
         },
         "publicProfile": {
             "breadcrumbDashboard": "Табло",

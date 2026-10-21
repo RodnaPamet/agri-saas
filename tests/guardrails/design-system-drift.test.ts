@@ -386,7 +386,16 @@ describe('New page token discipline', () => {
         // 153 → 94 (GRC teardown phase 2): the inherited GRC pages were
         // deleted, so the tally is re-floored at the post-deletion reality
         // rather than left at a ceiling nothing can reach.
-        expect(unmigrated.length).toBeLessThanOrEqual(94);
+        // 94 → 96 (+2, #1587): admin/market-prices/page.tsx +
+        // PriceOverridesClient.tsx — «Цени», the superuser daily price
+        // override console. A genuinely new route, so it enters the tally the
+        // way every unpromoted route above does. Not drift: semantic tokens
+        // only, and the shape is PageHeader/FormField/Input/Button/
+        // ConfirmDialog/DatePicker/InlineNotice/SkeletonInput + cardVariants.
+        // It uses PageHeader rather than a hand-rolled breadcrumbs+Heading+<p>
+        // stack precisely because the inline-subtitle budget names that
+        // component as the canonical home for a page subtitle.
+        expect(unmigrated.length).toBeLessThanOrEqual(96);
     });
 
     it('migrated page count is at least 4', () => {
