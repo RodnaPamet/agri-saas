@@ -78,7 +78,7 @@ import { verifyAndTouchSession } from '@/lib/security/session-tracker';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { logger } from '@/lib/observability/logger';
 import { env } from '@/env';
-import prisma from '@/lib/prisma';
+import { accessGrantingTenantIds } from '@/lib/auth/membership-presence';
 
 export const runtime = 'nodejs';
 
@@ -176,19 +176,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     // at is overwhelmingly where its last event came from. So the common case
     // costs one query rather than N.
     //
-    // Read through the UNSCOPED client because `TenantMembership` is the table
-    // that answers "which tenants may I see" — scoping that read to one tenant
-    // would be circular. It is filtered to this person and to live tenants,
-    // mirroring `accessGrantingTenantSlugs` exactly: an ACTIVE membership of a
-    // tenant that is not soft-deleted.
-    const memberships = await prisma.tenantMembership.findMany({
-        where: { userId: person.userId, status: 'ACTIVE', tenant: { deletedAt: null } },
-        select: { tenantId: true },
-    });
-    const tenantIds = [
-        ctx.tenantId,
-        ...memberships.map((m) => m.tenantId).filter((id) => id !== ctx.tenantId),
-    ];
+    // Through `accessGrantingTenantIds` rather than a query here:
+    // `tests/unit/tenant-isolation-structural` forbids a route calling prisma
+    // directly, and that module already owns this query and the reason for its
+    // filter — one person's own ACTIVE memberships of live tenants, mirroring
+    // `applyMembershipClaims`. A second copy in a route is the clause that
+    // drifts.
+    const granted = await accessGrantingTenantIds(person.userId);
+    const tenantIds = [ctx.tenantId, ...granted.filter((id) => id !== ctx.tenantId)];
 
     const { start, release } = createSseResponse({
         heartbeatMs: HEARTBEAT_MS,
