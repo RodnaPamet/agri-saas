@@ -107,7 +107,57 @@ export const env = createEnv({
         GOOGLE_CLIENT_SECRET: z.string().min(1, "Google Client Secret is required"),
         MICROSOFT_CLIENT_ID: z.string().min(1, "Microsoft Client ID is required"),
         MICROSOFT_CLIENT_SECRET: z.string().min(1, "Microsoft Client Secret is required"),
-        MICROSOFT_TENANT_ID: z.string().default("common"),
+        // The Entra authority. `common` (and `organizations` /
+        // `consumers`) are MULTI-TENANT authorities: they let a user from
+        // ANY Entra directory in the world obtain a token for this app.
+        //
+        // That matters here because an Entra ID token does not carry an
+        // `email_verified` claim, and the `signIn` callback in
+        // `src/auth.ts` links an OAuth identity to an existing user
+        // whenever the addresses match — guarded only by a check for
+        // `email_verified === false`, which an ABSENT claim does not
+        // trigger. On a multi-tenant authority those two facts compose:
+        // whoever can set a mailbox address in a directory they control
+        // can be matched to a user here who merely shares that address.
+        // Scoping the authority to one directory is what keeps that
+        // composition out of reach, so the value is load-bearing rather
+        // than cosmetic.
+        //
+        // `default("common")` therefore used to mean a deploy that simply
+        // forgot the variable silently chose the widest setting. Four of
+        // our own example files recommended `common` outright. The default
+        // is kept for dev/test/CI ergonomics (a fake tenant is fine there)
+        // and refused in production unless an operator opts in LOUDLY,
+        // which mirrors the REDIS_URL and DATA_ENCRYPTION_KEY refinements
+        // above.
+        MICROSOFT_TENANT_ID: z
+            .string()
+            .default("common")
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                const authority = val.trim().toLowerCase();
+                const MULTI_TENANT = ['common', 'organizations', 'consumers'];
+                if (!MULTI_TENANT.includes(authority)) return;
+                if (process.env.ENTRA_ALLOW_MULTITENANT === '1') return;
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message:
+                        `MICROSOFT_TENANT_ID is "${authority}", a MULTI-TENANT Entra ` +
+                        'authority — any user from any Entra directory can obtain a token ' +
+                        'for this app. Because an Entra token carries no email_verified ' +
+                        'claim and the signIn callback links an OAuth identity to an ' +
+                        'existing user with a matching address, that is an account-takeover ' +
+                        'path. Set MICROSOFT_TENANT_ID to your directory (tenant) GUID. ' +
+                        'If a multi-tenant app is genuinely intended, set ' +
+                        'ENTRA_ALLOW_MULTITENANT=1 to say so deliberately — and harden the ' +
+                        'linking in src/auth.ts first.',
+                });
+            }),
+
+        // Opt-in escape hatch for the refinement above. Declared so it is
+        // discoverable rather than a magic string read from the ambient
+        // environment, and so a future reader can find every use.
+        ENTRA_ALLOW_MULTITENANT: z.enum(["0", "1"]).optional(),
 
         // Rate Limiting
         RATE_LIMIT_ENABLED: z.enum(["0", "1"]).optional(),
@@ -758,6 +808,7 @@ export const env = createEnv({
         MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
         MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
         MICROSOFT_TENANT_ID: process.env.MICROSOFT_TENANT_ID,
+        ENTRA_ALLOW_MULTITENANT: process.env.ENTRA_ALLOW_MULTITENANT,
 
         RATE_LIMIT_ENABLED: process.env.RATE_LIMIT_ENABLED,
         RATE_LIMIT_MODE: process.env.RATE_LIMIT_MODE,
