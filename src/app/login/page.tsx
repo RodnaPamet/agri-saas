@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import { getProviders, signIn } from 'next-auth/react';
 import { useTranslations, useLocale } from 'next-intl';
 
+import { messageKeyForErrorParam } from '@/lib/auth/redirect-error-codes';
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -44,6 +46,7 @@ function extractErrorMessage(value: unknown, fallback: string): string {
 
 type VerifyStatus = 'verified' | 'invalid' | 'expired';
 
+
 function LoginForm() {
     const searchParams = useSearchParams();
     // R-1: default post-sign-in destination is /tenants so the picker logic
@@ -57,6 +60,16 @@ function LoginForm() {
             ? verifyStatusParam
             : null;
     const t = useTranslations('login');
+    /**
+     * A redirect-borne failure. `OAuthAccountNotLinked` is the only one that
+     * is deterministic and actionable — retrying cannot succeed, the person
+     * has to sign out first — so it is the only one with its own copy. The
+     * rest are transient or near-unreachable, and an unrecognised value is
+     * still a real failure, so both land on the generic message rather than
+     * on silence.
+     */
+    const redirectErrorKey = messageKeyForErrorParam(searchParams?.get('error'));
+    const redirectErrorMessage = redirectErrorKey ? t(redirectErrorKey) : null;
     /**
      * Is Sign in with Apple actually available? (#1673)
      *
@@ -242,9 +255,9 @@ function LoginForm() {
                         </Heading>
                     )}
 
-                    {error && (
+                    {(error || redirectErrorMessage) && (
                         <InlineNotice variant="error" className="mb-4" icon={null}>
-                            {error}
+                            {error || redirectErrorMessage}
                         </InlineNotice>
                     )}
 
