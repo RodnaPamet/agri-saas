@@ -36,6 +36,7 @@ import {
     loginAndGetTenant,
     safeGoto,
     waitForHydration,
+    readNavCounters,
 } from './e2e-utils';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
@@ -194,6 +195,10 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
             .locator('[data-testid="farm-tasks-table"] tbody tr')
             .count();
 
+        // Read BEFORE the gesture, so the capture can report a DELTA. The
+        // cumulative `SPA navigations` total cannot distinguish this click
+        // navigating from the three navigations the test already made.
+        const navBefore = await readNavCounters(page);
         await firstTask.click();
 
         // `expectRouteTransition` rather than a bare `page.waitForURL` plus a
@@ -222,6 +227,7 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
             url: /farm-tasks\/[a-z0-9]+$/i,
             content: keyBtn.first(),
             rowsBefore,
+            navBefore,
         });
 
         const expected = (await keyBtn.textContent())?.trim() ?? '';

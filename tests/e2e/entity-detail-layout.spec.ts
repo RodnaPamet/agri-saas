@@ -18,7 +18,14 @@
  * `/assets/[id]` mounts exactly as the practice detail page did.
  */
 import { test, expect } from '@playwright/test';
-import { loginAndGetTenant, safeGoto, waitForHydration, expectRouteTransition, instrumentRowGestures } from './e2e-utils';
+import {
+    loginAndGetTenant,
+    safeGoto,
+    waitForHydration,
+    expectRouteTransition,
+    instrumentRowGestures,
+    readNavCounters,
+} from './e2e-utils';
 
 test.describe('EntityDetailLayout', () => {
     test('asset detail page renders the shell — breadcrumbs, header, body', async ({
@@ -55,6 +62,7 @@ test.describe('EntityDetailLayout', () => {
             .getByRole('main')
             .locator('[data-testid="assets-table"] tbody tr')
             .count();
+        const navBefore = await readNavCounters(page);
         await firstRow.locator('td').last().dblclick();
 
         // The shell's three structural promises:
@@ -76,6 +84,7 @@ test.describe('EntityDetailLayout', () => {
             content: page.locator('[data-testid="entity-detail-header"]'),
             url: /\/assets\/[a-zA-Z0-9-]+$/,
             rowsBefore,
+            navBefore,
         });
         // (2) the body wrapper. (The asset surface does not pass a
         //     `rail` — linked Tasks live in their own tab — so the

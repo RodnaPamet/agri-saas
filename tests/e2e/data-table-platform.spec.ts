@@ -5,6 +5,7 @@ import {
     instrumentRowGestures,
     loginAndGetTenant,
     waitForHydration,
+    readNavCounters,
 } from './e2e-utils';
 
 /**
@@ -199,6 +200,7 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // remaining #1076 hypothesis sits on and the one thing reading the DOM
         // afterwards cannot settle.
         await instrumentRowGestures(page);
+        const navBefore = await readNavCounters(page);
         await rows.first().locator('td').last().dblclick();
         // ONE helper, two budgets sized for what each half does (#1076). The
         // paint had 10s here — less than the URL wait that precedes it and
@@ -209,6 +211,7 @@ test.describe('DataTable Platform — Row click navigation', () => {
             content: page.getByRole('main').locator('#asset-title-heading'),
             url: /\/assets\/[a-zA-Z0-9-]+$/,
             rowsBefore,
+            navBefore,
         });
     });
 
@@ -233,12 +236,14 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // remaining #1076 hypothesis sits on and the one thing reading the DOM
         // afterwards cannot settle.
         await instrumentRowGestures(page);
+        const navBefore = await readNavCounters(page);
         await rows.first().locator('td').last().dblclick();
         // Same shape, same fix as the Assets case above.
         await expectRouteTransition(page, {
             content: page.getByRole('main').locator('#task-title'),
             url: /\/farm-tasks\/[a-zA-Z0-9-]+$/,
             rowsBefore,
+            navBefore,
         });
     });
 });
