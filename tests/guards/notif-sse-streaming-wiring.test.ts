@@ -183,77 +183,85 @@ describe('PR-C SSE notification streaming wiring', () => {
         });
     });
 
-    describe('4. Client (notifications-bell) cutover to EventSource', () => {
+    describe('4. Client (notifications-bell) on the SHARED stream — P7.6 (#1995)', () => {
         const PATH_BELL = 'src/components/layout/notifications-bell.tsx';
 
-        it('opens an EventSource against /api/notifications/stream', () => {
-            const s = read(PATH_BELL);
-            expect(s).toMatch(
-                /new EventSource\(['"]\/api\/notifications\/stream['"]/,
-            );
+        /**
+         * This block asserted the bell CONSTRUCTED its own `EventSource`
+         * against `/api/notifications/stream`, which was right when the bell
+         * was the only consumer and is now the defect.
+         *
+         * Live Борса adding a second connection would mean two per TAB against
+         * a cap of three streams per person (P7.2) — so two tabs would exhaust
+         * somebody's budget and a third would be refused. The cap is per
+         * person because a person is what costs the server, and that only
+         * holds if a person's browser opens ONE connection.
+         *
+         * So the assertions are inverted: the bell must now NOT construct one,
+         * and must go through `useRealtime`. Inverted rather than deleted,
+         * because "the bell does not open its own socket" is a property worth
+         * keeping a test on — a future author reaching for `new EventSource`
+         * here is exactly the regression this block now catches.
+         */
+        it('does NOT construct an EventSource of its own', () => {
+            const code = blankNonCode(read(PATH_BELL));
+
+            expect(code).not.toMatch(/new EventSource\(/);
+            // Nor the old path, which the shared hook owns now.
+            expect(code).not.toMatch(/api\/notifications\/stream/);
         });
 
-        it('guards EventSource construction with typeof check (SSR + jsdom safe)', () => {
-            const s = read(PATH_BELL);
-            expect(s).toMatch(/typeof EventSource !== ['"]undefined['"]/);
+        it('subscribes through the shared hook, to the notification kind', () => {
+            const code = blankNonCode(read(PATH_BELL));
+
+            expect(code).toMatch(/useRealtime\(\s*['"]notification['"]/);
+            expect(code).toMatch(/from ['"]@\/lib\/realtime\/use-realtime['"]/);
         });
 
         it('carries NO second, build-time gate of its own', () => {
-            // REAIMED by #1982. This used to assert the OPPOSITE — that the
-            // client reads `env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1'` — and
-            // it passed for months while the channel was dead. The thing it
-            // checked was present; the thing that mattered, whether that flag
-            // could ever be set, was not expressible as a source match on
-            // this file. `NEXT_PUBLIC_*` is inlined at `next build` and the
-            // variable reached no Dockerfile `ARG` and no `ghcr-publish.yml`
-            // build-arg, so every image baked it `undefined`.
-            //
-            // The switch now lives in the route (see section 2). Two gates is
-            // how a surface comes to be off for a reason nobody can find, so
-            // the client must not reintroduce one.
-            //
-            // Comments stripped first: the docblock explains the retired
-            // variable by NAME, so a raw-text search finds it in the prose and
-            // reports the opposite of the truth.
             const code = blankNonCode(read(PATH_BELL));
+
+            // #1982: `NEXT_PUBLIC_*` is inlined at build and reached no
+            // Dockerfile ARG, so a client-side gate made the channel
+            // unreachable rather than off. The client always ASKS; the server
+            // decides, through a FeatureFlag row the route reads per request.
             expect(code).not.toMatch(/NEXT_PUBLIC_NOTIFICATIONS_SSE/);
         });
 
-        it('wires onmessage to REFETCH, and not to read the payload', () => {
-            // REAIMED by #1990. This asserted `JSON.parse(msg.data)` — the
-            // bell prepending the event into state — and the event carries ids
-            // only now, so there is no row in it to prepend.
-            //
-            // The negative half is the point. Reading the body to decide
-            // whether to refetch would reintroduce a dependency on a shape
-            // that just changed, and it was also a bug: a prepended payload is
-            // a copy, so a notification edited or deleted between publish and
-            // render was displayed anyway with no version to compare.
-            // Whitespace collapsed, not the window widened. `blankNonCode`
-            // replaces each comment character with a space, so the docblock
-            // explaining this handler becomes ~700 characters of filler
-            // between `onmessage` and the call — and widening the window to
-            // clear it would let the match reach an unrelated `fetchList()`
-            // elsewhere in the file. Collapsing keeps the window tight around
-            // actual code.
-            const code = blankNonCode(read(PATH_BELL)).replace(/\s+/g, ' ');
-            expect(code).toMatch(/es\.onmessage\s*=/);
-            expect(code).toMatch(/es\.onmessage[^;]{0,120}?fetchList\(\)/);
-            expect(code).not.toMatch(/JSON\.parse\(msg\.data\)/);
+        it('refetches on a frame, and does NOT read its payload', () => {
+            const code = blankNonCode(read(PATH_BELL));
+
+            // The frame carries ids only, so there is nothing in it to
+            // prepend — and reading it to decide whether to refetch would
+            // reintroduce a dependency on a shape that has now changed twice.
+            expect(code).toMatch(/fetchList\(\)/);
+            expect(code).not.toMatch(/JSON\.parse/);
         });
 
-        it('throttles fallback poll to 5min when SSE is healthy', () => {
-            const s = read(PATH_BELL);
-            // Constant name pin + value (5 * 60_000 = 300_000ms).
-            expect(s).toMatch(
-                /NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS\s*=\s*5\s*\*\s*60_000/,
-            );
+        it('derives the poll cadence from the connection state, not from a flag read once', () => {
+            const code = blankNonCode(read(PATH_BELL));
+
+            // #1983 made structural. The cadence used to be chosen once from a
+            // health flag read in the same tick the `EventSource` was
+            // constructed — `onopen` cannot have fired by then, so the
+            // five-minute branch was UNREACHABLE and a healthy stream polled
+            // every 60s for ever. As a value derived from `realtimeState`, the
+            // effect re-runs on every transition and the dead branch cannot
+            // return.
+            expect(code).toMatch(/realtimeState/);
+            expect(code).toMatch(/NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS/);
+            // And the state is in the effect's dependency list, which is what
+            // makes it re-run.
+            expect(code).toMatch(/\[[^\]]*realtimeState[^\]]*\]/);
         });
 
-        it('cleans up EventSource + interval on unmount', () => {
-            const s = read(PATH_BELL);
-            expect(s).toMatch(/if \(es\) es\.close\(\)/);
-            expect(s).toMatch(/window\.clearInterval\(intervalId\)/);
+        it('clears its interval and listener on unmount', () => {
+            const code = blankNonCode(read(PATH_BELL));
+
+            // The connection itself is the hook's to close — the bell no
+            // longer owns one, which is the point of the change.
+            expect(code).toMatch(/clearInterval\(/);
+            expect(code).toMatch(/removeEventListener\(/);
         });
     });
 });
