@@ -31,6 +31,7 @@ const subscribeMock = jest.fn();
 const acquireMock = jest.fn();
 const replayMock = jest.fn();
 const verifySessionMock = jest.fn();
+const subscribeListingsMock = jest.fn();
 /**
  * The farms the person belongs to — #2085.
  *
@@ -74,6 +75,11 @@ jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: { tenantMembership: { findMany: async () => membershipRows } },
     prisma: { tenantMembership: { findMany: async () => membershipRows } },
+}));
+jest.mock('@/lib/realtime/listing-broadcast', () => ({
+    __esModule: true,
+    subscribeToListings: (...a: unknown[]) => subscribeListingsMock(...a),
+    LISTING_TICK_ID: 'listings',
 }));
 jest.mock('@/lib/security/session-tracker', () => ({
     __esModule: true,
@@ -148,6 +154,7 @@ describe('GET /api/me/stream', () => {
         subscribeMock.mockReturnValue(unsubscribe);
         replayMock.mockResolvedValue([]);
         membershipRows = [{ tenantId: 't-1' }];
+        subscribeListingsMock.mockReturnValue(() => {});
         verifySessionMock.mockResolvedValue({ revoked: false, rowId: 'row-1' });
     });
 
@@ -561,6 +568,57 @@ describe('GET /api/me/stream', () => {
 
             expect(subscribeMock).toHaveBeenCalledTimes(1);
             expect(subscribeMock.mock.calls[0][0].tenantId).toBe('t-1');
+        });
+    });
+
+    describe('the market tick — #2123', () => {
+        it('subscribes ONCE globally, not once per farm', () => {
+            // `listActiveListings` browses across all tenants, so a listing is
+            // interesting to every connected client and there is no (farm,
+            // person) pair to address. Per-farm would also mean a browsing
+            // client in a farm with no listings never hears about the market.
+            membershipRows = [{ tenantId: 't-1' }, { tenantId: 't-2' }, { tenantId: 't-3' }];
+
+            return GET(request()).then(() => {
+                expect(subscribeListingsMock).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        it('emits a listing frame with the sentinel id and tenant', async () => {
+            const res = await GET(request());
+            const tick = subscribeListingsMock.mock.calls[0][0] as () => void;
+
+            tick();
+            const body = await readFrames(res);
+
+            expect(body).toMatch(/"kind":"listing"/);
+            expect(body).toMatch(/"id":"listings"/);
+            expect(body).toMatch(/"tenantId":"listings"/);
+        });
+
+        it('a listing frame carries NO id: line, so the cursor does not move', async () => {
+            // `id:` is the replay cursor and replay reads the `Notification`
+            // table. A tick that advanced it would point `Last-Event-ID` at a
+            // row that does not exist, and the next reconnect would replay
+            // nothing.
+            const res = await GET(request());
+            const tick = subscribeListingsMock.mock.calls[0][0] as () => void;
+
+            tick();
+            const body = await readFrames(res);
+
+            expect(body).toMatch(/"kind":"listing"/);
+            expect(body).not.toMatch(/^id: listings$/m);
+        });
+
+        it('releases the market subscription on cancel', async () => {
+            const releaseListings = jest.fn();
+            subscribeListingsMock.mockReturnValue(releaseListings);
+
+            const res = await GET(request());
+            await res.body!.cancel();
+
+            expect(releaseListings).toHaveBeenCalledTimes(1);
         });
     });
 });

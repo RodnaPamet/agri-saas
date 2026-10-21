@@ -13,6 +13,7 @@ import { badRequest, codedConflict, codedNotFound, forbidden } from '@/lib/error
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
+import { publishListingChange } from '@/lib/realtime/listing-broadcast';
 import { sendInquiryEmail } from '@/lib/email/inquiry-email';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
@@ -324,6 +325,10 @@ async function createListingRow(ctx: RequestContext, input: CreateListingInput) 
  */
 export async function createListing(ctx: RequestContext, input: CreateListingInput) {
     const listing = await createListingRow(ctx, input);
+    // The market moved — #2123. Coalesced at the publisher, so a burst of
+    // listings produces one tick; synchronous and it never throws, because a
+    // notification failure must not cost the write that caused it.
+    publishListingChange();
     return (await withFarmAttribution([listing]))[0];
 }
 
@@ -385,7 +390,7 @@ function assertListingTransition(
 
 export async function withdrawListing(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const listing = await loadOwnedListing(db, ctx, id);
         assertListingTransition(
             listing.status as ExchangeListingStatus,
@@ -410,12 +415,17 @@ export async function withdrawListing(ctx: RequestContext, id: string) {
         });
         return updated;
     });
+    // AFTER the transaction, like every other side effect here: a withdrawn
+    // listing has left the market, which is a change every browsing client
+    // should see. Coalesced, so three withdrawals in a burst are one tick.
+    publishListingChange();
+    return result;
 }
 
 /** Mark one of the caller-tenant's own listings as fulfilled. */
 export async function fulfillListing(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const result = await runInTenantContext(ctx, async (db) => {
         const listing = await loadOwnedListing(db, ctx, id);
         assertListingTransition(
             listing.status as ExchangeListingStatus,
@@ -454,6 +464,11 @@ export async function fulfillListing(ctx: RequestContext, id: string) {
         });
         return updated;
     });
+    // AFTER the transaction. A fulfilled listing leaves the market too, and
+    // the same tick serves both — a browsing client refetches the list
+    // either way and does not need to know which transition happened.
+    publishListingChange();
+    return result;
 }
 
 /**
