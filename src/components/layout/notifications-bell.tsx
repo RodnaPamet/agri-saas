@@ -36,6 +36,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+
+import { useRealtime } from '@/lib/realtime/use-realtime';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Bell, CheckCheck } from 'lucide-react';
@@ -146,134 +148,90 @@ export function NotificationsBell() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // 2026-05-27 (PR-C) — SSE-first with REST poll as a fallback.
-    // Primary signal: an EventSource subscription to
-    // `/api/notifications/stream`. Each server-side notification
-    // create emits an event; the bell prepends it to the list the
-    // moment it lands — no 60s wait. The browser's EventSource
-    // handles reconnect automatically after network blips.
-    //
-    // Fallback path: the original 60s REST poll stays in place but
-    // throttled to ~5 minutes when SSE is healthy (so a cross-pod
-    // notification — produced on a pod whose bus subscribers don't
-    // include us — still reaches the bell within five minutes).
-    // If the SSE connection errors (single-process bus on a
-    // restart-friendly platform, or a corporate proxy stripping
-    // text/event-stream), we drop back to the 60s cadence so the
-    // user keeps seeing the unread count tick.
+    /**
+     * The realtime signal, on the connection SHARED with every other consumer
+     * — P7.6 (#1995).
+     *
+     * This held its own `EventSource` on `/api/notifications/stream`. Live
+     * Борса adding a second would have meant two long-lived connections per
+     * TAB, against a cap of three streams per person (P7.2) — so two tabs
+     * would exhaust somebody's budget and a third would be refused. The cap is
+     * per person because a person is what costs the server, and that only
+     * works if a person's browser opens one connection.
+     *
+     * `useRealtime` owns that one connection and routes by `kind`, so this
+     * subscribes to `notification` and Борса will subscribe to `listing`
+     * without a second socket.
+     *
+     * The callback is wrapped in `useCallback` even though the hook holds it in
+     * a ref: the hook's contract does not require a stable callback, but
+     * passing an unstable one re-registers on every render for no reason.
+     */
+    const onNotification = useCallback(() => {
+        /**
+         * Refetch, do not prepend — #1990.
+         *
+         * The frame carries ids only, so there is no row in it to prepend.
+         * That is the phase rule (payloads carry ids; clients fetch bodies
+         * over REST with ETag) and it removes a class of bug this code had: a
+         * prepended payload is a copy, so a notification edited or deleted
+         * between publish and render was displayed anyway, with no version to
+         * compare against.
+         *
+         * The frame's contents are deliberately not read. Reading them to
+         * decide whether to refetch would reintroduce a dependency on their
+         * shape — and the shape just changed, twice.
+         */
+        void fetchList();
+    }, [fetchList]);
+
+    const realtimeState = useRealtime('notification', onNotification);
+
+    /**
+     * REST poll as the fallback, at a cadence DERIVED from the connection.
+     *
+     * 60s while the stream is idle or erroring, five minutes while it is open
+     * — so a cross-pod notification, produced on a pod whose bus subscribers
+     * do not include us, still reaches the bell.
+     *
+     * Derived rather than set imperatively, and that is the fix for #1983
+     * made structural. The cadence used to be chosen once, from a health flag
+     * read in the same tick that constructed the `EventSource` — so `onopen`
+     * could not have fired, the flag was always false, and the five-minute
+     * branch was UNREACHABLE: a perfectly healthy stream polled every 60s for
+     * ever. Nothing failed, which is why it survived; the only symptom was
+     * twice the intended request volume.
+     *
+     * With the cadence as a function of `realtimeState`, the effect re-runs on
+     * every transition and the dead branch cannot come back.
+     */
     useEffect(() => {
         fetchList();
 
-        let es: EventSource | null = null;
-        let intervalId: number | undefined;
-
         const poll = () => {
+            // A hidden tab is not looking, so polling it spends a request to
+            // update something nobody can see. `visibilitychange` below
+            // catches up the moment it returns.
             if (typeof document !== 'undefined' && document.hidden) return;
             void fetchList();
         };
 
-        /**
-         * The cadence is RECREATED on each transition, not chosen once — #1982.
-         *
-         * This used to read a `sseHealthy` flag into a `const pollIntervalMs`
-         * in the same tick that constructed the `EventSource`. `onopen` cannot
-         * have fired by then, so the flag was always `false` there and the
-         * five-minute branch was unreachable: a perfectly healthy stream still
-         * polled every 60 s forever, because `setInterval` was created once
-         * and never revisited when the flag flipped.
-         *
-         * Nothing failed, which is why it survived — the bell updated either
-         * way and the only symptom was twice the intended request volume. It
-         * matters now because P7.6 (#1198) turns this stream on, and the
-         * throttle it depends on has never once taken effect.
-         */
-        const setCadence = (ms: number) => {
-            if (intervalId !== undefined) window.clearInterval(intervalId);
-            intervalId = window.setInterval(poll, ms);
-        };
-
-        // Start on the 60 s cadence: the stream has not opened yet, and until
-        // it does the poll is the only signal there is.
-        setCadence(NOTIFICATIONS_POLL_INTERVAL_MS);
-        /**
-         * The client always ASKS; the server decides — #1982.
-         *
-         * This used to be gated on `env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1'`
-         * as well, which could not be satisfied: `NEXT_PUBLIC_*` is inlined at
-         * `next build` and that variable appears in no Dockerfile `ARG` and no
-         * `ghcr-publish.yml` build-arg, so every image baked it `undefined`.
-         * The channel was unreachable rather than off, and a client-side
-         * opt-in is a client preference in any case — the switch now lives in
-         * a `FeatureFlag` row that `/api/notifications/stream` reads per
-         * request.
-         *
-         * The `typeof` check stays: SSR and jsdom both lack `EventSource`.
-         *
-         * The E2E concern the old comment raised still holds and is still
-         * satisfied. A disabled channel answers 204, which the browser reads
-         * as a permanent failure rather than a blip, so the request completes
-         * and `networkidle` settles — and no flag row is seeded anywhere
-         * (`prisma/seed.ts` creates none, and suites that need one INSERT it
-         * explicitly, as the Lighthouse workflow does for
-         * `social.public-profile`), so the default in every test environment
-         * is off.
-         *
-         * Nothing is closed in `onerror` on purpose. `readyState` tells the
-         * two cases apart for free: CLOSED after a non-200 means the browser
-         * has given up, CONNECTING means it is retrying a real blip, and
-         * closing by hand would throw away the automatic reconnect that is
-         * most of the reason this channel is SSE.
-         */
-        if (typeof EventSource !== 'undefined') {
-            try {
-                es = new EventSource('/api/notifications/stream', {
-                    withCredentials: true,
-                });
-                es.onopen = () => {
-                    // Healthy stream: the poll becomes a safety net for
-                    // cross-pod events rather than the primary signal.
-                    setCadence(NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS);
-                };
-                es.onmessage = () => {
-                    /**
-                     * Refetch, do not prepend — #1990.
-                     *
-                     * The event carries ids only now, so there is no row in it
-                     * to prepend. That is the phase rule (payloads carry ids;
-                     * clients fetch bodies over REST with ETag) and it also
-                     * removes a class of bug this code had: a prepended
-                     * payload is a copy, so a notification edited or deleted
-                     * between publish and render was displayed anyway, with no
-                     * version to compare against.
-                     *
-                     * The event body is deliberately not read at all. Reading
-                     * it to decide whether to refetch would reintroduce a
-                     * dependency on its shape, which is the thing that just
-                     * changed.
-                     */
-                    void fetchList();
-                };
-                es.onerror = () => {
-                    // Back to the 60 s cadence. EventSource retries on its
-                    // own, and `onopen` will throttle again if it recovers.
-                    setCadence(NOTIFICATIONS_POLL_INTERVAL_MS);
-                };
-            } catch {
-                // Construction threw, so there is no stream to throttle for.
-                // The 60 s cadence set above already stands.
-            }
-        }
+        const cadence =
+            realtimeState === 'open'
+                ? NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS
+                : NOTIFICATIONS_POLL_INTERVAL_MS;
+        const intervalId = window.setInterval(poll, cadence);
 
         const onVisibility = () => {
             if (!document.hidden) void fetchList();
         };
         document.addEventListener('visibilitychange', onVisibility);
+
         return () => {
-            if (intervalId !== undefined) window.clearInterval(intervalId);
+            window.clearInterval(intervalId);
             document.removeEventListener('visibilitychange', onVisibility);
-            if (es) es.close();
         };
-    }, [fetchList]);
+    }, [fetchList, realtimeState]);
 
     // Opening the popover always pulls a fresh list — the user is
     // looking now, so show current data, not the last poll's.

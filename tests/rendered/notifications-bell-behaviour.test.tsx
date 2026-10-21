@@ -323,6 +323,14 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
          * why it survived review and why the assertion below is the one that
          * discriminates: step 3 passes on 60s-forever code only by accident,
          * step 4 cannot.
+         *
+         * P7.6 (#1995) made that fix structural rather than careful: the
+         * cadence is now DERIVED from the connection state the hook returns,
+         * so the effect re-runs on every transition and there is no flag to
+         * read at the wrong moment. These five steps are unchanged because
+         * they describe behaviour rather than mechanism — which is why they
+         * survived a rewrite of the mechanism, and the point of writing them
+         * that way.
          */
         class FakeEventSource {
             static last: FakeEventSource | null = null;
@@ -354,8 +362,16 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
             await act(async () => {});
 
             // The stream is subscribed to, and to the right endpoint.
+            //
+            // `/api/me/stream` rather than `/api/notifications/stream` as of
+            // P7.6 (#1995): the bell no longer owns a connection, it
+            // subscribes to the one `useRealtime` shares. The handle is still
+            // reachable here because the hook constructs a real `EventSource`
+            // — this fake — so driving `onopen` and `onerror` below still
+            // exercises the same transitions, now through the hook's state
+            // rather than through the bell's own handlers.
             expect(FakeEventSource.last).not.toBeNull();
-            expect(FakeEventSource.last!.url).toBe('/api/notifications/stream');
+            expect(FakeEventSource.last!.url).toBe('/api/me/stream');
 
             // 1. Before the stream opens, the poll is the only signal: 60s.
             const beforeOpen = fetchMock.mock.calls.length;
