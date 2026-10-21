@@ -8,9 +8,23 @@
 const webPush = jest.fn();
 const apns = jest.fn();
 const info = jest.fn();
+const warn = jest.fn();
 let notificationCount = 0;
 let countArgs: unknown = null;
 let userRow: { uiLanguage: string | null } | null = { uiLanguage: 'bg' };
+/**
+ * The preference and device counts the job reads alongside the count.
+ *
+ * It asks `resolveDelivery` at 06:00 rather than only re-checking the clock,
+ * because the night is eight hours long: somebody can turn push off at 23:00,
+ * and a summary that skipped the decision would deliver exactly the push they
+ * had just refused.
+ */
+let preferenceRow: { delivery: string } | null = null;
+let deviceRows: Array<{ platform: string; _count: { _all: number } }> = [
+    { platform: 'WEB', _count: { _all: 1 } },
+    { platform: 'IOS', _count: { _all: 1 } },
+];
 
 jest.mock('@/lib/db-context', () => ({
     __esModule: true,
@@ -22,6 +36,8 @@ jest.mock('@/lib/db-context', () => ({
                     return notificationCount;
                 },
             },
+            userNotificationPreference: { findUnique: async () => preferenceRow },
+            pushSubscription: { groupBy: async () => deviceRows },
         }),
 }));
 jest.mock('@/lib/prisma', () => ({
@@ -38,7 +54,12 @@ jest.mock('@/lib/notifications/apns', () => ({
 }));
 jest.mock('@/lib/observability/logger', () => ({
     __esModule: true,
-    logger: { info: (...a: unknown[]) => info(...a), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+    logger: {
+        info: (...a: unknown[]) => info(...a),
+        warn: (...a: unknown[]) => warn(...a),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
 }));
 
 import { runPushSummary } from '@/app-layer/jobs/push-summary';
@@ -52,6 +73,18 @@ beforeEach(() => {
     notificationCount = 3;
     countArgs = null;
     userRow = { uiLanguage: 'bg' };
+    preferenceRow = null;
+    deviceRows = [
+        { platform: 'WEB', _count: { _all: 1 } },
+        { platform: 'IOS', _count: { _all: 1 } },
+    ];
+    // Outside the quiet window, so the 06:00 decision grants both channels —
+    // which is what a summary job's own fire time looks like.
+    jest.useFakeTimers().setSystemTime(new Date(Date.UTC(2026, 10, 6, 4, 0, 0)));
+});
+
+afterEach(() => {
+    jest.useRealTimers();
 });
 
 describe('runPushSummary', () => {
@@ -209,5 +242,65 @@ describe('runPushSummary', () => {
             expect.objectContaining({ nightKey: '2026-11-05', count: 3 }),
         );
         expect(JSON.stringify(info.mock.calls)).not.toContain('Имате');
+    });
+});
+
+describe('the 06:00 decision is taken again, not assumed', () => {
+    it('sends nothing when push was DISABLED during the night', async () => {
+        // The gap this closes: the window is eight hours long, so somebody can
+        // turn push off at 23:00. A summary that re-checked only the clock
+        // would deliver at 06:00 exactly the push they had refused.
+        preferenceRow = { delivery: 'DISABLED' };
+
+        const r = await runPushSummary(payload);
+
+        expect(webPush).not.toHaveBeenCalled();
+        expect(apns).not.toHaveBeenCalled();
+        expect(r).toEqual({ count: 3, delivered: 0 });
+        expect(info).toHaveBeenCalledWith(
+            'push.summary_suppressed',
+            expect.objectContaining({ reason: 'preference-disabled', count: 3 }),
+        );
+    });
+
+    it('sends nothing when the devices are gone by morning', async () => {
+        // A person who signed out on every device overnight. The count is
+        // still reported, so the job's own result stays honest about what it
+        // found versus what it sent.
+        deviceRows = [];
+
+        const r = await runPushSummary(payload);
+
+        expect(webPush).not.toHaveBeenCalled();
+        expect(r).toEqual({ count: 3, delivered: 0 });
+    });
+
+    it('asks only for the transports still held', async () => {
+        deviceRows = [{ platform: 'IOS', _count: { _all: 2 } }];
+
+        const r = await runPushSummary(payload);
+
+        expect(webPush).not.toHaveBeenCalled();
+        expect(apns).toHaveBeenCalledTimes(1);
+        expect(r).toEqual({ count: 3, delivered: 1 });
+    });
+
+    it('drops rather than re-defers if it somehow runs inside the NEXT window', async () => {
+        // Only reachable on a backlog of eight hours or more. Chaining a
+        // summary into the following night would announce a window two nights
+        // old, and those rows are in the bell either way.
+        jest.setSystemTime(new Date(Date.UTC(2026, 10, 6, 21, 0, 0))); // 23:00 Sofia
+
+        const r = await runPushSummary(payload);
+
+        expect(webPush).not.toHaveBeenCalled();
+        expect(r).toEqual({ count: 3, delivered: 0 });
+        expect(warn).toHaveBeenCalledWith('push.summary_too_late', expect.anything());
+        // And ONLY that reason. Falling through to the suppression branch
+        // produces the same delivery outcome, so the result alone cannot tell
+        // the two apart — but it logs a second, different reason for one
+        // event, and an operator reading both cannot tell which applied.
+        const reasons = info.mock.calls.map((c) => c[0]);
+        expect(reasons).not.toContain('push.summary_suppressed');
     });
 });

@@ -110,15 +110,34 @@ describe('an APNs token registers', () => {
         expect(saveApnsRegistration).toHaveBeenCalled();
     });
 
-    it('logs that nothing can send to it yet', async () => {
-        // The gap made legible. Step 3 is the transport; until then an
-        // accepted token is a row with no sender, and an operator should be
-        // able to see that from the log rather than infer it from an issue.
-        await POST(req({ platform: 'IOS', deviceToken: TOKEN }), CTX);
+    it('logs the registration at INFO, with the environment that decides the host', async () => {
+        // This asserted `push.apns_registered_without_transport` at WARN,
+        // whose hint read "APNs delivery is not implemented yet (#1764 step
+        // 3)" — accurate when written and false from the moment `apns.ts`
+        // landed. It was read in production during the first real TestFlight
+        // registration, where it said the opposite of the facts: a warning
+        // naming a missing capability the product has sends whoever reads it
+        // looking in the wrong place.
+        //
+        // The case name went with it. "logs that nothing can send to it yet"
+        // encoded the stale claim as the thing being proved, so the test would
+        // have gone on passing about a world that no longer existed.
+        //
+        // `environment` rather than a hint, because it is the field that picks
+        // the host and the one value the sender refuses rather than guesses —
+        // worth having on the registration line instead of inferred later.
+        await POST(
+            req({ platform: 'IOS', deviceToken: TOKEN, environment: 'production' }),
+            CTX,
+        );
 
-        expect(logger.warn).toHaveBeenCalledWith(
+        expect(logger.info).toHaveBeenCalledWith(
+            'push.apns_registered',
+            expect.objectContaining({ component: 'push', environment: 'production' }),
+        );
+        expect(logger.warn).not.toHaveBeenCalledWith(
             'push.apns_registered_without_transport',
-            expect.objectContaining({ component: 'push' }),
+            expect.anything(),
         );
     });
 
