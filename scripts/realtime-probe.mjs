@@ -19,17 +19,37 @@
  * (#1940), the CSP report sink (#704), and this channel — which is why the
  * probe is written as if it will happen again.
  *
- * ## The three outcomes, and why OFF is not a failure
+ * ## The four outcomes, and why two of them are not failures
  *
- *   OK      — the event arrived. Exit 0.
- *   OFF     — the channel is disabled by decision. Exit 0, reported distinctly.
- *   BROKEN  — anything else. Exit 1, and the workflow opens an issue.
+ *   OK            — the event arrived. Exit 0.
+ *   OFF           — disabled by decision. Exit 0, reported distinctly.
+ *   UNCONFIGURED  — this probe has no credentials. Exit 1, its OWN issue title.
+ *   BROKEN        — anything else. Exit 1, and the workflow opens an issue.
  *
  * OFF matters because the gate is a `notifications.sse` flag row (#1984) and a
  * disabled channel answers 204. A probe that treated 204 as failure would page
  * on an intentional state; one that treated it as success would stay silent
  * through a real outage. So 204 is its own verdict, and the probe says which
  * of the two it saw rather than collapsing them.
+ *
+ * UNCONFIGURED was folded into BROKEN, and the collision was real rather than
+ * cosmetic. The workflow deduplicates by ISSUE TITLE so that an hourly probe
+ * failing for a day comments on one issue instead of opening 24 — which means
+ * two causes sharing a title share a thread. With no secrets set, the first
+ * thing this monitor would ever have said is "a realtime event is not
+ * arriving", and a genuine outage weeks later would have been a comment on
+ * that same issue, under that same title, with the channel having been fine
+ * the whole time in between.
+ *
+ * `/api/webhooks/resend/route.ts` already records this distinction for the
+ * same reason, one layer down: `no-secret` answers 503 and a bad signature
+ * 401, because "one means this deployment has not configured the feed, the
+ * other means something is posting to it that cannot sign. Collapsing them
+ * would hide an unconfigured endpoint behind what looks like an attack."
+ *
+ * It still exits 1. An unconfigured probe is not a working probe, and exiting
+ * 0 would make "nobody finished the setup" indistinguishable from "the channel
+ * is healthy" — the exact substitution this script exists to prevent.
  *
  * ## Why it does not use EventSource
  *
@@ -51,7 +71,7 @@ function verdict(state, detail) {
     // than the exit code alone, because OFF and OK share an exit code and the
     // issue body needs to say which.
     console.log(`PROBE_RESULT=${state} ${detail}`);
-    process.exit(state === 'BROKEN' ? 1 : 0);
+    process.exit(state === 'OK' || state === 'OFF' ? 0 : 1);
 }
 
 /**
@@ -72,7 +92,10 @@ function verdict(state, detail) {
  */
 async function signIn() {
     if (!EMAIL || !PASSWORD) {
-        verdict('BROKEN', 'PROBE_EMAIL or PROBE_PASSWORD is not set — the probe cannot authenticate');
+        verdict(
+            'UNCONFIGURED',
+            'PROBE_EMAIL or PROBE_PASSWORD is not set — the probe cannot authenticate',
+        );
     }
 
     // NextAuth requires a CSRF token and its cookie on the callback.

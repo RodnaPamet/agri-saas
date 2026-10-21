@@ -88,7 +88,26 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          TITLE="Realtime probe: a realtime event is not arriving"
+
+          # One title PER CAUSE, not one title for the step.
+          #
+          # Dedup below is by title, which is what keeps an hourly probe from
+          # opening 24 issues in a day. The cost of that is that two causes
+          # sharing a title share a thread — so with no secrets set, this
+          # monitor's first ever issue would have read "a realtime event is not
+          # arriving", and a genuine outage weeks later would have landed as a
+          # comment on it. Same thread, same title, channel fine throughout.
+          #
+          # `/api/webhooks/resend/route.ts` draws the same line one layer down:
+          # 503 for an unconfigured feed, 401 for a bad signature, because
+          # collapsing them "would hide an unconfigured endpoint behind what
+          # looks like an attack".
+          case "$VERDICT" in
+            UNCONFIGURED)
+              TITLE="Realtime probe: not configured (PROBE_EMAIL / PROBE_PASSWORD)" ;;
+            *)
+              TITLE="Realtime probe: a realtime event is not arriving" ;;
+          esac
 
           # Deduplicated by TITLE among open issues. An hourly probe that fails
           # for a day must not open 24 issues — it comments on the one that is
@@ -112,8 +131,13 @@ jobs:
             "" \
             "**\`OFF\` is not reported here.** A 204 from the stream means the" \
             "\`notifications.sse\` flag is off for the probe account, which is a" \
-            "decision rather than a fault, and the probe exits 0 on it. If you are" \
-            "reading this issue the verdict was \`BROKEN\`.")
+            "decision rather than a fault, and the probe exits 0 on it." \
+            "" \
+            "**\`UNCONFIGURED\` has its own title**, so it never shares a thread with a" \
+            "real outage. It means this repository has no \`PROBE_EMAIL\` /" \
+            "\`PROBE_PASSWORD\` secret: the account must exist, belong to a farm, and be" \
+            "in the cohort the \`notifications.sse\` flag is narrowed to — otherwise the" \
+            "stream correctly answers 204 and the probe reports \`OFF\` for ever.")
 
           if [ -n "$existing" ]; then
             echo "commenting on #$existing"
