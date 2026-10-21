@@ -113,3 +113,42 @@ export function restoreViewport(): void {
  * can NAME the default it relies on instead of inheriting it silently.
  */
 export const DEFAULT_VIEWPORT: Viewport = 'mobile';
+
+/**
+ * State that a suite is mobile-only ON PURPOSE, with the reason.
+ *
+ * ## The distinction this exists to make
+ *
+ * jsdom's `matchMedia` stub answers `matches: false` to every query, so a
+ * rendered test that never sets a viewport runs MOBILE — and four UI
+ * primitives switch implementation on that query, not just classes:
+ *
+ *     ui/modal.tsx            Radix Dialog  / Vaul Drawer
+ *     ui/popover.tsx          Radix Popover / Vaul Drawer
+ *     ui/sheet.tsx            right Drawer  / bottom Drawer
+ *     ui/DeferredOnMobile.tsx renders       / defers
+ *
+ * Measured 2026-10-22: 106 of 265 files in this directory transitively reach
+ * one of those, and 82 of them never reach desktop. Most of that 82 is fine —
+ * the component under test has no viewport-dependent behaviour and a second
+ * pass would be cost without signal. What is NOT fine is that "mobile by
+ * decision" and "nobody thought about it" look identical from outside.
+ *
+ * So this marks the decision. It is deliberately not a no-op comment: it sets
+ * the viewport explicitly, so the suite states its device rather than
+ * inheriting a stub's default, and `tests/guards/rendered-viewport-switchers.test.ts`
+ * counts a suite carrying it as handled.
+ *
+ * @param reason why desktop is out of scope — the component is mobile-only,
+ *               the assertion is about the drawer specifically, and so on.
+ */
+export function mobileOnly(reason: string): void {
+    if (reason.trim().length < 15) {
+        throw new Error(
+            `mobileOnly() needs a real reason, got ${JSON.stringify(reason)}. ` +
+                `The point of this marker is that it carries one — an empty string ` +
+                `would re-create the ambiguity it exists to remove.`,
+        );
+    }
+    setViewport('mobile');
+}
