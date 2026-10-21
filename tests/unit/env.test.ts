@@ -23,6 +23,10 @@ describe('Environment Variable Validation', () => {
         GOOGLE_CLIENT_SECRET: 'google-secret',
         MICROSOFT_CLIENT_ID: 'ms-client-id',
         MICROSOFT_CLIENT_SECRET: 'ms-secret',
+        // A single-directory GUID. Shape matters, not the digits: a valid
+        // production env must now name a directory rather than inherit the
+        // multi-tenant default, so the shared fixture names one.
+        MICROSOFT_TENANT_ID: '11111111-2222-3333-4444-555555555555',
         UPLOAD_DIR: '/tmp/uploads',
     };
 
@@ -310,6 +314,101 @@ describe('Environment Variable Validation', () => {
             expect(result.error).toContain('REQUIRED in production');
             // The pre-existing present-check must survive alongside the
             // new password check — the not-present branch returns early.
+        });
+    });
+
+    // MICROSOFT_TENANT_ID — a multi-tenant Entra authority is refused in
+    // production. `common` lets any Entra directory in the world obtain a
+    // token; combined with the address-matching link in the signIn callback
+    // (an Entra token carries no email_verified claim, and the guard there
+    // only rejects an explicit `false`) that composes into account takeover.
+    //
+    // The value used to default to `common`, so a deploy that forgot the
+    // variable silently chose the widest authority. These cases pin both
+    // halves: production refuses it, and dev/test keep booting without it.
+    describe('MICROSOFT_TENANT_ID multi-tenant authority', () => {
+        it('rejects NODE_ENV=production when the tenant is "common"', () => {
+            const result = runEnvScript({
+                NODE_ENV: 'production',
+                DATA_ENCRYPTION_KEY: 'a-real-production-key-at-least-32-chars-long-deterministic',
+                REDIS_URL: 'redis://:password@localhost:6379',
+                STORAGE_PROVIDER: 'local',
+                MICROSOFT_TENANT_ID: 'common',
+            });
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('MICROSOFT_TENANT_ID');
+            expect(result.error).toContain('MULTI-TENANT');
+        });
+
+        it('rejects the other multi-tenant authorities too, not just "common"', () => {
+            // `organizations` and `consumers` are the same hazard. A guard
+            // that only knew the literal "common" would pass while an
+            // operator picked a synonym from Microsoft's own docs.
+            for (const authority of ['organizations', 'consumers', 'COMMON']) {
+                const result = runEnvScript({
+                    NODE_ENV: 'production',
+                    DATA_ENCRYPTION_KEY: 'a-real-production-key-at-least-32-chars-long-deterministic',
+                    REDIS_URL: 'redis://:password@localhost:6379',
+                    STORAGE_PROVIDER: 'local',
+                    MICROSOFT_TENANT_ID: authority,
+                });
+                expect(result.success).toBe(false);
+                expect(result.error).toContain('MICROSOFT_TENANT_ID');
+            }
+        });
+
+        it('rejects NODE_ENV=production when the tenant is UNSET (the default applies)', () => {
+            // The whole point: an absent variable used to mean `common`
+            // silently. Absence must now be as loud as the literal.
+            const result = runEnvScript({
+                NODE_ENV: 'production',
+                DATA_ENCRYPTION_KEY: 'a-real-production-key-at-least-32-chars-long-deterministic',
+                REDIS_URL: 'redis://:password@localhost:6379',
+                STORAGE_PROVIDER: 'local',
+                MICROSOFT_TENANT_ID: undefined,
+            });
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('MICROSOFT_TENANT_ID');
+        });
+
+        it('accepts a multi-tenant authority when the operator opts in explicitly', () => {
+            // The escape hatch has to work, or the refinement is a wall
+            // rather than a gate and someone will delete it under deadline.
+            const result = runEnvScript({
+                NODE_ENV: 'production',
+                DATA_ENCRYPTION_KEY: 'a-real-production-key-at-least-32-chars-long-deterministic',
+                REDIS_URL: 'redis://:password@localhost:6379',
+                STORAGE_PROVIDER: 'local',
+                MICROSOFT_TENANT_ID: 'common',
+                ENTRA_ALLOW_MULTITENANT: '1',
+            });
+            expect(result.success).toBe(true);
+        });
+
+        it('accepts a single-directory GUID in production', () => {
+            const result = runEnvScript({
+                NODE_ENV: 'production',
+                DATA_ENCRYPTION_KEY: 'a-real-production-key-at-least-32-chars-long-deterministic',
+                REDIS_URL: 'redis://:password@localhost:6379',
+                STORAGE_PROVIDER: 'local',
+                MICROSOFT_TENANT_ID: '11111111-2222-3333-4444-555555555555',
+            });
+            expect(result.success).toBe(true);
+        });
+
+        it('accepts "common" under NODE_ENV=test (dev/test ergonomics preserved)', () => {
+            // CI sets a fake tenant and dev sets nothing. Neither should
+            // have to care, which is why the refinement is production-only.
+            const result = runEnvScript({ NODE_ENV: 'test', MICROSOFT_TENANT_ID: 'common' });
+            expect(result.success).toBe(true);
+        });
+
+        it('accepts "common" under NODE_ENV=development', () => {
+            const result = runEnvScript({
+                NODE_ENV: 'development',
+                MICROSOFT_TENANT_ID: 'common',
+            });
+            expect(result.success).toBe(true);
         });
     });
 });
