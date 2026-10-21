@@ -13,6 +13,7 @@ import * as React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { restoreViewport, setViewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() }),
@@ -23,6 +24,23 @@ jest.mock('next/navigation', () => ({
 jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantApiUrl: () => (p: string) => `/api/t/acme${p}`,
     useTenantHref: () => (p: string) => `/t/acme${p}`,
+}));
+
+/**
+ * The realtime subscription, captured rather than driven.
+ *
+ * The real hook is a module-singleton `EventSource` on `/api/me/stream`, and
+ * jsdom implements no `EventSource` at all — so the live path cannot run here
+ * and the hook has its own unit test (`tests/unit/realtime/use-realtime.ts`).
+ * What this file is for is the half that one cannot see: that THIS page
+ * subscribes to the right kind, and that a tick makes the list refetch.
+ */
+const realtimeSubscriptions: Array<[string, () => void]> = [];
+jest.mock('@/lib/realtime/use-realtime', () => ({
+    __esModule: true,
+    useRealtime: (kind: string, cb: () => void) => {
+        realtimeSubscriptions.push([kind, cb]);
+    },
 }));
 
 const mutate = jest.fn(async () => undefined);
@@ -101,7 +119,68 @@ function renderClient() {
 beforeEach(() => {
     mutate.mockClear();
     swrKeys.length = 0;
+    realtimeSubscriptions.length = 0;
     swrData = OFFERS.map((o) => ({ ...o }));
+});
+
+afterEach(() => restoreViewport());
+
+// ── live Борса, at both viewports (#1995) ──
+//
+// P7.6's standing rule is rendered tests at `setViewport('mobile')` AND
+// `('desktop')`, and this file had neither — so with jsdom's `matchMedia` stub
+// answering `matches: false` to every query, every assertion in it has run
+// against the mobile tree only. `ExchangeClient` branches on the viewport in
+// four places, and the detail surface is a Sheet whose primitive switches.
+//
+// The tick itself is viewport-independent, which is exactly why it is worth
+// running both: a refetch wired inside a branch that only renders on one of
+// them would pass here and be dead on the other.
+describe.each([['mobile'], ['desktop']] as const)('live Борса at %s', (viewport) => {
+    beforeEach(() => setViewport(viewport));
+
+    it('subscribes to the listing kind, not to notifications', async () => {
+        renderClient();
+        await screen.findByTestId('exchange-map');
+
+        // The DISTINCT kinds, not the call count. This mock records one entry
+        // per render while the real hook refcounts a single shared
+        // `EventSource`, so counting entries would assert how many times React
+        // re-rendered — which is not a property of this page. Subscribing to
+        // 'notification' here would make the bell's traffic refetch the market
+        // and leave a listing tick reaching nothing, and that IS.
+        expect([...new Set(realtimeSubscriptions.map(([kind]) => kind))]).toEqual(['listing']);
+    });
+
+    it('refetches the feed when a market tick arrives', async () => {
+        renderClient();
+        await screen.findByTestId('exchange-map');
+        // The mount's own fetches are not the subject.
+        mutate.mockClear();
+
+        const [, tick] = realtimeSubscriptions[0];
+        await act(async () => {
+            tick();
+        });
+
+        // Payloads carry ids only, so a tick is a nudge to refetch over REST
+        // with ETag — never a listing body that would race the 60s list cache.
+        expect(mutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT refetch without a tick — the control', async () => {
+        // Without this, the assertion above passes on a page that refetches on
+        // a timer, or on every render, and the tick would be doing nothing.
+        renderClient();
+        await screen.findByTestId('exchange-map');
+        mutate.mockClear();
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        expect(mutate).not.toHaveBeenCalled();
+    });
 });
 
 it('opens the detail Sheet on row select and shows the Anonymous-farm fallback', async () => {
