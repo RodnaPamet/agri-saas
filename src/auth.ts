@@ -607,43 +607,71 @@ export const authOptions: NextAuthOptions = {
             }
 
             // 1. Account linking for OAuth (not credentials).
+            //
+            // The three queries below are wrapped because next-auth puts a
+            // thrown error's MESSAGE into the redirect query string
+            // (`core/routes/callback.js`, the catch around each
+            // `callbacks.signIn` call). An unhandled Prisma failure here —
+            // a pool timeout, a lost connection, a P2002 on the create —
+            // would therefore land its text in a URL the person sees and
+            // the browser keeps in history, and which travels in `Referer`
+            // and any proxy log. Prisma messages name constraints and
+            // fields.
+            //
+            // The sign-in still fails, exactly as it did before: an
+            // unhandled throw failed it too. Only the message changes, and
+            // `'Callback'` is chosen because the message IS the code in
+            // that interpolation — `?error=Callback`, which
+            // `lib/auth/redirect-error-codes.ts` maps to the generic copy.
+            // The real error keeps its detail in our logs.
             if (account.provider !== 'credentials' && user.email) {
-                const existingUser = await prisma.user.findFirst({
-                    where: { emailHash: { in: hashForLookupCandidates(user.email) } },
-                });
-
-                if (existingUser && user.id !== existingUser.id) {
-                    const existingAccount = await prisma.account.findUnique({
-                        where: {
-                            provider_providerAccountId: {
-                                provider: account.provider,
-                                providerAccountId: account.providerAccountId,
-                            },
-                        },
+                try {
+                    const existingUser = await prisma.user.findFirst({
+                        where: { emailHash: { in: hashForLookupCandidates(user.email) } },
                     });
 
-                    if (!existingAccount) {
-                        await prisma.account.create({
-                            data: {
-                                userId: existingUser.id,
-                                type: account.type,
-                                provider: account.provider,
-                                providerAccountId: account.providerAccountId,
-                                refresh_token: (account.refresh_token as string) ?? null,
-                                access_token: (account.access_token as string) ?? null,
-                                expires_at: (account.expires_at as number) ?? null,
-                                token_type: (account.token_type as string) ?? null,
-                                scope: (account.scope as string) ?? null,
-                                id_token: (account.id_token as string) ?? null,
-                                session_state: (account.session_state as string) ?? null,
+                    if (existingUser && user.id !== existingUser.id) {
+                        const existingAccount = await prisma.account.findUnique({
+                            where: {
+                                provider_providerAccountId: {
+                                    provider: account.provider,
+                                    providerAccountId: account.providerAccountId,
+                                },
                             },
                         });
+
+                        if (!existingAccount) {
+                            await prisma.account.create({
+                                data: {
+                                    userId: existingUser.id,
+                                    type: account.type,
+                                    provider: account.provider,
+                                    providerAccountId: account.providerAccountId,
+                                    refresh_token: (account.refresh_token as string) ?? null,
+                                    access_token: (account.access_token as string) ?? null,
+                                    expires_at: (account.expires_at as number) ?? null,
+                                    token_type: (account.token_type as string) ?? null,
+                                    scope: (account.scope as string) ?? null,
+                                    id_token: (account.id_token as string) ?? null,
+                                    session_state: (account.session_state as string) ?? null,
+                                },
+                            });
+                        }
+                        // Invite redemption is NOT done here — a first-time
+                        // OAuth user's `user.id` is the provider subject, not
+                        // our User.id. It runs in the jwt callback below, which
+                        // fires after the adapter has persisted the row.
+                        return true;
                     }
-                    // Invite redemption is NOT done here — a first-time
-                    // OAuth user's `user.id` is the provider subject, not
-                    // our User.id. It runs in the jwt callback below, which
-                    // fires after the adapter has persisted the row.
-                    return true;
+                } catch (err) {
+                    // No address in these fields: the log is the safe place
+                    // for the cause, not for the person.
+                    edgeLogger.error('signIn account-link step failed', {
+                        component: 'auth',
+                        provider: account.provider,
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                    throw new Error('Callback');
                 }
             }
 
