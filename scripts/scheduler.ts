@@ -24,6 +24,7 @@
 import 'dotenv/config';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
+import os from 'node:os';
 import pino from 'pino';
 import { QUEUE_NAME } from '../src/app-layer/jobs/types';
 import { SCHEDULED_JOBS, ALL_SCHEDULE_NAMES } from '../src/app-layer/jobs/schedules';
@@ -31,9 +32,46 @@ import { schedulersToRemove } from '../src/app-layer/jobs/schedule-reconcile';
 import { assertProductionEncryptionReady } from '../src/lib/security/startup-gate';
 
 // ─── Logger ───
+//
+// ## `requestId` is not decoration — it is what makes the line leave the VM
+//
+// `/etc/google-cloud-ops-agent/config.yaml` on `agrent` keeps only lines
+// containing BOTH `requestId` and `msg`, and its own docblock explains why: a
+// path filter cannot name "the app" because container log paths are keyed by
+// container ID, which changes on every recreation, and without a content
+// filter the VM would ship ~2.5M lines of pgbouncer/redis/caddy connection
+// noise per rotation to gain 74 useful ones.
+//
+// `requestId` was chosen because `src/lib/observability/logger.ts` injects it
+// unconditionally — but in its `log()` WRAPPER, per call, not on the pino
+// instance. A second pino instance built here therefore emits neither field
+// and every line it writes is dropped. Measured over the full 14-day Cloud
+// Logging window on 2026-10-21, against a positive control:
+//
+//   job completed                 50 entries (query cap)  <- shared helper
+//   processing job                 0
+//   job processed successfully     0
+//   worker shut down gracefully    0
+//   registering repeatable jobs    0   <- scheduler.ts, same defect
+//   all schedules registered       0
+//
+// So the lines describing what this process actually did were the ones being
+// dropped, and an absent line reads as an absent event: #2091's question
+// ("does the worker's graceful shutdown complete?") was unanswerable from
+// outside the VM, and I drew the wrong conclusion from the silence twice
+// before finding the cause (#2101).
+//
+// ## Why `base` restates pid and hostname
+//
+// pino's `base` REPLACES its default bindings rather than merging with them —
+// measured, not assumed: `pino({ base: { requestId } })` emits
+// `level,msg,requestId,time` where the default emits
+// `hostname,level,msg,pid,time`. Omitting them here would fix the filter and
+// silently change the shape of every line this process writes.
 
 const log = pino({
     level: process.env.LOG_LEVEL || 'info',
+    base: { pid: process.pid, hostname: os.hostname(), requestId: 'unknown' },
     transport: process.env.NODE_ENV !== 'production'
         ? { target: 'pino-pretty', options: { colorize: true, ignore: 'pid,hostname', translateTime: 'HH:MM:ss.l' } }
         : undefined,

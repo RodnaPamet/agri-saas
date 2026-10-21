@@ -1,0 +1,127 @@
+# Cloud Ops Agent logging config for the `agrent` VM — a TRACKED MIRROR.
+#
+# ## What this file is, and what it is not
+#
+# The live file is `/etc/google-cloud-ops-agent/config.yaml` on the VM, and it
+# is NOT generated from this one. Nothing in this repository applies it; this
+# copy exists so that the content filter below is auditable, and so a guard can
+# DERIVE the terms a log line must carry instead of hard-coding them in a test.
+#
+# That means this file can drift from the host, and nothing here can detect it —
+# a test cannot read a remote machine. What makes drift survivable is that the
+# direction that matters is one-way: a filter term ADDED on the host and not
+# here would silently drop lines, so the verification below is the thing to run
+# after any change to the live config.
+#
+#     gcloud compute ssh agrent --zone europe-west1-b \
+#       --command 'sudo cat /etc/google-cloud-ops-agent/config.yaml' \
+#       | diff - deploy/ops-agent-config.yaml
+#
+# Mirrored 2026-10-21. Read by `tests/guards/every-logger-survives-the-filter.test.ts`.
+#
+# ## Why a content filter at all
+#
+# The comments below are the live file's own and are kept verbatim — they carry
+# the measurements that justified each choice.
+#
+# ══════════════════════════════════════════════════════════════════════════
+# Ships the APPLICATION container logs to Cloud Logging, additively.
+#
+# WHY THIS EXISTS
+# Container stdout is discarded every time watchtower recreates the app on
+# :latest, and nothing leaves the VM. Measured 2026-10-16: the agrent-app
+# container was 11 minutes old and held 78 lines; a 30-day Cloud Logging query
+# constrained to this VM returned ZERO application entries. So a `web-vital`
+# line — the measurement #1814 needs a per-surface p75 from — cannot be read
+# back even one hour after it is written.
+#
+# ADDITIVE ON PURPOSE. The docker json-file driver is untouched, so `docker
+# logs` and `journalctl` remain exactly the surface they were; this tails the
+# files docker already writes. Switching the app to the `gcplogs` driver would
+# have replaced that surface instead of adding to it.
+#
+# WHY A CONTENT FILTER RATHER THAN A PATH FILTER
+# Container log paths are keyed by container ID, which changes on every
+# recreation, so no include/exclude path names "the app" for longer than one
+# deploy. The filter is necessary, not tidy — measured per container over whole
+# log files on 2026-10-16:
+#                        lines   requestId+msg
+#   agrent-pgbouncer   2011742          0
+#   agrent-db           383290          0
+#   agrent-redis        126025          0
+#   agrent-watchtower    37577          0
+#   agrent-caddy          4543          0
+#   agrent-worker           93         19
+#   agrent-app              78         55
+# 2.56 million lines of connection noise carry neither term; the two
+# application containers carry both. The ratio is the point: without the
+# filter this ships ~2.5 M lines/rotation to gain 74.
+#
+# WHY THESE TWO WORDS
+# `requestId` is injected UNCONDITIONALLY by the single log helper
+# (src/lib/observability/logger.ts — `requestId: ctx?.requestId ?? 'unknown'`),
+# so it is present on every line the app writes INCLUDING the ones no caller
+# tagged. Filtering on `component` instead would drop exactly the target class:
+# verified 2026-10-16 by posting one beacon to https://app.agrent.bg/api/metrics
+# and reading the line it produced — it carries `requestId":"unknown"` and
+# `msg":"web-vital"`, and would survive this filter.
+#
+# `msg` is the second term because it is Pino's message key, present on every
+# line the helper writes and on none of the plain-text containers. Both terms
+# are bare words with no escaping, deliberately: docker wraps the payload as a
+# JSON *string*, so the inner quotes arrive escaped (`{"log":"{\"msg\":\"…`)
+# and an anchored or brace-bearing pattern loses a level of escaping somewhere
+# in the YAML -> agent-string -> RE2 chain.
+#
+# `exclude_logs` ORs its `match_any` entries for EXCLUSION, so a line must
+# satisfy EVERY entry to survive. Two `!~` terms therefore mean "keep only
+# lines containing BOTH words".
+#
+# KNOWN CONSEQUENCE: this VM also runs the playerz stack, whose app containers
+# are Pino too (playerz-app 1 line, playerz-staging-app 2 lines at time of
+# measurement). A content filter cannot tell them apart from agrent's, so their
+# application lines ship as well. They are separable after the fact — every
+# entry carries the container name — and the volume is negligible, but it is a
+# consequence of choosing content over path, not an oversight.
+logging:
+  receivers:
+    docker_json:
+      type: files
+      include_paths:
+        - /var/lib/docker/containers/*/*-json.log
+  processors:
+    keep_only_json_payloads:
+      type: exclude_logs
+      match_any:
+        - 'jsonPayload.message !~ "requestId"'
+        - 'jsonPayload.message !~ "msg"'
+    # Unwrap for readability. If this ever fails the filter above still holds,
+    # because it does not depend on it.
+    unwrap_docker:
+      type: parse_json
+      field: message
+
+    # A SECOND unwrap, which the sibling VM's config does not have and #1814
+    # needs. `unwrap_docker` structures docker's wrapper, leaving the app's own
+    # Pino payload as a JSON STRING in `jsonPayload.log` -- verified on the
+    # first shipped line: value arrived as `"value":2222.2` inside a string, so
+    # a log query could match the text but could not compute a p75 over the
+    # number. P6.5 wants a per-surface p75, which needs `value` and `surface`
+    # as fields.
+    #
+    # Ordering is the whole of it: this reads `log`, which only exists once
+    # `unwrap_docker` has produced it, so it must follow in the pipeline list.
+    # The same mistake in the other direction is recorded on the filter above
+    # -- an expression against a field no parse step had created yet matched
+    # nearly every record and dropped almost everything.
+    unwrap_app:
+      type: parse_json
+      field: log
+  service:
+    pipelines:
+      docker_app:
+        receivers: [docker_json]
+        processors: [keep_only_json_payloads, unwrap_docker, unwrap_app]
+      # Re-declared because naming any pipeline replaces the built-in set.
+      default_pipeline:
+        receivers: [syslog]
