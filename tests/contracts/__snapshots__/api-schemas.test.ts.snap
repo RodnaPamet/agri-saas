@@ -10095,6 +10095,22 @@ exports[`API contract — per-schema snapshots schema: MeStreamEvent 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MeStreamProbeAck 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "The id that was published. Match the \`data:\` frame on your open stream against THIS value — asserting that something arrived is not the same as asserting your event did."
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "description": "The id published to the caller’s own realtime channel. No row was written, so a client that receives it and refetches will find nothing new — the point is the transport, not the content."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: MyFarms 1`] = `
 "{
   "type": "object",

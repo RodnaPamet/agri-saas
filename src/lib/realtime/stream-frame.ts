@@ -114,3 +114,19 @@ export function serialiseFrame(frame: StreamFrame): string {
     const data = `data: ${JSON.stringify(frame)}\n\n`;
     return frame.kind === 'notification' ? `id: ${frame.id}\n${data}` : data;
 }
+
+/**
+ * The prefix every synthetic probe id carries — P7.9 (#1998).
+ *
+ * Here rather than in the route that mints it, because a Next route module may
+ * export only handlers and segment config: `tests/guards/...export only what
+ * Next allows` fails anything else, and it is right to — a constant exported
+ * from a route is a constant whose importers pull a server handler's module
+ * graph in with it.
+ *
+ * Deliberately NOT cuid-shaped. `notification-replay` shape-checks
+ * `Last-Event-ID` against a cuid before querying, so a probe id can never be
+ * mistaken for a replay cursor — a client echoing one back gets an immediate,
+ * silent "no cursor" rather than a confusing empty replay.
+ */
+export const PROBE_ID_PREFIX = 'probe-';

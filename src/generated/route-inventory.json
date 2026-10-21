@@ -391,6 +391,11 @@
       "documented": true
     },
     {
+      "path": "/api/me/probe-event",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/me/stream",
       "status": "live",
       "documented": true

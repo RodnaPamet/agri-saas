@@ -1,0 +1,124 @@
+# An hourly probe that a realtime event really arrives — P7.9 (#1998).
+#
+# ── why this workflow exists ──
+#
+# Everything in P7 can be code-complete and silent. The notifications SSE
+# channel spent months fully built and carrying zero events in production, and
+# nothing reported it: the gate was a `NEXT_PUBLIC_*` flag that could not be
+# set in any image (#1982), and the bell's REST fallback kept the UI updating,
+# so a dead channel and a healthy one looked identical from outside.
+#
+# The pattern has recurred three times in this repo — the vitals beacon
+# (#1940), the CSP report sink (#704), and this channel — so the probe is
+# written as if it will happen again.
+#
+# ── the ABSENT condition ──
+#
+# `inflect-compliance`'s alerting is the precedent, and its lesson is that each
+# reporter needs an ABSENT condition: an alert that only fires on a bad value
+# cannot distinguish "healthy" from "not running". Here the schedule IS the
+# absent condition — a workflow that stops running stops reporting, which
+# GitHub shows on the Actions tab. The `concurrency` group below deliberately
+# does NOT cancel in progress, so a slow run cannot be silently replaced by the
+# next hour's and leave no verdict at all.
+name: Realtime probe
+
+on:
+  schedule:
+    # Hourly, at :17 rather than :00 — the top of the hour is when every other
+    # scheduled workflow on GitHub contends for runners, and a probe that is
+    # queued for ten minutes reports a latency that is not ours.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: realtime-probe
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # To open and comment on the issue a failure raises.
+  issues: write
+
+jobs:
+  probe:
+    name: A realtime event arrives
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No `npm ci`. The probe is dependency-free on purpose: it uses `fetch`
+      # and a byte reader from the Node runtime, so an install failure cannot
+      # be mistaken for a channel failure — which is the class of confusion
+      # this probe exists to remove, not to add.
+      - name: Probe
+        id: probe
+        env:
+          PROBE_BASE_URL: ${{ vars.PROBE_BASE_URL || 'https://app.agrent.bg' }}
+          PROBE_EMAIL: ${{ secrets.PROBE_EMAIL }}
+          PROBE_PASSWORD: ${{ secrets.PROBE_PASSWORD }}
+        run: |
+          set +e
+          out=$(node scripts/realtime-probe.mjs 2>&1)
+          status=$?
+          echo "$out"
+          # The verdict line, not the exit code alone: OK and OFF share an exit
+          # code of 0 and the issue body needs to say which was seen.
+          verdict=$(printf '%s\n' "$out" | grep -oE '^PROBE_RESULT=[A-Z]+' | tail -1 | cut -d= -f2)
+          detail=$(printf '%s\n' "$out" | grep -E '^PROBE_RESULT=' | tail -1 | sed 's/^PROBE_RESULT=[A-Z]* //')
+          echo "verdict=${verdict:-BROKEN}" >> "$GITHUB_OUTPUT"
+          {
+            echo "detail<<PROBE_EOF"
+            echo "${detail:-the probe produced no verdict line}"
+            echo "PROBE_EOF"
+          } >> "$GITHUB_OUTPUT"
+          exit $status
+
+      - name: Open or update the issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERDICT: ${{ steps.probe.outputs.verdict }}
+          DETAIL: ${{ steps.probe.outputs.detail }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="Realtime probe: a realtime event is not arriving"
+
+          # Deduplicated by TITLE among open issues. An hourly probe that fails
+          # for a day must not open 24 issues — it comments on the one that is
+          # already open, so the issue becomes a record of how long the outage
+          # has lasted rather than a flood that gets muted.
+          existing=$(gh issue list --state open --search "in:title \"$TITLE\"" \
+            --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+
+          body=$(printf '%s\n' \
+            "The hourly realtime probe reported **$VERDICT**." \
+            "" \
+            "\`\`\`" \
+            "$DETAIL" \
+            "\`\`\`" \
+            "" \
+            "Run: $RUN_URL" \
+            "" \
+            "The probe opens \`/api/me/stream\` as a real authenticated client, calls" \
+            "\`POST /api/me/probe-event\` to cause one event, and asserts that exact id" \
+            "arrives. So a failure means the transport is broken, not that a UI is." \
+            "" \
+            "**\`OFF\` is not reported here.** A 204 from the stream means the" \
+            "\`notifications.sse\` flag is off for the probe account, which is a" \
+            "decision rather than a fault, and the probe exits 0 on it. If you are" \
+            "reading this issue the verdict was \`BROKEN\`.")
+
+          if [ -n "$existing" ]; then
+            echo "commenting on #$existing"
+            gh issue comment "$existing" --body "$body"
+          else
+            echo "opening a new issue"
+            gh issue create --title "$TITLE" --label bug --body "$body"
+          fi
