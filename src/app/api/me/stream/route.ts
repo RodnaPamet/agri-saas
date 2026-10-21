@@ -72,11 +72,13 @@ import { getLegacyCtx, getUserCtx } from '@/app-layer/context';
 import { subscribeToNotifications } from '@/lib/notifications/notification-bus';
 import { replayNotificationIdsAfter } from '@/app-layer/usecases/notification-replay';
 import { createSseResponse } from '@/lib/realtime/sse';
+import { serialiseFrame } from '@/lib/realtime/stream-frame';
 import { acquireStreamSlot } from '@/lib/realtime/stream-slots';
 import { verifyAndTouchSession } from '@/lib/security/session-tracker';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { logger } from '@/lib/observability/logger';
 import { env } from '@/env';
+import prisma from '@/lib/prisma';
 
 export const runtime = 'nodejs';
 
@@ -101,11 +103,16 @@ const HEARTBEAT_MS = 25_000;
  */
 const SESSION_RECHECK_MS = 5 * 60_000;
 
-function frame(id: string): string {
-    // `id:` first, then `data:`. The id is what the browser echoes back as
-    // `Last-Event-ID`, and the body stays ids-only for the reasons the bus
-    // records.
-    return `id: ${id}\ndata: ${JSON.stringify({ id })}\n\n`;
+/**
+ * One notification frame.
+ *
+ * The shape lives in `stream-frame.ts` because two clients consume it and the
+ * OpenAPI description has to name the same thing — see that module for why
+ * `kind` is a field rather than a named SSE event, and why `tenantId` is on
+ * every kind.
+ */
+function notificationFrame(id: string, tenantId: string): string {
+    return serialiseFrame({ kind: 'notification', id, tenantId });
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -154,6 +161,35 @@ export async function GET(req: NextRequest): Promise<Response> {
 
     const lastEventId = req.headers.get('last-event-id');
 
+    // ── every farm this person belongs to — #2085 ──
+    //
+    // Delivery was scoped to the session's ACTIVE farm, because a frame
+    // carrying a bare id gave a client no way to tell which farm a row came
+    // from — so an id from another farm would make it refetch a list that
+    // cannot contain it. The frame now carries `tenantId`, so that constraint
+    // is gone and one connection can carry them all. That is what makes "one
+    // connection per person" true for somebody in three farms rather than
+    // only a cap of three.
+    //
+    // The ACTIVE farm leads the list, which matters for the replay: the cursor
+    // is resolved per farm until found, and the farm a client was last looking
+    // at is overwhelmingly where its last event came from. So the common case
+    // costs one query rather than N.
+    //
+    // Read through the UNSCOPED client because `TenantMembership` is the table
+    // that answers "which tenants may I see" — scoping that read to one tenant
+    // would be circular. It is filtered to this person and to live tenants,
+    // mirroring `accessGrantingTenantSlugs` exactly: an ACTIVE membership of a
+    // tenant that is not soft-deleted.
+    const memberships = await prisma.tenantMembership.findMany({
+        where: { userId: person.userId, status: 'ACTIVE', tenant: { deletedAt: null } },
+        select: { tenantId: true },
+    });
+    const tenantIds = [
+        ctx.tenantId,
+        ...memberships.map((m) => m.tenantId).filter((id) => id !== ctx.tenantId),
+    ];
+
     const { start, release } = createSseResponse({
         heartbeatMs: HEARTBEAT_MS,
         subscribe: (send) => {
@@ -183,8 +219,8 @@ export async function GET(req: NextRequest): Promise<Response> {
                 for (const f of buffered) send(f);
             };
 
-            const emit = (id: string): void => {
-                const f = frame(id);
+            const emit = (id: string, tenantId: string): void => {
+                const f = notificationFrame(id, tenantId);
                 if (pending) pending.push(f);
                 else send(f);
             };
@@ -195,9 +231,9 @@ export async function GET(req: NextRequest): Promise<Response> {
                 // live subscription being registered. The ids are a hint
                 // either way — a client that receives none refetches, which is
                 // what it does on a cold open.
-                void replayNotificationIdsAfter(ctx, lastEventId)
-                    .then((ids) => {
-                        for (const id of ids) send(frame(id));
+                void replayNotificationIdsAfter(ctx, lastEventId, tenantIds)
+                    .then((replayed) => {
+                        for (const r of replayed) send(notificationFrame(r.id, r.tenantId));
                     })
                     .catch((err) => {
                         logger.warn('sse.replay_failed', {
@@ -208,11 +244,29 @@ export async function GET(req: NextRequest): Promise<Response> {
                     .finally(flush);
             }
 
-            const unsubscribe = subscribeToNotifications({
-                tenantId: ctx.tenantId,
-                userId: ctx.userId!,
-                send: (event) => emit(event.id),
-            });
+            // ── one subscription per farm — #2085 ──
+            //
+            // The bus channel is `notif:<tenantId>:<userId>`, so Redis does
+            // the routing and a process receives only what its own subscribers
+            // asked for. Covering three farms is three SUBSCRIBEs on the one
+            // shared subscriber connection, which is cheap — and far cheaper
+            // than the three CONNECTIONS a client would otherwise hold, which
+            // is the whole point of this route.
+            //
+            // Each closure captures its own `tenantId` so the frame can name
+            // the farm. A single subscription cannot do that: the bus hands
+            // the subscriber only the event, and the tenant is which channel
+            // it arrived on.
+            const unsubscribes = tenantIds.map((tenantId) =>
+                subscribeToNotifications({
+                    tenantId,
+                    userId: ctx.userId!,
+                    send: (event) => emit(event.id, tenantId),
+                }),
+            );
+            const unsubscribe = () => {
+                for (const u of unsubscribes) u();
+            };
 
             // Slot refresh rides the same cadence as the heartbeat, one tick
             // behind it, so a live stream always renews well inside the TTL.

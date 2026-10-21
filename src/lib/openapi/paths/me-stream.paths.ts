@@ -45,13 +45,22 @@ import { op } from './helpers';
  */
 const StreamFrameSchema = z
     .object({
-        id: z
-            .string()
-            .openapi({ description: 'The notification id. Refetch the row; do not render this.' }),
+        kind: z.enum(['notification', 'listing']).openapi({
+            description:
+                'What this frame is about. A FIELD rather than a named SSE `event:` line, deliberately: a named event is silently dropped by a client that registered no listener for it, so a third kind added later would break older clients invisibly. Switch on this in the default `onmessage` handler and ignore an unrecognised value — visibly, so it can be logged. `listing` has no publisher yet; it arrives with P7.6.',
+        }),
+        id: z.string().openapi({
+            description:
+                'The row this is about — a notification id (or its dedupeKey) for `notification`, a listing id for `listing`. A handle to refetch with, never content.',
+        }),
+        tenantId: z.string().openapi({
+            description:
+                'Which farm the row belongs to. Present on EVERY kind and never optional: a client belonging to several farms filters on it before refetching, and a field present on one kind only would make that filter conditional on the kind.',
+        }),
     })
     .openapi('MeStreamEvent', {
         description:
-            'The JSON on one `data:` line. IDS ONLY, by design — the row is authoritative and the event is a hint, so a client refetches under its own authorisation rather than rendering what arrived on a broadcast channel. The same id is also the SSE `id:` field, which is what makes replay possible.',
+            'The JSON on one `data:` line. IDS ONLY, by design — the row is authoritative and the event is a hint, so a client refetches under its own authorisation rather than rendering what arrived on a broadcast channel.',
     });
 
 export function registerMeStreamPaths(registry: OpenAPIRegistry): void {
@@ -66,7 +75,8 @@ export function registerMeStreamPaths(registry: OpenAPIRegistry): void {
             '\n\n**At most 3 concurrent streams per person**, counted in Redis across processes. The fourth is refused rather than evicting an older one, because eviction would close a live tab and that tab would reconnect. ' +
             '\n\n**A 204 means "do not reconnect"** and has three causes a client cannot distinguish: realtime is disabled for the deployment, the session has no trackable lineage, or the person is already at three streams. Per the `EventSource` specification a non-200 fails the connection without a reconnect, which is the intent in all three cases. ' +
             '\n\n**The session is re-checked every 5 minutes** and the stream is CLOSED on a revoked one, rather than going quiet — a silent stream is indistinguishable from an idle one, so closing is what lets the client discover it is signed out on its own reconnect. ' +
-            '\n\nDelivery is scoped to the session’s active farm: the frame carries no tenant, so an id from another farm would make a client refetch a list that cannot contain it. The stream is ONE-WAY. ' +
+            '\n\n**Every farm on one connection.** The stream carries events from every farm the caller belongs to, and each frame names its own `tenantId` — so one connection serves somebody in three farms rather than needing three. Delivery was scoped to the active farm until the frame could name the tenant (#2085). The stream is ONE-WAY. ' +
+            '\n\n**`id:` lines accompany `notification` frames only.** It is the replay cursor and replay reads the `Notification` table, so a `listing` frame carries its id in `data` without advancing the cursor — exchange events are live-only, and a reconnecting client refetches Борса over REST with ETag, which is what it does on a cold open. ' +
             '\n\nIt does NOT replace `GET /api/notifications/stream`, which is live and carries whole notifications; the two coexist until the web hook (P7.6) and the iOS client (P7.7) move across.',
         tags: ['Notifications'],
         success: {

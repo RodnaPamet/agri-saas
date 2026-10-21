@@ -10069,15 +10069,29 @@ exports[`API contract — per-schema snapshots schema: MeStreamEvent 1`] = `
 "{
   "type": "object",
   "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "notification",
+        "listing"
+      ],
+      "description": "What this frame is about. A FIELD rather than a named SSE \`event:\` line, deliberately: a named event is silently dropped by a client that registered no listener for it, so a third kind added later would break older clients invisibly. Switch on this in the default \`onmessage\` handler and ignore an unrecognised value — visibly, so it can be logged. \`listing\` has no publisher yet; it arrives with P7.6."
+    },
     "id": {
       "type": "string",
-      "description": "The notification id. Refetch the row; do not render this."
+      "description": "The row this is about — a notification id (or its dedupeKey) for \`notification\`, a listing id for \`listing\`. A handle to refetch with, never content."
+    },
+    "tenantId": {
+      "type": "string",
+      "description": "Which farm the row belongs to. Present on EVERY kind and never optional: a client belonging to several farms filters on it before refetching, and a field present on one kind only would make that filter conditional on the kind."
     }
   },
   "required": [
-    "id"
+    "kind",
+    "id",
+    "tenantId"
   ],
-  "description": "The JSON on one \`data:\` line. IDS ONLY, by design — the row is authoritative and the event is a hint, so a client refetches under its own authorisation rather than rendering what arrived on a broadcast channel. The same id is also the SSE \`id:\` field, which is what makes replay possible."
+  "description": "The JSON on one \`data:\` line. IDS ONLY, by design — the row is authoritative and the event is a hint, so a client refetches under its own authorisation rather than rendering what arrived on a broadcast channel."
 }"
 `;
 

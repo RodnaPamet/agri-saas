@@ -31,6 +31,14 @@ const subscribeMock = jest.fn();
 const acquireMock = jest.fn();
 const replayMock = jest.fn();
 const verifySessionMock = jest.fn();
+/**
+ * The farms the person belongs to — #2085.
+ *
+ * Read through the unscoped client because `TenantMembership` is the table
+ * that answers "which tenants may I see", so scoping that read to one tenant
+ * would be circular.
+ */
+let membershipRows: Array<{ tenantId: string }> = [];
 const warn = jest.fn();
 const info = jest.fn();
 
@@ -61,6 +69,11 @@ jest.mock('@/app-layer/usecases/notification-replay', () => ({
     __esModule: true,
     replayNotificationIdsAfter: (...a: unknown[]) => replayMock(...a),
     REPLAY_LIMIT: 50,
+}));
+jest.mock('@/lib/prisma', () => ({
+    __esModule: true,
+    default: { tenantMembership: { findMany: async () => membershipRows } },
+    prisma: { tenantMembership: { findMany: async () => membershipRows } },
 }));
 jest.mock('@/lib/security/session-tracker', () => ({
     __esModule: true,
@@ -134,6 +147,7 @@ describe('GET /api/me/stream', () => {
         });
         subscribeMock.mockReturnValue(unsubscribe);
         replayMock.mockResolvedValue([]);
+        membershipRows = [{ tenantId: 't-1' }];
         verifySessionMock.mockResolvedValue({ revoked: false, rowId: 'row-1' });
     });
 
@@ -254,7 +268,9 @@ describe('GET /api/me/stream', () => {
             const body = await readFrames(res);
 
             expect(body).toMatch(/^id: notif-42$/m);
-            expect(body).toMatch(/^data: \{"id":"notif-42"\}$/m);
+            expect(body).toMatch(
+                /^data: \{"kind":"notification","id":"notif-42","tenantId":"t-1"\}$/m,
+            );
             // `id:` BEFORE `data:` — a client that saw data first would
             // dispatch the event before the id was associated with it.
             expect(body.indexOf('id: notif-42')).toBeLessThan(body.indexOf('data:'));
@@ -269,7 +285,10 @@ describe('GET /api/me/stream', () => {
         });
 
         it('replays after the cursor the client echoed back', async () => {
-            replayMock.mockResolvedValue(['old-1', 'old-2']);
+            replayMock.mockResolvedValue([
+                { id: 'old-1', tenantId: 't-1' },
+                { id: 'old-2', tenantId: 't-1' },
+            ]);
 
             const res = await GET(request({ 'last-event-id': 'cursor-1' }));
             // The replay is deliberately not awaited by the route, so let the
@@ -281,6 +300,7 @@ describe('GET /api/me/stream', () => {
             expect(replayMock).toHaveBeenCalledWith(
                 expect.objectContaining({ tenantId: 't-1', userId: 'u-1' }),
                 'cursor-1',
+                ['t-1'],
             );
             expect(body).toMatch(/id: old-1/);
             expect(body).toMatch(/id: old-2/);
@@ -296,9 +316,9 @@ describe('GET /api/me/stream', () => {
             // LAST id it saw as `Last-Event-ID`, so a client whose newest
             // frame is an old replayed id carries a cursor that has moved
             // BACKWARDS, and its next reconnect replays from there again.
-            let resolveReplay: (ids: string[]) => void = () => {};
+            let resolveReplay: (ids: Array<{ id: string; tenantId: string }>) => void = () => {};
             replayMock.mockReturnValue(
-                new Promise<string[]>((r) => {
+                new Promise<Array<{ id: string; tenantId: string }>>((r) => {
                     resolveReplay = r;
                 }),
             );
@@ -308,7 +328,10 @@ describe('GET /api/me/stream', () => {
 
             // Live, while the replay query has not come back yet.
             send({ id: 'live-1' });
-            resolveReplay(['old-1', 'old-2']);
+            resolveReplay([
+                { id: 'old-1', tenantId: 't-1' },
+                { id: 'old-2', tenantId: 't-1' },
+            ]);
             await Promise.resolve();
             await Promise.resolve();
             await Promise.resolve();
@@ -326,7 +349,7 @@ describe('GET /api/me/stream', () => {
             // and have no way to know it had missed anything.
             let rejectReplay: (e: Error) => void = () => {};
             replayMock.mockReturnValue(
-                new Promise<string[]>((_r, j) => {
+                new Promise<Array<{ id: string; tenantId: string }>>((_r, j) => {
                     rejectReplay = j;
                 }),
             );
@@ -451,6 +474,93 @@ describe('GET /api/me/stream', () => {
         expect(subscribeMock.mock.calls[0][0]).toMatchObject({
             tenantId: 't-1',
             userId: 'u-1',
+        });
+    });
+
+    describe('every farm on one connection — #2085', () => {
+        it('subscribes once per farm the person belongs to', async () => {
+            // The point of the change. Delivery was scoped to the active farm
+            // because a bare id gave a client no way to tell which farm a row
+            // came from; the frame now carries `tenantId`, so one connection
+            // can carry them all.
+            membershipRows = [{ tenantId: 't-1' }, { tenantId: 't-2' }, { tenantId: 't-3' }];
+
+            await GET(request());
+
+            expect(subscribeMock).toHaveBeenCalledTimes(3);
+            const tenants = subscribeMock.mock.calls.map((c) => c[0].tenantId);
+            expect(new Set(tenants)).toEqual(new Set(['t-1', 't-2', 't-3']));
+        });
+
+        it('puts the ACTIVE farm first, which is what makes replay cheap', async () => {
+            // The cursor is resolved per farm until found, and the farm a
+            // client was last looking at is overwhelmingly where its last
+            // event came from — so the common case costs one query, not N.
+            membershipRows = [{ tenantId: 't-3' }, { tenantId: 't-1' }, { tenantId: 't-2' }];
+
+            await GET(request({ 'last-event-id': 'cursor-1' }));
+
+            expect(replayMock.mock.calls[0][2][0]).toBe('t-1');
+        });
+
+        it('lists each farm ONCE, even though the active one is also a membership', async () => {
+            // The active tenant is prepended and is normally also in the
+            // membership rows, so without the filter it would be subscribed
+            // to twice — two bus subscriptions on one channel, and every
+            // event delivered to the client twice.
+            membershipRows = [{ tenantId: 't-1' }, { tenantId: 't-2' }];
+
+            await GET(request());
+
+            const tenants = subscribeMock.mock.calls.map((c) => c[0].tenantId);
+            expect(tenants).toEqual(['t-1', 't-2']);
+            expect(tenants).toHaveLength(new Set(tenants).size);
+        });
+
+        it('names the farm in every live frame', async () => {
+            membershipRows = [{ tenantId: 't-1' }, { tenantId: 't-2' }];
+
+            const res = await GET(request());
+            // The second subscription is the second farm's.
+            const sendForT2 = subscribeMock.mock.calls[1][0].send as (e: { id: string }) => void;
+            sendForT2({ id: 'notif-from-t2' });
+            const body = await readFrames(res);
+
+            expect(body).toMatch(/"kind":"notification"/);
+            expect(body).toMatch(/"id":"notif-from-t2"/);
+            // The farm it came from, not the active one — which is the whole
+            // reason a client can act on it.
+            expect(body).toMatch(/"tenantId":"t-2"/);
+        });
+
+        it('releases EVERY farm subscription on cancel', async () => {
+            // Three subscriptions and one releaser. Releasing only the first
+            // would leak two per connection, which is the leak #1984 fixed in
+            // the single-farm case.
+            membershipRows = [{ tenantId: 't-1' }, { tenantId: 't-2' }, { tenantId: 't-3' }];
+            const un1 = jest.fn();
+            const un2 = jest.fn();
+            const un3 = jest.fn();
+            subscribeMock
+                .mockReturnValueOnce(un1)
+                .mockReturnValueOnce(un2)
+                .mockReturnValueOnce(un3);
+
+            const res = await GET(request());
+            await res.body!.cancel();
+
+            expect(un1).toHaveBeenCalledTimes(1);
+            expect(un2).toHaveBeenCalledTimes(1);
+            expect(un3).toHaveBeenCalledTimes(1);
+        });
+
+        it('still works for somebody with exactly one farm — the control', async () => {
+            membershipRows = [{ tenantId: 't-1' }];
+
+            await GET(request());
+
+            expect(subscribeMock).toHaveBeenCalledTimes(1);
+            expect(subscribeMock.mock.calls[0][0].tenantId).toBe('t-1');
         });
     });
 });
