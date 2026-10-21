@@ -53,6 +53,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const MIRROR = path.join(ROOT, 'deploy/ops-agent-config.yaml');
@@ -75,29 +76,36 @@ function requiredTerms(): string[] {
     return [...stanza.matchAll(/!~\s*"([^"]+)"/g)].map((m) => m[1]);
 }
 
-/** Every file that calls `pino({...})` directly. */
+/**
+ * Every file that calls `pino({...})` directly.
+ *
+ * Through `collectSourceFiles`, not a hand-rolled walk. The first version of
+ * this file walked `readdirSync` itself and
+ * `file-collection-is-not-silently-empty` failed it on main — a hand-rolled
+ * collector can be gutted to return `[]` with every assertion built on it
+ * still green, measured at 81% of the guards an automated sweep could audit.
+ * The helper refuses an empty result and refuses a root that does not resolve,
+ * which is the half a `floor` on the population below cannot cover.
+ */
 function pinoInstantiations(): Array<{ file: string; body: string }> {
+    const files = collectSourceFiles({
+        roots: ['src', 'scripts'],
+        extensions: ['.ts', '.tsx'],
+        // Not the count of pino instances — the count of files to scan. A
+        // floor near the real figure catches an extension filter or a skipDirs
+        // change that ate the population.
+        floor: 500,
+    });
     const out: Array<{ file: string; body: string }> = [];
-    const walk = (dir: string): void => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                if (entry.name === 'node_modules' || entry.name === '.next') continue;
-                walk(full);
-                continue;
-            }
-            if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
-            // Blanked: a docblock that merely mentions `pino({` is prose, and
-            // this guard's whole subject is which CALLS exist. The inverse
-            // mistake — a comment satisfying a check — is what
-            // `guards-blank-comments-before-matching` was written about.
-            const src = blankNonCode(fs.readFileSync(full, 'utf8'));
-            if (!/\bpino\(\{/.test(src)) continue;
-            out.push({ file: path.relative(ROOT, full), body: src });
-        }
-    };
-    walk(path.join(ROOT, 'src'));
-    walk(path.join(ROOT, 'scripts'));
+    for (const full of files) {
+        // Blanked: a docblock that merely mentions `pino({` is prose, and this
+        // guard's whole subject is which CALLS exist. The inverse mistake — a
+        // comment satisfying a check — is what
+        // `guards-blank-comments-before-matching` was written about.
+        const src = blankNonCode(fs.readFileSync(full, 'utf8'));
+        if (!/\bpino\(\{/.test(src)) continue;
+        out.push({ file: path.relative(ROOT, full), body: src });
+    }
     return out;
 }
 
