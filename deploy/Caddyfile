@@ -10,14 +10,44 @@
 # what the live file should contain, and it is reconciled by hand in both
 # directions — with nothing checking that the reconciliation happened.
 #
-# ── THE LIVE FILE, COMPARED ON THE VM 2026-09-10 (#842) ───────────────────
+# ── THIS FILE IS A FRAGMENT: ONE SITE BLOCK OF FIVE (#2129) ───────────────
 #
-# /opt/agrent/Caddyfile was read on the VM — `gcloud compute ssh agrent
-# --zone europe-west1-b`, which works with the configured account — and
-# compared against this copy directive by directive. The live copy carries
-# none of the comments above and indents with tabs; with comments stripped
-# and whitespace normalised, the two files differ in exactly ONE token: the
-# ACME contact in the global block. The live file carries the same
+# Re-measured on the VM 2026-10-22, compared block by block against this
+# copy. The live file serves TWO PRODUCTS, and
+# this copy holds the agrent block only:
+#
+#   /opt/agrent/Caddyfile        5556 bytes, 5 site blocks
+#     35-187-80-26.sslip.io, app.agrent.bg      <- the only one in this file
+#     playerz.bg, playerz.35-187-80-26.sslip.io
+#     app.playerz.bg, www.playerz.bg
+#     staging.playerz.bg
+#     staging.35-187-80-26.sslip.io
+#
+#   deploy/Caddyfile (this)      6327 bytes, 1 site block
+#
+# Note the byte counts: this copy is LARGER, because of the comments. A
+# reader comparing sizes would conclude the repo is ahead of the VM. It is
+# not; it is a subset with more prose.
+#
+# **Copying this file to the VM takes three live sites offline**, including
+# both Centrifugo websocket routes — `handle /connection/websocket` on the
+# production and staging playerz blocks. Reconcile the agrent block only, by
+# hand, in place.
+#
+# ── WHAT THE PREVIOUS HEADER CLAIMED, AND WHY IT IS WITHDRAWN ─────────────
+#
+# It said, measured 2026-09-10 (#842): "with comments stripped and whitespace
+# normalised, the two files differ in exactly ONE token: the ACME contact in
+# the global block." That is the claim that made `scp` look safe, and it is
+# false as of this measurement — four site blocks and two websocket routes
+# exist only on the VM.
+#
+# Which of the two is wrong is not knowable from here: playerz may have been
+# added to the host after 2026-09-10, or the directive-by-directive
+# comparison may have stopped at the first block. Either way the lesson is
+# the same one the header already draws about drift detection — a hand
+# comparison records a moment, and nothing here notices when that moment
+# passes. The live file carries the same
 # `email {$ACME_EMAIL:...}` directive with a DIFFERENT default — the
 # operator's PERSONAL mailbox.
 #
@@ -79,8 +109,14 @@
     # ACME_EMAIL is NOT supplied by anything in this repo — the `caddy`
     # service has no `env_file` and no `environment` — so this resolves to
     # the default below. The live VM's copy defaults to a different,
-    # personal address; the reconciliation is to change the VM, not to
-    # paste that address into a public repo. See the header.
+    # personal address, which must NOT be pasted into a public repo.
+    #
+    # "The reconciliation is to change the VM" is what this used to say, and
+    # read literally it invites overwriting the live file with this one —
+    # which would delete three playerz site blocks. The agrent-only change is
+    # to edit THAT ONE LINE in /opt/agrent/Caddyfile (back it up first), or
+    # better, to give the caddy service an `environment: ACME_EMAIL=…` so no
+    # file carries the address at all. See the header.
     email {$ACME_EMAIL:admin@agrent.bg}
 }
 
