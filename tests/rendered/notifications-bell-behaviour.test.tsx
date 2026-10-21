@@ -44,6 +44,7 @@ import * as React from 'react';
  * unless a test installs a double itself — as the throttle test does.
  */
 import { NotificationsBell } from '@/components/layout/notifications-bell';
+import { restoreViewport, setViewport, DEFAULT_VIEWPORT } from './viewport';
 
 // ─── fetch mock ────────────────────────────────────────────────────
 
@@ -99,6 +100,8 @@ beforeEach(() => {
     fetchMock.mockReset();
     (global as unknown as { fetch: typeof fetchMock }).fetch = fetchMock;
 });
+
+afterEach(() => restoreViewport());
 
 describe('<NotificationsBell> — behavioural (Tier 2)', () => {
     it('renders the unread COUNT from real data (not a hard-coded badge)', async () => {
@@ -239,6 +242,22 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         }
     });
 
+    // ── both viewports, and here that is not a formality (#1995) ──
+    //
+    // P7.6's standing rule is "rendered tests at both `setViewport('mobile')`
+    // and `('desktop')`", and for most components it buys insurance. For this
+    // one it covers a different component tree: `@/components/ui/popover` is
+    // "Radix Popover on desktop, Vaul Drawer on mobile (via `useMediaQuery`)".
+    //
+    // And jsdom's `matchMedia` stub answers `matches: false` to everything, so
+    // the DEFAULT is mobile — meaning every popover assertion in this file has
+    // only ever rendered the Vaul drawer, and the Radix path the bell shows on
+    // a desktop browser had no coverage at all. That is why these two cases
+    // are parametrised rather than given one extra `setViewport('desktop')`
+    // case: the whole popover body is what changes.
+    describe.each([['mobile'], ['desktop']] as const)('popover at %s', (viewport) => {
+        beforeEach(() => setViewport(viewport));
+
     it('opening the popover renders one row per notification with the hover recipe', async () => {
         const user = userEvent.setup();
         fetchMock.mockResolvedValue({
@@ -274,6 +293,26 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         expect(
             screen.getByTestId('notification-row-n2').tagName,
         ).toBe('BUTTON');
+    });
+
+    it('shows the "All clear" empty state when there are no notifications', async () => {
+        const user = userEvent.setup();
+        fetchMock.mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => [],
+        });
+        render(<NotificationsBell />);
+        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+        await user.click(
+            screen.getByTestId('top-chrome-notifications-bell'),
+        );
+
+        // The audit's R11 personality vocabulary: "All clear", not a
+        // generic "No notifications".
+        expect(await screen.findByText('All clear')).toBeInTheDocument();
+    });
     });
 
     it('REST-polls /api/notifications on a fixed interval (badge stays live)', async () => {
@@ -418,22 +457,46 @@ describe('<NotificationsBell> — behavioural (Tier 2)', () => {
         }
     });
 
-    it('shows the "All clear" empty state when there are no notifications', async () => {
-        const user = userEvent.setup();
-        fetchMock.mockResolvedValue({
-            ok: true,
-            status: 200,
-            json: async () => [],
-        });
-        render(<NotificationsBell />);
-        await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    it('CONTROL: the two viewports really do render different popovers', async () => {
+        // Without this, the parametrisation above could be two runs of the
+        // same tree and nobody would know — which is exactly the state the
+        // file was in, since jsdom resolves every media query to false.
+        //
+        // Measured rather than guessed, and the first guess was wrong:
+        // `[data-vaul-drawer]` is absent in both, and `data-radix-focus-guard`
+        // is present in both (Vaul builds on Radix Dialog). Dumping every
+        // data-/aria- attribute at each viewport gave the real split:
+        //
+        //   mobile  only: data-scroll-locked, data-aria-hidden
+        //   desktop only: data-radix-popper-content-wrapper, data-radix-popper-side
+        //
+        // Both directions are asserted, so neither tree can satisfy both.
+        const open = async (): Promise<{ popper: boolean; scrollLocked: boolean }> => {
+            const user = userEvent.setup();
+            fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => [] });
+            const view = render(<NotificationsBell />);
+            await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+            await user.click(screen.getByTestId('top-chrome-notifications-bell'));
+            await screen.findByText('All clear');
+            const shape = {
+                popper: document.querySelector('[data-radix-popper-content-wrapper]') !== null,
+                scrollLocked: document.querySelector('[data-scroll-locked]') !== null,
+            };
+            view.unmount();
+            return shape;
+        };
 
-        await user.click(
-            screen.getByTestId('top-chrome-notifications-bell'),
-        );
+        setViewport('mobile');
+        expect(await open()).toEqual({ popper: false, scrollLocked: true });
 
-        // The audit's R11 personality vocabulary: "All clear", not a
-        // generic "No notifications".
-        expect(await screen.findByText('All clear')).toBeInTheDocument();
+        setViewport('desktop');
+        expect(await open()).toEqual({ popper: true, scrollLocked: false });
+    });
+
+    it('the default viewport is the mobile one, which is why the above is needed', () => {
+        // Pinning the premise rather than restating it in prose. If the helper
+        // ever defaults to desktop, the comment above goes stale silently and
+        // the "every assertion ran mobile" claim stops being true.
+        expect(DEFAULT_VIEWPORT).toBe('mobile');
     });
 });
