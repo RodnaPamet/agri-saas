@@ -301,7 +301,9 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
     [
         'PppRegisterEntry',
         'One crop \u00d7 product row of a PppRegisterImport; inherits the import\u2019s decision. ' +
-            'Read-only to the application \u2014 written solely by the operator upload path and never ' +
+            'NOT READ by the application at all \u2014 the suggestion surface it was built for was ' +
+            'retired 2026-10-21 (#2077) and the loader kept. Written solely by the operator ' +
+            'upload path and never ' +
             'by a tenant request \u2014 and holds nothing about any farm: a crop name, a product name, ' +
             'a \u0417\u0417\u0420 registration number, pests, a dose range and a quarantine period, all of ' +
             'which are published facts.',

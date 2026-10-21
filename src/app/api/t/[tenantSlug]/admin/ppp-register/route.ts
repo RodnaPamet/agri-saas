@@ -1,9 +1,13 @@
 /**
  * The БАБХ ПРЗ register — operator upload and state (#2077).
  *
+ * **Nothing reads the register.** The suggestion surface this loader was built
+ * for was retired by the owner on 2026-10-21 (#2077, closed as not planned);
+ * the loader was kept. These two handlers are its only consumers.
+ *
  * Platform curation, not tenant work: `PppRegisterEntry` has no `tenantId`, so
- * a tenant-facing writer would let one farm rewrite the approved doses every
- * other farm reads. Sits under `/api/t/[tenantSlug]/admin/**` rather than
+ * a tenant-facing writer would let one farm rewrite the approved doses that —
+ * were anything reading them — every other farm would see. Sits under `/api/t/[tenantSlug]/admin/**` rather than
  * `/api/admin/**` because the gate is session-ful — see the usecase docblock
  * for why a header key could not carry this write's audit row.
  *
