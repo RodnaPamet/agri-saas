@@ -345,7 +345,19 @@ executorRegistry.register('push-send', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();
     const { runPushSend } = await import('../jobs/push-send');
-    const r = await runPushSend(payload);
+    // Destructured rather than spread, following `classify-photo`: naming the
+    // fields puts the TENANT AXIS at the executor, where
+    // `tests/unit/job-scope-audit.test.ts` looks for it. Passing an opaque
+    // `payload` scopes correctly one call away and reads, to that audit and to
+    // a human, exactly like an executor that forgot to scope at all.
+    const r = await runPushSend({
+        tenantId: payload.tenantId,
+        recipientUserId: payload.recipientUserId,
+        title: payload.title,
+        body: payload.body,
+        link: payload.link,
+        collapseKey: payload.collapseKey,
+    });
     // scanned = transports attempted, actioned = transports that accepted.
     // `skipped` is the difference rather than a third count: a transport that
     // is unconfigured returns without throwing, so it is attempted-and-not-
