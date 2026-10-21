@@ -45,6 +45,7 @@
  * guess fails as `BadDeviceToken` — indistinguishable from a revoked token,
  * so the pruning below would delete a working registration.
  */
+import * as http2 from 'node:http2';
 import { createPrivateKey, sign as cryptoSign } from 'node:crypto';
 
 import { env } from '@/env';
@@ -226,6 +227,164 @@ export async function sendApnsToUser(
 /** The result of one send, reduced to what the caller acts on. */
 type Outcome = 'sent' | 'gone' | 'failed';
 
+/**
+ * One HTTP/2 request to APNs.
+ *
+ * ## Why not `fetch`
+ *
+ * This was `fetch`, and it never delivered a single notification. APNs speaks
+ * HTTP/2 only, and Node's global `fetch` is undici, which implements HTTP/1.1
+ * — so every send threw before Apple could answer. Probed from inside the
+ * production container on 2026-10-21:
+ *
+ *     DNS api.push.apple.com    → 17.188.181.12
+ *     fetch                     → threw "fetch failed", cause
+ *                                 "Response does not match the HTTP/1.1
+ *                                  protocol (Expected HTTP/)"
+ *     http2.connect             → OK, ALPN negotiated h2
+ *
+ * The `http2.connect` control on the same host from the same container is what
+ * makes that a protocol fault rather than a network one. Every check that
+ * passed before — the key loads, the PEM round-trips, the signature is 64
+ * bytes, `isApnsConfigured()` is true — stopped short of the wire, which is
+ * why nothing caught it. `tests/integration/apns-http2-transport.test.ts`
+ * drives this function against a real local HTTP/2 server for that reason: a
+ * mocked transport would pass this exact bug again.
+ *
+ * ## Sessions are reused per host
+ *
+ * Apple asks providers to hold connections open rather than reconnect per
+ * notification, and a TLS handshake per device would dominate a fan-out. One
+ * session per host is cached and reused; a session that errors or closes is
+ * dropped from the cache so the next send rebuilds it. There are only ever two
+ * (sandbox and production), so the cache is bounded by construction.
+ */
+const sessions = new Map<string, http2.ClientHttp2Session>();
+
+/**
+ * Where the transport actually connects, when a test has redirected it.
+ *
+ * Null in production, always. It exists because the defect this transport
+ * replaces was invisible to every mocked test: the old sender was exercised
+ * through `global.fetch` and passed, while no request it made could ever have
+ * reached Apple. A test that stubs the transport cannot catch a transport
+ * fault, so the test has to drive the real `http2` client — and for that it
+ * needs somewhere to point it.
+ *
+ * Deliberately a redirect of the ORIGIN only. The path, the headers, the body
+ * and every status decision below stay on the production path, so what the
+ * test exercises differs from a real send in one respect: which socket it
+ * opens. Same pattern as `_resetShutdownInstalledForTesting` and
+ * `__resetAuditStreamForTests` elsewhere in the repo.
+ */
+let testTarget: { origin: string; connectOptions?: object } | null = null;
+
+/** Test-only: send to `origin` instead of Apple. Pass null to restore. @internal */
+export function _setApnsTargetForTesting(
+    target: { origin: string; connectOptions?: object } | null,
+): void {
+    testTarget = target;
+}
+
+/** How long a single request may take before it is abandoned. */
+const APNS_REQUEST_TIMEOUT_MS = 10_000;
+
+function sessionFor(host: string): http2.ClientHttp2Session {
+    const existing = sessions.get(host);
+    // `closed` and `destroyed` are both checked: a session can be closed
+    // gracefully by the peer (Apple cycles connections) without being
+    // destroyed, and reusing one in either state fails every request on it.
+    if (existing && !existing.closed && !existing.destroyed) return existing;
+
+    const session = testTarget
+        ? http2.connect(testTarget.origin, testTarget.connectOptions)
+        : http2.connect(`https://${host}`);
+    // Dropped from the cache on the way out rather than left to be discovered
+    // by the next request. Both handlers are needed — an error does not always
+    // emit 'close' in the same tick.
+    const forget = () => {
+        if (sessions.get(host) === session) sessions.delete(host);
+    };
+    session.on('error', (err: Error) => {
+        logger.warn('apns.session_error', { component: 'apns', host, error: err.message });
+        forget();
+    });
+    session.on('close', forget);
+    sessions.set(host, session);
+    return session;
+}
+
+/** Test-only: close and forget every cached session. @internal */
+export function _resetApnsSessionsForTesting(): void {
+    for (const s of sessions.values()) {
+        try {
+            s.close();
+        } catch {
+            // Already gone — nothing to do.
+        }
+    }
+    sessions.clear();
+}
+
+interface ApnsResponse {
+    status: number;
+    /** Apple's request id, echoed for support cases. Absent on a local stub. */
+    apnsId: string | null;
+    /** The JSON body, which carries `reason` on a failure. */
+    body: string;
+}
+
+function postToApns(
+    host: string,
+    path: string,
+    headers: Record<string, string>,
+    body: string,
+): Promise<ApnsResponse> {
+    return new Promise((resolve, reject) => {
+        let session: http2.ClientHttp2Session;
+        try {
+            session = sessionFor(host);
+        } catch (err) {
+            reject(err);
+            return;
+        }
+
+        const req = session.request({
+            ':method': 'POST',
+            ':path': path,
+            ...headers,
+        });
+
+        let status = 0;
+        let apnsId: string | null = null;
+        let chunks = '';
+        let settled = false;
+        const settle = (fn: () => void) => {
+            if (settled) return;
+            settled = true;
+            fn();
+        };
+
+        req.setTimeout(APNS_REQUEST_TIMEOUT_MS, () => {
+            req.close();
+            settle(() => reject(new Error(`APNs request to ${host} timed out`)));
+        });
+        req.on('response', (h) => {
+            status = Number(h[':status'] ?? 0);
+            const id = h['apns-id'];
+            apnsId = typeof id === 'string' ? id : null;
+        });
+        req.on('data', (d: Buffer) => {
+            // Bounded: a reason body is a few dozen bytes, and an unbounded
+            // concat would make a misbehaving peer a memory problem.
+            if (chunks.length < 2048) chunks += d.toString('utf8');
+        });
+        req.on('end', () => settle(() => resolve({ status, apnsId, body: chunks })));
+        req.on('error', (err: Error) => settle(() => reject(err)));
+        req.end(body);
+    });
+}
+
 async function deliver(row: DeviceRow, providerToken: string, payload: ApnsPayload): Promise<Outcome> {
     const host = APNS_HOSTS[row.apnsEnvironment!];
     const body = {
@@ -239,18 +398,30 @@ async function deliver(row: DeviceRow, providerToken: string, payload: ApnsPaylo
     };
 
     try {
-        const res = await fetch(`https://${host}/3/device/${row.deviceToken}`, {
-            method: 'POST',
-            headers: {
+        const res = await postToApns(
+            host,
+            `/3/device/${row.deviceToken}`,
+            {
                 authorization: `bearer ${providerToken}`,
                 'apns-topic': env.APNS_TOPIC!,
                 'apns-push-type': 'alert',
                 ...(payload.collapseId ? { 'apns-collapse-id': payload.collapseId } : {}),
             },
-            body: JSON.stringify(body),
-        });
+            JSON.stringify(body),
+        );
 
-        if (res.ok) return 'sent';
+        if (res.status >= 200 && res.status < 300) {
+            logger.info('apns.sent', {
+                component: 'apns',
+                subscriptionId: row.id,
+                environment: row.apnsEnvironment,
+                status: res.status,
+                // Apple's own request id. The one thing a support case needs,
+                // and it was unavailable before because no response existed.
+                apnsId: res.apnsId,
+            });
+            return 'sent';
+        }
 
         // 410 Unregistered is the ONE status that means the token is dead
         // rather than the request being wrong. 400 BadDeviceToken can mean a
@@ -262,6 +433,7 @@ async function deliver(row: DeviceRow, providerToken: string, payload: ApnsPaylo
                 component: 'apns',
                 subscriptionId: row.id,
                 environment: row.apnsEnvironment,
+                apnsId: res.apnsId,
             });
             return 'gone';
         }
@@ -271,11 +443,12 @@ async function deliver(row: DeviceRow, providerToken: string, payload: ApnsPaylo
             subscriptionId: row.id,
             status: res.status,
             environment: row.apnsEnvironment,
+            apnsId: res.apnsId,
             // The reason STRING, which names the cause (ExpiredProviderToken,
             // TooManyProviderTokenUpdates, BadDeviceToken). Without it every
             // failure looks the same in the log and an operator has nothing to
             // act on.
-            reason: await res.text().then((t) => t.slice(0, 200)).catch(() => ''),
+            reason: res.body.slice(0, 200),
         });
         return 'failed';
     } catch (err) {

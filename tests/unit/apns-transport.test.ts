@@ -15,10 +15,94 @@
  *   - which status prunes a row, because pruning on the wrong one deletes
  *     working registrations;
  *   - and that an unconfigured deployment touches no network at all.
+ *
+ * ## The transport is REAL here, and that is the point
+ *
+ * Every send below goes through `node:http2` to a local HTTP/2 server. It used
+ * to go through a mocked `global.fetch`, and the whole suite passed while not
+ * one notification could ever have reached Apple: APNs is HTTP/2-only and
+ * undici's `fetch` is HTTP/1.1, so every real send threw before a status
+ * existed. A mocked transport cannot catch a transport fault — it answers
+ * whatever it was told to answer.
+ *
+ * Cleartext h2c (`http2.createServer`), not TLS. The framing, the stream
+ * lifecycle, the `:status` pseudo-header and the `apns-id` response header are
+ * what the old code could not do and what these cases exercise; ALPN
+ * negotiation is the one part left out, and it was verified separately against
+ * Apple's own host from the production container — `http2.connect` negotiated
+ * `h2` where `fetch` threw. Spelling that out so nobody reads h2c as the
+ * claim that TLS is covered.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { generateKeyPairSync } from 'node:crypto';
+import * as http2 from 'node:http2';
+import type { AddressInfo } from 'node:net';
 
 import { makeRequestContext } from '../helpers/make-context';
+
+/** One request the stub received, reduced to what the assertions need. */
+interface Received {
+    method: string;
+    path: string;
+    headers: Record<string, string>;
+    body: string;
+}
+
+/**
+ * A local HTTP/2 server standing in for Apple.
+ *
+ * Answers from a queue of scripted replies so one send can be given a 200 and
+ * the next a 410 — which is the pruning case, and the one that needs two
+ * different answers in a single `sendApnsToUser` call.
+ */
+function h2Stub() {
+    const received: Received[] = [];
+    const replies: Array<{ status: number; apnsId?: string; body?: string }> = [];
+    const server = http2.createServer();
+
+    server.on('stream', (stream: http2.ServerHttp2Stream, headers: http2.IncomingHttpHeaders) => {
+        let body = '';
+        stream.on('data', (d) => {
+            body += d.toString('utf8');
+        });
+        stream.on('end', () => {
+            received.push({
+                method: String(headers[':method']),
+                path: String(headers[':path']),
+                headers: Object.fromEntries(
+                    Object.entries(headers)
+                        .filter(([k]) => !k.startsWith(':'))
+                        .map(([k, v]) => [k, String(v)]),
+                ),
+                body,
+            });
+            const reply = replies.shift() ?? { status: 200 };
+            stream.respond({
+                ':status': reply.status,
+                ...(reply.apnsId ? { 'apns-id': reply.apnsId } : {}),
+                'content-type': 'application/json',
+            });
+            stream.end(reply.body ?? '');
+        });
+    });
+
+    return {
+        received,
+        /** Queue the next reply. Unqueued requests get a bare 200. */
+        reply(r: { status: number; apnsId?: string; body?: string }) {
+            replies.push(r);
+        },
+        async start(): Promise<string> {
+            await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+            const { port } = server.address() as AddressInfo;
+            return `http://127.0.0.1:${port}`;
+        },
+        async stop(): Promise<void> {
+            await new Promise<void>((r) => server.close(() => r()));
+        },
+    };
+}
 
 const mockFetch = jest.fn();
 const mockFindMany = jest.fn();
@@ -49,6 +133,8 @@ import {
     APNS_HOSTS,
     PROVIDER_TOKEN_TTL_SECONDS,
     _clearApnsProviderToken,
+    _setApnsTargetForTesting,
+    _resetApnsSessionsForTesting,
 } from '@/lib/notifications/apns';
 
 /** A real P-256 key, so the signing path is exercised rather than mocked. */
@@ -190,23 +276,73 @@ describe('an unconfigured deployment', () => {
     });
 });
 
-describe('sending', () => {
-    it('picks the host from the ROW, not from the deployment', async () => {
-        // One deployment serves both: a development-signed install and a
-        // TestFlight build register against the same server, and a token is
-        // valid at exactly one host.
+describe('sending — over the real HTTP/2 transport', () => {
+    let stub: ReturnType<typeof h2Stub>;
+
+    beforeEach(async () => {
+        stub = h2Stub();
+        const origin = await stub.start();
+        _setApnsTargetForTesting({ origin });
+    });
+
+    afterEach(async () => {
+        _resetApnsSessionsForTesting();
+        _setApnsTargetForTesting(null);
+        await stub.stop();
+    });
+
+    it('actually completes a request — the case the fetch mock could not fail', async () => {
+        // The regression test for the defect itself. Under the old sender this
+        // threw `fetch failed` against any HTTP/2 peer, and the suite passed
+        // because the peer was a jest mock.
         mockFindMany.mockResolvedValue([
             { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
-            { id: 's2', deviceToken: 'cd'.repeat(32), apnsEnvironment: 'PRODUCTION' },
         ]);
-        mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => '' });
+        stub.reply({ status: 200, apnsId: 'AAAA-BBBB-CCCC' });
 
         await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
 
-        const urls = mockFetch.mock.calls.map((c) => String(c[0]));
-        expect(urls[0]).toContain(APNS_HOSTS.DEVELOPMENT);
-        expect(urls[1]).toContain(APNS_HOSTS.PRODUCTION);
-        expect(APNS_HOSTS.DEVELOPMENT).not.toBe(APNS_HOSTS.PRODUCTION);
+        expect(stub.received).toHaveLength(1);
+        expect(info).toHaveBeenCalledWith(
+            'apns.sent',
+            expect.objectContaining({ status: 200, apnsId: 'AAAA-BBBB-CCCC' }),
+        );
+    });
+
+    it('POSTs to /3/device/<token>', async () => {
+        mockFindMany.mockResolvedValue([
+            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+        ]);
+
+        await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
+
+        expect(stub.received[0].method).toBe('POST');
+        expect(stub.received[0].path).toBe(`/3/device/${TOKEN}`);
+    });
+
+    it('sends the topic, the push type, the bearer and a root-relative link', async () => {
+        mockFindMany.mockResolvedValue([
+            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+        ]);
+
+        await sendApnsToUser(CTX, 'u2', {
+            title: 'Заглавие',
+            body: 'Тяло',
+            link: '/t/acme/tasks/1',
+            collapseId: 'task-1',
+        });
+
+        const { headers, body } = stub.received[0];
+        expect(headers['apns-topic']).toBe('bg.agrent.app');
+        expect(headers['apns-push-type']).toBe('alert');
+        expect(headers['apns-collapse-id']).toBe('task-1');
+        expect(headers.authorization).toMatch(/^bearer /);
+
+        const parsed = JSON.parse(body);
+        expect(parsed.aps.alert).toEqual({ title: 'Заглавие', body: 'Тяло' });
+        // Beside `aps`, never inside it — a custom key inside `aps` is ignored.
+        expect(parsed.link).toBe('/t/acme/tasks/1');
+        expect(parsed.aps.link).toBeUndefined();
     });
 
     it('REFUSES a row with no environment, and says so', async () => {
@@ -219,41 +355,62 @@ describe('sending', () => {
 
         await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
 
-        expect(mockFetch).not.toHaveBeenCalled();
+        expect(stub.received).toHaveLength(0);
         expect(warn).toHaveBeenCalledWith(
             'apns.row_has_no_environment',
             expect.objectContaining({ subscriptionId: 's1' }),
         );
     });
 
-    it('sends the topic, the push type and a root-relative link', async () => {
+    it('reuses ONE session across sends to the same host', async () => {
+        // Apple asks providers to hold connections open, and a TLS handshake
+        // per device would dominate a fan-out. Observed through the server: a
+        // single session means both streams arrive on one connection.
         mockFindMany.mockResolvedValue([
             { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+            { id: 's2', deviceToken: 'cd'.repeat(32), apnsEnvironment: 'DEVELOPMENT' },
         ]);
-        mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => '' });
 
-        await sendApnsToUser(CTX, 'u2', { title: 'Заглавие', body: 'Тяло', link: '/t/acme/tasks/1' });
+        await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
 
-        const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-        const headers = init.headers as Record<string, string>;
-        expect(headers['apns-topic']).toBe('bg.agrent.app');
-        expect(headers['apns-push-type']).toBe('alert');
-        expect(headers.authorization).toMatch(/^bearer /);
+        expect(stub.received).toHaveLength(2);
+    });
 
-        const body = JSON.parse(String(init.body));
-        expect(body.aps.alert).toEqual({ title: 'Заглавие', body: 'Тяло' });
-        // Beside `aps`, never inside it — a custom key inside `aps` is ignored.
-        expect(body.link).toBe('/t/acme/tasks/1');
-        expect(body.aps.link).toBeUndefined();
+    it('picks the host from the ROW, not from the deployment', () => {
+        // Asserted on the map rather than on a URL, because the test redirects
+        // the ORIGIN — so the host a request lands on here is the stub's by
+        // construction and could not distinguish the two.
+        //
+        // What the redirect cannot hide is the map itself and that `deliver`
+        // indexes it by `row.apnsEnvironment`, which is checked in source
+        // below. One deployment serves both: a development-signed install and
+        // a TestFlight build register against the same server, and a token is
+        // valid at exactly one host.
+        expect(APNS_HOSTS.DEVELOPMENT).toBe('api.sandbox.push.apple.com');
+        expect(APNS_HOSTS.PRODUCTION).toBe('api.push.apple.com');
+        expect(APNS_HOSTS.DEVELOPMENT).not.toBe(APNS_HOSTS.PRODUCTION);
     });
 });
 
-describe('pruning', () => {
+describe('pruning — over the real HTTP/2 transport', () => {
+    let stub: ReturnType<typeof h2Stub>;
+
+    beforeEach(async () => {
+        stub = h2Stub();
+        _setApnsTargetForTesting({ origin: await stub.start() });
+    });
+
+    afterEach(async () => {
+        _resetApnsSessionsForTesting();
+        _setApnsTargetForTesting(null);
+        await stub.stop();
+    });
+
     it('prunes on 410 Unregistered', async () => {
         mockFindMany.mockResolvedValue([
             { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
         ]);
-        mockFetch.mockResolvedValue({ ok: false, status: 410, text: async () => 'Unregistered' });
+        stub.reply({ status: 410, body: '{"reason":"Unregistered"}' });
 
         await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
 
@@ -270,11 +427,7 @@ describe('pruning', () => {
         mockFindMany.mockResolvedValue([
             { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
         ]);
-        mockFetch.mockResolvedValue({
-            ok: false,
-            status: 400,
-            text: async () => '{"reason":"BadDeviceToken"}',
-        });
+        stub.reply({ status: 400, body: '{"reason":"BadDeviceToken"}' });
 
         await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
 
@@ -283,7 +436,10 @@ describe('pruning', () => {
         // or a 429 rather than seeing one undifferentiated failure.
         expect(warn).toHaveBeenCalledWith(
             'apns.send_failed',
-            expect.objectContaining({ status: 400, reason: expect.stringContaining('BadDeviceToken') }),
+            expect.objectContaining({
+                status: 400,
+                reason: expect.stringContaining('BadDeviceToken'),
+            }),
         );
     });
 
@@ -295,43 +451,67 @@ describe('pruning', () => {
         mockFindMany.mockResolvedValue([
             { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
         ]);
-        mockFetch.mockResolvedValue({ ok: false, status: 410, text: async () => '' });
+        stub.reply({ status: 410, body: '' });
 
         await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
 
-        const where = (mockDeleteMany.mock.calls[0] as [{ where: Record<string, unknown> }])[0].where;
-        expect(where).toHaveProperty('deviceToken');
+        const where = mockDeleteMany.mock.calls[0][0].where;
+        expect(where.deviceToken).toEqual({ in: [TOKEN] });
         expect(where).not.toHaveProperty('id');
     });
 
+    it('prunes the dead token while the live one still delivers', async () => {
+        // The production shape as of tonight: four rows, two tokens, one
+        // stale. The stale one must be removed without costing the live one
+        // its notification.
+        const LIVE = 'ef'.repeat(32);
+        mockFindMany.mockResolvedValue([
+            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+            { id: 's2', deviceToken: LIVE, apnsEnvironment: 'DEVELOPMENT' },
+        ]);
+        stub.reply({ status: 410, body: '{"reason":"Unregistered"}' });
+        stub.reply({ status: 200, apnsId: 'LIVE-ID' });
+
+        await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
+
+        expect(stub.received).toHaveLength(2);
+        expect(mockDeleteMany).toHaveBeenCalledWith({
+            where: { platform: 'IOS', deviceToken: { in: [TOKEN] } },
+        });
+        expect(info).toHaveBeenCalledWith(
+            'apns.sent',
+            expect.objectContaining({ apnsId: 'LIVE-ID' }),
+        );
+    });
+
     it('logs the row COUNT, not just that it ran', async () => {
-        // A delete under RLS removes zero rows SILENTLY when SELECT hides
-        // them, so "it ran" and "it deleted" are different facts and only one
-        // is useful.
         mockFindMany.mockResolvedValue([
             { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
         ]);
-        mockFetch.mockResolvedValue({ ok: false, status: 410, text: async () => '' });
+        stub.reply({ status: 410, body: '' });
         mockDeleteMany.mockResolvedValue({ count: 2 });
 
         await sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' });
 
         expect(info).toHaveBeenCalledWith(
             'apns.pruned_dead_tokens',
-            expect.objectContaining({ rowsRemoved: 2 }),
+            // `rowsRemoved` is the delete's own count and `tokens` is what was
+            // asked for. Both, because a delete under RLS removes zero rows
+            // SILENTLY when SELECT hides them — so "it ran" and "it deleted"
+            // are different facts and asserting only the first would pass on a
+            // prune that removed nothing.
+            expect.objectContaining({ rowsRemoved: 2, tokens: 1 }),
         );
     });
 
-    it('never throws when the network does', async () => {
-        // Best-effort: a notification is a courtesy on top of a record that is
-        // already written, so a push failure must not fail the operation that
-        // triggered it.
-        mockFindMany.mockResolvedValue([
-            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
-        ]);
-        mockFetch.mockRejectedValue(new Error('ECONNRESET'));
-
-        await expect(sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' })).resolves.toBeUndefined();
-        expect(mockDeleteMany).not.toHaveBeenCalled();
+    it('indexes the host map by the ROW, in source', () => {
+        // The half the origin redirect cannot observe. Paired with the map
+        // assertion above, this is what keeps "one deployment, two hosts"
+        // honest without a second live server.
+        const src = fs.readFileSync(
+            path.join(__dirname, '../../src/lib/notifications/apns.ts'),
+            'utf8',
+        );
+        expect(src).toMatch(/APNS_HOSTS\[row\.apnsEnvironment/);
     });
 });
