@@ -26,6 +26,20 @@ const mockPrisma = {
 } as any;
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
+
+/**
+ * The two shapes `notification.findMany` is called with on this path.
+ *
+ * Typed rather than `any`: the lint ceiling counts ESLint's SUPPRESSED
+ * findings, not just its reported ones, so an `any` inside a file that already
+ * carries a blanket `no-explicit-any` disable raises the count by one with
+ * nothing new appearing in the diff. That is exactly how this branch went red
+ * on a ceiling of 1584 while main sat at 1584.
+ */
+interface NotificationFindManyArgs {
+    where: { dedupeKey: { in: string[] } };
+    select?: { id?: boolean; dedupeKey?: boolean };
+}
 /**
  * `notification.findMany` answers TWO different queries on this path, and they
  * are told apart by their `select`:
@@ -42,9 +56,9 @@ jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
  * behaviour it stood in for.
  */
 function notificationFindManyDouble() {
-    return async (args: any) => {
-        if (args?.select?.id) {
-            return (args.where.dedupeKey.in as string[]).map((dedupeKey, i) => ({
+    return async (args: NotificationFindManyArgs) => {
+        if (args.select?.id) {
+            return args.where.dedupeKey.in.map((dedupeKey, i) => ({
                 id: `notif-${i + 1}`,
                 dedupeKey,
             }));
