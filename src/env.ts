@@ -143,7 +143,7 @@ export const env = createEnv({
                     code: z.ZodIssueCode.custom,
                     message:
                         `MICROSOFT_TENANT_ID is "${authority}", a MULTI-TENANT Entra ` +
-                        'authority: any user from any Entra directory can obtain a token ' +
+                        'authority — any user from any Entra directory can obtain a token ' +
                         'for this app. Because an Entra token carries no email_verified ' +
                         'claim and the signIn callback links an OAuth identity to an ' +
                         'existing user with a matching address, that is an account-takeover ' +
