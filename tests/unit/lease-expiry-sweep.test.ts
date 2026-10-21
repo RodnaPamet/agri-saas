@@ -33,7 +33,22 @@ beforeEach(() => {
         parcelLease: { findMany: (...a: unknown[]) => mockLeaseFindMany(...a) },
         tenantMembership: { findMany: (...a: unknown[]) => mockMembershipFindMany(...a) },
         notification: {
-            findMany: (...a: unknown[]) => mockNotifFindMany(...a),
+            // #2142 read-back. Two DIFFERENT queries now hit
+            // `notification.findMany` on this path, and they are told apart by
+            // their `select`: the pre-insert existence check asks only for
+            // `dedupeKey`, while the id read-back asks for `id` too. Without
+            // the branch, a test configuring the existence check to return
+            // `[]` also made the read-back resolve nothing, so the publish was
+            // skipped and the assertion read zero calls.
+            findMany: async (args: any) => {
+                if (args?.select?.id) {
+                    return (args.where.dedupeKey.in as string[]).map((dedupeKey, i) => ({
+                        id: `notif-${i + 1}`,
+                        dedupeKey,
+                    }));
+                }
+                return mockNotifFindMany(args);
+            },
             createMany: (...a: unknown[]) => mockNotifCreateMany(...a),
         },
     };
@@ -77,11 +92,22 @@ describe('runLeaseExpirySweep — linkUrl', () => {
 
         expect(createdRow().linkUrl).toBe('/t/acme/rent?locationId=loc-9');
         // The event carries ids ONLY as of #1990, so it no longer repeats the
-        // linkUrl — the client refetches the row over REST. What is still
-        // worth locking is that the id the event carries IS the row's
-        // dedupeKey, derived from the row rather than hardcoded so the two
-        // cannot drift apart silently.
-        expect(mockPublish).toHaveBeenCalledWith('t1', 'u1', {
+        // linkUrl — the client refetches the row over REST.
+        //
+        // ── this used to assert the dedupeKey (#2142) ──
+        //
+        // It read `expect(mockPublish).toHaveBeenCalledWith('t1', 'u1', { id:
+        // createdRow().dedupeKey })`, under a comment calling that "still
+        // worth locking … derived from the row rather than hardcoded so the
+        // two cannot drift apart silently". The derivation was careful and the
+        // value was wrong: since P7.2 a frame's id is the client's
+        // `Last-Event-ID`, which `replayNotificationIdsAfter` resolves as a
+        // `Notification.id` — so a dedupeKey meant a reconnect right after a
+        // sweep replayed nothing at all.
+        //
+        // The id is now the ROW id, and the dedupeKey is only how it is found.
+        expect(mockPublish).toHaveBeenCalledWith('t1', 'u1', { id: 'notif-1' });
+        expect(mockPublish).not.toHaveBeenCalledWith('t1', 'u1', {
             id: createdRow().dedupeKey,
         });
     });

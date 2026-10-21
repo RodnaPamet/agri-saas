@@ -26,6 +26,33 @@ const mockPrisma = {
 } as any;
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
+/**
+ * `notification.findMany` answers TWO different queries on this path, and they
+ * are told apart by their `select`:
+ *
+ *   - the pre-insert existence check asks only for `dedupeKey` (nothing exists
+ *     yet in these cases, hence the empty array);
+ *   - #2142's id read-back asks for `id` too, because the bus frame must carry
+ *     the ROW id — a dedupeKey becomes the client's `Last-Event-ID` and
+ *     resolves to nothing.
+ *
+ * A single canned `[]` answered both, so the read-back resolved nothing, the
+ * publish was skipped, and the assertion read zero calls — which looked like
+ * the sweep failing to notify rather than a double that could not express the
+ * behaviour it stood in for.
+ */
+function notificationFindManyDouble() {
+    return async (args: any) => {
+        if (args?.select?.id) {
+            return (args.where.dedupeKey.in as string[]).map((dedupeKey, i) => ({
+                id: `notif-${i + 1}`,
+                dedupeKey,
+            }));
+        }
+        return [];
+    };
+}
+
 
 jest.mock('@/lib/observability/job-runner', () => ({
     runJob: jest.fn(async (_name: string, fn: () => any) => fn()),
@@ -65,7 +92,7 @@ beforeEach(() => {
     mockPrisma.tenantMembership.findMany.mockResolvedValue([
         { tenantId: 'tenant-1', userId: 'owner-1', tenant: { slug: 'acme' } },
     ]);
-    mockPrisma.notification.findMany.mockResolvedValue([]);
+    mockPrisma.notification.findMany.mockImplementation(notificationFindManyDouble());
     mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
 });
 
@@ -172,7 +199,7 @@ describe('runContractDeliveryWindowSweep', () => {
         mockPrisma.tenantMembership.findMany.mockResolvedValue([
             { tenantId: 'tenant-1', userId: 'owner-1', tenant: { slug: 'acme' } },
         ]);
-        mockPrisma.notification.findMany.mockResolvedValue([]);
+        mockPrisma.notification.findMany.mockImplementation(notificationFindManyDouble());
         mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
         mockPrisma.grainDelivery.groupBy.mockResolvedValue([]);
         mockPrisma.contract.findMany.mockResolvedValue([

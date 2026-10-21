@@ -23,6 +23,16 @@
  * arrived. It recovered on the next frame carrying a real id, which made the
  * window bounded and silent.
  *
+ * ## Why not `createManyAndReturn`, which would need no read at all
+ *
+ * It exists on this client (Prisma 7.10) and returns the inserted rows with
+ * their ids, which would make this helper unnecessary. It does **not** accept
+ * `skipDuplicates` — checked against the generated types rather than assumed —
+ * and that option is load-bearing: a duplicate `dedupeKey` would raise P2002,
+ * which poisons an interactive Postgres transaction for every statement after
+ * it. Dedupe collapse is the normal case on these paths, not an edge, so the
+ * one-statement version is unavailable and the read-back is the price.
+ *
  * ## The read is inside the transaction; only the publish is deferred
  *
  * `dedupeKey` is unique and indexed, so this is one indexed read per batch —

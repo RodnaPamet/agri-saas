@@ -31,7 +31,22 @@ beforeEach(() => {
         inventoryLot: { groupBy: (...a: unknown[]) => mockLotGroupBy(...a) },
         tenantMembership: { findMany: (...a: unknown[]) => mockMembershipFindMany(...a) },
         notification: {
-            findMany: (...a: unknown[]) => mockNotifFindMany(...a),
+            // #2142 read-back. Two DIFFERENT queries now hit
+            // `notification.findMany` on this path, and they are told apart by
+            // their `select`: the pre-insert existence check asks only for
+            // `dedupeKey`, while the id read-back asks for `id` too. Without
+            // the branch, a test configuring the existence check to return
+            // `[]` also made the read-back resolve nothing, so the publish was
+            // skipped and the assertion read zero calls.
+            findMany: async (args: any) => {
+                if (args?.select?.id) {
+                    return (args.where.dedupeKey.in as string[]).map((dedupeKey, i) => ({
+                        id: `notif-${i + 1}`,
+                        dedupeKey,
+                    }));
+                }
+                return mockNotifFindMany(args);
+            },
             createMany: (...a: unknown[]) => mockNotifCreateMany(...a),
         },
     };
