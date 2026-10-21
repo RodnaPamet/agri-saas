@@ -15,6 +15,7 @@ on:
           - both
           - auth
           - lists
+          - streams
         default: both
       vus:
         description: Virtual users (concurrency target)
@@ -187,6 +188,45 @@ jobs:
             -e VUS=${{ steps.params.outputs.vus }} \
             -e DURATION=${{ steps.params.outputs.duration }} \
             tests/load/lists.js
+
+      # ── streams scenario (#1999) ───────────────────────────────────────
+      #
+      # Two steps rather than one, because this scenario needs ONE ACCOUNT PER
+      # VU: `/api/me/stream` caps streams at three per person, so the shape the
+      # other scenarios use (N VUs, one login) would hold three streams and
+      # take N-3 refusals. The seeder also enables `notifications.sse`, which
+      # is default-OFF — without it every stream answers 204 and k6 would
+      # report a vacuous pass on an empty metric.
+      #
+      # This runs at the nightly's 25 VUs, which is NOT the criterion's
+      # thousand — #1999 says the throwaway VM for that, and a 2-vCPU shared
+      # runner cannot produce a number worth recording. What it is for is the
+      # failure this directory's guard was written about: `lists.js` sat broken
+      # for months because nothing executed it. 25 VUs a night proves the
+      # script, the seeder and the login flow still work.
+      - name: Seed per-VU stream accounts (streams scenario)
+        if: steps.params.outputs.scenario == 'streams' || steps.params.outputs.scenario == 'both'
+        env:
+          LOAD_SEED_CONFIRM: yes-this-is-a-throwaway-vm
+          LOAD_TEST_PASSWORD: ci_load_password
+        run: |
+          npx tsx scripts/seed-load-streams.ts \
+            --users ${{ steps.params.outputs.vus }} \
+            --enable-flag
+
+      - name: Run k6 — streams scenario
+        if: steps.params.outputs.scenario == 'streams' || steps.params.outputs.scenario == 'both'
+        env:
+          BASE_URL: http://localhost:3006
+          LOAD_TEST_PASSWORD: ci_load_password
+        run: |
+          k6 run \
+            -e VUS=${{ steps.params.outputs.vus }} \
+            -e DURATION=${{ steps.params.outputs.duration }} \
+            -e RAMP_UP=20s \
+            -e RAMP_DOWN=10s \
+            -e STREAM_HOLD=15s \
+            tests/load/realtime-streams.js
 
       - name: Stop app
         if: always()

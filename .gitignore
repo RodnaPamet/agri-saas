@@ -171,3 +171,6 @@ scripts/ai/eval/report.json
 # being linted, which is the one way that guard could pass while seeing
 # nothing. An interrupted run can leave the directory behind.
 .eslint-extension-probe/
+
+# State file written by scripts/seed-load-streams.ts (#1999 load run)
+.load-streams-seed.json
