@@ -533,7 +533,19 @@
         "markRead": "Mark read",
         "noNotifications": "No notifications",
         "crumbDashboard": "Dashboard",
-        "description": "Recent activity across your farm"
+        "description": "Recent activity across your farm",
+        "bulkTask": {
+            "assigned": {
+                "title": "Tasks assigned to you",
+                "bodyOne": "You were assigned 1 task.",
+                "bodyMany": "You were assigned {count} tasks."
+            },
+            "rescheduled": {
+                "title": "Due dates changed",
+                "bodyOne": "The due date of 1 of your tasks changed.",
+                "bodyMany": "The due dates of {count} of your tasks changed."
+            }
+        }
     },
     "admin": {
         "title": "Administration",

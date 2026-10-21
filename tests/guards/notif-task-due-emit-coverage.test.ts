@@ -106,6 +106,23 @@ describe('PR-B TASK_DUE emit coverage', () => {
         // why not.
 
         /**
+         * The helpers that count as "tells the assignee".
+         *
+         * Three, not one, since #2103 wired the bulk paths. The per-task emit
+         * sends one notification about one task; the bulk emits send ONE
+         * SUMMARY about a batch, which is the shape the owner chose — N bells
+         * for one click is what a digest exists to prevent.
+         *
+         * A mutator satisfies this guard by calling ANY of them. What it may
+         * not do is change `assigneeUserId` or `dueAt` and tell nobody.
+         */
+        const EMIT_FNS = [
+            'emitTaskDueNotification',
+            'emitBulkAssignedNotification',
+            'emitBulkRescheduledNotification',
+        ];
+
+        /**
          * One function's body, from its declaration to the next one.
          *
          * Bounded by the next declaration rather than a character window: the
@@ -178,12 +195,11 @@ describe('PR-B TASK_DUE emit coverage', () => {
                 // is the inverse defect this repo calls "a scar is not a
                 // wound", and `guards-blank-comments-before-matching` lists it
                 // as case 4. So each direction reads the source it is safe in.
+                const body = bodyOf(taskSrc(), m[1]);
                 out.push({
                     name: m[1],
                     fields,
-                    emits: bodyOf(taskSrc(), m[1]).includes(
-                        'await emitTaskDueNotification(ctx,',
-                    ),
+                    emits: EMIT_FNS.some((fn) => body.includes(`await ${fn}(ctx,`)),
                 });
             }
             return out;
@@ -197,20 +213,15 @@ describe('PR-B TASK_DUE emit coverage', () => {
          * so the gap is visible in the code that would otherwise have hidden
          * it, not to bless it.
          */
-        const NO_EMIT_REASONS: Record<string, string> = {
-            bulkAssignTasks:
-                'KNOWN GAP (#2103). Writes a TASK_ASSIGNED audit row per task and ' +
-                'returns, so being assigned twenty tasks at once is silent while ' +
-                'being assigned one is not. Blocked on a product decision rather ' +
-                'than on code: N bells for one action is what digests exist to ' +
-                'avoid, so the shape (one summary vs a rate-limited per-task emit) ' +
-                'has to be chosen before it is wired. Zero bulk TASK_ASSIGNED rows ' +
-                'in production as of 2026-10-20, so nothing has been missed yet.',
-            bulkSetTaskDueDate:
-                'KNOWN GAP (#2103). Same shape as bulkAssignTasks and the same ' +
-                'pending decision — a bulk reschedule of twenty tasks would emit ' +
-                'twenty due-date bells.',
-        };
+        /**
+         * Mutators that deliberately do not notify, each with a reason.
+         *
+         * **Empty, and that is the point of #2103.** It held two entries for
+         * exactly as long as it took to decide what a bulk action should send:
+         * `bulkAssignTasks` and `bulkSetTaskDueDate` were KNOWN GAPS, and both
+         * now emit a summary. An entry here is a claim somebody has to defend.
+         */
+        const NO_EMIT_REASONS: Record<string, string> = {};
 
         const MUTATORS = deriveMutators();
 
@@ -275,46 +286,64 @@ describe('PR-B TASK_DUE emit coverage', () => {
         });
 
         it.each(MUTATORS.filter((x) => x.emits).map((x) => x.name))(
-            '%s fires emitTaskDueNotification post-commit',
+            '%s awaits one of the emit helpers post-commit',
             (usecase) => {
-                const s = taskSrc();
-                const start = s.indexOf(`export async function ${usecase}(`);
-                expect(start).toBeGreaterThan(-1);
-                const nextDecl = s.indexOf('export async function', start + 1);
-                const body = s.slice(start, nextDecl > start ? nextDecl : s.length);
-                // The call MUST be `emitTaskDueNotification(ctx, …)`
-                // (no `await`-less variants, no commented-out lines).
-                expect(body).toMatch(/await emitTaskDueNotification\(ctx,/);
+                // WHICH helper each one uses is asserted below; this is the
+                // weaker shared claim, and it is about the CALL FORM: an
+                // `await`-less variant would not be ordered against the cache
+                // bump, and a commented-out line is not a call at all. Hence
+                // the blanked source, not raw.
+                const body = bodyOf(taskSrc(), usecase);
+                expect(body).not.toBe('');
+                const awaited = EMIT_FNS.filter((fn) => body.includes(`await ${fn}(ctx,`));
+                expect(awaited.length).toBeGreaterThanOrEqual(1);
             },
         );
 
-        it('the declaration stays unique, and the call count MATCHES the derivation', () => {
-            // The old version locked this at the literal 3, which is the lock
-            // that held while two mutators went unwired. Tying it to the
-            // derived set means the number moves when the population does,
-            // and cannot move on its own.
+        it('every emit helper is declared exactly once', () => {
+            // The old version locked the CALL count at the literal 3, which is
+            // the lock that held while two mutators went unwired. The call
+            // count is now the derivation's business (above); what is worth
+            // locking here is that each helper has one definition, so a second
+            // inline copy cannot drift from it.
             const s = taskSrc();
-            const decls = s.match(/async function emitTaskDueNotification\b/g) ?? [];
-            const calls = s.match(/await emitTaskDueNotification\(ctx,/g) ?? [];
-            expect(decls.length).toBe(1);
-            expect(calls.length).toBe(MUTATORS.filter((x) => x.emits).length);
+            for (const fn of EMIT_FNS) {
+                const decls = s.match(new RegExp(`async function ${fn}\\b`, 'g')) ?? [];
+                expect(decls).toHaveLength(1);
+            }
+        });
+
+        it('each derived mutator is matched to the emit it actually calls', () => {
+            // The pairing, stated once. A refactor that pointed a bulk path at
+            // the per-task emit would send N notifications for one click and
+            // satisfy a guard that only asked "does it emit something".
+            const s = taskSrc();
+            const emitUsed = (name: string) =>
+                EMIT_FNS.filter((fn) => bodyOf(s, name).includes(`await ${fn}(ctx,`));
+
+            expect(emitUsed('createTask')).toEqual(['emitTaskDueNotification']);
+            expect(emitUsed('bulkAssignTasks')).toEqual(['emitBulkAssignedNotification']);
+            expect(emitUsed('bulkSetTaskDueDate')).toEqual(['emitBulkRescheduledNotification']);
         });
     });
 
     describe('3. Emit call placement: after commit, before cache-bump', () => {
         // Derived from the emitting set rather than listed again — a second
         // hand-written copy of the same population is a second thing to forget.
+        // Only the PER-TASK emit is placement-checked here. The bulk emits sit
+        // in the same position for the same reason, but their assertion lives
+        // with their own tests — this block's `bumpEntityCacheVersion` anchor
+        // is what makes it specific, and widening it would turn one clear
+        // claim into a vaguer one.
         const EMITTING = (() => {
             const s = read('src/app-layer/usecases/task.ts');
-            return ['createTask', 'updateTask', 'assignTask', 'bulkAssignTasks', 'bulkSetTaskDueDate'].filter(
-                (name) => {
-                    const start = s.indexOf(`export async function ${name}(`);
-                    if (start < 0) return false;
-                    const next = s.indexOf('export async function', start + 1);
-                    const body = s.slice(start, next > start ? next : s.length);
-                    return /await emitTaskDueNotification\(ctx,/.test(body);
-                },
-            );
+            return ['createTask', 'updateTask', 'assignTask'].filter((name) => {
+                const start = s.indexOf(`export async function ${name}(`);
+                if (start < 0) return false;
+                const next = s.indexOf('export async function', start + 1);
+                const body = s.slice(start, next > start ? next : s.length);
+                return /await emitTaskDueNotification\(ctx,/.test(body);
+            });
         })();
 
         it.each(EMITTING)(

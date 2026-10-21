@@ -84,14 +84,33 @@ jest.mock('../../../src/app-layer/events/audit', () => ({
     logEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+// The push queue. `enqueue` comes from `jobs/queue`, NOT from
+// `notifications/enqueue` mocked above — a partial mock of the wrong module
+// would leave `enqueue` undefined, and the bulk emit's own try/catch would
+// swallow the TypeError, so the test would observe "no push" and pass for the
+// wrong reason.
+jest.mock('@/app-layer/jobs/queue', () => ({
+    enqueue: jest.fn().mockResolvedValue(undefined),
+}));
+
+// The summary helper is mocked so this file can assert WHO gets told WHAT
+// about WHICH tasks. Its own behaviour — copy, dedupe key, link, bus frame —
+// is pinned in `tests/unit/notifications/bulk-task-summary.test.ts`.
+jest.mock('@/app-layer/notifications/bulk-task-summary', () => ({
+    createBulkTaskSummaryNotification: jest.fn().mockResolvedValue({ status: 'created' }),
+}));
+
 import {
     createTask,
     setTaskStatus,
     assignTask,
     addTaskComment,
     bulkSetTaskStatus,
+    bulkAssignTasks,
+    bulkSetTaskDueDate,
     deleteTask,
 } from '@/app-layer/usecases/task';
+import { createBulkTaskSummaryNotification } from '@/app-layer/notifications/bulk-task-summary';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     WorkItemRepository,
@@ -123,6 +142,28 @@ const mockSanitize = sanitizePlainText as jest.MockedFunction<typeof sanitizePla
 const mockEmitEvent = emitAutomationEvent as jest.MockedFunction<typeof emitAutomationEvent>;
 const mockEnqueueEmail = enqueueEmail as jest.MockedFunction<typeof enqueueEmail>;
 const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
+const mockSummary = createBulkTaskSummaryNotification as jest.MockedFunction<
+    typeof createBulkTaskSummaryNotification
+>;
+
+/**
+ * The transaction double the BULK emit paths need.
+ *
+ * Both read back what they wrote — the ids that carry the new assignee, or the
+ * assignee of every affected row — because `updateMany` returns a count and
+ * can match fewer rows than the caller asked for (#2103). And the summary
+ * resolves the recipient's language, so `user.findUnique` is on the path too.
+ */
+function bulkTx(opts: {
+    tasks?: Array<{ id: string; assigneeUserId?: string | null }>;
+    uiLanguage?: string | null;
+}) {
+    return {
+        ...TX,
+        task: { findMany: jest.fn().mockResolvedValue(opts.tasks ?? []) },
+        user: { findUnique: jest.fn().mockResolvedValue({ uiLanguage: opts.uiLanguage ?? 'bg' }) },
+    };
+}
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -347,6 +388,150 @@ describe('bulkSetTaskStatus', () => {
         // break per-task audit-trail completeness (an external auditor
         // searching by entityId would miss the bulk event entirely).
         expect(calls).toHaveLength(3);
+    });
+});
+
+// ── #2103: the two bulk mutators used to notify nobody ──
+//
+// Five usecases here can change `assigneeUserId` or `dueAt`. Three notified
+// and these two did not, so being assigned twenty tasks at once was silent
+// while being assigned one was not. The ruling was ONE summary per bulk
+// action; what this block pins is who receives it and what it is about.
+
+describe('bulkAssignTasks — the summary', () => {
+    const mockBulkAssign = WorkItemRepository.bulkAssign as jest.MockedFunction<
+        typeof WorkItemRepository.bulkAssign
+    >;
+
+    it('tells the new assignee, counting the rows ACTUALLY written', async () => {
+        // Three ids requested, two written — an id that does not exist or
+        // belongs to another tenant drops out of the `updateMany` filter
+        // silently. A summary saying "3" would misreport the thing it exists
+        // to report.
+        const tx = bulkTx({ tasks: [{ id: 't1' }, { id: 't2' }] });
+        // `mockImplementation`, NOT `mockImplementationOnce`: the emit opens a
+        // SECOND transaction frame of its own. Stubbing only the first leaves
+        // the summary's frame returning undefined, which throws inside the
+        // emit's own swallowing try/catch — so the test observes "no summary"
+        // and passes whatever the code does. That is how the self-assignment
+        // case below first passed with its refusal deleted.
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn(tx as never));
+        mockBulkAssign.mockResolvedValueOnce({ count: 2 } as never);
+
+        await bulkAssignTasks(makeRequestContext('EDITOR', { userId: 'actor' }), ['t1', 't2', 't3'], 'u-9');
+
+        expect(mockSummary).toHaveBeenCalledTimes(1);
+        const [, kind, target] = mockSummary.mock.calls[0];
+        expect(kind).toBe('assigned');
+        expect(target.recipientUserId).toBe('u-9');
+        expect(target.taskIds).toEqual(['t1', 't2']);
+    });
+
+    it('says nothing on an UNASSIGN — there is no recipient', async () => {
+        const tx = bulkTx({});
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn(tx as never));
+        mockBulkAssign.mockResolvedValueOnce({ count: 2 } as never);
+
+        await bulkAssignTasks(makeRequestContext('EDITOR', { userId: 'actor' }), ['t1', 't2'], null);
+
+        expect(mockSummary).not.toHaveBeenCalled();
+    });
+
+    it('says nothing when you assign to YOURSELF', async () => {
+        // #1755's reasoning, and the bell is the sharper case: it appears on
+        // the screen the person is already looking at, one action after they
+        // caused it.
+        const tx = bulkTx({ tasks: [{ id: 't1' }] });
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn(tx as never));
+        mockBulkAssign.mockResolvedValueOnce({ count: 1 } as never);
+
+        await bulkAssignTasks(makeRequestContext('EDITOR', { userId: 'actor' }), ['t1'], 'actor');
+
+        expect(mockSummary).not.toHaveBeenCalled();
+    });
+
+    it('CONTROL: the harness CAN see a summary for the same shape of call', async () => {
+        // The two refusals above assert an absence, and an absence is what a
+        // mis-stubbed harness produces for free — the self-assignment case
+        // passed with its refusal deleted because the summary's own
+        // transaction frame was unstubbed and the emit swallowed the error.
+        // This is the same call with a different assignee, so "not called"
+        // above can only mean the refusal fired.
+        const tx = bulkTx({ tasks: [{ id: 't1' }] });
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn(tx as never));
+        mockBulkAssign.mockResolvedValueOnce({ count: 1 } as never);
+
+        await bulkAssignTasks(makeRequestContext('EDITOR', { userId: 'actor' }), ['t1'], 'someone-else');
+
+        expect(mockSummary).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('bulkSetTaskDueDate — the summary', () => {
+    const mockBulkDue = WorkItemRepository.bulkSetDueDate as jest.MockedFunction<
+        typeof WorkItemRepository.bulkSetDueDate
+    >;
+
+    it('tells each affected assignee about their OWN tasks only', async () => {
+        // A reschedule has no single recipient: twenty tasks can belong to
+        // five people. Telling everyone about all twenty would leak who else
+        // is working on what, and would also be wrong.
+        const tx = bulkTx({
+            tasks: [
+                { id: 't1', assigneeUserId: 'u-1' },
+                { id: 't2', assigneeUserId: 'u-2' },
+                { id: 't3', assigneeUserId: 'u-1' },
+            ],
+        });
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn(tx as never));
+        mockBulkDue.mockResolvedValueOnce({ count: 3 } as never);
+
+        await bulkSetTaskDueDate(
+            makeRequestContext('EDITOR', { userId: 'actor' }),
+            ['t1', 't2', 't3'],
+            '2026-11-01',
+        );
+
+        expect(mockSummary).toHaveBeenCalledTimes(2);
+        const byRecipient = new Map(
+            mockSummary.mock.calls.map(([, , t]) => [t.recipientUserId, t.taskIds]),
+        );
+        expect(byRecipient.get('u-1')).toEqual(['t1', 't3']);
+        expect(byRecipient.get('u-2')).toEqual(['t2']);
+        for (const [, kind] of mockSummary.mock.calls) expect(kind).toBe('rescheduled');
+    });
+
+    it('skips unassigned tasks and the actor’s own', async () => {
+        const tx = bulkTx({
+            tasks: [
+                { id: 't1', assigneeUserId: null },
+                { id: 't2', assigneeUserId: 'actor' },
+                { id: 't3', assigneeUserId: 'u-7' },
+            ],
+        });
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn(tx as never));
+        mockBulkDue.mockResolvedValueOnce({ count: 3 } as never);
+
+        await bulkSetTaskDueDate(
+            makeRequestContext('EDITOR', { userId: 'actor' }),
+            ['t1', 't2', 't3'],
+            null,
+        );
+
+        expect(mockSummary).toHaveBeenCalledTimes(1);
+        expect(mockSummary.mock.calls[0][2].recipientUserId).toBe('u-7');
+    });
+
+    it('tells nobody when every affected task is unassigned — the control', async () => {
+        // Without this, the grouping above would pass on an implementation
+        // that notified a hardcoded recipient.
+        const tx = bulkTx({ tasks: [{ id: 't1', assigneeUserId: null }] });
+        mockRunInTx.mockImplementation(async (_ctx, fn) => fn(tx as never));
+        mockBulkDue.mockResolvedValueOnce({ count: 1 } as never);
+
+        await bulkSetTaskDueDate(makeRequestContext('EDITOR', { userId: 'actor' }), ['t1'], null);
+
+        expect(mockSummary).not.toHaveBeenCalled();
     });
 });
 
