@@ -3033,6 +3033,13 @@
         "enabling": "Активиране…",
         "enableAlerts": "Активирай известия"
     },
+    "push": {
+        "quietSummary": {
+            "title": "Нови известия",
+            "bodyOne": "Имате 1 ново известие.",
+            "bodyMany": "Имате {count} нови известия."
+        }
+    },
     "calendar": {
         "dashboard": "Табло",
         "breadcrumb": "Календар",

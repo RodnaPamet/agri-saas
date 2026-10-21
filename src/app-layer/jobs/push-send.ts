@@ -26,12 +26,17 @@
  * same shape of reason (an external fair-use budget that must not throttle
  * unrelated work). This copies it rather than inventing a second mechanism.
  *
- * ## What it does NOT do
+ * ## It asks `resolveDelivery` rather than deciding — P7.5 (#1994)
  *
- * Decide whether to send. Preferences, quiet hours and cross-device dedup are
- * P7.5 (#1994) and belong in one `resolveDelivery()` rather than scattered
- * across producers — so this job sends what it is given, and the two
- * `isXConfigured()` gates inside each transport remain the only suppression.
+ * The decision is made HERE, when the send is attempted, and not at the
+ * enqueue site. A job that sat behind a backlog would otherwise act on a
+ * decision taken minutes earlier — which matters precisely at 22:00, where a
+ * notification created at 21:59 and processed at 22:01 should be held, and the
+ * reverse at 06:00.
+ *
+ * When the window holds it back, this enqueues ONE `push-summary` job for the
+ * night instead, keyed so the fifth notification of the night cannot schedule
+ * a fifth summary.
  *
  * It also does not fan out to several PEOPLE. One job per recipient keeps a
  * retry honest: a failure for one person must not re-send to the others, and
@@ -41,6 +46,9 @@
 import type { PushSendPayload } from './types';
 import type { RequestContext } from '../types';
 import { getPermissionsForRole } from '@/lib/permissions';
+import { runInTenantContext } from '@/lib/db-context';
+import { resolveDelivery } from '@/app-layer/notifications/resolve-delivery';
+import { enqueue } from './queue';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
 import { sendApnsToUser } from '@/lib/notifications/apns';
 import { logger } from '@/lib/observability/logger';
@@ -88,11 +96,71 @@ export async function runPushSend(payload: PushSendPayload): Promise<PushSendRes
     const { tenantId, recipientUserId, title, body, link, collapseKey } = payload;
     const ctx = makeSystemCtx(tenantId, recipientUserId);
 
+    // One tenant-scoped read for both inputs the decision needs. Counting
+    // devices here rather than letting each transport discover it lets the
+    // decision say "no devices" once, instead of two transports each querying
+    // and each returning quietly — and a log line of "attempted 2, delivered
+    // 0" that means nothing was reachable reads exactly like one where both
+    // calls failed.
+    const { preference, devices } = await runInTenantContext(ctx, async (db) => {
+        const pref = await db.userNotificationPreference.findUnique({
+            where: { userId_tenantId: { userId: recipientUserId, tenantId } },
+            select: { delivery: true },
+        });
+        const rows = await db.pushSubscription.groupBy({
+            by: ['platform'],
+            where: { userId: recipientUserId },
+            _count: { _all: true },
+        });
+        const countOf = (p: 'WEB' | 'IOS') =>
+            rows.find((r) => r.platform === p)?._count._all ?? 0;
+        return {
+            preference: pref?.delivery ?? null,
+            devices: { web: countOf('WEB'), ios: countOf('IOS') },
+        };
+    });
+
+    const decision = resolveDelivery({ preference, now: new Date(), devices });
+
+    if (decision.deferral !== null) {
+        const { at, nightKey } = decision.deferral;
+        // `jobId` makes this idempotent across every notification of the
+        // night AND across processes: BullMQ refuses a duplicate id, so
+        // "ensure one summary" is a single `add` rather than a
+        // read-modify-write that two workers could interleave.
+        await enqueue(
+            'push-summary',
+            { tenantId, recipientUserId, nightKey },
+            { jobId: `push-summary:${tenantId}:${recipientUserId}:${nightKey}`, delay: Math.max(0, at.getTime() - Date.now()) },
+        );
+        logger.info('push.deferred', {
+            component: 'push',
+            // No prose: the payload is displayed copy.
+            collapseKey,
+            nightKey,
+            reason: decision.suppressedBecause,
+        });
+        return { attempted: 0, delivered: 0 };
+    }
+
+    if (!decision.webPush && !decision.apns) {
+        logger.info('push.suppressed', {
+            component: 'push',
+            collapseKey,
+            reason: decision.suppressedBecause,
+        });
+        return { attempted: 0, delivered: 0 };
+    }
+
     let attempted = 0;
     let delivered = 0;
     const failures: string[] = [];
 
-    for (const transport of ['web', 'apns'] as const) {
+    const wanted = [
+        ...(decision.webPush ? (['web'] as const) : []),
+        ...(decision.apns ? (['apns'] as const) : []),
+    ];
+    for (const transport of wanted) {
         attempted += 1;
         try {
             if (transport === 'web') {

@@ -243,6 +243,31 @@ export interface PushSendPayload {
     collapseKey: string;
 }
 
+/**
+ * The 06:00 summary for one person's quiet-hours window — P7.5 (#1994).
+ *
+ * Carries the night rather than a list of notifications, and that is the
+ * design: the summary is a COUNT taken when the job runs, from
+ * `Notification` rows that already exist, not a stored list assembled as they
+ * arrived. A stored list would have to be kept in step with reads, so somebody
+ * who cleared their bell at 02:00 would still be told about ten things at
+ * 06:00. Counting at fire time cannot drift because there is nothing to drift
+ * from.
+ *
+ * One job per (person, night), enforced by a deterministic BullMQ `jobId` at
+ * the enqueue site. The fifth notification of the night must not schedule a
+ * fifth summary.
+ */
+export interface PushSummaryPayload {
+    tenantId: string;
+    recipientUserId: string;
+    /**
+     * `YYYY-MM-DD` of the EVENING the window opened — `quietNightKey`'s
+     * output. Names one night across midnight, which a calendar date cannot.
+     */
+    nightKey: string;
+}
+
 export interface ProcessOutboxPayload {
     /** Max rows to drain in one sweep. Default: 100. */
     limit?: number;
@@ -888,6 +913,7 @@ export interface JobPayloadMap {
     'daily-evidence-expiry': DailyEvidenceExpiryPayload;
     'process-outbox': ProcessOutboxPayload;
     'push-send': PushSendPayload;
+    'push-summary': PushSummaryPayload;
     'zero-success-route-check': ZeroSuccessRouteCheckPayload;
     'data-lifecycle': DataLifecyclePayload;
     'retention-sweep': RetentionSweepPayload;
@@ -1010,6 +1036,18 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 2,
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'push-summary': {
+        // ONE attempt. A retry is the wrong shape for this job: it fires at a
+        // fixed moment and its whole content is "what you missed overnight",
+        // so a retry five seconds later sends the same summary again, and a
+        // retry an hour later sends a summary about a window that closed an
+        // hour ago. If it fails, the in-app rows are still there and the bell
+        // still shows them — which is the fallback the whole design rests on.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 100,
         removeOnFail: 500,
     },
     'push-send': {
@@ -1469,4 +1507,4 @@ export const SOIL_QUEUE_JOBS: ReadonlySet<JobName> = new Set(['soil-fetch']);
 export const PUSH_QUEUE_NAME = 'agrent-push';
 
 /** Job names that run on the dedicated push queue. */
-export const PUSH_QUEUE_JOBS: ReadonlySet<JobName> = new Set(['push-send']);
+export const PUSH_QUEUE_JOBS: ReadonlySet<JobName> = new Set(['push-send', 'push-summary']);

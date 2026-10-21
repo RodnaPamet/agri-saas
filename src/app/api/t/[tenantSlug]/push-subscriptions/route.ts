@@ -57,11 +57,22 @@ export const POST = withApiErrorHandling(
                 environment: body.environment,
                 userAgent: req.headers.get('user-agent'),
             });
-            logger.warn('push.apns_registered_without_transport', {
+            // INFO, and the hint says what is true now. This was a WARN
+            // reading "APNs delivery is not implemented yet (#1764 step 3)",
+            // which stopped being true when `src/lib/notifications/apns.ts`
+            // landed and a key was installed — and it was read in production
+            // during the first real TestFlight registration on 2026-10-21,
+            // where it says the opposite of the facts. A warning that names a
+            // missing capability the product has sends whoever reads it
+            // looking in the wrong place, which is worse than no line at all.
+            logger.info('push.apns_registered', {
                 component: 'push',
                 tenantId: ctx.tenantId,
                 subscriptionId: sub.id,
-                hint: 'Token stored; APNs delivery is not implemented yet (#1764 step 3).',
+                // The environment decides the host, and a null here is the one
+                // state the sender refuses rather than guesses — so it is worth
+                // having on the registration line rather than inferred later.
+                environment: body.environment,
             });
             return jsonResponse({ id: sub.id }, { status: 201 });
         }

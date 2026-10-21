@@ -3033,6 +3033,13 @@
         "enabling": "Enabling…",
         "enableAlerts": "Enable alerts"
     },
+    "push": {
+        "quietSummary": {
+            "title": "New notifications",
+            "bodyOne": "You have 1 new notification.",
+            "bodyMany": "You have {count} new notifications."
+        }
+    },
     "calendar": {
         "dashboard": "Dashboard",
         "breadcrumb": "Calendar",
