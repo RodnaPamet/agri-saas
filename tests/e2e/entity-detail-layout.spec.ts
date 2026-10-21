@@ -46,6 +46,15 @@ test.describe('EntityDetailLayout', () => {
         // See the note in data-table-platform.spec.ts — measure the event,
         // not the paint (#1076).
         await instrumentRowGestures(page);
+        // The count BEFORE the gesture. `expectRouteTransition` asks for it
+        // because its own capture showed `rows: 1` at failure against a seed
+        // of more than one, and only the caller can see the before — without
+        // it, "the set shrank under the gesture" and "it was always 1" are
+        // indistinguishable in the failure report.
+        const rowsBefore = await page
+            .getByRole('main')
+            .locator('[data-testid="assets-table"] tbody tr')
+            .count();
         await firstRow.locator('td').last().dblclick();
 
         // The shell's three structural promises:
@@ -66,6 +75,7 @@ test.describe('EntityDetailLayout', () => {
         await expectRouteTransition(page, {
             content: page.locator('[data-testid="entity-detail-header"]'),
             url: /\/assets\/[a-zA-Z0-9-]+$/,
+            rowsBefore,
         });
         // (2) the body wrapper. (The asset surface does not pass a
         //     `rail` — linked Tasks live in their own tab — so the

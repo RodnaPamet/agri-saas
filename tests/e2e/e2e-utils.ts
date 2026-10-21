@@ -873,8 +873,20 @@ export async function expectRouteTransition(
     // message channel is that the job log survives a flake whose artifact may
     // not. Wired to the other half now too.
     //
-    // `describeListState` is deliberately NOT reused: a list's rows and
-    // selection describe a different page's state.
+    // `describeListState` IS reused here now, conditionally, and the reason it
+    // was not is the reason it must be. The note said "a list's rows and
+    // selection describe a different page's state" — true only if this failure
+    // happens on the detail page, and the CORRECTION below records that it
+    // does not: the URL at paint failure is the LIST again.
+    //
+    // So the two diagnostics that decide this bug — `navigation entries`
+    // ("1 means no navigation was ever committed") and `row gestures` ("NONE
+    // reached a row" vs a recorded dblclick) — were attached ONLY to the
+    // `waitForURL` catch, which is the half that stopped firing. Measured over
+    // 19 main runs on 2026-10-20/21: 5 occurrences, every one of them on the
+    // paint half, every one reporting neither fact. Instrumentation aimed at
+    // the branch that no longer fires is instrumentation that cannot answer
+    // the question it was added for.
     //
     // CORRECTED 2026-10-16: the reason given here was "by here the URL wait
     // has passed, so the page is the DETAIL page". That premise is false in
@@ -886,13 +898,30 @@ export async function expectRouteTransition(
     try {
         await expect(opts.content).toBeVisible({ timeout: opts.paintTimeout ?? 30_000 });
     } catch (err) {
+        // Back on the list, or genuinely on the detail page that never
+        // painted? The answer decides which diagnostics are meaningful, so it
+        // is read rather than assumed.
+        let rolledBack = false;
+        try {
+            rolledBack = !opts.url.test(page.url());
+        } catch {
+            /* a closed page cannot be asked; fall through with the detail view */
+        }
         throw new Error(
             `${(err as Error).message}\n` +
                 `--- #1076 PAINT-wait diagnostics (the URL wait above SUCCEEDED) ---\n` +
+                (opts.rowsBefore === undefined
+                    ? ''
+                    : `  rows BEFORE gesture: ${opts.rowsBefore}   <- compare with \`rows\` below;` +
+                      ` a DROP means the set changed under the gesture\n`) +
                 (await describeDetailPaintState(page, opts.content, {
                     expectedUrl: String(opts.url),
                     failedRequests,
-                })),
+                })) +
+                (rolledBack
+                    ? `  --- the URL ROLLED BACK to a non-matching route, so the list state below is THIS page's ---\n` +
+                      (await describeListState(page))
+                    : '  (url still matches the destination — list diagnostics omitted as they would describe another page)\n'),
         );
     } finally {
         page.off('requestfailed', onRequestFailed);

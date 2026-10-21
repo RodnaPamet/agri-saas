@@ -42,7 +42,7 @@ const CACHE_VERSION = 'agrent-v1';
  * `tests/guards/sw-revision-stamp.test.ts` recomputes it and prints the
  * expected value on failure, so updating it is a paste.
  */
-const SW_REVISION = '99ab211e863e';
+const SW_REVISION = '5fed50934f64';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 const DATA_CACHE = `${CACHE_VERSION}-fielddata`;
@@ -431,6 +431,61 @@ async function dropPrefetchRscEntries() {
     }
 }
 
+/**
+ * Activate: reclaim old caches, drop partial prefetch payloads — and do NOT
+ * call `self.clients.claim()`.
+ *
+ * ## Why the claim is gone (#1076 / #1862, 2026-10-21)
+ *
+ * This file already refuses `skipWaiting` so that a deploy never hot-swaps
+ * under an operator mid-queue on flaky signal. `clients.claim()` was the same
+ * disruption applied one step earlier: on a FIRST install there is no
+ * incumbent to wait for, so the worker activates immediately and claimed the
+ * page that had just registered it — taking control of a live document
+ * mid-session, which is the thing the rest of this file is written to avoid.
+ *
+ * The cost of that showed up as an E2E flake family rather than as a bug
+ * report, which is why it survived two fixes. `known-flakes.json` records the
+ * shape: *"the click is made, the navigation never completes, and the page is
+ * still on the list."* #1329 identified a `controllerchange` reload as one
+ * cause and removed it; #1076's own fix gave the paint a 30s budget. Measured
+ * over 19 main runs on 2026-10-20/21, AFTER both: `entity-detail-layout` still
+ * fails an attempt in 26.3% of runs, with `SW controlling: yes` and the URL
+ * back on the list at failure. A budget cannot fix a transition that is
+ * dropped rather than slow, and the reload was not the only way a controller
+ * change lands mid-transition — taking control was.
+ *
+ * ## What this costs, stated rather than glossed
+ *
+ * A first visit's FIRST page view is now uncontrolled, so dynamic page and
+ * data caching for that one view does not happen. The `install` precache still
+ * runs, so the shell and static assets are stored regardless; control — and
+ * with it the RSC/document/data caching — begins at the next navigation.
+ * That is the standard worker lifecycle, and it is the trade this file already
+ * makes everywhere else: offline coverage arrives a beat later in exchange for
+ * never changing the page under someone using it.
+ *
+ * ## Nothing depended on the claim
+ *
+ * - The consented-update path does not: `SKIP_WAITING` activates the new
+ *   worker, and `ServiceWorkerRegistrar` reloads on the new worker's own
+ *   `activated` statechange or its fallback timer, not only on
+ *   `controllerchange`. The reloaded document is controlled by the active
+ *   worker because it is a fresh navigation, which is what claiming was
+ *   standing in for.
+ * - `tests/e2e/mobile/offline-basemap.spec.ts` does not: it opens the page so
+ *   the worker registers and then RELOADS, with a comment saying exactly why.
+ *   It was already written against this lifecycle.
+ *
+ * ## The prediction, so this is falsifiable
+ *
+ * If dropping the claim is the cause, `entity-detail-layout`'s 26.3% should go
+ * to zero. 0 occurrences over 20 runs bounds the rate under ~15%, which would
+ * be strong but not conclusive; the ledger entries stay until a longer window
+ * says so. If the rate is unchanged, this was not it, and the diagnostics
+ * wired into `expectRouteTransition`'s paint path in the same change will say
+ * whether a navigation was ever committed.
+ */
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches
@@ -440,8 +495,7 @@ self.addEventListener('activate', (event) => {
                     keys.filter((k) => !k.startsWith(CACHE_VERSION)).map((k) => caches.delete(k)),
                 ),
             )
-            .then(() => dropPrefetchRscEntries())
-            .then(() => self.clients.claim()),
+            .then(() => dropPrefetchRscEntries()),
     );
 });
 
@@ -1198,8 +1252,11 @@ self.addEventListener('message', (event) => {
         event.waitUntil ? event.waitUntil(flushOutbox()) : flushOutbox();
     }
     // Operator tapped "Update ready — refresh": activate the waiting worker
-    // now. It then claims clients (activate handler) and the page reloads on
-    // controllerchange. Only ever sent on explicit consent, so a deploy never
+    // now. The page then reloads on the new worker's `activated` statechange
+    // (or the registrar's fallback timer) and the reloaded document is
+    // controlled because it is a fresh navigation — NOT because the worker
+    // claims it. `clients.claim()` was removed from activate; see its
+    // docblock. Only ever sent on explicit consent, so a deploy never
     // interrupts an in-flight outbox flush on its own.
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
