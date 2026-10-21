@@ -24,9 +24,8 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
-import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { publishFreshNotifications } from './publish-fresh';
 
-import { afterCommit } from '@/lib/db/after-commit';
 export interface AssignmentTarget {
     /** Tenant the entity belongs to. */
     tenantId: string;
@@ -130,9 +129,12 @@ export async function createAssignmentNotification(
     // when result.count === 0 — that means the dedupeKey collapsed
     // a duplicate, and we already pushed the original.
     if (result.count > 0) {
-        afterCommit('notify.assignment', () =>
-            publishNotificationEvent(target.tenantId, target.assigneeUserId, { id: row.dedupeKey }),
-        );
+        // The ROW id, not the dedupeKey — see `publish-fresh.ts`. A dedupeKey
+        // on the frame becomes a `Last-Event-ID` that can never resolve, so
+        // the client's next reconnect replays nothing (#2142).
+        await publishFreshNotifications(db, 'notify.assignment', [
+            { tenantId: target.tenantId, userId: target.assigneeUserId, dedupeKey: row.dedupeKey },
+        ]);
     }
 
     return result.count > 0

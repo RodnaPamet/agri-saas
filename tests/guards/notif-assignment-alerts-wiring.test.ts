@@ -141,22 +141,35 @@ describe('PR-A notification-assignment alert wiring', () => {
         });
 
         it('publishes to the SSE bus on a fresh insert (2026-05-28 follow-up)', () => {
-            // After PR-C #761 landed the in-process bus + SSE route,
-            // the assignment helper SHOULD fan a fresh insert out
-            // to subscribed bell clients — the same posture
-            // `createTaskDueNotification` already has. Locked here
-            // so a future "tidy up" can't silently drop the path
-            // and leave the bell stuck on the 60s fallback poll
+            // After PR-C #761 landed the in-process bus + SSE route, the
+            // assignment helper SHOULD fan a fresh insert out to subscribed
+            // bell clients — the same posture `createTaskDueNotification`
+            // already has. Locked here so a future "tidy up" cannot silently
+            // drop the path and leave the bell stuck on the 60s fallback poll
             // for assignment events.
+            //
+            // Re-pointed 2026-10-21 (#2142): this asserted a direct
+            // `publishNotificationEvent(target.tenantId, target.assigneeUserId,
+            // …)` call, which was sending `{ id: row.dedupeKey }` — and since
+            // P7.2 a frame's id is the client's `Last-Event-ID`, resolved as a
+            // `Notification.id`, so a dedupeKey meant the next reconnect
+            // replayed nothing. The property asserted is the same one; the
+            // publish now goes through the shared read-back helper.
             const s = src();
             expect(s).toMatch(
-                /import\s*\{\s*publishNotificationEvent\s*\}\s*from\s+['"]@\/lib\/notifications\/notification-bus['"]/,
+                /import\s*\{\s*publishFreshNotifications\s*\}\s*from\s*['"]\.\/publish-fresh['"]/,
             );
-            // Publish ONLY when result.count > 0 (duplicates skip
-            // the fanout — the original publish already pushed
-            // when the row was first inserted).
+            // And not directly, which is the form that sent a dedupeKey.
+            expect(s).not.toMatch(/publishNotificationEvent\(/);
+            // Publish ONLY when result.count > 0 — a dedupe-collapse skips the
+            // fanout, because the original publish already pushed when the row
+            // was first inserted.
             expect(s).toMatch(
-                /if \(result\.count > 0\) \{[\s\S]{0,400}publishNotificationEvent\(\s*target\.tenantId,\s*target\.assigneeUserId,/,
+                /if \(result\.count > 0\) \{[\s\S]{0,600}publishFreshNotifications\(/,
+            );
+            // Addressed to the assignee, in the target tenant.
+            expect(s).toMatch(
+                /tenantId: target\.tenantId,\s*userId: target\.assigneeUserId,\s*dedupeKey:/,
             );
         });
     });
