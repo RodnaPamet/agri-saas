@@ -73,6 +73,7 @@ import { subscribeToNotifications } from '@/lib/notifications/notification-bus';
 import { replayNotificationIdsAfter } from '@/app-layer/usecases/notification-replay';
 import { createSseResponse } from '@/lib/realtime/sse';
 import { serialiseFrame } from '@/lib/realtime/stream-frame';
+import { subscribeToListings, LISTING_TICK_ID } from '@/lib/realtime/listing-broadcast';
 import { acquireStreamSlot } from '@/lib/realtime/stream-slots';
 import { verifyAndTouchSession } from '@/lib/security/session-tracker';
 import { isFeatureEnabled } from '@/lib/feature-flags';
@@ -259,8 +260,28 @@ export async function GET(req: NextRequest): Promise<Response> {
                     send: (event) => emit(event.id, tenantId),
                 }),
             );
+            // ── the market tick, one global channel — #2123 ──
+            //
+            // Not per farm: `listActiveListings` browses "across ALL tenants",
+            // so a listing is interesting to every connected client and there
+            // is no (farm, person) pair to address. The tick is coalesced at
+            // the publisher, so this fires at most once per window however
+            // many listings changed — a client refetches the list either way.
+            const unsubscribeListings = subscribeToListings(() => {
+                // A sentinel id and tenant, because a coalesced tick refers to
+                // no single row and spans farms. See `listing-broadcast.ts`.
+                send(
+                    serialiseFrame({
+                        kind: 'listing',
+                        id: LISTING_TICK_ID,
+                        tenantId: LISTING_TICK_ID,
+                    }),
+                );
+            });
+
             const unsubscribe = () => {
                 for (const u of unsubscribes) u();
+                unsubscribeListings();
             };
 
             // Slot refresh rides the same cadence as the heartbeat, one tick

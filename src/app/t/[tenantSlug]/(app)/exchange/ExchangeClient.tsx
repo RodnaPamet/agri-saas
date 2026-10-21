@@ -50,6 +50,7 @@ import { useTenantHref, useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useRealtime } from '@/lib/realtime/use-realtime';
 import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
 import {
     EXCHANGE_CURRENCY,
@@ -173,6 +174,27 @@ function ExchangeInner({ publicProfileEnabled }: { publicProfileEnabled: boolean
     const { data, isLoading, error, mutate } = useTenantSWR<ListingPage>(
         `/exchange/listings?${query}`,
     );
+
+    /**
+     * Live Борса — P7.6 (#1995), on the connection the bell already holds.
+     *
+     * A tick means "the market moved", not "listing X changed": it is
+     * coalesced at the publisher, so a burst of listings is one event. That
+     * suits what happens next exactly — a refetch of the first page through
+     * SWR, with ETag, which is also what keeps the exchange's 60s list cache
+     * coherent rather than bypassed.
+     *
+     * The frame's `id` and `tenantId` are deliberately NOT read. A coalesced
+     * tick refers to no single row and spans farms, so both carry a sentinel
+     * — and for a `listing` frame `tenantId` names the SELLER anyway, which
+     * means filtering on it here would hide exactly the listings this page
+     * exists to show.
+     */
+    const onMarketTick = useCallback(() => {
+        void mutate();
+    }, [mutate]);
+
+    useRealtime('listing', onMarketTick);
 
     // Page 1 comes from SWR (re-keyed on every filter change); later pages are
     // accumulated here. `reload` reseeds when SWR hands over a new first page.
