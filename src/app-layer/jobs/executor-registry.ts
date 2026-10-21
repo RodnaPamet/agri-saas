@@ -335,6 +335,40 @@ executorRegistry.register('reindex-knowledge-article', async (payload) => {
     );
 });
 
+// ── push-send ────────────────────────────────────────────────────────
+//
+// One recipient, both transports. Runs on the dedicated push queue
+// (`PUSH_QUEUE_JOBS`) so a fan-out cannot consume the main worker's 50/min
+// budget — see `push-send.ts` for why that budget matters.
+
+executorRegistry.register('push-send', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runPushSend } = await import('../jobs/push-send');
+    // Destructured rather than spread, following `classify-photo`: naming the
+    // fields puts the TENANT AXIS at the executor, where
+    // `tests/unit/job-scope-audit.test.ts` looks for it. Passing an opaque
+    // `payload` scopes correctly one call away and reads, to that audit and to
+    // a human, exactly like an executor that forgot to scope at all.
+    const r = await runPushSend({
+        tenantId: payload.tenantId,
+        recipientUserId: payload.recipientUserId,
+        title: payload.title,
+        body: payload.body,
+        link: payload.link,
+        collapseKey: payload.collapseKey,
+    });
+    // scanned = transports attempted, actioned = transports that accepted.
+    // `skipped` is the difference rather than a third count: a transport that
+    // is unconfigured returns without throwing, so it is attempted-and-not-
+    // delivered, which is exactly "skipped" here.
+    return makeResult(
+        'push-send', startedAt, startMs,
+        r.attempted, r.delivered, r.attempted - r.delivered,
+        { attempted: r.attempted, delivered: r.delivered },
+    );
+});
+
 // ── process-outbox ───────────────────────────────────────────────────
 //
 // Kept separate from `daily-evidence-expiry`, which also flushes: that job's

@@ -127,7 +127,7 @@ describe('OfflineFieldPanel — offline operator flow', () => {
         saveFieldSnapshot('task-1', fieldOp());
         setOnline(false);
 
-        render(<OfflineFieldPanel taskId="task-1" />);
+        render(<OfflineFieldPanel taskId="task-1" vapidPublicKey={null} />);
 
         // The snapshot's line renders — NOT "Field operation not found".
         expect(await screen.findByText('North 40')).toBeInTheDocument();
@@ -144,7 +144,7 @@ describe('OfflineFieldPanel — offline operator flow', () => {
         // No snapshot saved on purpose.
         setOnline(false);
 
-        render(<OfflineFieldPanel taskId="task-unseen" />);
+        render(<OfflineFieldPanel taskId="task-unseen" vapidPublicKey={null} />);
 
         expect(await screen.findByText('No signal')).toBeInTheDocument();
         expect(screen.queryByText(/not found/i)).not.toBeInTheDocument();
@@ -156,7 +156,7 @@ describe('OfflineFieldPanel — offline operator flow', () => {
         // still read as missing.
         setOnline(true);
 
-        render(<OfflineFieldPanel taskId="task-unseen" />);
+        render(<OfflineFieldPanel taskId="task-unseen" vapidPublicKey={null} />);
 
         expect(await screen.findByText(/not found/i)).toBeInTheDocument();
         expect(screen.queryByText('No signal')).not.toBeInTheDocument();
@@ -164,7 +164,7 @@ describe('OfflineFieldPanel — offline operator flow', () => {
 
     it('mark offline → queued + optimistic + snapshot; syncs the PATCH on reconnect', async () => {
         swrReturn = { data: fieldOp(), isLoading: false, mutate: jest.fn(async () => {}) };
-        render(<OfflineFieldPanel taskId="task-1" />);
+        render(<OfflineFieldPanel taskId="task-1" vapidPublicKey={null} />);
         await screen.findByText('North 40');
 
         // Go offline, then mark the line Done.

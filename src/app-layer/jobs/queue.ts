@@ -23,6 +23,8 @@ import { createRedisClient } from '@/lib/redis';
 import {
     QUEUE_NAME,
     SOIL_QUEUE_NAME,
+    PUSH_QUEUE_NAME,
+    PUSH_QUEUE_JOBS,
     SOIL_QUEUE_JOBS,
     JOB_DEFAULTS,
     type JobName,
@@ -35,6 +37,7 @@ import { logger } from '@/lib/observability/logger';
 const globalForQueue = globalThis as unknown as {
     __bullmq_queue?: Queue;
     __bullmq_soil_queue?: Queue;
+    __bullmq_push_queue?: Queue;
 };
 
 /**
@@ -70,6 +73,40 @@ export function getQueue(): Queue {
     }
 
     return globalForQueue.__bullmq_queue;
+}
+
+/**
+ * Returns the shared BullMQ Queue for push delivery — P7.4 (#1993).
+ *
+ * Separate queue so its Worker carries an independent limiter: a fan-out on
+ * the main queue would consume its `max: 50 / 60s` budget and starve every
+ * other job type, `process-outbox` included. Same Redis connection lifecycle
+ * as `getQueue`.
+ *
+ * `attempts` and `backoff` here are the queue-level DEFAULT; `enqueue()`
+ * overrides them per job from `JOB_DEFAULTS['push-send']`, which is where the
+ * reasoning for 3-and-5s lives. They are set anyway rather than left to
+ * BullMQ's own default of one attempt, so a job added by any other path is
+ * still retried.
+ */
+export function getPushQueue(): Queue {
+    if (!globalForQueue.__bullmq_push_queue) {
+        const connection = createRedisClient();
+        globalForQueue.__bullmq_push_queue = new Queue(PUSH_QUEUE_NAME, {
+            connection: connection as ConnectionOptions,
+            defaultJobOptions: {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 5000 },
+                removeOnComplete: 100,
+                removeOnFail: 500,
+            },
+        });
+        logger.info('BullMQ push queue initialized', {
+            component: 'queue',
+            queueName: PUSH_QUEUE_NAME,
+        });
+    }
+    return globalForQueue.__bullmq_push_queue;
 }
 
 /**
@@ -114,7 +151,14 @@ export async function enqueue<T extends JobName>(
     payload: JobPayload<T>,
     options?: Partial<JobsOptions>,
 ) {
-    const queue = SOIL_QUEUE_JOBS.has(name) ? getSoilQueue() : getQueue();
+    // Routing by job name, the same mechanism the soil queue introduced. A
+    // chain rather than a map because there are three: adding a fourth
+    // dedicated queue is the point at which this should become a lookup.
+    const queue = PUSH_QUEUE_JOBS.has(name)
+        ? getPushQueue()
+        : SOIL_QUEUE_JOBS.has(name)
+          ? getSoilQueue()
+          : getQueue();
     const defaults = JOB_DEFAULTS[name];
 
     const job = await queue.add(name, payload, {

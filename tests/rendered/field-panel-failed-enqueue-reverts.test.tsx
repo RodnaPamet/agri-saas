@@ -88,7 +88,7 @@ const OFFLINE = messages.offline as unknown as Record<string, string>;
 function mount() {
     return render(
         <NextIntlClientProvider locale="en" messages={messages}>
-            <OfflineFieldPanel taskId="t1" />
+            <OfflineFieldPanel taskId="t1" vapidPublicKey={null} />
         </NextIntlClientProvider>,
     );
 }

@@ -88,7 +88,18 @@ function applyLineStatus(
     return next;
 }
 
-export function OfflineFieldPanel({ taskId }: { taskId: string }) {
+export function OfflineFieldPanel({
+    taskId,
+    vapidPublicKey,
+}: {
+    taskId: string;
+    /**
+     * Forwarded straight to `PushOptIn`. Read from `env` by the server page
+     * at REQUEST time (P7.4, #1993) rather than inlined at build — see that
+     * component for what the build-time version cost.
+     */
+    vapidPublicKey: string | null;
+}) {
     const t = useTranslations('offline');
     const buildUrl = useTenantApiUrl();
     const { isMobile } = useMediaQuery();
@@ -286,7 +297,7 @@ export function OfflineFieldPanel({ taskId }: { taskId: string }) {
                     <Heading level={2}>{view.task.key ? `${view.task.key} · ` : ''}{view.task.title}</Heading>
                     <p className="text-sm text-content-muted">{t('progress', { done: view.progress.done, total: view.progress.total, status: view.task.status })}</p>
                 </div>
-                <PushOptIn className="shrink-0" />
+                <PushOptIn className="shrink-0" vapidPublicKey={vapidPublicKey} />
             </div>
 
             {/* The map is the operator's primary view: full-bleed and tall
