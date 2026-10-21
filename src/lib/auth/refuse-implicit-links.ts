@@ -59,13 +59,22 @@
  * - Deliberate provider linking: there is no such feature in this codebase,
  *   and `allowDangerousEmailAccountLinking` is set on no provider.
  *
- * ## The refusal is currently SILENT to the person, and that is a known gap
+ * ## The refusal carries a specific code, but still no copy (#2135)
  *
  * A throw here fails the sign-in — which is the security property — and
- * next-auth redirects to `/login` with an error code in the query. That page
- * does not read `?error=`, so the person sees the login form again with no
- * explanation. Worth fixing, and separable: it is a copy change on a public
- * surface rather than part of this.
+ * next-auth redirects to `/login` with an error code in the query. Two
+ * separate things have to be right for a person to learn why:
+ *
+ *   1. the CODE must say which failure this was. It does now: see
+ *      `NEXT_AUTH_DISPATCH_NAME`. Before that it arrived as the generic
+ *      `Callback`, indistinguishable from a transient OAuth failure, which
+ *      also means a client cannot tell "never retry this" from "retry".
+ *   2. `/login` must render it. It does not — that page reads no `?error=`
+ *      at all, for any of next-auth's ten codes. Still open as #2135: it is
+ *      copy on a public surface in two languages, not part of this.
+ *
+ * So the refusal remains silent to the person today. It is no longer
+ * anonymous to a client or to the logs.
  *
  * @module lib/auth/refuse-implicit-links
  */
@@ -81,14 +90,38 @@ import { logger } from '@/lib/observability/logger';
  */
 export const IMPLICIT_LINK_GRACE_MS = 10_000;
 
-/** Thrown instead of linking. Named so the reason survives into the logs. */
+/**
+ * The `error.name` next-auth dispatches on to choose the redirect.
+ *
+ * `next-auth/core/routes/callback.js` compares `error.name` as a STRING, not
+ * with `instanceof`, and this is the name of its own error for "the account is
+ * already associated with another user" — which is exactly what this refusal
+ * means. Setting it sends the person to `?error=OAuthAccountNotLinked`
+ * instead of `?error=Callback`, the generic bucket a transient OAuth failure
+ * also lands in.
+ *
+ * This deliberately DISAGREES with the class name, so it looks like a mistake.
+ * It is not, and the two names are doing different jobs: the class is what
+ * `instanceof` and our tests match on, and this string is what next-auth
+ * reads. Renaming it to agree would restore the generic redirect silently,
+ * which is why `tests/guards/the-refusal-code-is-distinguishable.test.ts`
+ * pins it against next-auth's own source rather than against itself.
+ */
+export const NEXT_AUTH_DISPATCH_NAME = 'AccountNotLinkedError';
+
+/**
+ * Thrown instead of linking.
+ *
+ * The reason survives into the logs via the message and via the explicit
+ * `logger.warn` at the call site — not via `name`, which is spoken for.
+ */
 export class ImplicitAccountLinkRefused extends Error {
     constructor(provider: string) {
         super(
             `Refusing to link an unseen ${provider} identity to an existing session. ` +
                 `Sign out first, then sign in with that account.`,
         );
-        this.name = 'ImplicitAccountLinkRefused';
+        this.name = NEXT_AUTH_DISPATCH_NAME;
     }
 }
 
