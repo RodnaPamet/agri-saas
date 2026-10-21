@@ -20,8 +20,23 @@
 import { test, expect } from '@playwright/test';
 import { loginAndGetTenant, safeGoto, waitForHydration, expectRouteTransition, instrumentRowGestures } from './e2e-utils';
 
+/**
+ * TEMPORARY — DIAGNOSTIC BRANCH, NOT FOR MERGE (#1076).
+ *
+ * The flake fires in ~26% of main runs, which makes each run one sample and
+ * the answer days away. Ten copies in one run gives a ~95% chance of at least
+ * one capture, in an isolated CI database, with the corrected probe from
+ * #2118 attached. The alternative was a local repeat run, which would have
+ * migrated and seeded the test database that sibling sessions' jest runs
+ * share.
+ *
+ * This branch exists to be read and deleted. Nothing here is proposed.
+ */
+const REPEATS = 10;
+
 test.describe('EntityDetailLayout', () => {
-    test('asset detail page renders the shell — breadcrumbs, header, body', async ({
+    for (const attempt of Array.from({ length: REPEATS }, (_, i) => i + 1)) {
+    test(`asset detail page renders the shell — breadcrumbs, header, body [sample ${attempt}/${REPEATS}]`, async ({
         page,
     }) => {
         const tenantSlug = await loginAndGetTenant(page);
@@ -85,4 +100,5 @@ test.describe('EntityDetailLayout', () => {
             page.locator('[data-entity-detail-layout]'),
         ).toBeVisible();
     });
+    }
 });
