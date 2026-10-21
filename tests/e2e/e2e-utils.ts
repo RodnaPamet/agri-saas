@@ -766,6 +766,79 @@ export async function openTreatmentFormWarm(
  * first load. A real hang still fails, 15 seconds later than before, which
  * is the cheaper of the two errors.
  */
+/**
+ * The navigation counters, read BEFORE a gesture so the failure can report a
+ * DELTA (#1076).
+ *
+ * Why a baseline is required rather than nice to have: `SPA navigations` is a
+ * CUMULATIVE count over the session, and by the time a row gesture happens the
+ * test has already navigated several times — sign-in, the tenant picker, the
+ * list. So an absolute reading of `3` or `4` at failure says nothing about
+ * whether THIS gesture committed a navigation, which is the only question it
+ * was added to answer.
+ *
+ * I reported those absolutes in two #1076 captures and had to withdraw both
+ * readings for exactly this reason. A cumulative counter without a baseline is
+ * the same mistake as the `navigation entries` probe it replaced, one level up:
+ * the number is real, and it does not mean what the label implies.
+ *
+ * Tolerant by construction — a closed page or a missing Navigation API yields
+ * `-1` rather than throwing, because this runs in the normal path and must
+ * never be the reason a test fails.
+ */
+/**
+ * The one line that answers "did this gesture commit a client navigation?".
+ *
+ * A delta of 0 on `spa` is a POSITIVE statement — the router committed nothing
+ * — which is what separates "the push was dropped in flight" from "the push
+ * never happened". Absent a baseline it says so instead of implying an answer.
+ */
+async function describeNavDelta(
+    page: Page,
+    before?: { spa: number; history: number },
+): Promise<string> {
+    if (!before) {
+        return (
+            '  NAV DELTA          : (no baseline — pass `navBefore: await readNavCounters(page)`;' +
+            ' the cumulative lines above cannot answer whether THIS gesture navigated)\n'
+        );
+    }
+    const after = await readNavCounters(page);
+    const d = (a: number, b: number) => (a === -1 || b === -1 ? null : a - b);
+    const spa = d(after.spa, before.spa);
+    const hist = d(after.history, before.history);
+    return (
+        `  NAV DELTA          : spa ${before.spa} -> ${after.spa}` +
+        `${spa === null ? '' : ` (${spa >= 0 ? '+' : ''}${spa})`}` +
+        `, history ${before.history} -> ${after.history}` +
+        `${hist === null ? '' : ` (${hist >= 0 ? '+' : ''}${hist})`}\n` +
+        `                       ${
+            spa === null
+                ? '<- no Navigation API; history is the weaker fallback'
+                : spa === 0
+                  ? '<- ZERO client navigations committed by this gesture'
+                  : `<- ${spa} client navigation(s) WERE committed, so the push landed and the paint or the route did not`
+        }\n`
+    );
+}
+
+export async function readNavCounters(
+    page: Page,
+): Promise<{ spa: number; history: number }> {
+    try {
+        return await page.evaluate(() => {
+            const nav = (window as unknown as { navigation?: { entries(): unknown[] } })
+                .navigation;
+            return {
+                spa: nav ? nav.entries().length : -1,
+                history: history.length,
+            };
+        });
+    } catch {
+        return { spa: -1, history: -1 };
+    }
+}
+
 export async function expectRouteTransition(
     page: Page,
     opts: {
@@ -783,6 +856,16 @@ export async function expectRouteTransition(
          * next fact needed, and only the caller can see the before.
          */
         rowsBefore?: number;
+        /**
+         * The navigation counters BEFORE the gesture, from `readNavCounters`.
+         *
+         * Without it the capture can only print cumulative totals, which do
+         * not distinguish "this gesture committed a client navigation" from
+         * "the test navigated three times earlier and this gesture did
+         * nothing". With it, a delta of 0 on `spa` is the positive statement
+         * that no client navigation was committed.
+         */
+        navBefore?: { spa: number; history: number };
     },
 ): Promise<void> {
     // `waitUntil: 'domcontentloaded'`, not Playwright's default of `'load'`.
@@ -860,6 +943,7 @@ export async function expectRouteTransition(
                     ? ''
                     : `  rows BEFORE gesture: ${opts.rowsBefore}   <- compare with \`rows\` below;` +
                       ` a DROP means the set changed under the gesture\n`) +
+                (await describeNavDelta(page, opts.navBefore)) +
                 (await describeListState(page)),
         );
     }
@@ -918,6 +1002,7 @@ export async function expectRouteTransition(
                     expectedUrl: String(opts.url),
                     failedRequests,
                 })) +
+                (await describeNavDelta(page, opts.navBefore)) +
                 (rolledBack
                     ? `  --- the URL ROLLED BACK to a non-matching route, so the list state below is THIS page's ---\n` +
                       (await describeListState(page))
@@ -1133,9 +1218,9 @@ async function describeListState(page: Page): Promise<string> {
             `  SPA navigations    : ${
                 snap.navigationEntries === -1
                     ? '(no Navigation API)'
-                    : `${snap.navigationEntries}   <- Navigation API; >1 means a CLIENT navigation was committed`
+                    : `${snap.navigationEntries} (cumulative — read the DELTA line below, not this)`
             }\n` +
-            `  history length     : ${snap.historyLength}   <- a router.push grows this; a replace does not\n` +
+            `  history length     : ${snap.historyLength} (cumulative)\n` +
             `  document loads     : ${snap.docNavs}   <- >1 means a full page load or RELOAD happened\n` +
             `  activeElement      : ${snap.activeElement}\n` +
             `  row gestures       : ${
