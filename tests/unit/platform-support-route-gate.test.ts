@@ -71,6 +71,11 @@ jest.mock('@/app-layer/usecases/company', () => companyUsecase);
 
 const marketManual = { upsertManualPriceSeries: jest.fn().mockResolvedValue({ count: 0 }) };
 jest.mock('@/app-layer/usecases/market-manual-prices', () => marketManual);
+const pppRegister = {
+    importPppRegister: jest.fn().mockResolvedValue({ importId: 'imp_1', entryCount: 0 }),
+    describePppRegister: jest.fn().mockResolvedValue({ live: null, incompleteImports: 0 }),
+};
+jest.mock('@/app-layer/usecases/ppp-register-admin', () => pppRegister);
 
 const promotionImage = {
     uploadPromotionImage: jest.fn().mockResolvedValue({ url: '/x.webp' }),
@@ -88,6 +93,7 @@ import * as promotionImageRoute from '@/app/api/t/[tenantSlug]/admin/promotions/
 import * as companiesRoute from '@/app/api/t/[tenantSlug]/admin/companies/route';
 import * as companyByIdRoute from '@/app/api/t/[tenantSlug]/admin/companies/[id]/route';
 import * as marketPricesRoute from '@/app/api/t/[tenantSlug]/admin/market-prices/route';
+import * as pppRegisterRoute from '@/app/api/t/[tenantSlug]/admin/ppp-register/route';
 
 const PLATFORM_SLUG = 'agrent-platform';
 /** A farm. Holds `admin.manage` in its OWN tenant — that is the whole point. */
@@ -189,6 +195,27 @@ const CASES: Case[] = [
         params: {},
         body: {},
         effect: marketManual.upsertManualPriceSeries,
+    },
+    // #2077 — the ПРЗ register. The POST case carries NO body on purpose: the
+    // real handler's next line after the gate is `await req.formData()`, which
+    // throws on a bodyless request. So a 404 here proves the gate runs BEFORE
+    // the upload is parsed, not merely before the register is written — which
+    // is the ordering the route's comment claims and nothing else checks.
+    {
+        name: 'ppp-register POST',
+        handler: pppRegisterRoute.POST as any,
+        method: 'POST',
+        path: '/admin/ppp-register',
+        params: {},
+        effect: pppRegister.importPppRegister,
+    },
+    {
+        name: 'ppp-register GET',
+        handler: pppRegisterRoute.GET as any,
+        method: 'GET',
+        path: '/admin/ppp-register',
+        params: {},
+        effect: pppRegister.describePppRegister,
     },
 ];
 

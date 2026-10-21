@@ -193,6 +193,15 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'the isolation practice.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/ppp-register(\\/.*)?$`),
+        permission: 'admin.manage',
+        note:
+            'The BABH register of approved plant-protection products \u2014 a dose ' +
+            'uploaded here is suggested to EVERY tenant and may be transcribed ' +
+            'onto a regulated document. Platform-tenant gated in-handler; ' +
+            'admin.manage is the audited role floor, not the isolation practice.',
+    },
+    {
         path: new RegExp(`^${T}\\/schemes(\\/.*)?$`),
         permission: 'admin.manage',
         methods: ['POST', 'PUT', 'PATCH', 'DELETE'],

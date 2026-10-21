@@ -952,3 +952,96 @@ model FarmProfile {
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 }
+
+/// One UPLOAD of the БАБХ register of approved plant-protection products
+/// (#2077). Owner's ruling 2026-10-20: the register arrives as a manual
+/// upload by the operator, not a scheduled fetch and not a scrape.
+///
+/// ## An import is a dated SNAPSHOT, never an accumulation
+///
+/// The read uses the LATEST import only. Older imports are kept for
+/// provenance — the suggestion carries the date it came from, which is the
+/// owner's answer to "may a stale suggestion be shown" — but they are never
+/// merged. Merging would produce a register nobody can reason about: a row
+/// withdrawn in the newest file would still be matched from an older one.
+///
+/// ## Why not a fetch
+///
+/// We own neither the format nor the URL, so a parser against them can break
+/// overnight and the failure mode is not an error — it is WRONG DOSES,
+/// rendered identically to right ones. A manual upload makes a refresh a
+/// deliberate act with a known date, which turns staleness from silent into
+/// visible. That is the property that matters for a regulatory figure.
+model PppRegisterImport {
+  id         String   @id @default(cuid())
+  importedAt DateTime @default(now())
+  /// The operator who uploaded it, as an OPAQUE id rather than a relation.
+  ///
+  /// Deliberate: GDPR erasure deletes `User` rows, and a relation would
+  /// either cascade a national regulatory register away with an operator's
+  /// account or have to be registered as an exception in `eraseAccount`.
+  /// Provenance of an upload is not personal data about the uploader, and the
+  /// register must outlive them.
+  importedById String
+  /// The uploaded file's name, for the operator to recognise what is live.
+  sourceName String
+  /// Rows accepted. Stored rather than counted on read so "the import that
+  /// silently parsed three rows" is visible beside its date.
+  entryCount Int
+  /// Stamped LAST, after every entry row is written.
+  ///
+  /// The read considers only imports with a non-null `completedAt`, which
+  /// makes a half-written import invisible BY CONSTRUCTION rather than by
+  /// relying on a transaction being short enough to finish. The failure it
+  /// closes is the worst this table can produce: the read takes the LATEST
+  /// import, so an upload that died a third of the way through would
+  /// otherwise become the live national register missing two thirds of its
+  /// rows — and a miss returns nothing, which is indistinguishable from "no
+  /// product is approved for this crop".
+  completedAt DateTime?
+
+  entries PppRegisterEntry[]
+
+  @@index([importedAt])
+}
+
+/// One crop × product row of the БАБХ register (#2077).
+///
+/// The register is NATIONAL: identical for every farm, so not tenant-scoped —
+/// the same decision as `MarketPriceSeries`, and for the same reason.
+model PppRegisterEntry {
+  id       String @id @default(cuid())
+  importId String
+  /// As the register spells it. Matching a farm's own crop to this is the
+  /// read's problem, not the import's — storing a normalised guess here would
+  /// bake one matching rule into the data.
+  crop        String
+  productName String
+  /// ЗЗР рег. № — the RELIABLE key. A product name differs by spelling,
+  /// transliteration and trade dress; a registration number does not, which
+  /// is why the read prefers it and falls back to the name.
+  pppRegistrationNo String?
+  /// What the product is approved against for this crop.
+  pests String[]
+  /// A RANGE, because the register quotes one. A single value is stored with
+  /// both bounds equal rather than in a separate column, so a reader never has
+  /// to ask which of two shapes it is looking at.
+  doseMin  Decimal? @db.Decimal(14, 4)
+  doseMax  Decimal? @db.Decimal(14, 4)
+  doseUnit String?
+  /// Карантинен срок in days.
+  quarantinePeriodDays Int?
+  /// The register says this product is WITHDRAWN.
+  ///
+  /// The read must suggest NOTHING for such a row — owner's ruling: a cached
+  /// dose for a withdrawn product is worse than no suggestion at all. Kept as
+  /// a row rather than dropped at import so the withdrawal is a fact the
+  /// product can state, not an absence it has to infer.
+  withdrawn Boolean @default(false)
+
+  import PppRegisterImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  /// The read's own shape: newest import, then crop + product.
+  @@index([importId, crop, productName])
+  @@index([importId, pppRegistrationNo])
+}

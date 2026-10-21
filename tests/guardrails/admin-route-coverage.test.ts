@@ -55,6 +55,12 @@ const ADMIN_ONLY_ROUTES = [
     // to the owner of any farm, since every tenant owner holds it.
     'admin/market-prices/overrides/route.ts',
     'admin/market-prices/overrides/[commodity]/route.ts',
+    // The БАБХ ПРЗ register upload (#2077). Same two gates, and the stakes
+    // are the highest of the cluster: a dose loaded here is suggested to every
+    // tenant and may be transcribed onto a regulated document, so
+    // `admin.manage` alone — held by the OWNER of every farm — would be the
+    // wrong boundary by a wide margin.
+    'admin/ppp-register/route.ts',
     // /admin/* routes
     'admin/members/route.ts',
     'admin/members/[membershipId]/route.ts',

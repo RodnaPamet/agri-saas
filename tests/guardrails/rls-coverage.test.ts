@@ -287,6 +287,25 @@ const GLOBAL_BY_DESIGN_MODELS: ReadonlyMap<string, string> = new Map([
     ['MarketPriceSeries', 'Global market-price series — public reference data / k-anonymised aggregate.'],
     ['MarketPricePoint', 'A dated observation on a MarketPriceSeries; inherits the series decision.'],
     ['MarketNewsItem', 'Global agri-news cache aggregated from public feeds.'],
+    [
+        'PppRegisterImport',
+        '#2077 \u2014 one dated upload of the \u0411\u0410\u0411\u0425 register of approved ' +
+            'plant-protection products. NATIONAL public reference data: the register is identical ' +
+            'for every farm, which is the same decision as MarketPriceSeries above and for the same ' +
+            'reason. It carries no tenant column because there is nothing tenant-specific in it \u2014 ' +
+            'a dose approved for wheat is approved for wheat everywhere. `importedById` is an OPAQUE ' +
+            'id rather than a relation, deliberately: GDPR erasure deletes User rows, and a foreign ' +
+            'key would either cascade a national register away with an operator\u2019s account or need ' +
+            'registering as an exception in `eraseAccount`.',
+    ],
+    [
+        'PppRegisterEntry',
+        'One crop \u00d7 product row of a PppRegisterImport; inherits the import\u2019s decision. ' +
+            'Read-only to the application \u2014 written solely by the operator upload path and never ' +
+            'by a tenant request \u2014 and holds nothing about any farm: a crop name, a product name, ' +
+            'a \u0417\u0417\u0420 registration number, pests, a dose range and a quarantine period, all of ' +
+            'which are published facts.',
+    ],
     ['NewsDerivedEvent', 'AI-derived calendar proposal from a global news item; a deadline is one fact for everyone.'],
 ]);
 
