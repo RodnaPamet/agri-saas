@@ -77,7 +77,28 @@ export interface StreamFrame {
      * channel.
      */
     id: string;
-    /** Which farm the row belongs to. Never absent, on any kind. */
+    /**
+     * Which farm the row belongs to. Never absent, on any kind.
+     *
+     * ## For `listing` it names the SELLER, and is NOT a filter
+     *
+     * Owner ruling, 2026-10-21. The semantics differ by kind and the
+     * difference matters, because the obvious thing to do with this field is
+     * wrong for one of them:
+     *
+     *   - `notification` — the farm whose row this is. A client belonging to
+     *     several farms filters on it before refetching, which is why
+     *     agrent-ios asked for it to be non-optional.
+     *   - `listing` — the farm that POSTED it. `listActiveListings` browses
+     *     "across ALL tenants", so the value of Борса is other farms'
+     *     listings. A client that filtered these to its own memberships, by
+     *     analogy with notifications, would hide **every listing worth
+     *     seeing** and show nothing new — silently.
+     *
+     * So it is useful here for display, and for ignoring your own farm's
+     * listings if a surface wants to. It is not an authorisation or relevance
+     * filter. See #2123 for the broadcast this kind is waiting on.
+     */
     tenantId: string;
 }
 

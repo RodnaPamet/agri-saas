@@ -55,7 +55,7 @@ const StreamFrameSchema = z
         }),
         tenantId: z.string().openapi({
             description:
-                'Which farm the row belongs to. Present on EVERY kind and never optional: a client belonging to several farms filters on it before refetching, and a field present on one kind only would make that filter conditional on the kind.',
+                'Which farm the row belongs to. Present on EVERY kind and never optional — a field present on one kind only would make a client\u2019s handling conditional on the kind. **Its meaning differs by kind, and one reading is a trap:** for `notification` it is the farm whose row this is, and a client belonging to several farms may filter on it before refetching. For `listing` it is the farm that POSTED the listing \u2014 the exchange browses across all farms, so filtering those to your own memberships would hide every listing worth seeing. Use it for display, not as a relevance filter.',
         }),
     })
     .openapi('MeStreamEvent', {
