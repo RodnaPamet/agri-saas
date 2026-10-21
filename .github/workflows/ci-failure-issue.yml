@@ -110,6 +110,18 @@ on:
       # unreported with nothing saying so. A stale POINTER never reaches
       # this channel: the script files its own issue and exits 0.
       - "Flake ledger pointers"
+      # Hourly cron (#1998). Watched for the same reason as the flake ledger
+      # above, and the distinction is worth stating: the probe files its OWN
+      # issue when it RUNS and reports BROKEN, which carries the verdict
+      # (OK / OFF / BROKEN) and the detail. What it cannot report is never
+      # having run — a dead runner, a failed checkout, a cancelled job — and
+      # that is precisely the silent-trigger case this notifier exists for.
+      #
+      # So a genuine channel outage may produce two issues: the probe's, which
+      # says what broke, and this one, which says the run was red. That is
+      # accepted over the alternative, which is a scheduled probe that can stop
+      # running with nothing saying so — the #805 failure exactly.
+      - "Realtime probe"
     types: [completed]
 
 permissions:

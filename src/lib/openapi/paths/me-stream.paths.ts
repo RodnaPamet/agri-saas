@@ -63,7 +63,34 @@ const StreamFrameSchema = z
             'The JSON on one `data:` line. IDS ONLY, by design — the row is authoritative and the event is a hint, so a client refetches under its own authorisation rather than rendering what arrived on a broadcast channel.',
     });
 
+const ProbeAckSchema = z
+    .object({
+        id: z.string().openapi({
+            description:
+                'The id that was published. Match the `data:` frame on your open stream against THIS value — asserting that something arrived is not the same as asserting your event did.',
+        }),
+    })
+    .openapi('MeStreamProbeAck', {
+        description:
+            'The id published to the caller\u2019s own realtime channel. No row was written, so a client that receives it and refetches will find nothing new — the point is the transport, not the content.',
+    });
+
 export function registerMeStreamPaths(registry: OpenAPIRegistry): void {
+    op(registry, {
+        method: 'post',
+        path: '/api/me/probe-event',
+        operationId: 'publishMyProbeEvent',
+        summary: 'Publish one event to your own realtime channel',
+        description:
+            'Publishes one event to the CALLING USER\u2019S own channel and writes nothing. It exists so a synthetic probe can assert that a realtime event really arrives end to end (P7.9) — every other producer notifies somebody else, and task assignment is deliberately silent when the assignee is the actor, so there is no way to provoke an event for yourself through the product\u2019s own surfaces. ' +
+            '\n\n**You can only ping yourself.** The channel is built from your own session, so no parameter names a recipient. The worst outcome is that your own tabs refetch your own notification list. ' +
+            '\n\n**No `Notification` row is created**, so this cannot put text in front of anybody, including you. A client that receives the id refetches and finds nothing new — which is the correct outcome, because the assertion is about the transport. ' +
+            '\n\n**Deliberately NOT gated on `notifications.sse`.** With the flag off, a gated endpoint would refuse here AND the stream would answer 204, leaving a probe unable to tell "off by decision" from "the publisher is broken". Publishing is always allowed; whether anybody is listening is the stream\u2019s business. ' +
+            '\n\nThe id is prefixed `probe-` and is deliberately not cuid-shaped, so it can never be mistaken for a `Last-Event-ID` replay cursor.',
+        tags: ['Notifications'],
+        success: { status: 202, description: 'Published.', schema: ProbeAckSchema },
+    });
+
     op(registry, {
         method: 'get',
         path: '/api/me/stream',

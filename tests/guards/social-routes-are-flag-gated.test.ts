@@ -131,6 +131,27 @@ function handlerSpans(src: string): Array<[string, string]> {
  * waived rather than fixed. Same style as `ALLOWED_API_DIRS` and `KNOWN_EMPTY`.
  */
 const UNGATED_SOCIAL_HANDLERS: Readonly<Record<string, string>> = {
+    // ── P7.9 — the probe endpoint, ungated so the probe can tell OFF from BROKEN ──
+    //
+    // `POST /api/me/probe-event` publishes one event to the CALLER'S OWN
+    // realtime channel and writes nothing. Gating it on `notifications.sse`
+    // would defeat the thing it exists for: with the flag off, a probe would be
+    // refused HERE and also get a 204 from the stream, and could not tell "off
+    // by decision" from "the publisher is broken". That distinction is #1998's
+    // second explicit requirement, and collapsing it gives a monitor that
+    // either pages on an intentional state or stays silent through an outage.
+    //
+    // The blast radius a switch would contain is nil in the direction that
+    // matters: there is no parameter naming a recipient, so a caller can only
+    // ping themselves, and no `Notification` row is written — so it cannot put
+    // text in front of anybody, including the caller. The worst outcome is
+    // that your own tabs refetch your own list, which a reload already does.
+    //
+    // Publishing is always allowed; whether anybody is LISTENING is the
+    // stream's business, and the stream is gated.
+    'src/app/api/me/probe-event/route.ts#POST':
+        'P7.9 (#1998) — gating this would make a probe unable to distinguish "the channel is off by decision" from "the publisher is broken", which is the second requirement of the issue it exists for. It can only ping the caller (no recipient parameter) and writes no row, so a flag would contain nothing.',
+
     // ── P5.2a — DSA Art 16, a LEGAL DUTY rather than a judgement call (#1593) ──
     //
     // Both handlers, and both for one reason: a flag defaulting OFF means the
