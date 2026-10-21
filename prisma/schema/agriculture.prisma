@@ -957,12 +957,31 @@ model FarmProfile {
 /// (#2077). Owner's ruling 2026-10-20: the register arrives as a manual
 /// upload by the operator, not a scheduled fetch and not a scrape.
 ///
+/// ## NOTHING READS THIS, and that is deliberate (2026-10-21)
+///
+/// These two tables exist to be LOADED and nothing more. The crop × product
+/// suggestion they were built for was retired by the owner — asked directly,
+/// confirmed 2026-10-21 — who chose to keep the loader and drop the
+/// suggestions. #2077 is closed as not planned.
+///
+/// So the only writer is the operator upload
+/// (`POST /api/t/{tenantSlug}/admin/ppp-register`) and there is no reader at
+/// all. Said this plainly because "a register exists but nothing reads it" is
+/// exactly the state a later reader tries to be helpful about: if you are
+/// about to write that reader, the decision above is the thing to reopen
+/// first, not the gap to close.
+///
+/// Every invariant below is phrased for a read that does not exist. They are
+/// kept rather than deleted because they are what would make an uploaded
+/// register trustworthy if one is ever written, and because they are the
+/// reason the loader was worth keeping instead of reverting.
+///
 /// ## An import is a dated SNAPSHOT, never an accumulation
 ///
-/// The read uses the LATEST import only. Older imports are kept for
-/// provenance — the suggestion carries the date it came from, which is the
-/// owner's answer to "may a stale suggestion be shown" — but they are never
-/// merged. Merging would produce a register nobody can reason about: a row
+/// Any read must use the LATEST import only. Older imports are kept for
+/// provenance — a suggestion would carry the date it came from, which was the
+/// owner's answer to "may a stale suggestion be shown" — but they must never
+/// be merged. Merging would produce a register nobody can reason about: a row
 /// withdrawn in the newest file would still be matched from an older one.
 ///
 /// ## Why not a fetch
@@ -990,10 +1009,10 @@ model PppRegisterImport {
   entryCount Int
   /// Stamped LAST, after every entry row is written.
   ///
-  /// The read considers only imports with a non-null `completedAt`, which
+  /// Any read must consider only imports with a non-null `completedAt`, which
   /// makes a half-written import invisible BY CONSTRUCTION rather than by
   /// relying on a transaction being short enough to finish. The failure it
-  /// closes is the worst this table can produce: the read takes the LATEST
+  /// closes is the worst this table can produce: a read takes the LATEST
   /// import, so an upload that died a third of the way through would
   /// otherwise become the live national register missing two thirds of its
   /// rows — and a miss returns nothing, which is indistinguishable from "no
@@ -1019,7 +1038,7 @@ model PppRegisterEntry {
   productName String
   /// ЗЗР рег. № — the RELIABLE key. A product name differs by spelling,
   /// transliteration and trade dress; a registration number does not, which
-  /// is why the read prefers it and falls back to the name.
+  /// is why a read should prefer it and fall back to the name.
   pppRegistrationNo String?
   /// What the product is approved against for this crop.
   pests String[]
@@ -1033,7 +1052,7 @@ model PppRegisterEntry {
   quarantinePeriodDays Int?
   /// The register says this product is WITHDRAWN.
   ///
-  /// The read must suggest NOTHING for such a row — owner's ruling: a cached
+  /// A read must suggest NOTHING for such a row — owner's ruling: a cached
   /// dose for a withdrawn product is worse than no suggestion at all. Kept as
   /// a row rather than dropped at import so the withdrawal is a fact the
   /// product can state, not an absence it has to infer.
@@ -1041,7 +1060,7 @@ model PppRegisterEntry {
 
   import PppRegisterImport @relation(fields: [importId], references: [id], onDelete: Cascade)
 
-  /// The read's own shape: newest import, then crop + product.
+  /// Shaped for the read that was retired: newest import, then crop + product.
   @@index([importId, crop, productName])
   @@index([importId, pppRegistrationNo])
 }

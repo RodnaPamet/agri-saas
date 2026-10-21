@@ -13615,7 +13615,7 @@ exports[`API contract — per-schema snapshots schema: PppRegisterState 1`] = `
     },
     "incompleteImports": {
       "type": "integer",
-      "description": "Imports with no \`completedAt\`. Non-zero means an upload died part-way. Those are invisible to the read by construction, so this is a diagnostic rather than a warning about correctness."
+      "description": "Imports with no \`completedAt\`. Non-zero means an upload died part-way. Those are invisible to any read by construction, so this is a diagnostic rather than a warning about correctness."
     }
   },
   "required": [

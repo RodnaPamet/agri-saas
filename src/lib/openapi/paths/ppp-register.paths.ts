@@ -112,7 +112,7 @@ const PppRegisterState = z
         incompleteImports: z.number().int().openapi({
             description:
                 'Imports with no `completedAt`. Non-zero means an upload died part-way. Those ' +
-                'are invisible to the read by construction, so this is a diagnostic rather ' +
+                'are invisible to any read by construction, so this is a diagnostic rather ' +
                 'than a warning about correctness.',
         }),
     })
@@ -131,11 +131,17 @@ export function registerPppRegisterPaths(registry: OpenAPIRegistry): void {
             'failure is not an exception, it is WRONG DOSES rendered identically to right ' +
             'ones. A manual upload makes a refresh a deliberate act with a known date, which ' +
             'turns staleness from silent into visible.' +
-            '\n\n**An import REPLACES; it never merges.** The read takes the latest completed ' +
-            'import and nothing else. Older imports are kept for provenance — a suggestion can ' +
-            'carry the date it came from — but are never consulted. Merging would let a row ' +
-            'withdrawn in the newest file still match from an older one, which is the worst ' +
-            'thing this table can produce.' +
+            '\n\n**NOTHING READS THIS REGISTER.** The crop × product suggestion it was built ' +
+            'for was retired by the owner on 2026-10-21, who chose to keep the loader and drop ' +
+            'the suggestions (#2077, closed as not planned). This operation and its GET are the ' +
+            'only consumers: one writes an import, the other tells the operator what is live. ' +
+            'Still documented because the upload still works and an operator may still load the ' +
+            'register.' +
+            '\n\n**An import REPLACES; it never merges.** A property of the stored data, kept ' +
+            'for whatever may one day read it: the latest completed import IS the register, and ' +
+            'older ones are provenance only. Merging would let a row withdrawn in the newest ' +
+            'file still match from an older one, which is the worst thing these tables can ' +
+            'produce.' +
             '\n\n**Columns bind by HEADER TEXT, never by position**, through an alias table, and ' +
             'the header is searched for in the first ten rows so a title or an issuing-order ' +
             'reference above it is fine. A bg-BG Excel writes SEMICOLON-delimited CSV, so the ' +

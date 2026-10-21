@@ -35,12 +35,29 @@
  * capability endpoint exists so that question has a current answer — a comment
  * repeating a nine-day-old probe is not one.
  *
+ * ── NOTHING READS THE REGISTER, and that is the decision (2026-10-21) ────
+ *
+ * The crop × product suggestion this loader was built for was RETIRED by the
+ * owner — asked directly, confirmed 2026-10-21 — who chose to keep the loader
+ * and drop the suggestions. #2077 is closed as not planned.
+ *
+ * So this module is the only writer and there is no reader. Stated plainly
+ * because "a register exists but nothing reads it" is the state a later reader
+ * tries to be helpful about: if you are about to add that reader, the decision
+ * is the thing to reopen, not the gap to close.
+ *
+ * `describePppRegister` below is NOT that reader. It answers "what did I just
+ * upload" for the operator who uploaded it, which is why it lives behind the
+ * same platform gate as the write.
+ *
  * ── An import is a SNAPSHOT, never an accumulation ───────────────────────
  *
- * The read uses the latest COMPLETED import and nothing else. Older imports are
- * kept for provenance — a suggestion can carry the date it came from — but are
- * never merged. Merging would let a row withdrawn in the newest file still
- * match from an older one, which is the single worst thing this table can do.
+ * Kept as a property of the stored data rather than deleted with the read.
+ * Any future read must use the latest COMPLETED import and nothing else.
+ * Older imports are kept for provenance — a suggestion could carry the date it
+ * came from — but must never be merged: merging would let a row withdrawn in
+ * the newest file still match from an older one, which is the single worst
+ * thing these tables can do.
  *
  * @module app-layer/usecases/ppp-register-admin
  */
@@ -202,7 +219,8 @@ export async function importPppRegister(
                 });
             }
 
-            // LAST. Everything above is invisible to the read until this line.
+            // LAST. Everything above stays invisible to any read until this
+            // line — see the module docblock on why the property is kept.
             await db.pppRegisterImport.update({
                 where: { id: created.id },
                 data: { completedAt: new Date() },
