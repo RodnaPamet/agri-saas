@@ -40,6 +40,8 @@ import Google from 'next-auth/providers/google';
 import AzureAD from 'next-auth/providers/azure-ad';
 import Apple from 'next-auth/providers/apple';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
+import type { Adapter } from 'next-auth/adapters';
+import { refuseImplicitAccountLinks } from '@/lib/auth/refuse-implicit-links';
 import prisma from '@/lib/prisma';
 import { env } from '@/env';
 import {
@@ -549,7 +551,14 @@ export const authOptions: NextAuthOptions = {
             },
         };
     })(),
-    adapter: PrismaAdapter(prisma) as NextAuthOptions['adapter'],
+    // Wrapped, not bare: next-auth 4 links an UNSEEN OAuth identity to
+    // whoever the session cookie already names. See
+    // `refuseImplicitAccountLinks` for the branch and why the refusal has to
+    // be conditional — `linkAccount` is also how a legitimate first signup
+    // attaches its identity.
+    adapter: refuseImplicitAccountLinks(
+        PrismaAdapter(prisma) as unknown as Adapter,
+    ) as NextAuthOptions['adapter'],
     providers,
     pages: {
         signIn: '/login',
