@@ -77,6 +77,55 @@
  * helper has one place to fix, and a copied one has 28.
  */
 
+/**
+ * Keywords after which a `/` opens a REGEX rather than dividing.
+ *
+ * Without these, `return /[",\n]/.test(s)` reads as division — the previous
+ * significant character is `n`, the last letter of `return` — and the regex's
+ * quote characters are then read as string delimiters. That is cause 3 of
+ * #2106, found by the contract sweep after the first two were fixed: one file
+ * remained, `reports/rent-roll/route.ts:40`, whose line 29 is exactly that.
+ *
+ * `instanceof` and `in` are here for `x in /re/` shapes, which are rare; the
+ * ones that earn their place in this corpus are `return`, `typeof`, `case` and
+ * `throw`.
+ */
+const REGEX_PRECEDING_KEYWORDS = new Set([
+    'return',
+    'typeof',
+    'instanceof',
+    'in',
+    'of',
+    'new',
+    'delete',
+    'void',
+    'throw',
+    'case',
+    'do',
+    'else',
+    'yield',
+    'await',
+]);
+
+/**
+ * Does the `/` at `i` open a regex literal, or divide?
+ *
+ * Undecidable without a parser; this is the standard heuristic. After a value
+ * — an identifier, a digit, `)`, `]`, `}` — a `/` divides. Everywhere else it
+ * opens a regex. The exception is a KEYWORD, which looks like an identifier
+ * and is not a value.
+ */
+function opensRegex(src: string, i: number, prevSignificant: string): boolean {
+    if (!/[A-Za-z0-9_$)\]}]/.test(prevSignificant)) return true;
+    // Looks like a value — unless the trailing word is a keyword.
+    if (!/[A-Za-z_$]/.test(prevSignificant)) return false;
+    let k = i - 1;
+    while (k >= 0 && /\s/.test(src[k])) k--;
+    let end = k + 1;
+    while (k >= 0 && /[A-Za-z0-9_$]/.test(src[k])) k--;
+    return REGEX_PRECEDING_KEYWORDS.has(src.slice(k + 1, end));
+}
+
 export interface BlankOptions {
     /**
      * Also blank string and template literals.
@@ -94,10 +143,24 @@ export interface BlankOptions {
  * spaces, character-for-character, newlines intact.
  */
 export function blankNonCode(src: string, opts: BlankOptions = {}): string {
-    const out = [...src];
+    // `split('')` yields CODE UNITS. `[...src]` yields code POINTS, which is
+    // the bug #2106 was filed for: a surrogate pair is one code point and two
+    // code units, while every index below comes from `src[j]` — code units. So
+    // after the first astral character the writes landed on the wrong element,
+    // and because `out[j] = ' '` replaced a two-unit element with one space,
+    // the output SHRANK. It also overwrote newlines: measured on
+    // `src/lib/processes/canvas-auto-layout.ts`, 290 lines became 210.
+    const out = src.split('');
     const blankRange = (from: number, to: number): void => {
         for (let j = from; j < to; j++) if (src[j] !== '\n') out[j] = ' ';
     };
+
+    /**
+     * The last significant code unit of CODE seen, used only to tell `/` as
+     * division from `/` as a regex opener. Unset at the start of the file,
+     * where a `/` can only be a regex.
+     */
+    let prevSignificant = '';
 
     let i = 0;
     while (i < src.length) {
@@ -125,6 +188,7 @@ export function blankNonCode(src: string, opts: BlankOptions = {}): string {
             // template, and for both callers the whole literal is either the
             // subject (keep it) or noise (blank it) — never half of each.
             if (opts.strings) blankRange(start, i);
+            prevSignificant = quote;
             continue;
         }
 
@@ -134,6 +198,58 @@ export function blankNonCode(src: string, opts: BlankOptions = {}): string {
             while (i < src.length && src[i] !== '\n') i++;
             blankRange(start, i);
             continue;
+        }
+
+        // ── regex literal ──
+        //
+        // Not blanked — a regex is CODE. The reason this state exists at all
+        // is that its quote characters were being read as string delimiters:
+        // `src/lib/geo/basemap-bundle-scan.ts` holds
+        // `/NEXT_PUBLIC_MAPTILER_KEY:"[^"]+"/`, three double quotes, so the
+        // third opened a string that ran to the next quote anywhere below —
+        // and with `strings: false` (the default) that whole region passed
+        // through UNBLANKED, making every comment after it read as code.
+        //
+        // Division or regex is decided by the previous significant character,
+        // which is the standard approach and cannot be perfect without a
+        // parser. After an identifier, a digit, `)`, `]` or `}` a `/` is
+        // division; anywhere else it opens a regex. Decisive for the real
+        // corpus: a regex assigned to a `const`, passed as an argument, or
+        // used in `.test(...)` is always the second case.
+        if (c === '/' && d !== '/' && d !== '*' && opensRegex(src, i, prevSignificant)) {
+            const start = i;
+            let j = i + 1;
+            let inClass = false;
+            let closed = false;
+            while (j < src.length) {
+                const e = src[j];
+                if (e === '\\') {
+                    j += 2;
+                    continue;
+                }
+                // A newline inside an unterminated literal means this was not
+                // a regex. Bailing out matters: swallowing to the next `/`
+                // anywhere below is exactly the failure this state fixes,
+                // reintroduced from the other side.
+                if (e === '\n') break;
+                if (e === '[') inClass = true;
+                else if (e === ']') inClass = false;
+                else if (e === '/' && !inClass) {
+                    j++;
+                    while (j < src.length && /[a-z]/.test(src[j])) j++; // flags
+                    closed = true;
+                    break;
+                }
+                j++;
+            }
+            if (closed) {
+                i = j;
+                prevSignificant = '/';
+                continue;
+            }
+            // Not a regex after all — fall through and treat it as an
+            // ordinary character.
+            i = start;
         }
 
         // ── block comment ──
@@ -149,6 +265,7 @@ export function blankNonCode(src: string, opts: BlankOptions = {}): string {
             continue;
         }
 
+        if (!/\s/.test(c)) prevSignificant = c;
         i++;
     }
     return out.join('');
