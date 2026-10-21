@@ -11,11 +11,21 @@
  * That direction is right. The gap is that **losing the feature produces no
  * signal**, so "deliberately closed" and "never configured" look identical from
  * outside — and on the `agrent` VM they have been identical since #12 merged.
- * Probed 2026-10-12: `PLATFORM_TENANT_SLUG` is ABSENT, so every route behind
+ * Probed 2026-10-12: `PLATFORM_TENANT_SLUG` was ABSENT, so every route behind
  * the gate (`admin/promotions`, `admin/promotions/[id]/image`,
- * `admin/companies/[id]`, `admin/market-prices`) has never been reachable in
+ * `admin/companies/[id]`, `admin/market-prices`) had never been reachable in
  * production. The global catalogues could only ever be changed by direct
  * database access.
+ *
+ * **Re-measured 2026-10-21 through this probe: `reachable`.** The slug was
+ * configured on 2026-10-13 and the platform tenant exists, so the paragraph
+ * above describes a window that closed the next day. Corrected here rather
+ * than deleted, because the way it was found is the point: it was read as a
+ * current fact nine days on and shaped a design decision in #2077 — the
+ * register upload shipped documented as unreachable — until `/api/readyz` was
+ * actually called. A probe is a measurement; a comment quoting a probe is a
+ * timestamp, and this file exists precisely because the two are not the same.
+ * Read the endpoint, not this sentence.
  *
  * This is the #781 treatment, third instance of the same argument: WATCHED, not
  * gated. `capabilities.basemap` exists because "the code shipped" and "the

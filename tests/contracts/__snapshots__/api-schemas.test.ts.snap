@@ -13519,6 +13519,134 @@ exports[`API contract — per-schema snapshots schema: PortfolioGrainSummary 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PppRegisterImportResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "importId": {
+      "type": "string"
+    },
+    "entryCount": {
+      "type": "integer",
+      "description": "Rows stored. This import is now the live register."
+    },
+    "previousEntryCount": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Rows in the import this one replaces, or null if it is the first. Returned BESIDE the new count deliberately: an operator who uploads a truncated export sees \`entryCount: 40, previousEntryCount: 4100\` and knows at once. Without the second number, 40 looks like a success."
+    },
+    "skippedRows": {
+      "type": "integer",
+      "description": "Rows dropped for having no crop or no product name. A handful is normal — sub-headings and trailing junk. A count near the file length means the binding found the wrong columns, and the register should be re-uploaded rather than trusted."
+    },
+    "unparsedDoses": {
+      "type": "integer",
+      "description": "Rows whose dose cell held text but no leading number (\`по указание на производителя\`). The row is KEPT with a null dose — its crop, product, pests and quarantine period are still true — and counted, because this is the number that says the dose column needs a human."
+    },
+    "withdrawnCount": {
+      "type": "integer",
+      "description": "Entries marked as no longer approved. Kept as rows rather than dropped at import, so a read can state the withdrawal instead of the product simply being absent."
+    },
+    "headers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The headers the parser bound, in file order. A shape change is visible here."
+    }
+  },
+  "required": [
+    "importId",
+    "entryCount",
+    "previousEntryCount",
+    "skippedRows",
+    "unparsedDoses",
+    "withdrawnCount",
+    "headers"
+  ],
+  "description": "What one register import stored."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PppRegisterState 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "live": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "importId": {
+          "type": "string"
+        },
+        "importedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sourceName": {
+          "type": "string",
+          "description": "The uploaded filename."
+        },
+        "entryCount": {
+          "type": "integer",
+          "description": "What the import recorded at the time it was stored."
+        },
+        "storedEntries": {
+          "type": "integer",
+          "description": "Rows COUNTED in the table now. Reported separately from \`entryCount\` on purpose: the two agreeing is the evidence that the snapshot is whole, and returning only the stored figure would make that check circular."
+        },
+        "withdrawnCount": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "importId",
+        "importedAt",
+        "sourceName",
+        "entryCount",
+        "storedEntries",
+        "withdrawnCount"
+      ],
+      "description": "Null when no import has ever completed — the register is not loaded, and every lookup will miss."
+    },
+    "incompleteImports": {
+      "type": "integer",
+      "description": "Imports with no \`completedAt\`. Non-zero means an upload died part-way. Those are invisible to the read by construction, so this is a diagnostic rather than a warning about correctness."
+    }
+  },
+  "required": [
+    "live",
+    "incompleteImports"
+  ],
+  "description": "Which register import is live, and whether it is whole."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PppRegisterUpload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary",
+      "description": "The register as published: \`.xlsx\`, or delimited text (\`.csv\`, semicolon, or tab). The parser is chosen from the FILENAME, not the declared content type — \`curl -F\` sends \`application/octet-stream\` by default and a browser has three different strings for an \`.xlsx\`, so here the extension is the more reliable signal. 32 MB ceiling, checked on the declared size before the body is buffered."
+    },
+    "sheet": {
+      "type": "string",
+      "description": "Worksheet name, for an \`.xlsx\` with more than one. Omitted takes the first sheet in workbook order — fine for a single-sheet export, and worth naming otherwise, since \\"the first one\\" is not always the one a person means."
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "description": "multipart/form-data body for a ПРЗ register import."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: PracticeCreateRequest 1`] = `
 "{
   "type": "object",
@@ -14058,7 +14186,7 @@ exports[`API contract — per-schema snapshots schema: RecordDiaryTreatment 1`] 
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "description": "Фенофаза/BBCH — the crop’s growth stage as observed on the day, stored on every line this treatment records (#2072). Free text, because the register’s own column admits a BBCH code OR a Bulgarian stage name and PRZ’s field is free text; an enum would refuse an entry a farmer is entitled to write. Omit it and the line stores NULL, which means “not captured” — never a guessed stage, because this is a regulated document. Accepted on a FERTILIZE record as well as a SPRAY: the line is shared by both kinds and a fertilisation also happens at a growth stage, so refusing it there would need a coded refusal to express something that is not actually wrong. **It does not print yet.** The 12-column «ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ» table is fixed by заповед РД 11-3194/31.12.2021 and has no phenophase cell; «Фенофаза/BBCH» is column 2 of the separate scouting table, which #1740 Q2 ruled should be derived from the treatments — a derivation that is its own change."
+      "description": "Фенофаза/BBCH — the crop’s growth stage as observed on the day, stored on every line this treatment records (#2072). Free text, because the register’s own column admits a BBCH code OR a Bulgarian stage name and PRZ’s field is free text; an enum would refuse an entry a farmer is entitled to write. Omit it and the line stores NULL, which means “not captured” — never a guessed stage, because this is a regulated document. Accepted on a FERTILIZE record as well as a SPRAY: the line is shared by both kinds and a fertilisation also happens at a growth stage, so refusing it there would need a coded refusal to express something that is not actually wrong. **It does not print in the treatments table, and cannot:** the 12-column «ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ» table is fixed by заповед РД 11-3194/31.12.2021 and has no phenophase cell. It prints in the separate scouting table, where «Фенофаза/BBCH» is column 2: since #2089 the journal PDF derives one scouting row per treatment line that carries a phenophase, marked with an asterisk and a caption (#1740 Q2). A line with no phenophase still prints as a treatment, it just derives no observation row."
     },
     "newProductCategory": {
       "type": "string",
