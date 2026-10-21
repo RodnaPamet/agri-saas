@@ -31,7 +31,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { ParcelRepository } from '@/app-layer/repositories/ParcelRepository';
 import { fetchDailyWeather, type DailyWeather } from '@/lib/weather/open-meteo-client';
 import { evaluateLocationSignals } from '@/app-layer/usecases/agro-signals';
-import { sendWebPushToUser } from '@/lib/notifications/web-push';
+import { enqueue } from './queue';
 import { bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import { logger } from '@/lib/observability/logger';
 import type { WeatherPullPayload } from './types';
@@ -254,15 +254,35 @@ export async function runWeatherPull(
                 try {
                     const r = await evaluateLocationSignals(ctx, locationId);
                     signals += r.created;
-                    // Fan a NEW spray-window warning out to Web Push (no-op
-                    // unless push is configured + the recipient subscribed).
-                    // Post-tx so the network send holds no transaction open.
+                    // A NEW spray-window warning goes on the push QUEUE — it
+                    // called `sendWebPushToUser` directly until P7.5 (#1994),
+                    // which cost it three things:
+                    //
+                    //   - the recipient's PREFERENCE was never consulted, so
+                    //     somebody who had turned push off still got this one;
+                    //   - quiet hours did not apply, so a warning evaluated at
+                    //     03:00 woke them;
+                    //   - and it reached BROWSERS ONLY. `sendWebPushToUser`
+                    //     filters `platform='WEB'`, so the most time-sensitive
+                    //     notification this product sends has never reached an
+                    //     iPhone. One enqueue gives it both transports.
+                    //
+                    // Found by `tests/guards/one-resolve-delivery.test.ts` on
+                    // its first run: this was the second push producer, and the
+                    // decision it skipped is exactly what #1994 means by "one".
+                    //
+                    // Still post-tx and still best-effort — the enqueue is a
+                    // Redis write, not a network send, and the surrounding
+                    // try/catch keeps a failed notification from costing the
+                    // weather pull.
                     if (r.sprayPush) {
-                        await sendWebPushToUser(ctx, r.sprayPush.recipientUserId, {
+                        await enqueue('push-send', {
+                            tenantId: ctx.tenantId,
+                            recipientUserId: r.sprayPush.recipientUserId,
                             title: r.sprayPush.title,
                             body: r.sprayPush.message,
-                            url: r.sprayPush.linkUrl,
-                            tag: `spray-${locationId}`,
+                            link: r.sprayPush.linkUrl,
+                            collapseKey: `spray-${locationId}`,
                         });
                     }
                 } catch (err) {

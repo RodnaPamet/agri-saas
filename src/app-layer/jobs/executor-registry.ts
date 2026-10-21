@@ -369,6 +369,30 @@ executorRegistry.register('push-send', async (payload) => {
     );
 });
 
+// ── push-summary ─────────────────────────────────────────────────────
+//
+// The 06:00 delivery for a quiet-hours window. One per (person, night),
+// enforced by the deterministic `jobId` at the enqueue site in `push-send`.
+
+executorRegistry.register('push-summary', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runPushSummary } = await import('../jobs/push-summary');
+    const r = await runPushSummary({
+        tenantId: payload.tenantId,
+        recipientUserId: payload.recipientUserId,
+        nightKey: payload.nightKey,
+    });
+    // scanned = notifications the window held back, actioned = transports that
+    // accepted the summary. A night with nothing unread scans 0 and actions 0,
+    // which is the ordinary outcome rather than a failure.
+    return makeResult(
+        'push-summary', startedAt, startMs,
+        r.count, r.delivered, 0,
+        { count: r.count, delivered: r.delivered },
+    );
+});
+
 // ── process-outbox ───────────────────────────────────────────────────
 //
 // Kept separate from `daily-evidence-expiry`, which also flushes: that job's

@@ -11,6 +11,35 @@
 const webPush = jest.fn();
 const apns = jest.fn();
 const warn = jest.fn();
+const info = jest.fn();
+const enqueue = jest.fn();
+
+/**
+ * What the one tenant-scoped read returns.
+ *
+ * `push-send` now asks `resolveDelivery` before sending, and that needs the
+ * recipient's preference and device counts — so the DB read is part of the
+ * job's contract rather than an implementation detail, and it is mocked at the
+ * `runInTenantContext` seam the job actually uses.
+ */
+let preferenceRow: { delivery: string } | null = null;
+let deviceRows: Array<{ platform: string; _count: { _all: number } }> = [
+    { platform: 'WEB', _count: { _all: 1 } },
+    { platform: 'IOS', _count: { _all: 2 } },
+];
+
+jest.mock('@/lib/db-context', () => ({
+    __esModule: true,
+    runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) =>
+        cb({
+            userNotificationPreference: { findUnique: async () => preferenceRow },
+            pushSubscription: { groupBy: async () => deviceRows },
+        }),
+}));
+jest.mock('@/app-layer/jobs/queue', () => ({
+    __esModule: true,
+    enqueue: (...a: unknown[]) => enqueue(...a),
+}));
 
 jest.mock('@/lib/notifications/web-push', () => ({
     __esModule: true,
@@ -22,7 +51,12 @@ jest.mock('@/lib/notifications/apns', () => ({
 }));
 jest.mock('@/lib/observability/logger', () => ({
     __esModule: true,
-    logger: { warn: (...a: unknown[]) => warn(...a), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
+    logger: {
+        warn: (...a: unknown[]) => warn(...a),
+        info: (...a: unknown[]) => info(...a),
+        error: jest.fn(),
+        debug: jest.fn(),
+    },
 }));
 
 import { runPushSend } from '@/app-layer/jobs/push-send';
@@ -36,10 +70,26 @@ const payload = {
     collapseKey: 'task-task-9',
 };
 
+/** Midday Sofia — outside the quiet window, so push is granted. */
+const AWAKE = new Date(Date.UTC(2026, 10, 15, 10, 0, 0));
+/** 23:00 Sofia on the 5th — inside the window. */
+const QUIET = new Date(Date.UTC(2026, 10, 5, 21, 0, 0));
+
 beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers().setSystemTime(AWAKE);
     webPush.mockResolvedValue(undefined);
     apns.mockResolvedValue(undefined);
+    enqueue.mockResolvedValue({ id: 'job-1' });
+    preferenceRow = null;
+    deviceRows = [
+        { platform: 'WEB', _count: { _all: 1 } },
+        { platform: 'IOS', _count: { _all: 2 } },
+    ];
+});
+
+afterEach(() => {
+    jest.useRealTimers();
 });
 
 describe('runPushSend', () => {
@@ -136,5 +186,121 @@ describe('runPushSend', () => {
         expect(logged).not.toContain(payload.link);
         // The collapse key identifies the subject without quoting it.
         expect(logged).toContain('task-task-9');
+    });
+});
+
+describe('the delivery decision — P7.5 (#1994)', () => {
+    it('is taken when the send is ATTEMPTED, not when it was enqueued', () => {
+        // Asserted by the fact that every case here sets the clock and gets a
+        // different outcome from the same payload. A job that carried its
+        // decision from the enqueue site would behave identically at 21:59 and
+        // 22:01, which is the one boundary where it matters.
+        expect(typeof runPushSend).toBe('function');
+    });
+
+    it('sends nothing and schedules a summary inside the window', async () => {
+        jest.setSystemTime(QUIET);
+
+        const r = await runPushSend(payload);
+
+        expect(webPush).not.toHaveBeenCalled();
+        expect(apns).not.toHaveBeenCalled();
+        expect(r).toEqual({ attempted: 0, delivered: 0 });
+        expect(enqueue).toHaveBeenCalledTimes(1);
+        expect(enqueue.mock.calls[0][0]).toBe('push-summary');
+        expect(enqueue.mock.calls[0][1]).toMatchObject({
+            tenantId: 't-1',
+            recipientUserId: 'u-2',
+            nightKey: '2026-11-05',
+        });
+    });
+
+    it('keys the summary job so one night gets ONE of them', async () => {
+        // The id is what makes "ensure one summary" a single `add` instead of
+        // a read-modify-write two workers could interleave. Without it the
+        // fifth notification of the night schedules a fifth summary and the
+        // person wakes to five banners — the outcome the summary exists to
+        // prevent.
+        jest.setSystemTime(QUIET);
+
+        await runPushSend(payload);
+
+        expect(enqueue.mock.calls[0][2]).toMatchObject({
+            jobId: 'push-summary:t-1:u-2:2026-11-05',
+        });
+        // And it is delayed rather than immediate.
+        expect(enqueue.mock.calls[0][2].delay).toBeGreaterThan(0);
+    });
+
+    it('gives the same job id from either side of midnight', async () => {
+        jest.setSystemTime(QUIET);
+        await runPushSend(payload);
+        const evening = enqueue.mock.calls[0][2].jobId;
+
+        enqueue.mockClear();
+        jest.setSystemTime(new Date(Date.UTC(2026, 10, 5, 23, 0, 0))); // 01:00 on the 6th
+        await runPushSend(payload);
+        const smallHours = enqueue.mock.calls[0][2].jobId;
+
+        expect(smallHours).toBe(evening);
+    });
+
+    it('sends normally outside the window — the control', async () => {
+        // Without this, an implementation that always deferred would satisfy
+        // every assertion above.
+        const r = await runPushSend(payload);
+
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(r).toEqual({ attempted: 2, delivered: 2 });
+    });
+
+    it('a DISABLED preference sends nothing and schedules nothing, even at night', async () => {
+        jest.setSystemTime(QUIET);
+        preferenceRow = { delivery: 'DISABLED' };
+
+        const r = await runPushSend(payload);
+
+        expect(webPush).not.toHaveBeenCalled();
+        expect(apns).not.toHaveBeenCalled();
+        // Not deferred: a 06:00 summary for somebody who turned push off is
+        // the push they turned off, delivered late.
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(r).toEqual({ attempted: 0, delivered: 0 });
+    });
+
+    it('asks only for the transports the person holds a device for', async () => {
+        deviceRows = [{ platform: 'IOS', _count: { _all: 1 } }];
+
+        const r = await runPushSend(payload);
+
+        expect(webPush).not.toHaveBeenCalled();
+        expect(apns).toHaveBeenCalledTimes(1);
+        // `attempted: 1`, so a log line of "attempted 2, delivered 0" can only
+        // mean two were genuinely possible and both failed.
+        expect(r).toEqual({ attempted: 1, delivered: 1 });
+    });
+
+    it('no devices sends nothing and schedules nothing', async () => {
+        jest.setSystemTime(QUIET);
+        deviceRows = [];
+
+        const r = await runPushSend(payload);
+
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(r).toEqual({ attempted: 0, delivered: 0 });
+    });
+
+    it('logs the reason it withheld, without the prose', async () => {
+        jest.setSystemTime(QUIET);
+
+        await runPushSend(payload);
+
+        expect(info).toHaveBeenCalledWith(
+            'push.deferred',
+            expect.objectContaining({ nightKey: '2026-11-05', reason: 'quiet-hours' }),
+        );
+        const logged = JSON.stringify(info.mock.calls);
+        expect(logged).not.toContain(payload.title);
+        expect(logged).not.toContain(payload.body);
     });
 });
