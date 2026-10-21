@@ -98,11 +98,53 @@ export async function POST(req: NextRequest) {
     try {
         payload = JSON.parse(rawBody);
     } catch {
+        // Logged, because a SIGNED body that is not JSON means the signature
+        // and the parser disagree about what was sent — a provider-side change
+        // or a verification bug, and either way not something to drop.
+        logger.warn('mail.webhook_unreadable', {
+            component: 'resend-webhook',
+            reason: 'invalid-json',
+            // Length only. The body is a provider payload that carries
+            // recipient addresses, so it is never logged.
+            bodyBytes: rawBody.length,
+        });
         return jsonResponse({ error: 'invalid-json' }, { status: 400 });
     }
 
     const event = parseDeliveryEvent(payload);
-    if (!event) return jsonResponse({ ok: true, ignored: 'unparseable' }, { status: 200 });
+    if (!event) {
+        // ── The silent swallow this exists to remove (2026-10-21) ──
+        //
+        // This path returned 200 with no log at all, which is the worst of the
+        // two directions at once: the provider reads success and never retries,
+        // and we keep no record that it called. So a Resend event whose shape
+        // `parseDeliveryEvent` does not recognise was discarded without trace.
+        //
+        // That made a live question unanswerable. Measured 2026-10-21 over the
+        // whole observable window (Cloud Logging begins 2026-10-16): ZERO
+        // entries for every one of this route's log lines, while 19
+        // `mail-canary.sent` events went out in the same period. "Resend is
+        // not configured to call us" and "Resend calls us with a shape we
+        // cannot read" produce an identical absence, and the second one is
+        // this branch.
+        //
+        // WARN, not info: an unrecognised delivery event is the signal whose
+        // absence cost an evening on 2026-10-13, arriving in a form we drop.
+        // The `type` is echoed when the payload has one, because that names
+        // what to teach the parser.
+        const rawType =
+            payload && typeof payload === 'object' && 'type' in payload
+                ? String((payload as { type?: unknown }).type)
+                : null;
+        logger.warn('mail.webhook_unparsed_event', {
+            component: 'resend-webhook',
+            // The event TYPE is a provider enum, not personal data. No other
+            // field of the payload is echoed — they carry addresses.
+            eventType: rawType,
+            hasType: rawType !== null,
+        });
+        return jsonResponse({ ok: true, ignored: 'unparseable' }, { status: 200 });
+    }
 
     if (event.isFailure) {
         // ERROR level, because this is the signal whose absence cost an
