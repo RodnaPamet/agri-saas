@@ -20,6 +20,7 @@ highest-traffic authenticated paths against documented SLOs.
 | `auth.js`         | Cold-start NextAuth credentials login throughput + p95 latency.             |
 | `lists.js`        | Steady-state authenticated list reads (practices / evidence).        |
 | `mutations.js`    | Authenticated mutations: practice creation + multipart evidence upload.      |
+| `realtime-streams.js` | Concurrent SSE streams held open on `/api/me/stream` + TTFB under load. |
 
 - `auth.js` opens a fresh cookie jar per iteration so every iteration is
   a real cold login (csrf → callback/credentials → session).
@@ -390,6 +391,9 @@ The directory is gitignored; the CI workflow uploads it as an artifact.
 | `RAMP_UP`               | `30s`                    | 0 → VUS ramp.                                    |
 | `RAMP_DOWN`             | `15s`                    | VUS → 0 ramp.                                    |
 | `RUN_ID`                | `local-<timestamp>`      | Tag prefix on `mutations.js` rows for cleanup.   |
+| `STREAM_HOLD`           | `45s`                    | `realtime-streams.js` only: how long a VU holds its stream. |
+| `SETUP_TIMEOUT`         | `15m`                    | `realtime-streams.js` only: budget for N serial logins. |
+| `LOAD_SEED_CONFIRM`     | _(none — required)_      | Typed phrase `scripts/seed-load-streams.ts` demands. |
 
 ## Adding a new scenario
 
@@ -403,7 +407,76 @@ The directory is gitignored; the CI workflow uploads it as an artifact.
 4. Add a `load:<name>` script to `package.json` mirroring the existing
    `load:auth` / `load:lists` entries.
 5. Add it to the `scenario` choice list in
-   `.github/workflows/load-test.yml`.
+   `.github/workflows/load-test.yml`. `tests/guards/load-script-routes-exist.test.ts`
+   fails if a script is named by no workflow — a script nothing runs cannot
+   fail, which is how `lists.js` sat broken. If the scenario's real scale
+   cannot run on a CI runner, wire a small profile anyway (see
+   `realtime-streams.js`) rather than taking the exemption.
+
+## `realtime-streams.js` — the one that needs 1,000 accounts
+
+P7.10 (#1999) asks for **1,000 streams at p95 ≤ 1s on the throwaway VM**.
+Three things about this scenario are different from every other one here,
+and all three follow from the route rather than from taste.
+
+**It needs one account per VU.** `/api/me/stream` caps streams at three per
+*person* — `acquireStreamSlot` keys on the user with no tenant term, which is
+what makes "3 streams per user" true for somebody who belongs to three farms.
+So the usual shape (N VUs behind one login) would hold three streams and take
+N−3 refusals, and a refusal is a **204**, not an error. The run would have
+gone green having measured three streams. 1,000 concurrent streams therefore
+needs at least 334 distinct people; this uses 1,000.
+
+**It needs the feature flag on.** `notifications.sse` is default-OFF and a
+disabled channel answers 204. With the flag off every sample is a refusal and
+`stream_ttfb` has no samples at all — and k6 **skips a threshold whose metric
+has no sink**, so the run would report a pass on an empty metric. That is why
+`stream_refused_204` is thresholded at `count==0`: it is the assertion that
+the run measured anything.
+
+**It does not run on the production VM.** The production host is `e2` class and
+shared with the playerz stack, so a number from there measures contention with
+another product and the run could affect a live service. `BASE_URL` has no
+default and the seeder refuses without a typed confirmation phrase.
+
+### One command at each end
+
+```bash
+# 1. On the throwaway VM — 1,000 accounts in their own tenant, flag on.
+LOAD_SEED_CONFIRM='yes-this-is-a-throwaway-vm' \
+LOAD_TEST_PASSWORD='<pick one>' \
+  npx tsx scripts/seed-load-streams.ts --users 1000 --enable-flag
+
+# 2. The run.
+BASE_URL=http://<vm>:3006 LOAD_TEST_PASSWORD='<the same one>' \
+  k6 run -e VUS=1000 tests/load/realtime-streams.js
+
+# 3. Put the database back — deletes exactly what step 1 recorded and
+#    restores notifications.sse to its prior state.
+LOAD_SEED_CONFIRM='yes-this-is-a-throwaway-vm' \
+  npx tsx scripts/seed-load-streams.ts --teardown
+```
+
+Seeding writes `.load-streams-seed.json` (gitignored) so teardown deletes what
+it recorded rather than pattern-matching its way through a database, and so the
+flag goes back to whatever it was — including *absent*.
+
+### What a pass does and does not claim
+
+`stream_ttfb` is `http_req_waiting` on a stream opened while ~VUS others are
+held, so a pass means **a thousand streams can be held and a new one still
+opens in under a second**. It does **not** mean event delivery stays under a
+second at that population: measuring that needs an SSE client that reads frames
+while k6 keeps the VU busy (xk6-sse), a binary this repo does not build.
+
+### The nightly runs it at 25 VUs, which is not the criterion
+
+`load-test.yml` seeds 25 accounts and runs this scenario on the nightly `both`
+path. 25 VUs on a 2-vCPU shared runner is not a number worth recording — it is
+there because of the failure this directory's route guard was written about:
+`lists.js` sat broken for months because nothing executed it. The nightly
+proves the script, the seeder and the login flow still work; the criterion's
+thousand comes from the VM.
 
 ## Why these scenarios
 
@@ -418,10 +491,13 @@ The mutations scenario closes the second half of GAP-11 — practice
 creation and multipart evidence upload are the two write paths most
 likely to introduce a latency cliff (RLS, audit trail, encryption,
 storage). It runs at three scales (50/100/200 VUs) for full baselines
-plus the **10 VUs × 30s smoke profile that PR CI executes on every
-pull request** via the `Load Smoke (k6)` job in
-`.github/workflows/ci.yml`. The smoke profile is sized to fit a PR
-budget (~5 min job total) while still producing ~200 samples per op —
+plus the **10 VUs × 30s smoke profile executed by the `Load Smoke (k6)`
+job in `.github/workflows/ci.yml`**. That job is `if: github.event_name
+== 'push'` — main-push only, and structurally unable to run on a pull
+request, as the threshold-binding section above records at length. This
+paragraph used to call it "PR CI … on every pull request", which is the
+claim that makes a main-only gate read as a merge gate. The smoke
+profile is nevertheless sized to a PR budget (~5 min job total) while still producing ~200 samples per op —
 enough for p95 to be meaningful and catch obvious regressions before
 merge without being flaky.
 

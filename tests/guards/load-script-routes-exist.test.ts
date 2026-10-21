@@ -121,6 +121,124 @@ describe('k6 load scripts drive routes that exist', () => {
     });
 });
 
+/**
+ * ── person-scoped routes (#1999) ──
+ *
+ * `realtime-streams.js` is the first load script to drive a path that is not
+ * tenant-scoped: `/api/me/stream` has no `/t/<slug>/` segment, because a stream
+ * belongs to a PERSON. So it writes `${BASE}/api/me/stream` rather than
+ * `${base}/<segment>`, and the parser above — which resolves against
+ * `src/app/api/t/[tenantSlug]/` — could not have seen it either way: matched,
+ * it would have looked for a `t/[tenantSlug]/api` directory and failed.
+ *
+ * Which would have left this script outside the only check that catches a
+ * renamed route before the run, and this file's docblock is the record of what
+ * that costs. Hence a second pattern, resolving the full path under
+ * `src/app/api/` instead.
+ */
+const APP_DIR = path.join(ROOT, 'src/app');
+
+interface AbsRef {
+    file: string;
+    line: number;
+    /** Path after the origin, e.g. `api/me/stream`. */
+    route: string;
+}
+
+function parseAbsoluteRefs(): AbsRef[] {
+    const out: AbsRef[] = [];
+    for (const file of loadScripts()) {
+        const rel = path.relative(ROOT, file);
+        fs.readFileSync(file, 'utf8')
+            .split('\n')
+            .forEach((line, i) => {
+                for (const m of line.matchAll(/\$\{BASE\}\/(api\/[A-Za-z0-9_\-/]+)/g)) {
+                    out.push({ file: rel, line: i + 1, route: m[1] });
+                }
+            });
+    }
+    return out;
+}
+
+/**
+ * Does `src/app/<route>` resolve to a handler, allowing for App Router
+ * segment syntax?
+ *
+ * The naive `existsSync(join(APP_DIR, route))` answers NO for two of the three
+ * paths these scripts actually use, and both for the same reason — the
+ * directory name is not the URL segment:
+ *
+ *   - `api/auth/csrf` and `api/auth/callback/credentials` are served by
+ *     `api/auth/[...nextauth]`, a CATCH-ALL that swallows everything below it.
+ *     No `csrf` directory exists and none should.
+ *   - A single dynamic segment (`[tenantSlug]`, `[id]`) matches one URL segment
+ *     the same way.
+ *
+ * So: descend literally where the directory exists, stop happy at a catch-all,
+ * and otherwise accept a single dynamic segment. A level with several `[x]`
+ * siblings is ambiguous and treated as unresolved — there is no such level on
+ * any path these scripts drive, and guessing would be the failure mode this
+ * guard exists to prevent.
+ */
+function resolveAppRoute(route: string): boolean {
+    let dir = APP_DIR;
+    const segments = route.split('/').filter(Boolean);
+    for (let i = 0; i < segments.length; i++) {
+        const literal = path.join(dir, segments[i]);
+        if (fs.existsSync(literal) && fs.statSync(literal).isDirectory()) {
+            dir = literal;
+            continue;
+        }
+        let siblings: string[];
+        try {
+            siblings = fs.readdirSync(dir);
+        } catch {
+            return false;
+        }
+        // `[...slug]` / `[[...slug]]` — matches this segment and every one
+        // after it, so the walk is done.
+        if (siblings.some((d) => d.startsWith('[...') || d.startsWith('[[...'))) return true;
+        const dynamic = siblings.filter((d) => /^\[[^.].*\]$/.test(d));
+        if (dynamic.length !== 1) return false;
+        dir = path.join(dir, dynamic[0]);
+    }
+    // A directory is only a route if it actually has a handler.
+    return ['route.ts', 'route.tsx', 'route.js'].some((f) => fs.existsSync(path.join(dir, f)));
+}
+
+const ABS_REFS = parseAbsoluteRefs();
+
+describe('person-scoped load-script routes exist', () => {
+    it('finds the population it is meant to check', () => {
+        // `realtime-streams.js` drives three: csrf, the credentials callback
+        // and the stream itself. An empty selection would pass the assertion
+        // below for ever.
+        expect(ABS_REFS.length).toBeGreaterThanOrEqual(3);
+        expect(fs.existsSync(APP_DIR)).toBe(true);
+    });
+
+    it('every absolute route resolves to a handler under src/app', () => {
+        const missing = ABS_REFS.filter((r) => !resolveAppRoute(r.route));
+        if (missing.length > 0) {
+            throw new Error(
+                `${missing.length} load-script route(s) do not resolve under src/app/:\n` +
+                    missing.map((r) => `  ${r.file}:${r.line}  /${r.route}`).join('\n'),
+            );
+        }
+        expect(missing).toEqual([]);
+    });
+
+    it('the resolver accepts live routes and rejects plausible renames', () => {
+        // Mutation proof on the resolver, one case per branch it has.
+        expect(resolveAppRoute('api/me/stream')).toBe(true); // literal walk
+        expect(resolveAppRoute('api/auth/csrf')).toBe(true); // catch-all
+        expect(resolveAppRoute('api/auth/callback/credentials')).toBe(true); // catch-all, deeper
+        expect(resolveAppRoute('api/me/streams')).toBe(false); // the rename
+        expect(resolveAppRoute('api/me')).toBe(false); // a directory with no handler
+        expect(resolveAppRoute('api/nothing/here')).toBe(false);
+    });
+});
+
 // ═══════════════════════════════════════════════════════════════════
 //  …and every script is actually INVOKED by a workflow (P3.10)
 // ═══════════════════════════════════════════════════════════════════

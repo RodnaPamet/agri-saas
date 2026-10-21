@@ -254,6 +254,57 @@ describe('GET /api/me/stream', () => {
         expect(isFeatureEnabledMock).toHaveBeenCalledWith('notifications.sse', 'u-1');
     });
 
+    describe('the open is logged, because nothing else records one (#1999)', () => {
+        // P7.10's fourth criterion is "100% of clients reconnect within 20s
+        // across real deploys" and assumes reconnects are countable from the
+        // container logs. They were not: this route emitted nothing at all on
+        // a successful open. Measured on `agrent` over the full 14-day window
+        // available on 2026-10-21 — zero `sse.*` entries and zero
+        // `component: 'realtime'` entries, with a positive control proving the
+        // query finds other messages in the same stream. "Nobody connected"
+        // and "connections leave no trace" looked identical.
+
+        it('logs sse.opened with reconnect=false on a cold open', async () => {
+            await GET(request());
+
+            const line = info.mock.calls.find((c) => c[0] === 'sse.opened');
+            expect(line).toBeDefined();
+            expect(line![1]).toMatchObject({ component: 'realtime', reconnect: false });
+        });
+
+        it('logs reconnect=true when the client echoed a cursor', async () => {
+            // The discriminator the criterion needs. Without it a reconnect is
+            // indistinguishable from a tab being opened, and "100% reconnected"
+            // cannot be computed from the logs at all.
+            await GET(request({ 'last-event-id': 'n-1' }));
+
+            const line = info.mock.calls.find((c) => c[0] === 'sse.opened');
+            expect(line![1]).toMatchObject({ reconnect: true });
+        });
+
+        it('does NOT log an open for a refused stream', async () => {
+            // A 204 is not a stream, and counting one as an open would make
+            // every flag-gated deployment look like a reconnect storm.
+            isFeatureEnabledMock.mockResolvedValue(false);
+
+            await GET(request({ 'last-event-id': 'n-1' }));
+
+            expect(info.mock.calls.filter((c) => c[0] === 'sse.opened')).toHaveLength(0);
+        });
+
+        it('carries no user or tenant id', async () => {
+            // The criterion needs counts, not a per-person record of who had a
+            // tab open.
+            await GET(request());
+
+            const payload = info.mock.calls.find((c) => c[0] === 'sse.opened')![1] as Record<
+                string,
+                unknown
+            >;
+            expect(Object.keys(payload).sort()).toEqual(['component', 'farms', 'reconnect']);
+        });
+    });
+
     it('streams with the headers that survive the real deployment', async () => {
         const res = await GET(request());
 

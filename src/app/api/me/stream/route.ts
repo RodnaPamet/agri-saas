@@ -336,6 +336,32 @@ export async function GET(req: NextRequest): Promise<Response> {
     // BOTH triggers — see `createSseResponse` for what happens with only one.
     req.signal.addEventListener('abort', release);
 
+    // ── the only record that a stream was ever established (#1999) ──
+    //
+    // P7.10's fourth criterion is "100% of clients reconnect within 20s across
+    // real deploys", and says those reconnects are "countable from
+    // `jsonPayload` without an SSH session" now that #1940 ships structured
+    // container logs. That premise was false in one specific way: the logs
+    // ship, but this route emitted NOTHING on a successful open. Measured on
+    // 2026-10-21 over the whole available window — 14 days on `agrent`: zero
+    // entries for every `sse.*` message and zero for `component: 'realtime'`,
+    // against a positive control showing that message matching finds other
+    // lines in the same stream. So there was nothing to count, and "nobody
+    // connected" and "connections leave no trace" produced an identical
+    // absence.
+    //
+    // `reconnect` is the field the criterion needs: paired with `sse.drained`
+    // (which carries how many streams a SIGTERM closed), it is what makes
+    // "every one of those N came back, and how long it took" answerable.
+    //
+    // No user or tenant id. The pair of counts is what the criterion asks for;
+    // a per-person log of who had a tab open is a different thing.
+    logger.info('sse.opened', {
+        component: 'realtime',
+        reconnect: lastEventId !== null,
+        farms: tenantIds.length,
+    });
+
     return new Response(stream, {
         status: 200,
         headers: {
