@@ -45,6 +45,7 @@
  * guess fails as `BadDeviceToken` — indistinguishable from a revoked token,
  * so the pruning below would delete a working registration.
  */
+import * as http2 from 'node:http2';
 import { createPrivateKey, sign as cryptoSign } from 'node:crypto';
 
 import { env } from '@/env';
@@ -258,7 +259,7 @@ type Outcome = 'sent' | 'gone' | 'failed';
  * dropped from the cache so the next send rebuilds it. There are only ever two
  * (sandbox and production), so the cache is bounded by construction.
  */
-const sessions = new Map<string, import('http2').ClientHttp2Session>();
+const sessions = new Map<string, http2.ClientHttp2Session>();
 
 /**
  * Where the transport actually connects, when a test has redirected it.
@@ -288,14 +289,13 @@ export function _setApnsTargetForTesting(
 /** How long a single request may take before it is abandoned. */
 const APNS_REQUEST_TIMEOUT_MS = 10_000;
 
-function sessionFor(host: string): import('http2').ClientHttp2Session {
+function sessionFor(host: string): http2.ClientHttp2Session {
     const existing = sessions.get(host);
     // `closed` and `destroyed` are both checked: a session can be closed
     // gracefully by the peer (Apple cycles connections) without being
     // destroyed, and reusing one in either state fails every request on it.
     if (existing && !existing.closed && !existing.destroyed) return existing;
 
-    const http2 = require('http2') as typeof import('http2');
     const session = testTarget
         ? http2.connect(testTarget.origin, testTarget.connectOptions)
         : http2.connect(`https://${host}`);
@@ -341,7 +341,7 @@ function postToApns(
     body: string,
 ): Promise<ApnsResponse> {
     return new Promise((resolve, reject) => {
-        let session: import('http2').ClientHttp2Session;
+        let session: http2.ClientHttp2Session;
         try {
             session = sessionFor(host);
         } catch (err) {
