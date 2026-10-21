@@ -13,11 +13,29 @@ import {
   forwardRef,
   ReactNode,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { Checkbox } from "../checkbox";
 import { useKeyboardShortcut } from "../hooks/use-keyboard-shortcut";
 import { DynamicTooltipWrapper, Tooltip } from "../tooltip";
+
+/**
+ * How long the selection toolbar stays unclickable after it appears (#1076).
+ *
+ * It has to outlast the gap between the two clicks of a double-click, which
+ * the platform — not this app — decides. Chromium's own threshold is 500ms
+ * for synthesising `dblclick`, but the gap that matters here is the one a
+ * person actually produces: ~100-200ms typical, and Playwright's `dblclick`
+ * dispatches the pair with no deliberate delay at all.
+ *
+ * 350ms covers a human double-click comfortably while staying well under the
+ * ~400ms at which a deferred affordance starts to feel broken. It is NOT set
+ * to 500ms to match Chromium: that would make the bar feel stuck for everyone
+ * in order to cover a gap no hand produces, and a slower-than-350ms second
+ * click is a click the row will not treat as an activation either.
+ */
+export const TOOLBAR_POINTER_GRACE_MS = 350;
 
 // ── Batch Action Types ──────────────────────────────────────────────
 
@@ -177,6 +195,50 @@ export function SelectionToolbar<T>({
     description: "Clear selection",
   });
 
+  // ── Why this toolbar is not clickable the instant it appears (#1076) ──
+  //
+  // It is mounted `absolute left-0 top-0 z-30` over the top of the card —
+  // `table.tsx`'s own comment says "when rows are selected the toolbar covers
+  // the top of the card". So the moment a click selects a row, this bar lands
+  // on top of the row that was just clicked.
+  //
+  // With selection enabled, the ROW ACTION is the double-click, and the row
+  // reads it off the second click's `detail === 2` (see `table-utils.ts`). If
+  // this bar becomes clickable between the two clicks, the second one hits the
+  // BAR instead of the row: the row's handler never sees `detail === 2`,
+  // `onRowClick` is never called, and the activation silently does not happen.
+  // The browser then dispatches `dblclick` on the nearest common ancestor of
+  // two different targets, so nothing downstream sees the gesture either.
+  //
+  // Measured, four identical captures from ten samples in one CI run: on the
+  // failing runs the row records `click(detail=1)` and NOTHING else, against
+  // three events on a passing one. `pointer-events` used to flip on the same
+  // render as the selection state — the `duration-100` transition is on
+  // opacity only and never gated it — so the race was React's commit against
+  // the arrival of the second click. Under load the commit won, in ~26% of CI
+  // runs; on a fast machine it usually lost, which is why this reached users
+  // as "sometimes the row just doesn't open" rather than as a bug report.
+  //
+  // So pointer events wait out the double-click window. The affordance appears
+  // immediately — only its clickability is deferred.
+  const [pointerReady, setPointerReady] = useState(false);
+  // Gated on the 0 -> non-zero TRANSITION, not on every count change.
+  // Re-arming the delay whenever the count moves would disable the bar under
+  // someone who is using it: select a second row and the Delete button would
+  // go dead for a third of a second.
+  const wasEmpty = useRef(true);
+  useEffect(() => {
+    if (selectedCount === 0) {
+      wasEmpty.current = true;
+      setPointerReady(false);
+      return;
+    }
+    if (!wasEmpty.current) return;
+    wasEmpty.current = false;
+    const t = setTimeout(() => setPointerReady(true), TOOLBAR_POINTER_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [selectedCount]);
+
   return (
     <div
       className={cn(
@@ -185,9 +247,13 @@ export function SelectionToolbar<T>({
         // per theme. 1px (`border-b`) keeps it a hairline accent.
         "w-full border-b border-[var(--brand-default)] bg-bg-elevated",
         "transition-opacity duration-100",
-        selectedCount > 0
-          ? "pointer-events-auto opacity-100"
-          : "pointer-events-none opacity-0",
+        selectedCount > 0 ? "opacity-100" : "opacity-0",
+        // Visible but not yet clickable during the grace window. `inert`
+        // below still keys off `selectedCount` alone: the hazard is a mouse
+        // gesture in flight, and a keyboard user cannot be mid-double-click.
+        selectedCount > 0 && pointerReady
+          ? "pointer-events-auto"
+          : "pointer-events-none",
         className,
       )}
       // React 18 doesn't recognise `inert` as a known boolean attribute,
