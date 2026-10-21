@@ -27,6 +27,47 @@ const mockPrisma = {
 
 jest.mock('@/lib/prisma', () => ({ __esModule: true, default: mockPrisma }));
 
+/**
+ * The two shapes `notification.findMany` is called with on this path.
+ *
+ * Typed rather than `any`: the lint ceiling counts ESLint's SUPPRESSED
+ * findings, not just its reported ones, so an `any` inside a file that already
+ * carries a blanket `no-explicit-any` disable raises the count by one with
+ * nothing new appearing in the diff. That is exactly how this branch went red
+ * on a ceiling of 1584 while main sat at 1584.
+ */
+interface NotificationFindManyArgs {
+    where: { dedupeKey: { in: string[] } };
+    select?: { id?: boolean; dedupeKey?: boolean };
+}
+/**
+ * `notification.findMany` answers TWO different queries on this path, and they
+ * are told apart by their `select`:
+ *
+ *   - the pre-insert existence check asks only for `dedupeKey` (nothing exists
+ *     yet in these cases, hence the empty array);
+ *   - #2142's id read-back asks for `id` too, because the bus frame must carry
+ *     the ROW id — a dedupeKey becomes the client's `Last-Event-ID` and
+ *     resolves to nothing.
+ *
+ * A single canned `[]` answered both, so the read-back resolved nothing, the
+ * publish was skipped, and the assertion read zero calls — which looked like
+ * the sweep failing to notify rather than a double that could not express the
+ * behaviour it stood in for.
+ */
+function notificationFindManyDouble() {
+    return async (args: NotificationFindManyArgs) => {
+        if (args.select?.id) {
+            return args.where.dedupeKey.in.map((dedupeKey, i) => ({
+                id: `notif-${i + 1}`,
+                dedupeKey,
+            }));
+        }
+        return [];
+    };
+}
+
+
 jest.mock('@/lib/observability/job-runner', () => ({
     runJob: jest.fn(async (_name: string, fn: () => any) => fn()),
 }));
@@ -65,7 +106,7 @@ beforeEach(() => {
     mockPrisma.tenantMembership.findMany.mockResolvedValue([
         { tenantId: 'tenant-1', userId: 'owner-1', tenant: { slug: 'acme' } },
     ]);
-    mockPrisma.notification.findMany.mockResolvedValue([]);
+    mockPrisma.notification.findMany.mockImplementation(notificationFindManyDouble());
     mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
 });
 
@@ -172,7 +213,7 @@ describe('runContractDeliveryWindowSweep', () => {
         mockPrisma.tenantMembership.findMany.mockResolvedValue([
             { tenantId: 'tenant-1', userId: 'owner-1', tenant: { slug: 'acme' } },
         ]);
-        mockPrisma.notification.findMany.mockResolvedValue([]);
+        mockPrisma.notification.findMany.mockImplementation(notificationFindManyDouble());
         mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
         mockPrisma.grainDelivery.groupBy.mockResolvedValue([]);
         mockPrisma.contract.findMany.mockResolvedValue([

@@ -102,7 +102,23 @@ describe('every notification publish is after-commit', () => {
         // Without this the suite passes for free the day the symbol is renamed
         // or the call sites move — the shape of regression it guards, reported
         // as green.
-        expect(publishers.length).toBeGreaterThanOrEqual(8);
+        //
+        // 8 → 4, 2026-10-21 (#2142). Seven sites published `{ id:
+        // row.dedupeKey }`, which since P7.2 becomes the client's
+        // `Last-Event-ID` and resolves to nothing. The fix reads the row back,
+        // and doing that seven times would have been seven copies of the same
+        // five lines, so the publishes were CONSOLIDATED into
+        // `app-layer/notifications/publish-fresh.ts`: 10 publisher files
+        // became 4.
+        //
+        // That is the opposite of the regression this floor guards — call
+        // sites vanishing because a symbol was renamed — but the floor cannot
+        // tell the two apart, so the number is restated with the reason. Worth
+        // being plain: a tripwire at 4 is weaker than one at 8. What narrows
+        // the gap is that the property now has ONE home, and
+        // `frame-id-is-a-row-id` separately forbids the value that made the
+        // consolidation necessary.
+        expect(publishers.length).toBeGreaterThanOrEqual(4);
     });
 
     it.each(publishers.map((f) => [path.relative(REPO_ROOT, f), f]))(

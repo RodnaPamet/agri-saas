@@ -21,9 +21,8 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
-import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { publishFreshNotifications } from './publish-fresh';
 
-import { afterCommit } from '@/lib/db/after-commit';
 export type AgroNotificationKind = 'SPRAY_WINDOW_WARNING' | 'DISEASE_RISK_RAISED' | 'AGRO_COPILOT_READY';
 
 export interface AgroNotificationTarget {
@@ -115,9 +114,9 @@ export async function createAgroSignalNotification(
     });
 
     if (result.count > 0) {
-        afterCommit('notify.agro', () =>
-            publishNotificationEvent(target.tenantId, target.recipientUserId, { id: row.dedupeKey }),
-        );
+        await publishFreshNotifications(db, 'notify.agro', [
+            { tenantId: target.tenantId, userId: target.recipientUserId, dedupeKey: row.dedupeKey },
+        ]);
     }
 
     return result.count > 0

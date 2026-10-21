@@ -159,26 +159,46 @@ describe('PR-C SSE notification streaming wiring', () => {
     describe('3. createTaskDueNotification publishes to the bus on insert', () => {
         const PATH_HELPER = 'src/app-layer/notifications/task-due.ts';
 
-        it('imports publishNotificationEvent', () => {
+        /**
+         * ── re-pointed 2026-10-21 (#2142) ──
+         *
+         * These three cases asserted that this file imported
+         * `publishNotificationEvent` and called it with
+         * `(task.tenantId, task.assigneeUserId, …)`. The publish now goes
+         * through `publishFreshNotifications`, because the id it was sending
+         * was the dedupeKey — and since P7.2 a frame's id is the client's
+         * `Last-Event-ID`, which `replayNotificationIdsAfter` resolves as a
+         * `Notification.id`, so a dedupeKey meant the next reconnect replayed
+         * nothing.
+         *
+         * The PROPERTY is unchanged and is what these still assert: a fresh
+         * insert reaches the bus for the right (tenant, user), and a
+         * dedupe-collapse does not. What changed is the symbol that carries
+         * it, which is the difference between a guard pinned to a contract and
+         * one pinned to a spelling.
+         */
+        it('routes the publish through the shared read-back helper', () => {
             const s = read(PATH_HELPER);
             expect(s).toMatch(
-                /import\s*\{\s*publishNotificationEvent\s*\}\s*from\s*['"]@\/lib\/notifications\/notification-bus['"]/,
+                /import\s*\{\s*publishFreshNotifications\s*\}\s*from\s*['"]\.\/publish-fresh['"]/,
+            );
+            // And NOT directly, which is what sent a dedupeKey.
+            expect(s).not.toMatch(/publishNotificationEvent\(/);
+        });
+
+        it('publishes ONLY when result.count > 0 (duplicates skip publish)', () => {
+            const s = read(PATH_HELPER);
+            // Inside the `if (result.count > 0)` branch, so a dedupe-collapse
+            // does not re-fan to subscribers — the original already did.
+            expect(s).toMatch(
+                /if \(result\.count > 0\) \{[\s\S]{0,800}publishFreshNotifications\(/,
             );
         });
 
-        it('calls publish ONLY when result.count > 0 (duplicates skip publish)', () => {
-            const s = read(PATH_HELPER);
-            // The publish call must be inside an `if (result.count > 0)`
-            // branch so dedupe-collapses don't re-fan to subscribers.
-            expect(s).toMatch(
-                /if \(result\.count > 0\) \{[\s\S]{0,500}publishNotificationEvent\(/,
-            );
-        });
-
-        it('publishes with the canonical (tenantId, userId, event) signature', () => {
+        it('addresses the frame to the assignee, in the tenant that owns the task', () => {
             const s = read(PATH_HELPER);
             expect(s).toMatch(
-                /publishNotificationEvent\(\s*task\.tenantId,\s*task\.assigneeUserId,/,
+                /tenantId: task\.tenantId,\s*userId: task\.assigneeUserId,\s*dedupeKey:/,
             );
         });
     });

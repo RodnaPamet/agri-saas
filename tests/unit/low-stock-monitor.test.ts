@@ -11,6 +11,20 @@
 
 export {};
 
+/**
+ * The two shapes `notification.findMany` is called with on this path.
+ *
+ * Typed rather than `any`: the lint ceiling counts ESLint's SUPPRESSED
+ * findings, not just its reported ones, so an `any` inside a file that already
+ * carries a blanket `no-explicit-any` disable raises the count by one with
+ * nothing new appearing in the diff. That is exactly how this branch went red
+ * on a ceiling of 1584 while main sat at 1584.
+ */
+interface NotificationFindManyArgs {
+    where: { dedupeKey: { in: string[] } };
+    select?: { id?: boolean; dedupeKey?: boolean };
+}
+
 const DAY = new Date('2026-06-14T09:00:00Z');
 
 const mockItemFindMany = jest.fn();
@@ -31,7 +45,22 @@ beforeEach(() => {
         inventoryLot: { groupBy: (...a: unknown[]) => mockLotGroupBy(...a) },
         tenantMembership: { findMany: (...a: unknown[]) => mockMembershipFindMany(...a) },
         notification: {
-            findMany: (...a: unknown[]) => mockNotifFindMany(...a),
+            // #2142 read-back. Two DIFFERENT queries now hit
+            // `notification.findMany` on this path, and they are told apart by
+            // their `select`: the pre-insert existence check asks only for
+            // `dedupeKey`, while the id read-back asks for `id` too. Without
+            // the branch, a test configuring the existence check to return
+            // `[]` also made the read-back resolve nothing, so the publish was
+            // skipped and the assertion read zero calls.
+            findMany: async (args: NotificationFindManyArgs) => {
+                if (args.select?.id) {
+                    return args.where.dedupeKey.in.map((dedupeKey, i) => ({
+                        id: `notif-${i + 1}`,
+                        dedupeKey,
+                    }));
+                }
+                return mockNotifFindMany(args);
+            },
             createMany: (...a: unknown[]) => mockNotifCreateMany(...a),
         },
     };

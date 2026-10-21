@@ -39,9 +39,8 @@
  *   three notifications (7d → 1d → 0d).
  */
 import type { PrismaClient } from '@prisma/client';
-import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { publishFreshNotifications } from './publish-fresh';
 
-import { afterCommit } from '@/lib/db/after-commit';
 /** ms in a UTC day. */
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -196,18 +195,20 @@ export async function createTaskDueNotification(
         skipDuplicates: true,
     });
 
-    // 2026-05-27 (PR-C) — on a fresh insert, push the event to
-    // every live SSE subscriber for this (tenant, user). The row
-    // we wrote is a value-equal copy of the inputs we're holding
-    // here — no re-read needed for the bell-bound payload shape.
-    // `id` would normally come from Prisma's return, but
-    // `createMany` doesn't return ids; we omit it from the event
-    // and the client treats `id`-less events as "prepend then
-    // refetch on next open" — graceful fallback.
+    // 2026-05-27 (PR-C) — on a fresh insert, push the event to every live SSE
+    // subscriber for this (tenant, user).
+    //
+    // This comment used to say the id "would normally come from Prisma's
+    // return, but `createMany` doesn't return ids; we omit it from the event
+    // and the client treats `id`-less events as prepend-then-refetch". The
+    // code did not omit it — it sent the dedupeKey, which since P7.2 becomes
+    // the client's `Last-Event-ID` and resolves to nothing. The prose
+    // described a graceful fallback the code never took, which is the worst
+    // kind of comment to leave next to a bug (#2142).
     if (result.count > 0) {
-        afterCommit('notify.task-due', () =>
-            publishNotificationEvent(task.tenantId, task.assigneeUserId, { id: row.dedupeKey }),
-        );
+        await publishFreshNotifications(db, 'notify.task-due', [
+            { tenantId: task.tenantId, userId: task.assigneeUserId, dedupeKey: row.dedupeKey },
+        ]);
     }
 
     // count 0 ⇒ the dedupeKey already existed ⇒ already notified.
