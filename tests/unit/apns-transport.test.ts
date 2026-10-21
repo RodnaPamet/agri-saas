@@ -35,7 +35,13 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { generateKeyPairSync } from 'node:crypto';
+import {
+    createPublicKey,
+    generateKeyPairSync,
+    sign as cryptoSign,
+    verify as cryptoVerify,
+    type KeyObject,
+} from 'node:crypto';
 import * as http2 from 'node:http2';
 import type { AddressInfo } from 'node:net';
 
@@ -145,6 +151,27 @@ const { privateKey } = generateKeyPairSync('ec', {
 }) as unknown as { privateKey: string };
 
 /**
+ * Does this signature verify when read as `enc`?
+ *
+ * `verify` answers false for a signature it cannot parse and throws for some
+ * inputs; both mean "not this encoding" here. Mirrors the helper in
+ * `apple-client-secret.test.ts` — the two suites assert the same property
+ * about two different ES256 token minters.
+ */
+const verifiesAs = (
+    enc: 'ieee-p1363' | 'der',
+    sig: Buffer,
+    input: Buffer,
+    key: KeyObject,
+): boolean => {
+    try {
+        return cryptoVerify('sha256', input, { key, dsaEncoding: enc }, sig);
+    } catch {
+        return false;
+    }
+};
+
+/**
  * A context, built by the shared helper rather than cast.
  *
  * `as any` would have been shorter and is what the file-level
@@ -204,13 +231,36 @@ describe('the provider token', () => {
         // base64url-encodes cleanly, and produces a token Apple rejects with
         // an error that reads like a wrong Key ID — so every local check
         // passes and production breaks pointing at the wrong thing.
-        const sig = Buffer.from(apnsProviderToken()!.split('.')[2], 'base64url');
+        const [header, payload, encodedSig] = apnsProviderToken()!.split('.');
+        const sig = Buffer.from(encodedSig, 'base64url');
+        const signingInput = Buffer.from(`${header}.${payload}`);
+        const pub = createPublicKey(privateKey);
 
         // Raw ES256 is exactly 64 bytes: r and s, 32 each.
         expect(sig.length).toBe(64);
-        // DER would open with 0x30 (SEQUENCE) and vary in length. This is the
-        // discriminator, not the length alone.
-        expect(sig[0]).not.toBe(0x30);
+
+        // Then prove the encoding BY VERIFYING IN IT. This used to be
+        // `expect(sig[0]).not.toBe(0x30)` — the DER SEQUENCE tag — and the
+        // first byte of a raw r||s signature is the top byte of `r`, which is
+        // uniformly random, so a correct signature failed about 1 run in 256.
+        // The sibling instance in `apple-client-secret.test.ts` reddened main
+        // that way on 2026-10-21, on a commit that changed two lines of JSON.
+        expect(verifiesAs('ieee-p1363', sig, signingInput, pub)).toBe(true);
+        expect(verifiesAs('der', sig, signingInput, pub)).toBe(false);
+    });
+
+    it('control: the same check can TELL a DER signature apart', () => {
+        // Otherwise both assertions above are satisfied by a `verify` that
+        // answers true for one encoding and false for the other whatever it is
+        // handed — green about a property never tested.
+        const [header, payload] = apnsProviderToken()!.split('.');
+        const signingInput = Buffer.from(`${header}.${payload}`);
+        const pub = createPublicKey(privateKey);
+        const der = cryptoSign('sha256', signingInput, { key: privateKey, dsaEncoding: 'der' });
+
+        expect(verifiesAs('der', der, signingInput, pub)).toBe(true);
+        expect(verifiesAs('ieee-p1363', der, signingInput, pub)).toBe(false);
+        expect(der.length).not.toBe(64);
     });
 
     it('is REUSED within the window, and re-minted after it', () => {

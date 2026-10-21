@@ -28,7 +28,13 @@
  * skipped without it would be the `a-control-that-cannot-express-failure`
  * shape — green for ever, by never running.
  */
-import { generateKeyPairSync } from 'node:crypto';
+import {
+    createPublicKey,
+    generateKeyPairSync,
+    sign as cryptoSign,
+    verify as cryptoVerify,
+    type KeyObject,
+} from 'node:crypto';
 
 const mockEnv: Record<string, string | undefined> = {};
 jest.mock('@/env', () => ({
@@ -67,6 +73,27 @@ const parts = (jwt: string) => jwt.split('.');
 const decode = (seg: string) =>
     JSON.parse(Buffer.from(seg.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
 
+/**
+ * Does this signature verify when read as `enc`?
+ *
+ * `verify` answers false for a signature it cannot parse, but for some inputs
+ * it throws instead — and both answers mean the same thing here: not this
+ * encoding. Collapsing them is what lets the assertions below read as a
+ * straight true/false.
+ */
+const verifiesAs = (
+    enc: 'ieee-p1363' | 'der',
+    sig: Buffer,
+    input: Buffer,
+    key: KeyObject,
+): boolean => {
+    try {
+        return cryptoVerify('sha256', input, { key, dsaEncoding: enc }, sig);
+    } catch {
+        return false;
+    }
+};
+
 beforeEach(() => {
     jest.clearAllMocks();
     configure();
@@ -95,16 +122,49 @@ describe('mintAppleClientSecret', () => {
     it('signs with a RAW r||s signature, not DER — the silent failure', () => {
         const jwt = mintAppleClientSecret()!;
         expect(jwt).not.toBeNull();
-        const sig = Buffer.from(parts(jwt)[2].replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+        const [header, payload, encodedSig] = parts(jwt);
+        const sig = Buffer.from(encodedSig.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+        const signingInput = Buffer.from(`${header}.${payload}`);
+        const pub = createPublicKey(privateKey);
 
         // A P-256 JWS signature is exactly 64 bytes: r and s, 32 each.
         expect(sig).toHaveLength(64);
-        // And DER is the thing it must NOT be: a DER SEQUENCE opens with
-        // 0x30 and runs ~70-72 bytes. Both assertions, because a length
-        // check alone would admit a 64-byte buffer of the wrong shape and a
-        // tag check alone would admit a raw signature that happened to start
-        // with 0x30.
-        expect(sig[0]).not.toBe(0x30);
+
+        // Then PROVE the encoding by verifying IN it, rather than inferring it
+        // from a byte. This assertion used to read `expect(sig[0]).not
+        // .toBe(0x30)` — the DER SEQUENCE tag — and the first byte of a raw
+        // r||s signature is the top byte of `r`, which is uniformly random. So
+        // a perfectly correct signature failed about 1 run in 256, and on
+        // 2026-10-21 one of them reddened main (a5c5ba14d, shard 2/6) on a
+        // commit that changed two lines of JSON. The old comment named that
+        // exact case — "a tag check alone would admit a raw signature that
+        // happened to start with 0x30" — and then used the tag as a NEGATIVE
+        // assertion, which turns the case it identified into a flake.
+        expect(verifiesAs('ieee-p1363', sig, signingInput, pub)).toBe(true);
+        expect(verifiesAs('der', sig, signingInput, pub)).toBe(false);
+    });
+
+    it('control: the same check can TELL a DER signature apart', () => {
+        // Without this, both assertions above would be satisfied by a `verify`
+        // that always answered true for one encoding and false for the other,
+        // whatever it was given — and the suite would be green about a property
+        // it never tested. So: sign the same input as DER and require the
+        // mirror image.
+        const jwt = mintAppleClientSecret()!;
+        const [header, payload] = parts(jwt);
+        const signingInput = Buffer.from(`${header}.${payload}`);
+        const pub = createPublicKey(privateKey);
+
+        const der = cryptoSign('sha256', signingInput, {
+            key: privateKey,
+            dsaEncoding: 'der',
+        });
+
+        expect(verifiesAs('der', der, signingInput, pub)).toBe(true);
+        expect(verifiesAs('ieee-p1363', der, signingInput, pub)).toBe(false);
+        // And the length difference the old comment relied on is real — it is
+        // just not sufficient on its own, which is why it is not the assertion.
+        expect(der.length).not.toBe(64);
     });
 
     it('builds the header Apple requires', () => {
