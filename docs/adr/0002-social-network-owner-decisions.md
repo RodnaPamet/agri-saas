@@ -41,11 +41,45 @@ changed circumstance should reopen it.
 | **OD15** | **Profiles are `noindex` by default.** |
 | **OD16** | **Chat recovery point: 24h during beta**; WAL archiving before national launch. |
 | **OD17** | **Channels in v1 are official only:** 15 crops, 28 oblasti, plus #субсидии #техника #вредители-и-болести #пазар #времето #помощ. |
-| **OD18** | **Push for DMs.** Channels notify on mentions and replies only. Quiet hours 22:00–06:00. |
+| **OD18** | **Push for DMs.** Channels notify on mentions and replies only. Quiet hours 22:00–06:00 — see OD18a. |
 | **OD19** | **Read receipts on by default and SYMMETRIC** — turning «Видяно» off also hides others' receipts from you. |
 | **OD20** | **Minimum age 16+.** |
 | **OD21** | **Import the Търговски регистър CC0 dump** to show the registered name as the user types their ЕИК. |
 | **OD22** | **No permanent staging.** Runtime flags with cohorts, and a throwaway VM for load tests. |
+
+## Clarifications
+
+A clarification is the owner answering a question this file left open, dated
+and recorded here rather than argued again. It does not change a ruling.
+
+### OD18a — quiet hours cover ALL push, and are not per-user
+
+**Asked:** 2026-10-21, building P7.5 (#1994). **Ruled:** the same day.
+
+OD18's row is headed "Push for DMs" and its third sentence gives the window
+with no scope of its own, so two readings were available: quiet hours bound
+only DM and channel push, or all of it. The difference is a product one — a
+task assigned at 23:00 either buzzes the assignee's phone or waits until 06:00
+— and it decided the SCHEMA, because a window that is the same for everybody
+needs no columns while a per-user one needs two.
+
+**The ruling:** quiet hours apply to every push the product sends, and the
+window is fixed at 22:00–06:00 rather than configurable per person.
+
+Two consequences recorded with it, both ruled the same day:
+
+- **A suppressed push is delivered when the window ends, not dropped.** As ONE
+  summary rather than one banner per notification — ten held overnight must not
+  become ten buzzes at 06:00, which is the pile-up quiet hours exists to
+  prevent, moved six hours.
+- **Only what the window suppressed counts toward that summary.** A
+  notification created at 21:00 already pushed normally, so including it would
+  buzz a second time about something the person may have read and dismissed.
+
+Quiet hours never suppress the in-app row. The bell is how somebody finds out
+about anything they were not interrupted for, so the only thing the window
+moves is the interruption. `resolve-delivery.ts` carries that as an
+unconditional `inApp: true`.
 
 ## Consequences worth stating
 

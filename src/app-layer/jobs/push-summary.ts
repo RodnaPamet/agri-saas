@@ -37,6 +37,7 @@ import { getPermissionsForRole } from '@/lib/permissions';
 import { runInTenantContext } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
 import { quietWindowBounds } from '@/lib/notifications/quiet-hours';
+import { resolveDelivery } from '@/app-layer/notifications/resolve-delivery';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { sendWebPushToUser } from '@/lib/notifications/web-push';
@@ -66,8 +67,8 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
     const ctx = makeSystemCtx(tenantId, recipientUserId);
     const { start, end } = quietWindowBounds(nightKey);
 
-    const count = await runInTenantContext(ctx, (db) =>
-        db.notification.count({
+    const { count, preference, devices } = await runInTenantContext(ctx, async (db) => {
+        const n = await db.notification.count({
             where: {
                 userId: recipientUserId,
                 // RLS scopes the tenant; `userId` is named because a tenant's
@@ -76,8 +77,24 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
                 createdAt: { gte: start, lt: end },
                 read: false,
             },
-        }),
-    );
+        });
+        const pref = await db.userNotificationPreference.findUnique({
+            where: { userId_tenantId: { userId: recipientUserId, tenantId } },
+            select: { delivery: true },
+        });
+        const rows = await db.pushSubscription.groupBy({
+            by: ['platform'],
+            where: { userId: recipientUserId },
+            _count: { _all: true },
+        });
+        const countOf = (pl: 'WEB' | 'IOS') =>
+            rows.find((r) => r.platform === pl)?._count._all ?? 0;
+        return {
+            count: n,
+            preference: pref?.delivery ?? null,
+            devices: { web: countOf('WEB'), ios: countOf('IOS') },
+        };
+    });
 
     if (count === 0) {
         logger.info('push.summary_empty', {
@@ -85,6 +102,39 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
             nightKey,
         });
         return { count: 0, delivered: 0 };
+    }
+
+    // Asked AGAIN, at 06:00, and this is not belt-and-braces. The night is
+    // eight hours long: somebody can turn push off at 23:00, and a summary
+    // that only re-checked the clock would deliver at 06:00 exactly the push
+    // they had just refused. So every producer goes through `resolveDelivery`
+    // and `tests/guards/one-resolve-delivery.test.ts` holds that to be true —
+    // "one" is the requirement in #1994, and a second producer deciding for
+    // itself is how the single decision point stops being one.
+    const decision = resolveDelivery({ preference, now: new Date(), devices });
+
+    if (decision.deferral !== null) {
+        // Only reachable if this job ran so late that it landed inside the
+        // NEXT night's window — a backlog of eight hours or more. Logged and
+        // dropped rather than re-deferred: chaining a summary into the
+        // following night would announce a window two nights old, and the
+        // rows it describes are still in the bell either way.
+        logger.warn('push.summary_too_late', {
+            component: 'push',
+            nightKey,
+            count,
+        });
+        return { count, delivered: 0 };
+    }
+
+    if (!decision.webPush && !decision.apns) {
+        logger.info('push.summary_suppressed', {
+            component: 'push',
+            nightKey,
+            count,
+            reason: decision.suppressedBecause,
+        });
+        return { count, delivered: 0 };
     }
 
     // The recipient's own language. Read OUTSIDE the tenant context: `User` is
@@ -113,7 +163,11 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
 
     let delivered = 0;
     const failures: string[] = [];
-    for (const transport of ['web', 'apns'] as const) {
+    const wanted = [
+        ...(decision.webPush ? (['web'] as const) : []),
+        ...(decision.apns ? (['apns'] as const) : []),
+    ];
+    for (const transport of wanted) {
         try {
             if (transport === 'web') {
                 await sendWebPushToUser(ctx, recipientUserId, {
