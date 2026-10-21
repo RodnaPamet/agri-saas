@@ -16,6 +16,10 @@ import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
+import {
+    createBulkTaskSummaryNotification,
+    type BulkTaskSummaryKind,
+} from '@/app-layer/notifications/bulk-task-summary';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { PrismaTx } from '@/lib/db-context';
 import {
@@ -753,6 +757,123 @@ async function emitTaskAssignedNotification(
     }
 }
 
+/**
+ * ONE bell row and ONE push for a bulk assignment — #2103.
+ *
+ * `bulkAssignTasks` wrote a `TASK_ASSIGNED` audit row per task and returned,
+ * so being assigned twenty tasks at once was silent while being assigned one
+ * was not. The owner's ruling was a summary rather than N notifications: see
+ * `notifications/bulk-task-summary.ts` for why, and for the measurement that
+ * makes N-per-action the worse option.
+ *
+ * Same fire-and-forget posture as `emitTaskAssignedNotification` — its own
+ * short `runInTenantContext`, errors swallowed and logged. A notification must
+ * never roll back a task.
+ *
+ * Two refusals, both inherited from the single-task path:
+ *   - **An unassign tells nobody.** There is no recipient.
+ *   - **Self-assignment rings nobody's bell** (#1755). It appears on the
+ *     screen the person is already looking at, one action after they caused it.
+ */
+async function emitBulkAssignedNotification(
+    ctx: RequestContext,
+    taskIds: string[],
+    assigneeUserId: string | null,
+): Promise<void> {
+    if (!assigneeUserId || !ctx.tenantSlug || taskIds.length === 0) return;
+    if (assigneeUserId === ctx.userId) return;
+    await emitBulkSummary(ctx, 'assigned', assigneeUserId, taskIds);
+}
+
+/**
+ * ONE bell row per AFFECTED ASSIGNEE for a bulk reschedule — #2103.
+ *
+ * Different from the assignment case in one way that matters: a bulk
+ * reschedule has no single recipient. Twenty tasks can belong to five people,
+ * so the rows are grouped by assignee and each person is told about their own
+ * tasks only — telling everyone about all twenty would leak who else is
+ * working on what, and would also be wrong.
+ *
+ * Unassigned tasks have nobody to tell, and the actor's own tasks are skipped
+ * for the same reason as above.
+ */
+async function emitBulkRescheduledNotification(
+    ctx: RequestContext,
+    affected: Array<{ id: string; assigneeUserId: string | null }>,
+): Promise<void> {
+    if (!ctx.tenantSlug || affected.length === 0) return;
+
+    const byAssignee = new Map<string, string[]>();
+    for (const row of affected) {
+        if (!row.assigneeUserId || row.assigneeUserId === ctx.userId) continue;
+        const ids = byAssignee.get(row.assigneeUserId) ?? [];
+        ids.push(row.id);
+        byAssignee.set(row.assigneeUserId, ids);
+    }
+
+    for (const [recipientUserId, ids] of byAssignee) {
+        // guardrail-allow: n+1 — one summary per recipient is the shape, and
+        // the recipient count is bounded by the people in one farm. Each
+        // iteration is its own short transaction on purpose: one failing
+        // recipient must not cost the others their notification.
+        await emitBulkSummary(ctx, 'rescheduled', recipientUserId, ids);
+    }
+}
+
+/**
+ * The half the two bulk emits share: locale, row, push.
+ *
+ * The push carries the summary's own title and body rather than a task's, so
+ * the owner's "keep the text in the payload" ruling costs no more here than a
+ * count — a bulk summary names no task.
+ *
+ * `collapseKey` is the batch's dedupe identity, so a retry replaces its own
+ * earlier push on both surfaces instead of stacking.
+ */
+async function emitBulkSummary(
+    ctx: RequestContext,
+    kind: BulkTaskSummaryKind,
+    recipientUserId: string,
+    taskIds: string[],
+): Promise<void> {
+    const tenantSlug = ctx.tenantSlug;
+    if (!tenantSlug || !ctx.tenantId) return;
+    const tenantId = ctx.tenantId;
+    try {
+        const outcome = await runInTenantContext(ctx, async (db) => {
+            const user = await db.user.findUnique({
+                where: { id: recipientUserId },
+                select: { uiLanguage: true },
+            });
+            return createBulkTaskSummaryNotification(db, kind, {
+                tenantId,
+                tenantSlug,
+                recipientUserId,
+                taskIds,
+                locale: resolveRecipientLocale(user?.uiLanguage),
+            });
+        });
+
+        if (outcome.status === 'created' && outcome.notification) {
+            await enqueue('push-send', {
+                tenantId,
+                recipientUserId,
+                title: outcome.notification.title,
+                body: outcome.notification.message,
+                link: outcome.notification.linkUrl,
+                collapseKey: `bulk-${kind}-${outcome.notification.id}`,
+            });
+        }
+    } catch (err) {
+        logger.warn('failed to create bulk task summary notification', {
+            component: 'notifications',
+            kind,
+            tasks: taskIds.length,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
 // ─── Links ───
 
 export async function listTaskLinks(ctx: RequestContext, taskId: string) {
@@ -1100,10 +1221,28 @@ export async function bulkAssignTasks(ctx: RequestContext, taskIds: string[], as
                 metadata: { assigneeUserId, bulk: true },
             });
         }
-        return result;
+        // The ids that actually CARRY the new assignee, read back rather than
+        // assumed from the request. `bulkAssign` is an `updateMany` filtered
+        // on `{ id: { in: taskIds }, tenantId }`, so an id that does not exist
+        // or belongs to another tenant drops out silently — and a summary
+        // saying "20 tasks" when three were written would misreport the thing
+        // it exists to report (#2103).
+        const written = assigneeUserId
+            ? (
+                  await db.task.findMany({
+                      where: { id: { in: taskIds }, tenantId: ctx.tenantId, assigneeUserId },
+                      select: { id: true },
+                  })
+              ).map((r) => r.id)
+            : [];
+        return { result, written };
     });
+    // Between the commit and the cache bump, like the single-task emits: a
+    // notification write inside the transaction would couple its failure to
+    // the task write, and after the bump it would race a stale cache read.
+    await emitBulkAssignedNotification(ctx, outcome.written, assigneeUserId);
     await bumpEntityCacheVersion(ctx, 'task');
-    return outcome;
+    return outcome.result;
 }
 
 export async function bulkSetTaskStatus(ctx: RequestContext, taskIds: string[], status: string, resolution?: string) {
@@ -1190,9 +1329,18 @@ export async function bulkSetTaskDueDate(ctx: RequestContext, taskIds: string[],
                 metadata: { dueAt, bulk: true },
             });
         }
-        return result;
+        // Who to tell, read AFTER the write. A due-date change does not touch
+        // `assigneeUserId`, so reading it after is the same answer as before —
+        // and it is the set that was actually updated, for the same
+        // `updateMany`-matches-fewer reason as `bulkAssignTasks`.
+        const affected = await db.task.findMany({
+            where: { id: { in: taskIds }, tenantId: ctx.tenantId },
+            select: { id: true, assigneeUserId: true },
+        });
+        return { result, affected };
     });
+    await emitBulkRescheduledNotification(ctx, outcome.affected);
     await bumpEntityCacheVersion(ctx, 'task');
-    return outcome;
+    return outcome.result;
 }
 
