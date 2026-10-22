@@ -173,7 +173,7 @@ export function SwipeRow({
                     aria-label={actionLabel}
                     title={actionLabel}
                     onClick={onAction}
-                    className="flex w-32 items-center justify-center gap-tight bg-bg-danger text-content-onDanger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex w-32 items-center justify-center gap-tight bg-bg-error-emphasis text-content-inverted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                     {actionIcon}
                     <span className="text-xs font-medium">{actionLabel}</span>
