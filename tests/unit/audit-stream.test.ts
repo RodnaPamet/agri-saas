@@ -26,6 +26,7 @@ jest.mock('@/lib/observability/metrics', () => {
 });
 
 import { computeHmacSha256 } from '@/app-layer/integrations/webhook-crypto';
+import { logger } from '@/lib/observability/logger';
 import {
     recordAuditStreamDelivery,
     recordAuditStreamBufferOverflow,
@@ -564,5 +565,73 @@ describe('audit-stream — delivery metrics', () => {
         }
         expect(mockRecordOverflow).toHaveBeenCalled();
         await flushAllAuditStreams();
+    });
+});
+
+describe('the #2091 tripwire', () => {
+    /**
+     * #2091 was closed on ONE premise: `TenantSecuritySettings` is empty in
+     * production, so every tenant resolves to null, `flushTenant`
+     * short-circuits, and the truncated SIGTERM flush has nothing to lose.
+     *
+     * That premise is a row somebody can insert at any time. A CI guard cannot
+     * watch for it — the condition is production data, not a property of the
+     * source — so the tripwire fires where the premise is observed, and these
+     * cases are what keep it wired.
+     */
+    const warnSpy = () =>
+        jest.spyOn(logger as unknown as { warn: (m: string, f?: unknown) => void }, 'warn');
+
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    it('fires when a tenant actually has a stream configured', async () => {
+        const spy = warnSpy();
+        __setStreamPost(async () => ({ ok: true, status: 200 }));
+        __setTenantStreamConfigResolver(async () => ({ url: 'https://x.test/h', secret: 's' }));
+
+        streamAuditEvent(makeEvent());
+        await flushAllAuditStreams();
+
+        const hit = spy.mock.calls.find(
+            (c) => c[0] === 'audit-stream.shutdown_posture_now_matters',
+        );
+        expect(hit).toBeDefined();
+        // Traceable to the decision it invalidates, not just a vague warning.
+        expect((hit![1] as { issue: number }).issue).toBe(2091);
+    });
+
+    it('stays SILENT when no tenant has one — today’s production state', async () => {
+        // The control, and the case that matters most: this warning must cost
+        // nothing while the premise holds, or it is noise that gets muted
+        // before the day it means something.
+        const spy = warnSpy();
+        __setStreamPost(async () => ({ ok: true, status: 200 }));
+        __setTenantStreamConfigResolver(async () => null);
+
+        streamAuditEvent(makeEvent());
+        await flushAllAuditStreams();
+
+        expect(
+            spy.mock.calls.filter((c) => c[0] === 'audit-stream.shutdown_posture_now_matters'),
+        ).toHaveLength(0);
+    });
+
+    it('fires ONCE per process, not once per flush', async () => {
+        // The resolver runs on every flush tick for every buffered tenant, so
+        // an ungated warning would be one line per batch for ever.
+        const spy = warnSpy();
+        __setStreamPost(async () => ({ ok: true, status: 200 }));
+        __setTenantStreamConfigResolver(async () => ({ url: 'https://x.test/h', secret: 's' }));
+
+        for (let i = 0; i < 3; i++) {
+            streamAuditEvent(makeEvent());
+            await flushAllAuditStreams();
+        }
+
+        expect(
+            spy.mock.calls.filter((c) => c[0] === 'audit-stream.shutdown_posture_now_matters'),
+        ).toHaveLength(1);
     });
 });

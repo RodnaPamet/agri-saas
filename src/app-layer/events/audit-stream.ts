@@ -144,6 +144,52 @@ async function defaultResolveTenantStreamConfig(
     };
 }
 
+/**
+ * Has any tenant ever resolved a stream config in this process?
+ *
+ * Module-scoped so the warning below fires ONCE per process rather than once
+ * per flush — the resolver runs on every flush tick for every buffered
+ * tenant.
+ */
+let shutdownPostureWarned = false;
+
+/**
+ * ── the #2091 tripwire ──
+ *
+ * #2091 asked whether the truncated shutdown stages lose anything. Measured on
+ * production 2026-10-22: stage 2 is a no-op (OTel disabled), stage 3 can drop a
+ * few queued Sentry events, and **stage 1 — this module's flush — has nothing
+ * to lose, because `TenantSecuritySettings` is empty.** Every tenant resolves
+ * to null, so `flushTenant` short-circuits and no delivery is missed. On that
+ * basis the custom server was not built.
+ *
+ * That argument has exactly one premise, and it is a row in a table somebody
+ * can insert at any time. The moment a tenant configures an audit stream,
+ * every restart can drop up to one flush interval of undelivered audit events
+ * — and audit forwarding is the sort of thing a customer configures precisely
+ * because they want completeness.
+ *
+ * So the tripwire fires where the premise is observed rather than where it was
+ * written down. A CI guard cannot do this: the condition is a production row,
+ * not a property of the source. `tests/guards/audit-stream-tripwire.test.ts`
+ * holds the static half — that this warning exists and still names the issue.
+ */
+function warnShutdownPostureOnce(tenantId: string): void {
+    if (shutdownPostureWarned) return;
+    shutdownPostureWarned = true;
+    logger.warn('audit-stream.shutdown_posture_now_matters', {
+        component: 'audit-stream',
+        issue: 2091,
+        tenantId,
+        detail:
+            'A tenant has an audit stream configured. #2091 was closed on the ' +
+            'premise that this table was empty, so the SIGTERM flush had ' +
+            'nothing to lose. It now does: Next exits via process.exit(143) ' +
+            'before the awaited stages finish, so a restart can drop up to one ' +
+            'flush interval of undelivered audit events. Re-open #2091.',
+    });
+}
+
 let resolveTenantStreamConfig:
     (tenantId: string) => Promise<TenantStreamConfig | null> =
     defaultResolveTenantStreamConfig;
@@ -324,6 +370,11 @@ export function __resetAuditStreamForTests(): void {
         if (buf.timer) clearTimeout(buf.timer);
     }
     buffers.clear();
+    // The #2091 tripwire fires once per PROCESS, which in jest means once per
+    // module instance — so without this, the second test to configure a
+    // tenant would see no warning and "fires once" would be untestable from
+    // the other direction.
+    shutdownPostureWarned = false;
 }
 
 // ─── Flush ─────────────────────────────────────────────────────────
@@ -356,6 +407,10 @@ async function flushTenant(tenantId: string): Promise<void> {
                 // silently dropped (still in the audit table; not lost).
                 return;
             }
+
+            // A non-null config is the ONE premise #2091 was closed on, now
+            // false. Fires once per process; see `warnShutdownPostureOnce`.
+            warnShutdownPostureOnce(tenantId);
 
             await deliverBatch(tenantId, config, batch);
         } catch (err) {
