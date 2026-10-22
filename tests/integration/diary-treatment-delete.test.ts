@@ -41,6 +41,8 @@ import {
     recordDiaryTreatment,
     getDiaryTreatment,
     deleteDiaryTreatment,
+    restoreDiaryTreatment,
+    listDeletedTreatments,
 } from '@/app-layer/usecases/diary-treatment';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -143,23 +145,212 @@ async function recordPartial(handle: string) {
 }
 
 describeFn('abandoning an unfinished treatment (DB-backed)', () => {
-    it('refuses a COMPLETE treatment, which is a farm record', async () => {
+    it('REMOVES a complete treatment, and keeps its handle so a restore is exact', async () => {
+        // This asserted the OPPOSITE until 2026-10-22: a 409 TREATMENT_COMPLETE,
+        // on the reasoning that a finished treatment is a БАБХ record and that
+        // dropping it here would be 'a convenience route that drops БАБХ
+        // records'. The owner reversed that (#2175). The old reasoning is kept
+        // verbatim in the usecase docblock, because it is still the best
+        // account of what the change costs.
         const handle = `complete-${randomUUID()}`;
         await recordDiaryTreatment(ctx(), input(), handle);
 
-        await expect(deleteDiaryTreatment(ctx(), handle)).rejects.toMatchObject({
-            code: 'TREATMENT_COMPLETE',
+        const before = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: handle },
+            select: { id: true, clientMutationId: true },
+            orderBy: { id: 'asc' },
         });
+        expect(before.length).toBeGreaterThan(0);
 
-        // And nothing moved. The refusal has to be a refusal, not a partial
-        // delete that stopped halfway — which is the failure mode a 409 from
-        // inside a multi-table write would otherwise hide.
+        const result = await deleteDiaryTreatment(ctx(), handle);
+        expect(result.tasks).toBe(before.length);
+
+        const tasks = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: handle },
+            select: { id: true, deletedAt: true, clientMutationId: true },
+            orderBy: { id: 'asc' },
+        });
+        expect(tasks.every((t) => t.deletedAt !== null)).toBe(true);
+        const entries = await globalPrisma.logEntry.findMany({ where: { tenantId, treatmentGroupId: handle } });
+        expect(entries.length).toBeGreaterThan(0);
+        expect(entries.every((e) => e.deletedAt !== null)).toBe(true);
+
+        // The handle is KEPT for a complete treatment, which is what makes the
+        // restore exact. The incomplete path releases it so a dead-end handle
+        // can be re-sent, and the value is recorded nowhere — so releasing it
+        // here would quietly make a restore lossy. Only a DB-backed test can
+        // see this: the column is the entire record of it.
+        expect(tasks.map((t) => t.clientMutationId)).toEqual(
+            before.map((t) => t.clientMutationId),
+        );
+        expect(tasks.every((t) => t.clientMutationId !== null)).toBe(true);
+
+        // DONE lines untouched: their own record of what happened stays true
+        // even though the entry they wrote is withdrawn, and it is what a
+        // restore brings back rather than rebuilding.
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, taskId: { in: tasks.map((t) => t.id) } },
+            select: { status: true },
+        });
+        expect(lines.length).toBeGreaterThan(0);
+        expect(lines.every((l) => l.status === 'DONE')).toBe(true);
+    });
+
+    it('a restore puts the treatment back, entries and all', async () => {
+        const handle = `restore-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        const restored = await restoreDiaryTreatment(ctx(), handle);
+        expect(restored.tasks).toBeGreaterThan(0);
+        expect(restored.entries).toBeGreaterThan(0);
+
         const tasks = await globalPrisma.task.findMany({ where: { tenantId, treatmentGroupId: handle } });
-        expect(tasks).not.toHaveLength(0);
         expect(tasks.every((t) => t.deletedAt === null)).toBe(true);
+        expect(tasks.every((t) => t.deletedByUserId === null)).toBe(true);
         const entries = await globalPrisma.logEntry.findMany({ where: { tenantId, treatmentGroupId: handle } });
         expect(entries.length).toBeGreaterThan(0);
         expect(entries.every((e) => e.deletedAt === null)).toBe(true);
+    });
+
+    it('restoring a treatment nobody withdrew is NOT FOUND, not a silent no-op', async () => {
+        // The lookup is `deletedAt: { not: null }`, the inverse of the delete's.
+        // Without that, restoring a live treatment updates zero rows and
+        // reports success — which reads as 'restored' to a client.
+        const handle = `live-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await expect(restoreDiaryTreatment(ctx(), handle)).rejects.toMatchObject({
+            code: 'TREATMENT_NOT_FOUND',
+        });
+    });
+
+    it('the deleted listing folds N tasks into ONE treatment', async () => {
+        // A treatment over several blocks is several tasks, and a trash view
+        // listing it once per task would invite several restores of one thing.
+        const handle = `folded-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        const { treatments } = await listDeletedTreatments(ctx());
+        const mine = treatments.filter((t) => t.treatmentGroupId === handle);
+        expect(mine).toHaveLength(1);
+        expect(mine[0].taskCount).toBeGreaterThan(0);
+    });
+
+    it('the «Кошче» listing names WHAT was withdrawn, not only when', async () => {
+        // The restore screen cannot fetch per row to label it: a withdrawn
+        // handle stops resolving, which the next assertion proves rather than
+        // assumes. So a listing of bare dates would be unusable — a farmer
+        // picking a row has to recognise the spraying. Raised in review by
+        // agrent-ios (#395) before the phone built against it.
+        const handle = `summary-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        // The reason the summary has to be ON the listing.
+        expect(await getDiaryTreatment(ctx(), handle)).toBeNull();
+
+        const { treatments } = await listDeletedTreatments(ctx());
+        const row = treatments.find((t) => t.treatmentGroupId === handle);
+        expect(row).toBeDefined();
+        expect(row!.productName).toBeTruthy();
+        expect(row!.blockNames.length).toBeGreaterThan(0);
+        expect(row!.parcelCount).toBeGreaterThan(0);
+        expect(row!.totalAreaHa).toBeGreaterThan(0);
+        expect(row!.kind).toBeTruthy();
+        expect(row!.occurredOn).toBe(DAY);
+    });
+
+    it('mayRestore answers for THIS caller, not for the farm', async () => {
+        // The flag exists so the phone offers «Възстанови» only where it would
+        // succeed, so the property worth asserting is that it DISAGREES between
+        // two callers on one row — a flag that is simply true everywhere would
+        // pass a presence check and tell a client nothing.
+        const handle = `mayrestore-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        const asCreator = await listDeletedTreatments(ctx('EDITOR' as Role));
+        expect(asCreator.treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(
+            true,
+        );
+
+        const stranger = makeRequestContext('EDITOR', {
+            userId: `${userId}-someone-else`,
+            tenantId,
+            tenantSlug: `${TAG}-t`,
+        });
+        const asStranger = await listDeletedTreatments(stranger);
+        expect(asStranger.treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(
+            false,
+        );
+    });
+
+    it('mayRestore is FALSE for a mixed-authorship handle, admin included', async () => {
+        // The arm no client could compute for itself, and the reason `mayDelete`
+        // is a server-side flag rather than a `createdByUserId` field: a reused
+        // handle is refused 409 for EVERYBODY, so an admin seeing `true` here
+        // would be offered a restore that cannot succeed.
+        const handle = `mixed-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        // Forge the second author directly. The usecase refuses to CREATE this
+        // state — one treatment is written by one person in one request — so it
+        // has to be written rather than recorded, and the fixture is a single
+        // block, so there is only one task to start from. Clone it under the
+        // same handle with a different author: that is precisely the reused
+        // handle the 409 exists for.
+        const first = await globalPrisma.task.findFirstOrThrow({
+            where: { tenantId, treatmentGroupId: handle },
+        });
+        // `createMany` because its input is SCALARS only — a cloned row has no
+        // relation objects to satisfy. Four fields are dropped rather than
+        // copied, and each one is a constraint rather than taste:
+        // `clientMutationId` and `key` are both UNIQUE per tenant, so carrying
+        // either over fails on the constraint instead of producing the state
+        // under test; `metadataJson` is a nullable Json, whose `null` Prisma
+        // will not accept back as an input value; and the timestamps are the
+        // database's to set.
+        const {
+            id: _id,
+            createdAt: _c,
+            updatedAt: _u,
+            clientMutationId: _k,
+            metadataJson: _m,
+            key: clonedFrom,
+            ...rest
+        } = first;
+        // A REAL second user, because `createdByUserId` is a foreign key. The
+        // `mayRestore` test above gets away with a made-up id only because its
+        // refusal lands before any write touches the column.
+        const otherEmail = `${TAG}-second@ag.test`;
+        const secondAuthor = await globalPrisma.user.create({
+            data: {
+                email: otherEmail,
+                emailHash: hashForLookup(otherEmail),
+                name: 'Second Author',
+            },
+            select: { id: true },
+        });
+        await globalPrisma.task.createMany({
+            data: [
+                {
+                    ...rest,
+                    key: `${clonedFrom}-dup`,
+                    createdByUserId: secondAuthor.id,
+                },
+            ],
+        });
+
+        const { treatments } = await listDeletedTreatments(ctx());
+        expect(treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(false);
+
+        // And the route agrees with the flag — which is the whole point of
+        // computing it from the same predicate.
+        await expect(restoreDiaryTreatment(ctx(), handle)).rejects.toMatchObject({
+            code: 'TREATMENT_MIXED_AUTHORSHIP',
+        });
     });
 
     it('404s on a handle nobody recorded', async () => {
@@ -168,13 +359,59 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         });
     });
 
-    it('is ADMIN-only — the role that records a treatment cannot abandon one', async () => {
+    it('a role that cannot WRITE cannot delete, whoever recorded it', async () => {
+        // This was called 'is ADMIN-only' and that stopped being true with
+        // #2175. It also never tested what the name said: `ctx(role)` keeps the
+        // SAME userId, so this MECHANISATOR *is* the creator — it is refused by
+        // `assertCanWrite` (MECHANISATOR has `canWrite: false`), not by any
+        // admin check, and `rejects.toBeDefined()` could not tell which gate
+        // answered. Both are fixed: the name says what it tests and the code is
+        // asserted.
         const handle = `authz-${randomUUID()}`;
         await recordPartial(handle);
 
-        // MECHANISATOR can write (it records field work) and cannot admin, so
-        // it is the role that separates the two policies.
-        await expect(deleteDiaryTreatment(ctx('MECHANISATOR' as Role), handle)).rejects.toBeDefined();
+        await expect(
+            deleteDiaryTreatment(ctx('MECHANISATOR' as Role), handle),
+            // A DISTINCT code from the creator refusal, which is what lets a
+            // client tell "your role cannot do this" from "this is not yours".
+        ).rejects.toMatchObject({ code: 'WRITE_FORBIDDEN_FOR_ROLE' });
+
+        const tasks = await globalPrisma.task.findMany({ where: { tenantId, treatmentGroupId: handle } });
+        expect(tasks.every((t) => t.deletedAt === null)).toBe(true);
+    });
+
+    it('the CREATOR may delete without being an admin — the #2175 widening', async () => {
+        // The actual content of the new rule, and it was untested: every other
+        // case here runs as OWNER, which is creator AND admin, so it passes
+        // through the admin arm and says nothing about the creator arm. EDITOR
+        // has `canWrite: true` and `canAdmin: false`, and shares the fixture's
+        // userId — so it is the creator and nothing else.
+        const handle = `creator-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+
+        const result = await deleteDiaryTreatment(ctx('EDITOR' as Role), handle);
+        expect(result.tasks).toBeGreaterThan(0);
+
+        const tasks = await globalPrisma.task.findMany({ where: { tenantId, treatmentGroupId: handle } });
+        expect(tasks.every((t) => t.deletedAt !== null)).toBe(true);
+    });
+
+    it('a WRITER who did not record it is refused, with the code the phone renders', async () => {
+        // The other side of the widening. A different user with full write
+        // rights must still be refused — otherwise 'creator or admin' is just
+        // 'canWrite' with extra words. No real user row is needed because the
+        // refusal lands before any write.
+        const handle = `stranger-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+
+        const stranger = makeRequestContext('EDITOR', {
+            userId: `${userId}-someone-else`,
+            tenantId,
+            tenantSlug: `${TAG}-t`,
+        });
+        await expect(deleteDiaryTreatment(stranger, handle)).rejects.toMatchObject({
+            code: 'TREATMENT_DELETE_NOT_PERMITTED',
+        });
 
         const tasks = await globalPrisma.task.findMany({ where: { tenantId, treatmentGroupId: handle } });
         expect(tasks.every((t) => t.deletedAt === null)).toBe(true);

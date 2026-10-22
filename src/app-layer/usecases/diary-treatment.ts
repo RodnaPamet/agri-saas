@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { farmToday } from '@/lib/calendar-day-key';
+import { dayKeyInTz, FARM_TIME_ZONE, farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
 import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanDeleteTreatment, canDeleteTreatment } from '../policies/task.policies';
 import { codedBadRequest, codedClientError, codedConflict, codedNotFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
@@ -751,6 +752,37 @@ export async function recordDiaryTreatment(
  *     convenience route that drops БАБХ records, which is the thing the
  *     issue was written to prevent.
  *
+ * ## SUPERSEDED in part, 2026-10-22 (#2175) — read this before the four above
+ *
+ * The owner reversed the last two of those protections. The original is kept
+ * verbatim rather than rewritten, because its reasoning is still the best
+ * account of what this costs, and a reader should see what was traded rather
+ * than a tidy description of where we ended up.
+ *
+ *   • **INCOMPLETE ONLY is gone.** A complete treatment may now be removed
+ *     through this endpoint — precisely the "convenience route that drops
+ *     БАБХ records" the paragraph above exists to prevent, and it was put to
+ *     the owner in those terms.
+ *   • **ADMIN ONLY is widened** to the treatment's creator, via
+ *     `assertCanDeleteTreatment`. A non-admin EDITOR can now withdraw a
+ *     finished record they wrote.
+ *
+ * What makes it defensible is the two protections that stay plus one added:
+ * SOFT, AUDITED, and now RESTORABLE from «Кошче» by the same people
+ * (`restoreDiaryTreatment`). Nothing is destroyed, and a withdrawal is
+ * reversible by anyone who could have made it.
+ *
+ * The register honours it: `farm-record-diary.ts` filters `task.deletedAt` on
+ * the lines it prints, so this is a real withdrawal rather than a view-level
+ * hide. That was the half that decided the design — without it a farmer would
+ * believe a record was gone while an inspector still read it.
+ *
+ * **`clientMutationId` is released only for an INCOMPLETE treatment.** The note
+ * below explains why releasing it matters for a dead-end handle. It must NOT be
+ * released for a complete one: the value is recorded nowhere, so a restore
+ * could not put it back, and a finished treatment's handle never needs
+ * re-sending.
+ *
  * ## Why three different mechanisms
  *
  * `Task` and `LogEntry` both carry `deletedAt`, so they are soft-deleted.
@@ -768,12 +800,14 @@ export async function deleteDiaryTreatment(
     ctx: RequestContext,
     treatmentGroupId: string,
 ): Promise<{ treatmentGroupId: string; tasks: number; entries: number; lines: number }> {
-    assertCanAdmin(ctx);
+    // `canWrite` first, narrowed by the creator check below once the rows say
+    // who recorded it. No longer `assertCanAdmin` — see SUPERSEDED above.
+    assertCanWrite(ctx);
 
     const tasks = await runInTenantContext(ctx, (db) =>
         db.task.findMany({
             where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
-            select: { id: true },
+            select: { id: true, createdByUserId: true },
         }),
     );
     if (tasks.length === 0) {
@@ -785,18 +819,27 @@ export async function deleteDiaryTreatment(
     }
 
     const taskIds = tasks.map((t) => t.id);
-    const summary = await summariseTreatmentLines(ctx, taskIds);
-    if (summary.complete) {
-        // The compliance record case. 409 rather than 403: the caller has the
-        // right to do this, the treatment is in the wrong STATE for it.
+
+    // Whoever recorded it, or an admin. Every task of one treatment is written
+    // by one person in one request, so the first is the creator — but that is
+    // ASSERTED rather than assumed: a mixed set would mean the handle had been
+    // reused across people, and then "who may delete this" has no single
+    // answer and the safe reply is to refuse rather than to pick one.
+    const creators = new Set(tasks.map((t) => t.createdByUserId));
+    if (creators.size !== 1) {
         throw codedConflict(
-            'TREATMENT_COMPLETE',
-            'This treatment is fully recorded, so it is a farm-record entry rather than an ' +
-                'unfinished write. Remove it through the journal, where a delete is reversible ' +
-                'and separately audited.',
+            'TREATMENT_MIXED_AUTHORSHIP',
+            'This treatment has tasks recorded by more than one person, so it cannot be '
+                + 'removed as a whole. Ask an administrator.',
             { reference: 'treatmentGroupId' },
         );
     }
+    assertCanDeleteTreatment(ctx, { createdByUserId: tasks[0].createdByUserId });
+
+    const summary = await summariseTreatmentLines(ctx, taskIds);
+    // The completeness refusal is GONE (#2175). `summary` is still read because
+    // the audit entry records what the deletion took with it, and because the
+    // `clientMutationId` decision below turns on it.
 
     return runInTenantContext(ctx, async (db) => {
         const now = new Date();
@@ -836,7 +879,18 @@ export async function deleteDiaryTreatment(
         // and it is a key rather than a record of anything.
         const removed = await db.task.updateMany({
             where: { tenantId: ctx.tenantId, id: { in: taskIds }, deletedAt: null },
-            data: { deletedAt: now, deletedByUserId: ctx.userId ?? null, clientMutationId: null },
+            data: {
+                deletedAt: now,
+                deletedByUserId: ctx.userId ?? null,
+                // Released for an INCOMPLETE treatment, KEPT for a complete one.
+                //
+                // The note above is why releasing it matters: a dead-end handle
+                // has to be re-sendable, and a soft-deleted row still occupies
+                // the unique key. None of that applies to a finished treatment,
+                // and nulling it would make the restore inexact — the value is
+                // recorded nowhere, so nothing could put it back.
+                ...(summary.complete ? {} : { clientMutationId: null }),
+            },
         });
 
         await logEvent(db, ctx, {
@@ -866,4 +920,326 @@ export async function deleteDiaryTreatment(
             lines: lines.count,
         };
     });
+}
+
+/**
+ * Put a withdrawn treatment back (#2175).
+ *
+ * The other half of the owner's 2026-10-22 ruling: a deleted treatment is gone
+ * from the register as if never recorded, AND «Кошче» can restore it. Without
+ * this the delete would be destruction with extra steps.
+ *
+ * ## What it restores, and what it cannot
+ *
+ * Clearing `Task.deletedAt` and `LogEntry.deletedAt` is enough to bring back
+ * everything a reader sees: the journal list filters that column, and the
+ * register filters `task.deletedAt` on the lines it prints. The
+ * `OperationParcel` rows were never touched by the delete, so the lines and
+ * their per-line snapshots — quarantine period, phenophase, treated area —
+ * return exactly as recorded rather than being rebuilt.
+ *
+ * Two things do NOT come back, and both are deliberate:
+ *
+ *   • `clientMutationId`, if the treatment was INCOMPLETE when deleted. The
+ *     delete releases it so a dead-end handle can be re-sent, and the value is
+ *     stored nowhere. A restored incomplete treatment is therefore no longer
+ *     resumable BY HANDLE; its rows are intact and a fresh send mints a new
+ *     one. A complete treatment keeps its key and restores exactly.
+ *   • The `SKIPPED` status on lines that never completed. `SKIPPED` is the
+ *     honest record of a line that was abandoned, and guessing which of them
+ *     had been `PENDING` before would invent a state nobody observed.
+ *
+ * Audited as its own event, never as an undo of the delete: a register that
+ * was withdrawn and reinstated has two facts in its history, not zero.
+ */
+export async function restoreDiaryTreatment(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+): Promise<{ treatmentGroupId: string; tasks: number; entries: number }> {
+    assertCanWrite(ctx);
+
+    const tasks = await runInTenantContext(ctx, (db) =>
+        db.task.findMany({
+            // `deletedAt: { not: null }` — the inverse of the delete's lookup,
+            // so restoring a live treatment is a not-found rather than a no-op
+            // reporting success.
+            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: { not: null } },
+            select: { id: true, createdByUserId: true },
+        }),
+    );
+    if (tasks.length === 0) {
+        throw codedNotFound(
+            'TREATMENT_NOT_FOUND',
+            'No withdrawn treatment was found under that handle.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
+    const creators = new Set(tasks.map((t) => t.createdByUserId));
+    if (creators.size !== 1) {
+        throw codedConflict(
+            'TREATMENT_MIXED_AUTHORSHIP',
+            'This treatment has tasks recorded by more than one person, so it cannot be '
+                + 'restored as a whole. Ask an administrator.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+    // The same gate as the delete, deliberately: whoever could withdraw it can
+    // put it back. A restore that needed MORE rights than the delete would
+    // leave a farmer able to destroy a record they cannot recover.
+    assertCanDeleteTreatment(ctx, { createdByUserId: tasks[0].createdByUserId });
+
+    const taskIds = tasks.map((t) => t.id);
+    return runInTenantContext(ctx, async (db) => {
+        const entries = await db.logEntry.updateMany({
+            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: { not: null } },
+            data: { deletedAt: null, deletedByUserId: null },
+        });
+        const restored = await db.task.updateMany({
+            where: { tenantId: ctx.tenantId, id: { in: taskIds }, deletedAt: { not: null } },
+            data: { deletedAt: null, deletedByUserId: null },
+        });
+
+        await logEvent(db, ctx, {
+            action: 'ENTITY_RESTORED',
+            entityType: 'Task',
+            entityId: treatmentGroupId,
+            details: `Treatment ${treatmentGroupId} restored`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Treatment',
+                operation: 'restored',
+                summary:
+                    `Restored a withdrawn treatment: ${restored.count} task(s) and `
+                    + `${entries.count} journal entr(ies).`,
+            },
+        });
+
+        return {
+            treatmentGroupId,
+            tasks: restored.count,
+            entries: entries.count,
+        };
+    });
+}
+
+/**
+ * The «Кошче» listing: treatments that were withdrawn and can be put back.
+ *
+ * Folded on `treatmentGroupId` rather than returned as tasks, because a
+ * treatment over three blocks is three tasks and a trash view listing it three
+ * times would invite three restores of one thing.
+ *
+ * Ordered by when it was withdrawn, newest first: the thing somebody wants back
+ * is almost always the thing they just removed.
+ */
+/**
+ * How many withdrawn treatments the «Кошче» listing returns.
+ *
+ * A review surface, not a register: the restore screen exists to undo a recent
+ * mistake, so the payload is bounded rather than paged. Stated in the spec so a
+ * client knows the list can be truncated, and set well above any plausible
+ * number of live corrections.
+ */
+export const DELETED_TREATMENT_LIST_LIMIT = 200;
+
+export async function listDeletedTreatments(ctx: RequestContext): Promise<{
+    treatments: {
+        treatmentGroupId: string;
+        deletedAt: string;
+        deletedByUserId: string | null;
+        taskCount: number;
+        occurredOn: string | null;
+        kind: string | null;
+        productName: string | null;
+        blockNames: string[];
+        parcelCount: number;
+        totalAreaHa: number;
+        mayRestore: boolean;
+    }[];
+}> {
+    assertCanRead(ctx);
+
+    const rows = await runInTenantContext(ctx, async (db) => {
+        const tasks = await db.task.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: { not: null },
+                treatmentGroupId: { not: null },
+            },
+            select: {
+                treatmentGroupId: true,
+                deletedAt: true,
+                deletedByUserId: true,
+                dueAt: true,
+                operationType: true,
+                // Authorship, so the listing can say whether THIS caller may
+                // put it back. Read off rows this query already fetches, which
+                // is why the withdrawn listing does not use the live list's
+                // `_treatmentAuthorship` group-by.
+                createdByUserId: true,
+            },
+            orderBy: { deletedAt: 'desc' },
+            // A trash can is a REVIEW surface, not a register: bounded so the
+            // payload cannot grow with a farm's whole history of corrections.
+            // The cap is stated in the spec rather than paged, because a farm
+            // with more than this many withdrawn treatments has a different
+            // problem from the one this screen solves.
+            take: DELETED_TREATMENT_LIST_LIMIT,
+        });
+
+        const handles = [...new Set(tasks.map((t) => t.treatmentGroupId).filter((h): h is string => !!h))];
+
+        // What each treatment WAS. A withdrawn handle stops resolving —
+        // `getDiaryTreatment` filters `deletedAt: null` — so a client cannot
+        // fetch per row to label it, and a «Кошче» of bare dates would not tell
+        // a farmer which spraying they are restoring. Found in review by
+        // agrent-ios before the phone built against it.
+        //
+        // `deletedAt: { not: null }` is the inverse of the live aggregate's
+        // filter, and it has to be: these are exactly the entries that query
+        // excludes.
+        const lines = handles.length
+            ? await db.logEntry.findMany({
+                  where: {
+                      tenantId: ctx.tenantId,
+                      treatmentGroupId: { in: handles },
+                      deletedAt: { not: null },
+                  },
+                  select: {
+                      treatmentGroupId: true,
+                      // The treatment's DAY. Not the task's `dueAt`, which the
+                      // treatment write never sets — so the `occurredOn` this
+                      // listing used to derive from it was null for every row,
+                      // a field that advertised a value it could not carry.
+                      // Caught by the test below, not by review.
+                      //
+                      // `occurredAt` through `dayKeyInTz` is exactly what the
+                      // live folded list prints, so the trash can and the
+                      // journal cannot disagree about which day a treatment
+                      // was.
+                      occurredAt: true,
+                      operationParcel: {
+                          select: {
+                              treatedAreaHa: true,
+                              product: { select: { name: true } },
+                              parcel: {
+                                  select: {
+                                      areaHa: true,
+                                      location: { select: { name: true } },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              })
+            : [];
+
+        return { tasks, lines };
+    });
+
+    // Folded here rather than with a `groupBy`, because the fold needs the
+    // FIRST row's metadata per handle and `groupBy` would only give aggregates.
+    const byHandle = new Map<
+        string,
+        {
+            deletedAt: Date;
+            deletedByUserId: string | null;
+            taskCount: number;
+            dueAt: Date | null;
+            kind: string | null;
+            createdByUserId: string | null;
+            mixedAuthorship: boolean;
+        }
+    >();
+    for (const row of rows.tasks) {
+        const handle = row.treatmentGroupId;
+        if (!handle || !row.deletedAt) continue;
+        const seen = byHandle.get(handle);
+        if (seen) {
+            seen.taskCount += 1;
+            if (seen.createdByUserId !== row.createdByUserId) seen.mixedAuthorship = true;
+            continue;
+        }
+        byHandle.set(handle, {
+            deletedAt: row.deletedAt,
+            deletedByUserId: row.deletedByUserId,
+            taskCount: 1,
+            dueAt: row.dueAt,
+            kind: row.operationType ?? null,
+            createdByUserId: row.createdByUserId,
+            mixedAuthorship: false,
+        });
+    }
+
+    const summaries = new Map<
+        string,
+        {
+            productName: string | null;
+            blocks: Set<string>;
+            parcelCount: number;
+            totalAreaHa: number;
+            occurredAt: Date | null;
+        }
+    >();
+    for (const line of rows.lines) {
+        const handle = line.treatmentGroupId;
+        if (!handle) continue;
+        const agg =
+            summaries.get(handle) ??
+            {
+                productName: null,
+                blocks: new Set<string>(),
+                parcelCount: 0,
+                totalAreaHa: 0,
+                occurredAt: null as Date | null,
+            };
+        agg.occurredAt = agg.occurredAt ?? line.occurredAt;
+        const op = line.operationParcel;
+        if (op) {
+            agg.parcelCount += 1;
+            // The TREATED area, falling back to the parcel's — the same
+            // expression the live list and the register both print. Summing the
+            // parcel area here while they print the treated area would make the
+            // trash can report more hectares than the document it withdrew.
+            const area = op.treatedAreaHa ?? op.parcel?.areaHa ?? null;
+            if (area != null) agg.totalAreaHa += Number(area);
+            agg.productName = agg.productName ?? op.product?.name ?? null;
+            const block = op.parcel?.location?.name;
+            if (block) agg.blocks.add(block);
+        }
+        summaries.set(handle, agg);
+    }
+
+    return {
+        treatments: [...byHandle.entries()].map(([treatmentGroupId, v]) => {
+            const agg = summaries.get(treatmentGroupId);
+            return {
+                treatmentGroupId,
+                deletedAt: v.deletedAt.toISOString(),
+                deletedByUserId: v.deletedByUserId,
+                taskCount: v.taskCount,
+                // The day as the FARM sees it, from the entry rather than the
+                // task — see the `occurredAt` note on the query above. `dueAt`
+                // is kept only as a fallback for a handle whose entries are
+                // gone, where there is no better answer than none.
+                occurredOn: agg?.occurredAt
+                    ? dayKeyInTz(agg.occurredAt, FARM_TIME_ZONE)
+                    : v.dueAt
+                      ? dayKeyInTz(v.dueAt, FARM_TIME_ZONE)
+                      : null,
+                kind: v.kind,
+                productName: agg?.productName ?? null,
+                blockNames: agg ? [...agg.blocks].sort() : [],
+                parcelCount: agg?.parcelCount ?? 0,
+                totalAreaHa: agg ? Math.round(agg.totalAreaHa * 1e4) / 1e4 : 0,
+                // The same two arms the restore itself applies, in the same
+                // order: mixed authorship refuses ADMINS too, so it is checked
+                // before the permission question.
+                mayRestore: v.mixedAuthorship
+                    ? false
+                    : canDeleteTreatment(ctx, { createdByUserId: v.createdByUserId }),
+            };
+        }),
+    };
 }

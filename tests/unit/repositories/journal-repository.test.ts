@@ -32,6 +32,7 @@ function makeDb() {
         update: jest.fn().mockResolvedValue({ id: 'updated' }),
         delete: jest.fn().mockResolvedValue({ id: 'deleted' }),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        groupBy: jest.fn().mockResolvedValue([]),
     });
     return {
         // The folded ДНЕВНИК list aggregates per treatment with a `GROUP BY`
@@ -51,6 +52,17 @@ function makeDb() {
         // `validEquipmentIds` / `listEquipment` delegate to it.
         asset: model(),
         parcel: model(),
+        // `_treatmentAuthorship` (#2175) asks `task.groupBy` who recorded each
+        // treatment on the page, so `mayDelete` can be answered server-side.
+        // A double without it throws "cannot read properties of undefined" the
+        // moment a page has rows — the SECOND time this file has learnt that
+        // lesson, after `$queryRaw` above.
+        //
+        // Empty, for the same reason: these are CLAUSE tests. Whether the flag
+        // is RIGHT is covered against a real database in
+        // `tests/integration/diary-treatment-delete.test.ts`, where authorship
+        // can differ between rows in ways a double cannot express.
+        task: model(),
     };
 }
 

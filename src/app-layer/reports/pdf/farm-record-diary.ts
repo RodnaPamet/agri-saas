@@ -1117,6 +1117,27 @@ export async function gatherFarmRecord(
                       tenantId: ctx.tenantId,
                       taskId: { in: taskIds },
                       status: 'DONE',
+                        // A deleted treatment is GONE from the register, as if
+                        // it had never been recorded (owner ruling 2026-10-22,
+                        // #2175).
+                        //
+                        // Filtered HERE rather than where the task ids are
+                        // resolved, because the two branches above resolve them
+                        // differently and only ONE of them filters: the
+                        // treatment-scoped branch queries `task` with
+                        // `deletedAt: null`, while the BLOCK branch maps
+                        // `taskLink` rows and never looks at the task. So a
+                        // deleted treatment would vanish from its own PDF and
+                        // keep printing in the block register — the document a
+                        // БАБХ inspector actually reads.
+                        //
+                        // `OperationParcel` carries no `deletedAt` of its own,
+                        // and a DONE line is deliberately left DONE on delete,
+                        // so the task is the only thing that can say the
+                        // treatment is withdrawn. That also makes a restore
+                        // exact: clearing `Task.deletedAt` brings the lines back
+                        // untouched.
+                        task: { deletedAt: null },
                       // The period narrows a BLOCK register. A treatment is
                       // already one day's work by construction, so filtering
                       // it by a range it defines would be circular.
