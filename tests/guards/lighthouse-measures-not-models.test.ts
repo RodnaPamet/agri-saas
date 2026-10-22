@@ -241,6 +241,50 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         );
     });
 
+    it('every assertions KEY is an audit id, so a doc note cannot become an audit', () => {
+        /**
+         * #2178. This file documents itself with `"//"` keys, which is fine at
+         * the top level and on a matrix ENTRY — lhci ignores both. Inside an
+         * `assertions` object it is not: lhci reads every key there as an audit
+         * name, so a 2406-character explanatory note became an audit called
+         * `//` and failed `auditRan` on every single run.
+         *
+         * It was a GUARANTEED failure, not a flake — an audit that does not
+         * exist can never have run — and it went unnoticed because the LCP
+         * assertion was failing alongside it and masked which was which.
+         *
+         * Nothing checked this, which is why it slipped through. The rule is
+         * narrow on purpose: an audit id is lower-case letters, digits and
+         * dashes, optionally prefixed `categories:`. That admits every real
+         * audit and rejects prose, a comment marker, or a stray key.
+         */
+        const AUDIT_ID = /^(categories:)?[a-z0-9][a-z0-9-]*$/;
+        const offenders: string[] = [];
+        let checked = 0;
+
+        const scan = (node: unknown, path: string, inAssertions: boolean) => {
+            if (Array.isArray(node)) {
+                node.forEach((v, i) => scan(v, `${path}[${i}]`, inAssertions));
+                return;
+            }
+            if (node === null || typeof node !== 'object') return;
+            for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+                if (inAssertions) {
+                    checked += 1;
+                    if (!AUDIT_ID.test(key)) offenders.push(`${path}.${key}`);
+                    continue;
+                }
+                scan(value, `${path}.${key}`, key === 'assertions');
+            }
+        };
+        scan(rc, '$', false);
+
+        // The denominator, because a scan that reached no assertions block
+        // would report zero offenders and look exactly like a clean config.
+        expect(checked).toBeGreaterThanOrEqual(8);
+        expect(offenders).toEqual([]);
+    });
+
     it('the cap is still a literal, which the retry guard requires', () => {
         // Asserted here only because THIS change is what would be tempted to
         // parameterise it: the fix above wanted a variable and could not have
