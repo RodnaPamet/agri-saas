@@ -5,7 +5,8 @@
         "http://localhost:3006/login",
         "http://localhost:3006/f/lighthouse"
       ],
-      "numberOfRuns": 3,
+      "numberOfRuns": 5,
+      "// numberOfRuns": "FIVE as of #2179, and the workflow now collects ONE URL PER JOB to afford it. The /f/ entry below derives its 3800 ms bound from a five-run median while the gate enforced it on a three-run median, and on 2026-10-22 that showed: three of eight runs failed on an unchanged page, across main and two unrelated branches, with medians 4052, 4086 and 4206 and a single-sample max of 4220, while five runs of the same page passed. Raising this to 5 with both URLs in one job TIMED OUT on all three attempts (250s, 510s, 770s elapsed) and produced no median at all: measured, 3 runs x 2 URLs is 197s against a 250s per-attempt cap, so ~33s per run puts 5 x 2 at ~328s. The cap could not absorb it (ci-retry-loop-timeout caps it at 300, the job budget allowed ~296) and its own note named the remedy: one URL per job. Five runs of one URL is ~164s, the ~1.5x headroom the cap was chosen for. BOTH urls stay declared here on purpose -- this file is the record of what is measured, and a guard asserts there are at least two -- while the workflow matrix narrows each leg with --collect.url. Verified 2026-10-22 that the flag REPLACES this list rather than appending to it: a collect run with one override announced only that URL and neither of these.",
       "settings": {
         "formFactor": "mobile",
         "screenEmulation": {
