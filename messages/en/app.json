@@ -3219,9 +3219,8 @@
             "stepOneTitle": "New entry — the treatment",
             "stepTwoTitle": "New entry — where it was done",
             "stepThreeTitle": "New entry — review",
-            "reviewIntro": "Check the details before saving.",
+            "reviewIntro": "Check the details. Once saved, the register entry cannot be edited.",
             "reviewArea": "{dca} dca",
-            "confirmCorrect": "I have checked the details and confirm they are correct.",
             "subtitle": "Records a treatment already carried out, in the ДНЕВНИК.",
             "targetNote": "Pest",
             "technique": "Application technique"

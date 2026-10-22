@@ -246,21 +246,6 @@ async function fillStepOne() {
     await pickFrom('Unit', /л\/ха/);
 }
 
-/**
- * Step 2 → the review → saved.
- *
- * A review step sits between the parcels and the write: a recorded treatment
- * cannot be edited (`journal/treatments/{handle}` is GET and DELETE only), so
- * the confirmation is the last cheap place to catch a mistyped dose.
- *
- * Shared rather than repeated, because SEVEN tests here drive the form to a
- * write and each would otherwise carry the same extra hop. The tick is clicked
- * AFTER the selection is final on purpose — it is keyed on the body signature,
- * so ticking it before the last parcel would be discarded by that parcel.
- *
- * Takes the userEvent instance because one caller shares a single `u` across a
- * fake-timer run rather than setting one up per click.
- */
 /** Step 1 filled, a crop picked, one parcel ticked — stopped ON the review. */
 async function reachReview(u = user()) {
     await fillStepOne();
@@ -271,11 +256,22 @@ async function reachReview(u = user()) {
     await u.click(await screen.findByRole('button', { name: 'Next' }));
 }
 
+/**
+ * Step 2 → the review → saved.
+ *
+ * A review step sits between the parcels and the write: a recorded treatment
+ * stays final, so this is the only place to catch a mistyped dose. There is no
+ * confirmation tick — the step itself is the confirmation, matching the phone's
+ * `TreatmentCheckView` — so this is one extra Next and then Save.
+ *
+ * Shared rather than repeated, because SEVEN tests here drive the form to a
+ * write and each would otherwise carry the same extra hop.
+ *
+ * Takes the userEvent instance because one caller shares a single `u` across a
+ * fake-timer run rather than setting one up per click.
+ */
 async function confirmReviewAndSave(u = user()) {
     await u.click(await screen.findByRole('button', { name: 'Next' }));
-    await u.click(
-        await screen.findByRole('checkbox', { name: /confirm they are correct/i }),
-    );
     await u.click(await screen.findByRole('button', { name: 'Save' }));
 }
 
@@ -465,9 +461,8 @@ describe('the three-step treatment form', () => {
         // review step is where a refusal now lands, so the proxy named the
         // wrong screen while the property it stood for was unchanged.
         expect((await screen.findAllByText('New entry — review')).length).toBeGreaterThan(0);
-        // And Save is still live, which is the point of keying the tick on the
-        // BODY: nothing about the treatment changed, so the confirmation the
-        // farmer already gave still applies and a retry needs no second tick.
+        // And Save is still live, so a retry costs one tap: the refusal was
+        // about the treatment, not about the form's state.
         expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
     });
 
@@ -512,9 +507,13 @@ describe('the three-step treatment form', () => {
     // ── The review step (step 3) ─────────────────────────────────────────
     //
     // The tests above pass THROUGH the review on their way to a write. These
-    // are about the review itself, and the first two are the reason it exists:
-    // a recorded treatment cannot be edited, so this is the last cheap place
-    // to catch a mistyped dose.
+    // are about the review itself: a recorded treatment stays final, so what
+    // this screen shows is a farmer's only chance to catch a mistyped dose.
+    //
+    // There is no confirmation tick to test. An earlier draft gated Save on
+    // one, keyed to the body signature so an edit afterwards revoked it; the
+    // owner removed it on 2026-10-22 to match the phone, where this step has
+    // shipped without a tick since 2026-10-20.
 
     it('reviews what will be WRITTEN, not what was typed', async () => {
         mount();
@@ -525,49 +524,6 @@ describe('the three-step treatment form', () => {
         expect(screen.getByText('Тест Препарат')).toBeInTheDocument();
         expect(screen.getByText('2 л/ха')).toBeInTheDocument();
         expect(screen.getByText('Парцел 1')).toBeInTheDocument();
-    });
-
-    it('will not save until the farmer confirms', async () => {
-        mount();
-        await reachReview();
-        // Disabled on arrival — the step is a prompt, and a Save that worked
-        // without the tick would make the tick decoration.
-        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-        await user().click(
-            await screen.findByRole('checkbox', { name: /confirm they are correct/i }),
-        );
-        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
-    });
-
-    it('DISCARDS the confirmation when the treatment is edited afterwards', async () => {
-        // The one that decides whether the step means anything. A tick held
-        // across an edit is a farmer attesting to a treatment they never saw —
-        // which is why it is stored as the signature of the body it was given
-        // for rather than as a boolean somebody has to remember to reset.
-        const { submit } = mount();
-        const u = user();
-        await reachReview(u);
-        await u.click(
-            await screen.findByRole('checkbox', { name: /confirm they are correct/i }),
-        );
-        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
-
-        // Back to the treatment, change the dose, and forward again.
-        await u.click(screen.getByRole('button', { name: 'Back' }));
-        await u.click(screen.getByRole('button', { name: 'Back' }));
-        fireEvent.change(screen.getByLabelText(/Application dose/), {
-            target: { value: '3' },
-        });
-        await u.click(screen.getByRole('button', { name: 'Next' }));
-        await u.click(await screen.findByRole('button', { name: 'Next' }));
-
-        // The new dose is on screen and the tick is gone with the old one.
-        expect(await screen.findByText('3 л/ха')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-        expect(
-            screen.getByRole('checkbox', { name: /confirm they are correct/i }),
-        ).not.toBeChecked();
-        expect(submit).not.toHaveBeenCalled();
     });
 
     it('shows the area in DECARES, which is what the register prints', async () => {

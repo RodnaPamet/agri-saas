@@ -20,18 +20,21 @@
  * a farmer who has typed a treatment and ticked nine parcels must not lose it
  * by pressing Escape on step 2.
  *
- * ## Step 3 is a review, and the confirmation is tied to the CONTENT
+ * ## Step 3 is the review, and the step ITSELF is the confirmation
  *
- * The register is a regulated document and a recorded treatment cannot be
- * edited — `journal/treatments/{handle}` serves GET and DELETE only, and what
- * an amendment would have to mean is still open (#2172). So the cheap place to
- * catch a mistyped dose is before the write, not after it.
+ * The register is a regulated document and a recorded treatment stays final —
+ * `journal/treatments/{handle}` serves GET and DELETE only, and the owner ruled
+ * on 2026-10-22 that recorded treatments will not become editable (#2172 keeps
+ * the constraints that made an amendment hard). So the only place to catch a
+ * mistyped dose is before the write.
  *
- * The confirmation is stored as the SIGNATURE of the body it was given for,
- * never as a boolean. A farmer who reviews, goes back, changes the dose and
- * returns must confirm again — and with a boolean that is a reset somebody has
- * to remember on every path that mutates the draft. Keyed on the content it is
- * true by construction: the signature moves, the tick is gone.
+ * There is deliberately NO separate confirmation tick. The owner's ruling, to
+ * match `TreatmentCheckView` on the phone, which has shipped without one since
+ * 2026-10-20: reading the step and pressing Save IS the confirmation, and two
+ * surfaces disagreeing about how a farmer confirms the same regulated entry is
+ * worse than either answer alone. An earlier draft of this step gated Save on a
+ * tick keyed to the body signature so that editing afterwards revoked it; that
+ * went with the tick.
  *
  * ## The idempotency key belongs to the OUTBOX
  *
@@ -206,13 +209,6 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
     const apiUrl = useTenantApiUrl();
 
     const [step, setStep] = useState<1 | 2 | 3>(1);
-    /**
-     * The body signature this farmer confirmed, or null.
-     *
-     * Not a boolean — see the module docblock. Compared against the live
-     * signature below, so any edit invalidates the tick without a reset.
-     */
-    const [confirmedFor, setConfirmedFor] = useState<string | null>(null);
     const [draft, setDraft] = useState<Draft>(emptyDraft);
     const [crop, setCrop] = useState<string | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
@@ -332,7 +328,6 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
      */
     const closeAndReset = useCallback(() => {
         setStep(1);
-        setConfirmedFor(null);
         setDraft(emptyDraft());
         setCrop(null);
         setSelected([]);
@@ -351,17 +346,14 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
         draft.doseUnitId !== null;
 
     /**
-     * The request body — and now also what the step-3 confirmation is keyed on.
+     * The request body, and what step 3 reviews.
      *
      * The draft holds what was typed; the body holds what is SENT, trimmed and
-     * with empty fields omitted. That distinction used to matter for an
-     * idempotency key this file derived here, and it still matters for the same
-     * reason one level up: a trailing space in the pest field, or `2` versus
-     * `2.0` in the dose, are the same treatment. A confirmation keyed on the
-     * draft would be discarded by whitespace the farmer cannot see; keyed on
-     * the body it survives a cosmetic edit and is discarded by a real one.
+     * with empty fields omitted. Reviewing the body rather than the draft is
+     * what makes the step honest: an omitted optional field is absent from both,
+     * instead of showing as an empty row that reads like a value of nothing.
      *
-     * The key itself is the outbox's, not derived from this — see `submit`.
+     * The idempotency key is the outbox's, not derived from this — see `submit`.
      *
      * The wording is load-bearing in a silly way. The previous sentence used
      * a colon where this one has a full stop, and `no-explicit-any-ratchet`
@@ -411,16 +403,6 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
         () => treatmentItems.find((i) => i.id === draft.productItemId)?.name ?? null,
         [treatmentItems, draft.productItemId],
     );
-
-    /**
-     * What step 3 shows and what the tick is given for.
-     *
-     * `JSON.stringify` of the payload is stable here because every value in it
-     * is a primitive or the already-SORTED `parcelIds`, so two identical
-     * treatments produce one string. It is a comparison token, never parsed.
-     */
-    const signature = useMemo(() => JSON.stringify(payload), [payload]);
-    const confirmed = confirmedFor !== null && confirmedFor === signature;
 
     /**
      * The review rows, built from the PAYLOAD rather than the draft.
@@ -624,10 +606,7 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                     e.preventDefault();
                     if (step === 1) setStep(2);
                     else if (step === 2) setStep(3);
-                    // Step 3 submits, and only with the tick given for THIS
-                    // body — the button is disabled otherwise, and this is the
-                    // same condition rather than a second reading of it.
-                    else if (confirmed) void submit();
+                    else void submit();
                 }}
             >
                 {step === 1 ? (
@@ -849,17 +828,6 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                                 ))}
                             </ul>
                         </div>
-
-                        {/* A raw label rather than FormField, for the reason
-                            `TermsConsentCheckbox` records: the label is a
-                            SENTENCE, not a short field name. */}
-                        <label className="flex items-start gap-compact">
-                            <Checkbox
-                                checked={confirmed}
-                                onCheckedChange={(on) => setConfirmedFor(on ? signature : null)}
-                            />
-                            <span>{t('confirmCorrect')}</span>
-                        </label>
                     </div>
                 )}
 
@@ -883,14 +851,11 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                         type="submit"
                         disabled={
                             submitting ||
-                            (step === 1
-                                ? !step1Complete
-                                : step === 2
-                                  ? selected.length === 0
-                                  : // Step 3 needs the tick, and it is given for a
-                                    // body signature — so editing anything on the
-                                    // way back here disables this again.
-                                    !confirmed)
+                            // Step 3 has nothing of its own to satisfy: the
+                            // step IS the confirmation, so Save is live on
+                            // arrival. Step 2's condition still guards it,
+                            // because reaching 3 requires passing 2.
+                            (step === 1 ? !step1Complete : selected.length === 0)
                         }
                     >
                         {step === 3 ? t('save') : t('next')}
