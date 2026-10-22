@@ -26,7 +26,7 @@
  * does NOT claim the work is on the server".
  */
 import { test, expect } from '../fixtures';
-import { openTreatmentFormWarm } from '../e2e-utils';
+import { openTreatmentFormWarm, saveTreatmentThroughReview } from '../e2e-utils';
 import { agPrisma, seedTreatmentBasics } from '../ag-fixtures';
 
 test.describe('offline outbox survives eviction visibly @mobile', () => {
@@ -69,7 +69,7 @@ test.describe('offline outbox survives eviction visibly @mobile', () => {
 
         await page.context().setOffline(true);
         await parcelBox.click();
-        await page.getByRole('button', { name: 'Save' }).click();
+        await saveTreatmentThroughReview(page);
         await expect(page.locator('#treatment-product')).toBeHidden();
 
         // Queued, and the app says WHERE it is: on the phone, not the server.
