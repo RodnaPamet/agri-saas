@@ -49,11 +49,17 @@ jest.mock('@/lib/prisma', () => ({
 }));
 
 const isTokenExpired = jest.fn();
-const refreshAccessToken = jest.fn();
+// The two provider functions, not the `refreshAccessToken` dispatcher that
+// stood here: #1986 deleted it along with its only caller. They are mocked so
+// the tests below can assert the callback calls NEITHER — which is the
+// property, and it needs a double that would record a call if one happened.
+const refreshGoogleToken = jest.fn();
+const refreshMicrosoftToken = jest.fn();
 jest.mock('@/lib/auth/refresh', () => ({
     __esModule: true,
     isTokenExpired: (...a: unknown[]) => isTokenExpired(...a),
-    refreshAccessToken: (...a: unknown[]) => refreshAccessToken(...a),
+    refreshGoogleToken: (...a: unknown[]) => refreshGoogleToken(...a),
+    refreshMicrosoftToken: (...a: unknown[]) => refreshMicrosoftToken(...a),
 }));
 
 const verifyAndTouchSession = jest.fn();
@@ -496,81 +502,62 @@ describe('jwt callback — throttled sessionVersion check', () => {
     });
 });
 
-describe('jwt callback — OAuth token refresh', () => {
-    const expiredToken = {
+describe('jwt callback — the OAuth refresh that is GONE (#1986)', () => {
+    // Four tests over the proactive refresh stood here: it refreshed an
+    // expired access token and persisted it, cleared the error, marked the
+    // token for reauth when the provider refused, and left an unexpired token
+    // alone. All four passed. Nothing read what they protected.
+    //
+    // These replace them, and they assert the harder direction — that the
+    // machinery is actually absent rather than merely unused. A removal with
+    // no test is indistinguishable from a removal someone reinstates.
+
+    const staleOauthToken = {
         userId: 'u-1',
         provider: 'google',
+        // The shape a cookie minted before #1986 still carries. It must be
+        // IGNORED, not acted on: these users exist until their cookies age
+        // out, and the one thing that must not happen is the old branch
+        // waking up for them.
         expiresAt: 100,
         refreshToken: 'old-refresh',
-        error: 'RefreshTokenError',
+        accessToken: 'old-access',
     };
 
-    it('refreshes an expired access token, clears the error and persists it', async () => {
-        // Break: not persisting to the Account row would leave the DB
-        // holding a dead access token for any server-side API call.
-        isTokenExpired.mockReturnValue(true);
-        refreshAccessToken.mockResolvedValue({
-            accessToken: 'new-access',
-            expiresAt: 999,
-            refreshToken: 'new-refresh',
-        });
+    it('does not call the provider, however stale the token looks', async () => {
+        // No `isTokenExpired.mockReturnValue(true)` here, and that absence is
+        // the point: `auth.ts` no longer imports it, so arming it would be
+        // decorative. The token is stale by its own `expiresAt` and nothing
+        // looks at it.
+        await runJwt({ token: { ...staleOauthToken } });
 
-        const result = await runJwt({ token: { ...expiredToken } });
-
-        expect(result.accessToken).toBe('new-access');
-        expect(result.refreshToken).toBe('new-refresh');
-        expect(result.error).toBeUndefined();
-        expect(accountUpdateMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: { userId: 'u-1', provider: 'google' },
-                data: expect.objectContaining({
-                    access_token: 'new-access',
-                    refresh_token: 'new-refresh',
-                }),
-            }),
-        );
+        expect(refreshGoogleToken).not.toHaveBeenCalled();
+        expect(refreshMicrosoftToken).not.toHaveBeenCalled();
     });
 
-    it('keeps the existing refresh token when the provider does not rotate it', async () => {
-        // Break: overwriting with undefined would lose the only means
-        // of refreshing again.
-        isTokenExpired.mockReturnValue(true);
-        refreshAccessToken.mockResolvedValue({
-            accessToken: 'new-access',
-            expiresAt: 999,
-        });
+    it('does not write the Account row', async () => {
+        // The refresh's destination. A write here would mean the branch is
+        // still running under another name.
+        await runJwt({ token: { ...staleOauthToken } });
 
-        const result = await runJwt({ token: { ...expiredToken } });
-
-        expect(result.refreshToken).toBe('old-refresh');
-        expect(accountUpdateMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                data: expect.not.objectContaining({ refresh_token: expect.anything() }),
-            }),
-        );
-    });
-
-    it('marks the token for reauth when the refresh fails', async () => {
-        // Break: swallowing the failure silently would loop the user
-        // through requests with a dead token and no signal to re-auth.
-        isTokenExpired.mockReturnValue(true);
-        refreshAccessToken.mockRejectedValue(new Error('revoked grant'));
-
-        const result = await runJwt({ token: { ...expiredToken, error: undefined } });
-
-        expect(result.error).toBe('RefreshTokenError');
-    });
-
-    it('leaves an unexpired token alone', async () => {
-        // Break: refreshing on every request would hammer the provider
-        // and burn rate limit.
-        isTokenExpired.mockReturnValue(false);
-
-        await runJwt({ token: { ...expiredToken, error: undefined } });
-
-        expect(refreshAccessToken).not.toHaveBeenCalled();
         expect(accountUpdateMany).not.toHaveBeenCalled();
     });
+
+    it('never stamps RefreshTokenError, so a revoked grant is not a sign-out', async () => {
+        // The user-facing half. A Google grant revoked in Google's own
+        // settings used to land the person on /login, over a token no agrent
+        // code read.
+        const result = await runJwt({ token: { ...staleOauthToken } });
+
+        expect(result.error).toBeUndefined();
+    });
+
+    // The "no credential on the token" assertion lives in the sign-in
+    // describe below, on `persists the PROVIDER for an OAuth sign-in, and no
+    // credential` — that is the seam that writes them, and it already has a
+    // helper supplying a complete user. A second copy here used a bare
+    // `{ id: 'u-1' }` and failed inside `applyMembershipClaims` on the
+    // missing email, which is a worse test of the same thing.
 });
 
 describe('jwt callback — MFA challenge completion', () => {
@@ -757,8 +744,16 @@ describe('jwt callback — MFA enforcement at sign-in', () => {
         expect(result.accessToken).toBeUndefined();
     });
 
-    it('persists provider credentials for an OAuth sign-in', async () => {
-        // Break: dropping these would make token refresh impossible.
+    it('persists the PROVIDER for an OAuth sign-in, and no credential', async () => {
+        // This asserted the opposite until #1986, under "Break: dropping
+        // these would make token refresh impossible." Dropping them is the
+        // change: the proactive refresh is gone, so the only reader of a
+        // cookie-borne access token is gone with it, and a refresh token in
+        // every signed-in cookie was a credential at rest for nothing.
+        //
+        // `Account.access_token` / `refresh_token` still hold them. A caller
+        // that needs one reads the row, which is authoritative where a JWT
+        // snapshot is not.
         secSettingsFindUnique.mockResolvedValue(null);
 
         const result = await signIn({
@@ -771,9 +766,13 @@ describe('jwt callback — MFA enforcement at sign-in', () => {
         });
 
         expect(result.provider).toBe('google');
-        expect(result.accessToken).toBe('at-1');
-        expect(result.refreshToken).toBe('rt-1');
-        expect(result.expiresAt).toBe(4242);
+        expect(result).not.toHaveProperty('accessToken');
+        expect(result).not.toHaveProperty('refreshToken');
+        expect(result).not.toHaveProperty('expiresAt');
+        // Asserted on the VALUES too, so a future `accessToken: undefined`
+        // write — which `not.toHaveProperty` would accept — still fails.
+        expect(JSON.stringify(result)).not.toContain('at-1');
+        expect(JSON.stringify(result)).not.toContain('rt-1');
     });
 
     it('redeems a pending invite before reading membership claims', async () => {

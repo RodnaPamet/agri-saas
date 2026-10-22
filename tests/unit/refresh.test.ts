@@ -13,7 +13,6 @@ import {
     isTokenExpired,
     refreshGoogleToken,
     refreshMicrosoftToken,
-    refreshAccessToken,
 } from '@/lib/auth/refresh';
 
 // Mock global fetch
@@ -147,36 +146,13 @@ describe('refreshMicrosoftToken', () => {
     });
 });
 
-describe('refreshAccessToken', () => {
-    it('routes to Google refresh for google provider', async () => {
-        mockFetch.mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({
-                access_token: 'google-token',
-                expires_in: 3600,
-            }),
-        });
-
-        const result = await refreshAccessToken('google', 'refresh');
-        expect(result.accessToken).toBe('google-token');
-    });
-
-    it('routes to Microsoft refresh for microsoft-entra-id provider', async () => {
-        mockFetch.mockResolvedValueOnce({
-            ok: true,
-            json: async () => ({
-                access_token: 'ms-token',
-                expires_in: 3600,
-            }),
-        });
-
-        const result = await refreshAccessToken('microsoft-entra-id', 'refresh');
-        expect(result.accessToken).toBe('ms-token');
-    });
-
-    it('throws for unsupported provider', async () => {
-        await expect(refreshAccessToken('github', 'refresh')).rejects.toThrow(
-            'Token refresh not supported for provider: github'
-        );
-    });
-});
+/*
+ * `describe('refreshAccessToken')` stood here until #1986 — three tests over a
+ * switch that routed to the two functions above.
+ *
+ * It went with its subject. The proactive refresh in the `jwt` callback was
+ * the dispatcher's only caller, and both integration token modules call the
+ * provider functions directly because each knows which provider it is. The
+ * routing it tested is covered by those functions' own tests above; what is
+ * gone is a layer, not a behaviour.
+ */
