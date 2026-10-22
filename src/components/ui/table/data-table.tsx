@@ -222,6 +222,15 @@ export interface DataTableProps<T> {
    *     `mobile-card-list.tsx`. At `sm`+ the normal table renders.
    */
   mobileFallback?: "card" | "scroll";
+  /**
+   * Per-row swipe-to-act on the CARD fallback (#2175). Ignored by the table
+   * presentation, which reaches the same action through its actions column —
+   * a mouse user has never expected to drag a row sideways.
+   *
+   * Return `null` for a row that must not be swipeable. The action owns its
+   * own undo window and write; see `<SwipeRow>` and Epic 67.
+   */
+  swipeAction?: (row: Row<T>) => { label: string; icon?: ReactNode; onAction: () => void } | null;
 
   /** Test ID for automated testing. */
   "data-testid"?: string;
@@ -327,6 +336,7 @@ export function DataTable<T>({
   scrollWrapperClassName,
   fillBody,
   mobileFallback,
+  swipeAction,
   "data-testid": dataTestId,
   virtualize,
   virtualRowHeight,
@@ -532,6 +542,7 @@ export function DataTable<T>({
             loading={loading}
             error={error}
             emptyState={emptyState}
+            swipeAction={swipeAction}
           />
         ) : (
           tableEl

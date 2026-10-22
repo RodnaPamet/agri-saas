@@ -3400,6 +3400,13 @@
         },
         "autoTitle": {
             "inputApplication": "{product} — {parcel}"
+        },
+        "swipe": {
+            "delete": "Изтрий",
+            "withdrewTreatment": "{rows, plural, one {Оттеглен е # ред} other {Оттеглени са # реда}} в {blocks, plural, one {# блок} other {# блока}}",
+            "withdrewEntry": "Записът е изтрит",
+            "undo": "Върни",
+            "failed": "Изтриването не бе записано"
         }
     },
     "tasks": {

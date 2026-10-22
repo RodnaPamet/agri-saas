@@ -179,6 +179,10 @@ export type EntityListPageTable<TRow> = Pick<
     | 'virtualize'
     | 'virtualRowHeight'
     | 'virtualHeight'
+    // #2175 — per-row swipe-to-act on the card fallback. Threaded here rather
+    // than left to a page reaching past the shell: `MobileCardList` renders
+    // every card list in the product, so the seam belongs on the shell too.
+    | 'swipeAction'
 > & {
     /** Test id forwarded to the DataTable. */
     'data-testid'?: string;

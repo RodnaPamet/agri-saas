@@ -56,6 +56,16 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Asset delete (asset detail)',
         handlers: ['handleDeleteAsset'],
     },
+    {
+        // #2175 — swiping a journal row left. The swipe COMMITS nothing on its
+        // own: `<SwipeRow>` fires `onAction` and the undo window is the
+        // caller's, which is this site. A gesture that deleted on release
+        // would be the one destructive control in the product with no undo,
+        // and the one hardest to perform by accident-proofing.
+        file: 'src/app/t/[tenantSlug]/(app)/journal/JournalClient.tsx',
+        name: 'Journal row swipe-to-withdraw',
+        handlers: ['withdrawRow'],
+    },
 ];
 
 function loadFile(file: string): string {
@@ -74,10 +84,24 @@ function extractHandlerBody(source: string, name: string): string {
     //   const name = async (...) => { ... }
     //   const name = (... ) => /* expression body */
     //   function name(...) { ... }
+    //   const name = useCallback(\n    (...) => { ... }        ← #2175
+    //
+    // The `useCallback` alternative is NOT cosmetic. The original pattern
+    // required the `=>` on the SAME line as the declaration (`=[^\n]*=>`),
+    // and a hook-wrapped handler puts its arrow on the next one — so the
+    // extractor returned '' and the site read as having no handler at all.
+    // That direction is at least loud, because `expect(body).not.toBe('')`
+    // below refuses an empty extraction rather than regexing over nothing;
+    // without that line this guard would have passed over a handler it never
+    // found. Journal's `withdrawRow` is the first site to be memoised, and it
+    // has to be: the callback is handed to `swipeAction`, which `DataTable`
+    // calls per row on every render.
     const re = new RegExp(
         // Group 1 captures from the handler's opening `=>` or `{` to
         // EOF; downstream we balance braces ourselves.
-        `(?:const|let|var)\\s+${name}\\s*=[^\\n]*=>|function\\s+${name}\\s*\\(`,
+        `(?:const|let|var)\\s+${name}\\s*=\\s*useCallback\\(` +
+            `|(?:const|let|var)\\s+${name}\\s*=[^\\n]*=>` +
+            `|function\\s+${name}\\s*\\(`,
     );
     const match = re.exec(source);
     if (!match) return '';

@@ -3925,14 +3925,30 @@ happens. The pending state lives at module scope (NOT in component
 state) so commits survive client-side navigation, mirroring Gmail's
 "undo send" UX.
 
-The wired sites today: farm-task link removal on the task detail
-page, exchange-listing withdraw on My Listings, lease removal on the
-Rent page, and asset delete on the asset detail page. (The four GRC
-sites this list used to name — `TraceabilityPanel`, practice-evidence
-and practice-requirement unlink, vendor document removal — went with
-the teardown.) The structural ratchet
-at `tests/guards/epic-67-rollout-coverage.test.ts` locks the wiring
-in — adding a new site means appending it to `SITE_CONTRACTS`.
+**16 files call `useToastWithUndo()`; the ratchet grades 5 of them.** The
+guard iterates a hand-written `SITE_CONTRACTS` and never derives its
+population, so it answers "are these five still wired" rather than "is every
+destructive flow wired" — its own docblock says as much. The five under
+contract are farm-task link removal (task detail), exchange-listing withdraw
+(My Listings), lease removal (Rent), asset delete (asset detail) and the
+journal row swipe-to-withdraw (#2175). The other eleven — grain yield, costs,
+contracts, deliveries, journal photos, journal detail, admin members, the two
+integration cards, Entra group mappings, `AttachedEvidencePanel` — are wired
+and UNGRADED. (The four GRC sites this list used to name —
+`TraceabilityPanel`, practice-evidence and practice-requirement unlink,
+vendor document removal — went with the teardown.)
+
+**#2193 proposes deriving that population.** Until it lands this list is
+MEASURED (2026-10-23) rather than complete by construction, so the COUNT is
+what to re-check, not the names — and adding a new site still means appending
+it to `SITE_CONTRACTS`, which is the step that will go on being forgotten for
+as long as nothing derives it.
+
+One trap if you do append: `extractHandlerBody` matched only a handler whose
+`=>` sits on the declaration line until #2192, so a `useCallback`-wrapped
+handler extracted as `''`. It is loud rather than silent — `expect(body).not
+.toBe('')` refuses an empty extraction — but a guard that regexes over nothing
+is the failure mode to watch for in anything built here.
 
 Never write a `confirm()` blocking dialog or a fire-and-forget
 direct DELETE for a routine destructive action — those are the

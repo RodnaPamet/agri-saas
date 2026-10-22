@@ -3400,6 +3400,13 @@
         },
         "autoTitle": {
             "inputApplication": "{product} — {parcel}"
+        },
+        "swipe": {
+            "delete": "Delete",
+            "withdrewTreatment": "{rows, plural, one {# row withdrawn} other {# rows withdrawn}} across {blocks, plural, one {# block} other {# blocks}}",
+            "withdrewEntry": "Entry deleted",
+            "undo": "Undo",
+            "failed": "The deletion was not saved"
         }
     },
     "tasks": {
