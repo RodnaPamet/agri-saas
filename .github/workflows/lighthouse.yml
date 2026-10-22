@@ -1,10 +1,29 @@
 name: Lighthouse
 
 # Mobile performance budget (390px). Builds + starts the app like the
-# load-smoke job, then runs Lighthouse CI against the public /login page on a
-# throttled mobile profile and asserts LCP / TBT / CLS budgets (see
-# lighthouserc.json). INP is a field-only metric — tracked via web-vitals RUM
+# load-smoke job, then runs Lighthouse CI on a throttled mobile profile and
+# asserts LCP / TBT / CLS budgets (see lighthouserc.json). INP is a field-only
+# metric — tracked via web-vitals RUM
 # (src/components/pwa/WebVitalsReporter.tsx), not here.
+#
+# ## ONE URL PER JOB, as of #2179
+#
+# Both pages used to be collected in one job. `numberOfRuns` is 5 because the
+# `/f/` budget was derived from a five-run median, and five runs of BOTH URLs
+# does not fit the per-attempt cap: measured 2026-10-22, three runs of two URLs
+# took 197s against a 250s cap (~33s per run), so five of two is ~328s and it
+# timed out on all three attempts without ever reaching the assertion stage.
+#
+# The cap could not absorb it — `ci-retry-loop-timeout` holds it at 300 and the
+# job's own arithmetic allowed ~296 — and the cap's own note already named the
+# remedy: "fewer runs or one URL per job, not a bigger cap". So the matrix
+# below is that, and each leg collects ~164s of one page with the ~1.5x headroom
+# the cap was chosen for.
+#
+# `lighthouserc.json` still declares BOTH urls. It is the documentation of what
+# is measured and a guard asserts there are at least two; the matrix narrows
+# collection per leg with `--collect.url`. `fail-fast: false` so one page's
+# verdict never cancels the other's measurement.
 on:
   pull_request:
   push:
@@ -18,9 +37,21 @@ env:
 
 jobs:
   lighthouse:
-    name: "Lighthouse (mobile budget)"
+    name: "Lighthouse (mobile budget, ${{ matrix.page }})"
     runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 20
+
+    strategy:
+      # Both verdicts wanted, always. A failing budget on one page must not
+      # cancel the other's collection — the run where you most want the number
+      # is the one that just broke.
+      fail-fast: false
+      matrix:
+        include:
+          - page: login
+            url: http://localhost:3006/login
+          - page: public-farm
+            url: http://localhost:3006/f/lighthouse
 
     env:
       AUTH_TEST_MODE: "1"
@@ -307,6 +338,18 @@ jobs:
         #   whole job, measured            414s / 430s / 451s  (budget 1200s)
         #   so the rest of the job is      ~290s
         #
+        # RE-MEASURED 2026-10-22 under `devtools`, and the regime this cap was
+        # written for has changed twice since: #1980 made the throttling real,
+        # and #2179 split the job to ONE URL so five runs fit.
+        #
+        #   3 runs x 2 URLs, measured      197s   (1.27x under this cap)
+        #   per run                        ~33s
+        #   5 runs x 2 URLs                ~328s  timed out 3/3, no median
+        #   5 runs x 1 URL  <- now         ~164s  (~1.5x under this cap)
+        #
+        # So the headroom this cap was chosen for is restored by the split
+        # rather than by moving the cap, which is what its own note required.
+        #
         # 250s leaves ~1.5x headroom over the slowest observed collection, and
         # the worst case fits the budget with room:
         #
@@ -320,8 +363,13 @@ jobs:
           for attempt in 1 2 3; do
             rm -rf .lighthouseci
             status=0
+            # `--collect.url` narrows this leg to one page; the config
+            # keeps both so it stays the record of what is measured. The
+            # assertMatrix patterns already key on the URL, so each leg
+            # asserts only the budgets for the page it collected.
             timeout -k 10 250 npx --yes @lhci/cli@0.15.1 autorun \
-              --config=lighthouserc.json > "$log" 2>&1 || status=$?
+              --config=lighthouserc.json \
+              --collect.url="${{ matrix.url }}" > "$log" 2>&1 || status=$?
             cat "$log"
             if [ "$status" -eq 0 ]; then
               echo "::notice::Lighthouse passed in $((SECONDS - started))s (attempt ${attempt}/3)"
@@ -356,7 +404,7 @@ jobs:
 
       # The number behind the verdict (#796).
       #
-      # `numberOfRuns: 3` writes three `lhr-<ts>.json` into `.lighthouseci`
+      # `numberOfRuns` writes one `lhr-<ts>.json` per run into `.lighthouseci`
       # and nothing ever read them, so the gate could say pass/fail and no one
       # could see the value it judged. That made any performance change
       # un-evidenceable — including the font preload #796 actually asks for.
@@ -378,7 +426,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: lighthouse-reports-${{ github.run_id }}
+          # The matrix leg is in the name because upload-artifact@v7 REFUSES
+          # a duplicate name, so two legs sharing one would fail the second.
+          name: lighthouse-reports-${{ github.run_id }}-${{ matrix.page }}
           # REQUIRED, not cosmetic: `.lighthouseci` is a HIDDEN directory and
           # actions/upload-artifact@v7 defaults include-hidden-files to false,
           # so `.lighthouseci/*` matched nothing. Measured on run 33839332043 —
