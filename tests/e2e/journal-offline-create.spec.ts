@@ -37,7 +37,7 @@
  */
 import { test, expect } from './fixtures';
 import { agPrisma, seedTreatmentBasics } from './ag-fixtures';
-import { openTreatmentFormWarm } from './e2e-utils';
+import { openTreatmentFormWarm, saveTreatmentThroughReview } from './e2e-utils';
 
 test('@mobile journal entry created offline queues and delivers exactly once', async ({
     authedPage,
@@ -62,7 +62,7 @@ test('@mobile journal entry created offline queues and delivers exactly once', a
     // ── Signal lost, then Save ─────────────────────────────────────────
     await authedPage.context().setOffline(true);
     await parcelBox.click();
-    await authedPage.getByRole('button', { name: 'Save' }).click();
+    await saveTreatmentThroughReview(authedPage);
 
     // The modal closes; the outbox holds it and the sync bar shows it queued.
     await expect(authedPage.locator('#treatment-product')).toBeHidden();
