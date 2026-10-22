@@ -205,6 +205,27 @@ export function FarmTaskDetailClient({
     const isAssignee = !!currentUserId && task?.assigneeUserId === currentUserId;
     const canComplete = !!permissions.canWrite || isAssignee;
 
+    // Whether to OFFER «Редактирай» — the same rule the server now enforces in
+    // `assertCanEditTask` (#2169): `canWrite` first, then creator-or-admin.
+    //
+    // Without this the button stays visible to every writer and answers 403
+    // `TASK_EDIT_NOT_PERMITTED`, which is worse than an absent control: the
+    // farmer has already opened the form and typed into it by the time they
+    // learn they cannot save. The phone has gated on exactly this rule
+    // client-side since agrent-ios #382; this is the web catching up, and it is
+    // the half of #2169 the server rule alone does not finish.
+    //
+    // An ABSENT `createdByUserId` permits, deliberately. The column is NOT NULL
+    // and `WorkItemRepository.getById` uses `include`, so every live response
+    // carries it — but this page reads through the persistent SWR cache, and
+    // treating a missing field as "not yours" would hide the control from the
+    // one person entitled to it. A stale permit costs one server refusal; a
+    // stale denial costs a farmer their own task. Same direction the native
+    // client takes for `mayDelete`.
+    const isTaskCreator =
+        task?.createdByUserId == null || task.createdByUserId === currentUserId;
+    const canEdit = !!permissions.canWrite && (!!permissions.canAdmin || isTaskCreator);
+
     const requestStatusChange = (status: string) => {
         setStatusError('');
         if ((TERMINAL_WORK_ITEM_STATUSES as readonly string[]).includes(status)) {
@@ -672,7 +693,7 @@ export function FarmTaskDetailClient({
                             )}
                         </div>
                     )}
-                    {permissions.canWrite && (
+                    {canEdit && (
                         <div className="flex justify-end gap-compact -mt-1 -mb-2">
                             <Button
                                 variant="secondary"
