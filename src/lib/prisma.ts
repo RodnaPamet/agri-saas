@@ -221,7 +221,7 @@ function buildAuditExtension() {
             const detailsJson: Record<string, unknown> = {
                 category: 'entity_lifecycle',
                 entityName: model,
-                operation: action.toLowerCase(),
+                operation: auditOperationFor(operation),
             };
             if (diffJson) {
                 detailsJson.changedFields = diffJson.changedFields;
@@ -467,6 +467,50 @@ function buildExtended() {
 const globalForPrisma = globalThis as unknown as {
     prisma?: ExtendedClient;
 };
+
+
+/**
+ * The audit vocabulary for a Prisma action — #2109.
+ *
+ * This was `action.toLowerCase()`, which put PRISMA METHOD NAMES into a field
+ * the canonical schema declares as past-tense verbs. Measured on production:
+ * 991 of 1,203 rows failed `AuditDetailsSchema` on this one field alone —
+ * `upsert` (654), `createmany` (88), `updatemany` (82), `create` (72),
+ * `update` (53), `deletemany` (42). The two halves of the system disagreed
+ * about a vocabulary, not a structure.
+ *
+ * The batch verbs collapse to the singular past tense on purpose. Batch-ness
+ * is already on the entry twice — `entityId` is the literal `'batch'` and
+ * `metadataJson.recordIds.count` carries the number — so a `createdmany` verb
+ * would be a third spelling of the same fact, and one the schema would then
+ * have to carry for ever.
+ *
+ * `upsert` keeps its own verb rather than flattening to `updated`, per the
+ * owner's ruling: an audit row asserting `updated` about a row the upsert
+ * CREATED is worse than one saying `upserted`.
+ */
+function auditOperationFor(action: string): string {
+    switch (action) {
+        case 'create':
+        case 'createMany':
+            return 'created';
+        case 'update':
+        case 'updateMany':
+            return 'updated';
+        case 'delete':
+        case 'deleteMany':
+            return 'deleted';
+        case 'upsert':
+            return 'upserted';
+        default:
+            // An action this map does not know. Returned lowercased, which is
+            // the OLD behaviour and therefore fails the schema loudly rather
+            // than inventing a verb — the right direction once `logEvent`
+            // enforces, because a new Prisma action should be a decision here
+            // and not a silent pass.
+            return action.toLowerCase();
+    }
+}
 
 export const prisma = (globalForPrisma.prisma ?? buildExtended()) as ExtendedClient;
 
