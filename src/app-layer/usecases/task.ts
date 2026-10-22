@@ -1,7 +1,12 @@
 import { RequestContext } from '../types';
 import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
 import { ParcelRepository, type ParcelSummaryGeo } from '../repositories/ParcelRepository';
-import { assertCanReadTasks, assertCanWriteTasks, assertCanCommentOnTasks } from '../policies/task.policies';
+import {
+    assertCanReadTasks,
+    assertCanWriteTasks,
+    assertCanCommentOnTasks,
+    assertCanEditTask,
+} from '../policies/task.policies';
 import { logEvent } from '../events/audit';
 import { emitAutomationEvent } from '../automation';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
@@ -207,6 +212,15 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 }) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
+        // Creator-or-admin (#2169), decided INSIDE the transaction because it
+        // needs the row. Loaded before any write so a refusal changes nothing,
+        // and `getById` is tenant-scoped so a cross-tenant id is a not-found
+        // rather than a forbidden — which is the existing behaviour and the
+        // right one: it discloses nothing about another farm's tasks.
+        const existing = await WorkItemRepository.getById(db, ctx, taskId);
+        if (!existing) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
+        assertCanEditTask(ctx, existing);
+
         // Validate metadataJson on write
         if (patch.metadataJson !== undefined) {
             patch.metadataJson = validateTaskMetadata(patch.metadataJson);

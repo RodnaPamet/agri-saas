@@ -28,7 +28,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 // `TaskDTOSchema` is ALREADY the documented response shape for
 // `farm-tasks.paths.ts` and `field-operations.paths.ts`, and the client
 // validates with it in `use-tasks.ts`. Referencing it here is using the
@@ -164,10 +164,24 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         summary: 'Update a task',
         description:
             'Partial update. `description` and `resolution` are ENCRYPTED at rest and sanitised ' +
-            'server-side on write, so send plain text and expect plain text back.',
+            'server-side on write, so send plain text and expect plain text back.\n\n' +
+            '**Editing is creator-or-admin** (#2169). A writer who did not create the task is ' +
+            'refused with `TASK_EDIT_NOT_PERMITTED` — distinct from the role refusal, so a ' +
+            'client can tell "this is not yours" from "your role cannot edit tasks" and say so. ' +
+            'The check reads `createdByUserId` off the stored ROW, so a patch cannot name its ' +
+            'own author.',
         tags: ['Tasks'],
         params: TaskParams,
         body: UpdateTaskSchema,
+        extraResponses: codedErrorResponses({
+            403:
+                'Signed in, but not permitted to edit THIS task.\n\n' +
+                '- `TASK_EDIT_NOT_PERMITTED` — the task was created by somebody else and this ' +
+                'caller is not a farm admin. Retrying will not help; the task has to be edited ' +
+                'by its creator or an admin.\n' +
+                '- `WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.\n\n' +
+                'The middleware 403s listed on the shared envelope are reachable here too.',
+        }),
         success: { status: 200, description: 'The updated task.', schema: TaskDTOSchema },
     });
 

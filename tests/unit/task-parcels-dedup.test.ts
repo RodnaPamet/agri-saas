@@ -66,6 +66,11 @@ jest.mock('../../src/app-layer/policies/task.policies', () => ({
     assertCanReadTasks: jest.fn(),
     assertCanWriteTasks: jest.fn(),
     assertCanCommentOnTasks: jest.fn(),
+    // #2169. A PARTIAL mock of a module throws on a new export the moment
+    // the code under test calls it, and the error names the call site
+    // rather than the mock — so every suite that mocks this module lists
+    // every export, whether or not it exercises this one.
+    assertCanEditTask: jest.fn(),
 }));
 
 import { listTaskParcels } from '@/app-layer/usecases/task';

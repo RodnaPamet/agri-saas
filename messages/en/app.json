@@ -6693,6 +6693,7 @@
         "SUPPORT_SCHEME_NOT_FOUND": "That support scheme was not found.",
         "SUSPEND_TARGET_REQUIRED": "Name the account to suspend.",
         "TARGET_USER_NOT_IN_TENANT": "That person is not a member of this farm.",
+        "TASK_EDIT_NOT_PERMITTED": "Only the person who created this task, or a farm administrator, can edit it.",
         "TASK_EVIDENCE_NOT_FOUND": "That task evidence was not found.",
         "TASK_LINK_NOT_FOUND": "That task link was not found.",
         "TASK_NOT_AWAITING_REVIEW": "This task is not awaiting review, so it cannot be approved or sent back.",
