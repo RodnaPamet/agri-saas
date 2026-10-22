@@ -233,9 +233,12 @@ export async function setPromotionPublished(ctx: RequestContext, id: string, pub
             entityId: promotion.id,
             details: `${published ? 'Published' : 'Unpublished'} promotion: ${promotion.title}`,
             detailsJson: {
+                // A real transition, which named its destination `operation`
+                // instead of `toStatus` (#2109). `operation` belongs to
+                // `entity_lifecycle`; the state this moved TO is a status.
                 category: 'status_change',
                 entityName: 'Promotion',
-                operation: published ? 'published' : 'unpublished',
+                toStatus: published ? 'PUBLISHED' : 'UNPUBLISHED',
                 after: { publishedAt: promotion.publishedAt?.toISOString() ?? null },
                 summary: `${published ? 'Published' : 'Unpublished'} ${promotion.company.name}: ${promotion.title}`,
             },
