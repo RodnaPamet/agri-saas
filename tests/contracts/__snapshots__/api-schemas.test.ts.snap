@@ -16123,6 +16123,10 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
       "description": "The day the work happened as the FARM sees it (\`YYYY-MM-DD\`, Europe/Sofia), not a UTC slice of \`occurredAt\`. For a free-hand entry typed between 00:00 and 03:00 in Sofia those two differ by a day.",
       "example": "2026-03-09"
     },
+    "mayDelete": {
+      "type": "boolean",
+      "description": "Whether THIS caller may withdraw this treatment — computed server-side so a client can offer «Изтрий» only where pressing it would succeed. It is not a \`createdByUserId\` field, deliberately: the rule is creator-or-admin AND single authorship, and the second arm refuses admins too, so no field on one row can express it. False on an ordinary manual entry, which has no treatment to withdraw. Advisory, not the control: the route re-checks and answers 403 \`TREATMENT_DELETE_NOT_PERMITTED\` or 409 \`TREATMENT_MIXED_AUTHORSHIP\`."
+    },
     "kind": {
       "type": [
         "string",
@@ -16204,6 +16208,7 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
   "required": [
     "treatmentGroupId",
     "occurredOn",
+    "mayDelete",
     "kind",
     "productName",
     "parcelCount",

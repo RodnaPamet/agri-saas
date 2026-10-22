@@ -37,17 +37,25 @@ export const GET = withApiErrorHandling(
 );
 
 /**
- * Abandon an unfinished treatment (#1777).
+ * Remove a treatment (#1777, widened by #2175).
  *
- * The escape hatch for a treatment whose marking keeps failing: without it a
- * farmer is left with one that will neither finish nor go away, because
- * re-sending under the same handle retries the same failing step.
+ * Began as the escape hatch for a treatment whose marking keeps failing:
+ * without it a farmer is left with one that will neither finish nor go away,
+ * because re-sending under the same handle retries the same failing step.
  *
- * ADMIN-gated and audited, and it refuses a COMPLETE treatment with 409
- * `TREATMENT_COMPLETE` — that one is a farm record, and removing it belongs
- * to the journal's own reversible, separately-audited flow. See
- * `deleteDiaryTreatment` for what the owner ruled this removes and why the
- * protections are shaped the way they are.
+ * Since the owner's 2026-10-22 ruling it removes a COMPLETE treatment too. The
+ * 409 `TREATMENT_COMPLETE` that used to refuse one is GONE, and the gate is no
+ * longer ADMIN-only: it is the treatment's creator or a farm admin
+ * (`TREATMENT_DELETE_NOT_PERMITTED`).
+ *
+ * The delete is SOFT, AUDITED and RESTORABLE through `./restore`, and the
+ * register stops printing the treatment — `farm-record-diary.ts` filters
+ * `task.deletedAt` on the lines it prints. That last part is what makes it a
+ * withdrawal rather than a view-level hide.
+ *
+ * See `deleteDiaryTreatment` for what the owner ruled, what the earlier ruling
+ * traded, and why the remaining protections are shaped as they are. The old
+ * reasoning is kept there verbatim rather than rewritten.
  */
 export const DELETE = withApiErrorHandling(
     async (

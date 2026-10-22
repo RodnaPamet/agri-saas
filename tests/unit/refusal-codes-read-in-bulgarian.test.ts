@@ -89,9 +89,13 @@ const BATCH_2: ReadonlyArray<[code: string, english: string]> = [
     ['SEASON_NAME_REQUIRED', 'A season name is required.'],
     ['SEASON_WINDOW_INVERTED', 'The season end date must be on or after the start date.'],
     ['TREATMENT_ABANDONED', 'This treatment was abandoned by an administrator.'],
-    ['TREATMENT_COMPLETE', 'This treatment is fully recorded.'],
     ['TREATMENT_DATE_INVALID', 'The treatment date must be a calendar day in the form YYYY-MM-DD.'],
     ['TREATMENT_DATE_IN_FUTURE', 'A treatment cannot be recorded for a future date.'],
+    // #2175. TREATMENT_COMPLETE left this list in the same change: nothing
+    // throws it any more, and a code with copy but no thrower is a translation
+    // somebody maintains for a refusal that cannot happen.
+    ['TREATMENT_DELETE_NOT_PERMITTED', 'Only the person who recorded this treatment, or a farm administrator, can remove it.'],
+    ['TREATMENT_MIXED_AUTHORSHIP', 'This treatment has tasks recorded by more than one person, so it cannot be removed as a whole. Ask an administrator.'],
     ['TREATMENT_NO_PARCELS', 'Select at least one parcel that was treated.'],
     ['UPLOAD_INFECTED', 'This image was rejected by the malware scanner.'],
     ['UPLOAD_SCANNER_UNAVAILABLE', 'The malware scanner is unavailable, so the image was not stored.'],
