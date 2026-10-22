@@ -1561,12 +1561,22 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/journal/treatments/deleted",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}",
       "status": "live",
       "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/farm-record",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/restore",
       "status": "live",
       "documented": true
     },
