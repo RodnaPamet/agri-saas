@@ -722,8 +722,14 @@ async function emitTaskAssignedNotification(
         // ONE job carrying BOTH transports rather than two jobs. A person may
         // hold a phone and a browser and the assignment should reach whichever
         // they are looking at, which is a property of the delivery rather than
-        // of either transport — and `runPushSend` only throws when BOTH fail,
-        // so a retry cannot re-send the one that already arrived.
+        // of either transport — and `runPushSend` throws only when NEITHER
+        // reached a device and the failure was retryable, so a retry cannot
+        // re-send the one that already arrived.
+        //
+        // That became true with #2171. Before it, neither transport could
+        // report a failure to `runPushSend` at all, so the throw was
+        // unreachable: a retry could not re-send the one that arrived because
+        // there was never a retry.
         //
         // `collapseKey` is the Web Push `tag` AND the APNs `apns-collapse-id`,
         // so a second assignment notification for one task replaces the first

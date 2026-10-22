@@ -280,7 +280,12 @@ export async function upsertOverrideDay(
             entityId: series[0].seriesId,
             details: `Platform price override for ${day}: ${series.length} commodity price(s)`,
             detailsJson: {
-                category: 'data_lifecycle',
+                // `entity_lifecycle`, not `data_lifecycle` (#2109). This
+                // payload has always had the lifecycle SHAPE — entityName,
+                // operation, summary, after — while `data_lifecycle` declares
+                // recordCount / model / reason / graceDays. It was the one
+                // production row failing on both its category and its verb.
+                category: 'entity_lifecycle',
                 entityName: 'MarketPriceSeries',
                 operation: 'upserted',
                 summary:

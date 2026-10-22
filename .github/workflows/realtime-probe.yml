@@ -77,10 +77,38 @@ jobs:
             echo "${detail:-the probe produced no verdict line}"
             echo "PROBE_EOF"
           } >> "$GITHUB_OUTPUT"
+          # ── UNCONFIGURED does not redden the RUN (measured 2026-10-22) ──
+          #
+          # The script exits 1 for it, and keeps doing so: a human running
+          # `node scripts/realtime-probe.mjs` must see a failure, because an
+          # unconfigured probe is not a working one.
+          #
+          # The JOB is a different question. `Realtime probe` is on
+          # `ci-failure-issue.yml`'s watch list — deliberately, so a probe that
+          # stops RUNNING is still reported — so a red run files a SECOND issue
+          # on top of the clearly-titled one this workflow files itself.
+          #
+          # Measured after two runs: #2149 (the notifier's) had 3 comments to
+          # #2148's 1, and the probe is hourly. That is ~24 comments a day on a
+          # thread that says only "the run was red", while the actionable issue
+          # sits beside it saying which secret is missing. For a GENUINE outage
+          # the pairing is worth it and stays; for a standing setup gap it is
+          # noise that grows.
+          #
+          # So: green run, issue still filed (see the step's `if:`). The signal
+          # does not disappear — it becomes a standing titled issue rather than
+          # an hourly red cron, which is the louder of the two anyway.
+          if [ "${verdict:-BROKEN}" = "UNCONFIGURED" ]; then
+            echo "::notice::probe is UNCONFIGURED — issue filed, run left green (see the step comment)"
+            exit 0
+          fi
           exit $status
 
       - name: Open or update the issue
-        if: failure()
+        # `failure()` alone would skip this for UNCONFIGURED, which now exits 0
+        # — and skipping it would trade one duplicate issue for no issue at
+        # all, which is the worse direction by far.
+        if: failure() || steps.probe.outputs.verdict == 'UNCONFIGURED'
         env:
           GH_TOKEN: ${{ github.token }}
           VERDICT: ${{ steps.probe.outputs.verdict }}

@@ -236,7 +236,10 @@ export const LIMITS: Limits = {
      *     reported on the `void load(…)` call inside it.
      *   • `token-refresh-reads-stored-copy` — its own `--` reason wrapped over
      *     three comment lines, so `-next-line` pointed at a comment and the
-     *     `as any` four lines down was never covered.
+     *     `as any` four lines down was never covered. (That suite was deleted
+     *     in #1986 with the proactive OAuth refresh it tested; the example is
+     *     kept because the MECHANISM is what this note is about, and a
+     *     wrapped reason still silently un-covers the line below it.)
      *
      * Both carried careful, well-argued reasons doing no work at all, in files
      * that read as though the finding were handled. That is the failure this

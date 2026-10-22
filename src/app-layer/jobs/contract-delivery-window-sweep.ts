@@ -45,8 +45,7 @@ import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
-import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
-import { afterCommit } from '@/lib/db/after-commit';
+import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
 import { CLOSING_SOON_DAYS, daysUntil } from '@/lib/grain/contract-window';
 import type { JobRunResult } from './types';
 
@@ -239,11 +238,21 @@ export async function runContractDeliveryWindowSweep(
                             skipDuplicates: true,
                         });
                         notified = res.count;
-                        for (const row of fresh) {
-                            afterCommit('notify.contract-delivery-window', () =>
-                                publishNotificationEvent(row.tenantId, row.userId, { id: row.dedupeKey }),
-                            );
-                        }
+                        // One read for the whole batch, then one frame per row
+                        // carrying its ROW id. The dedupeKey this used to send
+                        // becomes the client's `Last-Event-ID` and resolves to
+                        // nothing, so a reconnect right after a sweep replayed
+                        // nothing at all (#2142) — and a sweep is exactly when
+                        // a client has most to catch up on.
+                        await publishFreshNotifications(
+                            prisma,
+                            'notify.contract-delivery-window',
+                            fresh.map((row) => ({
+                                tenantId: row.tenantId,
+                                userId: row.userId,
+                                dedupeKey: row.dedupeKey,
+                            })),
+                        );
                     }
                 }
             }

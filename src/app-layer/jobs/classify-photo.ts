@@ -32,8 +32,7 @@ import { logger } from '@/lib/observability/logger';
 import { getProviderByName } from '@/lib/storage';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
-import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
-import { afterCommit } from '@/lib/db/after-commit';
+import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { identifyPhoto } from '@/app-layer/ai/vision';
 import { askKnowledgeBase } from '@/app-layer/usecases/rag';
@@ -288,8 +287,10 @@ export async function runClassifyPhoto(payload: ClassifyPhotoPayload): Promise<C
                                 // published unconditionally, so a retry
                                 // re-notified even when the row deduped.
                                 if (created.count > 0) {
-                                    afterCommit('notify.classify-photo', () =>
-                                        publishNotificationEvent(tenantId, notifyUserId, { id: dedupeKey }),
+                                    await publishFreshNotifications(
+                                        db,
+                                        'notify.classify-photo',
+                                        [{ tenantId, userId: notifyUserId, dedupeKey }],
                                     );
                                 }
                             }

@@ -112,7 +112,15 @@ describe('the section/service extractors this file depends on', () => {
         const h = header(read(CADDYFILE));
         expect(h.length).toBeGreaterThan(500);
         expect(h).not.toContain('reverse_proxy');
-        expect(h).not.toContain('35-187-80-26.sslip.io');
+        // The needle has to be CODE-ONLY, and `35-187-80-26.sslip.io` stopped
+        // being that in #2129: the header now lists the live file's five site
+        // blocks by name, because "this file is one block of five" cannot be
+        // said without naming them. A bare hostname therefore appears in the
+        // prose on purpose.
+        //
+        // The site-block OPENING is code-only — a comment never ends in `{`
+        // — so that is what the extractor is checked against.
+        expect(h).not.toContain('app.agrent.bg {');
     });
 
     it('unquoted() removes quoted material and nothing else', () => {
@@ -185,6 +193,80 @@ describe('deploy/Caddyfile — the divergence is stated, not excused', () => {
         // rather than a memory, since nothing detects the next one.
         expect(h).toMatch(/check-drift\.sh/);
         expect(h).toMatch(/apply\.sh/);
+    });
+});
+
+describe('deploy/Caddyfile — the header says it is a FRAGMENT (#2129)', () => {
+    // The previous header's central factual claim was that the two files
+    // "differ in exactly ONE token: the ACME contact". Measured 2026-10-22,
+    // that was false: the live file carries four more site blocks and two
+    // Centrifugo websocket routes, because the VM serves a second product.
+    //
+    // That claim is what made `scp deploy/Caddyfile` look safe, and doing it
+    // would take playerz.bg, app.playerz.bg and staging.playerz.bg offline.
+    // Nothing in this repo detects Caddy drift — `apply.sh` copies only the
+    // compose file — so the header is the only thing standing between a
+    // reader and that action, and these cases are what keep it standing.
+
+    it('states that this file is a subset of the live one', () => {
+        const h = header(read(CADDYFILE));
+        expect(h).toMatch(/FRAGMENT|subset/i);
+        // Named, not gestured at: a reader has to be able to tell WHICH
+        // blocks are missing without logging into the VM.
+        expect(h).toMatch(/playerz/i);
+    });
+
+    it('warns that copying it over would take live sites down', () => {
+        const h = header(read(CADDYFILE));
+        expect(h).toMatch(/takes three live sites offline|offline/i);
+        // The websocket routes are the part that is easy to miss, because
+        // they are inside the playerz blocks rather than beside them.
+        expect(h).toMatch(/websocket/i);
+    });
+
+    it('does NOT re-assert the withdrawn one-token claim', () => {
+        // Same shape as the ACME_EMAIL withdrawal above: the correction has
+        // to survive the next edit, and the way it dies is somebody restoring
+        // the tidier sentence.
+        const h = unquoted(header(read(CADDYFILE)));
+        expect(h).not.toMatch(/differ in exactly one token/i);
+    });
+
+    it('this file still holds exactly ONE site block, as the header claims', () => {
+        // If a second block is ever added here, "one block of five" becomes
+        // wrong and the count in the header has to move with it. Asserted on
+        // the CODE, not the prose: a site block opens at column 0 and ends
+        // the line with `{`.
+        const code = read(CADDYFILE)
+            .split('\n')
+            .filter((l) => !l.trimStart().startsWith('#'));
+        // First character must NOT be whitespace: a site block opens at
+        // column 0, while `    header {` is a nested directive. The first
+        // version of this pattern had `\s` inside the leading class and
+        // counted that nested block as a second site.
+        const blocks = code.filter((l) => /^[a-z0-9*][a-z0-9*.,\s-]*\{\s*$/.test(l));
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0]).toContain('app.agrent.bg');
+    });
+
+    it('CONTROL: the block detector does not count the global block or prose', () => {
+        // The global `{` block opens with a bare brace and must not be
+        // counted, and a comment that happens to end in `{` must not either —
+        // which is how the previous needle in this file went wrong.
+        const detect = (lines: string[]) =>
+            lines
+                .filter((l) => !l.trimStart().startsWith('#'))
+                .filter((l) => /^[a-z0-9*][a-z0-9*.,\s-]*\{\s*$/.test(l));
+        expect(detect(['{'])).toHaveLength(0);
+        expect(detect(['# app.agrent.bg {'])).toHaveLength(0);
+        expect(detect(['    reverse_proxy app:3000'])).toHaveLength(0);
+        // The case the first version of this detector got WRONG: a nested
+        // directive block, indented. `header {`, `handle {`, `route {` and
+        // `tls {` all take this shape, so counting them would make any real
+        // site block look like several.
+        expect(detect(['    header {'])).toHaveLength(0);
+        expect(detect(['    handle /connection/websocket {'])).toHaveLength(0);
+        expect(detect(['example.com, www.example.com {'])).toHaveLength(1);
     });
 });
 

@@ -78,12 +78,19 @@ function req(pathname: string) {
 beforeEach(() => getToken.mockReset());
 
 describe('a token carrying an error is refused', () => {
-    // Every writer of `token.error`. All four must deny — leaving any of them
-    // wired to nothing is how this bug existed in the first place.
+    // Every writer of `token.error` must deny — leaving any of them wired to
+    // nothing is how this bug existed in the first place.
+    //
+    // `RefreshTokenError` is kept deliberately after #1986 removed its only
+    // producer (the proactive OAuth refresh). The gate is NAME-AGNOSTIC — it
+    // denies any non-empty string — so this row now does the more valuable
+    // job of proving that: a value no current code can set is still refused.
+    // A future producer therefore needs no change here, and the row has a
+    // comment rather than becoming a puzzle.
     const ERRORS = [
         ['SessionRevoked', 'admin revoke / expiry / concurrency cap / sessionVersion bump'],
         ['MfaDependencyFailure', 'a FAIL-CLOSED MFA check that could not complete'],
-        ['RefreshTokenError', 'OAuth refresh failed — its own log says "forcing reauth"'],
+        ['RefreshTokenError', 'no live producer since #1986 — proves the gate reads any value'],
         ['EntraGroupGateDenied', 'Entra group gate refused'],
     ] as const;
 

@@ -72,11 +72,21 @@ function makeDb(tasks: TaskRow[]) {
     // `createMany` + `skipDuplicates` → `{ count: 1 }` on insert,
     // `{ count: 0 }` when the dedupeKey already existed.
     const createMany = jest.fn().mockResolvedValue({ count: 1 });
+    // `notification.findMany` is the read-back seam added by #2142: the bus
+    // frame must carry the ROW id, because since P7.2 that id becomes the
+    // client's `Last-Event-ID` and a dedupeKey resolves to nothing. It echoes
+    // the requested keys back rather than answering a canned row — a fixed
+    // response would resolve only the one key it names and silently skip the
+    // publish for every other case.
+    const notificationFindMany = jest.fn(
+        async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
+            where.dedupeKey.in.map((dedupeKey, i) => ({ id: `notif-${i + 1}`, dedupeKey })),
+    );
     const db = {
         task: { findMany },
-        notification: { createMany },
+        notification: { createMany, findMany: notificationFindMany },
     } as unknown as PrismaClient;
-    return { db, findMany, createMany };
+    return { db, findMany, createMany, notificationFindMany };
 }
 
 /** Last row payload passed to `notification.createMany`. */

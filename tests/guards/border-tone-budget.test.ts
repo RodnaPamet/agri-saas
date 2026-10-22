@@ -103,7 +103,9 @@ const ROOT = path.resolve(__dirname, '../..');
 // replaced by the `.surface-popup-texture` class (token-based border).
 // B4 (2026-06-20): +1 — two delight features landed discrete-surface cards
 // that legitimately use the `border-border-default` "discrete surface" tone:
-// the shareables ShareableStatCard and the onboarding CoachMark popover.
+// the shareables ShareableStatCard. (It also named the onboarding
+// CoachMark popover, deleted in #2107 — suppressed app-wide with no call
+// sites, so flipping its kill switch back would have restored nothing.)
 // B5 (2026-07-07, restored 2026-07-23): +1 — the Climate page's Meteobot
 // station embed wraps the dashboard iframe in a discrete external-content
 // surface (same register as a card / table outer border), so it legitimately

@@ -185,10 +185,10 @@ function ExchangeInner({ publicProfileEnabled }: { publicProfileEnabled: boolean
      * coherent rather than bypassed.
      *
      * The frame's `id` and `tenantId` are deliberately NOT read. A coalesced
-     * tick refers to no single row and spans farms, so both carry a sentinel
-     * — and for a `listing` frame `tenantId` names the SELLER anyway, which
-     * means filtering on it here would hide exactly the listings this page
-     * exists to show.
+     * tick refers to no single row and spans farms, so both carry the sentinel
+     * `'listings'` — there is no seller to name and no row to point at. Even
+     * if the field did name the seller, filtering on it here would hide
+     * exactly the listings this page exists to show (#2168).
      */
     const onMarketTick = useCallback(() => {
         void mutate();

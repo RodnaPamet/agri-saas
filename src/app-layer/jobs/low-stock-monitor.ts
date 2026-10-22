@@ -19,8 +19,7 @@
 import prisma from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
-import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
-import { afterCommit } from '@/lib/db/after-commit';
+import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
 import type { JobRunResult } from './types';
 
 export interface LowStockMonitorOptions {
@@ -147,11 +146,16 @@ export async function runLowStockMonitor(
                         if (fresh.length > 0) {
                             const res = await prisma.notification.createMany({ data: fresh, skipDuplicates: true });
                             notified = res.count;
-                            for (const row of fresh) {
-                                afterCommit('notify.low-stock', () =>
-                                    publishNotificationEvent(row.tenantId, row.userId, { id: row.dedupeKey }),
-                                );
-                            }
+                            // One read for the batch, then a frame per row carrying its
+                            // ROW id. A dedupeKey here becomes the client's
+                            // `Last-Event-ID` and resolves to nothing, so a reconnect
+                            // right after a sweep replayed nothing — and a sweep is
+                            // exactly when a client has most to catch up on (#2142).
+                            await publishFreshNotifications(prisma, 'notify.low-stock', fresh.map((row) => ({
+                                tenantId: row.tenantId,
+                                userId: row.userId,
+                                dedupeKey: row.dedupeKey,
+                            })));
                         }
                     }
                 }

@@ -78,8 +78,12 @@ const QUIET = new Date(Date.UTC(2026, 10, 5, 21, 0, 0));
 beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers().setSystemTime(AWAKE);
-    webPush.mockResolvedValue(undefined);
-    apns.mockResolvedValue(undefined);
+    // A `TransportOutcome`, not `undefined` — #2171. `undefined` was the real
+    // return type, and that is precisely what let these doubles pass while
+    // the job's accounting was wrong: a mock resolving nothing is
+    // indistinguishable from a transport that delivered nothing.
+    webPush.mockResolvedValue({ sent: 1, retryable: 0 });
+    apns.mockResolvedValue({ sent: 2, retryable: 0 });
     enqueue.mockResolvedValue({ id: 'job-1' });
     preferenceRow = null;
     deviceRows = [
@@ -173,6 +177,69 @@ describe('runPushSend', () => {
         // sends whoever reads it looking in the wrong place.
         await expect(runPushSend(payload)).rejects.toThrow(/push service 503/);
         await expect(runPushSend(payload)).rejects.toThrow(/apns 403/);
+    });
+
+    // ── the shape production actually produced — #2171 ──
+    //
+    // Every failure test above mocks a THROW, and neither transport has ever
+    // thrown: both catch per device and return. So the suite exercised a path
+    // the real senders cannot take, and the one they do take — resolving with
+    // failures — was untested. On 2026-10-21 that path ran twice in
+    // production, reported success, and spent none of its three attempts.
+
+    it('does not count a transport that reported failures as delivered', async () => {
+        webPush.mockResolvedValue({ sent: 0, retryable: 1 });
+
+        const r = await runPushSend(payload);
+
+        expect(r).toEqual({ attempted: 2, delivered: 1 });
+        expect(warn).toHaveBeenCalledWith('push.transport_failed', expect.anything());
+    });
+
+    it('throws when NEITHER transport reached a device — the production case', async () => {
+        // Exactly 2026-10-21 07:21: two `apns.send_threw`, nothing delivered,
+        // and the job succeeded. It must fail so BullMQ retries.
+        webPush.mockResolvedValue({ sent: 0, retryable: 1 });
+        apns.mockResolvedValue({ sent: 0, retryable: 2 });
+
+        await expect(runPushSend(payload)).rejects.toThrow(/failed on every transport/);
+    });
+
+    it('counts the DEVICES that failed, so one of three is not "the transport failed"', async () => {
+        apns.mockResolvedValue({ sent: 0, retryable: 3 });
+
+        await runPushSend(payload);
+
+        const detail = warn.mock.calls.find((c) => c[0] === 'push.transport_failed')?.[1] as {
+            detail?: string;
+        };
+        expect(detail?.detail).toContain('3 device send(s) failed');
+    });
+
+    it('does NOT throw when nothing was retryable, however little was delivered', async () => {
+        // An unconfigured transport, or one whose only device was dead and
+        // pruned, delivers nothing and reports no retryable failure. Burning
+        // three attempts to rediscover that is the trade this guards against —
+        // and it is why the throw tests `retryable > 0` rather than
+        // `delivered === 0` alone.
+        webPush.mockResolvedValue({ sent: 0, retryable: 0 });
+        apns.mockResolvedValue({ sent: 0, retryable: 0 });
+
+        const r = await runPushSend(payload);
+
+        expect(r).toEqual({ attempted: 2, delivered: 0 });
+        expect(warn).not.toHaveBeenCalledWith('push.transport_failed', expect.anything());
+    });
+
+    it('makes attempted - delivered the "skipped" the executor documents', async () => {
+        // `executor-registry` reports `attempted - delivered` as skipped. That
+        // was always 0 before #2171, because delivered counted transport
+        // functions that returned.
+        apns.mockResolvedValue({ sent: 0, retryable: 0 });
+
+        const r = await runPushSend(payload);
+
+        expect(r.attempted - r.delivered).toBe(1);
     });
 
     it('logs no notification PROSE — the payload is displayed copy', async () => {

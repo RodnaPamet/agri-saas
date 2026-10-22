@@ -88,6 +88,38 @@ describe('probe verdicts have somewhere to be reported', () => {
         expect(titles.some((t) => /not arriving/i.test(t))).toBe(true);
     });
 
+    it('UNCONFIGURED files its issue WITHOUT reddening the run', () => {
+        // Two halves that have to hold together, and the failure mode of each
+        // is the opposite of the other:
+        //
+        //   · the run must go green, or the CI-failure notifier files a second
+        //     issue on top of this workflow's own — measured at ~24 comments a
+        //     day on the notifier's thread while the probe is unconfigured;
+        //   · the issue must still be filed, or the signal vanishes entirely,
+        //     which is strictly worse than a duplicate.
+        //
+        // The script's own exit code is unchanged and asserted below: a human
+        // running it still sees a failure.
+        const wf = fs.readFileSync(WORKFLOW, 'utf8');
+        expect(wf).toMatch(/if \[ "\$\{verdict:-BROKEN\}" = "UNCONFIGURED" \]; then[\s\S]{0,300}exit 0/);
+        // And the issue step must not be gated on `failure()` alone, which
+        // would skip it now that the step succeeds.
+        expect(wf).toMatch(/if: failure\(\) \|\| steps\.probe\.outputs\.verdict == 'UNCONFIGURED'/);
+    });
+
+    it('a BROKEN verdict still fails the run', () => {
+        // The exemption is for UNCONFIGURED only. A dark channel must still
+        // redden the cron AND file its issue — that pairing is the one the
+        // watch list in ci-failure-issue.yml argues for, and it stays.
+        const wf = fs.readFileSync(WORKFLOW, 'utf8');
+        const guardIdx = wf.indexOf('= "UNCONFIGURED" ]; then');
+        const exitIdx = wf.indexOf('exit $status', guardIdx);
+        expect(guardIdx).toBeGreaterThan(-1);
+        // `exit $status` survives AFTER the UNCONFIGURED early-exit, so every
+        // other non-zero verdict still propagates.
+        expect(exitIdx).toBeGreaterThan(guardIdx);
+    });
+
     it('OK and OFF exit 0, and everything else exits non-zero', () => {
         // The exit mapping is the other half: a verdict that exits 0 never
         // reaches the issue step at all, which is the opposite failure — a

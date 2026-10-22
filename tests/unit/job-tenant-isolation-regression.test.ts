@@ -69,7 +69,13 @@ describe('REGRESSION: task-due-notification tenant isolation', () => {
 
     const mockPrisma = {
         task: { findMany: (...args: unknown[]) => mockTaskFindMany(...args) },
-        notification: { createMany: (...args: unknown[]) => mockNotificationCreateMany(...args) },
+        notification: {
+            createMany: (...args: unknown[]) => mockNotificationCreateMany(...args),
+            // The read-back seam (#2142) — the bus frame carries the ROW id,
+            // not the dedupeKey, so the helper resolves ids before publishing.
+            findMany: async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
+                where.dedupeKey.in.map((dedupeKey, i) => ({ id: `notif-${i + 1}`, dedupeKey })),
+        },
     } as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
     // Fixed anchor so "due today" classification is deterministic.

@@ -68,8 +68,12 @@ const payload = { tenantId: 't-1', recipientUserId: 'u-2', nightKey: '2026-11-05
 
 beforeEach(() => {
     jest.clearAllMocks();
-    webPush.mockResolvedValue(undefined);
-    apns.mockResolvedValue(undefined);
+    // A `TransportOutcome`, not `undefined` — #2171. See
+    // `push-send.test.ts`: a double resolving nothing is indistinguishable
+    // from a transport that delivered nothing, which is how this job came to
+    // report every wanted transport as delivered.
+    webPush.mockResolvedValue({ sent: 1, retryable: 0 });
+    apns.mockResolvedValue({ sent: 1, retryable: 0 });
     notificationCount = 3;
     countArgs = null;
     userRow = { uiLanguage: 'bg' };
@@ -230,6 +234,31 @@ describe('runPushSummary', () => {
         // since closed. The bell is the fallback it has been all night.
         webPush.mockRejectedValue(new Error('push service down'));
         apns.mockRejectedValue(new Error('apns down'));
+
+        await expect(runPushSummary(payload)).resolves.toEqual({ count: 3, delivered: 0 });
+    });
+
+    it('reports a transport that failed WITHOUT throwing as undelivered', async () => {
+        // The shape the real senders produce — #2171. Both failure tests above
+        // mock a throw, which neither transport does, so this job's
+        // `push.summary_sent` counter reported deliveries it had not made.
+        apns.mockResolvedValue({ sent: 0, retryable: 2 });
+
+        const r = await runPushSummary(payload);
+
+        expect(r).toEqual({ count: 3, delivered: 1 });
+        expect(info).toHaveBeenCalledWith(
+            'push.summary_sent',
+            expect.objectContaining({ delivered: 1, failures: 1 }),
+        );
+    });
+
+    it('still does not throw when neither transport reached a device', async () => {
+        // `attempts: 1` is unchanged by #2171: a retried summary either
+        // duplicates or describes a window that has closed. What changes is
+        // that the COUNT now says nothing arrived.
+        webPush.mockResolvedValue({ sent: 0, retryable: 1 });
+        apns.mockResolvedValue({ sent: 0, retryable: 1 });
 
         await expect(runPushSummary(payload)).resolves.toEqual({ count: 3, delivered: 0 });
     });

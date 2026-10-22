@@ -131,6 +131,14 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         expect(urls.length).toBeGreaterThanOrEqual(2);
     });
 
+    /*
+     * My flat version of the doc-key check stood here, and is deleted rather
+     * than merged. #2180 landed `every assertions KEY is an audit id` below
+     * while this branch was open: a recursive scan over the whole config is
+     * strictly broader than one pass over `assertMatrix[].assertions`, and it
+     * already asserts its own denominator, so nothing of mine was left to
+     * keep. Two tests for one property is how one of them rots unnoticed.
+     */
     it('throttles for real, so the budget bounds an observation', () => {
         // Named in the failure rather than asserted bare, so a revert says
         // what to restore and why it was chosen.
@@ -140,9 +148,44 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
     });
 
     it('keeps enough samples to take a median of', () => {
-        // Three is the floor: `scripts/ci/lighthouse-median.mjs` reports the
-        // median, and a median of two is the mean of two.
-        expect(rc.ci?.collect?.numberOfRuns).toBeGreaterThanOrEqual(3);
+        // FIVE as of #2179, raised from three, and paid for by splitting the
+        // workflow to one URL per job.
+        //
+        // Three was defended as "a median of two is the mean of two" — true,
+        // and not the binding constraint. The `/f/` entry's 3800 ms bound came
+        // from a FIVE-run median and was enforced on a three-run one; that
+        // entry already records two 3-run medians of the SAME commit landing
+        // 296 ms apart. Measured 2026-10-22: three of eight runs failed on an
+        // unchanged page across main and two unrelated branches (medians
+        // 4052 / 4086 / 4206, single-sample max 4220).
+        //
+        // Five runs of BOTH urls in one job does not fit, and that was
+        // measured rather than reasoned: 3 x 2 is 197s against a 250s cap, so
+        // ~33s per run puts 5 x 2 at ~328s, and it timed out 3/3 (250s, 510s,
+        // 770s elapsed) producing no median. The cap could not absorb it
+        // (`ci-retry-loop-timeout` holds it at 300) and said so itself —
+        // "fewer runs or one URL per job, not a bigger cap". Hence the matrix.
+        //
+        // A floor rather than equality, so a page needing more samples can
+        // raise it without editing this line.
+        expect(rc.ci?.collect?.numberOfRuns).toBeGreaterThanOrEqual(5);
+    });
+
+    it('still declares BOTH urls, because the matrix narrows them (#2179)', () => {
+        // The split moved COLLECTION to one URL per job via `--collect.url`,
+        // which replaces this list rather than appending to it (verified
+        // 2026-10-22). So the config stopped being what runs and became the
+        // record of what is measured — and a record is exactly the thing that
+        // rots silently. If a page is dropped from the matrix, this still
+        // says two are covered, so assert the pair that must stay declared.
+        const urls = rc.ci?.collect?.url ?? [];
+        expect(urls.some((u) => /\/login$/.test(u))).toBe(true);
+        expect(urls.some((u) => /\/f\//.test(u))).toBe(true);
+        // And every declared URL must have a matrix leg collecting it, or the
+        // budget below it is asserted against nothing.
+        for (const u of urls) {
+            expect(workflow).toContain(u);
+        }
     });
 
     it('the timeout warning states no bound of its own', () => {
@@ -200,7 +243,21 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         expect(publicEntry).toBeDefined();
         const lcp = publicEntry?.assertions?.['largest-contentful-paint'];
         const max = (lcp?.[1] as { maxNumericValue?: number } | undefined)?.maxNumericValue;
-        console.log(`[lighthouse-gate] /f/* LCP budget ${max}ms vs measured 3358ms (median of 3)`);
+        // The run count comes from the CONFIG, not from a literal. It read
+        // "(median of 3)" until #2179 raised the config to 5, and a printout
+        // that mirrors a setting by hand goes stale the moment the setting
+        // moves — silently, because nothing asserts on a log line.
+        //
+        // 3358 ms is kept as a literal deliberately: it is a HISTORICAL
+        // measurement (2026-10-20, the three runs that set this bound), not a
+        // mirror of anything live, and labelling it as such is what stops the
+        // next reader taking it for the current figure. See #2179 for what the
+        // page measured two days later.
+        console.log(
+            `[lighthouse-gate] /f/* LCP budget ${max}ms; baseline that set it 3358ms` +
+                ` (3-run median, 2026-10-20); gate now takes a median of` +
+                ` ${rc.ci?.collect?.numberOfRuns}`,
+        );
         expect(typeof max).toBe('number');
         expect(max!).toBeLessThanOrEqual(3800);
         // And a floor, so a flake is never "fixed" by setting the budget below
@@ -239,6 +296,50 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
                 .map(([k]) => k)
                 .join(', ')}`,
         );
+    });
+
+    it('every assertions KEY is an audit id, so a doc note cannot become an audit', () => {
+        /**
+         * #2178. This file documents itself with `"//"` keys, which is fine at
+         * the top level and on a matrix ENTRY — lhci ignores both. Inside an
+         * `assertions` object it is not: lhci reads every key there as an audit
+         * name, so a 2406-character explanatory note became an audit called
+         * `//` and failed `auditRan` on every single run.
+         *
+         * It was a GUARANTEED failure, not a flake — an audit that does not
+         * exist can never have run — and it went unnoticed because the LCP
+         * assertion was failing alongside it and masked which was which.
+         *
+         * Nothing checked this, which is why it slipped through. The rule is
+         * narrow on purpose: an audit id is lower-case letters, digits and
+         * dashes, optionally prefixed `categories:`. That admits every real
+         * audit and rejects prose, a comment marker, or a stray key.
+         */
+        const AUDIT_ID = /^(categories:)?[a-z0-9][a-z0-9-]*$/;
+        const offenders: string[] = [];
+        let checked = 0;
+
+        const scan = (node: unknown, path: string, inAssertions: boolean) => {
+            if (Array.isArray(node)) {
+                node.forEach((v, i) => scan(v, `${path}[${i}]`, inAssertions));
+                return;
+            }
+            if (node === null || typeof node !== 'object') return;
+            for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+                if (inAssertions) {
+                    checked += 1;
+                    if (!AUDIT_ID.test(key)) offenders.push(`${path}.${key}`);
+                    continue;
+                }
+                scan(value, `${path}.${key}`, key === 'assertions');
+            }
+        };
+        scan(rc, '$', false);
+
+        // The denominator, because a scan that reached no assertions block
+        // would report zero offenders and look exactly like a clean config.
+        expect(checked).toBeGreaterThanOrEqual(8);
+        expect(offenders).toEqual([]);
     });
 
     it('the cap is still a literal, which the retry guard requires', () => {

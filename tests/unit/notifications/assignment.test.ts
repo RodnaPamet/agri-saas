@@ -84,12 +84,22 @@ describe('createAssignmentNotification', () => {
     let db: {
         notification: {
             createMany: jest.Mock;
+            findMany: jest.Mock;
         };
     };
 
     beforeEach(() => {
         createManyMock = jest.fn();
-        db = { notification: { createMany: createManyMock } };
+        // `findMany` is the read-back seam #2142 added — the helper resolves
+        // the row id by dedupeKey so the bus frame carries something a
+        // reconnect can look up. These cases do not assert on the frame, but a
+        // double missing the seam fails them all.
+        db = {
+            notification: {
+                createMany: createManyMock,
+                findMany: jest.fn().mockResolvedValue([{ id: 'row-1', dedupeKey: 'k' }]),
+            },
+        };
     });
 
     it('returns "created" when a new row is inserted', async () => {
@@ -178,12 +188,29 @@ describe('createAssignmentNotification', () => {
 
 describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', () => {
     let createManyMock: jest.Mock;
-    let db: { notification: { createMany: jest.Mock } };
+    let findFirstMock: jest.Mock;
+    let db: { notification: { createMany: jest.Mock; findMany: jest.Mock } };
 
     beforeEach(() => {
         __resetNotificationBusForTests();
         createManyMock = jest.fn();
-        db = { notification: { createMany: createManyMock } };
+        // The read-back seam added by #2142. Two things this double has to
+        // get right, both learned by getting them wrong:
+        //
+        //  1. It must EXIST. Without it every case here failed on
+        //     `findMany is not a function` — loud, which is the good version
+        //     of this problem.
+        //  2. It must answer the key it was ASKED for. A canned row carrying
+        //     one fixed dedupeKey made the ASSET_ASSIGNED case resolve
+        //     nothing, so the helper skipped the publish and the test read an
+        //     empty subscriber — a double that cannot express the behaviour it
+        //     stands in for.
+        //
+        // So it echoes the requested keys back, one row each, numbered.
+        findFirstMock = jest.fn(async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
+            where.dedupeKey.in.map((dedupeKey, i) => ({ id: `notif-row-${i + 1}`, dedupeKey })),
+        );
+        db = { notification: { createMany: createManyMock, findMany: findFirstMock } };
     });
 
     it('fans the event to the SSE bus when the row inserts (count > 0)', async () => {
@@ -211,16 +238,30 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
 
         expect(received).toHaveLength(1);
         // `type` and `linkUrl` left the event in #1990 (ids only); the row
-        // still carries them and the client refetches it. What remains
-        // assertable here is the id, below — which is the dedupeKey, and that
-        // is the contract worth locking because the helper has no DB-assigned
-        // id to use instead.
-
-        // The publish uses the dedupeKey as the event id (the
-        // helper doesn't have the DB-assigned id from createMany).
-        expect(received[0].id).toBe(
-            'tenant-1:TASK_ASSIGNED:task-1:user-1:2026-05-28',
-        );
+        // still carries them and the client refetches it. The id is what
+        // remains assertable — and it is the ROW id.
+        //
+        // ── this case used to assert the opposite (#2142) ──
+        //
+        // It read:
+        //
+        //   // The publish uses the dedupeKey as the event id (the helper
+        //   // doesn't have the DB-assigned id from createMany).
+        //   expect(received[0].id).toBe('tenant-1:TASK_ASSIGNED:task-1:user-1:2026-05-28');
+        //
+        // under a comment calling that "the contract worth locking because the
+        // helper has no DB-assigned id to use instead". The premise was true —
+        // `createMany` returns no ids — and the conclusion was the bug: since
+        // P7.2 a frame's id is the client's `Last-Event-ID`, which
+        // `replayNotificationIdsAfter` resolves as a `Notification.id`. A
+        // dedupeKey matches no row, so a client whose newest frame came from
+        // here replayed NOTHING on its next reconnect.
+        //
+        // So the test was locking a defect as a contract, which is the most
+        // expensive kind of green. The helper reads the row back by its
+        // dedupeKey; the key is now how the id is FOUND, never what is sent.
+        expect(received[0].id).toBe('notif-row-1');
+        expect(received[0].id).not.toContain('TASK_ASSIGNED');
     });
 
     it('SKIPS the bus publish when skipDuplicates collapses the insert', async () => {

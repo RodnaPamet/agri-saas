@@ -234,7 +234,30 @@ describe('setPromotionPublished', () => {
         await setPromotionPublished(ctx, 'p-1', true);
         const payload = mockLogEvent.mock.calls[0][2];
         expect(payload.detailsJson.category).toBe('status_change');
-        expect(payload.detailsJson.operation).toBe('published');
+        // `toStatus`, not `operation` (#2109). This case asserted
+        // `operation: 'published'`, which is the field `entity_lifecycle`
+        // declares — so the payload named its destination with the other
+        // category's vocabulary, and `StatusChangeSchema.strict()` rejected
+        // it. The name of this test was already the argument for the change:
+        // a publication IS a status change, so it says where it moved TO.
+        expect(payload.detailsJson.toStatus).toBe('PUBLISHED');
+        expect(payload.detailsJson.operation).toBeUndefined();
+    });
+
+    it('says UNPUBLISHED on the way back', async () => {
+        // The other direction, which nothing covered — and the one where a
+        // field-diff payload would have been most tempting.
+        mockPromotion.findUnique.mockResolvedValue({
+            id: 'p-1',
+            title: 'T',
+            publishedAt: new Date('2026-10-01T00:00:00Z'),
+            company: { name: 'Syngenta' },
+        });
+
+        await setPromotionPublished(ctx, 'p-1', false);
+        const payload = mockLogEvent.mock.calls[0][2];
+        expect(payload.detailsJson.category).toBe('status_change');
+        expect(payload.detailsJson.toStatus).toBe('UNPUBLISHED');
     });
 });
 

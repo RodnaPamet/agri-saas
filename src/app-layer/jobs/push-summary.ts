@@ -169,28 +169,36 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
     ];
     for (const transport of wanted) {
         try {
-            if (transport === 'web') {
-                await sendWebPushToUser(ctx, recipientUserId, {
-                    title,
-                    body,
-                    // The bell, not a specific task: the summary is about
-                    // several notifications and there is no single target.
-                    url: '/notifications',
-                    // One collapse key per night, so a retry or a second
-                    // process cannot stack two summaries for one window.
-                    tag: `quiet-summary-${nightKey}`,
-                });
-            } else {
-                await sendApnsToUser(ctx, recipientUserId, {
-                    title,
-                    body,
-                    link: '/notifications',
-                    collapseId: `quiet-summary-${nightKey}`,
-                });
+            // #2171 — the same correction as `push-send`: `delivered += 1`
+            // after a call that cannot throw counted transport functions that
+            // returned, so this job's `push.summary_sent` line reported every
+            // wanted transport as delivered and `failures: 0` always, however
+            // many devices actually failed.
+            const outcome =
+                transport === 'web'
+                    ? await sendWebPushToUser(ctx, recipientUserId, {
+                          title,
+                          body,
+                          // The bell, not a specific task: the summary is
+                          // about several notifications and there is no single
+                          // target.
+                          url: '/notifications',
+                          // One collapse key per night, so a retry or a second
+                          // process cannot stack two summaries for one window.
+                          tag: `quiet-summary-${nightKey}`,
+                      })
+                    : await sendApnsToUser(ctx, recipientUserId, {
+                          title,
+                          body,
+                          link: '/notifications',
+                          collapseId: `quiet-summary-${nightKey}`,
+                      });
+            if (outcome.sent > 0) delivered += 1;
+            if (outcome.retryable > 0) {
+                failures.push(`${transport}: ${outcome.retryable} device send(s) failed`);
             }
-            delivered += 1;
         } catch (err) {
-            failures.push(`${transport}: ${err instanceof Error ? err.message : String(err)}`);
+            failures.push(`${transport}: threw — ${err instanceof Error ? err.message : String(err)}`);
         }
     }
 

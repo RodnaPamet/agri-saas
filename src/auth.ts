@@ -50,7 +50,6 @@ import {
 } from '@/lib/auth/session-lifetime';
 import { authenticateWithPassword } from '@/lib/auth/credentials';
 import { DEFAULT_LOCALE } from '@/lib/i18n/locales';
-import { isTokenExpired, refreshAccessToken } from '@/lib/auth/refresh';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup, hashForLookupCandidates } from '@/lib/security/encryption';
@@ -177,12 +176,35 @@ declare module 'next-auth/jwt' {
          *  array of group GUIDs would bloat the JWT cookie (worst for the very
          *  overage population this flag marks) with no downstream reader. */
         aadGroupsOverage?: boolean;
-        accessToken?: string;
-        refreshToken?: string;
-        expiresAt?: number;
+        /**
+         * NO `accessToken`, `refreshToken` or `expiresAt` — removed in #1986.
+         *
+         * The same reasoning as `aadGroupsOverage` above, applied to the one
+         * case that was also a CREDENTIAL: they were written at sign-in and
+         * refreshed on expiry for a value nothing ever read. The provider
+         * grant carries `openid email profile`, so it could never have served
+         * Drive or Calendar — those come from their own consent flow and their
+         * own store (`IntegrationConnection.secretEncrypted`, #2005).
+         *
+         * The tokens themselves are NOT gone: `Account.access_token` /
+         * `refresh_token` and the `access_type=offline` grant stay exactly as
+         * they were. What left is the cookie copy and the schedule. Whatever
+         * needs a provider token later reads the `Account` row — which is
+         * authoritative, unlike a JWT snapshot — through the Prisma client,
+         * never `$queryRaw`: the PII dual-write path decrypts on read, so raw
+         * SQL hands back ciphertext that would be adopted as a bearer token.
+         */
         /** Operational session row id (Epic C.3). */
         userSessionId?: string;
-        /** Soft-error flag — surfaces `RefreshTokenError` / `SessionRevoked` / `MfaDependencyFailure`. */
+        /**
+         * Soft-error flag — `SessionRevoked` / `MfaDependencyFailure` /
+         * `EntraGroupGateDenied`. Middleware denies any non-empty value.
+         *
+         * `RefreshTokenError` was a fourth producer until #1986 removed the
+         * proactive OAuth refresh. Its removal is a user-facing improvement
+         * worth naming: a revoked Google grant used to sign the person out of
+         * agrent entirely, for a token no agrent code read.
+         */
         error?: string;
     }
 }
@@ -712,10 +734,11 @@ export const authOptions: NextAuthOptions = {
                 await applyMembershipClaims(token, user.id);
 
                 if (account.provider !== 'credentials') {
+                    // The provider only. It names which identity minted this
+                    // session, is not a credential, and costs a short string.
+                    // The three token fields that stood here left with the
+                    // refresh they existed for — see the JWT declaration.
                     token.provider = account.provider;
-                    token.accessToken = (account.access_token as string) ?? undefined;
-                    token.refreshToken = (account.refresh_token as string) ?? undefined;
-                    token.expiresAt = (account.expires_at as number) ?? undefined;
                 }
 
                 // ── EI-1 — extract AAD security-group membership from the ID
@@ -886,139 +909,40 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
-            // OAuth token refresh.
-            if (
-                token.provider &&
-                token.expiresAt &&
-                token.refreshToken &&
-                isTokenExpired(token.expiresAt)
-            ) {
-                try {
-                    /**
-                     * Ask the STORED row before asking the provider — #1963.
-                     *
-                     * Measured on production 2026-10-16: every authenticated
-                     * request performed a live `POST
-                     * https://oauth2.googleapis.com/token`. The `agrent-app`
-                     * container was 11 minutes old and its whole log
-                     * histogram read 17 "request started", 17 "request
-                     * completed", 17 "Refreshing Google access token" — 1:1,
-                     * from two background pollers on one idle open tab. A
-                     * Google access token lasts ~3600s, so the expected rate
-                     * is about one refresh per hour per session.
-                     *
-                     * What that ratio proves is narrow but sufficient: the
-                     * expiry written by one request is not visible to the
-                     * next. `isTokenExpired` is correct and is being
-                     * consulted — it just keeps seeing the old value, because
-                     * the condition above reads `token.expiresAt`, which
-                     * comes from the JWT cookie, and a `jwt` callback invoked
-                     * through `auth()` inside a route handler does not
-                     * reissue that cookie. The branch below then writes the
-                     * fresh values to the `Account` row, where nothing ever
-                     * read them back.
-                     *
-                     * So the row was the DESTINATION of the refresh without
-                     * being an INPUT to the decision. Making it both is what
-                     * fixes this, and deliberately without depending on the
-                     * cookie question: whatever the reason a snapshot goes
-                     * stale, the authoritative copy is the one in the
-                     * database, and consulting it is strictly cheaper than
-                     * what this did before — a local read replacing a network
-                     * round trip to Google.
-                     *
-                     * It also makes concurrent requests collapse: the first
-                     * to arrive refreshes, and the rest adopt its result
-                     * instead of each redeeming the refresh token again.
-                     * Google may invalidate a refresh token that is redeemed
-                     * abusively, which would surface as a forced re-auth with
-                     * no local cause.
-                     *
-                     * Every refresh SUCCEEDED, which is why this went
-                     * unnoticed: no error, no failed request, no user-visible
-                     * symptom — only latency on every authenticated request.
-                     *
-                     * `findFirst` mirrors the `updateMany` below: both match
-                     * on `userId` + `provider` rather than the account's own
-                     * unique key, so with two accounts on one provider this
-                     * reads one of them and that writes both. Pre-existing
-                     * and unchanged here; worth naming rather than silently
-                     * inheriting.
-                     *
-                     * THIS READ MUST GO THROUGH THE PRISMA CLIENT, never raw
-                     * SQL. `Account.access_token` and `refresh_token` are on
-                     * the legacy dual-write path in
-                     * `src/lib/security/pii-middleware.ts:99-101`, and the
-                     * extension installed at `src/lib/prisma.ts:7` decrypts
-                     * them on read (`record[spec.plain] = decryptField(value)`
-                     * at `:142`). So the plaintext above is correct and needs
-                     * no decrypt step — but `$queryRaw` bypasses the extension
-                     * and would hand back ciphertext, which this code would
-                     * then adopt as a bearer token. `scripts/
-                     * backfill-token-encryption.ts` uses raw SQL deliberately
-                     * for exactly that reason. `expires_at` is not in the
-                     * field map at all, so the column the validity decision
-                     * reads is a plain `Int`. Verified by the agrent backend-1
-                     * session and re-checked here, 2026-10-16.
-                     */
-                    const stored = await prisma.account.findFirst({
-                        where: {
-                            userId: token.userId!,
-                            provider: token.provider,
-                        },
-                        select: {
-                            access_token: true,
-                            refresh_token: true,
-                            expires_at: true,
-                        },
-                    });
-
-                    if (
-                        stored?.expires_at != null &&
-                        !isTokenExpired(stored.expires_at)
-                    ) {
-                        // Someone already refreshed. Adopt it; do not spend a
-                        // provider round trip to learn the same thing.
-                        token.accessToken =
-                            stored.access_token ?? token.accessToken;
-                        token.expiresAt = stored.expires_at;
-                        if (stored.refresh_token) {
-                            token.refreshToken = stored.refresh_token;
-                        }
-                        delete token.error;
-                        return token;
-                    }
-
-                    const refreshed = await refreshAccessToken(
-                        token.provider,
-                        token.refreshToken,
-                    );
-
-                    token.accessToken = refreshed.accessToken;
-                    token.expiresAt = refreshed.expiresAt;
-                    if (refreshed.refreshToken) {
-                        token.refreshToken = refreshed.refreshToken;
-                    }
-                    delete token.error;
-
-                    await prisma.account.updateMany({
-                        where: {
-                            userId: token.userId!,
-                            provider: token.provider,
-                        },
-                        data: {
-                            access_token: refreshed.accessToken,
-                            expires_at: refreshed.expiresAt,
-                            ...(refreshed.refreshToken
-                                ? { refresh_token: refreshed.refreshToken }
-                                : {}),
-                        },
-                    });
-                } catch {
-                    edgeLogger.error('Token refresh failed, forcing reauth', { component: 'auth' });
-                    token.error = 'RefreshTokenError';
-                }
-            }
+            /**
+             * NO proactive OAuth token refresh — removed in #1986.
+             *
+             * A branch here refreshed the provider access token whenever the
+             * cookie's `expiresAt` was stale: read the `Account` row, adopt it
+             * if another request had already refreshed, otherwise redeem the
+             * refresh token against Google or Entra, write the result back to
+             * the row, and on failure set `token.error = 'RefreshTokenError'`
+             * so middleware forced a re-auth.
+             *
+             * Every part of that worked. Nothing read the result. The sign-in
+             * grant carries `openid email profile`, so it could not have
+             * served Drive or Calendar even once those shipped — #2005 gave
+             * them their own consent flow and their own store, which is the
+             * half of the original premise that was false.
+             *
+             * So this spent a network round trip to Google, per session per
+             * token lifetime, to keep a value no reader consumed. Owner
+             * decision 2026-10-16: keep the storage, drop the schedule. A
+             * caller that needs a provider token refreshes at the point of
+             * use, from the `Account` row, which is where the SharePoint and
+             * Google integration token modules already go.
+             *
+             * Deliberately NOT removed: `Account.access_token` /
+             * `refresh_token`, the `access_type=offline` grant, and
+             * `isTokenExpired` — the last is correct and is reused by both
+             * integration token modules.
+             *
+             * One behaviour changes for the person, in the right direction. A
+             * failed refresh used to stamp `RefreshTokenError`, which
+             * middleware treats as a dead session — so a Google grant revoked
+             * in Google's own settings signed the user out of agrent, over a
+             * token agrent never read. It no longer does.
+             */
 
             // Terms acceptance completion check — gated on it still being
             // pending, exactly like the MFA check below. A session that has
