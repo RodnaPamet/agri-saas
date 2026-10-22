@@ -308,4 +308,19 @@ model PublicFarmProfile {
   /// installs; without it a GIN index on text is useless for similarity.
   @@index([displayName(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([displayNameLatin(ops: raw("gin_trgm_ops"))], type: Gin)
+
+  /// Public thumbnail authorisation — #2160.
+  ///
+  /// `resolvePublicMedia` answers "is this hash published by somebody?" with
+  /// `WHERE logoMediaHash = $1 OR photoMediaHashes has $1`, once per public
+  /// image request. Neither column was indexed, so every thumbnail on
+  /// `/f/<handle>` sequentially scanned this table — cheap while the table is
+  /// small, and growing with the number of published farms, which is backwards
+  /// for a public endpoint served `Cache-Control: immutable`.
+  ///
+  /// Two indexes rather than one because the columns are different shapes: a
+  /// nullable scalar takes a btree, and a `String[]` needs GIN for the
+  /// containment arm. A single composite would serve neither.
+  @@index([logoMediaHash])
+  @@index([photoMediaHashes], type: Gin)
 }
