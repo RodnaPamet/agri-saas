@@ -145,13 +145,24 @@ describe('editing a task is creator-or-admin', () => {
         });
     });
 
-    it('the creator check reads the row, not the patch', async () => {
-        // A patch carrying `createdByUserId` must not be able to claim
-        // authorship. The schema does not accept that field on a patch, so this
-        // guards the day somebody widens the shape.
-        await refusal({
-            ...OTHER_EDITOR,
-        } as ReturnType<typeof makeRequestContext>);
-        expect(getById).toHaveBeenCalledWith(mockDb, OTHER_EDITOR, TASK.id);
+    it('the creator check reads the ROW, so a patch cannot claim authorship', async () => {
+        // The name of this test used to promise more than its body delivered:
+        // it asserted only that `getById` was called. This asserts the claim —
+        // a patch naming the caller as creator is still refused, because the
+        // decision comes from the stored row.
+        //
+        // The cast is deliberate. `UpdateTaskSchema` does not admit this field
+        // today, so the test is guarding the day somebody widens the shape
+        // rather than a hole that exists now.
+        const forged = { ...PATCH, createdByUserId: 'u-colleague' } as typeof PATCH;
+        let code = '<did not refuse>';
+        try {
+            await updateTask(OTHER_EDITOR, TASK.id, forged);
+        } catch (err) {
+            code = (toApiErrorResponse(err).payload as { error?: { code?: string } })
+                .error?.code ?? '';
+        }
+        expect(code).toBe('TASK_EDIT_NOT_PERMITTED');
+        expect(update).not.toHaveBeenCalled();
     });
 });
