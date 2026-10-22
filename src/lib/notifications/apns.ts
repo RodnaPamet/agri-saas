@@ -50,6 +50,7 @@ import { createPrivateKey, sign as cryptoSign } from 'node:crypto';
 
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { TransportOutcome, noSend } from './transport-outcome';
 import { runInTenantContext } from '@/lib/db-context';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -173,8 +174,8 @@ export async function sendApnsToUser(
     ctx: RequestContext,
     recipientUserId: string,
     payload: ApnsPayload,
-): Promise<void> {
-    if (!isApnsConfigured()) return;
+): Promise<TransportOutcome> {
+    if (!isApnsConfigured()) return noSend();
 
     let rows: DeviceRow[] = [];
     try {
@@ -191,15 +192,24 @@ export async function sendApnsToUser(
             component: 'apns',
             error: err instanceof Error ? err.message : String(err),
         });
-        return;
+        // Retryable, and counted as ONE: no device was addressed, so there is
+        // no device count to report. A read that threw is the clearest case
+        // for another attempt — nothing about the request was wrong.
+        return { sent: 0, retryable: 1 };
     }
-    if (rows.length === 0) return;
+    if (rows.length === 0) return noSend();
 
     const token = apnsProviderToken();
-    if (!token) return;
+    // Null here is a MINT failure, not an unconfigured transport — that
+    // returned above — and `apns.provider_token_mint_failed` has already been
+    // logged. Retryable: the key is present and the next attempt re-signs.
+    if (!token) return { sent: 0, retryable: 1 };
 
     /** Tokens APNs reported as gone. Pruned together, after the sends. */
     const dead: string[] = [];
+
+    let sent = 0;
+    let retryable = 0;
 
     for (const row of rows) {
         if (!row.apnsEnvironment) {
@@ -219,9 +229,16 @@ export async function sendApnsToUser(
 
         const outcome = await deliver(row, token, payload);
         if (outcome === 'gone') dead.push(row.deviceToken);
+        else if (outcome === 'sent') sent += 1;
+        else retryable += 1;
     }
 
     if (dead.length > 0) await pruneDeadTokens(ctx, dead);
+
+    // `gone` is in neither count, and nor is a row with no environment. See
+    // `transport-outcome.ts`: a retry is worth nothing for a dead token, and
+    // counting one would turn a pruned device into a permanent failing send.
+    return { sent, retryable };
 }
 
 /** The result of one send, reduced to what the caller acts on. */
@@ -455,6 +472,12 @@ async function deliver(row: DeviceRow, providerToken: string, payload: ApnsPaylo
         logger.warn('apns.send_threw', {
             component: 'apns',
             subscriptionId: row.id,
+            // The HOST and the environment, because `fetch failed` on its own
+            // names nothing an operator can act on — it is what the two real
+            // failures of 2026-10-21 07:21 said, and they could not be told
+            // apart from a wrong-host misconfiguration without these (#2171).
+            environment: row.apnsEnvironment,
+            host: row.apnsEnvironment ? APNS_HOSTS[row.apnsEnvironment] : null,
             error: err instanceof Error ? err.message : String(err),
         });
         return 'failed';

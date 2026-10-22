@@ -442,6 +442,99 @@ describe('sending — over the real HTTP/2 transport', () => {
     });
 });
 
+describe('what it REPORTS to its caller — #2171', () => {
+    // The contract that did not exist before #2171. `sendApnsToUser` returned
+    // `Promise<void>`, so a caller could not tell a delivery from a total
+    // failure — and `push-send` did not: it incremented `delivered` on the
+    // absence of a throw. Measured in production on 2026-10-21: two
+    // `apns.send_threw`, zero `push.transport_failed`, job succeeded.
+    let stub: ReturnType<typeof h2Stub>;
+
+    beforeEach(async () => {
+        stub = h2Stub();
+        const origin = await stub.start();
+        _setApnsTargetForTesting({ origin });
+    });
+
+    afterEach(async () => {
+        _resetApnsSessionsForTesting();
+        _setApnsTargetForTesting(null);
+        await stub.stop();
+    });
+
+    it('reports one accepted device as sent', async () => {
+        mockFindMany.mockResolvedValue([
+            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+        ]);
+        stub.reply({ status: 200, apnsId: 'AAAA' });
+
+        await expect(sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' })).resolves.toEqual({
+            sent: 1,
+            retryable: 0,
+        });
+    });
+
+    it('reports a 400 as RETRYABLE — the caller may try again', async () => {
+        // Not pruned (see the control above) and not delivered. Something is
+        // wrong with the request or the host, and the next attempt is the only
+        // thing that can distinguish a transient fault from a wrong host.
+        mockFindMany.mockResolvedValue([
+            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+        ]);
+        stub.reply({ status: 400, body: '{"reason":"BadDeviceToken"}' });
+
+        await expect(sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' })).resolves.toEqual({
+            sent: 0,
+            retryable: 1,
+        });
+    });
+
+    it('reports a 410 as NEITHER sent nor retryable', async () => {
+        // The device is gone and the row is pruned. Counting it retryable is
+        // exactly how a dead token becomes a permanent failing send — the
+        // thing `pruneDeadTokens` exists to stop.
+        mockFindMany.mockResolvedValue([
+            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+        ]);
+        stub.reply({ status: 410, body: '{"reason":"Unregistered"}' });
+
+        await expect(sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' })).resolves.toEqual({
+            sent: 0,
+            retryable: 0,
+        });
+    });
+
+    it('reports a row with no environment as neither — a retry cannot fix it', async () => {
+        // What fixes it is the device re-registering, so asking again is load
+        // with no outcome.
+        mockFindMany.mockResolvedValue([{ id: 's1', deviceToken: TOKEN, apnsEnvironment: null }]);
+
+        await expect(sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' })).resolves.toEqual({
+            sent: 0,
+            retryable: 0,
+        });
+        expect(stub.received).toHaveLength(0);
+    });
+
+    it('counts each device separately when they disagree', async () => {
+        // The reason an outcome is two counts and not one boolean: two devices
+        // can give two different answers, and "it failed" cannot carry that.
+        const OTHER = 'ef'.repeat(32);
+        mockFindMany.mockResolvedValue([
+            { id: 's1', deviceToken: TOKEN, apnsEnvironment: 'DEVELOPMENT' },
+            { id: 's2', deviceToken: OTHER, apnsEnvironment: 'DEVELOPMENT' },
+        ]);
+        // Queued in order — one `reply` per device, as the stub shifts them.
+        stub.reply({ status: 200, apnsId: 'AAAA' });
+        stub.reply({ status: 400, body: '{"reason":"TooManyRequests"}' });
+
+        await expect(sendApnsToUser(CTX, 'u2', { title: 't', body: 'b' })).resolves.toEqual({
+            sent: 1,
+            retryable: 1,
+        });
+    });
+});
+
 describe('pruning — over the real HTTP/2 transport', () => {
     let stub: ReturnType<typeof h2Stub>;
 
