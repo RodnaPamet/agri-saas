@@ -218,10 +218,13 @@ export async function evaluateLocationSignals(
                 entityId: locationId,
                 details: `Spray window UNSUITABLE at ${location.name}`,
                 detailsJson: {
+                    // A transition that was missing `entityName` and spelled
+                    // its destination `status` (#2109).
                     category: 'status_change',
+                    entityName: 'AgroSignal',
+                    toStatus: spray.status,
                     summary: 'Spray window unsuitable',
                     locationId,
-                    status: spray.status,
                 },
             });
         }

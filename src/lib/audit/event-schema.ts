@@ -50,12 +50,66 @@ export const EntityLifecycleSchema = z.object({
 
 // ─── Status Change ──────────────────────────────────────────────────
 
+/**
+ * A transition of some entity's state.
+ *
+ * ## `toStatus` stays REQUIRED, and six call sites were fixed instead
+ *
+ * Six sites emitted this category with no `toStatus` at all (#2109). Making it
+ * optional was the one-line option and was rejected on the owner's ruling: a
+ * category called `status_change` that cannot say what the status changed TO
+ * would make the schema agree with the code by asserting less, and a reader
+ * filtering on it would get rows that announce a transition without naming its
+ * destination.
+ *
+ * So each of the six was fixed to what it actually was. Three were not status
+ * changes at all and moved to `entity_lifecycle` — a draft being CREATED, a
+ * handle rename, and a field edit whose `fields` array is precisely what
+ * `changedFields` already declares. One (consent recording) moved to `custom`.
+ * Two really were transitions and had simply named the field something else.
+ *
+ * ## The optional fields below are broad, deliberately
+ *
+ * Owner ruling: declare what the callers actually send rather than nesting it
+ * under a `detail` record, which would be `.passthrough()` by the back door
+ * for that subtree and would stop this category policing anything inside it.
+ *
+ * The cost is visible and was accepted: several of these are set by exactly
+ * one caller, so this one member now documents four unrelated domains. What it
+ * buys is that every field is NAMED — a typo is still rejected, which is what
+ * `.strict()` is for. If this list keeps growing, the honest next step is to
+ * split the category rather than to widen it again.
+ */
 export const StatusChangeSchema = z.object({
     category: z.literal('status_change'),
     entityName: z.string().min(1),
-    fromStatus: z.string().nullable(),
+    fromStatus: z.string().nullable().optional(),
     toStatus: z.string().min(1),
     reason: z.string().optional(),
+    /**
+     * Declared because its sibling `EntityLifecycleSchema` has always had it
+     * and this did not — the oversight that made 7 of the 17 non-conforming
+     * sites non-conforming.
+     */
+    summary: z.string().optional(),
+    /** The resulting state, as `entity_lifecycle` records it. */
+    after: z.record(z.string(), z.unknown()).optional(),
+    // ── exchange-expiry-sweep ──
+    commodity: z.string().optional(),
+    side: z.string().optional(),
+    expiresAtIso: z.string().optional(),
+    transitionedBy: z.string().optional(),
+    // ── access-review execution ──
+    total: z.number().int().nonnegative().optional(),
+    counts: z.record(z.string(), z.unknown()).optional(),
+    confirmed: z.number().int().nonnegative().optional(),
+    executed: z.number().int().nonnegative().optional(),
+    skipped: z.number().int().nonnegative().optional(),
+    // ── public farm profile ──
+    handle: z.string().optional(),
+    removedHandle: z.string().optional(),
+    // ── agro signals ──
+    locationId: z.string().optional(),
 }).strict();
 
 // ─── Relationship ───────────────────────────────────────────────────

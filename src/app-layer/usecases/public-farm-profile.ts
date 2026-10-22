@@ -714,14 +714,21 @@ export async function claimFarmBrandHandle(
                 entityId: brand.id,
                 details: 'Public address claimed',
                 detailsJson: {
-                    category: 'status_change',
-                    entityName: 'FarmBrand',
+                    // `entity_lifecycle`, not `status_change` (#2109): a
+                    // handle claim changes a VALUE, and nothing here is a
+                    // status. `changedFields` + `before`/`after` is the
+                    // declared way to say exactly what this said.
+                    //
                     // The handle is public by definition — it is the URL — so
                     // recording it is not a disclosure. The PREVIOUS one is
                     // recorded too, because a rename is the thing somebody
                     // auditing a broken link needs to see.
-                    fromHandle: brand.handle,
-                    toHandle: handle,
+                    category: 'entity_lifecycle',
+                    entityName: 'FarmBrand',
+                    operation: 'updated',
+                    changedFields: ['handle'],
+                    before: { handle: brand.handle },
+                    after: { handle },
                 },
             });
             return { published: brand.published, changed: true };
@@ -853,7 +860,13 @@ export async function updateFarmBrand(
                 entityType: 'FarmBrand',
                 entityId: row.id,
                 details: 'Public profile draft created',
-                detailsJson: { category: 'status_change', entityName: 'FarmBrand' },
+                // A creation, which `status_change` cannot describe — it has
+                // no status and no destination (#2109).
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'FarmBrand',
+                    operation: 'created',
+                },
             });
             // A new draft cannot be published, so there is nothing to
             // reproject — `published` defaults to false.
@@ -867,13 +880,18 @@ export async function updateFarmBrand(
             entityId: before.id,
             details: 'Public profile content edited',
             detailsJson: {
-                category: 'status_change',
-                entityName: 'FarmBrand',
+                // `entity_lifecycle` with `changedFields`, which is precisely
+                // what `fields` meant — the concept was already declared under
+                // another name (#2109).
+                //
                 // WHICH fields changed, not their values. The content is
                 // destined to be public, but an audit row naming every edit
                 // of an unpublished draft would be a record of what the owner
                 // tried and withdrew.
-                fields: Object.keys(data).sort(),
+                category: 'entity_lifecycle',
+                entityName: 'FarmBrand',
+                operation: 'updated',
+                changedFields: Object.keys(data).sort(),
             },
         });
         return { created: false, published: before.published };
@@ -939,7 +957,13 @@ export async function recordFarmBrandConsent(
             entityId: brand.id,
             details: `Consent recorded for text ${input.textVersion}`,
             detailsJson: {
-                category: 'status_change',
+                // `custom` (#2109): recording a consent is neither a lifecycle
+                // operation nor a transition between states, and `custom` is
+                // `.passthrough()` so the version rides along unchanged. The
+                // event name keeps the semantic that `category` used to carry
+                // badly.
+                category: 'custom',
+                event: 'farm_brand_consent_recorded',
                 entityName: 'FarmBrand',
                 consentTextVersion: input.textVersion,
             },
