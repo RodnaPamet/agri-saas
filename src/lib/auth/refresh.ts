@@ -102,19 +102,15 @@ export async function refreshMicrosoftToken(
     };
 }
 
-/**
- * Refresh an access token based on the provider.
+/*
+ * `refreshAccessToken(provider, refreshToken)` stood here until #1986.
+ *
+ * It was a switch over the two functions above, and the proactive refresh in
+ * the `jwt` callback was its only caller. With that gone it had none, and it
+ * offered nothing the callers it dispatched to do not: both integration token
+ * modules already call `refreshGoogleToken` / `refreshMicrosoftToken`
+ * directly, because each knows which provider it is.
+ *
+ * So a point-of-use refresh needs no dispatcher. `isTokenExpired` and both
+ * provider functions above are the whole mechanism, and all three stay.
  */
-export async function refreshAccessToken(
-    provider: string,
-    refreshToken: string
-): Promise<TokenRefreshResult> {
-    switch (provider) {
-        case 'google':
-            return refreshGoogleToken(refreshToken);
-        case 'microsoft-entra-id':
-            return refreshMicrosoftToken(refreshToken);
-        default:
-            throw new Error(`Token refresh not supported for provider: ${provider}`);
-    }
-}

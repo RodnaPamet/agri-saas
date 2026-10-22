@@ -218,18 +218,25 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
 
     // ── 2b. Reject a token whose session is no longer valid ──
     //
-    // The `jwt` callback signals four distinct failure modes by setting
+    // The `jwt` callback signals three distinct failure modes by setting
     // `token.error`, and until this check existed NOTHING READ ANY OF THEM:
     //
     //   SessionRevoked        admin revoke, expiry, maxConcurrentSessions
     //                         eviction, or a User.sessionVersion bump
-    //                         (auth.ts:637, :727)
     //   MfaDependencyFailure  a FAIL-CLOSED MFA check could not complete
-    //                         (auth.ts:591, :708) — so it was failing OPEN
-    //   RefreshTokenError     OAuth refresh failed; its own log line says
-    //                         "forcing reauth" (auth.ts:681) — nothing forced
+    //                         — so it was failing OPEN
     //   EntraGroupGateDenied  Entra group gate refused
-    //                         (lib/auth/entra-group-sync.ts:182)
+    //                         (lib/auth/entra-group-sync.ts)
+    //
+    // There was a FOURTH, `RefreshTokenError`, set when the proactive OAuth
+    // refresh failed. #1986 removed that refresh, so the producer is gone and
+    // with it a surprising behaviour: a Google grant revoked in Google's own
+    // settings used to land here and sign the person out of agrent, over an
+    // access token no agrent code read. This gate is unchanged — it denies any
+    // non-empty value, whatever sets it.
+    //
+    // (Line numbers deliberately dropped from the list above: they rotted
+    // against every one of these call sites.)
     //
     // The flag was written in five places and read in none, so the
     // /admin/members "revoke session" button, the concurrency cap, session
@@ -244,8 +251,8 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
     // second, looser path to keep in sync.
     //
     // Placed AFTER `isPublicPath` (which covers `/login` and `/api/auth`), so
-    // a denial cannot redirect-loop. A successful refresh clears the flag
-    // (`delete token.error`, auth.ts:664), so a set value is always current.
+    // a denial cannot redirect-loop. Each remaining producer clears or re-sets
+    // the flag on the path that sets it, so a value present here is current.
     //
     // NOT changed here: `verifyAndTouchSession` still fails OPEN on a
     // transient DB error. Failing closed there would turn a database blip
