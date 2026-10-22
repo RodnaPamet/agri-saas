@@ -165,7 +165,14 @@ describe('routing by kind', () => {
         renderHook(() => useRealtime('notification', jest.fn()));
         const before = _unroutedFrameCountForTesting();
 
-        act(() => constructed[0].emit({ kind: 'listing', id: 'l-1', tenantId: 't-1' }));
+        // The sentinel, not a listing id and a tenant id. That shape was a
+        // frame the server cannot produce: every tick carries
+        // `LISTING_TICK_ID` in BOTH fields because the tick is coalesced
+        // across farms. A fixture modelling a per-listing frame is a fixture
+        // a consumer can be written against and still be wrong on the wire —
+        // which is exactly what happened to a reader of the old contract
+        // docblock (#2168).
+        act(() => constructed[0].emit({ kind: 'listing', id: 'listings', tenantId: 'listings' }));
 
         expect(_unroutedFrameCountForTesting()).toBe(before + 1);
     });
