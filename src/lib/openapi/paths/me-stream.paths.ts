@@ -47,15 +47,15 @@ const StreamFrameSchema = z
     .object({
         kind: z.enum(['notification', 'listing']).openapi({
             description:
-                'What this frame is about. A FIELD rather than a named SSE `event:` line, deliberately: a named event is silently dropped by a client that registered no listener for it, so a third kind added later would break older clients invisibly. Switch on this in the default `onmessage` handler and ignore an unrecognised value — visibly, so it can be logged. `listing` has no publisher yet; it arrives with P7.6.',
+                'What this frame is about. A FIELD rather than a named SSE `event:` line, deliberately: a named event is silently dropped by a client that registered no listener for it, so a third kind added later would break older clients invisibly. Switch on this in the default `onmessage` handler and ignore an unrecognised value — visibly, so it can be logged. Both kinds are published; `listing` arrived with the coalesced market tick.',
         }),
         id: z.string().openapi({
             description:
-                'The row this is about — a notification id (or its dedupeKey) for `notification`, a listing id for `listing`. A handle to refetch with, never content.',
+                'The row this is about — a notification id (or its dedupeKey) for `notification`. A handle to refetch with, never content. **On a `listing` frame it is not a handle at all:** every tick carries the constant `listings`, because the tick is coalesced across farms and refers to no single row. Refetching it gets nothing.',
         }),
         tenantId: z.string().openapi({
             description:
-                'Which farm the row belongs to. Present on EVERY kind and never optional — a field present on one kind only would make a client\u2019s handling conditional on the kind. **Its meaning differs by kind, and one reading is a trap:** for `notification` it is the farm whose row this is, and a client belonging to several farms may filter on it before refetching. For `listing` it is the farm that POSTED the listing \u2014 the exchange browses across all farms, so filtering those to your own memberships would hide every listing worth seeing. Use it for display, not as a relevance filter.',
+                'Which farm the row belongs to. Present on EVERY kind and never optional — a field present on one kind only would make a client\u2019s handling conditional on the kind. **Its meaning differs by kind, and one reading is a trap:** for `notification` it is the farm whose row this is, and a client belonging to several farms may filter on it before refetching. On a `listing` frame it is **always the constant `listings`** \u2014 not a farm, and not displayable: the tick is coalesced across farms, so it has no one seller to name. Never filter on this field for `listing` either way \u2014 the exchange browses across all farms, so narrowing to your own memberships would hide every listing worth seeing.',
         }),
     })
     .openapi('MeStreamEvent', {
@@ -103,7 +103,7 @@ export function registerMeStreamPaths(registry: OpenAPIRegistry): void {
             '\n\n**A 204 means "do not reconnect"** and has three causes a client cannot distinguish: realtime is disabled for the deployment, the session has no trackable lineage, or the person is already at three streams. Per the `EventSource` specification a non-200 fails the connection without a reconnect, which is the intent in all three cases. ' +
             '\n\n**The session is re-checked every 5 minutes** and the stream is CLOSED on a revoked one, rather than going quiet — a silent stream is indistinguishable from an idle one, so closing is what lets the client discover it is signed out on its own reconnect. ' +
             '\n\n**Every farm on one connection.** The stream carries events from every farm the caller belongs to, and each frame names its own `tenantId` — so one connection serves somebody in three farms rather than needing three. Delivery was scoped to the active farm until the frame could name the tenant (#2085). The stream is ONE-WAY. ' +
-            '\n\n**`id:` lines accompany `notification` frames only.** It is the replay cursor and replay reads the `Notification` table, so a `listing` frame carries its id in `data` without advancing the cursor — exchange events are live-only, and a reconnecting client refetches Борса over REST with ETag, which is what it does on a cold open. ' +
+            '\n\n**`id:` lines accompany `notification` frames only.** It is the replay cursor and replay reads the `Notification` table, so a `listing` frame advances no cursor — exchange events are live-only, and a reconnecting client refetches Борса over REST with ETag, which is what it does on a cold open. ' +
             '\n\nIt does NOT replace `GET /api/notifications/stream`, which is live and carries whole notifications; the two coexist until the web hook (P7.6) and the iOS client (P7.7) move across.',
         tags: ['Notifications'],
         success: {

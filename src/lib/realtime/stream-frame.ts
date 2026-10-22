@@ -57,10 +57,11 @@
 /**
  * What a frame is about.
  *
- * `listing` has no publisher yet — it arrives with P7.6 (#1995). It is in the
- * union now because the contract was agreed with both clients before either
- * shipped, and a consumer written today should switch on it rather than
- * discover it later.
+ * Both kinds are published. `listing` arrived with the coalesced market tick
+ * (#2123); the note that once stood here saying it had no publisher yet is
+ * gone with it. A consumer should still switch on this rather than assume a
+ * closed set — the enum is the contract, and an unknown kind is a frame to
+ * ignore, not a parse error.
  */
 export type StreamEventKind = 'notification' | 'listing';
 
@@ -68,36 +69,55 @@ export type StreamEventKind = 'notification' | 'listing';
 export interface StreamFrame {
     kind: StreamEventKind;
     /**
-     * The row this is about — a notification id (or its `dedupeKey`) for
-     * `notification`, a listing id for `listing`.
+     * The row this is about, for `notification`: its id, or its `dedupeKey`.
      *
-     * In both cases it is a handle to refetch with, never content: the row is
-     * authoritative and the event is a hint, so a client refetches under its
-     * own authorisation rather than rendering what arrived on a broadcast
-     * channel.
+     * It is a handle to refetch with, never content: the row is authoritative
+     * and the event is a hint, so a client refetches under its own
+     * authorisation rather than rendering what arrived on a broadcast channel.
+     *
+     * ## For `listing` it is NOT a handle — it is always the sentinel
+     *
+     * Every listing tick carries `LISTING_TICK_ID` (`'listings'`), because the
+     * tick is coalesced across farms: at most one per window however many
+     * listings changed. There is no single row to point at, and naming one of
+     * the several that moved would invite a client to refetch that one and
+     * miss the rest. `listing-broadcast.ts` reasons this out in full.
+     *
+     * So a client must not treat this as a listing id on a `listing` frame.
+     * Refetching it gets nothing.
      */
     id: string;
     /**
-     * Which farm the row belongs to. Never absent, on any kind.
-     *
-     * ## For `listing` it names the SELLER, and is NOT a filter
-     *
-     * Owner ruling, 2026-10-21. The semantics differ by kind and the
-     * difference matters, because the obvious thing to do with this field is
-     * wrong for one of them:
+     * Which farm the frame belongs to. Never absent, on any kind — but it
+     * names a farm on only ONE of them.
      *
      *   - `notification` — the farm whose row this is. A client belonging to
      *     several farms filters on it before refetching, which is why
      *     agrent-ios asked for it to be non-optional.
-     *   - `listing` — the farm that POSTED it. `listActiveListings` browses
-     *     "across ALL tenants", so the value of Борса is other farms'
-     *     listings. A client that filtered these to its own memberships, by
-     *     analogy with notifications, would hide **every listing worth
-     *     seeing** and show nothing new — silently.
+     *   - `listing` — **always the sentinel `'listings'`.** Not a farm, not
+     *     displayable, not a filter.
      *
-     * So it is useful here for display, and for ignoring your own farm's
-     * listings if a surface wants to. It is not an authorisation or relevance
-     * filter. See #2123 for the broadcast this kind is waiting on.
+     * ## Why `listing` has no farm, when the ruling says it names the seller
+     *
+     * The owner ruling of 2026-10-21 was that on a listing frame this field
+     * names the SELLER and is explicitly NOT a relevance filter:
+     * `listActiveListings` browses "across ALL tenants", so the value of Борса
+     * is other farms' listings, and a client that filtered these to its own
+     * memberships — by analogy with notifications — would hide every listing
+     * worth seeing and show nothing new, silently. That reasoning stands, and
+     * it is why no client should ever filter on this field.
+     *
+     * But the publisher that shipped is coalesced, and a tick that spans
+     * sellers has no seller to name, so it sends the sentinel for the same
+     * reason it sends a sentinel `id`. **The ruling describes an intent the
+     * wire does not carry**, and this docblock used to state only the intent —
+     * which cost a real reader a wrong model: the agrent-ios session read it
+     * and planned a display path for a value that is always the literal
+     * `"listings"` (#2168). Hence the ordering above: what the wire sends
+     * first, the intent second.
+     *
+     * If a per-seller value is ever wanted on this kind, it needs a frame per
+     * listing, and `listing-broadcast.ts` argues against that at length.
      */
     tenantId: string;
 }
