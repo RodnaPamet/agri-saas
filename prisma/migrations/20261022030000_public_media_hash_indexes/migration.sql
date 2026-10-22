@@ -1,0 +1,42 @@
+-- #2160 — index the columns every public thumbnail request filters on.
+--
+-- ## What was unindexed, and what it cost
+--
+-- `resolvePublicMedia` answers "is this hash published by somebody?" once per
+-- public image request:
+--
+--     WHERE "logoMediaHash" = $1 OR "photoMediaHashes" @> ARRAY[$1]
+--
+-- `PublicFarmProfile` carried indexes on `oblast`, `indexable` and two GIN
+-- trigram indexes on the display names — and nothing on either media-hash
+-- column. So every thumbnail on `/f/<handle>` sequentially scanned this table.
+--
+-- Measured from the Lighthouse artifacts of 11 runs on main: the LCP element
+-- of `/f/` is one of these thumbnails, 14,552 bytes, and its LCP "Load Time"
+-- phase is 1,592 ms — about 48% of the page's 3,357 ms LCP. The scan is not
+-- proven to dominate that figure and this migration does not claim it does;
+-- what it removes is a cost that grows with the number of published farms,
+-- which is the wrong shape for a public endpoint served
+-- `Cache-Control: public, max-age=31536000, immutable`.
+--
+-- ## Two indexes, because the columns are two shapes
+--
+-- `logoMediaHash` is a nullable scalar and takes a btree. `photoMediaHashes`
+-- is `text[]` and needs GIN for the containment arm — a btree on an array
+-- cannot serve `@>`. A composite over both would serve neither arm of the OR,
+-- since Postgres plans each side separately and may BitmapOr them.
+--
+-- ## Not CONCURRENTLY, deliberately
+--
+-- Prisma runs each migration inside a transaction and `CREATE INDEX
+-- CONCURRENTLY` cannot run in one. The lock is an ACCESS EXCLUSIVE held for
+-- the build, which on this table is milliseconds: it holds one row per
+-- published farm, and production has three tenants. If that stops being true
+-- the honest fix is a separate out-of-band index build, not a flag on this
+-- statement.
+
+-- CreateIndex
+CREATE INDEX "PublicFarmProfile_logoMediaHash_idx" ON "PublicFarmProfile"("logoMediaHash");
+
+-- CreateIndex
+CREATE INDEX "PublicFarmProfile_photoMediaHashes_idx" ON "PublicFarmProfile" USING GIN ("photoMediaHashes");
