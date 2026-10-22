@@ -119,6 +119,77 @@ describe('sendWebPushToUser', () => {
     });
 });
 
+// ─── #2171 — what it REPORTS to its caller ───────────────────────────
+//
+// This returned `Promise<void>`, so `push-send` could not tell a delivery from
+// a total failure and did not try: it incremented `delivered` on the absence of
+// a throw, and this sender never throws. Every branch below used to be
+// indistinguishable from every other.
+
+describe('sendWebPushToUser — the outcome it reports', () => {
+    const CONFIGURED = { VAPID_PUBLIC_KEY: 'pub', VAPID_PRIVATE_KEY: 'priv', VAPID_SUBJECT: 'mailto:x@y.z' };
+    const SUB = { id: 's1', endpoint: 'https://fcm.googleapis.com/fcm/send/1', p256dh: 'k', auth: 'a' };
+
+    it('counts each accepted subscription as sent', async () => {
+        const wp = loadWithEnv(CONFIGURED);
+        findMany.mockResolvedValue([SUB, { ...SUB, id: 's2', endpoint: 'https://fcm.googleapis.com/fcm/send/2' }]);
+        sendNotification.mockResolvedValue(undefined);
+
+        await expect(wp.sendWebPushToUser(ctx, 'u-recipient', { title: 'x', body: 'y' })).resolves.toEqual({
+            sent: 2,
+            retryable: 0,
+        });
+    });
+
+    it('reports a non-410 failure as retryable', async () => {
+        const wp = loadWithEnv(CONFIGURED);
+        findMany.mockResolvedValue([SUB]);
+        sendNotification.mockRejectedValue(Object.assign(new Error('503'), { statusCode: 503 }));
+
+        await expect(wp.sendWebPushToUser(ctx, 'u-recipient', { title: 'x', body: 'y' })).resolves.toEqual({
+            sent: 0,
+            retryable: 1,
+        });
+    });
+
+    it('reports a pruned 410 as NEITHER sent nor retryable', async () => {
+        // Retrying a gone subscription is how it becomes a permanent failing
+        // send — the thing the prune exists to stop.
+        const wp = loadWithEnv(CONFIGURED);
+        findMany.mockResolvedValue([SUB]);
+        sendNotification.mockRejectedValue(Object.assign(new Error('gone'), { statusCode: 410 }));
+        deleteMany.mockResolvedValue({ count: 1 });
+
+        await expect(wp.sendWebPushToUser(ctx, 'u-recipient', { title: 'x', body: 'y' })).resolves.toEqual({
+            sent: 0,
+            retryable: 0,
+        });
+    });
+
+    it('reports an unconfigured deployment as neither, not as a failure', async () => {
+        // The case that makes `attempted - delivered` mean "skipped": nothing
+        // was sent and nothing is worth retrying.
+        const wp = loadWithEnv({});
+
+        await expect(wp.sendWebPushToUser(ctx, 'u-recipient', { title: 'x', body: 'y' })).resolves.toEqual({
+            sent: 0,
+            retryable: 0,
+        });
+    });
+
+    it('reports a device read that threw as retryable, counted as one', async () => {
+        // No device was addressed, so there is no device count to report —
+        // and a read that threw is the clearest case for another attempt.
+        const wp = loadWithEnv(CONFIGURED);
+        findMany.mockRejectedValue(new Error('pool exhausted'));
+
+        await expect(wp.sendWebPushToUser(ctx, 'u-recipient', { title: 'x', body: 'y' })).resolves.toEqual({
+            sent: 0,
+            retryable: 1,
+        });
+    });
+});
+
 // ─── #696 — the SSRF gate on the send path ───────────────────────────
 
 /**

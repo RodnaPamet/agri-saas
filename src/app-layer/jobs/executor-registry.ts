@@ -360,8 +360,14 @@ executorRegistry.register('push-send', async (payload) => {
     });
     // scanned = transports attempted, actioned = transports that accepted.
     // `skipped` is the difference rather than a third count: a transport that
-    // is unconfigured returns without throwing, so it is attempted-and-not-
-    // delivered, which is exactly "skipped" here.
+    // is unconfigured, or whose every device failed, delivers to no device, so
+    // it is attempted-and-not-delivered — which is exactly "skipped" here.
+    //
+    // This was TRUE AS INTENT and false as arithmetic until #2171. An
+    // unconfigured transport returns without throwing, and `runPushSend`
+    // incremented `delivered` on the absence of a throw — so the difference
+    // was always 0 and `skipped` could never be anything else. It now counts
+    // transports that reached at least one device, so the sentence holds.
     return makeResult(
         'push-send', startedAt, startMs,
         r.attempted, r.delivered, r.attempted - r.delivered,
