@@ -11,6 +11,7 @@ import { appendAuditEntry } from '@/lib/audit';
 import { shouldFailClosed } from '@/lib/audit/fail-closed-entities';
 import { reportLostAuditRow } from '@/lib/db/before-commit';
 import { validateAuditDetailsJson } from '../schemas/json-columns.schemas';
+import { shadowParseAuditDetails } from './audit-details-shadow';
 
 export interface AuditEventPayload {
     action: string;
@@ -48,6 +49,12 @@ export async function logEvent(db: PrismaTx, ctx: RequestContext, payload: Audit
     const standardContext = { requestId: ctx.requestId, ...safeMetadata };
     let combinedDetails = payload.details ? payload.details + '\n\n' : '';
     combinedDetails += `Context: ${JSON.stringify(standardContext)}`;
+
+    // #2109 — report payloads the CANONICAL schema would refuse, and refuse
+    // nothing. A statement rather than an expression inside the literal
+    // below: the write path is `validateAuditDetailsJson`, the permissive one,
+    // and nothing about that should be easy to misread.
+    shadowParseAuditDetails(payload.detailsJson, payload.action, payload.entityType);
 
     const entry = {
             tenantId: ctx.tenantId,
