@@ -182,30 +182,44 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
     });
 
     it('keeps enough samples to take a median of', () => {
-        // THREE, and #2179 is why it is not five.
+        // FIVE as of #2179, raised from three, and paid for by splitting the
+        // workflow to one URL per job.
         //
-        // Three is the floor on its own terms: `scripts/ci/lighthouse-median.mjs`
-        // reports the median, and a median of two is the mean of two.
+        // Three was defended as "a median of two is the mean of two" — true,
+        // and not the binding constraint. The `/f/` entry's 3800 ms bound came
+        // from a FIVE-run median and was enforced on a three-run one; that
+        // entry already records two 3-run medians of the SAME commit landing
+        // 296 ms apart. Measured 2026-10-22: three of eight runs failed on an
+        // unchanged page across main and two unrelated branches (medians
+        // 4052 / 4086 / 4206, single-sample max 4220).
         //
-        // The `/f/` entry wants five and says so — its 3800 ms bound came from
-        // a five-run median, and two 3-run medians of the SAME commit once
-        // came back 296 ms apart. Measured 2026-10-22, three of eight runs
-        // failed on an unchanged page across main and two unrelated branches
-        // (medians 4052 / 4086 / 4206, single-sample max 4220).
+        // Five runs of BOTH urls in one job does not fit, and that was
+        // measured rather than reasoned: 3 x 2 is 197s against a 250s cap, so
+        // ~33s per run puts 5 x 2 at ~328s, and it timed out 3/3 (250s, 510s,
+        // 770s elapsed) producing no median. The cap could not absorb it
+        // (`ci-retry-loop-timeout` holds it at 300) and said so itself —
+        // "fewer runs or one URL per job, not a bigger cap". Hence the matrix.
         //
-        // Setting it to five does not work in one job, and that was measured
-        // rather than reasoned: 3 runs x 2 URLs takes 197s against a 250s
-        // per-attempt cap, so ~33s per run puts 5 x 2 at ~328s. At five it
-        // timed out on all three attempts — 250s, 510s, 770s elapsed — never
-        // reaching the assertion stage. The cap cannot absorb it either;
-        // `ci-retry-loop-timeout.test.ts` holds it at 300 and the job budget
-        // allows ~296.
-        //
-        // So five runs means ONE URL PER JOB, which the workflow's own comment
-        // prescribes and which costs a second job's setup. That is an owner
-        // decision, open on #2179. Until it lands this stays three, and this
-        // comment is here so the next reader does not re-derive the timeout.
-        expect(rc.ci?.collect?.numberOfRuns).toBeGreaterThanOrEqual(3);
+        // A floor rather than equality, so a page needing more samples can
+        // raise it without editing this line.
+        expect(rc.ci?.collect?.numberOfRuns).toBeGreaterThanOrEqual(5);
+    });
+
+    it('still declares BOTH urls, because the matrix narrows them (#2179)', () => {
+        // The split moved COLLECTION to one URL per job via `--collect.url`,
+        // which replaces this list rather than appending to it (verified
+        // 2026-10-22). So the config stopped being what runs and became the
+        // record of what is measured — and a record is exactly the thing that
+        // rots silently. If a page is dropped from the matrix, this still
+        // says two are covered, so assert the pair that must stay declared.
+        const urls = rc.ci?.collect?.url ?? [];
+        expect(urls.some((u) => /\/login$/.test(u))).toBe(true);
+        expect(urls.some((u) => /\/f\//.test(u))).toBe(true);
+        // And every declared URL must have a matrix leg collecting it, or the
+        // budget below it is asserted against nothing.
+        for (const u of urls) {
+            expect(workflow).toContain(u);
+        }
     });
 
     it('the timeout warning states no bound of its own', () => {
