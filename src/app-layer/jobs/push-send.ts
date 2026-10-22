@@ -160,40 +160,75 @@ export async function runPushSend(payload: PushSendPayload): Promise<PushSendRes
         ...(decision.webPush ? (['web'] as const) : []),
         ...(decision.apns ? (['apns'] as const) : []),
     ];
+    /** Device sends that failed for a reason another attempt could fix. */
+    let retryable = 0;
+
     for (const transport of wanted) {
         attempted += 1;
         try {
-            if (transport === 'web') {
-                await sendWebPushToUser(ctx, recipientUserId, {
-                    title,
-                    body,
-                    // `?? undefined`, because the payload says `null` for "no
-                    // target" and both transports spell that absent. Passing
-                    // `null` through would be a type error here and, worse,
-                    // a literal "null" href if either ever stringified it.
-                    url: link ?? undefined,
-                    tag: collapseKey,
-                });
-            } else {
-                await sendApnsToUser(ctx, recipientUserId, {
-                    title,
-                    body,
-                    link: link ?? undefined,
-                    collapseId: collapseKey,
-                });
+            // #2171 — the OUTCOME, not the absence of a throw.
+            //
+            // This read `await send…(); delivered += 1;` inside a try whose
+            // catch could never fire: neither transport throws, both catch
+            // per device and return. So `delivered` counted transport
+            // functions that returned, `failures` was always empty, and the
+            // two branches below were unreachable — measured in production as
+            // two `apns.send_threw` against ZERO `push.transport_failed`,
+            // with this job reporting success and never spending `attempts: 3`.
+            const outcome =
+                transport === 'web'
+                    ? await sendWebPushToUser(ctx, recipientUserId, {
+                          title,
+                          body,
+                          // `?? undefined`, because the payload says `null` for
+                          // "no target" and both transports spell that absent.
+                          // Passing `null` through would be a type error here
+                          // and, worse, a literal "null" href if either ever
+                          // stringified it.
+                          url: link ?? undefined,
+                          tag: collapseKey,
+                      })
+                    : await sendApnsToUser(ctx, recipientUserId, {
+                          title,
+                          body,
+                          link: link ?? undefined,
+                          collapseId: collapseKey,
+                      });
+
+            // A transport counts as delivered when at least one DEVICE
+            // accepted. That is what makes `attempted - delivered` the
+            // "skipped" the executor documents — an unconfigured transport,
+            // or one whose every device failed, is now attempted and not
+            // delivered rather than silently both.
+            if (outcome.sent > 0) delivered += 1;
+            if (outcome.retryable > 0) {
+                retryable += outcome.retryable;
+                // COUNTS, never a message from the transport: a failure
+                // string is about to be logged and thrown, and a push
+                // payload's prose is displayed copy (Epic C.4).
+                failures.push(`${transport}: ${outcome.retryable} device send(s) failed`);
             }
-            delivered += 1;
         } catch (err) {
+            // Kept as a backstop, not as the mechanism. Neither transport
+            // throws today; if a future one does, that is a bug worth
+            // retrying rather than swallowing.
+            retryable += 1;
             failures.push(
-                `${transport}: ${err instanceof Error ? err.message : String(err)}`,
+                `${transport}: threw — ${err instanceof Error ? err.message : String(err)}`,
             );
         }
     }
 
-    if (delivered === 0 && failures.length > 0) {
-        // Both failed. Thrown so BullMQ retries — and the message names both
-        // causes, because "push failed" with one transport's error would send
-        // whoever reads it looking in the wrong place.
+    if (delivered === 0 && retryable > 0) {
+        // Nothing arrived anywhere AND something failed in a way a retry could
+        // fix. Thrown so BullMQ retries — and the message names every
+        // transport, because "push failed" with one transport's cause would
+        // send whoever reads it looking in the wrong place.
+        //
+        // The `retryable > 0` half is what keeps the retry honest: a recipient
+        // with a registered device and no configured transport, or one whose
+        // only device is dead and pruned, delivers nothing and must NOT burn
+        // three attempts discovering that again.
         throw new Error(`push-send failed on every transport — ${failures.join('; ')}`);
     }
 

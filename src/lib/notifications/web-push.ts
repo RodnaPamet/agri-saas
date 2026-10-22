@@ -23,6 +23,7 @@
 import webpush from 'web-push';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
+import { TransportOutcome, noSend } from './transport-outcome';
 import { checkPushEndpoint, assertPublicAddress } from '@/app-layer/automation/webhook-safety';
 import { env } from '@/env';
 import type { RequestContext } from '@/app-layer/types';
@@ -61,8 +62,8 @@ export async function sendWebPushToUser(
     ctx: RequestContext,
     recipientUserId: string,
     payload: WebPushPayload,
-): Promise<void> {
-    if (!isWebPushConfigured()) return;
+): Promise<TransportOutcome> {
+    if (!isWebPushConfigured()) return noSend();
 
     let subs: Array<{ id: string; endpoint: string; p256dh: string; auth: string }> = [];
     try {
@@ -99,9 +100,13 @@ export async function sendWebPushToUser(
                 : [],
         );
     } catch {
-        return; // reading subs failed — nothing to send
+        // Retryable, and counted as ONE: no device was addressed, so there is
+        // no device count to report. Returning a bare `undefined` here is what
+        // made a failed read indistinguishable from a successful send at the
+        // caller (#2171).
+        return { sent: 0, retryable: 1 };
     }
-    if (subs.length === 0) return;
+    if (subs.length === 0) return noSend();
 
     // ── SSRF gate, at the only seam that sees a STORED endpoint (#696) ──
     //
@@ -137,10 +142,14 @@ export async function sendWebPushToUser(
         });
     }
     const sendable = gated.filter((g) => !g.block).map((g) => g.sub);
-    if (sendable.length === 0) return;
+    // Every endpoint blocked. NOT retryable: the SSRF gate's verdict is a
+    // property of the stored row, and asking it twice gets the same answer.
+    if (sendable.length === 0) return noSend();
 
     const body = JSON.stringify(payload);
     const dead: string[] = [];
+    let sent = 0;
+    let retryable = 0;
     await Promise.all(
         sendable.map(async (s) => {
             try {
@@ -152,11 +161,16 @@ export async function sendWebPushToUser(
                     // blackholed address hangs the calling request forever.
                     { timeout: 10_000 },
                 );
+                sent += 1;
             } catch (err) {
                 const status = (err as { statusCode?: number }).statusCode;
                 if (status === 404 || status === 410) {
+                    // Pruned, and in NEITHER count: not a delivery, and a
+                    // retry is how a dead subscription becomes a permanent
+                    // failing send.
                     dead.push(s.id); // subscription expired/unsubscribed — prune
                 } else {
+                    retryable += 1;
                     logger.warn('web-push.send_failed', {
                         component: 'web-push',
                         tenantId: ctx.tenantId,
@@ -176,4 +190,6 @@ export async function sendWebPushToUser(
             /* prune is best-effort */
         }
     }
+
+    return { sent, retryable };
 }
