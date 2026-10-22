@@ -20,13 +20,29 @@
  * a farmer who has typed a treatment and ticked nine parcels must not lose it
  * by pressing Escape on step 2.
  *
- * ## The idempotency key is re-minted on every change
+ * ## Step 3 is a review, and the confirmation is tied to the CONTENT
  *
- * `POST /journal/treatments` REPLAYS a reused key without comparing the body
- * (#1765). So a key held across an edit would return the earlier treatment,
- * report success, and silently drop the correction. The key is therefore
- * derived from the draft: change anything and it changes. That is the
- * client's whole responsibility here and the server cannot check it.
+ * The register is a regulated document and a recorded treatment cannot be
+ * edited — `journal/treatments/{handle}` serves GET and DELETE only, and what
+ * an amendment would have to mean is still open (#2172). So the cheap place to
+ * catch a mistyped dose is before the write, not after it.
+ *
+ * The confirmation is stored as the SIGNATURE of the body it was given for,
+ * never as a boolean. A farmer who reviews, goes back, changes the dose and
+ * returns must confirm again — and with a boolean that is a reset somebody has
+ * to remember on every path that mutates the draft. Keyed on the content it is
+ * true by construction: the signature moves, the tick is gone.
+ *
+ * ## The idempotency key belongs to the OUTBOX
+ *
+ * `POST /journal/treatments` replays a reused key without comparing the body
+ * (#1765), so a key held across an edit would return the earlier treatment,
+ * report success and silently drop the correction. This file used to derive one
+ * from the content for that reason; it no longer does. `offlineSubmit` mints an
+ * id before the first attempt and reuses it for every replay (#924, #1830), and
+ * on this route the key IS the treatment handle — see `submit` below. Nothing
+ * here derives a key, and the two docblocks that said otherwise were describing
+ * a mechanism that had already been replaced.
  *
  * ## Not an offline-outbox write
  *
@@ -40,6 +56,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { haToDca, trimNumber } from '@/lib/agro/rate-calc';
 import type { OfflineSync } from '@/lib/offline/use-offline-sync';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
@@ -188,7 +205,14 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
     const t = useTranslations('journal.treatmentForm');
     const apiUrl = useTenantApiUrl();
 
-    const [step, setStep] = useState<1 | 2>(1);
+    const [step, setStep] = useState<1 | 2 | 3>(1);
+    /**
+     * The body signature this farmer confirmed, or null.
+     *
+     * Not a boolean — see the module docblock. Compared against the live
+     * signature below, so any edit invalidates the tick without a reset.
+     */
+    const [confirmedFor, setConfirmedFor] = useState<string | null>(null);
     const [draft, setDraft] = useState<Draft>(emptyDraft);
     const [crop, setCrop] = useState<string | null>(null);
     const [selected, setSelected] = useState<string[]>([]);
@@ -245,11 +269,13 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
 
     // ── Step 2 reference data ───────────────────────────────────────────
     const { data: cropData } = useTenantSWR<{ crops?: CropTotal[] }>(
-        open && step === 2 ? '/parcels/by-crop' : null,
+        // `>= 2`, not `=== 2`: step 3 reviews these parcels, and a key that
+        // went null on the way there would blank the thing being reviewed.
+        open && step >= 2 ? '/parcels/by-crop' : null,
     );
     const { data: parcelData, isLoading: parcelsLoading } = useTenantSWR<{
         parcels?: ByCropParcel[];
-    }>(open && step === 2 && crop ? `/parcels/by-crop?crop=${encodeURIComponent(crop)}` : null);
+    }>(open && step >= 2 && crop ? `/parcels/by-crop?crop=${encodeURIComponent(crop)}` : null);
 
     const cropOptions: ComboboxOption[] = useMemo(
         () =>
@@ -306,6 +332,7 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
      */
     const closeAndReset = useCallback(() => {
         setStep(1);
+        setConfirmedFor(null);
         setDraft(emptyDraft());
         setCrop(null);
         setSelected([]);
@@ -324,21 +351,17 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
         draft.doseUnitId !== null;
 
     /**
-     * The request body, and the idempotency key DERIVED FROM IT.
+     * The request body — and now also what the step-3 confirmation is keyed on.
      *
-     * From the body and not from the draft, which is the whole point. The
-     * draft holds what was typed; the body holds what is sent, trimmed and
-     * with empty fields omitted. Keying on the draft meant two saves with an
-     * IDENTICAL body could carry different keys — type a trailing space in
-     * the pest field, lose the answer, delete the space, retry, and the
-     * server mints a SECOND treatment because the key moved while the request
-     * did not. Same for `2` versus `2.0` in the dose, which both send the
-     * number 2.
+     * The draft holds what was typed; the body holds what is SENT, trimmed and
+     * with empty fields omitted. That distinction used to matter for an
+     * idempotency key this file derived here, and it still matters for the same
+     * reason one level up: a trailing space in the pest field, or `2` versus
+     * `2.0` in the dose, are the same treatment. A confirmation keyed on the
+     * draft would be discarded by whitespace the farmer cannot see; keyed on
+     * the body it survives a cosmetic edit and is discarded by a real one.
      *
-     * Re-minted by construction rather than by anyone remembering to. Every
-     * edit changes the input, so a retry of an UNCHANGED save reuses the key
-     * (which is what makes it idempotent) while an edited save gets a new one
-     * (which is what stops the server replaying the old treatment at it).
+     * The key itself is the outbox's, not derived from this — see `submit`.
      *
      * The wording is load-bearing in a silly way. The previous sentence used
      * a colon where this one has a full stop, and `no-explicit-any-ratchet`
@@ -375,6 +398,7 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
         [draft, selected],
     );
 
+
     /**
      * The chosen product's NAME, for the queue label and the optimistic row.
      *
@@ -386,6 +410,93 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
     const productName = useMemo(
         () => treatmentItems.find((i) => i.id === draft.productItemId)?.name ?? null,
         [treatmentItems, draft.productItemId],
+    );
+
+    /**
+     * What step 3 shows and what the tick is given for.
+     *
+     * `JSON.stringify` of the payload is stable here because every value in it
+     * is a primitive or the already-SORTED `parcelIds`, so two identical
+     * treatments produce one string. It is a comparison token, never parsed.
+     */
+    const signature = useMemo(() => JSON.stringify(payload), [payload]);
+    const confirmed = confirmedFor !== null && confirmedFor === signature;
+
+    /**
+     * The review rows, built from the PAYLOAD rather than the draft.
+     *
+     * So what is shown is what will be written: an omitted optional field is
+     * absent from the body and absent here, instead of appearing as an empty
+     * row that reads like a value of nothing. A farmer checking a regulated
+     * entry should see the record, not the form.
+     */
+    const reviewRows = useMemo(() => {
+        const unitSymbol = unitOptions.find((u) => u.value === draft.doseUnitId)?.label ?? null;
+        const rows: { key: string; label: string; value: string }[] = [
+            { key: 'kind', label: t('kind'), value: t(`kind_${draft.kind}`) },
+            { key: 'occurredOn', label: t('occurredOn'), value: draft.occurredOn },
+        ];
+        if (productName) rows.push({ key: 'product', label: t('product'), value: productName });
+        rows.push({
+            key: 'dose',
+            label: t('doseValue'),
+            // Dose and unit on one line: «2 л/дка» is how it is written on the
+            // form and read by an inspector, not as two unrelated fields.
+            value: unitSymbol ? `${payload.doseValue} ${unitSymbol}` : String(payload.doseValue),
+        });
+        if (crop) rows.push({ key: 'crop', label: t('crop'), value: crop });
+        if (payload.targetNote) {
+            rows.push({ key: 'targetNote', label: t('targetNote'), value: payload.targetNote });
+        }
+        if (payload.applicationTechnique) {
+            rows.push({
+                key: 'technique',
+                label: t('technique'),
+                value: payload.applicationTechnique,
+            });
+        }
+        if (payload.quarantinePeriodDays !== undefined) {
+            rows.push({
+                key: 'quarantine',
+                label: t('quarantine'),
+                value: String(payload.quarantinePeriodDays),
+            });
+        }
+        return rows;
+    }, [draft, crop, payload, productName, unitOptions, t]);
+
+    /**
+     * The parcels under review, in the order the body sends them.
+     *
+     * Mapped from `payload.parcelIds` and not from `selected`, for the reason
+     * the rows above come from the payload: the sorted de-duplicated set is
+     * what the server is asked to record. A parcel whose row has not loaded
+     * shows its id rather than being dropped — a silently shorter list is the
+     * one failure this screen exists to prevent.
+     */
+    const reviewParcels = useMemo(
+        () =>
+            payload.parcelIds.map((id) => {
+                const row = parcels.find((x) => x.id === id);
+                return {
+                    id,
+                    name: row?.name ?? id,
+                    /**
+                     * DECARES, converted here.
+                     *
+                     * Areas are stored in hectares throughout, and Bulgarian
+                     * farmers work in декари — `lib/grain/per-area.ts` says so
+                     * and the register's own column is «Площ (дка)»
+                     * (`journal.colTreatedArea`). Showing hectares on a review
+                     * screen for a regulated entry would be wrong by a factor
+                     * of ten, in the direction that looks plausible. Same
+                     * `haToDca` + `trimNumber` the locations table uses, so
+                     * there is one conversion in the product rather than two.
+                     */
+                    areaDca: row?.areaHa != null ? trimNumber(haToDca(Number(row.areaHa))) : null,
+                };
+            }),
+        [payload.parcelIds, parcels],
     );
 
     const submit = useCallback(async () => {
@@ -489,7 +600,8 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
         }
     }, [apiUrl, closeAndReset, draft.kind, draft.occurredOn, offlineSubmit, onSaved, payload, productName, selected.length, submitting, t]);
 
-    const heading = step === 1 ? t('stepOneTitle') : t('stepTwoTitle');
+    const heading =
+        step === 1 ? t('stepOneTitle') : step === 2 ? t('stepTwoTitle') : t('stepThreeTitle');
 
     return (
         <Modal
@@ -511,7 +623,11 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                 onSubmit={(e) => {
                     e.preventDefault();
                     if (step === 1) setStep(2);
-                    else void submit();
+                    else if (step === 2) setStep(3);
+                    // Step 3 submits, and only with the tick given for THIS
+                    // body — the button is disabled otherwise, and this is the
+                    // same condition rather than a second reading of it.
+                    else if (confirmed) void submit();
                 }}
             >
                 {step === 1 ? (
@@ -616,7 +732,7 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                             </FormField>
                         </div>
                     </div>
-                ) : (
+                ) : step === 2 ? (
                     <div className="space-y-default">
                         <FormField label={t('crop')} required>
                             <Combobox
@@ -691,13 +807,71 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                             </p>
                         ) : null}
                     </div>
+                ) : (
+                    <div className="space-y-section">
+                        <p className="text-content-muted">{t('reviewIntro')}</p>
+
+                        <dl className="rounded border border-border-subtle divide-y divide-border-subtle">
+                            {reviewRows.map((row) => (
+                                <div
+                                    key={row.key}
+                                    className="grid grid-cols-[11rem_1fr] gap-compact p-default"
+                                >
+                                    <dt className="text-content-muted">{row.label}</dt>
+                                    <dd className="font-medium">{row.value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+
+                        <div className="space-y-compact">
+                            <p className="text-content-muted">
+                                {t('selectedCount', { count: reviewParcels.length })}
+                            </p>
+                            <ul className="rounded border border-border-subtle divide-y divide-border-subtle">
+                                {reviewParcels.map((parcel) => (
+                                    <li
+                                        key={parcel.id}
+                                        className="flex items-baseline justify-between gap-compact p-default"
+                                    >
+                                        <span>{parcel.name}</span>
+                                        {/* Shown only when the parcel row carries an
+                                            area. `Parcel.areaHa` is nullable, and the
+                                            register prints the parcel's own area when
+                                            no treated area was given — so an absent
+                                            value means "not recorded", which is not
+                                            zero and must not render as one. */}
+                                        {parcel.areaDca !== null ? (
+                                            <span className="text-content-muted tabular-nums">
+                                                {t('reviewArea', { dca: parcel.areaDca })}
+                                            </span>
+                                        ) : null}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* A raw label rather than FormField, for the reason
+                            `TermsConsentCheckbox` records: the label is a
+                            SENTENCE, not a short field name. */}
+                        <label className="flex items-start gap-compact">
+                            <Checkbox
+                                checked={confirmed}
+                                onCheckedChange={(on) => setConfirmedFor(on ? signature : null)}
+                            />
+                            <span>{t('confirmCorrect')}</span>
+                        </label>
+                    </div>
                 )}
 
                 {error ? <p className="text-content-error">{error}</p> : null}
 
                 <Modal.Footer>
-                    {step === 2 ? (
-                        <Button variant="secondary" type="button" onClick={() => setStep(1)}>
+                    {step > 1 ? (
+                        <Button
+                            variant="secondary"
+                            type="button"
+                            onClick={() => setStep(step === 3 ? 2 : 1)}
+                        >
                             {t('back')}
                         </Button>
                     ) : null}
@@ -709,10 +883,17 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                         type="submit"
                         disabled={
                             submitting ||
-                            (step === 1 ? !step1Complete : selected.length === 0)
+                            (step === 1
+                                ? !step1Complete
+                                : step === 2
+                                  ? selected.length === 0
+                                  : // Step 3 needs the tick, and it is given for a
+                                    // body signature — so editing anything on the
+                                    // way back here disables this again.
+                                    !confirmed)
                         }
                     >
-                        {step === 1 ? t('next') : t('save')}
+                        {step === 3 ? t('save') : t('next')}
                     </Button>
                 </Modal.Footer>
             </Modal.Form>

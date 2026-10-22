@@ -246,7 +246,44 @@ async function fillStepOne() {
     await pickFrom('Unit', /л\/ха/);
 }
 
-describe('the two-step treatment form', () => {
+/**
+ * Step 2 → the review → saved.
+ *
+ * A review step sits between the parcels and the write: a recorded treatment
+ * cannot be edited (`journal/treatments/{handle}` is GET and DELETE only), so
+ * the confirmation is the last cheap place to catch a mistyped dose.
+ *
+ * Shared rather than repeated, because SEVEN tests here drive the form to a
+ * write and each would otherwise carry the same extra hop. The tick is clicked
+ * AFTER the selection is final on purpose — it is keyed on the body signature,
+ * so ticking it before the last parcel would be discarded by that parcel.
+ *
+ * Takes the userEvent instance because one caller shares a single `u` across a
+ * fake-timer run rather than setting one up per click.
+ */
+/** Step 1 filled, a crop picked, one parcel ticked — stopped ON the review. */
+async function reachReview(u = user()) {
+    await fillStepOne();
+    await u.click(screen.getByRole('button', { name: 'Next' }));
+    await pickFrom('Crop', /Пшеница/);
+    const boxes = await screen.findAllByRole('checkbox');
+    await u.click(boxes[0]);
+    await u.click(await screen.findByRole('button', { name: 'Next' }));
+}
+
+async function confirmReviewAndSave(u = user()) {
+    await u.click(await screen.findByRole('button', { name: 'Next' }));
+    await u.click(
+        await screen.findByRole('checkbox', { name: /confirm they are correct/i }),
+    );
+    await u.click(await screen.findByRole('button', { name: 'Save' }));
+}
+
+// The FILENAME still says two-step; the form has three. Kept because
+// `rendered-coverage-floor.test.ts` names this file in a written comment and
+// the churn of renaming both buys nothing — the describe is where a reader
+// looks for what is under test.
+describe('the three-step treatment form', () => {
     it('opens on step one, which is the treatment and not a free-form note', async () => {
         mount();
         // The step-1 heading, and the fields that make this a TREATMENT: a
@@ -284,7 +321,7 @@ describe('the two-step treatment form', () => {
         await pickFrom('Crop', /Пшеница/);
         const boxes = await screen.findAllByRole('checkbox');
         await user().click(boxes[0]);
-        await user().click(await screen.findByRole('button', { name: 'Save' }));
+        await confirmReviewAndSave();
 
         await waitFor(() => expect(submit).toHaveBeenCalled());
         const now = new Date();
@@ -310,7 +347,7 @@ describe('the two-step treatment form', () => {
         await pickFrom('Crop', /Пшеница/);
         const boxes = await screen.findAllByRole('checkbox');
         await u.click(boxes[0]);
-        await u.click(await screen.findByRole('button', { name: 'Save' }));
+        await confirmReviewAndSave(u);
 
         await waitFor(() => expect(submit).toHaveBeenCalled());
         expect(submit.mock.calls[0][0].body.occurredOn).toMatch(/^\d{4}-\d{2}-01$/);
@@ -365,7 +402,7 @@ describe('the two-step treatment form', () => {
         await pickFrom('Crop', /Пшеница/);
         const boxes = await screen.findAllByRole('checkbox');
         await user().click(boxes[0]);
-        await user().click(await screen.findByRole('button', { name: 'Save' }));
+        await confirmReviewAndSave();
 
         await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
         const input = submit.mock.calls[0][0];
@@ -396,7 +433,7 @@ describe('the two-step treatment form', () => {
         await pickFrom('Crop', /Пшеница/);
         const boxes = await screen.findAllByRole('checkbox');
         await user().click(boxes[0]);
-        await user().click(await screen.findByRole('button', { name: 'Save' }));
+        await confirmReviewAndSave();
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled());
         expect(submit).toHaveBeenCalledTimes(1);
@@ -418,13 +455,20 @@ describe('the two-step treatment form', () => {
         await pickFrom('Crop', /Пшеница/);
         const boxes = await screen.findAllByRole('checkbox');
         await user().click(boxes[0]);
-        await user().click(await screen.findByRole('button', { name: 'Save' }));
+        await confirmReviewAndSave();
 
         await waitFor(() => expect(submit).toHaveBeenCalled());
         expect(await screen.findByText(/sample product/i)).toBeInTheDocument();
         expect(onSaved).not.toHaveBeenCalled();
-        // Still on step two, with the selection intact.
-        expect(screen.getByRole('combobox', { name: 'Crop' })).toBeInTheDocument();
+        // Still in the form, on the REVIEW, with the work intact. This used to
+        // assert the step-two crop picker as a proxy for "did not close"; the
+        // review step is where a refusal now lands, so the proxy named the
+        // wrong screen while the property it stood for was unchanged.
+        expect((await screen.findAllByText('New entry — review')).length).toBeGreaterThan(0);
+        // And Save is still live, which is the point of keying the tick on the
+        // BODY: nothing about the treatment changed, so the confirmation the
+        // farmer already gave still applies and a retry needs no second tick.
+        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
     });
 
     it('sends what was typed TRIMMED, so the body is the treatment and nothing else', async () => {
@@ -437,7 +481,7 @@ describe('the two-step treatment form', () => {
         await pickFrom('Crop', /Пшеница/);
         const boxes = await screen.findAllByRole('checkbox');
         await user().click(boxes[0]);
-        await user().click(await screen.findByRole('button', { name: 'Save' }));
+        await confirmReviewAndSave();
 
         await waitFor(() => expect(submit).toHaveBeenCalled());
         const body = submit.mock.calls[0][0].body;
@@ -457,11 +501,84 @@ describe('the two-step treatment form', () => {
         // Reverse order deliberately.
         await user().click(boxes[1]);
         await user().click(boxes[0]);
-        await user().click(await screen.findByRole('button', { name: 'Save' }));
+        await confirmReviewAndSave();
 
         await waitFor(() => expect(submit).toHaveBeenCalled());
         const body = submit.mock.calls[0][0].body;
         expect(body.parcelIds).toEqual(['p-1', 'p-2']);
     });
 
+
+    // ── The review step (step 3) ─────────────────────────────────────────
+    //
+    // The tests above pass THROUGH the review on their way to a write. These
+    // are about the review itself, and the first two are the reason it exists:
+    // a recorded treatment cannot be edited, so this is the last cheap place
+    // to catch a mistyped dose.
+
+    it('reviews what will be WRITTEN, not what was typed', async () => {
+        mount();
+        await reachReview();
+        // The product and the dose with its unit, as one reading — «2 л/ха» is
+        // how the form is read, not two unrelated fields.
+        expect((await screen.findAllByText('New entry — review')).length).toBeGreaterThan(0);
+        expect(screen.getByText('Тест Препарат')).toBeInTheDocument();
+        expect(screen.getByText('2 л/ха')).toBeInTheDocument();
+        expect(screen.getByText('Парцел 1')).toBeInTheDocument();
+    });
+
+    it('will not save until the farmer confirms', async () => {
+        mount();
+        await reachReview();
+        // Disabled on arrival — the step is a prompt, and a Save that worked
+        // without the tick would make the tick decoration.
+        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+        await user().click(
+            await screen.findByRole('checkbox', { name: /confirm they are correct/i }),
+        );
+        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    });
+
+    it('DISCARDS the confirmation when the treatment is edited afterwards', async () => {
+        // The one that decides whether the step means anything. A tick held
+        // across an edit is a farmer attesting to a treatment they never saw —
+        // which is why it is stored as the signature of the body it was given
+        // for rather than as a boolean somebody has to remember to reset.
+        const { submit } = mount();
+        const u = user();
+        await reachReview(u);
+        await u.click(
+            await screen.findByRole('checkbox', { name: /confirm they are correct/i }),
+        );
+        expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+
+        // Back to the treatment, change the dose, and forward again.
+        await u.click(screen.getByRole('button', { name: 'Back' }));
+        await u.click(screen.getByRole('button', { name: 'Back' }));
+        fireEvent.change(screen.getByLabelText(/Application dose/), {
+            target: { value: '3' },
+        });
+        await u.click(screen.getByRole('button', { name: 'Next' }));
+        await u.click(await screen.findByRole('button', { name: 'Next' }));
+
+        // The new dose is on screen and the tick is gone with the old one.
+        expect(await screen.findByText('3 л/ха')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+        expect(
+            screen.getByRole('checkbox', { name: /confirm they are correct/i }),
+        ).not.toBeChecked();
+        expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('shows the area in DECARES, which is what the register prints', async () => {
+        // `Парцел 1` is `areaHa: 2` in the fixture. Areas are stored in
+        // hectares and Bulgarian farmers work in декари, so the register's
+        // column is «Площ (дка)» — 2 ha is 20 dca. Rendering the stored number
+        // would be wrong by a factor of ten in the direction that looks
+        // plausible, which is why this asserts 20 and not merely "a number".
+        mount();
+        await reachReview();
+        expect(await screen.findByText('20 dca')).toBeInTheDocument();
+        expect(screen.queryByText('2 dca')).toBeNull();
+    });
 });
