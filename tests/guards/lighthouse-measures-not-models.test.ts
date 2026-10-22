@@ -131,6 +131,48 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         expect(urls.length).toBeGreaterThanOrEqual(2);
     });
 
+    it('puts no documentation key inside an `assertions` block (#2179)', () => {
+        // This file documents itself with `"//"` keys, because JSON has no
+        // comments. At the top of `assert`, or beside `assertions` inside a
+        // matrix entry, lhci ignores them — `/login` has had one for months.
+        //
+        // One level deeper is different in kind: every key of `assertions` is
+        // an AUDIT NAME, so a note placed there is asserted. #2060 put the
+        // 2200 -> 3800 rationale inside the `/f/` block, and from then until
+        // #2179 every run of that page printed
+        //
+        //     ✘  // failure for auditRan assertion
+        //        "//" is not a known audit.   expected: >=1   found: 0
+        //
+        // It did not fail the gate — measured: a run printed that ✘, printed
+        // no `Assertion failed`, and reported `Lighthouse passed`. That is
+        // what makes it worth a guard rather than a shrug. A permanent ✘ that
+        // is not a failure teaches every reader to discount ✘ on this job,
+        // and the thing it taught them to discount was a real LCP failure on
+        // main. It also skews the "N result(s)" line, which counts FAILING
+        // assertions and reads like a run count.
+        const offenders: string[] = [];
+        for (const entry of rc.ci?.assert?.assertMatrix ?? []) {
+            for (const key of Object.keys(entry.assertions ?? {})) {
+                // An audit id or a `categories:` selector. Anything else is
+                // not something lhci can assert, whatever it was meant as.
+                if (!/^(categories:)?[a-z][a-z0-9-]*$/.test(key)) {
+                    offenders.push(`${entry.matchingUrlPattern}: ${JSON.stringify(key)}`);
+                }
+            }
+        }
+        // The denominator, so a config trimmed to nothing cannot pass this by
+        // having no keys to check.
+        const checked = (rc.ci?.assert?.assertMatrix ?? []).reduce(
+            (n, e) => n + Object.keys(e.assertions ?? {}).length,
+            0,
+        );
+        console.log(`[lighthouse-gate] ${checked} assertion key(s) checked across ` +
+            `${(rc.ci?.assert?.assertMatrix ?? []).length} matrix entr(ies)`);
+        expect(checked).toBeGreaterThanOrEqual(8);
+        expect(offenders).toEqual([]);
+    });
+
     it('throttles for real, so the budget bounds an observation', () => {
         // Named in the failure rather than asserted bare, so a revert says
         // what to restore and why it was chosen.
@@ -140,9 +182,23 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
     });
 
     it('keeps enough samples to take a median of', () => {
-        // Three is the floor: `scripts/ci/lighthouse-median.mjs` reports the
-        // median, and a median of two is the mean of two.
-        expect(rc.ci?.collect?.numberOfRuns).toBeGreaterThanOrEqual(3);
+        // FIVE is the floor as of #2179, raised from three.
+        //
+        // Three was defended as "a median of two is the mean of two", which is
+        // true and is not the binding constraint. The `/f/` entry's 3800 ms
+        // LCP bound was derived from a FIVE-run median and enforced against a
+        // THREE-run median — two different instruments — and that entry
+        // already records why three cannot work for this page: two 3-run
+        // medians of the SAME commit came back 296 ms apart.
+        //
+        // Measured 2026-10-22: three of eight runs failed, on main and two
+        // unrelated branches, with medians 4052 / 4086 / 4206 against 3800
+        // and a single-sample max of 4220, while five runs of the same page
+        // passed. A median of three moves when two samples are bad.
+        //
+        // Asserted as a floor rather than equality so a future page that needs
+        // more samples can raise it without editing this line.
+        expect(rc.ci?.collect?.numberOfRuns).toBeGreaterThanOrEqual(5);
     });
 
     it('the timeout warning states no bound of its own', () => {
@@ -200,7 +256,21 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         expect(publicEntry).toBeDefined();
         const lcp = publicEntry?.assertions?.['largest-contentful-paint'];
         const max = (lcp?.[1] as { maxNumericValue?: number } | undefined)?.maxNumericValue;
-        console.log(`[lighthouse-gate] /f/* LCP budget ${max}ms vs measured 3358ms (median of 3)`);
+        // The run count comes from the CONFIG, not from a literal. It read
+        // "(median of 3)" until #2179 raised the config to 5, and a printout
+        // that mirrors a setting by hand goes stale the moment the setting
+        // moves — silently, because nothing asserts on a log line.
+        //
+        // 3358 ms is kept as a literal deliberately: it is a HISTORICAL
+        // measurement (2026-10-20, the three runs that set this bound), not a
+        // mirror of anything live, and labelling it as such is what stops the
+        // next reader taking it for the current figure. See #2179 for what the
+        // page measured two days later.
+        console.log(
+            `[lighthouse-gate] /f/* LCP budget ${max}ms; baseline that set it 3358ms` +
+                ` (3-run median, 2026-10-20); gate now takes a median of` +
+                ` ${rc.ci?.collect?.numberOfRuns}`,
+        );
         expect(typeof max).toBe('number');
         expect(max!).toBeLessThanOrEqual(3800);
         // And a floor, so a flake is never "fixed" by setting the budget below
