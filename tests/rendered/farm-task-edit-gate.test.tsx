@@ -15,6 +15,14 @@
  * moving. CLAUDE.md's own rule: a guard is right for "this pattern is present",
  * and a behavioural guarantee needs an executing test.
  *
+ * ## Both viewports, because the gate must hold on both
+ *
+ * Parametrised over `mobile` and `desktop` rather than inheriting the suite
+ * default. This page renders a `DataTable`, which switches presentation on a
+ * `min-width` probe, so a suite asserting only the default would be silent
+ * about the branch an agronomist in an office sees. The control is the same
+ * control on both and that is the claim.
+ *
  * ## The four cases, and why the fourth is the interesting one
  *
  * Creator-with-write sees it; a writer who is not the creator does not; an
@@ -28,6 +36,7 @@
  */
 import { render, screen } from '@testing-library/react';
 import * as React from 'react';
+import { setViewport, restoreViewport, type Viewport } from './viewport';
 
 jest.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -125,8 +134,15 @@ function mount(opts: {
 
 const editButton = () => screen.queryByTestId('task-edit-button');
 
-describe('the farm-task edit control is offered on the server\'s rule (#2169)', () => {
+describe.each<Viewport>(['mobile', 'desktop'])(
+    'the farm-task edit control is offered on the server\'s rule (#2169) — %s',
+    (viewport) => {
+    beforeEach(() => {
+        setViewport(viewport);
+    });
+
     afterEach(() => {
+        restoreViewport();
         mockPermissions = {};
         mockTask = null;
     });
@@ -184,4 +200,5 @@ describe('the farm-task edit control is offered on the server\'s rule (#2169)', 
         });
         expect(editButton()).toBeNull();
     });
-});
+    },
+);

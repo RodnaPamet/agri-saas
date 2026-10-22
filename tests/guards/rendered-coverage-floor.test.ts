@@ -294,7 +294,14 @@ const ROOT = path.resolve(__dirname, '../..');
 // 263 is this branch's own measured live count. The guard compares against
 // THIS PR's base rather than main's tip, so a peer merging first cannot make
 // it fire — but the number still has to be measured rather than derived.
-const RENDERED_TEST_FLOOR = 265;
+// 266 is this branch's own measured live count, not 265 + 1. The guard compares
+// against the PR's BASE rather than main's tip, so a peer landing a rendered
+// suite cannot make this fire — but writing it as an arithmetic offset is still
+// the thing that goes wrong when two branches each add one and both merge.
+// Raised by the farm-task edit gate (#2169), which is a RENDERED suite
+// precisely because the sixteen guards naming that component all read source
+// text and none of them mounts it.
+const RENDERED_TEST_FLOOR = 266;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
