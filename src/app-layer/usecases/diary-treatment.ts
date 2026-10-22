@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { farmToday } from '@/lib/calendar-day-key';
+import { dayKeyInTz, FARM_TIME_ZONE, farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
 import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
-import { assertCanDeleteTreatment } from '../policies/task.policies';
+import { assertCanDeleteTreatment, canDeleteTreatment } from '../policies/task.policies';
 import { codedBadRequest, codedClientError, codedConflict, codedNotFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
@@ -1033,21 +1033,35 @@ export async function restoreDiaryTreatment(
  * Ordered by when it was withdrawn, newest first: the thing somebody wants back
  * is almost always the thing they just removed.
  */
-export async function listDeletedTreatments(
-    ctx: RequestContext,
-): Promise<{
+/**
+ * How many withdrawn treatments the «Кошче» listing returns.
+ *
+ * A review surface, not a register: the restore screen exists to undo a recent
+ * mistake, so the payload is bounded rather than paged. Stated in the spec so a
+ * client knows the list can be truncated, and set well above any plausible
+ * number of live corrections.
+ */
+export const DELETED_TREATMENT_LIST_LIMIT = 200;
+
+export async function listDeletedTreatments(ctx: RequestContext): Promise<{
     treatments: {
         treatmentGroupId: string;
         deletedAt: string;
         deletedByUserId: string | null;
         taskCount: number;
         occurredOn: string | null;
+        kind: string | null;
+        productName: string | null;
+        blockNames: string[];
+        parcelCount: number;
+        totalAreaHa: number;
+        mayRestore: boolean;
     }[];
 }> {
     assertCanRead(ctx);
 
-    const rows = await runInTenantContext(ctx, (db) =>
-        db.task.findMany({
+    const rows = await runInTenantContext(ctx, async (db) => {
+        const tasks = await db.task.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 deletedAt: { not: null },
@@ -1058,23 +1072,93 @@ export async function listDeletedTreatments(
                 deletedAt: true,
                 deletedByUserId: true,
                 dueAt: true,
+                operationType: true,
+                // Authorship, so the listing can say whether THIS caller may
+                // put it back. Read off rows this query already fetches, which
+                // is why the withdrawn listing does not use the live list's
+                // `_treatmentAuthorship` group-by.
+                createdByUserId: true,
             },
             orderBy: { deletedAt: 'desc' },
-        }),
-    );
+            // A trash can is a REVIEW surface, not a register: bounded so the
+            // payload cannot grow with a farm's whole history of corrections.
+            // The cap is stated in the spec rather than paged, because a farm
+            // with more than this many withdrawn treatments has a different
+            // problem from the one this screen solves.
+            take: DELETED_TREATMENT_LIST_LIMIT,
+        });
+
+        const handles = [...new Set(tasks.map((t) => t.treatmentGroupId).filter((h): h is string => !!h))];
+
+        // What each treatment WAS. A withdrawn handle stops resolving —
+        // `getDiaryTreatment` filters `deletedAt: null` — so a client cannot
+        // fetch per row to label it, and a «Кошче» of bare dates would not tell
+        // a farmer which spraying they are restoring. Found in review by
+        // agrent-ios before the phone built against it.
+        //
+        // `deletedAt: { not: null }` is the inverse of the live aggregate's
+        // filter, and it has to be: these are exactly the entries that query
+        // excludes.
+        const lines = handles.length
+            ? await db.logEntry.findMany({
+                  where: {
+                      tenantId: ctx.tenantId,
+                      treatmentGroupId: { in: handles },
+                      deletedAt: { not: null },
+                  },
+                  select: {
+                      treatmentGroupId: true,
+                      // The treatment's DAY. Not the task's `dueAt`, which the
+                      // treatment write never sets — so the `occurredOn` this
+                      // listing used to derive from it was null for every row,
+                      // a field that advertised a value it could not carry.
+                      // Caught by the test below, not by review.
+                      //
+                      // `occurredAt` through `dayKeyInTz` is exactly what the
+                      // live folded list prints, so the trash can and the
+                      // journal cannot disagree about which day a treatment
+                      // was.
+                      occurredAt: true,
+                      operationParcel: {
+                          select: {
+                              treatedAreaHa: true,
+                              product: { select: { name: true } },
+                              parcel: {
+                                  select: {
+                                      areaHa: true,
+                                      location: { select: { name: true } },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              })
+            : [];
+
+        return { tasks, lines };
+    });
 
     // Folded here rather than with a `groupBy`, because the fold needs the
     // FIRST row's metadata per handle and `groupBy` would only give aggregates.
     const byHandle = new Map<
         string,
-        { deletedAt: Date; deletedByUserId: string | null; taskCount: number; dueAt: Date | null }
+        {
+            deletedAt: Date;
+            deletedByUserId: string | null;
+            taskCount: number;
+            dueAt: Date | null;
+            kind: string | null;
+            createdByUserId: string | null;
+            mixedAuthorship: boolean;
+        }
     >();
-    for (const row of rows) {
+    for (const row of rows.tasks) {
         const handle = row.treatmentGroupId;
         if (!handle || !row.deletedAt) continue;
         const seen = byHandle.get(handle);
         if (seen) {
             seen.taskCount += 1;
+            if (seen.createdByUserId !== row.createdByUserId) seen.mixedAuthorship = true;
             continue;
         }
         byHandle.set(handle, {
@@ -1082,18 +1166,80 @@ export async function listDeletedTreatments(
             deletedByUserId: row.deletedByUserId,
             taskCount: 1,
             dueAt: row.dueAt,
+            kind: row.operationType ?? null,
+            createdByUserId: row.createdByUserId,
+            mixedAuthorship: false,
         });
     }
 
+    const summaries = new Map<
+        string,
+        {
+            productName: string | null;
+            blocks: Set<string>;
+            parcelCount: number;
+            totalAreaHa: number;
+            occurredAt: Date | null;
+        }
+    >();
+    for (const line of rows.lines) {
+        const handle = line.treatmentGroupId;
+        if (!handle) continue;
+        const agg =
+            summaries.get(handle) ??
+            {
+                productName: null,
+                blocks: new Set<string>(),
+                parcelCount: 0,
+                totalAreaHa: 0,
+                occurredAt: null as Date | null,
+            };
+        agg.occurredAt = agg.occurredAt ?? line.occurredAt;
+        const op = line.operationParcel;
+        if (op) {
+            agg.parcelCount += 1;
+            // The TREATED area, falling back to the parcel's — the same
+            // expression the live list and the register both print. Summing the
+            // parcel area here while they print the treated area would make the
+            // trash can report more hectares than the document it withdrew.
+            const area = op.treatedAreaHa ?? op.parcel?.areaHa ?? null;
+            if (area != null) agg.totalAreaHa += Number(area);
+            agg.productName = agg.productName ?? op.product?.name ?? null;
+            const block = op.parcel?.location?.name;
+            if (block) agg.blocks.add(block);
+        }
+        summaries.set(handle, agg);
+    }
+
     return {
-        treatments: [...byHandle.entries()].map(([treatmentGroupId, v]) => ({
-            treatmentGroupId,
-            deletedAt: v.deletedAt.toISOString(),
-            deletedByUserId: v.deletedByUserId,
-            taskCount: v.taskCount,
-            // The treatment's day, which is what a farmer recognises it by. On
-            // a FIELD_OPERATION task `dueAt` IS the day of the work.
-            occurredOn: v.dueAt ? v.dueAt.toISOString().slice(0, 10) : null,
-        })),
+        treatments: [...byHandle.entries()].map(([treatmentGroupId, v]) => {
+            const agg = summaries.get(treatmentGroupId);
+            return {
+                treatmentGroupId,
+                deletedAt: v.deletedAt.toISOString(),
+                deletedByUserId: v.deletedByUserId,
+                taskCount: v.taskCount,
+                // The day as the FARM sees it, from the entry rather than the
+                // task — see the `occurredAt` note on the query above. `dueAt`
+                // is kept only as a fallback for a handle whose entries are
+                // gone, where there is no better answer than none.
+                occurredOn: agg?.occurredAt
+                    ? dayKeyInTz(agg.occurredAt, FARM_TIME_ZONE)
+                    : v.dueAt
+                      ? dayKeyInTz(v.dueAt, FARM_TIME_ZONE)
+                      : null,
+                kind: v.kind,
+                productName: agg?.productName ?? null,
+                blockNames: agg ? [...agg.blocks].sort() : [],
+                parcelCount: agg?.parcelCount ?? 0,
+                totalAreaHa: agg ? Math.round(agg.totalAreaHa * 1e4) / 1e4 : 0,
+                // The same two arms the restore itself applies, in the same
+                // order: mixed authorship refuses ADMINS too, so it is checked
+                // before the permission question.
+                mayRestore: v.mixedAuthorship
+                    ? false
+                    : canDeleteTreatment(ctx, { createdByUserId: v.createdByUserId }),
+            };
+        }),
     };
 }

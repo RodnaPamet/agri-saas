@@ -15318,6 +15318,10 @@
             "description": "The day the work happened as the FARM sees it (`YYYY-MM-DD`, Europe/Sofia), not a UTC slice of `occurredAt`. For a free-hand entry typed between 00:00 and 03:00 in Sofia those two differ by a day.",
             "example": "2026-03-09"
           },
+          "mayDelete": {
+            "type": "boolean",
+            "description": "Whether THIS caller may withdraw this treatment — computed server-side so a client can offer «Изтрий» only where pressing it would succeed. It is not a `createdByUserId` field, deliberately: the rule is creator-or-admin AND single authorship, and the second arm refuses admins too, so no field on one row can express it. False on an ordinary manual entry, which has no treatment to withdraw. Advisory, not the control: the route re-checks and answers 403 `TREATMENT_DELETE_NOT_PERMITTED` or 409 `TREATMENT_MIXED_AUTHORSHIP`."
+          },
           "kind": {
             "type": [
               "string",
@@ -15399,6 +15403,7 @@
         "required": [
           "treatmentGroupId",
           "occurredOn",
+          "mayDelete",
           "kind",
           "productName",
           "parcelCount",
@@ -16895,8 +16900,8 @@
       },
       "delete": {
         "operationId": "deleteDiaryTreatment",
-        "summary": "Abandon an unfinished treatment",
-        "description": "The other exit from a treatment that cannot be finished (#1777).\n\nThe write is resumable rather than atomic: re-sending the same handle finishes a partly-recorded treatment. That has one dead end — if the cause of the failure REPEATS, every retry fails identically and the farmer is left with a treatment that will neither complete nor go away. This clears it.\n\n**It soft-deletes the WHOLE treatment, including register entries already written** for the lines that did complete (owner ruling 2026-10-15). Those entries record applications that really happened, so the protections are deliberate: ADMIN only, soft (every row stays on disk), audited as one event naming the counts, and INCOMPLETE only.\n\n| answer | meaning |\n| --- | --- |\n| `200` | abandoned — the body reports how many tasks, entries and lines it touched |\n| `404` `TREATMENT_NOT_FOUND` | no treatment under that handle, or it was already abandoned |\n| `403` `TREATMENT_DELETE_NOT_PERMITTED` | not the treatment's creator and not a farm admin |\n| `409` `TREATMENT_MIXED_AUTHORSHIP` | recorded by more than one person, so it cannot be removed as a whole |\n\nAfterwards the handle stops resolving and is RELEASED: sending it again mints a new treatment rather than resuming the abandoned one. Unfinished lines move to `SKIPPED` rather than being deleted, because `OperationParcel` has no soft-delete column and the completion pass already refuses to touch that state.",
+        "summary": "Withdraw a recorded treatment",
+        "description": "Removes a treatment as a whole — its tasks, its ДНЕВНИК entries and the register rows they print (#1777, widened by #2175).\n\nIt serves two cases. A treatment that cannot be FINISHED: the write is resumable rather than atomic, so re-sending the same handle completes a partly-recorded one — and if the cause of the failure REPEATS, every retry fails identically and the farmer is left with a treatment that will neither complete nor go away. And a treatment recorded in ERROR, complete or not.\n\n**It soft-deletes the WHOLE treatment, including register entries already written** for the lines that did complete. Those entries record applications that really happened, so a 2026-10-15 ruling made this route ADMIN-only and INCOMPLETE-only; a 2026-10-22 ruling reversed BOTH. What makes the wider door defensible is that the delete is soft (every row stays on disk), audited as one event naming the counts, and RESTORABLE through `POST .../restore` by the same people.\n\n| answer | meaning |\n| --- | --- |\n| `200` | withdrawn — the body reports how many tasks, entries and lines it touched |\n| `404` `TREATMENT_NOT_FOUND` | no treatment under that handle, or it was already withdrawn |\n| `403` `TREATMENT_DELETE_NOT_PERMITTED` | not the treatment's creator and not a farm admin |\n| `409` `TREATMENT_MIXED_AUTHORSHIP` | recorded by more than one person, so it cannot be removed as a whole |\n\nAfterwards the handle stops resolving — this `GET` and `.../farm-record` both answer `404` — and the treatment appears in `GET .../journal/treatments/deleted` until it is restored.\n\n**The handle is RELEASED only for an INCOMPLETE treatment**, so a dead-end key can be re-sent and mints a new treatment. A COMPLETE one KEEPS its `clientMutationId`, because that column is the only record of it and releasing it would make the restore silently lossy.\n\nUnfinished lines move to `SKIPPED` rather than being deleted, because `OperationParcel` has no soft-delete column and the completion pass already refuses to touch that state.",
         "tags": [
           "Journal"
         ],
@@ -16929,7 +16934,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Abandoned, with what it touched.",
+            "description": "Withdrawn, with what it touched.",
             "content": {
               "application/json": {
                 "schema": {
@@ -18630,7 +18635,7 @@
       "get": {
         "operationId": "listDeletedTreatments",
         "summary": "Withdrawn treatments that can be put back",
-        "description": "The «Кошче» listing (#2175).\n\nFolded on `treatmentGroupId` rather than returned as tasks: a treatment over three blocks is three tasks, and a trash view listing it three times would invite three restores of one thing. `taskCount` says how many it folded.\n\nOrdered by when it was withdrawn, newest first — the thing somebody wants back is almost always the thing they just removed.\n\n`deleted` is a STATIC segment beside the dynamic `{treatmentGroupId}` sibling, which Next resolves first. The ambiguity is theoretical: a handle is a server-minted UUID or a client `Idempotency-Key`, never the word `deleted`.\n\nRead-gated. It names no parcels, products or people beyond the user id that performed the deletion, so it carries nothing a journal reader could not already see.",
+        "description": "The «Кошче» listing (#2175).\n\nFolded on `treatmentGroupId` rather than returned as tasks: a treatment over three blocks is three tasks, and a trash view listing it three times would invite three restores of one thing. `taskCount` says how many it folded.\n\nOrdered by when it was withdrawn, newest first — the thing somebody wants back is almost always the thing they just removed.\n\n`deleted` is a STATIC segment beside the dynamic `{treatmentGroupId}` sibling, which Next resolves first. The ambiguity is theoretical: a handle is a server-minted UUID or a client `Idempotency-Key`, never the word `deleted`.\n\nEach row carries the treatment SUMMARY — `kind`, `productName`, `blockNames`, `parcelCount`, `totalAreaHa` — because a withdrawn handle stops resolving: this listing's `{treatmentGroupId}` sibling answers `404` for every row here, so a client cannot fetch per row to label it. A trash can of bare dates would not tell a farmer which spraying they are restoring.\n\n`mayRestore` says whether THIS caller may put the row back, under the same two arms the restore applies: mixed authorship refuses admins too, so it is false for a reused handle whatever the role. Offer the control only where it is true — an offered restore that 403s is worse than an absent one.\n\nBounded at 200 and NOT paged, newest-withdrawn first. A restore screen exists to undo a recent mistake; a farm with more withdrawn treatments than that has a different problem from the one this screen solves.\n\nRead-gated. Beyond the user ids that recorded and withdrew it, it names nothing a journal reader could not already see — these are rows that WERE in the register.",
         "tags": [
           "Journal"
         ],
@@ -18686,6 +18691,33 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "kind": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "productName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "blockNames": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "parcelCount": {
+                            "type": "integer"
+                          },
+                          "totalAreaHa": {
+                            "type": "number"
+                          },
+                          "mayRestore": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -18693,7 +18725,13 @@
                           "deletedAt",
                           "deletedByUserId",
                           "taskCount",
-                          "occurredOn"
+                          "occurredOn",
+                          "kind",
+                          "productName",
+                          "blockNames",
+                          "parcelCount",
+                          "totalAreaHa",
+                          "mayRestore"
                         ]
                       }
                     }

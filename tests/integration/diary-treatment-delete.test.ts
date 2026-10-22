@@ -237,6 +237,122 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(mine[0].taskCount).toBeGreaterThan(0);
     });
 
+    it('the «Кошче» listing names WHAT was withdrawn, not only when', async () => {
+        // The restore screen cannot fetch per row to label it: a withdrawn
+        // handle stops resolving, which the next assertion proves rather than
+        // assumes. So a listing of bare dates would be unusable — a farmer
+        // picking a row has to recognise the spraying. Raised in review by
+        // agrent-ios (#395) before the phone built against it.
+        const handle = `summary-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        // The reason the summary has to be ON the listing.
+        expect(await getDiaryTreatment(ctx(), handle)).toBeNull();
+
+        const { treatments } = await listDeletedTreatments(ctx());
+        const row = treatments.find((t) => t.treatmentGroupId === handle);
+        expect(row).toBeDefined();
+        expect(row!.productName).toBeTruthy();
+        expect(row!.blockNames.length).toBeGreaterThan(0);
+        expect(row!.parcelCount).toBeGreaterThan(0);
+        expect(row!.totalAreaHa).toBeGreaterThan(0);
+        expect(row!.kind).toBeTruthy();
+        expect(row!.occurredOn).toBe(DAY);
+    });
+
+    it('mayRestore answers for THIS caller, not for the farm', async () => {
+        // The flag exists so the phone offers «Възстанови» only where it would
+        // succeed, so the property worth asserting is that it DISAGREES between
+        // two callers on one row — a flag that is simply true everywhere would
+        // pass a presence check and tell a client nothing.
+        const handle = `mayrestore-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        const asCreator = await listDeletedTreatments(ctx('EDITOR' as Role));
+        expect(asCreator.treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(
+            true,
+        );
+
+        const stranger = makeRequestContext('EDITOR', {
+            userId: `${userId}-someone-else`,
+            tenantId,
+            tenantSlug: `${TAG}-t`,
+        });
+        const asStranger = await listDeletedTreatments(stranger);
+        expect(asStranger.treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(
+            false,
+        );
+    });
+
+    it('mayRestore is FALSE for a mixed-authorship handle, admin included', async () => {
+        // The arm no client could compute for itself, and the reason `mayDelete`
+        // is a server-side flag rather than a `createdByUserId` field: a reused
+        // handle is refused 409 for EVERYBODY, so an admin seeing `true` here
+        // would be offered a restore that cannot succeed.
+        const handle = `mixed-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        await deleteDiaryTreatment(ctx(), handle);
+
+        // Forge the second author directly. The usecase refuses to CREATE this
+        // state — one treatment is written by one person in one request — so it
+        // has to be written rather than recorded, and the fixture is a single
+        // block, so there is only one task to start from. Clone it under the
+        // same handle with a different author: that is precisely the reused
+        // handle the 409 exists for.
+        const first = await globalPrisma.task.findFirstOrThrow({
+            where: { tenantId, treatmentGroupId: handle },
+        });
+        // `createMany` because its input is SCALARS only — a cloned row has no
+        // relation objects to satisfy. Four fields are dropped rather than
+        // copied, and each one is a constraint rather than taste:
+        // `clientMutationId` and `key` are both UNIQUE per tenant, so carrying
+        // either over fails on the constraint instead of producing the state
+        // under test; `metadataJson` is a nullable Json, whose `null` Prisma
+        // will not accept back as an input value; and the timestamps are the
+        // database's to set.
+        const {
+            id: _id,
+            createdAt: _c,
+            updatedAt: _u,
+            clientMutationId: _k,
+            metadataJson: _m,
+            key: clonedFrom,
+            ...rest
+        } = first;
+        // A REAL second user, because `createdByUserId` is a foreign key. The
+        // `mayRestore` test above gets away with a made-up id only because its
+        // refusal lands before any write touches the column.
+        const otherEmail = `${TAG}-second@ag.test`;
+        const secondAuthor = await globalPrisma.user.create({
+            data: {
+                email: otherEmail,
+                emailHash: hashForLookup(otherEmail),
+                name: 'Second Author',
+            },
+            select: { id: true },
+        });
+        await globalPrisma.task.createMany({
+            data: [
+                {
+                    ...rest,
+                    key: `${clonedFrom}-dup`,
+                    createdByUserId: secondAuthor.id,
+                },
+            ],
+        });
+
+        const { treatments } = await listDeletedTreatments(ctx());
+        expect(treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(false);
+
+        // And the route agrees with the flag — which is the whole point of
+        // computing it from the same predicate.
+        await expect(restoreDiaryTreatment(ctx(), handle)).rejects.toMatchObject({
+            code: 'TREATMENT_MIXED_AUTHORSHIP',
+        });
+    });
+
     it('404s on a handle nobody recorded', async () => {
         await expect(deleteDiaryTreatment(ctx(), `nope-${randomUUID()}`)).rejects.toMatchObject({
             code: 'TREATMENT_NOT_FOUND',

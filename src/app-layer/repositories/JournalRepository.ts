@@ -5,6 +5,7 @@ import { buildCursorWhere, computePageInfo, clampLimit } from '@/lib/pagination'
 import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { AssetRepository } from './AssetRepository';
+import { canDeleteTreatment } from '@/app-layer/policies/task.policies';
 
 export interface LogQuantityInput {
     measure:
@@ -280,6 +281,7 @@ function buildTreatmentSummary(
         } | null;
     },
     agg: { parcelCount: number; totalAreaHa: number; blockNames: string[] } | undefined,
+    mayDelete: boolean,
 ): Record<string, unknown> {
     const line = entry.operationParcel;
     // The DAY as the FARM sees it, for every row.
@@ -303,6 +305,11 @@ function buildTreatmentSummary(
     return {
         treatmentGroupId: entry.treatmentGroupId,
         occurredOn,
+        // Whether THIS caller may withdraw it — computed here rather than left
+        // to the client, because the rule has an arm no row can express (see
+        // `_treatmentAuthorship`) and an offered «Изтрий» that 403s is worse
+        // than an absent one.
+        mayDelete,
         kind: line?.task?.operationType ?? null,
         productName: line?.product?.name ?? null,
         parcelCount: agg?.parcelCount ?? 0,
@@ -488,16 +495,27 @@ export class JournalRepository {
                   })
                 : undefined;
 
-        const aggregates = await JournalRepository._treatmentAggregates(
-            db,
-            ctx,
-            page.map((e) => e.treatmentGroupId),
-        );
+        const handles = page.map((e) => e.treatmentGroupId);
+        const aggregates = await JournalRepository._treatmentAggregates(db, ctx, handles);
+        const authorship = await JournalRepository._treatmentAuthorship(db, ctx, handles);
 
         return {
             items: page.map((e) => ({
                 ...e,
-                treatment: buildTreatmentSummary(e, aggregates.get(e.treatmentGroupId)),
+                treatment: buildTreatmentSummary(
+                    e,
+                    aggregates.get(e.treatmentGroupId),
+                    // The 403 arm AND the 409 arm, because the control has to
+                    // be absent for both. A treatment with no tasks under its
+                    // handle — a free-hand entry folding to itself — has no
+                    // author to compare against, so it is not deletable
+                    // through the treatment route at all.
+                    (() => {
+                        const a = authorship.get(e.treatmentGroupId);
+                        if (!a || a.mixedAuthorship) return false;
+                        return canDeleteTreatment(ctx, a);
+                    })(),
+                ),
             })),
             pageInfo: { nextCursor, hasNextPage },
         };
@@ -539,6 +557,63 @@ export class JournalRepository {
      * REPRESENTATIVE row the page already fetched, so they cost no query at
      * all.
      */
+    /**
+     * Who recorded each treatment on ONE page, and whether that answer is
+     * SINGLE — the two facts `mayDelete` needs.
+     *
+     * Authorship lives on `Task.createdByUserId`, and a treatment is N tasks
+     * (one per block), so the question cannot be answered from the `LogEntry`
+     * row the fold already holds. Every task of one treatment is written by one
+     * person in one request, so the normal answer is one creator — but a reused
+     * handle would make it several, and then "who may delete this" has no
+     * single answer and the usecase refuses with `TREATMENT_MIXED_AUTHORSHIP`
+     * (409) for ADMINS TOO. That is the arm no client can see, which is why
+     * `mayDelete` is computed on the server rather than left to a
+     * `createdByUserId` field on the row.
+     *
+     * A `groupBy` rather than raw SQL: the predicate is `tenantId` + `handle IN
+     * (…)` over `@@index([tenantId, treatmentGroupId])` and the shape is one
+     * row per (handle, author), so it is bounded by the PAGE like its sibling
+     * above and never by the tasks behind it.
+     *
+     * `deletedAt: null` matches what this list shows. The withdrawn listing
+     * folds its own authorship from rows it already reads — see
+     * `listDeletedTreatments`.
+     */
+    private static async _treatmentAuthorship(
+        db: PrismaTx,
+        ctx: RequestContext,
+        handles: string[],
+    ): Promise<Map<string, { createdByUserId: string | null; mixedAuthorship: boolean }>> {
+        const out = new Map<string, { createdByUserId: string | null; mixedAuthorship: boolean }>();
+        if (handles.length === 0) return out;
+
+        const rows = await db.task.groupBy({
+            by: ['treatmentGroupId', 'createdByUserId'],
+            where: {
+                tenantId: ctx.tenantId,
+                treatmentGroupId: { in: handles },
+                deletedAt: null,
+            },
+        });
+
+        for (const row of rows) {
+            const handle = row.treatmentGroupId;
+            if (!handle) continue;
+            const seen = out.get(handle);
+            if (seen) {
+                // A SECOND author for this handle. Keep the first id rather
+                // than nulling it: the flag is what decides, and the id stays
+                // useful to a reader diagnosing the reuse.
+                seen.mixedAuthorship = true;
+                continue;
+            }
+            out.set(handle, { createdByUserId: row.createdByUserId, mixedAuthorship: false });
+        }
+
+        return out;
+    }
+
     private static async _treatmentAggregates(
         db: PrismaTx,
         ctx: RequestContext,
