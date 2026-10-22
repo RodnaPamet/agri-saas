@@ -191,12 +191,6 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // (promotional chrome, like the onboarding tour) — read via
             // process.env for build-time inlining (same as ClientProviders).
             if (file.endsWith('pwa/InstallPrompt.tsx')) continue;
-            // CoachMark suppresses its first-time hint bubble under
-            // NEXT_PUBLIC_TEST_MODE (onboarding chrome, like InstallPrompt /
-            // the tour) so the always-on-fresh-browser bubble can't intercept
-            // taps in E2E — read via process.env for build-time inlining
-            // (same rationale as ClientProviders / InstallPrompt above).
-            if (file.endsWith('ui/coach-mark.tsx')) continue;
             // DeferredOnMobile reads process.env.NODE_ENV to render heavy
             // children eagerly under jest (jsdom resolves to "mobile"); a
             // client test-env gate must read NODE_ENV directly, same as the
