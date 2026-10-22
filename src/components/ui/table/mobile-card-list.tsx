@@ -37,6 +37,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { ChevronRight } from "@/components/ui/icons/nucleo/chevron-right";
 import { useTranslations } from "next-intl";
 import { cn } from "./table-utils";
+import { SwipeRow } from "../swipe-row";
 
 // ── Column-meta augmentation ────────────────────────────────────────
 // Adds the `mobileCard` slot descriptor to every TanStack column's
@@ -97,6 +98,20 @@ export interface MobileCardListProps<T> {
   emptyState?: ReactNode;
   /** Extra classes on the outer <ul>/state wrapper (e.g. `sm:hidden`). */
   className?: string;
+  /**
+   * Per-row swipe-to-act, opt-in (#2175). Return `null` for a row that must
+   * not be swipeable — the card then renders exactly as before, with no
+   * wrapper and no hidden button.
+   *
+   * A FUNCTION of the row rather than a flag, because eligibility is per row
+   * and not per table: on the journal a treatment the caller did not record
+   * carries `mayDelete: false`, and offering a control that 403s is worse than
+   * an absent one.
+   *
+   * The returned `onAction` owns the undo window and the write —
+   * `<SwipeRow>` commits nothing. See Epic 67.
+   */
+  swipeAction?: (row: Row<T>) => { label: string; icon?: ReactNode; onAction: () => void } | null;
 }
 
 export function MobileCardList<T>({
@@ -106,6 +121,7 @@ export function MobileCardList<T>({
   error,
   emptyState,
   className,
+  swipeAction,
 }: MobileCardListProps<T>) {
   const t = useTranslations("ui.table");
   const rows = table.getRowModel().rows;
@@ -171,9 +187,29 @@ export function MobileCardList<T>({
         const actionsCell = cells.find((c) => cardSlot(c) === "actions");
         const clickable = !!onRowClick;
 
+        const swipe = swipeAction?.(row) ?? null;
+
         return (
           <li key={row.id}>
-            {/* Card a11y mirrors the desktop DataTable row: the card's
+            {swipe ? (
+              <SwipeRow
+                actionLabel={swipe.label}
+                actionIcon={swipe.icon}
+                onAction={swipe.onAction}
+              >
+                {renderCard()}
+              </SwipeRow>
+            ) : (
+              renderCard()
+            )}
+          </li>
+        );
+
+        // Extracted so the card markup is written ONCE and rendered either
+        // bare or inside <SwipeRow>. A conditional wrapper around a duplicated
+        // body is how the two copies drift.
+        function renderCard() {
+          /* Card a11y mirrors the desktop DataTable row: the card's
                 onClick is a MOUSE convenience only, and the nested
                 title <Link> (Tasks/Journal/Locations embed a
                 same-destination <Link>) is the keyboard + assistive-tech
@@ -183,7 +219,9 @@ export function MobileCardList<T>({
                 duplicate the link's action for AT users. Rows whose
                 title carries no <Link> match the desktop table's own
                 mouse-only row-click model. Non-clickable rows (no detail
-                route) render a plain, non-interactive card. */}
+                route) render a plain, non-interactive card. */
+
+          return (
             <div
               onClick={clickable ? (e) => onRowClick!(row, e) : undefined}
               className={cn(
@@ -270,8 +308,8 @@ export function MobileCardList<T>({
                 </div>
               ) : null}
             </div>
-          </li>
-        );
+          );
+        }
       })}
     </ul>
   );

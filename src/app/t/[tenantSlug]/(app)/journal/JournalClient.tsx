@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { PullToRefresh, useCursorPagination, useToast } from '@/components/ui/hooks';
+import { PullToRefresh, useCursorPagination, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { CACHE_KEYS } from '@/lib/swr-keys';
 import { useOfflineSync, type ConflictResolution } from '@/lib/offline/use-offline-sync';
@@ -13,9 +13,11 @@ import { OfflineConflictBanner } from '@/components/offline/OfflineConflictBanne
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { Button } from '@/components/ui/button';
 import { Download, Plus, Trash } from '@/components/ui/icons/nucleo';
+import { apiDelete } from '@/lib/api-client';
 import { parseContentDispositionFilename } from '@/lib/http/content-disposition';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DeletedJournalView } from './DeletedJournalView';
+import { journalSwipeKind } from './swipe-eligibility';
 import { Fab } from '@/components/ui/fab';
 import { createColumns } from '@/components/ui/table';
 import {
@@ -59,6 +61,18 @@ interface JournalRow {
         parcelCount: number;
         totalAreaHa: number;
         blockNames: string[];
+        /**
+         * Whether THIS caller may withdraw it (#2175). Server-computed,
+         * because the rule is creator-or-admin AND single authorship and the
+         * second arm binds admins too — no field on one row can express it.
+         *
+         * Optional, and absent means PERMITTED: this list reads through the
+         * persistent SWR cache, so a row written before the field existed
+         * would otherwise hide the control from the person who recorded the
+         * treatment. A stale permit costs one 403; a stale denial costs a
+         * farmer their own entry.
+         */
+        mayDelete?: boolean;
     } | null;
     /** The linked spray/operation line — the dnevnik agronomic columns (#10). */
     operationParcel?: {
@@ -202,6 +216,28 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
     }, [page1, page1Signature, reloadPagination]);
 
     const entries = pagination.rows;
+
+    /**
+     * Rows inside an open undo window (#2175).
+     *
+     * Held in local state rather than mutated into the SWR cache because
+     * `entries` is a cursor ACCUMULATOR fed by `reloadPagination` — a page-1
+     * cache edit is overwritten by the next revalidation, which can land while
+     * the five seconds are still running and make a withdrawn row reappear
+     * mid-countdown.
+     */
+    const [withdrawing, setWithdrawing] = useState<string[]>([]);
+    const unhide = useCallback(
+        (id: string) => setWithdrawing((cur) => cur.filter((x) => x !== id)),
+        [],
+    );
+
+    // What the list actually renders: everything except rows inside an open
+    // undo window. See `withdrawing` below.
+    const visibleEntries = useMemo(
+        () => (withdrawing.length ? entries.filter((e) => !withdrawing.includes(e.id)) : entries),
+        [entries, withdrawing],
+    );
     const loading = page1Query.isLoading && !page1Query.data;
 
     // Offline-capable journal-entry create. One shared hook so a create queued
@@ -332,6 +368,86 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
         // shows whatever the server actually holds.
         void page1Query.mutate();
     };
+
+    const triggerUndoToast = useToastWithUndo();
+
+    /**
+     * Swiping a journal row removes what that row IS, which is two different
+     * writes (#2175).
+     *
+     * A folded row with `parcelCount > 0` stands for a TREATMENT — N tasks and
+     * N register lines across its blocks — so the honest action is the
+     * treatment withdrawal, and the toast names the count because the row
+     * looks like one line and is not. A row with no treatment is one entry,
+     * and the entry delete that has existed since #338 is correct for it.
+     *
+     * The register is why this matters: its treatment rows are built from
+     * `operationParcel` and never read `LogEntry`, so deleting the ENTRY under
+     * a treatment row would leave every printed line in place. Only the
+     * withdrawal reaches them.
+     */
+    const withdrawRow = useCallback(
+        (entry: JournalRow) => {
+            const tr = entry.treatment;
+            // The same function the gate used, not a second reading of the
+            // same fields — two spellings of "is this a treatment" is how the
+            // control and the write end up disagreeing about what it does.
+            const isTreatment =
+                journalSwipeKind(entry, { canWrite: permissions.canWrite }) === 'treatment';
+            setWithdrawing((cur) => [...cur, entry.id]);
+            triggerUndoToast({
+                message: isTreatment
+                    ? t('swipe.withdrewTreatment', {
+                          rows: tr!.parcelCount,
+                          blocks: tr!.blockNames.length,
+                      })
+                    : t('swipe.withdrewEntry'),
+                undoMessage: t('swipe.undo'),
+                action: async () => {
+                    await apiDelete(
+                        buildApiUrl(
+                            isTreatment
+                                ? `/journal/treatments/${tr!.treatmentGroupId}`
+                                : `/journal/${entry.id}`,
+                        ),
+                    );
+                    await page1Query.mutate();
+                },
+                // The row is already gone from the server's answer by the time
+                // the revalidation lands, so the local hide has done its job.
+                onCommit: () => unhide(entry.id),
+                undoAction: () => unhide(entry.id),
+                onError: (err) => {
+                    unhide(entry.id);
+                    toast.error(err instanceof Error ? err.message : t('swipe.failed'));
+                },
+            });
+        },
+        [buildApiUrl, page1Query, permissions.canWrite, t, toast, triggerUndoToast, unhide],
+    );
+
+    /**
+     * Who gets the gesture. `null` means the row does not swipe at all, which
+     * is the right answer for a control that would refuse: `mayDelete` is
+     * false for a treatment this caller did not record, and for one recorded
+     * by more than one person (which refuses admins too).
+     *
+     * `mayDelete === false` rather than `!mayDelete`, because an ABSENT flag
+     * is a cached row from before the field existed and must permit — the
+     * server re-checks either way.
+     */
+    const swipeAction = useCallback(
+        (row: { original: JournalRow }) => {
+            const entry = row.original;
+            if (!journalSwipeKind(entry, { canWrite: permissions.canWrite })) return null;
+            return {
+                label: t('swipe.delete'),
+                icon: <Trash className="size-4" />,
+                onAction: () => withdrawRow(entry),
+            };
+        },
+        [permissions.canWrite, t, withdrawRow],
+    );
 
     const liveFilters = useMemo(() => buildJournalFilters(te), [te]);
 
@@ -599,13 +715,14 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                 searchPlaceholder: t('searchPlaceholder'),
             }}
             table={{
-                data: entries,
+                data: visibleEntries,
                 columns,
                 loading,
                 getRowId: (e) => e.id,
                 // <sm: render each entry as a tappable card; taps through to
                 // the journal detail via onRowClick below.
                 mobileFallback: 'card',
+                swipeAction,
                 // An optimistic (queued-offline) row has a client temp id with
                 // no server detail page yet — don't navigate until it delivers.
                 onRowClick: (row) => {
