@@ -131,48 +131,14 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
         expect(urls.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('puts no documentation key inside an `assertions` block (#2179)', () => {
-        // This file documents itself with `"//"` keys, because JSON has no
-        // comments. At the top of `assert`, or beside `assertions` inside a
-        // matrix entry, lhci ignores them — `/login` has had one for months.
-        //
-        // One level deeper is different in kind: every key of `assertions` is
-        // an AUDIT NAME, so a note placed there is asserted. #2060 put the
-        // 2200 -> 3800 rationale inside the `/f/` block, and from then until
-        // #2179 every run of that page printed
-        //
-        //     ✘  // failure for auditRan assertion
-        //        "//" is not a known audit.   expected: >=1   found: 0
-        //
-        // It did not fail the gate — measured: a run printed that ✘, printed
-        // no `Assertion failed`, and reported `Lighthouse passed`. That is
-        // what makes it worth a guard rather than a shrug. A permanent ✘ that
-        // is not a failure teaches every reader to discount ✘ on this job,
-        // and the thing it taught them to discount was a real LCP failure on
-        // main. It also skews the "N result(s)" line, which counts FAILING
-        // assertions and reads like a run count.
-        const offenders: string[] = [];
-        for (const entry of rc.ci?.assert?.assertMatrix ?? []) {
-            for (const key of Object.keys(entry.assertions ?? {})) {
-                // An audit id or a `categories:` selector. Anything else is
-                // not something lhci can assert, whatever it was meant as.
-                if (!/^(categories:)?[a-z][a-z0-9-]*$/.test(key)) {
-                    offenders.push(`${entry.matchingUrlPattern}: ${JSON.stringify(key)}`);
-                }
-            }
-        }
-        // The denominator, so a config trimmed to nothing cannot pass this by
-        // having no keys to check.
-        const checked = (rc.ci?.assert?.assertMatrix ?? []).reduce(
-            (n, e) => n + Object.keys(e.assertions ?? {}).length,
-            0,
-        );
-        console.log(`[lighthouse-gate] ${checked} assertion key(s) checked across ` +
-            `${(rc.ci?.assert?.assertMatrix ?? []).length} matrix entr(ies)`);
-        expect(checked).toBeGreaterThanOrEqual(8);
-        expect(offenders).toEqual([]);
-    });
-
+    /*
+     * My flat version of the doc-key check stood here, and is deleted rather
+     * than merged. #2180 landed `every assertions KEY is an audit id` below
+     * while this branch was open: a recursive scan over the whole config is
+     * strictly broader than one pass over `assertMatrix[].assertions`, and it
+     * already asserts its own denominator, so nothing of mine was left to
+     * keep. Two tests for one property is how one of them rots unnoticed.
+     */
     it('throttles for real, so the budget bounds an observation', () => {
         // Named in the failure rather than asserted bare, so a revert says
         // what to restore and why it was chosen.
@@ -330,6 +296,50 @@ describe('the Lighthouse gate measures rather than models (#1980)', () => {
                 .map(([k]) => k)
                 .join(', ')}`,
         );
+    });
+
+    it('every assertions KEY is an audit id, so a doc note cannot become an audit', () => {
+        /**
+         * #2178. This file documents itself with `"//"` keys, which is fine at
+         * the top level and on a matrix ENTRY — lhci ignores both. Inside an
+         * `assertions` object it is not: lhci reads every key there as an audit
+         * name, so a 2406-character explanatory note became an audit called
+         * `//` and failed `auditRan` on every single run.
+         *
+         * It was a GUARANTEED failure, not a flake — an audit that does not
+         * exist can never have run — and it went unnoticed because the LCP
+         * assertion was failing alongside it and masked which was which.
+         *
+         * Nothing checked this, which is why it slipped through. The rule is
+         * narrow on purpose: an audit id is lower-case letters, digits and
+         * dashes, optionally prefixed `categories:`. That admits every real
+         * audit and rejects prose, a comment marker, or a stray key.
+         */
+        const AUDIT_ID = /^(categories:)?[a-z0-9][a-z0-9-]*$/;
+        const offenders: string[] = [];
+        let checked = 0;
+
+        const scan = (node: unknown, path: string, inAssertions: boolean) => {
+            if (Array.isArray(node)) {
+                node.forEach((v, i) => scan(v, `${path}[${i}]`, inAssertions));
+                return;
+            }
+            if (node === null || typeof node !== 'object') return;
+            for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+                if (inAssertions) {
+                    checked += 1;
+                    if (!AUDIT_ID.test(key)) offenders.push(`${path}.${key}`);
+                    continue;
+                }
+                scan(value, `${path}.${key}`, key === 'assertions');
+            }
+        };
+        scan(rc, '$', false);
+
+        // The denominator, because a scan that reached no assertions block
+        // would report zero offenders and look exactly like a clean config.
+        expect(checked).toBeGreaterThanOrEqual(8);
+        expect(offenders).toEqual([]);
     });
 
     it('the cap is still a literal, which the retry guard requires', () => {

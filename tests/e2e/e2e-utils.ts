@@ -698,6 +698,24 @@ export async function waitForFieldMapWarm(page: Page): Promise<void> {
  * this form's reads is among them (#1845). So this warm-up matches what a real
  * device must also do, rather than compensating for an empty test fixture.
  */
+/**
+ * Step 2 → the review → Save.
+ *
+ * «Нов запис» has a third step: the review a farmer reads before the write,
+ * because a recorded treatment stays final. A spec that drove the old two-step
+ * form straight to Save therefore needs one more Next, and both offline specs
+ * needed the same one — so it lives here rather than twice.
+ *
+ * It takes NO network. The review renders what step 2 already loaded, and the
+ * `/parcels/by-crop` key is `step >= 2` so moving on refetches nothing. Both
+ * callers invoke this AFTER cutting the network, which is what makes that claim
+ * tested rather than merely asserted.
+ */
+export async function saveTreatmentThroughReview(page: Page): Promise<void> {
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('button', { name: 'Save' }).click();
+}
+
 export async function openTreatmentFormWarm(
     page: Page,
     opts: { product: string; crop?: string },
