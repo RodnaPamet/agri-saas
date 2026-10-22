@@ -66,6 +66,7 @@
     // `tests/guards/data-writing-scripts-are-typechecked.test.ts` DERIVES this
     // set from the filesystem and fails when a new data-writing script is
     // absent — a curated list is a list somebody forgets (#805).
+    "scripts/audit-details-conformance.ts",
     "scripts/add-tenant-owner.ts",
     "scripts/add-test-user.ts",
     "scripts/backfill-journal-title-descriptors.ts",
