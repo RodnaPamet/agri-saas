@@ -1656,19 +1656,24 @@ export async function generateSeasonDiaryPdf(
                   select: { entityId: true },
               })
             : [];
-        let ids = [...new Set(links.map((l) => l.entityId))];
-        // Fallback: no completed ops → still produce a per-location register
-        // over the tenant's fields (empty ruled tables), so the file is a
-        // usable blank ДНЕВНИК rather than a single empty page.
-        if (ids.length === 0) {
-            const locs = await db.location.findMany({
-                where: { tenantId: ctx.tenantId, deletedAt: null },
-                select: { id: true },
-                orderBy: { name: 'asc' },
-                take: 25,
-            });
-            ids = locs.map((l) => l.id);
-        }
+        const ids = [...new Set(links.map((l) => l.entityId))];
+        // ## SUPERSEDED, 2026-10-23 (#2183)
+        //
+        // There was a fallback here, and its reasoning was:
+        //
+        //   > Fallback: no completed ops → still produce a per-location
+        //   > register over the tenant's fields (empty ruled tables), so the
+        //   > file is a usable blank ДНЕВНИК rather than a single empty page.
+        //
+        // It took up to 25 locations and rendered each as blank ruled tables.
+        // That stopped working the moment empty sections began to be omitted:
+        // with no data and no blank forms, each location contributes a COVER
+        // and nothing else, so the fallback's own purpose — a usable blank
+        // register — became 25 cover pages.
+        //
+        // Owner ruling 2026-10-23: refuse, with the same code a block uses. A
+        // farmer who wants a blank form to fill in is better served by the
+        // printed Приложение 1 than by a PDF of covers.
         return { from: f, to: t, seasonName: season.name, locationIds: ids };
     });
 
@@ -1683,11 +1688,31 @@ export async function generateSeasonDiaryPdf(
     const doc = createPdfDocument(meta);
 
     let first = true;
+    let rendered = 0;
     for (const locationId of locationIds) {
         const data = await gatherFarmRecordData(ctx, locationId, from, to);
+        // A location is picked from `operationParcel` rows that are DONE in the
+        // window, so it normally has lines to print. One case makes it empty
+        // anyway, and it is reachable because of #2184: `gatherFarmRecord`
+        // filters `task.deletedAt`, so a season whose only work was a
+        // treatment later WITHDRAWN still selects the location and then
+        // gathers nothing. Without this it would contribute a lone cover page.
+        //
+        // NOT COVERED BY A TEST — see #2201. Removing this line reddens
+        // nothing today, which is exactly why the gap is written down rather
+        // than left for someone to discover by deleting it.
+        if (isRegisterEmpty(data)) continue;
         if (!first) doc.addPage({ size: 'A4', layout: 'portrait' });
         renderFarmRecordDiary(doc, data, BG_LABELS, false);
         first = false;
+        rendered += 1;
+    }
+    if (rendered === 0) {
+        throw codedNotFound(
+            'REGISTER_EMPTY_FOR_PERIOD',
+            'Nothing was recorded for this season.',
+            { reference: 'seasonId' },
+        );
     }
     stampPageNumbers(doc, BG_LABELS);
 

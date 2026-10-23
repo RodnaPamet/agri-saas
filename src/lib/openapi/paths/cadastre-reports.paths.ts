@@ -30,7 +30,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -205,8 +205,21 @@ export function registerCadastreAndReportPaths(registry: OpenAPIRegistry): void 
         operationId: 'generateSeasonDiaryPdf',
         summary: 'Generate the season diary PDF',
         description:
-            'POST because generating the document is a job with a body, not a lookup. Returns PDF BYTES with `Content-Disposition` — do not attempt to decode JSON from it.',
+            'POST because generating the document is a job with a body, not a lookup. Returns PDF BYTES with `Content-Disposition` — do not attempt to decode JSON from it.\n\n' +
+            '**A season with nothing recorded gets NO document** (#2183, owner ruling ' +
+            '2026-10-23): `404 REGISTER_EMPTY_FOR_PERIOD`, the same code the per-block ' +
+            'register uses. A location whose own register is empty is skipped rather than ' +
+            'contributing a lone cover page.\n\n' +
+            'This replaced a fallback that composed up to 25 locations as blank ruled tables ' +
+            'so the file was "a usable blank ДНЕВНИК" — which stopped being true once empty ' +
+            'sections began to be omitted, because the result was 25 cover pages.',
         tags: ['Reports'],
+        extraResponses: codedErrorResponses({
+            404:
+                '- `REGISTER_EMPTY_FOR_PERIOD` — the season recorded nothing. Not a fault; ' +
+                'say so rather than showing an error.\n' +
+                '- `SEASON_NOT_FOUND` — no such season for this tenant.',
+        }),
         params: TenantParams,
         body: z.object({}).passthrough().openapi('SeasonDiaryRequest'),
         success: {

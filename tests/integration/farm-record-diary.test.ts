@@ -19,6 +19,7 @@ import {
     gatherFarmRecordData,
     gatherFarmRecord,
     generateFarmRecordDiaryPdf,
+    generateSeasonDiaryPdf,
 } from '@/app-layer/reports/pdf/farm-record-diary';
 import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
 
@@ -441,5 +442,58 @@ describeFn('ДНЕВНИК for a block with nothing in the period (#2183)', () =
             to: TO,
         });
         expect(doc).toBeTruthy();
+    });
+});
+
+describeFn('season ДНЕВНИК for a season that recorded nothing (#2183)', () => {
+    /**
+     * There was no test for `generateSeasonDiaryPdf` at all before this, which
+     * is why its fallback could be removed without anything failing.
+     *
+     * That fallback composed up to 25 locations as blank ruled tables so the
+     * file was "a usable blank ДНЕВНИК rather than a single empty page". Once
+     * empty sections began to be omitted it produced 25 COVER pages instead —
+     * its own purpose inverted, silently. Owner ruling 2026-10-23: refuse,
+     * with the code a block uses.
+     */
+    let quietSeasonId = '';
+    let activeSeasonId = '';
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        const quiet = await prisma.season.create({
+            data: {
+                tenantId: TENANT_ID,
+                name: `${TAG}-quiet-season`,
+                startDate: new Date('2019-01-01T00:00:00Z'),
+                endDate: new Date('2019-12-31T23:59:59Z'),
+            },
+            select: { id: true },
+        });
+        quietSeasonId = quiet.id;
+        const active = await prisma.season.create({
+            data: {
+                tenantId: TENANT_ID,
+                name: `${TAG}-active-season`,
+                startDate: new Date('2026-01-01T00:00:00Z'),
+                endDate: new Date('2026-12-31T23:59:59Z'),
+            },
+            select: { id: true },
+        });
+        activeSeasonId = active.id;
+    });
+
+    it('REFUSES rather than composing a document of cover pages', async () => {
+        await expect(
+            generateSeasonDiaryPdf(ctx(), { seasonId: quietSeasonId }),
+        ).rejects.toMatchObject({ code: 'REGISTER_EMPTY_FOR_PERIOD', status: 404 });
+    });
+
+    it('still composes a season that DID record something — the positive control', async () => {
+        // Without this the refusal above could be passing because the season
+        // generator refuses everything, which looks the same from outside.
+        const doc = await generateSeasonDiaryPdf(ctx(), { seasonId: activeSeasonId });
+        expect(doc).toBeTruthy();
+        expect(doc.bufferedPageRange().count).toBeGreaterThan(0);
     });
 });
