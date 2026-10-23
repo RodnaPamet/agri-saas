@@ -203,7 +203,7 @@
         "vaul": "^1.1.2",
         "web-push": "^3.6.7",
         "web-vitals": "^6.2.2",
-        "zod": "^4.6.5",
+        "zod": "^4.6.6",
         "zod-to-json-schema": "^3.25.2"
     },
     "optionalDependencies": {
