@@ -78,6 +78,76 @@ const FAMILIES = [
     { family: 'Inter', weights: [300, 400, 500, 600, 700, 800] },
 ];
 
+/**
+ * Deliberately-authored cuts, fetched from Google's `&text=` endpoint (#1969).
+ *
+ * ## The defect these exist for
+ *
+ * Onest's `cyrillic` cut claims no digits, no hyphen, no comma and neither
+ * Bulgarian quote mark -- measured against the vendored file's own cmap, which
+ * carries 104 codepoints and, of this product's alphabet, only the letters,
+ * U+2116 and a space. `U+0020` through `U+00FF` all live in the `latin` cut.
+ *
+ * So a Bulgarian heading downloads `onest-latin.woff2` (33,760 B) to render its
+ * SPACE, and any farm name with a digit or a hyphen needs it for real. On
+ * `/f/<handle>`, whose visible text is entirely Cyrillic, the trace carried
+ * both files.
+ *
+ * ## Why a third cut rather than a widened range
+ *
+ * Declaring `U+0020` on the `cyrillic` face would work for a space -- the glyph
+ * IS in that file -- and would still fetch `latin` for `Победа 2024`, which is
+ * the common case. The repo already records two retracted LCP claims from
+ * reading this page's numbers too eagerly, and "improves the Lighthouse fixture
+ * because its seeded name happens to be two Cyrillic words" is that shape
+ * again.
+ *
+ * A shared punctuation cut is 9,236 B and covers every farm name: a Bulgarian
+ * heading page goes 49,620 -> 25,096 B of Onest. A Latin one goes 33,760 ->
+ * 42,996 B, because its punctuation now comes from the shared file too. Owner
+ * ruling 2026-10-23 took that trade knowingly -- four of five users carry
+ * `uiLanguage: 'bg'`.
+ *
+ * ## The CUT stays disjoint from its siblings — which is narrower than it sounds
+ *
+ * `takeFrom` names the subset whose declared range this cut is subtracted from.
+ * Overlapping ranges would make the outcome depend on `@font-face` declaration
+ * precedence, and that is not a thing to ship on a reading of the spec.
+ *
+ * What this does NOT establish is that the family's ranges are disjoint
+ * overall. MEASURED 2026-10-23, Google's own cuts overlap heavily and
+ * deliberately — 20 overlapping file pairs across the three families, mostly
+ * combining marks carried in several cuts so each is usable alone
+ * (`U+0304`, `U+0308`, `U+0329` in latin, latin-ext AND vietnamese), plus
+ * `onest-math` ∩ `onest-symbols` at 185 codepoints and `onest-latin` ∩
+ * `onest-symbols` at 63. So precedence IS consulted elsewhere in this
+ * stylesheet; the claim here is only that it is never consulted for the 33
+ * codepoints this cut claims. `font-subset-ranges-are-disjoint` holds exactly
+ * that, and carries Google's overlaps as a named baseline so a NEW one is a
+ * failure rather than a surprise.
+ *
+ * Codepoints a SIBLING subset already claims are dropped from the cut rather
+ * than subtracted from the sibling -- `U+2116` is in the `cyrillic` cut and
+ * belongs there, since a Bulgarian page needs it and already has that file.
+ * Computed from the response, not hand-listed.
+ *
+ * `wght@100..900` so Google serves the VARIABLE font. The same text at a
+ * discrete weight returns a static instance, and CLAUDE.md records that swap
+ * moving metrics. The cut is then declared at each of the family's discrete
+ * weights like every other face, so one file serves all three and nothing
+ * about weight matching changes.
+ */
+const EXTRA_CUTS = [
+    {
+        family: 'Onest',
+        subset: 'bg-punct',
+        takeFrom: 'latin',
+        // Space, the sentence punctuation Bulgarian writes, digits, and the
+        // Bulgarian quotation marks. Google normalises this to a range.
+        text: ' !"%&\'()+,-./0123456789:;=?\u00ab\u00bb\u2013\u2014\u201c\u201e\u2116',
+    },
+];
+
 const CHROME_UA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -92,6 +162,32 @@ function css2Url() {
         (f) => `family=${f.family.replace(/ /g, '+')}:wght@${f.weights.join(';')}`,
     ).join('&');
     return `https://fonts.googleapis.com/css2?${families}&display=swap`;
+}
+
+/** css2 for ONE deliberately-authored cut. `wght@100..900` keeps it variable. */
+function cutCss2Url(cut) {
+    const fam = cut.family.replace(/ /g, '+');
+    return (
+        `https://fonts.googleapis.com/css2?family=${fam}:wght@100..900`
+        + `&text=${encodeURIComponent(cut.text)}&display=swap`
+    );
+}
+
+/**
+ * Parse a `&text=` response, which carries ONE `@font-face` and -- unlike the
+ * subset response -- NO `/* subset *\/` comment, so `parseCss2` matches zero
+ * blocks against it. Separate function rather than a loosened regex: making the
+ * comment optional there would let a future malformed subset response parse as
+ * one unnamed face and vendor it under a filename ending `-undefined`.
+ */
+function parseTextCut(css) {
+    const body = (css.match(/@font-face\s*\{([\s\S]*?)\}/) ?? [])[1];
+    if (!body) throw new Error('text-cut response carried no @font-face');
+    const pick = (k) => (body.match(new RegExp(`${k}:\\s*([^;]+);`)) ?? [])[1]?.trim();
+    const url = (body.match(/url\((\S+?)\)/) ?? [])[1];
+    const unicodeRange = pick('unicode-range');
+    if (!url || !unicodeRange) throw new Error('text-cut response lacked a url or unicode-range');
+    return { url, unicodeRange };
 }
 
 /**
@@ -134,6 +230,80 @@ async function fetchBytes(url) {
 }
 
 /**
+ * `unicode-range` as a sorted list of inclusive `[lo, hi]` pairs.
+ *
+ * THROWS on anything it cannot parse rather than skipping it. A silently
+ * dropped clause would make the subtraction below leave codepoints in two
+ * faces at once, which is the precedence dependency this whole mechanism
+ * exists to avoid -- and it would read as a narrower range that works.
+ */
+export function parseRange(spec) {
+    const out = [];
+    for (const raw of spec.split(',')) {
+        const part = raw.trim();
+        if (!part) continue;
+        let m = /^U\+([0-9A-Fa-f]+)-([0-9A-Fa-f]+)$/.exec(part);
+        if (m) {
+            out.push([parseInt(m[1], 16), parseInt(m[2], 16)]);
+            continue;
+        }
+        m = /^U\+([0-9A-Fa-f]+)$/.exec(part);
+        if (m) {
+            const v = parseInt(m[1], 16);
+            out.push([v, v]);
+            continue;
+        }
+        throw new Error(`unicode-range clause not understood: ${part}`);
+    }
+    return out.sort((a, b) => a[0] - b[0]);
+}
+
+/** Back to CSS, in the `U+xx` / `U+xx-yy` spelling Google uses. */
+export function formatRange(pairs) {
+    const hex = (n) => n.toString(16).toUpperCase();
+    return pairs
+        .map(([lo, hi]) => (lo === hi ? `U+${hex(lo)}` : `U+${hex(lo)}-${hex(hi)}`))
+        .join(', ');
+}
+
+/** `a` minus `b`, both lists of inclusive pairs. */
+export function subtractRange(a, b) {
+    let cur = a.map(([lo, hi]) => [lo, hi]);
+    for (const [blo, bhi] of b) {
+        const next = [];
+        for (const [lo, hi] of cur) {
+            if (bhi < lo || blo > hi) {
+                next.push([lo, hi]);
+                continue;
+            }
+            if (lo < blo) next.push([lo, blo - 1]);
+            if (hi > bhi) next.push([bhi + 1, hi]);
+        }
+        cur = next;
+    }
+    return cur.sort((x, y) => x[0] - y[0]);
+}
+
+/** Contiguous codepoints back into pairs. */
+export function packRange(cps) {
+    const sorted = [...new Set(cps)].sort((a, b) => a - b);
+    const out = [];
+    for (const c of sorted) {
+        const last = out[out.length - 1];
+        if (last && c === last[1] + 1) last[1] = c;
+        else out.push([c, c]);
+    }
+    return out;
+}
+
+export const rangeHas = (pairs, cp) => pairs.some(([lo, hi]) => lo <= cp && cp <= hi);
+export const expandRange = (pairs) => {
+    const out = [];
+    for (const [lo, hi] of pairs) for (let c = lo; c <= hi; c += 1) out.push(c);
+    return out;
+};
+
+/**
  * The `@font-face` block, written from the SAME descriptors Google served.
  *
  * `unicode-range` is copied VERBATIM and is load-bearing twice over: it is
@@ -161,6 +331,71 @@ async function main() {
     const css = await fetchText(css2Url());
     const faces = parseCss2(css).filter((f) => f.url);
     if (faces.length === 0) throw new Error('parsed zero @font-face blocks — did the css2 format change?');
+
+    // ── Deliberately-authored cuts (#1969), appended BEFORE the grouping so
+    // they are named and deduplicated by exactly the same rules.
+    for (const cut of EXTRA_CUTS) {
+        const family = faces.filter((f) => f.family === cut.family);
+        if (family.length === 0) throw new Error(`EXTRA_CUTS names an unvendored family: ${cut.family}`);
+        const donors = family.filter((f) => f.subset === cut.takeFrom);
+        if (donors.length === 0) {
+            throw new Error(`EXTRA_CUTS takeFrom names no subset of ${cut.family}: ${cut.takeFrom}`);
+        }
+
+        const served = parseTextCut(await fetchText(cutCss2Url(cut)));
+        const offered = parseRange(served.unicodeRange);
+        const spanned = offered.reduce((n, [lo, hi]) => n + (hi - lo + 1), 0);
+        // A cut is a few dozen codepoints. Anything larger means the response
+        // was not what this mechanism assumes, and expanding it would be the
+        // expensive way to find that out.
+        if (spanned > 512) throw new Error(`text cut spans ${spanned} codepoints — refusing to expand`);
+
+        // Codepoints a SIBLING subset already claims stay with that sibling.
+        const siblings = family
+            .filter((f) => f.subset !== cut.takeFrom)
+            .map((f) => parseRange(f.unicodeRange));
+        const dropped = [];
+        const kept = [];
+        for (const cp of expandRange(offered)) {
+            (siblings.some((r) => rangeHas(r, cp)) ? dropped : kept).push(cp);
+        }
+        if (kept.length === 0) {
+            // Every codepoint already lived in a sibling, so the cut would be
+            // an unreferenced file and a no-op that reads as success.
+            throw new Error(`text cut for ${cut.family}/${cut.subset} kept no codepoints`);
+        }
+        const keptPairs = packRange(kept);
+
+        // Codepoints the donor does NOT claim are NEW coverage rather than a
+        // move. Legitimate, but it means the saving is not what it looks like,
+        // so it is printed rather than absorbed.
+        const donorRange = parseRange(donors[0].unicodeRange);
+        const fresh = kept.filter((cp) => !rangeHas(donorRange, cp));
+
+        console.log(
+            `[fonts] cut ${cut.family}/${cut.subset}: ${kept.length} codepoint(s) taken from `
+                + `${cut.takeFrom}, ${dropped.length} left with a sibling, ${fresh.length} new`,
+        );
+
+        // Narrow the donor so every codepoint is claimed by exactly one face.
+        for (const d of donors) {
+            d.unicodeRange = formatRange(subtractRange(parseRange(d.unicodeRange), keptPairs));
+            if (d.unicodeRange === '') throw new Error(`subtraction emptied ${cut.family}/${d.subset}`);
+        }
+
+        // One face per discrete weight the family declares, all on one URL —
+        // so weight matching is identical to every other face here.
+        for (const weight of [...new Set(family.map((f) => f.weight))]) {
+            faces.push({
+                subset: cut.subset,
+                family: cut.family,
+                style: 'normal',
+                weight,
+                unicodeRange: formatRange(keptPairs),
+                url: served.url,
+            });
+        }
+    }
 
     // Name each face's file from its (family, subset) GROUP rather than from
     // the face, because a group whose weights all point at one URL IS one
@@ -287,7 +522,28 @@ async function main() {
     );
 }
 
-main().catch((err) => {
-    console.error(err.message);
-    process.exit(1);
-});
+/**
+ * Guarded so the pure range helpers can be imported without the script
+ * reaching the network.
+ *
+ * The disjointness guard does NOT import them, and not by choice: jest's
+ * `node` project is CJS and cannot load an `.mjs` at all ("Must use import to
+ * load ES Module") — the same wall `verify-changed.mjs` hit in #2018. So
+ * `tests/guards/font-subset-ranges-are-disjoint.test.ts` carries its own
+ * parser, and pays for that second copy with a positive control: it proves it
+ * DETECTS a deliberately overlapped pair before trusting what it says about
+ * the real ranges. Interval arithmetic with a control is a fair thing to
+ * duplicate; a selection rule would not be.
+ *
+ * The export still earns its place — the migration that applied #1969 to the
+ * committed artifacts used these functions rather than a third copy.
+ */
+const INVOKED_DIRECTLY =
+    process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename);
+
+if (INVOKED_DIRECTLY) {
+    main().catch((err) => {
+        console.error(err.message);
+        process.exit(1);
+    });
+}
