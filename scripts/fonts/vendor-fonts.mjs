@@ -20,6 +20,35 @@
  * diff in review. This makes the change VISIBLE, not impossible — that is the
  * honest limit of the mechanism.
  *
+ * ## One variable file per subset, not one per weight
+ *
+ * MEASURED 2026-10-23: the css2 response for the requested weight set declares
+ * 72 `@font-face` blocks pointing at **17 distinct URLs**. Each is one variable
+ * file per (family, subset) carrying the whole `wght` axis, reused by every
+ * weight of that family:
+ *
+ *   Onest cyrillic 500 / 600 / 700  ->  ...gNMKW3F-SZuj7xmb-HY6EQ.woff2
+ *   that file's axes: [('wght', 100.0, 400.0, 900.0)]
+ *
+ * This script used to fetch `face.url` once per FACE and write a file per face,
+ * so it downloaded 17 files 72 times and wrote 72 copies: 1,950,912 B on disk
+ * for 431,792 B of distinct font program (#2199). The disk cost was the smaller
+ * half -- a different filename is a different URL, so a page rendering Onest at
+ * 500, 600 and 700 fetched the same 15,860 B three times under three names.
+ *
+ * So a file is named per (family, subset) and fetched once per URL. The WEIGHT
+ * stays in the name when a group's weights genuinely resolve to different URLs,
+ * which no family does today; keeping that branch means a future family that
+ * ships static per-weight instances vendors correctly instead of silently
+ * collapsing every weight onto one weight's bytes.
+ *
+ * `fonts.css` still declares all 72 faces with their discrete `font-weight`
+ * values. An identical `src` on several faces is ONE fetch, and the browser's
+ * weight matching and variable-axis clamping are then bit-for-bit unchanged.
+ * Collapsing those 72 declarations into 17 ranged ones WOULD change rendering
+ * -- `font-[560]` would stop rounding to 600 -- and is #2199's Fix B,
+ * deliberately not taken here.
+ *
  * ## Why the whole weight set, even the unused weights
  *
  * MEASURED: the requested weight SET decides which file Google serves.
@@ -133,11 +162,43 @@ async function main() {
     const faces = parseCss2(css).filter((f) => f.url);
     if (faces.length === 0) throw new Error('parsed zero @font-face blocks — did the css2 format change?');
 
+    // Name each face's file from its (family, subset) GROUP rather than from
+    // the face, because a group whose weights all point at one URL IS one
+    // variable file. Derived from the response, never assumed: a group with
+    // several URLs keeps the weight in its filename.
+    const groupKey = (f) => `${f.family}|${f.subset}`;
+    const urlsByGroup = new Map();
+    for (const f of faces) {
+        if (!urlsByGroup.has(groupKey(f))) urlsByGroup.set(groupKey(f), new Set());
+        urlsByGroup.get(groupKey(f)).add(f.url);
+    }
+    const fileFor = (f) =>
+        urlsByGroup.get(groupKey(f)).size === 1
+            ? `${slug(f.family)}-${f.subset}.woff2`
+            : `${slug(f.family)}-${f.subset}-${f.weight}.woff2`;
+
+    const distinctUrls = [...new Set(faces.map((f) => f.url))];
+    const perWeightGroups = [...urlsByGroup].filter(([, u]) => u.size > 1).map(([k]) => k);
+    // `[fonts]` tag so the denominator reaches the step summary (#1879).
+    console.log(
+        `[fonts] ${faces.length} face(s) over ${distinctUrls.length} distinct URL(s) `
+            + `-> ${new Set(faces.map(fileFor)).size} file(s)`,
+    );
+    console.log(
+        `[fonts] groups needing a per-weight filename: ${perWeightGroups.length}`
+            + (perWeightGroups.length ? ` (${perWeightGroups.join(', ')})` : ''),
+    );
+
+    // ONE fetch per URL. Per-face fetching made 55 of these 72 downloads
+    // re-retrievals of bytes already in hand.
+    const bytesByUrl = new Map();
+    for (const url of distinctUrls) bytesByUrl.set(url, await fetchBytes(url));
+
     const entries = [];
     const blocks = [];
     for (const face of faces) {
-        const bytes = await fetchBytes(face.url);
-        const file = `${slug(face.family)}-${face.subset}-${face.weight}.woff2`;
+        const bytes = bytesByUrl.get(face.url);
+        const file = fileFor(face);
         entries.push({
             file,
             family: face.family,
@@ -148,7 +209,7 @@ async function main() {
             bytes: bytes.byteLength,
             sha256: sha256(bytes),
         });
-        blocks.push({ face, file, bytes });
+        blocks.push({ face, file });
     }
     // CODE-UNIT order, never `localeCompare` — this writes a hash-verified
     // lockfile, so its byte order is part of what `--write-lock` freezes.
@@ -192,7 +253,11 @@ async function main() {
             await rm(path.join(OUT_DIR, f));
         }
     }
-    for (const { file, bytes } of blocks) await writeFile(path.join(OUT_DIR, file), bytes);
+    // Keyed by FILE, so a name shared by several faces is written once rather
+    // than once per face with identical bytes.
+    const filesToWrite = new Map();
+    for (const face of faces) filesToWrite.set(fileFor(face), bytesByUrl.get(face.url));
+    for (const [file, bytes] of filesToWrite) await writeFile(path.join(OUT_DIR, file), bytes);
 
     await writeFile(LOCK, `${JSON.stringify(lock, null, 4)}\n`);
 
@@ -216,7 +281,10 @@ async function main() {
         `${header}${blocks.map(({ face, file }) => renderFontFace(face, file)).join('\n\n')}\n`,
     );
 
-    console.log(`Wrote ${entries.length} faces to public/fonts/, plus the lock and fonts.css.`);
+    console.log(
+        `Wrote ${filesToWrite.size} file(s) for ${entries.length} faces to public/fonts/, `
+            + 'plus the lock and fonts.css.',
+    );
 }
 
 main().catch((err) => {

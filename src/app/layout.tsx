@@ -170,9 +170,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     invisible on screen because `font-display: swap` paints the
                     fallback either way.
 
-                    Only Inter, and only the subsets this locale can render: all
-                    72 faces are 1.9 MB, so preloading them all would be
-                    strictly worse than preloading none. Onest and Bricolage
+                    Only Inter, and only the subsets this locale can render:
+                    the 17 vendored files are 431,792 B, so preloading them all
+                    would be strictly worse than preloading none. Onest and Bricolage
                     fall back to Inter, which is preloaded.
 
                     NO nonce attribute HERE, deliberately. A font preload is
