@@ -543,8 +543,11 @@ describe('ДНЕВНИК omits an empty data section (#2183)', () => {
         },
     ];
 
-    /** Cover + sampling + ОДБХ: the floor a document never goes below. */
-    const STRUCTURAL_PAGES = 3;
+    /**
+     * The COVER alone. It was 3 — cover plus the sampling and ОДБХ sheets —
+     * until the owner ruled those two out as well (#2183, 2026-10-23).
+     */
+    const STRUCTURAL_PAGES = 1;
 
     const only = (over: Partial<FarmRecordData>): FarmRecordData => ({
         ...fixture(PROFILE),
@@ -583,11 +586,35 @@ describe('ДНЕВНИК omits an empty data section (#2183)', () => {
         expect(sprayed - notSprayed).toBe(1);
     });
 
-    test('KEEPS the sampling and ОДБХ sheets, which are blank by design', async () => {
-        // The one case "omit empty sections" would get wrong. A document with a
-        // single observation and nothing else still carries the two ruled forms
-        // an inspector writes on: cover + observations + those two.
+    test('DROPS the sampling and ОДБХ sheets too, which never had data to print', async () => {
+        // REVERSED on 2026-10-23. This test asserted the opposite — that the
+        // two ruled forms stay "because an inspector writes on them" — which
+        // is a real argument and one the owner heard and declined, twice, with
+        // both pages named. Their original complaint was that pages 4-6 are
+        // redundant for a one-parcel spraying.
+        //
+        // The distinction that matters: nothing in this product records a
+        // sample or an inspector's finding, so those pages were not "empty
+        // this period" but empty BY CONSTRUCTION — pages a farmer prints and
+        // throws away. The three data sections can be full or empty; these two
+        // could only ever be empty.
+        //
+        // So a document with one observation and nothing else is exactly two
+        // pages: the cover, and the observations.
         expect(await pageCount(only({ observations: OBS }))).toBe(STRUCTURAL_PAGES + 1);
+    });
+
+    test('a register with all three data sections carries no blank form pages', async () => {
+        // cover + observations + one chemical sheet + fertilizers. Nothing else.
+        const full = await pageCount(
+            only({
+                sprayLines: [SPRAY[0]],
+                fertilizeLines: FERT,
+                observations: OBS,
+                fields: [FIELDS[0]],
+            }),
+        );
+        expect(full).toBe(STRUCTURAL_PAGES + 3);
     });
 });
 

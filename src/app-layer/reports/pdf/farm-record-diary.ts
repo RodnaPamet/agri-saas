@@ -952,30 +952,33 @@ export function renderFarmRecordDiary(
         );
     }
 
-    // ── LANDSCAPE: sampling (empty ruled) ───────────────────────────
-    doc.addPage({ size: 'A4', layout: 'landscape' });
-    doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
-    doc.text(L.samplingSection, doc.page.margins.left, doc.page.margins.top, {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-        align: 'center',
-    });
-    drawRuledTable(doc, doc.y + 8, L.sampleCols, L.sampleCols.map(() => ({ weight: 1 })), [], 8);
-
-    // ── PORTRAIT: ОДБХ inspector result (empty ruled) ───────────────
-    doc.addPage({ size: 'A4', layout: 'portrait' });
-    doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
-    doc.text(L.inspectorSection, doc.page.margins.left, doc.page.margins.top, {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-        align: 'center',
-    });
-    drawRuledTable(
-        doc,
-        doc.y + 8,
-        L.inspectorCols,
-        [{ weight: 1 }, { weight: 3 }, { weight: 3 }, { weight: 1.5 }],
-        [],
-        8,
-    );
+    // ── ВЗЕТИ ПРОБИ and РЕЗУЛТАТ ОТ ПРОВЕРКАТА: NOT RENDERED ────────
+    //
+    // Приложение 1 contains both pages, and this renderer printed them as
+    // ruled tables with no rows. They are gone (#2183, owner ruling
+    // 2026-10-23), and the reasoning for keeping them is recorded here because
+    // it was put to the owner and declined.
+    //
+    // The argument FOR printing them: they are the parts of the form an
+    // inspector writes on, so a register that arrives without them cannot be
+    // completed by hand on the spot — unlike the three data sections, "empty"
+    // is their normal state rather than a sign of a quiet period.
+    //
+    // The ruling against it, twice and with these two pages named: the owner's
+    // original complaint was that "pages 4, 5 and 6 are redundant" for a
+    // one-parcel spraying, and when asked specifically whether the blank
+    // sampling page and the blank inspector page should go — including on the
+    // per-block ДНЕВНИК — the answer was to drop them. Nothing in this product
+    // records a sample or an inspector's finding, so they were ALWAYS blank:
+    // not "empty this period" but empty by construction, which makes them
+    // pages a farmer prints and throws away.
+    //
+    // `samplingSection`, `sampleCols`, `inspectorSection` and `inspectorCols`
+    // are KEPT in `DiaryLabels` on purpose. They are the official form's own
+    // wording, `farm-record-diary-integrity` pins their column counts, and the
+    // day `FarmRecordData` carries samples or an inspection result the section
+    // comes back — gated on that data, which is the gate the other three have
+    // and these two never could.
 
     if (stampPages) stampPageNumbers(doc, L);
 }
