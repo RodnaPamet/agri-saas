@@ -98,6 +98,18 @@ afterEach(() => {
  */
 const visibilitySwitch = () => screen.findByRole('switch', { name: /visibilityLabel/ });
 
+/**
+ * The oblast picker (#2068). There is exactly ONE combobox on this form, so
+ * the role alone is unambiguous — and the id is asserted so it stays that way:
+ * a second combobox landing here would make `getByRole` throw rather than
+ * silently start asserting about the other one.
+ */
+function oblastTrigger(): HTMLElement {
+    const el = screen.getByRole('combobox');
+    expect(el.id).toBe('public-profile-oblast');
+    return el;
+}
+
 describe('the public-profile editor', () => {
     it('shows the draft the farm already has', async () => {
         // The reason this form exists: before it, nothing could display what
@@ -110,7 +122,12 @@ describe('the public-profile editor', () => {
             expect(screen.getByDisplayValue('Стопанство Победа')).toBeInTheDocument();
         });
         expect(screen.getByDisplayValue('Зърно от Добруджа')).toBeInTheDocument();
-        expect(screen.getByDisplayValue('Добрич')).toBeInTheDocument();
+        // The oblast is a PICKER since #2068, not a text box, so it has no
+        // display value — the trigger carries the option's bilingual label as
+        // its CONTENT. Asserted on textContent rather than on the accessible
+        // name: Radix composes that name from the trigger plus
+        // `aria-expanded`, so a `name:` query does not match the label.
+        expect(oblastTrigger().textContent).toContain('Добрич / Dobrich');
         // Crops are stored as an array and edited as one comma-separated
         // field, so the join is part of what the form has to get right.
         expect(screen.getByDisplayValue('пшеница, слънчоглед')).toBeInTheDocument();
@@ -538,5 +555,77 @@ describe('the public-profile editor', () => {
         mockFetch([{ ok: true, body: DRAFT }]);
         render(<PublicProfileClient baseUrl={BASE} />);
         expect(await screen.findByText('heading')).toBeInTheDocument();
+    });
+
+    describe('the oblast is one of the 28, not free text (#2068)', () => {
+        it('offers a picker rather than a text box', async () => {
+            // The defect: free text here while the iOS client wrote one of the
+            // 28 names, so two farms in one oblast could hold different values
+            // and the unusual spelling vanished from the browse filter.
+            mockFetch([{ ok: true, body: DRAFT }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+
+            await waitFor(() => {
+                expect(screen.getByDisplayValue('pobeda')).toBeInTheDocument();
+            });
+            expect(oblastTrigger().textContent).toContain('Добрич / Dobrich');
+            // And NOT as a value-carrying control, which is what it was.
+            expect(screen.queryByDisplayValue('Добрич')).not.toBeInTheDocument();
+        });
+
+        it('shows a stored value outside the 28 instead of blanking it', async () => {
+            // Free text was the only way in before this change, so such values
+            // exist by construction. Dropping it renders an empty picker over a
+            // farm that HAS an oblast, and the next save writes null —
+            // destroying data by opening a form.
+            mockFetch([{ ok: true, body: { ...DRAFT, oblast: 'Добрич обл.' } }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+
+            // `useTranslations` is mocked to echo the key and drop params, so
+            // the unlisted label renders as its key — which is exactly the
+            // signal wanted here: the unlisted BRANCH was taken.
+            await waitFor(() => {
+                expect(screen.getByDisplayValue('pobeda')).toBeInTheDocument();
+            });
+            expect(oblastTrigger().textContent).toContain('oblastUnlisted');
+        });
+
+        it('can be UNSET again — the field is optional', async () => {
+            // #2068's second open question: a picker needs a way back to empty
+            // rather than trapping a farm in an oblast. The primitive clears by
+            // re-selecting the chosen option, which reaches this component as
+            // `null`; the one line that has to be right is
+            // `setSelected={(o) => setOblast(o?.value ?? '')}`, and an `o.value`
+            // there would throw on exactly this gesture.
+            mockFetch([{ ok: true, body: DRAFT }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+            await waitFor(() => {
+                expect(screen.getByDisplayValue('pobeda')).toBeInTheDocument();
+            });
+            expect(oblastTrigger().textContent).toContain('Добрич / Dobrich');
+
+            const user = userEvent.setup();
+            await user.click(oblastTrigger());
+            // The already-selected option; clicking it is the clear gesture.
+            await user.click(await screen.findByRole('option', { name: /Добрич \/ Dobrich/ }));
+
+            await waitFor(() => {
+                expect(oblastTrigger().textContent).not.toContain('Добрич / Dobrich');
+            });
+            // Back to the placeholder, not to a blank trigger with a stale value.
+            expect(oblastTrigger().textContent).toContain('oblastPlaceholder');
+        });
+
+        it('CONTROL: a canonical value does NOT take the unlisted branch', async () => {
+            // Without this, an `oblastUnlisted` label applied unconditionally
+            // would satisfy the case above while mislabelling all 28.
+            mockFetch([{ ok: true, body: DRAFT }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+
+            await waitFor(() => {
+                expect(screen.getByDisplayValue('pobeda')).toBeInTheDocument();
+            });
+            expect(oblastTrigger().textContent).not.toContain('oblastUnlisted');
+        });
     });
 });

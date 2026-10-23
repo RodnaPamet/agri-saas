@@ -124,3 +124,78 @@ export interface RegionOption {
 export const BULGARIA_REGION_OPTIONS: readonly RegionOption[] = [...BULGARIA_REGIONS]
     .sort((a, b) => a.nameBg.localeCompare(b.nameBg, 'bg'))
     .map((r) => ({ value: r.code, label: `${r.nameBg} / ${r.nameEn}` }));
+
+/**
+ * The same 28 oblasti valued by BULGARIAN NAME, for the surfaces that store a
+ * name rather than a code — #2068.
+ *
+ * ## Two option lists, on purpose, and picking the wrong one stores a dead value
+ *
+ * This repo has two oblast representations and they are not interchangeable:
+ *
+ *   - **ISO code** (`BG-08`) — the exchange. `ExchangeOffer.region` is a code,
+ *     `CreateOfferModal` writes one from `BULGARIA_REGION_OPTIONS`, and
+ *     `filter-defs.ts` filters on one.
+ *   - **Bulgarian name** (`Добрич`) — the public farm profile.
+ *     `FarmBrand.oblast` projects to `PublicFarmProfile.oblast`, the iOS client
+ *     writes one of these names, and `searchPublicFarms` compares them with
+ *     `lower()` (#1909).
+ *
+ * So a profile editor wired to `BULGARIA_REGION_OPTIONS` would store `BG-08`
+ * into a column every other reader treats as a name: the browse filter would
+ * offer «Добрич» and never match it, and the phone would render a code. That is
+ * a worse state than the free text #2068 was filed about, because free text at
+ * least sometimes matches. #2068's own suggested fix names that list, which is
+ * why this one carries the warning rather than just existing.
+ *
+ * Sorted by Bulgarian collation like its sibling, and the label is identical —
+ * only the `value` differs, which is exactly what makes the two easy to confuse
+ * at a call site and worth asserting in a guard rather than hoping.
+ */
+export const BULGARIA_REGION_NAME_OPTIONS: readonly RegionOption[] = [...BULGARIA_REGIONS]
+    .sort((a, b) => a.nameBg.localeCompare(b.nameBg, 'bg'))
+    .map((r) => ({ value: r.nameBg, label: `${r.nameBg} / ${r.nameEn}` }));
+
+/** Whether `value` is exactly one of the 28 Bulgarian oblast names. */
+export function isBulgariaRegionName(value: string): boolean {
+    return BULGARIA_REGIONS.some((r) => r.nameBg === value);
+}
+
+/**
+ * Map a recognisable oblast spelling onto the canonical Bulgarian name, and
+ * leave anything unrecognised ALONE — #2068.
+ *
+ * ## Normalise, never reject (owner ruling 2026-10-23)
+ *
+ * `FarmBrand.oblast` is written by the web editor AND by the iOS client, and a
+ * `z.enum` over the 28 names would make a shipped iOS build's write fail the
+ * moment it sent anything unexpected. #1087 is what that costs here: five
+ * renamed routes, an iOS client 404ing for four days, found by the owner
+ * opening the app rather than by a test. So an unrecognised value is stored as
+ * given — free text remains technically reachable from a non-UI client, which
+ * is a known and accepted limit rather than an oversight.
+ *
+ * What this DOES remove is the divergence the issue was filed about: two
+ * clients holding different spellings of the same oblast. #1909 had to make the
+ * browse filter case-insensitive to paper over exactly that, and this is the
+ * same repair at the write end, where it belongs.
+ *
+ * ## The English name is matched too, deliberately
+ *
+ * `BULGARIA_REGION_OPTIONS`'s labels are bilingual («Добрич / Dobrich»), so a
+ * client that submitted the English half is a plausible accident; canonicalising
+ * it costs nothing and stops a second spelling family taking root in a column
+ * every reader treats as Bulgarian. Matching is case-insensitive on both.
+ *
+ * It is NOT fuzzy. «Добрич обл.» and «Добричка област» do not match and are
+ * stored as typed — equating those is a decision about what an oblast is
+ * called, which #2068 says the filter should not make either.
+ */
+export function canonicaliseRegionName(value: string | null): string | null {
+    if (value === null) return null;
+    const needle = value.toLowerCase();
+    const hit = BULGARIA_REGIONS.find(
+        (r) => r.nameBg.toLowerCase() === needle || r.nameEn.toLowerCase() === needle,
+    );
+    return hit ? hit.nameBg : value;
+}
