@@ -5,13 +5,42 @@
 // the top of the client entry. See src/lib/zod-jitless.ts.
 import '@/lib/zod-jitless';
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from '@/components/theme/ThemeProvider';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import {
-    CommandPalette,
-    CommandPaletteProvider,
-} from '@/components/command-palette';
+/**
+ * NOT from the `@/components/command-palette` barrel, and not statically — #2225.
+ *
+ * That barrel re-exports `CommandPalette` (which pulls `cmdk`,
+ * `@radix-ui/react-dialog` and `@radix-ui/react-visually-hidden`) alongside the
+ * provider, which imports only `react` and the shortcut hook. Importing the
+ * barrel for the PROVIDER therefore dragged the heavy module into this chunk,
+ * and from here into the ROOT LAYOUT's — measured on a real `/f/{handle}` load,
+ * `cmdk` arrives in `layout-<hash>.js` itself.
+ *
+ * `/f/{handle}` never renders `<Providers>` (the root layout's `isPublic`
+ * branch is just `children`), so the cost was entirely the static edge: the
+ * chunk shipped to a stranger's page because of an import, not a render. A
+ * dynamic import is enough to fix that without deferring anything on the app
+ * side — the chunk is fetched when the component renders, which on the public
+ * page it never does.
+ *
+ * The barrel stays for the three rendered suites that import it; a future app-
+ * shell import of it would silently restore the edge, which is why it now
+ * carries a warning of its own.
+ */
+import { CommandPaletteProvider } from '@/components/command-palette/command-palette-provider';
+
+const CommandPalette = dynamic(
+    () => import('@/components/command-palette/command-palette').then((m) => m.CommandPalette),
+    {
+        // Client-only. It is an overlay opened by a keyboard shortcut, so there
+        // is nothing for the server to render and `ssr: false` keeps the module
+        // out of the server bundle as well.
+        ssr: false,
+    },
+);
 import { KeyboardShortcutProvider } from '@/lib/hooks/use-keyboard-shortcut';
 import { ShortcutHelpOverlay } from '@/components/app-shell/shortcut-help-overlay';
 import { registerFormTelemetrySink } from '@/lib/telemetry/form-telemetry';

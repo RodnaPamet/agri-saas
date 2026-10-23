@@ -105,8 +105,21 @@ export const PROVIDER_ONLY = [
  * boundary on first paint to save ~3 KB of transfer on one page. #1971 measured
  * that trade and judged it not worth taking on its own.
  *
- * **The other four are here because the first CI run found them, and #1971 said
- * they were absent.** That issue reports "Confirmed absent, so #1872 did do its
+ * **`cmdk` and `radix` are NOT here any more, and that is a prediction this
+ * check adjudicates (#2225).** `providers.tsx` now imports the palette through
+ * `next/dynamic` and the provider from its own module rather than the barrel
+ * that re-exports both, so the static graph from `layout.tsx` no longer reaches
+ * either library — measured as 96 reachable modules before and 68 after. If
+ * that is right they leave the public payload; if it is wrong, this check fails
+ * with "cmdk reaches the public page" and the prediction was simply false.
+ *
+ * `swr` stays because `SWRPersistenceProvider` is needed at mount, and `sonner`
+ * because the toaster is. Owner chose the palette-only change (2026-10-23) over
+ * lazy-loading all of `Providers`, which would have put SWR config and the
+ * toaster behind a second request on every app page load.
+ *
+ * **The history: these were here because the first CI run found them, and #1971
+ * said they were absent.** That issue reports "Confirmed absent, so #1872 did do its
  * job: no MISSING_MESSAGE, no SWRConfig, no cmdk-, no data-radix" — and this
  * check, run against a real `public-farm` page load, found all four:
  *
@@ -131,7 +144,7 @@ export const PROVIDER_ONLY = [
  * Which is the honest limit of a baseline this size: it no longer proves the
  * public surface is clean, only that it is not getting dirtier.
  */
-export const BASELINE = new Set(['sonner', 'cmdk', 'radix', 'swr']);
+export const BASELINE = new Set(['sonner', 'swr']);
 
 export function lhrFiles(dir) {
     if (!existsSync(dir)) throw new Error(`no Lighthouse report directory at ${dir}`);
