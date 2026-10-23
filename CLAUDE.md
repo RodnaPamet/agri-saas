@@ -3247,10 +3247,22 @@ negated. Say what remains instead:
   Namespaces`) IS the expectation `tests/guards/nav-vocabulary.test.ts` checks,
   so an owner reversal is one edit there and CI then names every catalogue key
   to follow. Do NOT restate a noun in the guard — and when you add a surface
-  whose name people navigate by, add its row. The canonical three today:
+  whose name people navigate by, add its row. The canonical **eight** today:
   «Борса» (the `/exchange` destination), «Тенденции» (`/trends`), «Пазар» (the
   sidebar SECTION holding them, plus the news category and price copy — the
-  `Never` sweep bans a reserved noun as a key's WHOLE value, never the word).
+  `Never` sweep bans a reserved noun as a key's WHOLE value, never the word),
+  and five LAND rows from #1966: «Блок» / «Блокове» for a Location (owner
+  ruling 2026-10-16 — `Локация`, `Обект`, `Нива` and `землище` all banned as
+  whole values) and «Парцел» / «Парцели» for a Parcel («Имот» banned, because
+  it is the CADASTRAL unit, and deliberately NOT swept under `ag.cadastre.` —
+  the one subtree where a bare «Имот» is the right word). Two traps are
+  recorded there rather than here: «нива» stays legal in PROSE, because it is
+  what a farmer says for a field, and `assets.location` keeps
+  «Местоположение», because where a machine physically sits is not a farm's
+  block. A Location needs THREE rows because the table pins one value per row
+  and checks both catalogues exactly, and `sidebarNav.location` is
+  «Блокове»/`Location` — BG-plural with EN-singular being the house pattern
+  for nav items (`sidebarNav.asset` is «Активи»/`Asset`).
   The same file carries the load-bearing spellings that must NOT be renamed
   (the sidebar section `id`, the `/exchange` + `/trends` path strings shared
   with the iOS bottom-tab order, `complianceMailbox`), with the reason each
