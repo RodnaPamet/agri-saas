@@ -204,7 +204,19 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
             'any selected task was created by somebody else, nothing is deleted and the ' +
             'error carries `refused` and `selected` counts so a client can say how many. A ' +
             'partial success would leave the farmer reconciling an outcome against their ' +
-            'own selection with no way to tell which rows went.',
+            'own selection with no way to tell which rows went.\n\n' +
+            '**A treatment\'s task cannot be deleted here at all** (#2220). Four child ' +
+            'models cascade on this delete and `OperationParcel` is one of them — those ' +
+            'rows ARE the lines the БАБХ ДНЕВНИК prints, and `TaskLink` is the LOCATION ' +
+            'link it joins through. So this route would destroy register lines from a ' +
+            'filed regulatory document, permanently, while `DELETE ' +
+            '/journal/treatments/{treatmentGroupId}` does the same job reversibly: it ' +
+            'flags rather than deletes, leaves DONE lines intact, audits the withdrawal ' +
+            'and restores from «Кошче».\n\n' +
+            'The discriminator is `treatmentGroupId`, not `type`: a FIELD_OPERATION ' +
+            'planned through `POST /locations/{id}/operations` leaves it null and stays ' +
+            'deletable here, which matters because the withdrawal route keys on a group ' +
+            'such a task does not have.',
         tags: ['Tasks'],
         extraResponses: codedErrorResponses({
             403:
@@ -212,6 +224,12 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
                 '- `TASK_DELETE_NOT_PERMITTED` — created by somebody else and this caller ' +
                 'is not a farm admin. On the bulk route it carries `refused` / `selected`.\n' +
                 '- `WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+            409:
+                'Permitted, but the wrong route for this row.\n\n' +
+                '- `TASK_BELONGS_TO_TREATMENT` — the task is one block\'s share of a ' +
+                'recorded treatment. `reference` names `treatmentGroupId`, which is the ' +
+                'handle for `DELETE /journal/treatments/{treatmentGroupId}`. On the bulk ' +
+                'route it is all-or-nothing and carries `refused` / `selected` instead.',
         }),
         params: TaskParams,
         success: {

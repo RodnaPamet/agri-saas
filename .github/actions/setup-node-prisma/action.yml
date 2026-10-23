@@ -36,6 +36,15 @@ runs:
 
     - name: Install dependencies
       shell: bash
+      env:
+        # Belt and braces for #2230. `node-version` above PINS the major, so a
+        # CI job cannot install on the wrong one — but that is a claim about
+        # configuration, and this is a check on what is actually running. It
+        # lives here rather than in `.npmrc` because that file is read by every
+        # npm invocation anywhere, including Dependabot's updater, whose image
+        # moved to node 24 and whose every security-update run then failed the
+        # engine check.
+        npm_config_engine_strict: "true"
       # CI hardening — `npm ci` runs package postinstall scripts, and a
       # few (notably onnxruntime-node) download prebuilt binaries from
       # external CDNs / GitHub releases that intermittently time out

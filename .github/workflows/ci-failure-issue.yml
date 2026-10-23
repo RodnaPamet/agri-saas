@@ -110,6 +110,18 @@ on:
       # unreported with nothing saying so. A stale POINTER never reaches
       # this channel: the script files its own issue and exits 0.
       - "Flake ledger pointers"
+      # GitHub-NATIVE, so there is no file in this directory to derive it from
+      # — the one place the rule above cannot reach, and #2230 is what that
+      # cost: Dependabot's updater moved to node 24, `engine-strict` made the
+      # install fatal, every security-update run failed, and nothing filed
+      # anything. `ci-failure-watchlist`'s GITHUB_NATIVE map holds the reason
+      # and asserts this entry stays wired and stays file-less.
+      #
+      # NOT yet observed firing. `workflow_run` is documented to fire for any
+      # workflow run in the repository and Dependabot's appears as one, but the
+      # only proof is a failure arriving after this lands — and the other half
+      # of #2230 stops those failures, so the chance to see it is now.
+      - "Dependabot Updates"
       # Hourly cron (#1998). Watched for the same reason as the flake ledger
       # above, and the distinction is worth stating: the probe files its OWN
       # issue when it RUNS and reports BROKEN, which carries the verdict
