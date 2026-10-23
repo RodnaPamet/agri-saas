@@ -110,7 +110,7 @@ function overlap(a: Pair[], b: Pair[]): number[] {
     return hits;
 }
 
-const hex = (c: number) => `U+${c.toString(16).toUpperCase()}`;
+const hex = (c: number) => (null);
 const faces = parseFaces(CSS);
 
 describe('font subset ranges are disjoint within a family (#1969)', () => {
@@ -121,6 +121,26 @@ describe('font subset ranges are disjoint within a family (#1969)', () => {
         expect(overlap(parseRange('U+0000-00FF'), parseRange('U+20-22'))).toEqual([32, 33, 34]);
         expect(overlap(parseRange('U+2116'), parseRange('U+2100-2120'))).toEqual([0x2116]);
         expect(overlap(parseRange('U+0-1F'), parseRange('U+20-22'))).toEqual([]);
+    });
+
+    it('CONTROL: a reported clash is legible — the codepoints are named', () => {
+        // `hex` builds the ONLY part of this guard a human reads when it
+        // fails, and it is reached from nowhere else: both call sites are
+        // inside a failure message, so a green run never executes it. The
+        // `Selector teeth` gate caught exactly that on #2206 — neutering
+        // `hex` to return '' left every test here green, which means a
+        // failure could have printed `both claim , , ` and nobody would have
+        // learned it until the day it mattered.
+        //
+        // Asserted in the SHAPE the messages use (`cps.map(hex).join(', ')`)
+        // rather than as a standalone formatter trivia test, so the control
+        // covers the detector and the rendering together.
+        const cps = overlap(parseRange('U+0000-00FF'), parseRange('U+20-22'));
+        expect(cps.map(hex).join(', ')).toBe('U+20, U+21, U+22');
+        // Four hex digits and a codepoint above the BMP's low range, since a
+        // `toString(16)` that lost its radix would still be right for 0-9.
+        expect(hex(0x2116)).toBe('U+2116');
+        expect(hex(0x1F300)).toBe('U+1F300');
     });
 
     it('CONTROL: the parser refuses a clause it does not understand', () => {
