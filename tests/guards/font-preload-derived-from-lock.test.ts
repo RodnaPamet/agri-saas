@@ -60,10 +60,18 @@ describe('font preload is derived from the lock', () => {
     });
 
     it('the preload budget stays a fraction of the full face set', () => {
-        const all = lock.faces.reduce((n, f) => n + f.bytes, 0);
+        // DISTINCT files, not the sum over faces. Since #2199 one file serves
+        // every weight of a family, so summing 72 faces counts 431,792 B of
+        // font program as 1,950,912 B — inflating the denominator 4.5x and
+        // making the ceiling below weaker than it reads.
+        const all = [...new Map(lock.faces.map((f) => [f.file, f.bytes])).values()].reduce(
+            (n, b) => n + b,
+            0,
+        );
         for (const locale of LOCALES) {
             const preloaded = preloadFaces(locale).reduce((n, f) => n + f.bytes, 0);
-            // 150 KB against 1.9 MB. The number is a ceiling, not a target —
+            // 150 KB against 431,792 B of distinct font program. The number
+            // is a ceiling, not a target —
             // its job is to make "preload everything" fail rather than to
             // track the current figure (67,004 bytes for bg today).
             expect(preloaded).toBeLessThan(150_000);

@@ -1428,6 +1428,16 @@ Three things it does not do, stated so they are not assumed:
       A lock change is a FONT PROGRAM change: keep the whole weight set, since
       trimming Onest's unused weights swaps a variable font for a static
       instance (measured) and moves metrics.
+      **One file per (family, subset), never one per weight (#2199).** Every
+      vendored woff2 is a variable font carrying the whole `wght` axis, and
+      Google's css2 answers all 72 faces with 17 distinct URLs — so a file per
+      weight is the same bytes under several names: 1,950,912 B on disk for
+      431,792 B of program, and, because a different filename is a different
+      URL, a 3-weight page fetched one 15,860 B file three times. `fonts.css`
+      still declares all 72 faces at their discrete `font-weight` values, which
+      is what keeps browser weight matching and variable-axis clamping
+      unchanged — `font-[560]` still rounds to 600. Collapsing them into ranged
+      faces WOULD change rendering and is tracked separately on #2199.
       This is not only CI hygiene. `public/sw.js` passes cross-origin requests
       through untouched, so the Google-hosted files were never cacheable — an
       operator with no signal fell back to system-ui for every string.

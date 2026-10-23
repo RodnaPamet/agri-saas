@@ -4,8 +4,9 @@
  * ## Why derive rather than hardcode
  *
  * `scripts/fonts/vendor-fonts.mjs` names each file from the css2 response
- * (`${slug(family)}-${subset}-${weight}.woff2`), so a change in the upstream
- * subset set RENAMES files. A hardcoded href would then preload a 404 — and a
+ * (`${slug(family)}-${subset}.woff2`, with the weight appended only where a
+ * family's weights resolve to different URLs — #2199), so a change in the
+ * upstream subset set RENAMES files. A hardcoded href would then preload a 404 — and a
  * preload that 404s is worse than no preload: it costs a request, warms
  * nothing, and is invisible on screen because `font-display: swap` shows the
  * fallback either way.
@@ -17,8 +18,8 @@
  *
  * ## Why only the body face
  *
- * All 72 faces total 1,950,912 bytes; preloading them would be strictly worse
- * than preloading none. `Inter` is the BODY face (`globals.css`: `body {
+ * The 17 distinct files total 431,792 bytes, declared by 72 faces; preloading
+ * them all would be strictly worse than preloading none. `Inter` is the BODY face (`globals.css`: `body {
  * font-family: 'Inter', … }`), so it is the one blocking first TEXT paint.
  * `Onest` (headings) and `Bricolage Grotesque` (dashboard numbers) both fall
  * back to Inter, which is preloaded — so no surface is left without a face.
@@ -30,8 +31,8 @@
  * defaults to `bg`), so a `bg` render needs the Cyrillic cut for its text and
  * the Latin cut for digits and punctuation.
  *
- *   en   inter-latin-400                    48,256 B
- *   bg   inter-latin-400 + inter-cyrillic-400  67,004 B
+ *   en   inter-latin                  48,256 B
+ *   bg   inter-latin + inter-cyrillic  67,004 B
  */
 import lock from '@/styles/fonts.lock.json';
 
