@@ -25,6 +25,7 @@ import { AsidePanel } from "@/components/ui/aside-panel";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/icons/loading-spinner";
 import { useToast } from "@/components/ui/hooks";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatDateTime } from "@/lib/format-date";
 
 interface SnapshotRow {
@@ -65,16 +66,22 @@ export function CanvasHistorySidebar({
         null,
     );
 
+    /**
+     * Which version is awaiting confirmation (#2209).
+     *
+     * NOT a discard-guard like the six modal ones: restoring a snapshot
+     * REPLACES the canvas's current state, so this is an action confirmation
+     * and takes a real `ConfirmDialog`. `tone="warning"` rather than
+     * `danger` because it is recoverable — the state being replaced is itself
+     * a version you can restore back to.
+     *
+     * The version is captured here rather than read at confirm time: the
+     * version list refetches while the dialog is open.
+     */
+    const [pendingRestore, setPendingRestore] = useState<number | null>(null);
+
     const handleRestore = async (targetVersion: number) => {
         if (!mapId || currentVersion == null) return;
-        if (
-            typeof window !== "undefined" &&
-            !window.confirm(
-                t("canvasHistory.restoreConfirm", { version: targetVersion }),
-            )
-        ) {
-            return;
-        }
         setRestoringVersion(targetVersion);
         try {
             const res = await fetch(
@@ -224,7 +231,7 @@ export function CanvasHistorySidebar({
                                                 variant="secondary"
                                                 size="xs"
                                                 onClick={() =>
-                                                    void handleRestore(r.version)
+                                                    setPendingRestore(r.version)
                                                 }
                                                 disabled={
                                                     restoringVersion !== null ||
@@ -244,6 +251,25 @@ export function CanvasHistorySidebar({
                     </ul>
                 )}
             </div>
+            {pendingRestore !== null ? (
+                <ConfirmDialog
+                    showModal
+                    setShowModal={() => setPendingRestore(null)}
+                    tone="warning"
+                    title={t("canvasHistory.restoreConfirmTitle", {
+                        version: pendingRestore,
+                    })}
+                    description={t("canvasHistory.restoreConfirm", {
+                        version: pendingRestore,
+                    })}
+                    confirmLabel={t("canvasHistory.restore")}
+                    onConfirm={async () => {
+                        const version = pendingRestore;
+                        setPendingRestore(null);
+                        await handleRestore(version);
+                    }}
+                />
+            ) : null}
         </AsidePanel>
     );
 }

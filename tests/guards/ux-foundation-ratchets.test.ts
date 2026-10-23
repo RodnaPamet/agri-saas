@@ -156,11 +156,45 @@ describe('Epic 64 — window.confirm() ceiling', () => {
     //
     // To LOWER this number further: migrate one or more remaining sites
     // and bump the constant down. Don't lower without a real migration.
-    const CONFIRM_CALL_CEILING = 13;
+    //
+    // #2209 lowered 13 -> 0. Every remaining site was migrated, and they
+    // split into three kinds rather than the one this ratchet's name implies:
+    //
+    //   • 6 UNSAVED-CHANGES guards on modal close. These needed no dialog of
+    //     their own — `Modal` has an `isDirty` prop that renders the design
+    //     system's `<Confirm>` («Отхвърляне на промените?») as a sibling of
+    //     the surface, and six other components were already using it. The
+    //     migration was to pass the prop and delete the bespoke branch.
+    //   • 6 destructive or state-changing ACTIONS (three session revocations,
+    //     member deactivate, session revoke, canvas restore) -> ConfirmDialog
+    //     with the existing prose as the description.
+    //   • 1 job runner -> ConfirmDialog, `tone="info"`, which
+    //     `confirm-dialog.tsx` names for exactly this case.
+    //
+    // ## The scan root widened with it, and that is the load-bearing half
+    //
+    // This counted `src/app/t/[tenantSlug]/(app)` only. One of the 13 lived
+    // in `src/components/processes/CanvasHistorySidebar.tsx` and was
+    // therefore NEVER GRADED — it was found by grepping `src/`, not by this
+    // ratchet. A ceiling of 0 over a root that excludes shared components
+    // would be `a-gate-narrow-enough-to-always-pass`: the next
+    // `window.confirm` written in `src/components` would not reddened it.
+    //
+    // So the root is now `src/`, and the number is 0 under BOTH roots —
+    // measured before the widening, so this is not a ceiling fitted to
+    // whatever the wider scan happened to find.
+    const CONFIRM_CALL_CEILING = 0;
+    /** `src/`, not the tenant app — see the note above. */
+    const CONFIRM_SCAN_ROOT = path.join(REPO, 'src');
 
-    it(`has at most ${CONFIRM_CALL_CEILING} native-confirm call sites under the tenant app`, () => {
+    it(`has at most ${CONFIRM_CALL_CEILING} native-confirm call sites under src/`, () => {
         const offenders: string[] = [];
-        for (const file of walk(TENANT_APP)) {
+        const scanned = walk(CONFIRM_SCAN_ROOT);
+        // The denominator. `walk` already refuses a missing root (#875), but
+        // a root that EXISTS and yields almost nothing would pass a ceiling
+        // of 0 just as quietly.
+        expect(scanned.length).toBeGreaterThan(1500);
+        for (const file of scanned) {
             const src = read(file);
             // Strip comments first so doc-comment mentions don't count.
             const stripped = blankNonCode(src);

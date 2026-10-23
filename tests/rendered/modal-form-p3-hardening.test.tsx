@@ -63,6 +63,8 @@ const FLOWS: HardenedFlow[] = [
         hookPath: 'assets/_form/useEditAssetForm.ts',
         hookExport: 'useEditAssetForm',
         modalPath: 'assets/EditAssetModal.tsx',
+        // #2209 — migrated to the Modal primitive's guard, like `tasks`.
+        guard: 'native',
         confirmCopy: /Discard changes\?/,
     },
 ];
@@ -127,7 +129,30 @@ describe.each(FLOWS)('modal-form P3 — $label hook exposes isDirty', (flow) => 
     });
 });
 
-describe.each(FLOWS.filter((f) => f.guard !== 'native'))(
+/**
+ * #2209 — this list is now EMPTY, and that is asserted rather than left
+ * silent.
+ *
+ * `describe.each([])` is a hard load failure ("called with an empty Array of
+ * table data"), which is how the migration announced itself here. Two ways to
+ * answer it: delete the block, or keep it behind a length check. Kept, because
+ * adding a row to `FLOWS` is how this family grows and a future flow could
+ * arrive before someone remembers to mark it — but a conditional `describe`
+ * that never runs is invisible, so the emptiness gets its own assertion. If a
+ * bespoke flow reappears, THAT case reddens and the block below starts
+ * grading it.
+ *
+ * The repo-wide backstop is `ux-foundation-ratchets`, whose native-confirm
+ * ceiling is now 0 over all of `src/`.
+ */
+const BESPOKE_FLOWS = FLOWS.filter((f) => f.guard !== 'native');
+
+it('no flow still uses the hand-rolled window.confirm guard (#2209)', () => {
+    expect(BESPOKE_FLOWS).toHaveLength(0);
+});
+
+if (BESPOKE_FLOWS.length > 0) {
+    describe.each(BESPOKE_FLOWS)(
     'modal-form P3 — $label modal wires the (window.confirm) guard',
     (flow) => {
         const src = read(flow.modalPath);
@@ -174,7 +199,8 @@ describe.each(FLOWS.filter((f) => f.guard !== 'native'))(
             expect(src).not.toMatch(/setShowModal=\{setOpen\}/);
         });
     },
-);
+    );
+}
 
 // mobile-forms PR-3 — flows migrated to the Modal primitive's native
 // `isDirty` guard. Same INTENT (unsaved changes are protected on every

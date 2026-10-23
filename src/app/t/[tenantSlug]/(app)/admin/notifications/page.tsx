@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -48,8 +49,21 @@ export default function NotificationSettingsPage() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    /**
+     * Which job is awaiting confirmation (#2209). `tone="info"` and not
+     * `danger`: running the outbox or the daily sweep is not destructive, and
+     * `confirm-dialog.tsx` names this exact case — "info — confirmable but
+     * non-destructive (run job now)".
+     *
+     * NOTE: the two `alert()` calls below report the RESULT and are untouched
+     * here. They are the same blocking-native-dialog family, but replacing
+     * them is a change to how a result is presented (one of them prints
+     * `JSON.stringify(data.stats)`), not a confirmation, and it wants its own
+     * decision. Six live `alert()` calls remain across two files — see #2224.
+     */
+    const [pendingJob, setPendingJob] = useState<'processOutbox' | 'dailySweep' | null>(null);
+
     async function handleRunJob(jobType: 'processOutbox' | 'dailySweep') {
-        if (!confirm(t('confirmRunJob', { job: jobType }))) return;
         setRunningJob(jobType);
         try {
             const res = await fetch(apiUrl('/notification-settings/run-job'), {
@@ -113,7 +127,7 @@ export default function NotificationSettingsPage() {
                     <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => handleRunJob('processOutbox')}
+                        onClick={() => setPendingJob('processOutbox')}
                         disabled={!!runningJob}
                         loading={runningJob === 'processOutbox'}
                         className="rounded-full"
@@ -123,7 +137,7 @@ export default function NotificationSettingsPage() {
                     <Button
                         variant="secondary"
                         size="sm"
-                        onClick={() => handleRunJob('dailySweep')}
+                        onClick={() => setPendingJob('dailySweep')}
                         disabled={!!runningJob}
                         loading={runningJob === 'dailySweep'}
                         className="rounded-full"
@@ -235,6 +249,21 @@ export default function NotificationSettingsPage() {
                     )}
                 </div>
             )}
+            {pendingJob ? (
+                <ConfirmDialog
+                    showModal
+                    setShowModal={() => setPendingJob(null)}
+                    tone="info"
+                    title={t('confirmRunJobTitle')}
+                    description={t('confirmRunJob', { job: pendingJob })}
+                    confirmLabel={t('runJobNow')}
+                    onConfirm={async () => {
+                        const job = pendingJob;
+                        setPendingJob(null);
+                        await handleRunJob(job);
+                    }}
+                />
+            ) : null}
         </div>
     );
 }

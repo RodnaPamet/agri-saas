@@ -128,6 +128,19 @@ const DYNAMIC_LABEL_EXEMPT: Record<string, string> = {
     // (`confirmLabel={t('deleteParcelConfirmLabel')}`); resolved en+bg both
     // begin with the canonical "Delete" verb → "Delete parcel".
     'src/app/t/[tenantSlug]/(app)/locations/[locationId]/page.tsx': 'confirmLabel i18n key t(deleteParcelConfirmLabel) → "Delete parcel"',
+    // #2209 — two pages converted from native `confirm()`. Both labels are
+    // i18n keys the static scan cannot read, and both resolve to the canonical
+    // "Revoke":
+    //   admin.security.revoke = "Revoke" / «Отнеми»  (all three revocations)
+    //   admin.members.revoke  = "Revoke" / «Отнеми»  (session revoke)
+    //
+    // The same page's DEACTIVATE confirmation is deliberately not here: this
+    // guard is what showed that `danger` was the wrong tone for it, since
+    // deactivation is reversible (there is a `/reactivate` route beside it),
+    // so it now carries `tone="warning"` and is outside the danger rule rather
+    // than exempted from it.
+    'src/app/t/[tenantSlug]/(app)/admin/security/page.tsx': 'confirmLabel i18n key t(revoke) → "Revoke"',
+    'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx': 'confirmLabel i18n key t(revoke) → "Revoke"',
     // Crop-plan delete — confirmLabel is `t('confirmDeleteLabel')`; resolved
     // en+bg both begin with the canonical "Delete" verb → "Delete plan".
     'src/app/t/[tenantSlug]/(app)/planning/[cropPlanId]/page.tsx': 'confirmLabel i18n key t(confirmDeleteLabel) → "Delete plan"',
