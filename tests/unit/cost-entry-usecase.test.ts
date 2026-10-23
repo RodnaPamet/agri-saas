@@ -87,6 +87,8 @@ import {
 import { logEvent } from '@/app-layer/events/audit';
 import { makeRequestContext } from '../helpers/make-context';
 
+import { minimalPdf } from '../helpers/minimal-pdf';
+
 const ctx = makeRequestContext('ADMIN', { tenantSlug: 'acme', tenantId: 'tenant-1' });
 const readerCtx = makeRequestContext('READER', { tenantSlug: 'acme', tenantId: 'tenant-1' });
 
@@ -548,8 +550,13 @@ describe('listCostEntriesForDomain — the fan-out seam', () => {
 
 describe('uploadCostInvoice', () => {
     const { FileRepository } = jest.requireMock('@/app-layer/repositories/FileRepository');
+    // A REAL minimal PDF, as of #2035. This was `new Uint8Array([1, 2, 3])`
+    // with `type: 'application/pdf'` — the type asserted and the bytes
+    // arbitrary, which the image strip ignored (non-images pass through
+    // undecoded) and the PDF strip refuses, because it will not store a file
+    // whose metadata it could not remove.
     const pdf = () =>
-        new File([new Uint8Array([1, 2, 3])], 'invoice.pdf', { type: 'application/pdf' });
+        new File([new Uint8Array(minimalPdf())], 'invoice.pdf', { type: 'application/pdf' });
 
     it('writes bytes, then marks the record STORED, then points the entry at it', async () => {
         await uploadCostInvoice(ctx, 'ce-1', pdf());
