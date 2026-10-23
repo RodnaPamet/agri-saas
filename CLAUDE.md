@@ -1239,6 +1239,46 @@ duplicating the limits table).
 
 ## Testing Conventions
 
+### Which tests to run before a push — `npm run verify:changed` (#2018)
+
+**Do not hand-pick a subset.** Sixteen test roots, and several guards fire on
+the *shape* of a change rather than on the code it touches, so the correct
+subset is not inferable from reading a diff. Three different wrong subsets cost
+three CI cycles in one day; a later change missed a fifth fake fixture that only
+CI found.
+
+```bash
+npm run verify:changed              # derive the population from the diff, run it
+npm run verify:changed -- --explain # print the population and WHY, run nothing
+```
+
+It derives on **two axes**, and the second is where hand-picking goes wrong:
+
+- **path rules** — which roots care about files in this directory
+- **content rules** — what this diff now *treats differently*. A new
+  `codedBadRequest('X')` pulls in the Bulgarian-entry guard and the OpenAPI
+  contract, neither of which lives near the throwing file. A stripper that
+  starts refusing a format pulls in every suite holding a fixture of it.
+
+**The mapping is data, not prose: `scripts/verify-changed.rules.json`.** Each
+rule carries its `why`. It is deliberately not duplicated here — a second copy
+would rot, and this paragraph would become the stale one.
+`tests/guards/verify-changed-rules-resolve.test.ts` asserts every path a rule
+names still exists, because a rule pointing at a renamed root contributes zero
+tests and still reads as a pass.
+
+Three things it does not do, stated so they are not assumed:
+
+- It is **not CI**. It prints `this is the DERIVED population, not CI` on
+  success for that reason.
+- It does not run `npm run lint`, which is a **ratchet** over five counters, not
+  eslint. A ceiling measured before your last edit is stale — one of the three
+  failures above was exactly that. The script warns when your diff adds an
+  `eslint-disable`.
+- It does not run `npm run typecheck` (two `tsc` invocations, ~8 minutes). Gate
+  that on its **exit code**, never on a grep: a bare `npx tsc` on this repo dies
+  at exit 134 (OOM) and prints zero errors.
+
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use `makeRequestContext(role?, overrides?)` from `tests/helpers/make-context.ts` to construct test contexts. Note `jest.clearAllMocks()` clears CALLS but not IMPLEMENTATIONS — a test that installs a throwing `mockImplementation` poisons every later test in the file unless the mock is `mockReset()` in `beforeEach`.
 - **Integration tests**: Use `prismaTestClient()` and `resetDatabase()` from `tests/helpers/db.ts`. Hit a real DB — do not mock Prisma in integration tests.
 - **Guard tests** (`tests/guards/`): Static analysis tests that enforce architectural rules (no `as any`, no unsafe patterns). These are regular Jest tests that scan source files with regex. They assert on source TEXT and contribute **no runtime coverage** — see "Green is not the same as executed" below before treating one as proof a feature works.
