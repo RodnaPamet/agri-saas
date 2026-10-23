@@ -767,66 +767,66 @@ export async function recordDiaryTreatment(
  *     `assertCanDeleteTreatment`. A non-admin EDITOR can now withdraw a
  *     finished record they wrote.
  *
- * What makes it defensible is the two protections that stay plus one added:
- * SOFT, AUDITED, and now RESTORABLE from «Кошче» by the same people
- * (`restoreDiaryTreatment`). Nothing is destroyed, and a withdrawal is
- * reversible by anyone who could have made it.
+ * ## 2026-10-24: the protection that made it defensible is GONE
  *
- * The register honours it: `farm-record-diary.ts` filters `task.deletedAt` on
- * the lines it prints, so this is a real withdrawal rather than a view-level
- * hide. That was the half that decided the design — without it a farmer would
- * believe a record was gone while an inspector still read it.
+ * The paragraph above said this was defensible because the delete was SOFT,
+ * AUDITED and RESTORABLE from «Кошче». The owner has now removed «Кошче»
+ * altogether — "what's deleted is deleted" — and chose, when asked what
+ * 'deleted' should mean, "erased from the database: the rows are physically
+ * deleted, with no trace beyond the audit log line", over the recommended
+ * "gone for everyone, kept hidden for audit".
  *
- * **`clientMutationId` is released only for an INCOMPLETE treatment.** The note
- * below explains why releasing it matters for a dead-end handle. It must NOT be
- * released for a complete one: the value is recorded nowhere, so a restore
- * could not put it back, and a finished treatment's handle never needs
- * re-sending.
+ * So of those three only AUDITED survives, and the audit row is now the sole
+ * record that a treatment ever existed. Both earlier rulings are kept above
+ * rather than tidied away: this endpoint has been widened twice and then had
+ * its safety net removed, and each step was taken knowing the last.
  *
- * ## Why three different mechanisms
+ * The register no longer needs the `task.deletedAt` filter to honour a
+ * withdrawal — the lines are gone, not hidden. `farm-record-diary.ts` keeps
+ * the filter anyway, where it is now a no-op guarding against a soft-deleted
+ * row that nothing produces.
  *
- * `Task` and `LogEntry` both carry `deletedAt`, so they are soft-deleted.
- * `OperationParcel` does NOT — it has only a status — so its unfinished lines
- * move to `SKIPPED`, the existing "deliberately not done" state that the
- * completion pass already refuses to touch (it marks `PENDING` only). A line
- * already `DONE` is left alone: its own record of what happened stays true
- * even though the entry it wrote is being withdrawn.
+ * **`clientMutationId` is released for every treatment now.** It used to be
+ * kept for a complete one so a restore could be exact; with no restore and no
+ * surviving row to occupy `@@unique([tenantId, clientMutationId])`, both
+ * halves of that rule are gone.
  *
- * The handle stops resolving because the replay arm looks up tasks with
- * `deletedAt: null`, so a later re-send mints a fresh treatment rather than
- * resuming this one.
+ * ## Why the three mechanisms collapsed into one
  *
- * ## THE GENERIC TASK DELETE IS HARD — this softness is scoped, not the rule
+ * They used to differ: `Task` and `LogEntry` carry `deletedAt` and were
+ * soft-deleted; `OperationParcel` has only a status, so its unfinished lines
+ * moved to `SKIPPED`, the existing "deliberately not done" state that the
+ * completion pass already refuses to touch.
  *
- * `deleteTask` in `usecases/task.ts` calls `db.task.delete`: the row goes, and
- * its comments, links and watchers cascade with it. Nothing restores them and
- * no Trash lists them. So the SAME `Task` row has two fates depending on which
- * route reached it:
+ * Now all three are simply deleted. The tasks go, `OperationParcel` cascades
+ * with them, and the journal entries are deleted EXPLICITLY — which is the
+ * one subtlety left in this function. `LogEntry.operationParcel` is an
+ * optional relation declaring no `onDelete`, so Prisma defaults it to SET
+ * NULL: cascading from the task alone would leave every entry alive with a
+ * null `operationParcelId` and its `treatmentGroupId` intact, still listed
+ * and still printed. The schema says this by saying nothing, which is the
+ * hardest kind of thing to notice.
  *
- *   DELETE /journal/treatments/{treatmentGroupId}  -> here: soft, restorable
- *   DELETE /tasks/{id}  and the bulk delete        -> hard, children cascade
+ * The handle stops resolving because there is no row left to resolve.
  *
- * Owner ruling 2026-10-23 (#2215): the asymmetry stays. The justification for
- * softness here does not generalise — it is that a register entry is a FILED
- * record, which is also why `farm-record-diary.ts` had to learn the flag
- * (#2184) for the withdrawal to mean anything. An ordinary task carries no
- * such obligation.
+ * ## THE GENERIC TASK DELETE IS HARD TOO — the asymmetry is gone
  *
- * Worth knowing in this direction too, and MEASURED rather than assumed: a
- * treatment's tasks are `FIELD_OPERATION` rows, nothing on the task-delete
- * path filters `type`, and `OperationParcel` carries `onDelete: Cascade` on
- * its task relation. So `DELETE /tasks/{id}` on a treatment's task destroys
- * the register lines themselves — the rows this withdrawal is careful to
- * merely FLAG — along with the `TaskLink` the register joins through.
+ * `deleteTask` in `usecases/task.ts` calls `db.task.delete`. Until
+ * 2026-10-24 this route was the soft counterpart and that difference was the
+ * subject of #2215; both are now physical, so the same `Task` row has one
+ * fate whichever route reaches it.
  *
- * Authorisation is intact: both paths are creator-or-admin (#2175, #2187), so
- * nobody reaches it who could not already withdraw the treatment. What differs
- * is the OUTCOME — one route is reversible and audited as a withdrawal, the
- * other is permanent. Filed as #2220, and it is new information relative to
- * the #2215 ruling, which was made on the asymmetry alone.
+ * What still differs, and why `deleteTask` REFUSES a task carrying a
+ * `treatmentGroupId` (#2220):
  *
- * `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both halves
- * so neither note can quietly become false.
+ *   • this route takes the WHOLE group by its handle; the task route would
+ *     take one block's share and leave a half-treatment;
+ *   • this route writes one audit event naming the treatment and its counts,
+ *     where the task route writes a generic `ENTITY_DELETED` — and with the
+ *     rows gone, that event is the only surviving record.
+ *
+ * `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both ends
+ * so neither docblock can quietly go stale.
  */
 export async function deleteDiaryTreatment(
     ctx: RequestContext,
@@ -874,23 +874,33 @@ export async function deleteDiaryTreatment(
     // `clientMutationId` decision below turns on it.
 
     return runInTenantContext(ctx, async (db) => {
-        const now = new Date();
-
-        // The lines that never completed. `SKIPPED` because OperationParcel
-        // has no `deletedAt`, and because the completion pass filters on
-        // PENDING — so this also makes the remainder un-markable by any
-        // path that still holds a task id.
-        const lines = await db.operationParcel.updateMany({
-            where: { tenantId: ctx.tenantId, taskId: { in: taskIds }, status: 'PENDING' },
-            data: { status: 'SKIPPED' },
+        // The PENDING -> SKIPPED pass is gone with the soft delete. It existed
+        // because `OperationParcel` has no `deletedAt` of its own, so an
+        // unfinished line had to be moved to a state the completion pass would
+        // not touch. Now every line of the treatment — PENDING, SKIPPED or
+        // DONE — is cascade-deleted with its task, so there is no remainder to
+        // make un-markable. Counted below from the cascade rather than from a
+        // separate update.
+        const lineCount = await db.operationParcel.count({
+            where: { tenantId: ctx.tenantId, taskId: { in: taskIds } },
         });
 
-        // The register entries, found by the handle itself: `treatmentGroupId`
-        // is denormalised onto LogEntry for the fold, so this needs no join
-        // through OperationParcel -> Task.
-        const entries = await db.logEntry.updateMany({
-            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
-            data: { deletedAt: now, deletedByUserId: ctx.userId ?? null },
+        // ── PHYSICAL, owner ruling 2026-10-24: "what's deleted is deleted" ──
+        //
+        // The register entries go FIRST, and explicitly, because nothing else
+        // reaches them. `LogEntry.operationParcel` is an OPTIONAL relation
+        // with no `onDelete`, so Prisma's default for it is SET NULL: deleting
+        // the tasks cascades the `OperationParcel` lines and would leave every
+        // journal entry sitting there with a null `operationParcelId` and its
+        // `treatmentGroupId` intact — still live, still listed, still printed.
+        // That is the opposite of the ruling, and it is invisible unless you
+        // read the schema for a relation that declares no action.
+        //
+        // No `deletedAt: null` filter: rows soft-deleted before this shipped
+        // are taken too. There is no state left in which a withdrawn
+        // treatment half-exists.
+        const entries = await db.logEntry.deleteMany({
+            where: { tenantId: ctx.tenantId, treatmentGroupId },
         });
 
         // `clientMutationId` is RELEASED along with the task, and that is not
@@ -909,20 +919,18 @@ export async function deleteDiaryTreatment(
         // `treatmentGroupId` is deliberately KEPT, so the abandoned rows still
         // say which treatment they belonged to. Only the idempotency key goes,
         // and it is a key rather than a record of anything.
-        const removed = await db.task.updateMany({
-            where: { tenantId: ctx.tenantId, id: { in: taskIds }, deletedAt: null },
-            data: {
-                deletedAt: now,
-                deletedByUserId: ctx.userId ?? null,
-                // Released for an INCOMPLETE treatment, KEPT for a complete one.
-                //
-                // The note above is why releasing it matters: a dead-end handle
-                // has to be re-sendable, and a soft-deleted row still occupies
-                // the unique key. None of that applies to a finished treatment,
-                // and nulling it would make the restore inexact — the value is
-                // recorded nowhere, so nothing could put it back.
-                ...(summary.complete ? {} : { clientMutationId: null }),
-            },
+        // The tasks, physically. `TaskComment`, `TaskLink`, `TaskWatcher` and
+        // `OperationParcel` all carry `onDelete: Cascade`, so the register
+        // lines and the LOCATION link the ДНЕВНИК joins through go with them.
+        //
+        // `clientMutationId` no longer needs releasing, and the long note
+        // above about it is now history rather than a rule: the key was
+        // released on an incomplete treatment because a SOFT-deleted row still
+        // occupied `@@unique([tenantId, clientMutationId])` while the replay
+        // lookup filtered `deletedAt: null`, so a resend hit the constraint. A
+        // deleted row occupies nothing. Both arms of that condition are gone.
+        const removed = await db.task.deleteMany({
+            where: { tenantId: ctx.tenantId, id: { in: taskIds } },
         });
 
         await logEvent(db, ctx, {
@@ -943,7 +951,7 @@ export async function deleteDiaryTreatment(
                 operation: 'deleted',
                 summary:
                     `Abandoned an unfinished treatment: ${removed.count} task(s), ` +
-                    `${entries.count} journal entr(ies) and ${lines.count} unfinished line(s).`,
+                    `${entries.count} journal entr(ies) and ${lineCount} register line(s).`,
                 before: {
                     parcelCount: summary.parcelCount,
                     completedCount: summary.completedCount,
@@ -956,111 +964,11 @@ export async function deleteDiaryTreatment(
             treatmentGroupId,
             tasks: removed.count,
             entries: entries.count,
-            lines: lines.count,
+            lines: lineCount,
         };
     });
 }
 
-/**
- * Put a withdrawn treatment back (#2175).
- *
- * The other half of the owner's 2026-10-22 ruling: a deleted treatment is gone
- * from the register as if never recorded, AND «Кошче» can restore it. Without
- * this the delete would be destruction with extra steps.
- *
- * ## What it restores, and what it cannot
- *
- * Clearing `Task.deletedAt` and `LogEntry.deletedAt` is enough to bring back
- * everything a reader sees: the journal list filters that column, and the
- * register filters `task.deletedAt` on the lines it prints. The
- * `OperationParcel` rows were never touched by the delete, so the lines and
- * their per-line snapshots — quarantine period, phenophase, treated area —
- * return exactly as recorded rather than being rebuilt.
- *
- * Two things do NOT come back, and both are deliberate:
- *
- *   • `clientMutationId`, if the treatment was INCOMPLETE when deleted. The
- *     delete releases it so a dead-end handle can be re-sent, and the value is
- *     stored nowhere. A restored incomplete treatment is therefore no longer
- *     resumable BY HANDLE; its rows are intact and a fresh send mints a new
- *     one. A complete treatment keeps its key and restores exactly.
- *   • The `SKIPPED` status on lines that never completed. `SKIPPED` is the
- *     honest record of a line that was abandoned, and guessing which of them
- *     had been `PENDING` before would invent a state nobody observed.
- *
- * Audited as its own event, never as an undo of the delete: a register that
- * was withdrawn and reinstated has two facts in its history, not zero.
- */
-export async function restoreDiaryTreatment(
-    ctx: RequestContext,
-    treatmentGroupId: string,
-): Promise<{ treatmentGroupId: string; tasks: number; entries: number }> {
-    assertCanWrite(ctx);
-
-    const tasks = await runInTenantContext(ctx, (db) =>
-        db.task.findMany({
-            // `deletedAt: { not: null }` — the inverse of the delete's lookup,
-            // so restoring a live treatment is a not-found rather than a no-op
-            // reporting success.
-            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: { not: null } },
-            select: { id: true, createdByUserId: true },
-        }),
-    );
-    if (tasks.length === 0) {
-        throw codedNotFound(
-            'TREATMENT_NOT_FOUND',
-            'No withdrawn treatment was found under that handle.',
-            { reference: 'treatmentGroupId' },
-        );
-    }
-
-    const creators = new Set(tasks.map((t) => t.createdByUserId));
-    if (creators.size !== 1) {
-        throw codedConflict(
-            'TREATMENT_MIXED_AUTHORSHIP',
-            'This treatment has tasks recorded by more than one person, so it cannot be '
-                + 'restored as a whole. Ask an administrator.',
-            { reference: 'treatmentGroupId' },
-        );
-    }
-    // The same gate as the delete, deliberately: whoever could withdraw it can
-    // put it back. A restore that needed MORE rights than the delete would
-    // leave a farmer able to destroy a record they cannot recover.
-    assertCanDeleteTreatment(ctx, { createdByUserId: tasks[0].createdByUserId });
-
-    const taskIds = tasks.map((t) => t.id);
-    return runInTenantContext(ctx, async (db) => {
-        const entries = await db.logEntry.updateMany({
-            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: { not: null } },
-            data: { deletedAt: null, deletedByUserId: null },
-        });
-        const restored = await db.task.updateMany({
-            where: { tenantId: ctx.tenantId, id: { in: taskIds }, deletedAt: { not: null } },
-            data: { deletedAt: null, deletedByUserId: null },
-        });
-
-        await logEvent(db, ctx, {
-            action: 'ENTITY_RESTORED',
-            entityType: 'Task',
-            entityId: treatmentGroupId,
-            details: `Treatment ${treatmentGroupId} restored`,
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'Treatment',
-                operation: 'restored',
-                summary:
-                    `Restored a withdrawn treatment: ${restored.count} task(s) and `
-                    + `${entries.count} journal entr(ies).`,
-            },
-        });
-
-        return {
-            treatmentGroupId,
-            tasks: restored.count,
-            entries: entries.count,
-        };
-    });
-}
 
 /**
  * The «Кошче» listing: treatments that were withdrawn and can be put back.
@@ -1072,213 +980,3 @@ export async function restoreDiaryTreatment(
  * Ordered by when it was withdrawn, newest first: the thing somebody wants back
  * is almost always the thing they just removed.
  */
-/**
- * How many withdrawn treatments the «Кошче» listing returns.
- *
- * A review surface, not a register: the restore screen exists to undo a recent
- * mistake, so the payload is bounded rather than paged. Stated in the spec so a
- * client knows the list can be truncated, and set well above any plausible
- * number of live corrections.
- */
-export const DELETED_TREATMENT_LIST_LIMIT = 200;
-
-export async function listDeletedTreatments(ctx: RequestContext): Promise<{
-    treatments: {
-        treatmentGroupId: string;
-        deletedAt: string;
-        deletedByUserId: string | null;
-        taskCount: number;
-        occurredOn: string | null;
-        kind: string | null;
-        productName: string | null;
-        blockNames: string[];
-        parcelCount: number;
-        totalAreaHa: number;
-        mayRestore: boolean;
-    }[];
-}> {
-    assertCanRead(ctx);
-
-    const rows = await runInTenantContext(ctx, async (db) => {
-        const tasks = await db.task.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: { not: null },
-                treatmentGroupId: { not: null },
-            },
-            select: {
-                treatmentGroupId: true,
-                deletedAt: true,
-                deletedByUserId: true,
-                dueAt: true,
-                operationType: true,
-                // Authorship, so the listing can say whether THIS caller may
-                // put it back. Read off rows this query already fetches, which
-                // is why the withdrawn listing does not use the live list's
-                // `_treatmentAuthorship` group-by.
-                createdByUserId: true,
-            },
-            orderBy: { deletedAt: 'desc' },
-            // A trash can is a REVIEW surface, not a register: bounded so the
-            // payload cannot grow with a farm's whole history of corrections.
-            // The cap is stated in the spec rather than paged, because a farm
-            // with more than this many withdrawn treatments has a different
-            // problem from the one this screen solves.
-            take: DELETED_TREATMENT_LIST_LIMIT,
-        });
-
-        const handles = [...new Set(tasks.map((t) => t.treatmentGroupId).filter((h): h is string => !!h))];
-
-        // What each treatment WAS. A withdrawn handle stops resolving —
-        // `getDiaryTreatment` filters `deletedAt: null` — so a client cannot
-        // fetch per row to label it, and a «Кошче» of bare dates would not tell
-        // a farmer which spraying they are restoring. Found in review by
-        // agrent-ios before the phone built against it.
-        //
-        // `deletedAt: { not: null }` is the inverse of the live aggregate's
-        // filter, and it has to be: these are exactly the entries that query
-        // excludes.
-        const lines = handles.length
-            ? await db.logEntry.findMany({
-                  where: {
-                      tenantId: ctx.tenantId,
-                      treatmentGroupId: { in: handles },
-                      deletedAt: { not: null },
-                  },
-                  select: {
-                      treatmentGroupId: true,
-                      // The treatment's DAY. Not the task's `dueAt`, which the
-                      // treatment write never sets — so the `occurredOn` this
-                      // listing used to derive from it was null for every row,
-                      // a field that advertised a value it could not carry.
-                      // Caught by the test below, not by review.
-                      //
-                      // `occurredAt` through `dayKeyInTz` is exactly what the
-                      // live folded list prints, so the trash can and the
-                      // journal cannot disagree about which day a treatment
-                      // was.
-                      occurredAt: true,
-                      operationParcel: {
-                          select: {
-                              treatedAreaHa: true,
-                              product: { select: { name: true } },
-                              parcel: {
-                                  select: {
-                                      areaHa: true,
-                                      location: { select: { name: true } },
-                                  },
-                              },
-                          },
-                      },
-                  },
-              })
-            : [];
-
-        return { tasks, lines };
-    });
-
-    // Folded here rather than with a `groupBy`, because the fold needs the
-    // FIRST row's metadata per handle and `groupBy` would only give aggregates.
-    const byHandle = new Map<
-        string,
-        {
-            deletedAt: Date;
-            deletedByUserId: string | null;
-            taskCount: number;
-            dueAt: Date | null;
-            kind: string | null;
-            createdByUserId: string | null;
-            mixedAuthorship: boolean;
-        }
-    >();
-    for (const row of rows.tasks) {
-        const handle = row.treatmentGroupId;
-        if (!handle || !row.deletedAt) continue;
-        const seen = byHandle.get(handle);
-        if (seen) {
-            seen.taskCount += 1;
-            if (seen.createdByUserId !== row.createdByUserId) seen.mixedAuthorship = true;
-            continue;
-        }
-        byHandle.set(handle, {
-            deletedAt: row.deletedAt,
-            deletedByUserId: row.deletedByUserId,
-            taskCount: 1,
-            dueAt: row.dueAt,
-            kind: row.operationType ?? null,
-            createdByUserId: row.createdByUserId,
-            mixedAuthorship: false,
-        });
-    }
-
-    const summaries = new Map<
-        string,
-        {
-            productName: string | null;
-            blocks: Set<string>;
-            parcelCount: number;
-            totalAreaHa: number;
-            occurredAt: Date | null;
-        }
-    >();
-    for (const line of rows.lines) {
-        const handle = line.treatmentGroupId;
-        if (!handle) continue;
-        const agg =
-            summaries.get(handle) ??
-            {
-                productName: null,
-                blocks: new Set<string>(),
-                parcelCount: 0,
-                totalAreaHa: 0,
-                occurredAt: null as Date | null,
-            };
-        agg.occurredAt = agg.occurredAt ?? line.occurredAt;
-        const op = line.operationParcel;
-        if (op) {
-            agg.parcelCount += 1;
-            // The TREATED area, falling back to the parcel's — the same
-            // expression the live list and the register both print. Summing the
-            // parcel area here while they print the treated area would make the
-            // trash can report more hectares than the document it withdrew.
-            const area = op.treatedAreaHa ?? op.parcel?.areaHa ?? null;
-            if (area != null) agg.totalAreaHa += Number(area);
-            agg.productName = agg.productName ?? op.product?.name ?? null;
-            const block = op.parcel?.location?.name;
-            if (block) agg.blocks.add(block);
-        }
-        summaries.set(handle, agg);
-    }
-
-    return {
-        treatments: [...byHandle.entries()].map(([treatmentGroupId, v]) => {
-            const agg = summaries.get(treatmentGroupId);
-            return {
-                treatmentGroupId,
-                deletedAt: v.deletedAt.toISOString(),
-                deletedByUserId: v.deletedByUserId,
-                taskCount: v.taskCount,
-                // The day as the FARM sees it, from the entry rather than the
-                // task — see the `occurredAt` note on the query above. `dueAt`
-                // is kept only as a fallback for a handle whose entries are
-                // gone, where there is no better answer than none.
-                occurredOn: agg?.occurredAt
-                    ? dayKeyInTz(agg.occurredAt, FARM_TIME_ZONE)
-                    : v.dueAt
-                      ? dayKeyInTz(v.dueAt, FARM_TIME_ZONE)
-                      : null,
-                kind: v.kind,
-                productName: agg?.productName ?? null,
-                blockNames: agg ? [...agg.blocks].sort() : [],
-                parcelCount: agg?.parcelCount ?? 0,
-                totalAreaHa: agg ? Math.round(agg.totalAreaHa * 1e4) / 1e4 : 0,
-                // The same two arms the restore itself applies, in the same
-                // order: mixed authorship refuses ADMINS too, so it is checked
-                // before the permission question.
-                mayRestore: v.mixedAuthorship
-                    ? false
-                    : canDeleteTreatment(ctx, { createdByUserId: v.createdByUserId }),
-            };
-        }),
-    };
-}

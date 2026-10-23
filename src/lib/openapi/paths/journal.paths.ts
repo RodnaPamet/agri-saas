@@ -543,13 +543,20 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'and if the cause of the failure REPEATS, every retry fails identically and the ' +
             'farmer is left with a treatment that will neither complete nor go away. And a ' +
             'treatment recorded in ERROR, complete or not.\n\n' +
-            '**It soft-deletes the WHOLE treatment, including register entries already ' +
-            'written** for the lines that did complete. Those entries record applications that ' +
-            'really happened, so a 2026-10-15 ruling made this route ADMIN-only and ' +
-            'INCOMPLETE-only; a 2026-10-22 ruling reversed BOTH. What makes the wider door ' +
-            'defensible is that the delete is soft (every row stays on disk), audited as one ' +
-            'event naming the counts, and RESTORABLE through `POST .../restore` by the same ' +
-            'people.\n\n' +
+            '**It ERASES the WHOLE treatment, including register entries already written** ' +
+            'for the lines that did complete. The rows are physically deleted — tasks, their ' +
+            'journal entries, and the `OperationParcel` register lines that cascade with them. ' +
+            'Nothing remains beyond the audit event.\n\n' +
+            'Three rulings in ten days, each reversing part of the last, so the history is ' +
+            'worth stating: 2026-10-15 made this route ADMIN-only and INCOMPLETE-only; ' +
+            '2026-10-22 reversed both, defensible then because the delete was SOFT and ' +
+            'restorable; 2026-10-24 removed «Кошче» entirely — "what\'s deleted is deleted" — ' +
+            'which removed the very property that justified the wider door. The door stays ' +
+            'wide and the safety net is gone, deliberately.\n\n' +
+            'The journal entries are deleted EXPLICITLY, not by cascade. ' +
+            '`LogEntry.operationParcel` is an optional relation with no `onDelete`, so Prisma ' +
+            'defaults it to SET NULL: without the explicit delete every entry would survive ' +
+            'with a null `operationParcelId`, still live and still listed.\n\n' +
             '| answer | meaning |\n' +
             '| --- | --- |\n' +
             '| `200` | withdrawn — the body reports how many tasks, entries and lines it touched |\n' +
@@ -557,12 +564,14 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             '| `403` `TREATMENT_DELETE_NOT_PERMITTED` | not the treatment\'s creator and not a farm admin |\n' +
             '| `409` `TREATMENT_MIXED_AUTHORSHIP` | recorded by more than one person, so it cannot be removed as a whole |\n\n' +
             'Afterwards the handle stops resolving — this `GET` and `.../farm-record` both ' +
-            'answer `404` — and the treatment appears in `GET .../journal/treatments/deleted` ' +
-            'until it is restored.\n\n' +
-            '**The handle is RELEASED only for an INCOMPLETE treatment**, so a dead-end key can ' +
-            'be re-sent and mints a new treatment. A COMPLETE one KEEPS its `clientMutationId`, ' +
-            'because that column is the only record of it and releasing it would make the ' +
-            'restore silently lossy.\n\n' +
+            'answer `404`. There is no deleted-treatment listing and no restore: both routes ' +
+            'were removed with «Кошче».\n\n' +
+            'The handle is released for EVERY treatment now, complete or not. It used to be ' +
+            'released only for an incomplete one, because a soft-deleted row still occupied ' +
+            '`@@unique([tenantId, clientMutationId])` while the replay lookup filtered it out — ' +
+            'and keeping it on a complete treatment mattered only so a restore could be exact. ' +
+            'A deleted row occupies no key and there is no restore, so both halves of that rule ' +
+            'are gone.\n\n' +
             'Unfinished lines move to `SKIPPED` rather than being deleted, because ' +
             '`OperationParcel` has no soft-delete column and the completion pass already ' +
             'refuses to touch that state.',
@@ -780,100 +789,4 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         },
     });
 
-    op(registry, {
-        method: 'post',
-        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/restore',
-        operationId: 'restoreTreatment',
-        summary: 'Put a withdrawn treatment back',
-        description:
-            'The other half of the delete (#2175): a withdrawn treatment is gone from the '
-            + 'register as if it had never been recorded, AND it can be restored from '
-            + '\u00ab\u041a\u043e\u0448\u0447\u0435\u00bb. Without this the delete would be destruction with extra steps.\n\n'
-            + 'POST rather than PUT or a flag on DELETE, matching the journal\u2019s own '
-            + '`/journal/{id}/restore`. A client that reads one of these and guesses the other '
-            + 'is how #1087 happened.\n\n'
-            + 'Clearing the soft-delete is enough to bring back everything a reader sees: the '
-            + 'journal list filters that column and the register filters `task.deletedAt` on the '
-            + 'lines it prints. The `OperationParcel` rows were never touched, so the lines and '
-            + 'their per-line snapshots \u2014 quarantine period, phenophase, treated area \u2014 return '
-            + 'exactly as recorded rather than being rebuilt.\n\n'
-            + '**Two things do not come back.** `clientMutationId`, if the treatment was '
-            + 'INCOMPLETE when deleted \u2014 that path releases the key so a dead-end handle can be '
-            + 're-sent, and the value is stored nowhere, so a restored incomplete treatment is no '
-            + 'longer resumable BY HANDLE. And the `SKIPPED` status on lines that never completed, '
-            + 'because `SKIPPED` is the honest record of an abandoned line and guessing which had '
-            + 'been `PENDING` would invent a state nobody observed. A COMPLETE treatment keeps its '
-            + 'key and restores exactly.\n\n'
-            + 'Audited as its own event, never as an undo: a register withdrawn and reinstated has '
-            + 'two facts in its history, not zero.\n\n'
-            + '| status | code | when |\n|---|---|---|\n'
-            + '| `403` | `TREATMENT_DELETE_NOT_PERMITTED` | not the treatment\u2019s creator and not a farm admin \u2014 the SAME gate as the delete, so whoever could withdraw it can put it back |\n'
-            + '| `404` | `TREATMENT_NOT_FOUND` | no WITHDRAWN treatment under that handle. A live one answers this too: the lookup is the inverse of the delete\u2019s, so a restore of something never deleted is a not-found rather than a no-op reporting success |\n'
-            + '| `409` | `TREATMENT_MIXED_AUTHORSHIP` | tasks recorded by more than one person, so \u201cwho may restore this\u201d has no single answer |\n',
-        tags: ['Journal'],
-        params: TreatmentParams,
-        success: {
-            status: 200,
-            description: 'Restored. The counts are rows actually changed.',
-            schema: z.object({
-                treatmentGroupId: z.string(),
-                tasks: z.number().int(),
-                entries: z.number().int(),
-            }),
-        },
-    });
-
-    op(registry, {
-        method: 'get',
-        path: '/api/t/{tenantSlug}/journal/treatments/deleted',
-        operationId: 'listDeletedTreatments',
-        summary: 'Withdrawn treatments that can be put back',
-        description:
-            'The \u00ab\u041a\u043e\u0448\u0447\u0435\u00bb listing (#2175).\n\n'
-            + 'Folded on `treatmentGroupId` rather than returned as tasks: a treatment over three '
-            + 'blocks is three tasks, and a trash view listing it three times would invite three '
-            + 'restores of one thing. `taskCount` says how many it folded.\n\n'
-            + 'Ordered by when it was withdrawn, newest first \u2014 the thing somebody wants back is '
-            + 'almost always the thing they just removed.\n\n'
-            + '`deleted` is a STATIC segment beside the dynamic `{treatmentGroupId}` sibling, which '
-            + 'Next resolves first. The ambiguity is theoretical: a handle is a server-minted UUID '
-            + 'or a client `Idempotency-Key`, never the word `deleted`.\n\n'
-            + 'Each row carries the treatment SUMMARY — `kind`, `productName`, `blockNames`, '
-            + '`parcelCount`, `totalAreaHa` — because a withdrawn handle stops resolving: this '
-            + 'listing\'s `{treatmentGroupId}` sibling answers `404` for every row here, so a '
-            + 'client cannot fetch per row to label it. A trash can of bare dates would not tell '
-            + 'a farmer which spraying they are restoring.\n\n'
-            + '`mayRestore` says whether THIS caller may put the row back, under the same two '
-            + 'arms the restore applies: mixed authorship refuses admins too, so it is false for '
-            + 'a reused handle whatever the role. Offer the control only where it is true — an '
-            + 'offered restore that 403s is worse than an absent one.\n\n'
-            + 'Bounded at 200 and NOT paged, newest-withdrawn first. A restore screen exists to '
-            + 'undo a recent mistake; a farm with more withdrawn treatments than that has a '
-            + 'different problem from the one this screen solves.\n\n'
-            + 'Read-gated. Beyond the user ids that recorded and withdrew it, it names nothing a '
-            + 'journal reader could not already see — these are rows that WERE in the register.',
-        tags: ['Journal'],
-        params: TenantParams,
-        success: {
-            status: 200,
-            description: 'One entry per withdrawn treatment, newest first.',
-            schema: z.object({
-                treatments: z.array(
-                    z.object({
-                        treatmentGroupId: z.string(),
-                        deletedAt: z.string(),
-                        deletedByUserId: z.string().nullable(),
-                        taskCount: z.number().int(),
-                        occurredOn: z.string().nullable(),
-                        kind: z.string().nullable(),
-                        productName: z.string().nullable(),
-                        blockNames: z.array(z.string()),
-                        parcelCount: z.number().int(),
-                        totalAreaHa: z.number(),
-                        mayRestore: z.boolean(),
-                    }),
-                ),
-            }),
-        },
-    });
 }

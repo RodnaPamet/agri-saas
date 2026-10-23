@@ -264,29 +264,26 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 // regulatory document, permanently, with no Trash and no restore. Nothing on
 // this path filters `type`, so it is reachable for any task — see #2220.
 //
-// ## THE OTHER DELETE ON THIS TABLE IS SOFT, AND THAT IS DELIBERATE
+// ## BOTH DELETES ON THIS TABLE ARE NOW HARD — and this note is the third
 //
-// `Task.deletedAt` exists, is indexed as `@@index([tenantId, deletedAt])`,
-// and `WorkItemRepository` filters on it. None of that is dead: a TREATMENT
-// withdrawal writes it. `deleteDiaryTreatment` soft-deletes the treatment's
-// tasks and its journal entries, `restoreDiaryTreatment` puts them back, and
-// `listDeletedTreatments` is the Trash behind it.
+// Owner ruling 2026-10-24: «Кошче» goes, "what's deleted is deleted". The
+// treatment withdrawal is a PHYSICAL delete now, so the asymmetry this
+// paragraph used to document is gone:
 //
-// So one table carries two delete semantics, chosen by the route:
-//
-//   DELETE /journal/treatments/{treatmentGroupId}  -> soft, restorable
+//   DELETE /journal/treatments/{treatmentGroupId}  -> hard, erases the group
 //   DELETE /tasks/{id}  and the bulk delete        -> hard, children cascade
 //
-// Owner ruling 2026-10-23 (#2215): THIS STAYS. A register entry is a filed
-// record, so withdrawing one has to be reversible; an ordinary task is not,
-// and making the whole table soft would buy a cascade question (do comments,
-// links and watchers inherit the flag, or join through the parent?) and a
-// purge obligation for GDPR, in exchange for recovering to-do items nobody
-// asked to recover.
+// The two rulings it replaces are kept because the reversal is the point.
+// 2026-10-23 (#2215) was "keep the asymmetry": a register entry is a filed
+// record, so withdrawing one must be reversible, while an ordinary task need
+// not be. One day later the owner removed the reversibility itself. A reader
+// who finds only the later ruling cannot tell that the earlier reasoning was
+// considered and overridden rather than missed.
 //
-// Recorded here because the asymmetry is invisible from either route, and
-// because a reader who finds `deletedAt` on the model will otherwise assume
-// this function is the thing that writes it. It is not.
+// `Task.deletedAt` is now written by NOTHING on either path, though the
+// column, its `@@index([tenantId, deletedAt])` and `WorkItemRepository`'s
+// filter all remain — see #2215, which is where that question lives.
+//
 // `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both
 // halves so this note cannot quietly become false.
 /**
@@ -300,15 +297,28 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
  * LOCATION link it joins through. So deleting a treatment's task destroys
  * register lines from a filed regulatory document, permanently.
  *
- * Meanwhile `deleteDiaryTreatment` — the purpose-built route for the same
- * intent — goes to real trouble to avoid exactly that: it flags the tasks and
- * entries, leaves DONE lines intact, is audited as a withdrawal, and is
- * reversible through `restoreDiaryTreatment` and «Кошче».
+ * ## The REASON changed on 2026-10-24, and the refusal survived it
  *
- * Authorisation was never the gap. Both paths are creator-or-admin (#2175,
- * #2187), so nobody reaches this who could not already withdraw the treatment.
- * What differed was the OUTCOME, and nothing told the caller which one they
- * were getting.
+ * This guard was written when `deleteDiaryTreatment` was soft and restorable,
+ * and its argument was recoverability: one route destroyed register lines,
+ * the other merely flagged them. The owner then removed «Кошче» — "what's
+ * deleted is deleted" — so the withdrawal erases the same rows. The original
+ * reason is gone.
+ *
+ * The refusal stays, on two reasons that do not depend on it:
+ *
+ *   • ATOMICITY. A treatment is N tasks, one per block. The withdrawal takes
+ *     the whole group by its handle; this route takes ONE block's share and
+ *     leaves the rest — a half-treatment whose register prints some blocks
+ *     and not others, which nothing downstream can describe.
+ *   • THE AUDIT ROW. The withdrawal writes one event naming the treatment and
+ *     the counts it took. This path writes a generic `ENTITY_DELETED` on a
+ *     Task, and since the ruling made the audit log the ONLY surviving trace,
+ *     the difference between those two rows is now the whole difference.
+ *
+ * Authorisation was never the gap either way: both paths are creator-or-admin
+ * (#2175, #2187), so nobody reaches this who could not already delete the
+ * treatment. What differs is the SHAPE of what they get.
  *
  * ## Why `treatmentGroupId` and not `type`
  *
@@ -335,9 +345,9 @@ function assertTaskIsNotTreatmentShare(task: { treatmentGroupId: string | null }
     if (task.treatmentGroupId === null) return;
     throw codedConflict(
         'TASK_BELONGS_TO_TREATMENT',
-        'This task is one block\'s share of a recorded treatment. Deleting it would '
-            + 'destroy the treatment\'s register lines. Withdraw the treatment instead, '
-            + 'which is reversible.',
+        'This task is one block\'s share of a recorded treatment. Delete the whole '
+            + 'treatment instead — doing it here would remove this block\'s register '
+            + 'lines and leave the rest of the treatment behind.',
         { reference: 'treatmentGroupId' },
     );
 }
@@ -410,7 +420,7 @@ export async function bulkDeleteTask(
             throw codedConflict(
                 'TASK_BELONGS_TO_TREATMENT',
                 'Some of the selected tasks are shares of recorded treatments, so none '
-                    + 'were deleted. Withdraw those treatments instead, which is reversible.',
+                    + 'were deleted. Delete those treatments whole instead.',
                 { refused: shares.length, selected: rows.length },
             );
         }
