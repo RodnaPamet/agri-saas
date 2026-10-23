@@ -72,14 +72,30 @@ jest.mock('@/lib/storage/av-scan', () => ({
 
 import { ingestUploadedFile } from '@/lib/upload/ingest';
 
-/** A minimal `File` stand-in — jsdom's File is not available under node-env. */
-function fakeFile(over: Partial<{ name: string; type: string; size: number; body: string }> = {}) {
-    const body = over.body ?? 'hello world';
+import { minimalPdf } from '../helpers/minimal-pdf';
+
+/**
+ * A minimal `File` stand-in — jsdom's File is not available under node-env.
+ *
+ * The default body is a REAL minimal PDF as of #2035. It used to be
+ * `'hello world'` while the mocked sniffer reported
+ * `resolved: 'application/pdf'` — so the TYPE was true and the BYTES were
+ * arbitrary, which the image strip ignored (it passes non-images through
+ * undecoded) and the PDF strip rejects, because it refuses a file it cannot
+ * parse rather than storing it unstripped.
+ *
+ * Giving it a real PDF is the honest fix: a suite whose fixture declares
+ * `application/pdf` should hold one. Pass `body` to override for the cases
+ * that are about something else.
+ */
+function fakeFile(over: Partial<{ name: string; type: string; size: number; body: string | Buffer }> = {}) {
+    const body = over.body ?? minimalPdf();
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(body);
     return {
         name: over.name ?? 'invoice.pdf',
         type: over.type ?? 'application/pdf',
-        size: over.size ?? body.length,
-        arrayBuffer: async () => Buffer.from(body),
+        size: over.size ?? buf.length,
+        arrayBuffer: async () => buf,
     } as unknown as File;
 }
 
@@ -279,6 +295,13 @@ describe('ingestUploadedFile', () => {
         // `FileRecord.sha256` is what `/api/public/media/[hash]` resolves, so
         // it has to digest the bytes the route actually serves rather than
         // the ones the caller sent.
+        // An IMAGE for this one, as of #2035. The assertion is about the
+        // image strip's output reaching storage, and the fixture's default
+        // resolved type is `application/pdf` — so the PDF strip, which runs
+        // after, would try to parse `'re-encoded'` and refuse. Setting the
+        // sniffed type to an image is what makes this test about the thing it
+        // names; `stripPdfMetadata` returns an image untouched.
+        sniffResult = { resolved: 'image/jpeg', detected: 'image/jpeg', corrected: false };
         const strippedBytes = Buffer.from('re-encoded', 'ascii');
         mockStrip.mockImplementationOnce(async () => ({
             bytes: strippedBytes,

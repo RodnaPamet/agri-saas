@@ -35,6 +35,7 @@ import { trace } from '@opentelemetry/api';
 import { reconcileMimeType } from '@/lib/storage/mime-sniff';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { stripImageMetadata } from '@/lib/images/strip-metadata';
+import { stripPdfMetadata } from '@/lib/files/strip-pdf-metadata';
 
 
 /**
@@ -711,7 +712,24 @@ export async function uploadLogEntryPhoto(
     // EXIF/GPS stripped before the bytes land — #1812. A journal attachment
     // is a photo taken at the operation it records, so its GPS tag is the
     // parcel's location. Non-images pass through undecoded.
-    const { bytes: toStore } = await stripImageMetadata(buffer, mimeType, {
+    const { bytes: imageStripped } = await stripImageMetadata(buffer, mimeType, {
+        component: 'journal',
+    });
+
+    // …and document metadata stripped from a PDF — #2035.
+    //
+    // CHAINED rather than branched, and the two are mutually exclusive by
+    // resolved MIME: `stripImageMetadata` returns a PDF untouched and
+    // undecoded (it must never reach libvips, which would rasterise away the
+    // text layer that for an invoice or a БАБХ form IS the content), and
+    // `stripPdfMetadata` returns an image untouched. So each file is rewritten
+    // by exactly one of them, and a type neither handles — a zip, a shapefile
+    // — passes through both.
+    //
+    // Unlike the image strip this one can REFUSE: a PDF whose bytes cannot be
+    // parsed throws a coded 400 rather than being stored unstripped, because a
+    // privacy property that degrades silently to no privacy is not one.
+    const { bytes: toStore } = await stripPdfMetadata(imageStripped, mimeType, {
         component: 'journal',
     });
 

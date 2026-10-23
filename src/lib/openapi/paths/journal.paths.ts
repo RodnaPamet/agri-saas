@@ -690,7 +690,8 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             + '- `IMAGE_UNREADABLE` — the magic number said this was an image and the decoder disagreed, so the container is truncated or malformed. A different photo, not the same one re-exported. Raised in place of storing the bytes unstripped, because a file that cannot be decoded is also one no viewer in the product could render.\n'
             + '- `FILE_TYPE_NOT_ALLOWED` — the type is outside the shared allowlist. Checked on the DECLARED type first and again on the sniffed one, so bytes whose real content is inadmissible are refused even when the claim passed.\n'
             + '- `FILE_TOO_LARGE` — over the shared maximum. The limit is on the wire as `maxBytes` rather than only in the sentence, so a translated message can still name the figure.\n'
-            + '- `INVALID_FILE` — the `multipart/form-data` body carried no usable file part.\n\n'
+            + '- `INVALID_FILE` — the `multipart/form-data` body carried no usable file part.\n'
+            + '- `PDF_UNREADABLE` — the bytes sniffed as a PDF and could not be parsed, rewritten or re-serialised, so its document metadata (`/Author`, `/Producer`, `/CreationDate` and the XMP packet) could not be removed (#2035). Refused rather than stored unstripped, for the same reason as `IMAGE_UNREADABLE` above: a privacy property that degrades silently to no privacy is not one. Raised on every surface that stores an uploaded PDF — this route, the evidence upload, and the cost-entry invoice through `ingestUploadedFile`.\n\n'
             + 'Note what this route does NOT raise: `UPLOAD_INFECTED` and `UPLOAD_SCANNER_UNAVAILABLE` are thrown by `scanOrRefuse`, and this path uses `scanUploadedBuffer`, which RETURNS a verdict instead. An infected attachment is therefore stored with `scanStatus: INFECTED` and refused by the download gate rather than refused at upload.',
         tags: ['Journal'],
         params: EntryParams,

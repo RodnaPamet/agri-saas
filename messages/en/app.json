@@ -6679,6 +6679,7 @@
         "PAST_DUE_RESTRICTED": "Payment on this account has not been received.",
         "PAYROLL_BREAKDOWN_INCOMPLETE": "A salary breakdown needs both the number of people and the yearly salary per person, or neither.",
         "PAYROLL_BREAKDOWN_NOT_APPLICABLE": "A salary breakdown can only be set on a payroll cost entry.",
+        "PDF_UNREADABLE": "This PDF could not be read, so its document metadata could not be removed. Try re-saving it from the program that produced it and upload it again.",
         "PESTICIDE_REGULATORY_FIELDS_REQUIRED": "A plant protection product needs its registration number (ПРЗ №) and quarantine period — both are printed in the farm record.",
         "PLANTING_NOT_FOUND": "That planting was not found.",
         "PLAN_LIMIT_EXCEEDED": {
