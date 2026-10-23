@@ -181,11 +181,25 @@ false for a single VM with one app container.
 one, so `/api/readyz` reports the platform console (#1669).**
 `assertPlatformSupport` is correctly fail-closed — unset `PLATFORM_TENANT_SLUG`
 makes #12's console unreachable for every tenant rather than open for all of
-them — and that produced no signal, so nobody noticed the var has **never been
-set on the VM**. Every route behind the gate (`admin/promotions`,
+them — and that produced no signal, so for a long time nobody noticed the var
+was not set on the VM. Every route behind the gate (`admin/promotions`,
 `admin/promotions/[id]/image`, `admin/companies/[id]`, `admin/market-prices`)
-has been inert in production since #12 merged; the global catalogues could only
-be changed by direct database access.
+was inert in production from #12 until the slug was set, and until then the
+global catalogues could only be changed by direct database access.
+
+**It is SET now, and the console is LIVE.** Measured 2026-10-23:
+`PLATFORM_TENANT_SLUG` is present in `/opt/agrent/.env`, and `/api/readyz`
+reports `capabilities.platformConsole: { state: "reachable" }` — which is the
+state that means the slug names a LIVE tenant, not merely that it is non-empty.
+So those four routes are reachable in production to whoever holds
+`PLATFORM_ADMIN_API_KEY`, and the global catalogues are editable through them.
+Set deliberately by the owner (confirmed 2026-10-23).
+
+The paragraph above is kept because the HISTORY is the lesson: an unset
+fail-closed gate is invisible, which is why it stayed unset and unnoticed, and
+why #1669 put it on `readyz` in the first place. Do not read either paragraph
+as today's state — read `readyz`, which is the only thing that tells
+`unconfigured` from `misconfigured` from `reachable`.
 
 `capabilities.platformConsole` is the #781 treatment — WATCHED, not gated, and
 OUTSIDE `checks`/`failed` like its three siblings, because this endpoint is the
