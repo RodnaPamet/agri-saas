@@ -14,7 +14,7 @@
  * docs/implementation-notes/2026-08-07-knowledge-crud-defects.md.
  */
 
-import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -130,20 +130,20 @@ export function EditArticleModal({
         }
     };
 
-    const guardedSetOpen = useCallback<Dispatch<SetStateAction<boolean>>>(
-        (next) => {
-            const wantClose = typeof next === 'function' ? !next(true) : next === false;
-            if (wantClose) {
-                if (submitting) return;
-                if (isDirty && !window.confirm(t('discardConfirm'))) {
-                    return;
-                }
-            }
-            setOpen(next);
-        },
-        [submitting, isDirty, setOpen, t],
-    );
-    const close = () => guardedSetOpen(false);
+    // #2209 - the hand-rolled close guard is GONE, both halves of it.
+    //
+    //   - the DIRTY half is the Modal primitive's `isDirty` prop, which
+    //     renders the design system's own <Confirm> on every dismiss (X,
+    //     Escape, outside-click, mobile drag), mounted as a sibling of the
+    //     surface so it stacks above it;
+    //   - the SUBMITTING half is `preventDefaultClose`, which this modal
+    //     already passed.
+    //
+    // So `setShowModal` goes straight to `setOpen`. This is the shape
+    // `NewTaskModal` has had since mobile-forms PR-3, and it is what the two
+    // guards grading this family require for a flow marked `guard: 'native'`
+    // - they assert the wrapper is ABSENT, not merely thinned.
+    const close = () => setOpen(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -153,11 +153,12 @@ export function EditArticleModal({
     return (
         <Modal
             showModal={open}
-            setShowModal={guardedSetOpen}
+            setShowModal={setOpen}
             size="lg"
             title={t('title')}
             description={t('description')}
             preventDefaultClose={submitting}
+            isDirty={isDirty}
         >
             <Modal.Header title={t('title')} description={t('description')} />
             <Modal.Form id="edit-article-form" onSubmit={handleSubmit}>

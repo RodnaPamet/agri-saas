@@ -134,22 +134,71 @@ test.describe('Asset Edit Modal', () => {
 
         await nameInput(authedPage).fill('This should not save');
 
-        // Modal-form P3 — closing a DIRTY form raises the native
-        // unsaved-changes `window.confirm`. Playwright auto-DISMISSES an
-        // unhandled dialog, which the guard reads as "keep editing", so
-        // the discard must be accepted explicitly. (This is the intent
-        // of the click: we are asserting the discard path.)
-        authedPage.on('dialog', (dialog) => {
-            void dialog.accept();
-        });
+        // #2209 — this used to install a Playwright `dialog` handler and
+        // accept a native `window.confirm`. There is no native dialog any
+        // more: the dirty guard is the Modal primitive's `isDirty`, which
+        // renders the design system's own confirmation in the page.
+        //
+        // The handler is gone rather than kept "just in case". A handler for
+        // a dialog that never fires is inert, and leaving it would let this
+        // case keep claiming to assert the discard path while asserting
+        // nothing — Playwright is happy either way.
+        //
+        // What this case asserts now is the DOCUMENTED intent of Cancel:
+        // `Modal`'s own docblock says "the explicit Cancel button should
+        // still close directly", and it is wired to `setOpen(false)`, which
+        // does not route through the dismiss guard. So a dirty form closes
+        // on Cancel with NO prompt — asserted positively below, because the
+        // failure mode worth catching is a stray confirmation appearing on
+        // the one path that is meant to be unguarded.
         await authedPage.locator('#edit-asset-cancel-btn').click();
         await expect(authedPage.locator('#edit-asset-form')).toBeHidden({
             timeout: 3000,
         });
+        await expect(authedPage.locator('[data-modal-confirm]')).toHaveCount(0);
 
         await expect(authedPage.locator('#asset-title-heading')).toHaveText(
             originalTitle,
         );
+    });
+
+    /**
+     * The guarded path, which the case above no longer covers (#2209).
+     *
+     * Escape is a DISMISS, not an explicit Cancel, so it routes through the
+     * Modal's `closeModal` and raises the in-page discard confirmation. Both
+     * halves are asserted: the prompt appears, and the form is still there
+     * behind it — a prompt that appeared after the form had already gone
+     * would be the regression this is for.
+     */
+    test('Escape on a dirty form asks before discarding', async ({
+        authedPage,
+        isolatedTenant,
+    }) => {
+        await createAsset(authedPage, isolatedTenant.tenantSlug);
+
+        const editBtn = authedPage.locator('#edit-asset-btn');
+        await editBtn.waitFor({ state: 'visible' });
+        await editBtn.click();
+        await expect(authedPage.locator('#edit-asset-form')).toBeVisible({
+            timeout: 5000,
+        });
+        await nameInput(authedPage).fill('Dirty, then dismissed');
+
+        await authedPage.keyboard.press('Escape');
+
+        // `data-modal-confirm` / `data-modal-cancel` are the primitive's own
+        // handles — present on every ConfirmDialog in the product, so this
+        // does not match on translated copy.
+        const discard = authedPage.locator('[data-modal-confirm]');
+        await expect(discard).toBeVisible({ timeout: 3000 });
+        // Still open BEHIND the prompt — the whole point of asking.
+        await expect(authedPage.locator('#edit-asset-form')).toBeVisible();
+
+        await discard.click();
+        await expect(authedPage.locator('#edit-asset-form')).toBeHidden({
+            timeout: 3000,
+        });
     });
 
     // Read-only role-gate check — kept on the SHARED seeded tenant

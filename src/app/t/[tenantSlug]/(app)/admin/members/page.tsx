@@ -33,6 +33,7 @@ import { StatusBadge, statusBadgeVariants } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonButton } from '@/components/ui/skeleton';
 import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Combobox, ComboboxOption } from '@/components/ui/combobox';
@@ -445,7 +446,6 @@ export default function MembersAdminPage() {
     }
 
     async function handleDeactivate(membershipId: string, email: string) {
-        if (!confirm(t('confirmDeactivate', { email }))) return;
         setError(null);
         setSuccess(null);
 
@@ -620,9 +620,23 @@ export default function MembersAdminPage() {
         }
     }, [certsModalMember, apiUrl, certApplicator, certAgronomistName, certAgronomistNo, t, fetchMembers]);
 
+    /**
+     * What is awaiting confirmation (#2209). Two unrelated destructive actions
+     * on one page, so a discriminated union rather than two booleans.
+     *
+     * Each variant carries everything its dialog needs to NAME the target and
+     * everything the action needs to perform it. `email` is captured, not
+     * looked up at confirm time: the member list refetches while the dialog is
+     * open, and resolving the row later could deactivate a different person
+     * than the one the dialog named.
+     */
+    type PendingConfirm =
+        | { kind: 'deactivate'; membershipId: string; email: string }
+        | { kind: 'revokeSession'; sessionId: string };
+    const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+
     const handleRevokeSession = useCallback(async (sessionId: string) => {
         if (!sessionsModalUser) return;
-        if (!confirm(t('confirmRevokeSession'))) return;
         setRevokingSessionId(sessionId);
         try {
             const res = await fetch(apiUrl('/admin/sessions'), {
@@ -834,7 +848,7 @@ export default function MembersAdminPage() {
                         }}
                         onViewSessions={(m) => void openSessionsModal(m)}
                         onCertificates={(m) => openCertsModal(m)}
-                        onDeactivate={(m) => void handleDeactivate(m.id, m.user.email)}
+                        onDeactivate={(m) => setPendingConfirm({ kind: 'deactivate', membershipId: m.id, email: m.user.email })}
                         onReactivate={(m) => void handleReactivate(m.id, m.user.email)}
                         onRemove={(m) => handleRemove(m.id, m.user.email)}
                     />
@@ -1136,7 +1150,7 @@ export default function MembersAdminPage() {
                                     <Button
                                         variant="secondary"
                                         size="xs"
-                                        onClick={() => handleRevokeSession(s.sessionId)}
+                                        onClick={() => setPendingConfirm({ kind: 'revokeSession', sessionId: s.sessionId })}
                                         disabled={revokingSessionId === s.sessionId}
                                         id={`revoke-session-${s.sessionId}`}
                                     >
@@ -1211,6 +1225,58 @@ export default function MembersAdminPage() {
                     </div>
                 </Modal.Body>
             </Modal>
+            {/* #2209. Rendered at PAGE level, not inside the sessions modal
+                that the revoke button lives in: two sibling Radix dialogs
+                stack and the newer one takes focus, whereas nesting one
+                overlay's root inside another's body puts two focus traps in
+                the same subtree. `OverlayDepthProvider` exists for the
+                popover-inside-a-sheet case, not for this one.
+
+                Both are ConfirmDialogs rather than undo toasts because
+                neither is undoable: a deactivated member loses access at
+                once, and a revoked session cannot be un-revoked. */}
+            {pendingConfirm ? (
+                <ConfirmDialog
+                    showModal
+                    setShowModal={() => setPendingConfirm(null)}
+                    // Tone by KIND, because the two differ in reversibility and
+                    // `confirm-dialog.tsx` defines the tones by exactly that:
+                    // `danger` is "irreversible destructive", `warning` is
+                    // "significant consequence".
+                    //
+                    // Revoking a session cannot be undone. Deactivating a
+                    // member CAN — there is a `/reactivate` route and a
+                    // «Реактивирай» button in this very table — so `danger`
+                    // overstated it. `destructive-vocabulary` is what surfaced
+                    // this: it requires a danger-tone dialog to carry one of
+                    // Delete / Remove / Revoke / Discard / Archive / Unlink /
+                    // Detach / Reject, and "Deactivate" is on none of those
+                    // lists because deactivation is not destruction.
+                    tone={pendingConfirm.kind === 'deactivate' ? 'warning' : 'danger'}
+                    title={
+                        pendingConfirm.kind === 'deactivate'
+                            ? t('confirmDeactivateTitle', { email: pendingConfirm.email })
+                            : t('confirmRevokeSessionTitle')
+                    }
+                    description={
+                        pendingConfirm.kind === 'deactivate'
+                            ? t('confirmDeactivate', { email: pendingConfirm.email })
+                            : t('confirmRevokeSession')
+                    }
+                    confirmLabel={
+                        pendingConfirm.kind === 'deactivate' ? t('deactivate') : t('revoke')
+                    }
+                    onConfirm={async () => {
+                        const pending = pendingConfirm;
+                        setPendingConfirm(null);
+                        if (pending.kind === 'deactivate') {
+                            await handleDeactivate(pending.membershipId, pending.email);
+                        } else {
+                            await handleRevokeSession(pending.sessionId);
+                        }
+                    }}
+                />
+            ) : null}
         </div>
     );
 }

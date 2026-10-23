@@ -12,7 +12,7 @@
  * next/dynamic so its ~200KB chunk only lands when the modal opens.
  */
 
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import dynamic from 'next/dynamic';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -490,26 +490,19 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
         }
     };
 
-    // Unsaved-changes guard.
-    //   - CREATE mode delegates to the Modal primitive's `isDirty` prop
-    //     (native "Discard changes?" confirm on drag-down / backdrop /
-    //     Escape) — see the `isDirty` prop on <Modal> below.
-    //   - EDIT mode keeps the bespoke `window.confirm` guard (untouched).
-    // Either way the explicit Cancel button calls `setOpen(false)`
-    // directly to bypass the guard.
-    const guardedSetOpen = useCallback<Dispatch<SetStateAction<boolean>>>(
-        (next) => {
-            const wantClose = typeof next === 'function' ? !next(true) : next === false;
-            if (wantClose) {
-                if (submitting) return;
-                if (isEdit && dirty && !window.confirm(t('discardConfirm'))) {
-                    return;
-                }
-            }
-            setOpen(next);
-        },
-        [setOpen, submitting, isEdit, dirty, t],
-    );
+    // #2209 - the hand-rolled close guard is GONE, both halves of it.
+    //
+    //   - the DIRTY half is the Modal primitive's `isDirty` prop, which
+    //     renders the design system's own <Confirm> on every dismiss (X,
+    //     Escape, outside-click, mobile drag), mounted as a sibling of the
+    //     surface so it stacks above it;
+    //   - the SUBMITTING half is `preventDefaultClose`, which this modal
+    //     already passed.
+    //
+    // So `setShowModal` goes straight to `setOpen`. This is the shape
+    // `NewTaskModal` has had since mobile-forms PR-3, and it is what the two
+    // guards grading this family require for a flow marked `guard: 'native'`
+    // - they assert the wrapper is ABSENT, not merely thinned.
     const close = () => setOpen(false);
 
     const heading = isEdit ? t('editTitle') : t('newTitle');
@@ -520,12 +513,12 @@ export function JournalEntryModal({ open, setOpen, tenantSlug, initial, onSaved,
     return (
         <Modal
             showModal={open}
-            setShowModal={guardedSetOpen}
+            setShowModal={setOpen}
             size="lg"
             title={heading}
             description={description}
             preventDefaultClose={submitting}
-            isDirty={!isEdit && dirty}
+            isDirty={dirty}
         >
             <Modal.Header title={heading} description={description} />
             <Modal.Form

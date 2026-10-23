@@ -14,6 +14,7 @@ import { ShieldCheck, Save, AlertTriangle, LogOut, Users, UserX } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { InfoTooltip } from '@/components/ui/tooltip';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { cn } from '@/lib/cn';
@@ -45,6 +46,21 @@ const POLICY_OPTIONS: { value: MfaPolicy; label: string; description: string }[]
 
 export default function AdminSecurityPage() {
     const t = useTranslations('admin.security');
+
+    /**
+     * Which revocation is awaiting confirmation (#2209).
+     *
+     * One discriminated state rather than three booleans, so the three
+     * mutually-exclusive dialogs cannot be open at once — and `userId` is
+     * CAPTURED here rather than read from `revokeUserId` at confirm time: the
+     * input stays editable while the dialog is up, so reading it later could
+     * revoke a different user than the one the dialog named.
+     */
+    type PendingRevoke =
+        | { kind: 'mine' }
+        | { kind: 'all' }
+        | { kind: 'user'; userId: string };
+    const [pendingRevoke, setPendingRevoke] = useState<PendingRevoke | null>(null);
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [settings, setSettings] = useState<SecuritySettings>({ mfaPolicy: 'DISABLED', sessionMaxAgeMinutes: null });
@@ -98,7 +114,6 @@ export default function AdminSecurityPage() {
     };
 
     const handleRevokeMySessions = async () => {
-        if (!confirm(t('confirmRevokeMine'))) return;
         setRevoking(true);
         setError(null);
         try {
@@ -121,7 +136,6 @@ export default function AdminSecurityPage() {
     };
 
     const handleRevokeAllTenant = async () => {
-        if (!confirm(t('confirmRevokeAll'))) return;
         setRevoking(true);
         setError(null);
         try {
@@ -139,16 +153,15 @@ export default function AdminSecurityPage() {
         }
     };
 
-    const handleRevokeUser = async () => {
-        if (!revokeUserId.trim()) return;
-        if (!confirm(t('confirmRevokeUser', { user: revokeUserId }))) return;
+    const handleRevokeUser = async (targetUserId: string) => {
+        if (!targetUserId.trim()) return;
         setRevoking(true);
         setError(null);
         try {
             const res = await fetch(apiUrl('/security/sessions/revoke-user'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetUserId: revokeUserId.trim() }),
+                body: JSON.stringify({ targetUserId: targetUserId.trim() }),
             });
             const data = await res.json();
             if (res.ok) {
@@ -337,7 +350,7 @@ export default function AdminSecurityPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-compact">
                     {/* Revoke my sessions */}
                     <button
-                        onClick={handleRevokeMySessions}
+                        onClick={() => setPendingRevoke({ kind: 'mine' })}
                         disabled={revoking}
                         className="p-4 border border-border-default rounded-lg hover:border-[var(--brand-default)]/50 transition text-left flex items-start gap-compact group"
                         id="revoke-my-sessions-btn"
@@ -351,7 +364,7 @@ export default function AdminSecurityPage() {
 
                     {/* Revoke all tenant sessions */}
                     <button
-                        onClick={handleRevokeAllTenant}
+                        onClick={() => setPendingRevoke({ kind: 'all' })}
                         disabled={revoking}
                         className="p-4 border border-border-error rounded-lg hover:border-border-error transition text-left flex items-start gap-compact group"
                         id="revoke-all-sessions-btn"
@@ -378,7 +391,7 @@ export default function AdminSecurityPage() {
                         />
                         <Button
                             variant="destructive-outline"
-                            onClick={handleRevokeUser}
+                            onClick={() => setPendingRevoke({ kind: 'user', userId: revokeUserId })}
                             disabled={revoking || !revokeUserId.trim()}
                             id="revoke-user-btn"
                         >
@@ -388,6 +401,45 @@ export default function AdminSecurityPage() {
                     </div>
                 </div>
             </div>
+            {/* #2209. These three asked with a native `confirm()`, which
+                CLAUDE.md bans by name: it blocks the main thread, cannot be
+                translated beyond its button labels, and on a phone renders as
+                browser chrome that looks nothing like the product.
+
+                A ConfirmDialog and not the undo toast, because none of these
+                is undoable — a revoked session cannot be un-revoked, and the
+                tenant-wide one signs out every member. The existing prose
+                becomes the DESCRIPTION, so the owner's Bulgarian is reused
+                rather than rewritten; only the short titles are new. */}
+            {pendingRevoke ? (
+                <ConfirmDialog
+                    showModal
+                    setShowModal={() => setPendingRevoke(null)}
+                    tone="danger"
+                    title={
+                        pendingRevoke.kind === 'mine'
+                            ? t('confirmRevokeMineTitle')
+                            : pendingRevoke.kind === 'all'
+                              ? t('confirmRevokeAllTitle')
+                              : t('confirmRevokeUserTitle')
+                    }
+                    description={
+                        pendingRevoke.kind === 'mine'
+                            ? t('confirmRevokeMine')
+                            : pendingRevoke.kind === 'all'
+                              ? t('confirmRevokeAll')
+                              : t('confirmRevokeUser', { user: pendingRevoke.userId })
+                    }
+                    confirmLabel={t('revoke')}
+                    onConfirm={async () => {
+                        const pending = pendingRevoke;
+                        setPendingRevoke(null);
+                        if (pending.kind === 'mine') await handleRevokeMySessions();
+                        else if (pending.kind === 'all') await handleRevokeAllTenant();
+                        else await handleRevokeUser(pending.userId);
+                    }}
+                />
+            ) : null}
         </div>
     );
 }

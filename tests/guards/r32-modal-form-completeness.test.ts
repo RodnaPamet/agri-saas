@@ -62,6 +62,11 @@ const ENTITIES = [
     {
         slug: "assets",
         modal: "NewAssetModal",
+        // #2209 — migrated to the <Modal isDirty> guard, like `tasks` before
+        // it. The native branch above asserts `isDirty={...}` is passed AND
+        // that no `window.confirm` survives, which is the property this row
+        // now claims.
+        guard: "native",
         formHook: "useNewAssetForm",
     },
 ] as const;
