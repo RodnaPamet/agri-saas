@@ -456,6 +456,21 @@ the prune removed it. Both scripts assert a POSITIVE CONTROL alongside the
 absence they check, because "not present" and "I resolved the wrong tree" are
 the same observation and the second fails toward green.
 
+**A third belongs to the same family but checks the BROWSER's payload rather
+than the image: `scripts/ci/check-public-chunk-payload.mjs` (#1971).** It runs
+on the Lighthouse `public-farm` leg, maps every Script URL in that run's reports
+back to a file in `.next`, and fails when a provider-only library reaches
+`/f/{handle}` — a page with no toaster, no palette and no dialogs. It exists
+because `public-surface-skips-app-chrome` asserts which BRANCH of the root
+layout a component sits in, and `layout.tsx` imports `Providers` statically, so
+a chunk from that subtree ships whether or not the branch renders.
+Two measured facts worth not rediscovering: a build manifest CANNOT answer this
+(the client-reference manifests for `/f/[handle]` and `/login` list the same 134
+clientModules, so that file has no discriminating power), and its positive
+control is load-bearing — it caught `SWRConfig` and `floating-ui` being findable
+nowhere in a production build, which had made two of #1971's own "confirmed
+absent" claims unfalsifiable.
+
 Async-request-API: GAP-05 is **complete**. Every dynamic route
 handler under `src/app/api` types `params` as `Promise<…>` and
 `await`s it (the Next 16 contract, enforced by

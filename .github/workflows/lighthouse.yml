@@ -415,6 +415,27 @@ jobs:
         if: always()
         run: node scripts/ci/lighthouse-median.mjs .lighthouseci
 
+      # #1971 — what the PUBLIC page actually DOWNLOADS, which no guard can
+      # answer. `public-surface-skips-app-chrome` asserts which branch of the
+      # root layout a component sits in; that is a RENDERING property, and the
+      # layout imports `Providers` statically, so a chunk from that subtree is
+      # in the payload whether or not the branch renders.
+      #
+      # It reads THIS leg's reports rather than standing up its own browser,
+      # because this is the only page load in CI that has the
+      # `social.public-profile` flag on and a seeded `PublicFarmProfile` row.
+      # And it cannot be done from a build manifest: measured 2026-10-23, the
+      # client-reference manifests for `/f/[handle]` and `/login` list the same
+      # 134 clientModules, so that file has no discriminating power at all.
+      #
+      # `public-farm` only — the login page is not the public surface. `if:
+      # always()` for the same reason the median above has it: a run that
+      # failed its BUDGET still carries a valid payload measurement, and that
+      # is exactly when somebody wants to know what the page is loading.
+      - name: Public payload — no app-only JS on /f/
+        if: always() && matrix.page == 'public-farm'
+        run: node scripts/ci/check-public-chunk-payload.mjs .lighthouseci .next
+
       - name: Stop app
         if: always()
         run: |
