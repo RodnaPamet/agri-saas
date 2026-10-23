@@ -513,36 +513,6 @@
             "sha256": "5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2"
         },
         {
-            "file": "onest-bg-punct.woff2",
-            "family": "Onest",
-            "subset": "bg-punct",
-            "style": "normal",
-            "weight": "500",
-            "unicodeRange": "U+20-22, U+25-29, U+2B-3B, U+3D, U+3F, U+AB, U+BB, U+2013-2014, U+201C, U+201E",
-            "bytes": 9236,
-            "sha256": "745e344887c8dd642294050a0d97302e5bdc7b10bc8b00e2ded07eedbbb55785"
-        },
-        {
-            "file": "onest-bg-punct.woff2",
-            "family": "Onest",
-            "subset": "bg-punct",
-            "style": "normal",
-            "weight": "600",
-            "unicodeRange": "U+20-22, U+25-29, U+2B-3B, U+3D, U+3F, U+AB, U+BB, U+2013-2014, U+201C, U+201E",
-            "bytes": 9236,
-            "sha256": "745e344887c8dd642294050a0d97302e5bdc7b10bc8b00e2ded07eedbbb55785"
-        },
-        {
-            "file": "onest-bg-punct.woff2",
-            "family": "Onest",
-            "subset": "bg-punct",
-            "style": "normal",
-            "weight": "700",
-            "unicodeRange": "U+20-22, U+25-29, U+2B-3B, U+3D, U+3F, U+AB, U+BB, U+2013-2014, U+201C, U+201E",
-            "bytes": 9236,
-            "sha256": "745e344887c8dd642294050a0d97302e5bdc7b10bc8b00e2ded07eedbbb55785"
-        },
-        {
             "file": "onest-cyrillic-ext.woff2",
             "family": "Onest",
             "subset": "cyrillic-ext",
@@ -638,7 +608,7 @@
             "subset": "latin",
             "style": "normal",
             "weight": "500",
-            "unicodeRange": "U+0-1F, U+23-24, U+2A, U+3C, U+3E, U+40-AA, U+AC-BA, U+BC-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+304, U+308, U+329, U+2000-2012, U+2015-201B, U+201D, U+201F-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+            "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
             "bytes": 33760,
             "sha256": "052df74533250c2e0ca0c4bdd32de594e107d99c1648e63820ef9c6142067828"
         },
@@ -648,7 +618,7 @@
             "subset": "latin",
             "style": "normal",
             "weight": "600",
-            "unicodeRange": "U+0-1F, U+23-24, U+2A, U+3C, U+3E, U+40-AA, U+AC-BA, U+BC-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+304, U+308, U+329, U+2000-2012, U+2015-201B, U+201D, U+201F-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+            "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
             "bytes": 33760,
             "sha256": "052df74533250c2e0ca0c4bdd32de594e107d99c1648e63820ef9c6142067828"
         },
@@ -658,7 +628,7 @@
             "subset": "latin",
             "style": "normal",
             "weight": "700",
-            "unicodeRange": "U+0-1F, U+23-24, U+2A, U+3C, U+3E, U+40-AA, U+AC-BA, U+BC-FF, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+304, U+308, U+329, U+2000-2012, U+2015-201B, U+201D, U+201F-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
+            "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
             "bytes": 33760,
             "sha256": "052df74533250c2e0ca0c4bdd32de594e107d99c1648e63820ef9c6142067828"
         },
