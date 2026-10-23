@@ -18,6 +18,12 @@
 
 set -e
 
+# Node major first — cheapest of all, and the only place this is checked since
+# #2230 moved it out of .npmrc's engine-strict (which also bound Dependabot's
+# node-24 runner and broke every security-update job). A tree installed on the
+# wrong major was never validated against what CI and production run.
+node scripts/check-node-version.mjs
+
 # Cheap top-level scan first — fast feedback before we spawn lint-staged.
 bash scripts/detect-secrets.sh
 
