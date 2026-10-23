@@ -48,6 +48,8 @@ const SCANNER = /\bscanUploadedBuffer\s*\(|\bscanOrRefuse\s*\(/;
 const WRITER = /\bstorage\s*\.\s*write\s*\(|getStorageProvider\(\)\s*\.\s*write\s*\(/;
 /** The measure itself. */
 const STRIPPER = /\bstripImageMetadata\s*\(/;
+/** The document-metadata measure — #2035. Same partition, second measure. */
+const PDF_STRIPPER = /\bstripPdfMetadata\s*\(/;
 
 /**
  * Surfaces that store user bytes and deliberately do NOT strip, with the
@@ -83,6 +85,39 @@ const DELIBERATELY_UNSTRIPPED: ReadonlyArray<[file: string, why: string]> = [
 ];
 
 const EXEMPT = new Map(DELIBERATELY_UNSTRIPPED);
+
+/**
+ * Surfaces that store user bytes and deliberately do NOT strip PDF document
+ * metadata — #2035. Separate reasons from the image list above, because they
+ * are not the same argument: an image exemption can rest on "re-encodes
+ * anyway", which says nothing about a PDF.
+ */
+const DELIBERATELY_UNSTRIPPED_PDF: ReadonlyArray<[file: string, why: string]> = [
+    [
+        'src/app-layer/usecases/spatial-import.ts',
+        'Stages a shapefile/KML/GeoJSON bundle and rejects anything else by '
+            + 'extension before the bytes are read, so a PDF cannot reach storage '
+            + 'through it. Its `mimeType` is the DECLARED one besides, and a '
+            + 'caller who could opt out of stripping by lying about the content '
+            + 'type would defeat the measure.',
+    ],
+    [
+        'src/app/api/t/[tenantSlug]/evidence/imports/route.ts',
+        'Accepts a `.zip` archive only — the route 415s on any other extension. '
+            + 'A PDF INSIDE the archive reaches storage through `evidence.ts`, '
+            + 'which does strip, so the documents a visitor can eventually '
+            + 'download are covered there rather than here.',
+    ],
+    [
+        'src/lib/account/avatar.ts',
+        'Decodes its input as an image and re-encodes to WebP, so a PDF does '
+            + 'not survive the path at all — it is refused by the decode rather '
+            + 'than stored unstripped. It also owns its own storage key and '
+            + 'serve route, and wants one canonical format.',
+    ],
+];
+
+const EXEMPT_PDF = new Map(DELIBERATELY_UNSTRIPPED_PDF);
 
 function rel(abs: string): string {
     return abs.slice(REPO_ROOT.length + 1);
@@ -168,6 +203,69 @@ describe('every upload surface strips image metadata (#1812)', () => {
                 scanBeforeStrip: scanAt < stripAt,
                 stripBeforeWrite: stripAt < writeAt,
             }).toEqual({ file, scanBeforeStrip: true, stripBeforeWrite: true });
+        },
+    );
+});
+
+describe('every upload surface strips PDF document metadata (#2035)', () => {
+    // The SAME population as the image partition above, deliberately. The
+    // issue asked for this rather than a guard of its own: "a PDF stripper
+    // should join that partition rather than get a guard of its own", and the
+    // reason is that a new upload surface should have to answer both
+    // questions at once, from one derived list, rather than one of them
+    // because the other list was not updated.
+    const writers = uploadWriters();
+
+    it('ranges over the same surfaces as the image strip', () => {
+        // Not an independent population. If these ever diverge, one of the
+        // two measures is being asked about a set the other is not.
+        expect(writers.length).toBeGreaterThanOrEqual(5);
+        expect(writers).toEqual(expect.arrayContaining([
+            'src/lib/upload/ingest.ts',
+            'src/app-layer/usecases/evidence.ts',
+            'src/app-layer/usecases/journal.ts',
+        ]));
+    });
+
+    it.each(writers)('%s strips PDFs, or is exempt with a reason', (file) => {
+        const code = blankNonCode(readFileSync(path.join(REPO_ROOT, file), 'utf8'));
+        const strips = PDF_STRIPPER.test(code);
+        const why = EXEMPT_PDF.get(file);
+
+        expect({ file, covered: strips || Boolean(why) }).toEqual({ file, covered: true });
+
+        if (strips && why) {
+            throw new Error(
+                `${file} calls stripPdfMetadata AND is listed in `
+                    + `DELIBERATELY_UNSTRIPPED_PDF. Remove the exemption — a stale `
+                    + `one excuses the next surface that forgets.`,
+            );
+        }
+    });
+
+    it.each(DELIBERATELY_UNSTRIPPED_PDF)('%s records a substantial reason', (file, why) => {
+        expect({ file, long: why.length > 80 }).toEqual({ file, long: true });
+    });
+
+    it.each(DELIBERATELY_UNSTRIPPED_PDF)('%s is still in the population', (file) => {
+        expect({ file, present: writers.includes(file) }).toEqual({ file, present: true });
+    });
+
+    it.each(writers.filter((f) => !EXEMPT_PDF.has(f)))(
+        '%s strips the PDF BEFORE it writes',
+        (file) => {
+            // The order that matters here. There is no scan-before-strip
+            // constraint for this one: `stripPdfMetadata` parses an object
+            // graph rather than decoding pixels through libvips, so it carries
+            // nothing like the image strip's decode risk. What still has to
+            // hold is that the write follows it, or the unstripped bytes land.
+            const code = blankNonCode(readFileSync(path.join(REPO_ROOT, file), 'utf8'));
+            const stripAt = code.search(PDF_STRIPPER);
+            const writeAt = code.search(WRITER);
+            expect({ file, stripBeforeWrite: stripAt < writeAt }).toEqual({
+                file,
+                stripBeforeWrite: true,
+            });
         },
     );
 });

@@ -63,6 +63,17 @@ import { getPermissionsForRole } from '@/lib/permissions';
 import { computePermissions } from '@/lib/tenant-context';
 import type { RequestContext } from '@/app-layer/types';
 
+import { minimalPdf } from '../helpers/minimal-pdf';
+
+/**
+ * A REAL minimal PDF, as of #2035. These entries were
+ * `'%PDF-1.5\\nfake'` — a header with a junk body, which pdf-lib loads
+ * and then fails on (no catalog), so `stripPdfMetadata` refuses them and
+ * the extraction counted them as errors. The fixtures were never PDFs;
+ * the type was asserted and the bytes were arbitrary.
+ */
+const REAL_PDF = minimalPdf().toString('latin1');
+
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 interface BuiltZip {
@@ -248,7 +259,7 @@ describeFn('evidence-import — integration', () => {
 
     test('happy path: ZIP with 3 evidence files expands into 3 Evidence rows', async () => {
         const staged = await stageZip(tenantA, adminUserId, [
-            { name: 'q4-soc2-report.pdf', body: '%PDF-1.5\nfake-pdf-bytes-1' },
+            { name: 'q4-soc2-report.pdf', body: REAL_PDF },
             { name: 'access-review.csv', body: 'user,role\nalice,admin' },
             {
                 name: 'screenshot.png',
@@ -307,7 +318,7 @@ describeFn('evidence-import — integration', () => {
         // for the basename `passwd` with no extension) is exercised
         // directly by `evidence-import-safety.test.ts`.
         const staged = await stageZip(tenantA, adminUserId, [
-            { name: 'safe.pdf', body: '%PDF-1.5\nfake' },
+            { name: 'safe.pdf', body: REAL_PDF },
             { name: '../etc/passwd', body: 'should never land' },
         ]);
 
@@ -328,7 +339,7 @@ describeFn('evidence-import — integration', () => {
 
     test('skips non-allowed extensions but extracts the rest', async () => {
         const staged = await stageZip(tenantA, adminUserId, [
-            { name: 'good.pdf', body: '%PDF-1.5\nfake' },
+            { name: 'good.pdf', body: REAL_PDF },
             { name: 'evil.exe', body: 'MZ\x00\x00' },
             { name: 'random.bin', body: 'binary' },
         ]);
@@ -351,7 +362,7 @@ describeFn('evidence-import — integration', () => {
 
     test('throws on permission denied (READER user)', async () => {
         const staged = await stageZip(tenantA, readerUserId, [
-            { name: 'a.pdf', body: '%PDF-1.5\nfake' },
+            { name: 'a.pdf', body: REAL_PDF },
         ]);
 
         await expect(
@@ -366,7 +377,7 @@ describeFn('evidence-import — integration', () => {
 
     test('throws on user with no active membership in the target tenant', async () => {
         const staged = await stageZip(tenantA, adminUserId, [
-            { name: 'a.pdf', body: '%PDF-1.5\nfake' },
+            { name: 'a.pdf', body: REAL_PDF },
         ]);
 
         await expect(
@@ -381,7 +392,7 @@ describeFn('evidence-import — integration', () => {
 
     test('macOS metadata entries are silently dropped (no skip noise)', async () => {
         const staged = await stageZip(tenantA, adminUserId, [
-            { name: 'real.pdf', body: '%PDF-1.5\nfake' },
+            { name: 'real.pdf', body: REAL_PDF },
             { name: '__MACOSX/._real.pdf', body: 'mac fork' },
             { name: '.DS_Store', body: 'mac metadata' },
         ]);
