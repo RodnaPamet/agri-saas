@@ -51,6 +51,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { Prisma } from '@prisma/client';
 
 import { runWithoutRls } from '@/lib/db/rls-middleware';
+import { canonicaliseRegionName } from '@/lib/geo/bulgaria-regions';
 import { assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
@@ -805,7 +806,13 @@ export async function updateFarmBrand(
     if (input.displayName !== undefined) data.displayName = input.displayName;
     if (input.tagline !== undefined) data.tagline = input.tagline;
     if (input.about !== undefined) data.about = input.about;
-    if (input.oblast !== undefined) data.oblast = input.oblast;
+    // Canonicalised, never rejected (#2068). The web editor picks from the 28
+    // names and the iOS client sends one, but nothing structurally stops a
+    // spelling drifting by case — which is precisely what forced #1909 to make
+    // the browse filter case-insensitive. Repairing it HERE means the stored
+    // value is the one the filter offers, instead of two readers agreeing to
+    // be tolerant of each other.
+    if (input.oblast !== undefined) data.oblast = canonicaliseRegionName(input.oblast);
     if (input.crops !== undefined) data.crops = input.crops;
     if (input.indexable !== undefined) data.indexable = input.indexable;
     // The eye toggles (P6.6, #1815). Same `!== undefined` treatment as every

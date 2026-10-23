@@ -27,7 +27,7 @@
  * screen, the checkbox is explicit, and the version sent is the version
  * rendered.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -35,6 +35,7 @@ import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -42,6 +43,10 @@ import { Input } from '@/components/ui/input';
 import { QrCode } from '@/components/ui/qr-code';
 import { PublicFarmBody } from '@/components/public-profile/public-farm-body';
 import { applyVisibility } from '@/lib/public-profile/visibility';
+import {
+    BULGARIA_REGION_NAME_OPTIONS,
+    isBulgariaRegionName,
+} from '@/lib/geo/bulgaria-regions';
 import type { readFarmBrandDraft } from '@/app-layer/usecases/public-farm-profile';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -140,6 +145,31 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
     // Available here because `publicSurfaceMessages` trims the catalogue only
     // for /f/ requests — the admin editor is served the full set.
     const tp = useTranslations('publicFarm');
+
+    /**
+     * The 28 oblasti by BULGARIAN NAME, never by ISO code — #2068.
+     *
+     * `BULGARIA_REGION_OPTIONS` is valued by code (`BG-08`) and belongs to the
+     * exchange. `FarmBrand.oblast` holds a name: the iOS client writes one, and
+     * `searchPublicFarms` compares it with `lower()` (#1909). Wiring this to the
+     * code list would store a value the browse filter can never match — worse
+     * than the free text this replaced, because free text at least sometimes
+     * matched.
+     *
+     * A stored value that is NOT one of the 28 is KEPT as its own option rather
+     * than dropped. Dropping it would make the combobox render empty over a
+     * farm that does have an oblast, and the next save would then write null —
+     * destroying data by opening a form. Free text was the only way to enter
+     * one before this change, so such values exist by construction, and the
+     * label marks it so the farmer can see why it looks different.
+     */
+    const oblastOptions = useMemo<ComboboxOption[]>(() => {
+        const base = [...BULGARIA_REGION_NAME_OPTIONS];
+        if (oblast !== '' && !isBulgariaRegionName(oblast)) {
+            return [{ value: oblast, label: t('oblastUnlisted', { value: oblast }) }, ...base];
+        }
+        return base;
+    }, [oblast, t]);
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     // The shared formatter, not an ad-hoc Intl call:
@@ -479,11 +509,15 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                     onChange={(shown) => setHidden('hideAbout', !shown)}
                     disabled={busy}
                 />
-                <FormField label={t('oblastLabel')}>
-                    <Input
-                        value={oblast}
-                        onChange={(e) => setOblast(e.target.value)}
-                        maxLength={80}
+                <FormField label={t('oblastLabel')} description={t('oblastHelp')}>
+                    <Combobox
+                        id="public-profile-oblast"
+                        options={oblastOptions}
+                        selected={oblastOptions.find((o) => o.value === oblast) ?? null}
+                        setSelected={(o) => setOblast(o?.value ?? '')}
+                        placeholder={t('oblastPlaceholder')}
+                        searchPlaceholder={t('oblastSearchPlaceholder')}
+                        matchTriggerWidth
                     />
                 </FormField>
                 <VisibilityToggle
