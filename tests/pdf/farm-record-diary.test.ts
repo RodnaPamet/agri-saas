@@ -365,44 +365,58 @@ describe('ДНЕВНИК per-field header — the strip the form is built around
 });
 
 describe('ДНЕВНИК per-field register — one chemical sheet per field', () => {
-    test('each extra field adds exactly one sheet', async () => {
-        // ONE spray line, on the first field, in both arms. The line has to be
-        // present at all now: #2183 omits the whole chemical section when
-        // nothing was sprayed, so a `sprayLines: []` pair — which is how this
-        // test was written before — measures 0 sheets against 0 and reports a
-        // difference of 0 whatever the field list does.
-        //
-        // Varying the field list around a line that stays put is the honest
-        // version of the same measurement: the second field is untreated and
-        // still gets its own blank-strip sheet, because the register is filed
-        // per field.
+    /**
+     * REVERSED, 2026-10-23 (#2183 ask 4). The arms below are unchanged; the
+     * EXPECTATION was 1 and is now 0, because this case was asserting the
+     * defect. Its own note explained the behaviour it was pinning — "the
+     * second field is untreated and still gets its own blank-strip sheet,
+     * because the register is filed per field" — and that blank sheet is
+     * exactly what the owner ruled out: "only parcels sprayed in the period
+     * get a spraying sheet. Blank parcel sheets go as well."
+     *
+     * Kept rather than deleted, with the same arms, because the measurement
+     * was right and only the expected answer was wrong. Reading the two
+     * together says what changed.
+     */
+    test('an extra UNSPRAYED field adds NO sheet (#2183 ask 4)', async () => {
         const base = { ...fixture(PROFILE), sprayLines: [SPRAY[0]] };
         const one = await pageCount({ ...base, fields: [FIELDS[0]] });
         const two = await pageCount({ ...base, fields: FIELDS });
-        expect(two - one).toBe(1);
+        expect(two - one).toBe(0);
+    });
+
+    test('an extra SPRAYED field DOES add exactly one sheet', async () => {
+        // The other direction, and the positive control for the case above: a
+        // filter that dropped every per-field sheet would satisfy "adds no
+        // sheet" while destroying the register. The document is filed per
+        // field and that is still true for the fields that were sprayed.
+        const base = { ...fixture(PROFILE), fields: FIELDS };
+        const oneSprayed = await pageCount({ ...base, sprayLines: [SPRAY[0]] });
+        const twoSprayed = await pageCount({ ...base, sprayLines: SPRAY });
+        expect(twoSprayed - oneSprayed).toBe(1);
     });
 
     test('a treatment on an unknown field still prints, on a sheet of its own', async () => {
         // The orphan guard: a legal register may not silently drop a treatment
         // just because its field is not in `fields`.
         //
-        // Both arms carry ONE line, so the only difference is whether it
-        // matches a field. Previously the baseline had NO lines, which is no
-        // longer a comparable document — the section is absent from it
-        // entirely, and the measured difference became 3 rather than 1.
-        const attached = await pageCount({
+        // The NO-LINES baseline is usable again. This case had moved away from
+        // it, noting that "the section is absent from it entirely, and the
+        // measured difference became 3 rather than 1" — 3 because two empty
+        // per-field sheets rode along with the orphan's. #2183 ask 4 removes
+        // those two, so the difference is back to the 1 sheet the orphan
+        // itself contributes, and the comparison says what it means again.
+        const noLines = await pageCount({
             ...fixture(PROFILE),
-            sprayLines: [SPRAY[0]],
+            sprayLines: [],
             fields: FIELDS,
         });
-        const orphaned = await pageCount({
+        const orphanOnly = await pageCount({
             ...fixture(PROFILE),
             sprayLines: [{ ...SPRAY[0], parcelId: 'parcel-does-not-exist' }],
             fields: FIELDS,
         });
-        // The orphan gets a sheet of its own ON TOP of the per-field sheets,
-        // which both arms have.
-        expect(orphaned - attached).toBe(1);
+        expect(orphanOnly - noLines).toBe(1);
     });
 
     test('a period with no treatments OMITS the section, rather than filing a blank sheet', async () => {
@@ -470,6 +484,40 @@ describe('ДНЕВНИК per-field register — no treatment disappears from a l
         const second = groups.find((g) => g.field?.parcelId === 'parcel-2');
         expect(first?.lines).toEqual([SPRAY[0]]);
         expect(second?.lines).toEqual([SPRAY[1]]);
+    });
+
+    /**
+     * #2183 ask 4, the owner's fourth ruling of 2026-10-22: "only parcels
+     * sprayed in the period get a spraying sheet. Blank parcel sheets go as
+     * well."
+     *
+     * This only ever affected the BLOCK register. `fields` is built from a
+     * parcel query scoped two ways: a treatment-scoped document limits it to
+     * the parcels the treatment touched (#1740), a block-scoped one takes
+     * every live parcel of the block. So the ruling is about the second.
+     */
+    test('gives NO sheet to a field with no line in the period (#2183 ask 4)', () => {
+        const groups = groupSprayLinesByField(FIELDS, [SPRAY[0]]);
+        expect(groups.map((g) => g.field?.parcelId)).toEqual(['parcel-1']);
+    });
+
+    test('still prints one sheet PER sprayed field — the filter is not a cap of one', () => {
+        // Without this, a filter that collapsed everything to a single group
+        // would satisfy the case above. The register is filed per field.
+        const groups = groupSprayLinesByField(FIELDS, SPRAY);
+        expect(groups.map((g) => g.field?.parcelId).sort()).toEqual(['parcel-1', 'parcel-2']);
+    });
+
+    test('an ORPHAN line keeps its blank-strip sheet even though it has no field', () => {
+        // The one group that must survive the filter: a line whose parcel is
+        // past MAX_FIELD_SHEETS has no `field`, and dropping it would be an
+        // unrecorded chemical application. Asserted here beside the filter so
+        // the two rules are read together.
+        const orphan = { ...SPRAY[0], parcelId: 'parcel-nowhere' };
+        const groups = groupSprayLinesByField(FIELDS, [orphan]);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].field).toBeNull();
+        expect(groups[0].lines).toEqual([orphan]);
     });
 });
 
@@ -571,18 +619,17 @@ describe('ДНЕВНИК omits an empty data section (#2183)', () => {
     });
 
     test('drops every CHEMICAL sheet when nothing was sprayed', async () => {
-        // `groupSprayLinesByField` manufactures one blank group for an idle
-        // period — its own comment says so — which is the behaviour reversed
-        // here. With no lines the section must not appear at all, rather than
-        // appear once and empty.
-        //
-        // ONE field in both arms, because the section is filed PER FIELD: with
-        // the fixture's two fields the difference is 2, which is correct and
-        // measures the per-field split rather than the omission.
+        // BOTH fields in both arms now. This case used to pass ONE field with
+        // a note explaining why: "with the fixture's two fields the difference
+        // is 2, which is correct and measures the per-field split rather than
+        // the omission". That difference of 2 WAS the defect in #2183 ask 4 —
+        // the unsprayed field was getting a sheet with an empty table — so the
+        // workaround is gone and the case now runs on the shape a block
+        // register actually has.
         const sprayed = await pageCount(
-            only({ sprayLines: [SPRAY[0]], observations: OBS, fields: [FIELDS[0]] }),
+            only({ sprayLines: [SPRAY[0]], observations: OBS, fields: FIELDS }),
         );
-        const notSprayed = await pageCount(only({ observations: OBS, fields: [FIELDS[0]] }));
+        const notSprayed = await pageCount(only({ observations: OBS, fields: FIELDS }));
         expect(sprayed - notSprayed).toBe(1);
     });
 
