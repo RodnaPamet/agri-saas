@@ -79,26 +79,21 @@ function readWorkflows(): Workflow[] {
 }
 
 /**
- * Workflow names GitHub provides that have NO file in `.github/workflows`, each
- * with the reason it is watched anyway — #2230.
+ * There is NO exemption map here, and #2230 is why there should not be.
  *
- * This is the one place the derive-from-disk rule cannot reach, and leaving it
- * unreached cost something: on 2026-10-23 `Dependabot Updates` began failing on
- * EVERY run (its updater moved to node 24, which `engine-strict` made fatal
- * against `engines.node`), so security advisories stopped producing PRs — and
- * nothing filed an issue, because there is no file to derive a watch from.
+ * I added one, for `Dependabot Updates` — GitHub-native, so no file in
+ * `.github/workflows` and nothing for the rule below to derive. The notifier
+ * cannot watch it, and no `permissions:` block changes that: a `workflow_run`
+ * whose triggering actor is `dependabot[bot]` runs with a READ-ONLY token, so
+ * the issue-creation call answers 404 and the notifier becomes a red run on
+ * main. Measured inside seven minutes on the same workflow — 22:08
+ * `actor=h0mele55` success, 22:11 `actor=dependabot[bot]` 404, 22:15
+ * `actor=h0mele55` success.
  *
- * Entries here are exempt from the file-existence assertions and from nothing
- * else. Two checks below keep the exemption honest: an entry must actually be
- * WIRED into the notifier, and must NOT name a workflow that exists on disk —
- * so the day somebody adds `dependabot-updates.yml`, this stops being an
- * exception and goes back to being derived.
+ * So the rule stays exactly what it says: derived from the files on disk, with
+ * no escape hatch. A native workflow needs a SCHEDULED checker under a normal
+ * token, which is a different mechanism and not this list's business.
  */
-const GITHUB_NATIVE: Record<string, string> = {
-    'Dependabot Updates': 'GitHub-native; Dependabot runs its updater itself, so there is no '
-        + 'workflow file to derive a watch from. Its failure is silent and stops security '
-        + 'advisories producing PRs (#2230).',
-};
 
 /** Every workflow this notifier is expected to watch, derived from the files. */
 function expectedWatchList(workflows: Workflow[]): string[] {
@@ -129,9 +124,7 @@ describe('CI-failure notifier — the watch list is derived, not curated', () =>
 
         // The reverse direction matters too: an entry naming a workflow that
         // no longer exists is dead weight that reads as coverage.
-        // GitHub-native names are exempt here — they have no file by
-        // definition — and are held to their own two assertions below.
-        const phantom = actual.filter((n) => !expected.includes(n) && !(n in GITHUB_NATIVE));
+        const phantom = actual.filter((n) => !expected.includes(n));
         expect(phantom).toEqual([]);
     });
 
@@ -141,7 +134,6 @@ describe('CI-failure notifier — the watch list is derived, not curated', () =>
         // nothing anywhere reports that it did not.
         const names = readWorkflows().map((w) => w.name);
         for (const watched of actualWatchList()) {
-            if (watched in GITHUB_NATIVE) continue;
             expect(names).toContain(watched);
         }
     });
@@ -166,25 +158,5 @@ describe('CI-failure notifier — the watch list is derived, not curated', () =>
         const expected = expectedWatchList(readWorkflows());
         expect(expected.length).toBeGreaterThan(5);
         expect(expected).toContain('Publish image to GHCR');
-    });
-    it('every GitHub-native entry is actually WIRED into the notifier', () => {
-        // An entry here that is not in the watch list is a reason written down
-        // for a watch that does not exist — which reads as coverage and is not.
-        const actual = actualWatchList();
-        for (const [name, why] of Object.entries(GITHUB_NATIVE)) {
-            expect({ name, watched: actual.includes(name) }).toEqual({ name, watched: true });
-            expect({ name, hasReason: why.length > 80 }).toEqual({ name, hasReason: true });
-        }
-    });
-
-    it('no GitHub-native entry names a workflow that EXISTS on disk', () => {
-        // The exemption exists only because the rule cannot reach these. The
-        // moment a file with that `name:` appears, the derivation covers it and
-        // the exception must go — otherwise it permanently excuses a workflow
-        // from the file-existence checks everything else gets.
-        const names = readWorkflows().map((w) => w.name);
-        for (const name of Object.keys(GITHUB_NATIVE)) {
-            expect({ name, onDisk: names.includes(name) }).toEqual({ name, onDisk: false });
-        }
     });
 });

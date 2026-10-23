@@ -110,18 +110,22 @@ on:
       # unreported with nothing saying so. A stale POINTER never reaches
       # this channel: the script files its own issue and exits 0.
       - "Flake ledger pointers"
-      # GitHub-NATIVE, so there is no file in this directory to derive it from
-      # — the one place the rule above cannot reach, and #2230 is what that
-      # cost: Dependabot's updater moved to node 24, `engine-strict` made the
-      # install fatal, every security-update run failed, and nothing filed
-      # anything. `ci-failure-watchlist`'s GITHUB_NATIVE map holds the reason
-      # and asserts this entry stays wired and stays file-less.
+      # `Dependabot Updates` was listed here and has been REMOVED: the
+      # notifier cannot watch it, for a reason no amount of permissions can
+      # fix. A `workflow_run` triggered by a run whose actor is
+      # `dependabot[bot]` is given a READ-ONLY token regardless of the
+      # `permissions:` block below, so the issue-creation call answers 404 and
+      # the notifier itself becomes a red run on main.
       #
-      # NOT yet observed firing. `workflow_run` is documented to fire for any
-      # workflow run in the repository and Dependabot's appears as one, but the
-      # only proof is a failure arriving after this lands — and the other half
-      # of #2230 stops those failures, so the chance to see it is now.
-      - "Dependabot Updates"
+      # Measured, 2026-10-23, same workflow inside seven minutes:
+      #   22:08  actor=h0mele55        success
+      #   22:11  actor=dependabot[bot] FAILURE  {"message":"Not Found","status":"404"}
+      #   22:15  actor=h0mele55        success
+      #
+      # So the monitoring gap #2230 identified is real and this is not its fix.
+      # The shape that would work is a SCHEDULED job running under a normal
+      # token that queries the Dependabot Updates run history — not a reaction
+      # to the run itself. Tracked on #2230.
       # Hourly cron (#1998). Watched for the same reason as the flake ledger
       # above, and the distinction is worth stating: the probe files its OWN
       # issue when it RUNS and reports BROKEN, which carries the verdict
