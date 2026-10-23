@@ -933,7 +933,14 @@ export async function deleteDiaryTreatment(
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'Treatment',
-                operation: 'soft_deleted',
+                // `deleted`, not `soft_deleted` (#2109). The canonical enum is
+                // `created|updated|upserted|deleted|restored|purged`, and
+                // `restored` is already in it — so the PAIR expresses the soft
+                // lifecycle and a separate soft verb would be, in the enum's
+                // own words about the batch verbs, "a second spelling of a fact
+                // the row already states". The reversibility is recorded by the
+                // existence of the restore, not by the delete's name.
+                operation: 'deleted',
                 summary:
                     `Abandoned an unfinished treatment: ${removed.count} task(s), ` +
                     `${entries.count} journal entr(ies) and ${lines.count} unfinished line(s).`,

@@ -201,7 +201,8 @@ export async function createAccessReview(
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'AccessReview',
-                operation: 'create',
+                // Past tense (#2109): the enum records what HAPPENED.
+                operation: 'created',
                 summary: `Access review "${review.name}" created with ${snapshotCount} subject(s)`,
                 after: {
                     name: review.name,
@@ -327,7 +328,7 @@ export async function submitDecision(
                 /// authn/authz reviews.
                 category: 'access',
                 entityName: 'AccessReviewDecision',
-                operation: 'submit',
+                operation: 'review_decision_submitted',
                 summary: `Reviewer recorded ${parsed.decision} on decision ${decisionId}`,
                 targetUserId: decision.subjectUserId,
                 after: {
@@ -470,7 +471,7 @@ export async function revokeDecision(
             detailsJson: {
                 category: 'access',
                 entityName: 'AccessReviewDecision',
-                operation: 'revoke',
+                operation: 'review_decision_revoked',
                 summary: `Reviewer revoked prior ${priorDecision} verdict on decision ${decisionId}`,
                 targetUserId: decision.subjectUserId,
                 before: {
@@ -737,7 +738,7 @@ export async function closeAccessReview(
                 detailsJson: {
                     category: 'access',
                     entityName: 'TenantMembership',
-                    operation: 'execute',
+                    operation: 'review_decision_executed',
                     summary: `Closeout executed ${d.decision} on subject ${d.subjectUser.email} → ${outcome}`,
                     targetUserId: d.subjectUserId,
                     after: {
@@ -910,7 +911,7 @@ export async function closeAccessReview(
                 detailsJson: {
                     category: 'entity_lifecycle',
                     entityName: 'FileRecord',
-                    operation: 'create',
+                    operation: 'created',
                     summary: `Generated access-review evidence PDF (sha256=${writeResult.sha256})`,
                     after: {
                         fileRecordId: record.id,

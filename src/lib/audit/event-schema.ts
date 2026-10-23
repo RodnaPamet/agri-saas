@@ -128,10 +128,50 @@ export const RelationshipSchema = z.object({
 
 export const AccessSchema = z.object({
     category: z.literal('access'),
-    operation: z.enum(['login', 'logout', 'session_revoked', 'permission_changed']),
+    /**
+     * The three `review_decision_*` verbs are #2109's: an access-review
+     * decision is recorded under `access` DELIBERATELY — `access-review.ts`
+     * says why, and it is not a style choice: "SIEM operators already filter
+     * on it for authn/authz reviews". Re-categorising those rows would move
+     * them out of the query a compliance operator runs.
+     *
+     * Past tense, like `session_revoked` and `permission_changed` beside them.
+     * Named rather than flattened onto `permission_changed`, which is the
+     * owner's standing ruling from #2164 ("name what happened rather than
+     * flatten it") and is also just true here: SUBMITTED and REVOKED change no
+     * permission at all — they record a reviewer's verdict — while only
+     * EXECUTED actually alters a membership.
+     */
+    operation: z.enum([
+        'login',
+        'logout',
+        'session_revoked',
+        'permission_changed',
+        'review_decision_submitted',
+        'review_decision_revoked',
+        'review_decision_executed',
+    ]),
     targetUserId: z.string().optional(),
     ipAddress: z.string().optional(),
     detail: z.string().optional(),
+    /**
+     * Declared because the call sites already write them (#2109) — the same
+     * reason `MembershipSchema` gained `summary`: "its sibling
+     * `EntityLifecycleSchema` has always had it and this did not", which is
+     * the oversight that made conforming sites non-conforming.
+     *
+     * `accessReviewId` and `actorIsAssignedReviewer` sit at the top level
+     * rather than inside `after` because that is where the rows already carry
+     * them, and `StatusChangeSchema` next door declares domain keys the same
+     * way (`handle`, `locationId`, `commodity`). Moving them would change what
+     * a reader of the existing 1,203 rows finds.
+     */
+    entityName: z.string().min(1).optional(),
+    summary: z.string().optional(),
+    before: z.record(z.string(), z.unknown()).optional(),
+    after: z.record(z.string(), z.unknown()).optional(),
+    accessReviewId: z.string().optional(),
+    actorIsAssignedReviewer: z.boolean().optional(),
 }).strict();
 
 // ─── Data Lifecycle ─────────────────────────────────────────────────
