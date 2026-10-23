@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiPost, apiPatch, apiDelete } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ export function ParcelLeasePanel({
     prefillEik?: string | null;
 }) {
     const t = useTranslations('ag.lease');
+    const triggerUndoToast = useToastWithUndo();
     const tc = useTranslations('common');
     const buildUrl = useTenantApiUrl();
     const leasesQ = useTenantSWR<{ leases: LeaseDTO[] }>(
@@ -97,13 +99,41 @@ export function ParcelLeasePanel({
         }
     };
 
-    const remove = async (id: string) => {
-        try {
-            await apiDelete(buildUrl(`/locations/${locationId}/parcels/${parcelId}/leases/${id}`));
-            await leasesQ.mutate();
-        } catch {
-            /* non-blocking */
-        }
+    /**
+     * Epic 67 — optimistic remove plus a 5s undo window; the DELETE only fires
+     * if the farmer does not press Отмени (#2193).
+     *
+     * It was a bare `apiDelete` with a silent catch: one mis-tap on a phone
+     * removed a lease from the register with no confirmation, no undo and —
+     * because the catch swallowed — no sign if the write then failed. The same
+     * lease removal on the Rent page has had the undo window since Epic 67
+     * shipped; this is the map panel catching up.
+     */
+    const remove = (id: string) => {
+        let snapshot: LeaseDTO[] = [];
+        void leasesQ.mutate(
+            (cur) => {
+                snapshot = cur?.leases ?? [];
+                return { leases: snapshot.filter((x) => x.id !== id) };
+            },
+            { revalidate: false },
+        );
+        const restore = () => {
+            void leasesQ.mutate({ leases: snapshot }, { revalidate: false });
+        };
+        triggerUndoToast({
+            action: () =>
+                apiDelete(buildUrl(`/locations/${locationId}/parcels/${parcelId}/leases/${id}`)),
+            undoAction: restore,
+            onCommit: () => {
+                void leasesQ.mutate();
+            },
+            // The rollback alone was silent — the row un-removed itself and
+            // the farmer was left to notice.
+            onError: restore,
+            message: t('leaseRemoved'),
+            undoMessage: t('undo'),
+        });
     };
 
     const kindLabel = (k: 'ARENDA' | 'NAEM') => (k === 'ARENDA' ? t('kindArenda') : t('kindNaem'));

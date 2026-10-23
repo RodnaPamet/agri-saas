@@ -115,6 +115,12 @@ const DYNAMIC_LABEL_EXEMPT: Record<string, string> = {
     'src/app/t/[tenantSlug]/(app)/admin/promotions/PromotionsAdminClient.tsx':
         'confirmLabel i18n key t(deleteConfirm) → "Delete promotion"',
     'src/app/t/[tenantSlug]/(app)/admin/sso/page.tsx': 'confirmLabel i18n key t(confirmDeleteLabel) → "Delete configuration"',
+    // #2193 — the single-role delete, converted from a native `confirm()`.
+    // Its bulk sibling on the same page already used `useBulkDelete`'s dialog;
+    // only this path was still asking with the banned blocking prompt.
+    //   roles → t('deleteRole') = "Delete role" / «Изтрий ролята»
+    'src/app/t/[tenantSlug]/(app)/admin/roles/page.tsx':
+        'confirmLabel i18n key t(deleteRole) → "Delete role"',
     // T13 i18n migration — confirmLabel is now `t('removeMfa')`, resolved
     // en+bg both begin with the canonical "Remove" verb → "Remove MFA".
     'src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx': 'confirmLabel i18n key t(removeMfa) → "Remove MFA"',

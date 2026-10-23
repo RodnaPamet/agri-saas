@@ -22,6 +22,7 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { SharePointCard } from './SharePointCard';
 import { GoogleCard } from './GoogleCard';
+import { useToastWithUndo } from '@/components/ui/hooks';
 
 interface ConnectionDTO {
     id: string;
@@ -52,6 +53,7 @@ interface ProviderInfo {
 export default function AdminIntegrationsPage() {
     const { formatDate } = useDateFormat();
     const t = useTranslations('admin.integrations');
+    const triggerUndoToast = useToastWithUndo();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
 
@@ -169,19 +171,44 @@ export default function AdminIntegrationsPage() {
         setTesting(null);
     };
 
-    const handleDisable = async (connectionId: string) => {
+    /**
+     * Epic 67 — a 5s undo window before the connection is disabled (#2193).
+     *
+     * It was a bare `fetch(..., { method: 'DELETE' })` that never read its own
+     * response: the page said «connectionDisabled» whether the call succeeded
+     * or returned a 4xx, and only the reload afterwards would have hinted
+     * otherwise. Disabling an integration stops a data feed, so a mis-click is
+     * worth five seconds.
+     *
+     * `GoogleCard` and `SharePointCard` in this same folder have had the undo
+     * window since Epic 67; this page's own list action did not.
+     */
+    const handleDisable = (connectionId: string) => {
         setMessage(null);
-        try {
-            await fetch(apiUrl('/admin/integrations'), {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ connectionId }),
-            });
-            setMessage({ type: 'success', text: t('connectionDisabled') });
-            await fetchConnections();
-        } catch {
-            setMessage({ type: 'error', text: t('disableFailed') });
-        }
+        const snapshot = connections;
+        setConnections((cur) => cur.filter((c) => c.id !== connectionId));
+        const restore = () => setConnections(snapshot);
+        triggerUndoToast({
+            action: async () => {
+                const res = await fetch(apiUrl('/admin/integrations'), {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ connectionId }),
+                });
+                if (!res.ok) throw new Error(String(res.status));
+            },
+            undoAction: restore,
+            onCommit: () => {
+                setMessage({ type: 'success', text: t('connectionDisabled') });
+                void fetchConnections();
+            },
+            onError: () => {
+                restore();
+                setMessage({ type: 'error', text: t('disableFailed') });
+            },
+            message: t('connectionDisabled'),
+            undoMessage: t('undo'),
+        });
     };
 
     const selectedProvider = providers.find(p => p.id === formProvider);

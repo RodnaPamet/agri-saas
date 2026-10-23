@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { apiPost, apiDelete } from '@/lib/api-client';
+import { useToastWithUndo } from '@/components/ui/hooks';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -42,6 +43,7 @@ export function LeasePaymentsPanel({
 }) {
     const { formatDate } = useDateFormat();
     const t = useTranslations('ag.leasePayments');
+    const triggerUndoToast = useToastWithUndo();
     const buildUrl = useTenantApiUrl();
     const [rows, setRows] = useState<LeasePaymentRow[]>([]);
     const [loading, setLoading] = useState(true);
@@ -126,17 +128,32 @@ export function LeasePaymentsPanel({
         }
     };
 
-    const remove = async (id: string) => {
-        setBusy(true);
-        try {
-            await apiDelete(buildUrl(`/leases/${leaseId}/payments/${id}`));
-            await load();
-            onChanged?.();
-        } catch {
-            /* the list reload below surfaces the true state */
-        } finally {
-            setBusy(false);
-        }
+    /**
+     * Epic 67 — a 5s undo window before the DELETE fires (#2193).
+     *
+     * This panel loads through `load()` rather than holding an SWR handle, so
+     * the optimistic step is a local filter rather than a cache write: there is
+     * no cache to roll back, and `load()` on commit is what reconciles with the
+     * server. `restore` therefore re-runs the load, which is the only honest
+     * rollback available here — it re-reads rather than asserting what the row
+     * was.
+     */
+    const remove = (id: string) => {
+        setRows((cur) => cur.filter((r) => r.id !== id));
+        const restore = () => {
+            void load();
+        };
+        triggerUndoToast({
+            action: () => apiDelete(buildUrl(`/leases/${leaseId}/payments/${id}`)),
+            undoAction: restore,
+            onCommit: () => {
+                void load();
+                onChanged?.();
+            },
+            onError: restore,
+            message: t('paymentRemoved'),
+            undoMessage: t('undo'),
+        });
     };
 
     const suffix = rentTotalSuffix(rentUnit);
