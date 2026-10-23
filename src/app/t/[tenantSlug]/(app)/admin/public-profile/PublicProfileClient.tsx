@@ -145,6 +145,27 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
     // Available here because `publicSurfaceMessages` trims the catalogue only
     // for /f/ requests — the admin editor is served the full set.
     const tp = useTranslations('publicFarm');
+    const apiUrl = useTenantApiUrl();
+    const tenantHref = useTenantHref();
+    // The shared formatter, not an ad-hoc Intl call:
+    // `date-display-consistency` forbids those in app code, and the
+    // formatter is keyed on the locale the reader actually chose rather
+    // than a hardcoded tag — my first version hardcoded `bg-BG`, so an
+    // English reader would have seen a Bulgarian date.
+    const { formatDate } = useDateFormat();
+
+    const [draft, setDraft] = useState<Draft | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
+
+    // Form state is STRINGS because that is what an input holds — the same
+    // reason `admin/farm-profile` keeps its numeric fields as text.
+    const [displayName, setDisplayName] = useState('');
+    const [tagline, setTagline] = useState('');
+    const [about, setAbout] = useState('');
+    const [oblast, setOblast] = useState('');
 
     /**
      * The 28 oblasti by BULGARIAN NAME, never by ISO code — #2068.
@@ -170,27 +191,6 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
         }
         return base;
     }, [oblast, t]);
-    const apiUrl = useTenantApiUrl();
-    const tenantHref = useTenantHref();
-    // The shared formatter, not an ad-hoc Intl call:
-    // `date-display-consistency` forbids those in app code, and the
-    // formatter is keyed on the locale the reader actually chose rather
-    // than a hardcoded tag — my first version hardcoded `bg-BG`, so an
-    // English reader would have seen a Bulgarian date.
-    const { formatDate } = useDateFormat();
-
-    const [draft, setDraft] = useState<Draft | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [success, setSuccess] = useState<string | null>(null);
-
-    // Form state is STRINGS because that is what an input holds — the same
-    // reason `admin/farm-profile` keeps its numeric fields as text.
-    const [displayName, setDisplayName] = useState('');
-    const [tagline, setTagline] = useState('');
-    const [about, setAbout] = useState('');
-    const [oblast, setOblast] = useState('');
     const [crops, setCrops] = useState('');
 
     const [handleInput, setHandleInput] = useState('');
