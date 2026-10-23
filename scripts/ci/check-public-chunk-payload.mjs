@@ -71,8 +71,29 @@ export const PROVIDER_ONLY = [
     { name: 'cmdk', marker: 'cmdk-', why: 'the palette; it used to open the app search from a stranger’s page' },
     { name: 'radix', marker: 'data-radix', why: 'dialog/popover primitives, all app-only chrome' },
     { name: 'swr', marker: 'revalidateOnFocus', why: 'the persistent cache provider, handed an undefined userId here' },
-    { name: 'next-intl-client', marker: 'MISSING_MESSAGE', why: 'the next-intl CLIENT runtime; this page is server-rendered' },
 ];
+
+/**
+ * `next-intl-client` was on the list above and is NOT app-only — removed (#2225).
+ *
+ * I wrote its reason as "the next-intl CLIENT runtime; this page is
+ * server-rendered", and that is wrong about the layout. `NextIntlClientProvider`
+ * is mounted at `src/app/layout.tsx:288`, OUTSIDE the `isPublic` ternary, so it
+ * wraps both branches — the public surface gets it with a narrowed message set
+ * (`publicSurfaceMessages(allMessages)`, line 119) rather than not at all. The
+ * client runtime is therefore the public page's own requirement, not chrome
+ * leaking through a static import.
+ *
+ * Leaving it listed would have been worse than useless: the `why` string tells
+ * the next reader to remove something load-bearing, and the layout records what
+ * happens when the provider boundary is got wrong — moving `InstallPrompt`
+ * outside it "500'd every page with 'NextIntlClientProvider context not
+ * found'".
+ *
+ * So it is not merely dropped from the BASELINE; it is dropped from the
+ * POPULATION, because a library that belongs on the page is not a finding about
+ * the page.
+ */
 
 /**
  * Known residue, each with the reason it is tolerated. SHRINK-ONLY: an entry
@@ -89,10 +110,16 @@ export const PROVIDER_ONLY = [
  * job: no MISSING_MESSAGE, no SWRConfig, no cmdk-, no data-radix" — and this
  * check, run against a real `public-farm` page load, found all four:
  *
- *   radix             27156-….js, 95891-….js
- *   cmdk              58750-….js, layout-….js
- *   swr               82696-….js, 90901-….js
- *   next-intl-client  9714-….js
+ *   radix  27156-….js, 95891-….js
+ *   cmdk   58750-….js, layout-….js
+ *   swr    82696-….js, 90901-….js
+ *
+ * **All four arrive through ONE static import** — `src/app/layout.tsx`'s
+ * `./providers` (#2225, traced over the static graph): sonner directly, cmdk and
+ * radix via `components/command-palette`, swr via `SWRPersistenceProvider`. So
+ * the `next/dynamic` fix #1971 rejected on arithmetic computed for 8,895 bytes
+ * of sonner would remove FOUR libraries across six chunks, which is the
+ * recomputation #2225 asks for.
  *
  * None of those is in `rootMainFiles` (webpack / react-dom / main-app, which
  * every route loads and no layout change can reach), so this is not
@@ -104,13 +131,7 @@ export const PROVIDER_ONLY = [
  * Which is the honest limit of a baseline this size: it no longer proves the
  * public surface is clean, only that it is not getting dirtier.
  */
-export const BASELINE = new Set([
-    'sonner',
-    'cmdk',
-    'radix',
-    'swr',
-    'next-intl-client',
-]);
+export const BASELINE = new Set(['sonner', 'cmdk', 'radix', 'swr']);
 
 export function lhrFiles(dir) {
     if (!existsSync(dir)) throw new Error(`no Lighthouse report directory at ${dir}`);

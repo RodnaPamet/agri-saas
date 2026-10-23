@@ -54,15 +54,26 @@
  * chunks." It is not true, and the check above is what found out.** Run against
  * a real `public-farm` page load, all four of the detectable ones ARE there:
  *
- *   radix             27156-….js, 95891-….js
- *   cmdk              58750-….js, layout-….js      <- the root layout's chunk
- *   swr               82696-….js, 90901-….js
- *   next-intl-client  9714-….js
+ *   radix  27156-….js, 95891-….js
+ *   cmdk   58750-….js, layout-….js      <- the root layout's own chunk
+ *   swr    82696-….js, 90901-….js
  *
  * None is in `rootMainFiles` (webpack / react-dom / main-app, which every route
  * loads and no layout change can reach), so it is not shared-runtime noise.
  * Whether this is a regression since 2026-10-16 or a gap the original
  * measurement missed is #2225.
+ *
+ * `next-intl-client` was briefly listed here as a fourth and is NOT one
+ * (#2225): `NextIntlClientProvider` is mounted at line 288, OUTSIDE the
+ * `isPublic` ternary, so it wraps both branches and the public surface gets it
+ * with a narrowed message set. The client runtime is the page's own
+ * requirement, not leakage.
+ *
+ * **All three that ARE leakage arrive through one static import** — `./providers`
+ * — traced over the static graph: sonner directly, cmdk and radix via
+ * `components/command-palette`, swr via `SWRPersistenceProvider`. That is the
+ * arithmetic #1971's `next/dynamic` rejection was missing: it was computed for
+ * 8,895 bytes of sonner, and the edge actually carries four libraries.
  *
  * What #1872 DID remove is the MOUNTING, which is what the assertions below
  * establish and all they ever established. The rendering change was real and

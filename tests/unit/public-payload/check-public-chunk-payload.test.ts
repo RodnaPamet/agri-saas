@@ -32,7 +32,6 @@ const MARKERS: Record<string, string> = {
     cmdk: 'cmdk-',
     radix: 'data-radix',
     swr: 'revalidateOnFocus',
-    'next-intl-client': 'MISSING_MESSAGE',
 };
 
 let tmp: string;
@@ -103,14 +102,14 @@ function run(lhrDir: string, build: string) {
 }
 
 describe('check-public-chunk-payload.mjs', () => {
-    it('passes when exactly the five baselined libraries are present', () => {
+    it('passes when exactly the four baselined libraries are present', () => {
         // The state the first CI run measured. Every one of the five is
         // baselined, so the check is green — and the only thing left that can
         // fail it is a SIXTH library, which is the honest limit of a baseline
         // this size.
         const { lhrDir, build } = fixture({
             'a.js': ['sonner', 'cmdk'],
-            'b.js': ['radix', 'swr', 'next-intl-client'],
+            'b.js': ['radix', 'swr'],
         });
         const r = run(lhrDir, build);
         expect(r.status).toBe(0);
@@ -122,7 +121,7 @@ describe('check-public-chunk-payload.mjs', () => {
         // one arrived" would be green forever.
         const { lhrDir, build } = fixture({
             'a.js': ['sonner', 'cmdk'],
-            'b.js': ['radix', 'swr', 'next-intl-client'],
+            'b.js': ['radix', 'swr'],
         });
         const src = fs.readFileSync(SCRIPT, 'utf8');
         const shrunk = path.join(tmp, 'shrunk.mjs');
@@ -135,7 +134,7 @@ describe('check-public-chunk-payload.mjs', () => {
         expect(r.status).toBe(1);
         // Every one, not just the first: a loop that returned early would hide
         // the rest and the reader would fix one and re-run.
-        for (const name of ['cmdk', 'radix', 'swr', 'next-intl-client']) {
+        for (const name of ['cmdk', 'radix', 'swr']) {
             expect(out).toContain(`${name} reaches the public page`);
         }
     });
@@ -158,7 +157,7 @@ describe('check-public-chunk-payload.mjs', () => {
         expect(r.status).toBe(1);
         // Every baseline entry is absent here, and each must be reported —
         // the baseline is five entries since the first CI run.
-        for (const name of ['sonner', 'cmdk', 'radix', 'swr', 'next-intl-client']) {
+        for (const name of ['sonner', 'cmdk', 'radix', 'swr']) {
             expect(r.out).toContain(`BASELINE names ${name}`);
         }
     });
