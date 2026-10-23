@@ -1,4 +1,5 @@
 import { RequestContext } from '../types';
+import { assertTenantNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { EvidenceRepository, EvidenceListFilters } from '../repositories/EvidenceRepository';
 import { assertCanRead, assertCanWrite, assertCanAdmin } from '../policies/common';
 import { logEvent } from '../events/audit';
@@ -504,6 +505,16 @@ export async function uploadEvidenceFile(
     },
 ) {
     assertCanWrite(ctx);
+
+    // #2030 — the past-due gate, HERE rather than inherited.
+    //
+    // CLAUDE.md, `entitlements.ts` and `ingest.ts` each ASSERTED, until this
+    // change, that uploads were gated once at `ingestUploadedFile` — "the choke
+    // point every record-backed upload reaches". Measured 2026-10-23: two of
+    // six paths reached it, and `assertTenantNotPastDueRestricted` had exactly
+    // ONE call site in the repository. This path was not it, so a past-due
+    // tenant could still store bytes through it. All three now say so.
+    await assertTenantNotPastDueRestricted(ctx.tenantId, 'upload');
 
     // Validate before writing.
     //

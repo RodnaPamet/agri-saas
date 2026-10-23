@@ -152,6 +152,16 @@ describe('assertWithinLimit — exchange_listing', () => {
 // hand the inner callback a stub `db` whose shape covers just
 // `billingAccount.findUnique` and the two counted resources.
 
+/**
+ * `assertTenantNotPastDueRestricted` reads `@/lib/prisma` rather than
+ * `db-context` — `BillingAccount` is not RLS-scoped, so it goes to the global
+ * client. Mocked separately for that reason; the two are not interchangeable
+ * here (#2030).
+ */
+jest.mock('@/lib/prisma', () => ({
+    prisma: { billingAccount: { findUnique: jest.fn() } },
+}));
+
 jest.mock('@/lib/db-context', () => {
     const stub = {
         billingAccount: {
@@ -367,5 +377,96 @@ describe('assertWithinLimit — location', () => {
                 plan: 'FREE', resource: 'location', limit: '5', current: '13',
             });
         }
+    });
+});
+
+/**
+ * ── the tenantId gate actually REFUSES — #2030 ──
+ *
+ * This had no behavioural test, and #2030 is why that mattered. The gate's
+ * decision logic is covered by `past-due-grace.test.ts` (when is a tenant
+ * restricted) and its presence at every upload path is covered statically by
+ * §5 of `past-due-capability-coverage`. Neither proves the wrapper THROWS, so
+ * all five upload gates could have been no-ops with both green.
+ *
+ * The `ctx` sibling is exercised through `exchange-usecase.test.ts`. The
+ * `tenantId` variant — the one every upload site calls — was untested.
+ */
+describe('assertTenantNotPastDueRestricted (#2030)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+
+    async function load() {
+        const ent = await loadEntitlements('sk_test_saas');
+        const { prisma } = (await import('@/lib/prisma')) as unknown as {
+            prisma: { billingAccount: { findUnique: jest.Mock } };
+        };
+        return { ent, findUnique: prisma.billingAccount.findUnique };
+    }
+
+    it('refuses an upload once the grace has expired', async () => {
+        const { ent, findUnique } = await load();
+        findUnique.mockResolvedValue({
+            status: 'PAST_DUE',
+            // 15 days, one past the 14-day grace.
+            pastDueSince: new Date(Date.now() - 15 * DAY),
+        });
+
+        // The MESSAGE, not a bare `toThrow()`. An argument-less `toThrow`
+        // accepts any error — including a mock-plumbing TypeError from a
+        // future refactor of this file's module mocks — so it would pass while
+        // proving nothing about the refusal. Measured: the real rejection is
+        // `ForbiddenError: Account payment is outstanding.`
+        await expect(
+            ent.assertTenantNotPastDueRestricted('t-1', 'upload'),
+        ).rejects.toThrow(/payment is outstanding/i);
+    });
+
+    it('lets an upload through while still INSIDE the grace', async () => {
+        // The discriminator. Without it, a gate that refused every PAST_DUE
+        // tenant would pass the test above and silently break the 14-day
+        // grace the owner's ruling grants.
+        const { ent, findUnique } = await load();
+        findUnique.mockResolvedValue({
+            status: 'PAST_DUE',
+            pastDueSince: new Date(Date.now() - 1 * DAY),
+        });
+
+        await expect(
+            ent.assertTenantNotPastDueRestricted('t-1', 'upload'),
+        ).resolves.toBeUndefined();
+    });
+
+    it('lets an ACTIVE tenant through', async () => {
+        const { ent, findUnique } = await load();
+        findUnique.mockResolvedValue({ status: 'ACTIVE', pastDueSince: null });
+
+        await expect(
+            ent.assertTenantNotPastDueRestricted('t-1', 'upload'),
+        ).resolves.toBeUndefined();
+    });
+
+    it('lets a tenant with no billing row through', async () => {
+        const { ent, findUnique } = await load();
+        findUnique.mockResolvedValue(null);
+
+        await expect(
+            ent.assertTenantNotPastDueRestricted('t-1', 'upload'),
+        ).resolves.toBeUndefined();
+    });
+
+    it('never queries billing under SELFHOSTED', async () => {
+        // The short-circuit every upload path inherits in tests, which is
+        // exactly why the suites that call those paths pass without proving
+        // anything about the gate.
+        const ent = await loadEntitlements(undefined);
+        const { prisma } = (await import('@/lib/prisma')) as unknown as {
+            prisma: { billingAccount: { findUnique: jest.Mock } };
+        };
+        prisma.billingAccount.findUnique.mockClear();
+
+        await expect(
+            ent.assertTenantNotPastDueRestricted('t-1', 'upload'),
+        ).resolves.toBeUndefined();
+        expect(prisma.billingAccount.findUnique).not.toHaveBeenCalled();
     });
 });
