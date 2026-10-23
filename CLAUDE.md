@@ -1437,7 +1437,25 @@ Three things it does not do, stated so they are not assumed:
       still declares all 72 faces at their discrete `font-weight` values, which
       is what keeps browser weight matching and variable-axis clamping
       unchanged — `font-[560]` still rounds to 600. Collapsing them into ranged
-      faces WOULD change rendering and is tracked separately on #2199.
+      faces WOULD change rendering and is tracked separately on #2203.
+      **Onest carries a third, repo-authored cut: `onest-bg-punct.woff2`
+      (#1969).** Onest's `cyrillic` cut claims no digit, hyphen, comma or
+      Bulgarian quote mark — measured on the file's own cmap, where the only
+      non-letters are `U+0020` and `U+2116` — so every Bulgarian heading
+      downloaded `onest-latin.woff2` (33,760 B) to render its SPACE. The cut is
+      9,236 B, fetched from Google's `&text=` endpoint at `wght@100..900` so it
+      is the VARIABLE font, and `latin`'s declared range is NARROWED by exactly
+      the codepoints it takes, so no `@font-face` precedence rule decides which
+      file serves a comma. A Bulgarian heading page goes 49,620 → 25,096 B of
+      Onest; a Latin one goes 33,760 → 42,996 B, a trade the owner took
+      knowingly. Do NOT widen the `cyrillic` range to cover a space instead:
+      it works for `Стопанство Победа` and not for `Победа 2024`, which is the
+      common case. Google's own cuts overlap deliberately (20 file pairs,
+      combining marks and `math` ∩ `symbols` at 185 codepoints), so the
+      property held by `tests/guards/font-subset-ranges-are-disjoint.test.ts`
+      is that the REPO-AUTHORED cut overlaps nothing, with the upstream pairs
+      as a baseline. Inter has no such cut and `bg` still preloads
+      `inter-latin`; that is a measured open question, not an oversight.
       This is not only CI hygiene. `public/sw.js` passes cross-origin requests
       through untouched, so the Google-hosted files were never cacheable — an
       operator with no signal fell back to system-ui for every string.
@@ -3023,8 +3041,18 @@ with *"Part of #626 — deliberately does NOT close it"*, the branch commit said
 and inverted — the PR page displays the careful "Part of", while the issue
 quietly reads CLOSED.
 
+**The PR BODY closes too, independently.** The paragraph above explains that a
+commit's keyword closes an issue even when the body says "Part of", which reads
+as though the body were inert. It is not: a closing keyword in the PR
+DESCRIPTION closes the linked issue on merge whatever the commits say. #2202
+shipped a body opening `Closes #2199 (Fix A only — Fix B is a rendering change
+and stays open there)` over a commit that correctly said `Refs #2199`, and
+#2199 closed. Both channels close; neither cancels the other, and a
+parenthetical in the same sentence cancels nothing.
+
 So when a PR only partly addresses an issue, the closing keyword must not
-appear in ANY branch commit: write `Part of #N` / `Refs #N` there too. If you
+appear in ANY branch commit NOR in the PR body: write `Part of #N` / `Refs #N`
+in both. If you
 notice late, amend the COMMIT — amending the body changes nothing, and
 `gh issue reopen` plus a comment stating what shipped and what remains is the
 recovery.

@@ -171,7 +171,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     fallback either way.
 
                     Only Inter, and only the subsets this locale can render:
-                    the 17 vendored files are 431,792 B, so preloading them all
+                    the 18 vendored files are 441,028 B, so preloading them all
                     would be strictly worse than preloading none. Onest and Bricolage
                     fall back to Inter, which is preloaded.
 

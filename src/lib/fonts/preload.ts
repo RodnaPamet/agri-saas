@@ -18,7 +18,7 @@
  *
  * ## Why only the body face
  *
- * The 17 distinct files total 431,792 bytes, declared by 72 faces; preloading
+ * The 18 distinct files total 441,028 bytes, declared by 75 faces; preloading
  * them all would be strictly worse than preloading none. `Inter` is the BODY face (`globals.css`: `body {
  * font-family: 'Inter', … }`), so it is the one blocking first TEXT paint.
  * `Onest` (headings) and `Bricolage Grotesque` (dashboard numbers) both fall
@@ -30,6 +30,15 @@
  * Cyrillic file and vice versa. The product ships in Bulgarian (`uiLanguage`
  * defaults to `bg`), so a `bg` render needs the Cyrillic cut for its text and
  * the Latin cut for digits and punctuation.
+ *
+ * **Inter has no shared-punctuation cut, unlike Onest (#1969).** That is why
+ * `bg` still preloads `inter-latin` (48,256 B) rather than something smaller:
+ * `inter-cyrillic` claims no digit, comma or hyphen, so Bulgarian body text
+ * needs the Latin file for real. Giving Inter the same treatment Onest got
+ * would cut the preload budget by ~39 KB on the critical path — and would only
+ * pay off on pages with no Latin LETTER anywhere, which units like `ha` and
+ * `kg` make unlikely. Measured as its own question on the follow-up issue
+ * rather than assumed from Onest's result.
  *
  *   en   inter-latin                  48,256 B
  *   bg   inter-latin + inter-cyrillic  67,004 B
