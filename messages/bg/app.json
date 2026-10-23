@@ -6749,6 +6749,7 @@
         "YIELD_RECORD_INVALID_DATE": "{field} трябва да е валидна дата.",
         "YIELD_RECORD_NOT_FOUND": "Записът за добив не беше намерен.",
         "YIELD_RECORD_TONNES_NEGATIVE": "Количеството в тонове трябва да е нула или положително число.",
-        "REGISTER_EMPTY_FOR_PERIOD": "Няма записи за този период."
+        "REGISTER_EMPTY_FOR_PERIOD": "Няма записи за този период.",
+        "TASK_DELETE_NOT_PERMITTED": "Само човекът, създал тази задача, или администратор на стопанството може да я изтрие."
     }
 }

@@ -1,7 +1,7 @@
 import { RequestContext } from '../types';
 import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
 import { ParcelRepository, type ParcelSummaryGeo } from '../repositories/ParcelRepository';
-import {
+import { assertCanDeleteTask, assertCanDeleteTasks,
     assertCanReadTasks,
     assertCanWriteTasks,
     assertCanCommentOnTasks,
@@ -260,6 +260,10 @@ export async function deleteTask(ctx: RequestContext, taskId: string) {
     const result = await runInTenantContext(ctx, async (db) => {
         const existing = await WorkItemRepository.getById(db, ctx, taskId);
         if (!existing) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
+        // Creator-or-admin (#2187). Read off the STORED row, which `getById`
+        // has already fetched — no extra query, and no way for a caller to
+        // name its own authorship.
+        assertCanDeleteTask(ctx, existing);
         await db.task.delete({ where: { id: taskId } });
         await logEvent(db, ctx, {
             action: 'TASK_DELETED',
@@ -288,9 +292,15 @@ export async function bulkDeleteTask(
     const result = await runInTenantContext(ctx, async (db) => {
         const rows = await db.task.findMany({
             where: { id: { in: taskIds }, tenantId: ctx.tenantId },
-            select: { id: true, title: true, type: true },
+            select: { id: true, title: true, type: true, createdByUserId: true },
         });
         if (rows.length === 0) return { deleted: 0 };
+
+        // All-or-nothing (#2187). Asserted BEFORE the deleteMany, so a refusal
+        // leaves every row intact rather than part of the selection gone.
+        // Note it runs on the rows that EXIST: an id the tenant does not own
+        // was already filtered out above and is not something to refuse over.
+        assertCanDeleteTasks(ctx, rows);
 
         await db.task.deleteMany({
             where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId },

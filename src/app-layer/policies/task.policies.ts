@@ -84,6 +84,72 @@ export function assertCanEditTask(
  * `JournalRepository`. Folding that in here would make the assert throw 403 for
  * a case the usecase answers 409.
  */
+/**
+ * Only a task's CREATOR or a farm admin may DELETE it (#2187).
+ *
+ * Owner ruling 2026-10-23, closing an asymmetry #2169 opened: editing became
+ * creator-or-admin while deleting stayed any-writer, so the rule read "you may
+ * not change my task, but you may delete it" — the weaker permission guarding
+ * the more destructive verb.
+ *
+ * ## The delete is HARD, which is worse than I first recorded
+ *
+ * #2187 was filed saying "a soft delete is recoverable from the Trash, so a
+ * lower bar is defensible". That was wrong. `deleteTask` calls
+ * `db.task.delete`, and its own test is named "deletes the row (children
+ * cascade)" — comments, links and the audit trail's entity go with it. Nothing
+ * writes `Task.deletedAt`, even though the column exists, is indexed and the
+ * repository filters on it; `src/lib/prisma.ts` describes a `softDelete`
+ * extension in a comment that is not applied anywhere, and the repositories
+ * that do soft-delete (Location, Parcel, CostEntry, Knowledge) each implement
+ * it explicitly by name.
+ *
+ * So the cost of a mistaken delete is permanent, and the argument for a lower
+ * bar than EDIT does not survive contact with what the code does.
+ *
+ * Whether the task delete SHOULD be soft is a separate question and not this
+ * change's to answer.
+ */
+export function assertCanDeleteTask(
+    ctx: RequestContext,
+    task: { createdByUserId: string },
+) {
+    if (ctx.permissions.canAdmin) return;
+    if (task.createdByUserId === ctx.userId) return;
+    throw codedForbidden(
+        'TASK_DELETE_NOT_PERMITTED',
+        'Only the person who created this task, or a farm administrator, can delete it.',
+    );
+}
+
+/**
+ * The same rule for a BULK delete, which refuses the WHOLE call (#2187).
+ *
+ * Owner ruling: all-or-nothing, reporting how many rows were refused. A
+ * partial success is the worse answer here — the farmer selected twenty rows
+ * and would get an outcome they have to reconcile against their selection,
+ * with no way to tell which seventeen went. #1740 is the same shape one domain
+ * over, where the treatment write is atomic PER BLOCK rather than across the
+ * treatment, and the lesson there was that a half-applied destructive result
+ * is a state the UI cannot explain.
+ *
+ * The count rides in `params`, which `ErrorParams` documents as "named,
+ * non-personal, for translation" — a number of rows, never whose they are.
+ */
+export function assertCanDeleteTasks(
+    ctx: RequestContext,
+    tasks: ReadonlyArray<{ createdByUserId: string }>,
+) {
+    if (ctx.permissions.canAdmin) return;
+    const refused = tasks.filter((t) => t.createdByUserId !== ctx.userId).length;
+    if (refused === 0) return;
+    throw codedForbidden(
+        'TASK_DELETE_NOT_PERMITTED',
+        'Some of the selected tasks were created by somebody else, so none were deleted.',
+        { refused, selected: tasks.length },
+    );
+}
+
 export function canDeleteTreatment(
     ctx: RequestContext,
     treatment: { createdByUserId: string | null },

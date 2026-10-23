@@ -109,6 +109,7 @@ import {
     bulkAssignTasks,
     bulkSetTaskDueDate,
     deleteTask,
+    bulkDeleteTask,
 } from '@/app-layer/usecases/task';
 import { createBulkTaskSummaryNotification } from '@/app-layer/notifications/bulk-task-summary';
 import { runInTenantContext } from '@/lib/db-context';
@@ -548,8 +549,13 @@ describe('deleteTask', () => {
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({ ...TX, task: { delete: del } } as never),
         );
+        // `createdByUserId` added by #2187: the delete is creator-or-admin now,
+        // and this fixture predates the rule. An EDITOR is write-but-not-admin,
+        // so without it the row belongs to nobody and the gate refuses — which
+        // is the gate working, not a regression.
         mockGetById.mockResolvedValueOnce({
             id: 't1', title: 'My task', type: 'TASK', status: 'OPEN', practiceId: null,
+            createdByUserId: 'user-1',
         } as never);
 
         await deleteTask(makeRequestContext('EDITOR'), 't1');
@@ -573,5 +579,165 @@ describe('deleteTask', () => {
             deleteTask(makeRequestContext('EDITOR'), 'missing'),
         ).rejects.toThrow();
         expect(del).not.toHaveBeenCalled();
+    });
+});
+
+describe('deleteTask — creator-or-admin (#2187)', () => {
+    /**
+     * The asymmetry this closes: #2169 gated EDIT on creator-or-admin and left
+     * DELETE on any-writer, so the rule read "you may not change my task, but
+     * you may delete it" — the weaker permission guarding the more destructive
+     * verb. And the delete is HARD: the sibling test above is named "deletes
+     * the row (children cascade)".
+     *
+     * EDITOR is the persona that makes these cases mean anything — `canWrite`
+     * true, `canAdmin` false — because every OWNER/ADMIN case passes through
+     * the admin arm and says nothing about the creator arm.
+     */
+    const txWith = (del: jest.Mock) =>
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ ...TX, task: { delete: del } } as never),
+        );
+
+    it('the CREATOR may delete without being an admin', async () => {
+        const del = jest.fn().mockResolvedValue({});
+        txWith(del);
+        mockGetById.mockResolvedValueOnce({
+            id: 't1', title: 'Mine', type: 'TASK', status: 'OPEN', practiceId: null,
+            createdByUserId: 'user-1',
+        } as never);
+
+        await deleteTask(makeRequestContext('EDITOR'), 't1');
+        expect(del).toHaveBeenCalledWith({ where: { id: 't1' } });
+    });
+
+    it('a WRITER who did not create it is REFUSED, and nothing is deleted', async () => {
+        const del = jest.fn();
+        txWith(del);
+        mockGetById.mockResolvedValueOnce({
+            id: 't1', title: 'Theirs', type: 'TASK', status: 'OPEN', practiceId: null,
+            createdByUserId: 'somebody-else',
+        } as never);
+
+        await expect(
+            deleteTask(makeRequestContext('EDITOR'), 't1'),
+        ).rejects.toMatchObject({ code: 'TASK_DELETE_NOT_PERMITTED' });
+        // The assertion that matters: the refusal lands BEFORE the write.
+        expect(del).not.toHaveBeenCalled();
+    });
+
+    it('an ADMIN may delete a task somebody else created', async () => {
+        // The release valve. Without it a farm whose only admin is away cannot
+        // clear anybody's mistake, which is the cost the owner accepted.
+        const del = jest.fn().mockResolvedValue({});
+        txWith(del);
+        mockGetById.mockResolvedValueOnce({
+            id: 't1', title: 'Theirs', type: 'TASK', status: 'OPEN', practiceId: null,
+            createdByUserId: 'somebody-else',
+        } as never);
+
+        await deleteTask(makeRequestContext('ADMIN'), 't1');
+        expect(del).toHaveBeenCalled();
+    });
+
+    it('refuses a code DISTINCT from the role refusal', async () => {
+        // A READER is stopped one gate earlier, by `assertCanWriteTasks`. What
+        // matters here is that the two refusals are DISTINGUISHABLE: telling a
+        // farmer "you lack permission" when the truth is "this is not yours"
+        // points them at the wrong remedy.
+        //
+        // Note the role refusal is an UNCODED `forbidden()` — plain
+        // `FORBIDDEN` — unlike the treatment path's `WRITE_FORBIDDEN_FOR_ROLE`.
+        // I expected the coded one here and was wrong. So the pair is
+        // distinguishable, but only because the NEW code is specific; the old
+        // one still says nothing a client can switch on. Out of scope to
+        // change, and asserted as it IS rather than as it should be.
+        await expect(
+            deleteTask(makeRequestContext('READER'), 't1'),
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+});
+
+describe('bulkDeleteTask — all-or-nothing (#2187)', () => {
+    /**
+     * The first tests this usecase has had. It was written with no authorship
+     * check at all, and nothing covered it — which is how the asymmetry
+     * survived #2169.
+     */
+    const txWith = (findMany: jest.Mock, deleteMany: jest.Mock) =>
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ ...TX, task: { findMany, deleteMany } } as never),
+        );
+
+    const row = (id: string, by: string) => ({
+        id, title: id, type: 'TASK', createdByUserId: by,
+    });
+
+    it('deletes every row when they are all the caller\'s own', async () => {
+        const deleteMany = jest.fn().mockResolvedValue({ count: 2 });
+        txWith(jest.fn().mockResolvedValue([row('a', 'user-1'), row('b', 'user-1')]), deleteMany);
+
+        const result = await bulkDeleteTask(makeRequestContext('EDITOR'), ['a', 'b']);
+        expect(result).toEqual({ deleted: 2 });
+        expect(deleteMany).toHaveBeenCalled();
+    });
+
+    it('refuses the WHOLE call when ONE row belongs to somebody else', async () => {
+        // The owner's ruling, and the case worth the strongest assertion: the
+        // two the caller owns must NOT go. A partial success would leave them
+        // reconciling an outcome against their own selection.
+        const deleteMany = jest.fn();
+        txWith(
+            jest.fn().mockResolvedValue([
+                row('a', 'user-1'),
+                row('b', 'somebody-else'),
+                row('c', 'user-1'),
+            ]),
+            deleteMany,
+        );
+
+        await expect(
+            bulkDeleteTask(makeRequestContext('EDITOR'), ['a', 'b', 'c']),
+        ).rejects.toMatchObject({
+            code: 'TASK_DELETE_NOT_PERMITTED',
+            params: { refused: 1, selected: 3 },
+        });
+        expect(deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('reports the counts a client needs to phrase the refusal', async () => {
+        const deleteMany = jest.fn();
+        txWith(
+            jest.fn().mockResolvedValue([
+                row('a', 'other-1'),
+                row('b', 'other-2'),
+                row('c', 'user-1'),
+            ]),
+            deleteMany,
+        );
+
+        await expect(
+            bulkDeleteTask(makeRequestContext('EDITOR'), ['a', 'b', 'c']),
+        ).rejects.toMatchObject({ params: { refused: 2, selected: 3 } });
+    });
+
+    it('an ADMIN deletes the selection whatever its authorship', async () => {
+        const deleteMany = jest.fn().mockResolvedValue({ count: 2 });
+        txWith(jest.fn().mockResolvedValue([row('a', 'other'), row('b', 'other')]), deleteMany);
+
+        const result = await bulkDeleteTask(makeRequestContext('ADMIN'), ['a', 'b']);
+        expect(result).toEqual({ deleted: 2 });
+    });
+
+    it('an empty selection is 0 deleted, not a refusal', async () => {
+        // The rows that EXIST are what the check runs on, and an id this
+        // tenant does not own was filtered out by the query rather than being
+        // something to refuse over.
+        const deleteMany = jest.fn();
+        txWith(jest.fn().mockResolvedValue([]), deleteMany);
+
+        const result = await bulkDeleteTask(makeRequestContext('EDITOR'), ['nope']);
+        expect(result).toEqual({ deleted: 0 });
+        expect(deleteMany).not.toHaveBeenCalled();
     });
 });

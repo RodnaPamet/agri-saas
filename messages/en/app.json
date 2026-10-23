@@ -6749,6 +6749,7 @@
         "YIELD_RECORD_INVALID_DATE": "{field} must be a valid date.",
         "YIELD_RECORD_NOT_FOUND": "That yield record was not found.",
         "YIELD_RECORD_TONNES_NEGATIVE": "Gross tonnes must be zero or positive.",
-        "REGISTER_EMPTY_FOR_PERIOD": "Nothing was recorded for this block in this period."
+        "REGISTER_EMPTY_FOR_PERIOD": "Nothing was recorded for this block in this period.",
+        "TASK_DELETE_NOT_PERMITTED": "Only the person who created this task, or a farm administrator, can delete it."
     }
 }
