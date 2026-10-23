@@ -196,8 +196,14 @@ describe('Epic 64 — window.confirm() ceiling', () => {
         expect(scanned.length).toBeGreaterThan(1500);
         for (const file of scanned) {
             const src = read(file);
-            // Strip comments first so doc-comment mentions don't count.
-            const stripped = blankNonCode(src);
+            // Comments AND strings. Comments so a doc-comment mention does not
+            // count — that part was always here. `strings: true` added with
+            // #2224's sibling ceiling below, which found the reason: the
+            // default leaves string literals intact, so a `confirm(` quoted in
+            // any description or fixture string would count as a call site.
+            // Nothing does today; the subject is a CALL SHAPE either way, and
+            // the helper's docblock prescribes the option for that.
+            const stripped = blankNonCode(src, { strings: true });
             // Match BOTH bare `confirm(` (the global) and `window.confirm(`
             // — the second is what people write when their linter complains
             // about implicit globals.
@@ -219,6 +225,54 @@ describe('Epic 64 — window.confirm() ceiling', () => {
                 `Found ${total} native-confirm call sites — over the ceiling of ${CONFIRM_CALL_CEILING}. Migrate to <ConfirmDialog>:\n  ` +
                     offenders.join('\n  ') +
                     '\n\nIf the rise is intentional and the ceiling needs to lift, document why in the PR description.',
+            );
+        }
+    });
+
+    /**
+     * The same ratchet for `alert()` (#2224), which #2226's sibling issue
+     * proposed and #2209 deliberately left out of scope.
+     *
+     * `confirm()` asks a question before an action; `alert()` reports a RESULT
+     * afterwards. That is why they were separate pieces of work — there is no
+     * drop-in replacement for the second, because what replaces it depends on
+     * what the result IS. But they are the same anti-pattern in CLAUDE.md's
+     * terms: both block the main thread, neither can be translated beyond its
+     * button label, and on a phone both render as browser chrome.
+     *
+     * Three calls existed. The issue said six; that count came from a grep
+     * that stripped neither comments nor string literals, and one of its hits
+     * was `<script>alert(1)</script>` inside an XSS example in the OpenAPI
+     * prose. Stripping both gives three, all now converted — so this starts at
+     * 0 rather than ratcheting down from a wrong number.
+     */
+    const ALERT_CALL_CEILING = 0;
+
+    it(`has at most ${ALERT_CALL_CEILING} native-alert call sites under src/`, () => {
+        const offenders: string[] = [];
+        const scanned = walk(CONFIRM_SCAN_ROOT);
+        expect(scanned.length).toBeGreaterThan(1500);
+        for (const file of scanned) {
+            // `{ strings: true }`, which is NOT the default — `blankNonCode`
+            // blanks comments only unless asked. Without it this counted
+            // `<script>alert(1)</script>` from an XSS example inside an
+            // OpenAPI description string in `tasks.paths.ts`, which is
+            // documentation prose, not a call.
+            //
+            // The helper's own docblock prescribes the option for exactly this:
+            // "On for a guard looking for code structure — an object literal,
+            // a call shape". A call shape is what this looks for.
+            const stripped = blankNonCode(read(file), { strings: true });
+            const bare = stripped.match(/(?<![\w.])alert\s*\(/g) ?? [];
+            const windowed = stripped.match(/\bwindow\.alert\s*\(/g) ?? [];
+            const total = bare.length + windowed.length;
+            if (total > 0) offenders.push(`${path.relative(REPO, file)}:${total}`);
+        }
+        const total = offenders.reduce((n, line) => n + Number(line.split(':').pop()), 0);
+        if (total > ALERT_CALL_CEILING) {
+            throw new Error(
+                `Found ${total} native-alert call sites — over the ceiling of ${ALERT_CALL_CEILING}. Report results with a toast or an InlineNotice:\n  ` +
+                    offenders.join('\n  '),
             );
         }
     });
