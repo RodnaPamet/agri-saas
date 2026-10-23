@@ -1,0 +1,129 @@
+{
+    "//": "Generated from the rules that lived in scripts/verify-changed.mjs (#2018). This file is the SOURCE now: the script compiles each `when` with new RegExp, and tests/guards/verify-changed-rules-resolve.test.ts asserts every `run` path exists. Data rather than code so the mapping is readable, diffable, and assertable from a CJS test — jest's node project cannot import an .mjs.",
+    "pathRules": [
+        {
+            "when": "^tests\\/",
+            "run": [
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "A change under tests/ puts META-guards in scope — ones that grade the SHAPE of test code (hand-rolled file walks, comment strippers, guard-file ceilings) rather than the code under test. Measured twice: `file-collection-is-not-silently-empty` fired on a helper inside a new test, and its subject (\"which guards exist\") has nothing to do with any change topic."
+        },
+        {
+            "when": "^src\\/app\\/api\\/",
+            "run": [
+                "tests/guardrails",
+                "tests/guards",
+                "tests/contracts"
+            ],
+            "why": "Route coverage, the route inventory and the OpenAPI completeness contracts all range over the route tree, and none of them live beside the route."
+        },
+        {
+            "when": "^messages\\/",
+            "run": [
+                "tests/guardrails",
+                "tests/guards"
+            ],
+            "why": "The i18n gate checks bg/en key parity, orphans, drift and untranslated values across the whole catalogue, so one added key is a whole-catalogue question."
+        },
+        {
+            "when": "^src\\/lib\\/openapi\\/",
+            "run": [
+                "tests/contracts",
+                "tests/guards"
+            ],
+            "why": "The generated spec is committed, so a path edit without `npm run openapi:generate` leaves it stale, and the contract snapshots pin its prose."
+        },
+        {
+            "when": "^prisma\\/",
+            "run": [
+                "tests/guards",
+                "tests/guardrails",
+                "tests/integration"
+            ],
+            "why": "Schema-folder coverage, destructive-migration inverses and RLS guards are all derived from the schema rather than from the migration you wrote."
+        },
+        {
+            "when": "^(deploy|docker-compose|Dockerfile)",
+            "run": [
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "Compose/image guards assert drift against the repo-canonical files and the env template."
+        },
+        {
+            "when": "^(package\\.json|package-lock\\.json)$",
+            "run": [
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "Dependency ratchets and the lockfile guards. A lockfile written by the wrong npm also drops platform `libc` constraints, which only a guard notices."
+        },
+        {
+            "when": "^src\\/components\\/|^src\\/app\\/(?!api\\/)",
+            "run": [
+                "tests/rendered",
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "Rendered tests, the design-system drift guardrail and the public-surface guards all range over components rather than over the file you edited."
+        },
+        {
+            "when": "^(src|scripts)\\/",
+            "run": [
+                "tests/unit"
+            ],
+            "why": "The default population for source changes. Broad on purpose: it is the root that held the failing assertion in the first of the three wrong subsets this issue records."
+        },
+        {
+            "when": "^CLAUDE\\.md$",
+            "run": [
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "Several guards quote CLAUDE.md or assert that a claim in it is true, so editing it can fail a test with no code change at all."
+        }
+    ],
+    "contentRules": [
+        {
+            "when": "coded(?:BadRequest|NotFound|Conflict|Forbidden)\\s*\\(\\s*['\"][A-Z0-9_]+['\"]",
+            "run": [
+                "tests/guards/a-new-code-ships-with-its-entry.test.ts",
+                "tests/contracts/error-codes-are-documented.test.ts",
+                "tests/unit/refusal-codes-read-in-bulgarian.test.ts"
+            ],
+            "why": "A NEW refusal code needs a Bulgarian entry and a name in the OpenAPI spec. Both guards live far from the throwing file, and both fired on #2035 after everything else was green."
+        },
+        {
+            "when": "\\bmarkStored\\s*\\(|storage\\s*\\.\\s*write\\s*\\(",
+            "run": [
+                "tests/guards/uploads-strip-image-metadata.test.ts",
+                "tests/guards/past-due-capability-coverage.test.ts"
+            ],
+            "why": "A new path that stores uploaded bytes joins two derived populations — the metadata strippers and the past-due upload gate. #2030: four paths had escaped the second one."
+        },
+        {
+            "when": "application\\/pdf|stripPdfMetadata|stripImageMetadata",
+            "run": [
+                "tests/unit",
+                "tests/integration",
+                "tests/guards"
+            ],
+            "why": "Changing how an uploaded FORMAT is treated puts every suite holding a fixture of that format in scope. On #2035 that was 47 suites, 35 outside the import-derived set."
+        },
+        {
+            "when": "eslint-disable",
+            "run": [],
+            "why": "The lint ceiling counts SUPPRESSED findings, so a new disable can redden CI with no new warning. Re-run the ceiling AFTER the last edit — a stale run is one of the three failures this issue records.",
+            "lintOnly": true
+        },
+        {
+            "when": "RESTRICTED_CAPABILITIES|assert(?:Tenant)?NotPastDueRestricted",
+            "run": [
+                "tests/guards/past-due-capability-coverage.test.ts",
+                "tests/unit/past-due-grace.test.ts"
+            ],
+            "why": "The capability ruling and its gate coverage are checked by a derived population, not by the file holding the gate."
+        }
+    ]
+}
