@@ -1562,8 +1562,9 @@
     },
     {
       "path": "/api/t/{tenantSlug}/journal/treatments/deleted",
-      "status": "live",
-      "documented": true
+      "status": "retired",
+      "documented": true,
+      "reason": "Retired 2026-10-24. Owner ruling: «Кошче» goes entirely — \"what's deleted is deleted\". There is no withdrawn-treatment listing because a withdrawn treatment no longer exists: `deleteDiaryTreatment` erases its journal entries and register lines outright. The phone dropped its «Кошче» in agrent-ios #413; a client still calling this gets a 404 and should stop asking."
     },
     {
       "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}",
@@ -1577,8 +1578,9 @@
     },
     {
       "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/restore",
-      "status": "live",
-      "documented": true
+      "status": "retired",
+      "documented": true,
+      "reason": "Retired 2026-10-24, with the listing above. Nothing to restore: the entries and `OperationParcel` lines are physically deleted on withdrawal, so a restore could only ever have resurrected an empty task shell. Removed rather than left answering 404, so no client builds a retry around it."
     },
     {
       "path": "/api/t/{tenantSlug}/journal/{id}",

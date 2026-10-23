@@ -51,20 +51,35 @@ const read = (rel: string): string => fs.readFileSync(path.join(REPO, rel), 'utf
 /** Comments and string literals blanked, so prose cannot satisfy a code assertion. */
 const code = (rel: string): string => blankNonCode(read(rel));
 
-describe('the task path is hard, in code and not only in prose', () => {
-    it('`deleteTask` and `bulkDeleteTask` destroy the row', () => {
+describe('the task path calls delete — which the extension makes SOFT', () => {
+    it('`deleteTask` and `bulkDeleteTask` call delete / deleteMany', () => {
         const c = code(HARD);
         expect(c).toContain('db.task.delete(');
         expect(c).toContain('db.task.deleteMany(');
     });
 
-    it('nothing on that path writes `deletedAt`', () => {
-        // The failure this catches: a well-meant conversion to a soft delete
-        // that leaves both docblocks describing a hard one. `deletedAt` may
-        // appear in a FILTER elsewhere in the file, so the assertion is about
-        // a WRITE — `deletedAt:` followed by a value, inside an update.
-        const c = code(HARD);
-        expect(c).not.toMatch(/db\.task\.update(Many)?\([^)]*deletedAt/s);
+    /**
+     * ⚠ WHAT THIS SUITE CANNOT SEE — #2242.
+     *
+     * This file reads SOURCE. `Task` is in `SOFT_DELETE_MODELS`, and
+     * `withSoftDeleteExtension` (`src/lib/prisma.ts:459`) rewrites both calls
+     * above into `update({ data: { deletedAt } })` before they reach the
+     * database. Measured through the real tenant client:
+     *
+     *     delete     -> SOFT (deletedAt=true)
+     *     deleteMany -> SOFT (deletedAt=true)
+     *
+     * An earlier version of this suite asserted "nothing on that path writes
+     * `deletedAt`" and PASSED, which is true of the file and false of the
+     * behaviour. It is blind by construction: no scan of a call site can see
+     * something rewriting the call. The assertion is gone rather than fixed,
+     * because there is no regex that closes that gap — the replacement is a
+     * DB-backed case, tracked in #2242.
+     */
+    it('records that the call shape is not the semantics', () => {
+        // A deliberate non-assertion would be worse than none. What IS
+        // checkable here: the file tells the reader where the truth is.
+        expect(read(HARD)).toMatch(/SOFT_DELETE_MODELS|#2242/);
     });
 
     it('the file points the reader at the TREATMENT path', () => {
@@ -83,10 +98,17 @@ describe('the task path is hard, in code and not only in prose', () => {
  * rows from one table, and each file's docblock describes the other, so each
  * can go stale silently. What changed is which facts it pins.
  */
-describe('the treatment path is hard too, and erases what nothing else reaches', () => {
-    it('the withdrawal DELETES the tasks rather than flagging them', () => {
-        expect(code(SOFT)).toMatch(/db\.task\.deleteMany\(/);
-        expect(code(SOFT)).not.toMatch(/db\.task\.updateMany\([^)]*deletedAt:/s);
+describe('the treatment path erases what the extension would otherwise spare', () => {
+    it('deletes the register LINES explicitly, not by cascade', () => {
+        // The crux. `Task` is in `SOFT_DELETE_MODELS`, so the extension
+        // rewrites its delete into an UPDATE — and an update cascades
+        // NOTHING. Relying on `onDelete: Cascade` here leaves every
+        // `OperationParcel` row in place and the ДНЕВНИК still printing a
+        // treatment the farmer erased.
+        //
+        // This assertion is the one that would have caught #2242: the source
+        // reads `db.task.delete`, which looks hard and is not.
+        expect(code(SOFT)).toMatch(/db\.operationParcel\.deleteMany\(/);
     });
 
     it('it deletes the journal entries EXPLICITLY', () => {

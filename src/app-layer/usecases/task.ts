@@ -251,51 +251,42 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 
 // ─── Delete ───
 //
-// Hard delete. FOUR child models cascade via `onDelete: Cascade`, not the
-// three this comment used to list: TaskComment, TaskLink, TaskWatcher — and
-// **OperationParcel**. Gated on write permission AND creator-or-admin
-// (#2187, `assertCanDeleteTask`) — the same tier as edit — and audited.
+// ⚠ SOFT delete, despite what the call reads like. `Task` is in
+// `SOFT_DELETE_MODELS`, and `withSoftDeleteExtension` (`src/lib/prisma.ts:459`)
+// rewrites `db.task.delete` into `update({ data: { deletedAt } })` before it
+// reaches the database. Measured through the real tenant client:
 //
-// The fourth one is why the blast radius is bigger than "a to-do and its
-// comments". `OperationParcel` rows ARE the lines the БАБХ ДНЕВНИК prints
-// (`farm-record-diary.ts` joins `Location -> taskLink -> DONE
-// operationParcel`), and `TaskLink` is the LOCATION link it joins through. So
-// deleting a FIELD_OPERATION task here removes register lines from a filed
-// regulatory document, permanently, with no Trash and no restore. Nothing on
-// this path filters `type`, so it is reachable for any task — see #2220.
+//     delete     -> SOFT (deletedAt=true)
+//     deleteMany -> SOFT (deletedAt=true)
 //
-// ## BOTH DELETES ON THIS TABLE ARE NOW HARD — and this note is the third
+// This said "Hard delete, FOUR child models cascade" until 2026-10-24, and
+// the unit test beside it is still named "deletes the row (children cascade)"
+// — it injects a mock transaction, and a mock cannot see an extension. Both
+// were wrong in the same direction; that is #2242.
 //
-// Owner ruling 2026-10-24: «Кошче» goes, "what's deleted is deleted". The
-// treatment withdrawal is a PHYSICAL delete now, so the asymmetry this
-// paragraph used to document is gone:
+// **Nothing cascades**, because an update is not a delete. `TaskComment`,
+// `TaskLink`, `TaskWatcher` and `OperationParcel` all declare
+// `onDelete: Cascade` and none of it fires — so the БАБХ register lines a
+// FIELD_OPERATION task owns SURVIVE this call untouched.
 //
-//   DELETE /journal/treatments/{treatmentGroupId}  -> hard, erases the group
-//   DELETE /tasks/{id}  and the bulk delete        -> hard, children cascade
-//
-// The two rulings it replaces are kept because the reversal is the point.
-// 2026-10-23 (#2215) was "keep the asymmetry": a register entry is a filed
-// record, so withdrawing one must be reversible, while an ordinary task need
-// not be. One day later the owner removed the reversibility itself. A reader
-// who finds only the later ruling cannot tell that the earlier reasoning was
-// considered and overridden rather than missed.
-//
-// `Task.deletedAt` is now written by NOTHING on either path, though the
-// column, its `@@index([tenantId, deletedAt])` and `WorkItemRepository`'s
-// filter all remain — see #2215, which is where that question lives.
-//
-// `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both
-// halves so this note cannot quietly become false.
+// Gated on write permission AND creator-or-admin (#2187,
+// `assertCanDeleteTask`) — the same tier as edit — and audited. The rows are
+// erased later by `purgeSoftDeletedOlderThan`, which iterates
+// `SOFT_DELETE_MODELS` with raw SQL that deliberately bypasses the extension.
 /**
  * A treatment's task may not be deleted through the TASK route (#2220).
  *
- * ## What the hard delete actually takes
+ * ## The original justification was FALSE, and is corrected here
  *
- * Four child models cascade, and `OperationParcel` is one of them — those rows
- * ARE the lines the БАБХ ДНЕВНИК prints (`renderFarmRecordDiary` joins
- * `Location -> taskLink -> DONE operationParcel`), and `TaskLink` is the
- * LOCATION link it joins through. So deleting a treatment's task destroys
- * register lines from a filed regulatory document, permanently.
+ * This guard was written on the claim that the task delete destroys register
+ * lines: four child models declare `onDelete: Cascade`, `OperationParcel`
+ * among them, and those rows ARE the lines the БАБХ ДНЕВНИК prints.
+ *
+ * The cascades are real and none of them fire. `Task` is in
+ * `SOFT_DELETE_MODELS`, so the delete is an UPDATE, and an update cascades
+ * nothing — the register lines survive this call untouched. #2242 records how
+ * that went unnoticed through a source-reading guard and a mock-injecting
+ * unit test, both green.
  *
  * ## The REASON changed on 2026-10-24, and the refusal survived it
  *
@@ -346,8 +337,8 @@ function assertTaskIsNotTreatmentShare(task: { treatmentGroupId: string | null }
     throw codedConflict(
         'TASK_BELONGS_TO_TREATMENT',
         'This task is one block\'s share of a recorded treatment. Delete the whole '
-            + 'treatment instead — doing it here would remove this block\'s register '
-            + 'lines and leave the rest of the treatment behind.',
+            + 'treatment instead — removing one block would leave the rest of it '
+            + 'behind, half recorded.',
         { reference: 'treatmentGroupId' },
     );
 }

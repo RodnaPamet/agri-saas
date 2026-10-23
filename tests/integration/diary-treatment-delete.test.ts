@@ -143,7 +143,7 @@ async function recordPartial(handle: string) {
 }
 
 describeFn('abandoning an unfinished treatment (DB-backed)', () => {
-    it('ERASES a complete treatment — rows gone, handle released', async () => {
+    it('ERASES a complete treatment\'s entries and register lines', async () => {
         // This asserted the OPPOSITE until 2026-10-22: a 409 TREATMENT_COMPLETE,
         // on the reasoning that a finished treatment is a БАБХ record and that
         // dropping it here would be 'a convenience route that drops БАБХ
@@ -169,10 +169,16 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         // database", so every one of those expectations is now the opposite.
         // The arms are unchanged — the same treatment, the same reads — which
         // is what makes the reversal legible.
+        // The task row SURVIVES as a flagged shell. `Task` is in
+        // `SOFT_DELETE_MODELS`, so the extension rewrites the delete into an
+        // update — which is also why the lines below had to be deleted
+        // explicitly rather than left to a cascade that never fires.
+        // `purgeSoftDeletedOlderThan` erases the shell on its schedule.
         const tasks = await globalPrisma.task.findMany({
             where: { tenantId, treatmentGroupId: handle },
         });
-        expect(tasks).toHaveLength(0);
+        expect(tasks.length).toBeGreaterThan(0);
+        expect(tasks.every((t) => t.deletedAt !== null)).toBe(true);
 
         // The entries are the ones a cascade would MISS.
         // `LogEntry.operationParcel` is optional and declares no `onDelete`,
@@ -185,19 +191,21 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         });
         expect(entries).toHaveLength(0);
 
-        // The register lines, cascaded with their tasks.
+        // The register lines, deleted EXPLICITLY — the assertion that would
+        // have passed for the wrong reason if written as a cascade check.
+        // Nothing cascades from an update, so without the explicit delete
+        // these rows survive and the ДНЕВНИК keeps printing them.
         const lines = await globalPrisma.operationParcel.findMany({
             where: { tenantId, taskId: { in: before.map((t) => t.id) } },
         });
         expect(lines).toHaveLength(0);
 
-        // The handle is released for a COMPLETE treatment now. It used to be
-        // kept so a restore could be exact; with the row gone it occupies no
-        // unique key and there is no restore to be exact about.
-        const reused = await globalPrisma.task.findFirst({
+        // The handle is KEPT for a complete treatment, unchanged: the shell
+        // row still occupies `@@unique([tenantId, clientMutationId])`.
+        const kept = await globalPrisma.task.findFirst({
             where: { tenantId, clientMutationId: { in: before.map((t) => t.clientMutationId!) } },
         });
-        expect(reused).toBeNull();
+        expect(kept).not.toBeNull();
     });
 
     it('404s on a handle nobody recorded', async () => {
@@ -264,7 +272,7 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(tasks.every((t) => t.deletedAt === null)).toBe(true);
     });
 
-    it('soft-deletes the tasks and the entries, and SKIPS the unfinished lines', async () => {
+    it('ERASES the entries and ALL lines, and flags the task shell', async () => {
         const handle = `partial-${randomUUID()}`;
         const { pendingLine, doneLine } = await recordPartial(handle);
 
@@ -273,30 +281,33 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(before).toMatchObject({ complete: false });
 
         const result = await deleteDiaryTreatment(ctx(), handle);
-        expect(result).toMatchObject({ treatmentGroupId: handle, tasks: 1, lines: 1 });
+        // `lines` now counts what was DELETED — both of them — where it used
+        // to count only the PENDING ones moved to SKIPPED.
+        expect(result).toMatchObject({ treatmentGroupId: handle, tasks: 1, lines: 2 });
         expect(result.entries).toBeGreaterThan(0);
 
-        // Tasks: soft, not hard — the row and its audit history stay.
+        // The task shell stays, flagged. `Task` is in `SOFT_DELETE_MODELS`, so
+        // the extension turns its delete into an update — which is exactly why
+        // the lines below are deleted EXPLICITLY and not left to a cascade.
         const tasks = await globalPrisma.task.findMany({ where: { tenantId, treatmentGroupId: handle } });
         expect(tasks).toHaveLength(1);
         expect(tasks[0].deletedAt).not.toBeNull();
         expect(tasks[0].deletedByUserId).toBe(userId);
 
-        // Entries: withdrawn, and still on disk.
+        // Entries: GONE. Owner ruling 2026-10-24 — "what's deleted is
+        // deleted". `LogEntry` is not in the allowlist, so this delete is real.
         const entries = await globalPrisma.logEntry.findMany({ where: { tenantId, treatmentGroupId: handle } });
-        expect(entries.length).toBeGreaterThan(0);
-        expect(entries.every((e) => e.deletedAt !== null)).toBe(true);
+        expect(entries).toHaveLength(0);
 
-        // The unfinished line is SKIPPED — `OperationParcel` has no
-        // `deletedAt`, and SKIPPED is the state the completion pass already
-        // refuses to touch, so the remainder cannot be marked later.
+        // BOTH lines gone, the unfinished one and the completed one. This
+        // asserted `SKIPPED` and `DONE` respectively until the ruling: the
+        // PENDING line was moved to a state the completion pass would not
+        // touch, and the DONE line was left because its record of what
+        // happened stayed true. Neither survives an erase.
         const pending = await globalPrisma.operationParcel.findUnique({ where: { id: pendingLine } });
-        expect(pending?.status).toBe('SKIPPED');
-
-        // The line that DID complete keeps its own status. Its record of what
-        // happened stays true even though the entry it wrote is withdrawn.
+        expect(pending).toBeNull();
         const done = await globalPrisma.operationParcel.findUnique({ where: { id: doneLine } });
-        expect(done?.status).toBe('DONE');
+        expect(done).toBeNull();
     });
 
     it('REFUSES a resend of an abandoned handle rather than recreating it', async () => {

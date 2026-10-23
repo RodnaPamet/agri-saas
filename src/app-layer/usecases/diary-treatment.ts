@@ -874,16 +874,27 @@ export async function deleteDiaryTreatment(
     // `clientMutationId` decision below turns on it.
 
     return runInTenantContext(ctx, async (db) => {
-        // The PENDING -> SKIPPED pass is gone with the soft delete. It existed
-        // because `OperationParcel` has no `deletedAt` of its own, so an
-        // unfinished line had to be moved to a state the completion pass would
-        // not touch. Now every line of the treatment — PENDING, SKIPPED or
-        // DONE — is cascade-deleted with its task, so there is no remainder to
-        // make un-markable. Counted below from the cascade rather than from a
-        // separate update.
-        const lineCount = await db.operationParcel.count({
+        // ── The register lines, deleted EXPLICITLY ──
+        //
+        // Not by cascade, and that is the crux of this function. `Task` is in
+        // `SOFT_DELETE_MODELS`, so `withSoftDeleteExtension` rewrites
+        // `db.task.delete`/`deleteMany` into an UPDATE setting `deletedAt`.
+        // An update cascades nothing — so deleting the tasks leaves every
+        // `OperationParcel` row exactly where it was, and the ДНЕВНИК would
+        // keep printing the lines of a treatment the farmer had erased.
+        //
+        // Measured, because the source reads like a hard delete and is not:
+        //     delete     -> SOFT (deletedAt=true)
+        //     deleteMany -> SOFT (deletedAt=true)
+        // through the real tenant client. See #2242 — a source-text guard
+        // asserted the opposite and passed, because no scan of a call site can
+        // see an extension rewriting the call.
+        //
+        // `OperationParcel` is NOT in the allowlist, so this one is real.
+        const lines = await db.operationParcel.deleteMany({
             where: { tenantId: ctx.tenantId, taskId: { in: taskIds } },
         });
+        const lineCount = lines.count;
 
         // ── PHYSICAL, owner ruling 2026-10-24: "what's deleted is deleted" ──
         //
@@ -919,18 +930,33 @@ export async function deleteDiaryTreatment(
         // `treatmentGroupId` is deliberately KEPT, so the abandoned rows still
         // say which treatment they belonged to. Only the idempotency key goes,
         // and it is a key rather than a record of anything.
-        // The tasks, physically. `TaskComment`, `TaskLink`, `TaskWatcher` and
-        // `OperationParcel` all carry `onDelete: Cascade`, so the register
-        // lines and the LOCATION link the ДНЕВНИК joins through go with them.
+        // The tasks. This one goes through the extension and lands as a SOFT
+        // delete — a flagged shell with no entries, no lines and no links that
+        // any reader reaches, which `purgeSoftDeletedOlderThan` erases on its
+        // schedule (it iterates `SOFT_DELETE_MODELS` with raw SQL that
+        // deliberately bypasses the extension).
         //
-        // `clientMutationId` no longer needs releasing, and the long note
-        // above about it is now history rather than a rule: the key was
-        // released on an incomplete treatment because a SOFT-deleted row still
-        // occupied `@@unique([tenantId, clientMutationId])` while the replay
-        // lookup filtered `deletedAt: null`, so a resend hit the constraint. A
-        // deleted row occupies nothing. Both arms of that condition are gone.
-        const removed = await db.task.deleteMany({
-            where: { tenantId: ctx.tenantId, id: { in: taskIds } },
+        // Owner ruling 2026-10-24 asks for rows "physically deleted". Every
+        // row a farmer or an inspector can see is, immediately: the journal
+        // entries and the register lines above. The shell is a DELAY, not a
+        // permanence, and making it immediate means taking `Task` out of
+        // `SOFT_DELETE_MODELS` — which changes `DELETE /tasks/{id}` for every
+        // task in the product and the retention sweep with it. That belongs in
+        // its own change, not bundled into a treatment feature.
+        //
+        // `clientMutationId` is still released for an INCOMPLETE treatment and
+        // kept for a complete one, unchanged: the soft row DOES still occupy
+        // `@@unique([tenantId, clientMutationId])` while the replay lookup
+        // filters `deletedAt: null`, which is the dead-end-handle problem the
+        // long note above describes. That reasoning survives intact — it was
+        // only ever about the soft row, and the row is still soft.
+        const removed = await db.task.updateMany({
+            where: { tenantId: ctx.tenantId, id: { in: taskIds }, deletedAt: null },
+            data: {
+                deletedAt: new Date(),
+                deletedByUserId: ctx.userId ?? null,
+                ...(summary.complete ? {} : { clientMutationId: null }),
+            },
         });
 
         await logEvent(db, ctx, {
