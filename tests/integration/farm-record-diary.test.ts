@@ -15,7 +15,11 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { gatherFarmRecordData, gatherFarmRecord } from '@/app-layer/reports/pdf/farm-record-diary';
+import {
+    gatherFarmRecordData,
+    gatherFarmRecord,
+    generateFarmRecordDiaryPdf,
+} from '@/app-layer/reports/pdf/farm-record-diary';
 import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -350,5 +354,92 @@ describeFn('ДНЕВНИК scoped to one treatment', () => {
         // And both treatments' rows, because the block register is the
         // period's whole record.
         expect(data.sprayLines.length).toBeGreaterThanOrEqual(2);
+    });
+});
+
+describeFn('ДНЕВНИК for a block with nothing in the period (#2183)', () => {
+    /**
+     * Owner ruling 2026-10-22, confirmed 2026-10-23 when the question was put
+     * back as a possible reversal with the declined options named: a block that
+     * recorded nothing gets NO document, and the clients say «Няма записи за
+     * този период».
+     *
+     * This reverses the previous behaviour, which printed the blank form like
+     * the paper original — reasoning kept verbatim in
+     * `generateFarmRecordDiaryPdf`'s docblock, because it is the better
+     * argument and may be re-adopted.
+     *
+     * ## "Empty" is a property of the BLOCK AND THE PERIOD TOGETHER
+     *
+     * The first draft of these tests created a brand-new location and expected
+     * it to refuse. It rendered a four-page document instead, and was right to:
+     * an UNLINKED observation is farm-wide, so it appears in every block's
+     * register — which is what the first describe in this file asserts on
+     * purpose. A new block in a period the farm was active in is therefore NOT
+     * empty, and the refusal is rarer than "this block has no treatments"
+     * suggests.
+     *
+     * Pinned below rather than worked around, because it is the kind of thing
+     * a later reader would otherwise rediscover as a bug.
+     */
+    let quietLocationId = '';
+    const QUIET_FROM = '2019-01-01';
+    const QUIET_TO = '2019-01-31';
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        const loc = await prisma.location.create({
+            data: { tenantId: TENANT_ID, name: `${TAG}-quiet-block` },
+            select: { id: true },
+        });
+        quietLocationId = loc.id;
+    });
+
+    it('REFUSES with its own code rather than rendering a blank register', async () => {
+        await expect(
+            generateFarmRecordDiaryPdf(ctx(), {
+                locationId: quietLocationId,
+                from: QUIET_FROM,
+                to: QUIET_TO,
+            }),
+        ).rejects.toMatchObject({ code: 'REGISTER_EMPTY_FOR_PERIOD', status: 404 });
+    });
+
+    it('refuses the ESTABLISHED block too, for a window it recorded nothing in', () => {
+        // The code says the PERIOD was empty, not that the block is unknown —
+        // so the same block that renders below must refuse for a quiet window.
+        return expect(
+            generateFarmRecordDiaryPdf(ctx(), {
+                locationId,
+                from: QUIET_FROM,
+                to: QUIET_TO,
+            }),
+        ).rejects.toMatchObject({ code: 'REGISTER_EMPTY_FOR_PERIOD' });
+    });
+
+    it('still renders for a block and period that DID record something', async () => {
+        // The positive control. Without it the two refusals above could both be
+        // passing because the generator refuses everything, which looks
+        // identical from outside.
+        const doc = await generateFarmRecordDiaryPdf(ctx(), {
+            locationId,
+            from: FROM,
+            to: TO,
+        });
+        expect(doc).toBeTruthy();
+        expect(doc.bufferedPageRange().count).toBeGreaterThan(0);
+    });
+
+    it('a FARM-WIDE observation makes even a fresh block non-empty', async () => {
+        // The finding that corrected these tests. An unlinked observation
+        // belongs to every block's register, so a block with no work of its own
+        // still has something to report in a period the farm was active in.
+        // A reader who expects "new block => refuses" needs this stated.
+        const doc = await generateFarmRecordDiaryPdf(ctx(), {
+            locationId: quietLocationId,
+            from: FROM,
+            to: TO,
+        });
+        expect(doc).toBeTruthy();
     });
 });

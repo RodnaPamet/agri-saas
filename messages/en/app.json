@@ -6737,6 +6737,7 @@
         "YIELD_RECORD_AREA_NEGATIVE": "Area must be zero or positive.",
         "YIELD_RECORD_INVALID_DATE": "{field} must be a valid date.",
         "YIELD_RECORD_NOT_FOUND": "That yield record was not found.",
-        "YIELD_RECORD_TONNES_NEGATIVE": "Gross tonnes must be zero or positive."
+        "YIELD_RECORD_TONNES_NEGATIVE": "Gross tonnes must be zero or positive.",
+        "REGISTER_EMPTY_FOR_PERIOD": "Nothing was recorded for this block in this period."
     }
 }

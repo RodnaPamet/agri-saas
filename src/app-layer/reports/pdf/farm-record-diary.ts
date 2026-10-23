@@ -834,45 +834,54 @@ export function renderFarmRecordDiary(
     );
 
     // ── LANDSCAPE: observation section ──────────────────────────────
-    doc.addPage({ size: 'A4', layout: 'landscape' });
-    doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
-    doc.text(L.observationSection, doc.page.margins.left, doc.page.margins.top, {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-        align: 'center',
-    });
-    // Scouting entries are LOCATION-scoped — LogEntry carries no parcel link
-    // — so they cannot be split per field the way treatments can. The strip is
-    // therefore filled only when the location has exactly ONE field, where the
-    // attribution is unambiguous; with several it prints blank for completion
-    // by hand, which is how the pre-printed form arrives anyway. Filling it
-    // from an arbitrary field would be the misattribution this work removes.
-    const obsField = data.fields.length === 1 ? data.fields[0] : null;
-    const obsHeaderBottom = drawFieldHeaderStrip(
-        doc,
-        doc.y + 8,
-        L.obsFieldHeader,
-        buildObsFieldHeaderRow(obsField),
-    );
-    const obsRows = buildObservationRows(data.observations);
-    const obsCols: RuledColumn[] = L.obsCols.map(() => ({ weight: 1 }));
-    drawRuledTable(
-        doc,
-        obsHeaderBottom + 6,
-        L.obsCols,
-        obsCols,
-        obsRows,
-        Math.max(0, 8 - obsRows.length),
-    );
-
-    // The disclosure (#2072, #1740 Q2). A derived row is not an observation a
-    // person made, and this document is read by a regulator who would
-    // otherwise have no way to tell. Only printed when at least one row is
-    // actually derived.
-    if (data.observations.some((o) => o.derived)) {
-        doc.fontSize(7).fillColor(MUTED).text(L.derivedNote, doc.page.margins.left, doc.y + 4, {
+    //
+    // OMITTED ENTIRELY when there is nothing to report (#2183, owner ruling
+    // 2026-10-23). Only the three DATA sections behave this way; the sampling
+    // and ОДБХ sheets below are blank by DESIGN — ruled forms an inspector
+    // writes on by hand — so "empty" is not a thing that can be true of them
+    // and dropping them would remove the parts of the document that are
+    // supposed to arrive unfilled.
+    if (data.observations.length > 0) {
+        doc.addPage({ size: 'A4', layout: 'landscape' });
+        doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
+        doc.text(L.observationSection, doc.page.margins.left, doc.page.margins.top, {
             width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+            align: 'center',
         });
-        doc.fillColor(INK);
+        // Scouting entries are LOCATION-scoped — LogEntry carries no parcel link
+        // — so they cannot be split per field the way treatments can. The strip is
+        // therefore filled only when the location has exactly ONE field, where the
+        // attribution is unambiguous; with several it prints blank for completion
+        // by hand, which is how the pre-printed form arrives anyway. Filling it
+        // from an arbitrary field would be the misattribution this work removes.
+        const obsField = data.fields.length === 1 ? data.fields[0] : null;
+        const obsHeaderBottom = drawFieldHeaderStrip(
+            doc,
+            doc.y + 8,
+            L.obsFieldHeader,
+            buildObsFieldHeaderRow(obsField),
+        );
+        const obsRows = buildObservationRows(data.observations);
+        const obsCols: RuledColumn[] = L.obsCols.map(() => ({ weight: 1 }));
+        drawRuledTable(
+            doc,
+            obsHeaderBottom + 6,
+            L.obsCols,
+            obsCols,
+            obsRows,
+            Math.max(0, 8 - obsRows.length),
+        );
+
+        // The disclosure (#2072, #1740 Q2). A derived row is not an observation a
+        // person made, and this document is read by a regulator who would
+        // otherwise have no way to tell. Only printed when at least one row is
+        // actually derived.
+        if (data.observations.some((o) => o.derived)) {
+            doc.fontSize(7).fillColor(MUTED).text(L.derivedNote, doc.page.margins.left, doc.y + 4, {
+                width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+            });
+            doc.fillColor(INK);
+    }
     }
 
     // ── LANDSCAPE: chemical treatments (the core) ───────────────────
@@ -885,7 +894,14 @@ export function renderFarmRecordDiary(
         weight: w,
         align: i === 0 ? 'center' : 'left',
     }));
-    const chemGroups = groupSprayLinesByField(data.fields, data.sprayLines);
+    // Same rule. `groupSprayLinesByField` still manufactures one blank group
+    // for an idle period — see its own note — but that branch is now only
+    // reached when the section is printed at all, i.e. when there IS a spray
+    // line somewhere. A block with none skips the section rather than filing
+    // a sheet that says nothing happened.
+    const chemGroups = data.sprayLines.length > 0
+        ? groupSprayLinesByField(data.fields, data.sprayLines)
+        : [];
     for (const group of chemGroups) {
         doc.addPage({ size: 'A4', layout: 'landscape' });
         doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
@@ -911,28 +927,30 @@ export function renderFarmRecordDiary(
     }
 
     // ── PORTRAIT: fertilizers ───────────────────────────────────────
-    doc.addPage({ size: 'A4', layout: 'portrait' });
-    doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
-    doc.text(L.fertilizerSection, doc.page.margins.left, doc.page.margins.top, {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-        align: 'center',
-    });
-    const fertRows = buildFertilizerRows(data.fertilizeLines);
-    const fertCols: RuledColumn[] = [
-        { weight: 0.5, align: 'center' },
-        { weight: 1.2 },
-        { weight: 3 },
-        { weight: 1.6, align: 'right' },
-        { weight: 1.4, align: 'right' },
-    ];
-    drawRuledTable(
-        doc,
-        doc.y + 8,
-        L.fertCols,
-        fertCols,
-        fertRows,
-        Math.max(0, 6 - fertRows.length),
-    );
+    if (data.fertilizeLines.length > 0) {
+        doc.addPage({ size: 'A4', layout: 'portrait' });
+        doc.font(UNICODE_FONT_BOLD).fontSize(11).fillColor(INK);
+        doc.text(L.fertilizerSection, doc.page.margins.left, doc.page.margins.top, {
+            width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+            align: 'center',
+        });
+        const fertRows = buildFertilizerRows(data.fertilizeLines);
+        const fertCols: RuledColumn[] = [
+            { weight: 0.5, align: 'center' },
+            { weight: 1.2 },
+            { weight: 3 },
+            { weight: 1.6, align: 'right' },
+            { weight: 1.4, align: 'right' },
+        ];
+        drawRuledTable(
+            doc,
+            doc.y + 8,
+            L.fertCols,
+            fertCols,
+            fertRows,
+            Math.max(0, 6 - fertRows.length),
+        );
+    }
 
     // ── LANDSCAPE: sampling (empty ruled) ───────────────────────────
     doc.addPage({ size: 'A4', layout: 'landscape' });
@@ -1480,11 +1498,42 @@ export async function generateFarmRecordDiaryPdf(
     opts: { locationId: string; from: string; to: string },
 ): Promise<PDFKit.PDFDocument> {
     const doc = await generateFarmRecordDiaryPdfScoped(ctx, { kind: 'location', ...opts });
-    // A block register is never null: the emptiness check applies to a
-    // treatment handle only, because a block with no work in the period still
-    // prints — blank, like the paper form. Asserted rather than cast away, so
-    // if that ever stops holding it says so instead of returning undefined.
-    if (!doc) throw new Error('a location-scoped ДНЕВНИК is never empty');
+    // ## SUPERSEDED, 2026-10-23 (#2183)
+    //
+    // This assertion read, verbatim:
+    //
+    //   > A block register is never null: the emptiness check applies to a
+    //   > treatment handle only, because a block with no work in the period
+    //   > still prints — blank, like the paper form. Asserted rather than cast
+    //   > away, so if that ever stops holding it says so instead of returning
+    //   > undefined.
+    //
+    // Kept because it is the better argument and may well be re-adopted: the
+    // paper БАБХ form prints its sections whether or not they have rows, and a
+    // blank register is a document a farmer can file to show a clean period.
+    //
+    // The owner ruled the other way, twice — once on 2026-10-22 choosing "say
+    // nothing was recorded" over both "cover page only" and "keep the blank
+    // form", and again on 2026-10-23 when the question was put back as a
+    // possible reversal with the declined options named. A register that
+    // exists only to say nothing happened was judged worse than an honest
+    // refusal the client can phrase.
+    if (!doc) {
+        // The code is written as a LITERAL here, not as the constant above,
+        // and the duplication is deliberate. `a-new-code-ships-with-its-entry`
+        // scans throw sites to check a new code arrives with its Bulgarian
+        // entry, and it can only do that for a code it can READ — an
+        // identifier makes the site opaque, which the guard then wants
+        // DECLARED as an opt-out. Opting out of the check that the farmer sees
+        // Bulgarian is a worse trade than one repeated string, and the two
+        // cannot drift: the integration test asserts this literal while the
+        // job's predicate compares the constant.
+        throw codedNotFound(
+            'REGISTER_EMPTY_FOR_PERIOD',
+            'Nothing was recorded for this block in this period.',
+            { reference: 'locationId' },
+        );
+    }
     return doc;
 }
 
@@ -1499,12 +1548,55 @@ export async function generateFarmRecordDiaryPdf(
  * route can answer 404 rather than render an empty register that looks like a
  * real document with nothing in it.
  */
+/**
+ * The refusal code for a register with nothing in its period (#2183).
+ *
+ * Its OWN code rather than a bare 404, because one status would collapse
+ * three situations a client must tell apart: no such block, not this tenant's
+ * block, and a block that exists and simply had a quiet period. The third is
+ * the only GOOD-NEWS case and it is the common one — an untreated block in a
+ * period is normal — so a client that cannot recognise it shows an error for
+ * the most ordinary outcome there is.
+ */
+export const REGISTER_EMPTY_FOR_PERIOD = 'REGISTER_EMPTY_FOR_PERIOD';
+
+/**
+ * Whether a gathered register has anything to report.
+ *
+ * The three DATA sections only. `fields` is deliberately not counted: a block
+ * has parcels whether or not anything happened on them, so counting it would
+ * make every block non-empty and the check inert — the shape of a gate that
+ * cannot fail.
+ */
+export function isRegisterEmpty(data: FarmRecordData): boolean {
+    return (
+        data.sprayLines.length === 0 &&
+        data.fertilizeLines.length === 0 &&
+        data.observations.length === 0
+    );
+}
+
+/** True when `err` is this module's empty-register refusal. */
+export function isRegisterEmptyRefusal(err: unknown): boolean {
+    return (
+        typeof err === 'object' &&
+        err !== null &&
+        (err as { code?: unknown }).code === REGISTER_EMPTY_FOR_PERIOD
+    );
+}
+
 export async function generateFarmRecordDiaryPdfScoped(
     ctx: RequestContext,
     scope: FarmRecordScope,
 ): Promise<PDFKit.PDFDocument | null> {
     const data = await gatherFarmRecord(ctx, scope);
     if (scope.kind === 'treatment' && data.sprayLines.length === 0 && data.fertilizeLines.length === 0) {
+        return null;
+    }
+    // A LOCATION-scoped register with nothing in its period is now refused
+    // too (owner ruling 2026-10-22, confirmed 2026-10-23) — see the
+    // SUPERSEDED note on `generateFarmRecordDiaryPdf`.
+    if (scope.kind === 'location' && isRegisterEmpty(data)) {
         return null;
     }
 

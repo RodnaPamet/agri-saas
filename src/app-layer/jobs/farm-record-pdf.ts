@@ -28,7 +28,10 @@ import { logger } from '@/lib/observability/logger';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
 import { getPermissionsForRole } from '@/lib/permissions';
-import { saveFarmRecordDiary } from '@/app-layer/reports/pdf/farm-record-diary';
+import {
+    isRegisterEmptyRefusal,
+    saveFarmRecordDiary,
+} from '@/app-layer/reports/pdf/farm-record-diary';
 import type { RequestContext } from '../types';
 import type { JobRunResult, FarmRecordPdfPayload } from './types';
 
@@ -141,14 +144,29 @@ export async function runFarmRecordPdf(payload: FarmRecordPdfPayload): Promise<F
                     generated = true;
                 }
             } catch (err) {
-                // Fail-open: never surface into the completion path.
-                logger.warn('farm-record-pdf: auto-generation failed (task completion unaffected)', {
-                    component: 'job',
-                    jobName: 'farm-record-pdf',
-                    tenantId: payload.tenantId,
-                    taskId: payload.taskId,
-                    error: err instanceof Error ? err.message : String(err),
-                });
+                // A block with nothing in the window is not a failure (#2183).
+                // The register is now REFUSED rather than rendered blank, so
+                // this path is reached on every completion whose location had
+                // a quiet season — which is ordinary. Warning about it would
+                // teach an operator to ignore this job's warnings, and the one
+                // that matters is the next line down.
+                if (isRegisterEmptyRefusal(err)) {
+                    logger.info('farm-record-pdf: nothing recorded in the window, no register written', {
+                        component: 'job',
+                        jobName: 'farm-record-pdf',
+                        tenantId: payload.tenantId,
+                        taskId: payload.taskId,
+                    });
+                } else {
+                    // Fail-open: never surface into the completion path.
+                    logger.warn('farm-record-pdf: auto-generation failed (task completion unaffected)', {
+                        component: 'job',
+                        jobName: 'farm-record-pdf',
+                        tenantId: payload.tenantId,
+                        taskId: payload.taskId,
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                }
             }
 
             const durationMs = Math.round(performance.now() - startMs);

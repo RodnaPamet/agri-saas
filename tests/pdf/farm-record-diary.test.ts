@@ -364,37 +364,67 @@ describe('ДНЕВНИК per-field header — the strip the form is built around
 
 describe('ДНЕВНИК per-field register — one chemical sheet per field', () => {
     test('each extra field adds exactly one sheet', async () => {
-        // No spray lines, so the field list is the ONLY thing varying. With
-        // lines present, dropping a field does not remove its sheet — the
-        // orphan guard turns it into a blank-strip sheet instead, which is
-        // the point of that guard and would mask the effect measured here.
-        const base = { ...fixture(PROFILE), sprayLines: [] };
+        // ONE spray line, on the first field, in both arms. The line has to be
+        // present at all now: #2183 omits the whole chemical section when
+        // nothing was sprayed, so a `sprayLines: []` pair — which is how this
+        // test was written before — measures 0 sheets against 0 and reports a
+        // difference of 0 whatever the field list does.
+        //
+        // Varying the field list around a line that stays put is the honest
+        // version of the same measurement: the second field is untreated and
+        // still gets its own blank-strip sheet, because the register is filed
+        // per field.
+        const base = { ...fixture(PROFILE), sprayLines: [SPRAY[0]] };
         const one = await pageCount({ ...base, fields: [FIELDS[0]] });
         const two = await pageCount({ ...base, fields: FIELDS });
         expect(two - one).toBe(1);
     });
 
     test('a treatment on an unknown field still prints, on a sheet of its own', async () => {
-        // The orphan guard: a legal register may not silently drop a
-        // treatment just because its field is not in `fields`.
-        const base = await pageCount({ ...fixture(PROFILE), sprayLines: [], fields: FIELDS });
+        // The orphan guard: a legal register may not silently drop a treatment
+        // just because its field is not in `fields`.
+        //
+        // Both arms carry ONE line, so the only difference is whether it
+        // matches a field. Previously the baseline had NO lines, which is no
+        // longer a comparable document — the section is absent from it
+        // entirely, and the measured difference became 3 rather than 1.
+        const attached = await pageCount({
+            ...fixture(PROFILE),
+            sprayLines: [SPRAY[0]],
+            fields: FIELDS,
+        });
         const orphaned = await pageCount({
             ...fixture(PROFILE),
             sprayLines: [{ ...SPRAY[0], parcelId: 'parcel-does-not-exist' }],
             fields: FIELDS,
         });
-        expect(orphaned - base).toBe(1);
+        // The orphan gets a sheet of its own ON TOP of the per-field sheets,
+        // which both arms have.
+        expect(orphaned - attached).toBe(1);
     });
 
-    test('a period with no fields and no treatments still prints its section', async () => {
-        const empty = await pageCount({
+    test('a period with no treatments OMITS the section, rather than filing a blank sheet', async () => {
+        // REVERSED by #2183 (owner ruling 2026-10-23). This test was called
+        // 'a period with no fields and no treatments still prints its section'
+        // and asserted `empty === one` — one blank sheet either way, "exactly
+        // as a single field would get".
+        //
+        // That stopped being true and, worse, the old assertion kept PASSING:
+        // with the section omitted both sides render 0 sheets, so `empty ===
+        // one` holds for a reason opposite to the one its name gave. A test
+        // that passes because its subject disappeared is the shape worth
+        // naming.
+        const noTreatments = await pageCount({
             ...fixture(PROFILE),
             sprayLines: [],
             fields: [],
         });
-        const one = await pageCount({ ...fixture(PROFILE), sprayLines: [], fields: [FIELDS[0]] });
-        // One blank sheet, exactly as a single field would get.
-        expect(empty).toBe(one);
+        const sprayed = await pageCount({
+            ...fixture(PROFILE),
+            sprayLines: [SPRAY[0]],
+            fields: [FIELDS[0]],
+        });
+        expect(sprayed - noTreatments).toBe(1);
     });
 });
 
