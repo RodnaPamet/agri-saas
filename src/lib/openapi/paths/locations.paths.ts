@@ -1250,10 +1250,31 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             'the PDF filed in the register instead. Negotiate on what you SENT; an `Accept` ' +
             'header has no effect.\n\n' +
             'Read-only data, authorised by `assertCanRead` inside the generator. Runs on the ' +
-            'Node runtime with a 60s budget.',
+            'Node runtime with a 60s budget.\n\n' +
+            '**A block with nothing recorded in the period gets NO document** (#2183, owner ' +
+            'ruling 2026-10-23). It answers `404 REGISTER_EMPTY_FOR_PERIOD`, and a client ' +
+            'should render that as "nothing was recorded for this period" rather than as an ' +
+            'error — it is the ordinary outcome for an untreated block, not a fault. This ' +
+            'reverses the previous behaviour, which printed the blank form like the paper ' +
+            'original; both options were put to the owner and the blank form was declined ' +
+            'twice.\n\n' +
+            'Within a document that DOES have content, a data section with no rows is left ' +
+            'out entirely. The sampling and ОДБХ inspector sheets are NOT data sections — ' +
+            'they are ruled forms that arrive blank for completion by hand — so they are ' +
+            'always present.',
         tags: ['Farm records'],
         params: LocationParams,
         body: FarmRecordGenerateSchema,
+        extraResponses: codedErrorResponses({
+            404:
+                'Either the block does not exist, or it exists and had a quiet period.\n\n' +
+                '- `REGISTER_EMPTY_FOR_PERIOD` — nothing recorded for this block between ' +
+                '`from` and `to`. Not a fault; say so in the farmer\'s words.\n' +
+                '- `LOCATION_NOT_FOUND` — no such block for this tenant.\n\n' +
+                'They are distinct codes on purpose: one 404 for both would make the only ' +
+                'good-news case indistinguishable from a broken request, and the good-news ' +
+                'case is the common one.',
+        }),
         success: {
             status: 200,
             description: 'The ДНЕВНИК as PDF bytes, or the saved file’s identity when `save` was true.',

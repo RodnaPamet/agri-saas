@@ -23568,7 +23568,7 @@
       "post": {
         "operationId": "generateFarmRecord",
         "summary": "Generate the БАБХ ДНЕВНИК",
-        "description": "ONE 200 with TWO media types, chosen by the `save` flag in the body. Default (`save` absent or false) → `application/pdf` bytes with `Content-Disposition: attachment`. `save: true` → `application/json` `{ fileRecordId, fileName }`, with the PDF filed in the register instead. Negotiate on what you SENT; an `Accept` header has no effect.\n\nRead-only data, authorised by `assertCanRead` inside the generator. Runs on the Node runtime with a 60s budget.",
+        "description": "ONE 200 with TWO media types, chosen by the `save` flag in the body. Default (`save` absent or false) → `application/pdf` bytes with `Content-Disposition: attachment`. `save: true` → `application/json` `{ fileRecordId, fileName }`, with the PDF filed in the register instead. Negotiate on what you SENT; an `Accept` header has no effect.\n\nRead-only data, authorised by `assertCanRead` inside the generator. Runs on the Node runtime with a 60s budget.\n\n**A block with nothing recorded in the period gets NO document** (#2183, owner ruling 2026-10-23). It answers `404 REGISTER_EMPTY_FOR_PERIOD`, and a client should render that as \"nothing was recorded for this period\" rather than as an error — it is the ordinary outcome for an untreated block, not a fault. This reverses the previous behaviour, which printed the blank form like the paper original; both options were put to the owner and the blank form was declined twice.\n\nWithin a document that DOES have content, a data section with no rows is left out entirely. The sampling and ОДБХ inspector sheets are NOT data sections — they are ruled forms that arrive blank for completion by hand — so they are always present.",
         "tags": [
           "Farm records"
         ],
@@ -23659,7 +23659,7 @@
             }
           },
           "404": {
-            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "description": "Either the block does not exist, or it exists and had a quiet period.\n\n- `REGISTER_EMPTY_FOR_PERIOD` — nothing recorded for this block between `from` and `to`. Not a fault; say so in the farmer's words.\n- `LOCATION_NOT_FOUND` — no such block for this tenant.\n\nThey are distinct codes on purpose: one 404 for both would make the only good-news case indistinguishable from a broken request, and the good-news case is the common one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -52035,7 +52035,7 @@
       "post": {
         "operationId": "generateSeasonDiaryPdf",
         "summary": "Generate the season diary PDF",
-        "description": "POST because generating the document is a job with a body, not a lookup. Returns PDF BYTES with `Content-Disposition` — do not attempt to decode JSON from it.",
+        "description": "POST because generating the document is a job with a body, not a lookup. Returns PDF BYTES with `Content-Disposition` — do not attempt to decode JSON from it.\n\n**A season with nothing recorded gets NO document** (#2183, owner ruling 2026-10-23): `404 REGISTER_EMPTY_FOR_PERIOD`, the same code the per-block register uses. A location whose own register is empty is skipped rather than contributing a lone cover page.\n\nThis replaced a fallback that composed up to 25 locations as blank ruled tables so the file was \"a usable blank ДНЕВНИК\" — which stopped being true once empty sections began to be omitted, because the result was 25 cover pages.",
         "tags": [
           "Reports"
         ],
@@ -52110,7 +52110,7 @@
             }
           },
           "404": {
-            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "description": "- `REGISTER_EMPTY_FOR_PERIOD` — the season recorded nothing. Not a fault; say so rather than showing an error.\n- `SEASON_NOT_FOUND` — no such season for this tenant.",
             "content": {
               "application/json": {
                 "schema": {
