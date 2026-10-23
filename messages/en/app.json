@@ -6762,6 +6762,7 @@
         "YIELD_RECORD_NOT_FOUND": "That yield record was not found.",
         "YIELD_RECORD_TONNES_NEGATIVE": "Gross tonnes must be zero or positive.",
         "REGISTER_EMPTY_FOR_PERIOD": "Nothing was recorded for this block in this period.",
-        "TASK_DELETE_NOT_PERMITTED": "Only the person who created this task, or a farm administrator, can delete it."
+        "TASK_DELETE_NOT_PERMITTED": "Only the person who created this task, or a farm administrator, can delete it.",
+        "TASK_BELONGS_TO_TREATMENT": "This task is one block's share of a recorded treatment. Deleting it would destroy the treatment's register lines. Withdraw the treatment instead, which is reversible."
     }
 }
