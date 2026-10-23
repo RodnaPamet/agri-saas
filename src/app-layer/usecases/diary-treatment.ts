@@ -795,6 +795,38 @@ export async function recordDiaryTreatment(
  * The handle stops resolving because the replay arm looks up tasks with
  * `deletedAt: null`, so a later re-send mints a fresh treatment rather than
  * resuming this one.
+ *
+ * ## THE GENERIC TASK DELETE IS HARD — this softness is scoped, not the rule
+ *
+ * `deleteTask` in `usecases/task.ts` calls `db.task.delete`: the row goes, and
+ * its comments, links and watchers cascade with it. Nothing restores them and
+ * no Trash lists them. So the SAME `Task` row has two fates depending on which
+ * route reached it:
+ *
+ *   DELETE /journal/treatments/{treatmentGroupId}  -> here: soft, restorable
+ *   DELETE /tasks/{id}  and the bulk delete        -> hard, children cascade
+ *
+ * Owner ruling 2026-10-23 (#2215): the asymmetry stays. The justification for
+ * softness here does not generalise — it is that a register entry is a FILED
+ * record, which is also why `farm-record-diary.ts` had to learn the flag
+ * (#2184) for the withdrawal to mean anything. An ordinary task carries no
+ * such obligation.
+ *
+ * Worth knowing in this direction too, and MEASURED rather than assumed: a
+ * treatment's tasks are `FIELD_OPERATION` rows, nothing on the task-delete
+ * path filters `type`, and `OperationParcel` carries `onDelete: Cascade` on
+ * its task relation. So `DELETE /tasks/{id}` on a treatment's task destroys
+ * the register lines themselves — the rows this withdrawal is careful to
+ * merely FLAG — along with the `TaskLink` the register joins through.
+ *
+ * Authorisation is intact: both paths are creator-or-admin (#2175, #2187), so
+ * nobody reaches it who could not already withdraw the treatment. What differs
+ * is the OUTCOME — one route is reversible and audited as a withdrawal, the
+ * other is permanent. Filed as #2220, and it is new information relative to
+ * the #2215 ruling, which was made on the asymmetry alone.
+ *
+ * `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both halves
+ * so neither note can quietly become false.
  */
 export async function deleteDiaryTreatment(
     ctx: RequestContext,
