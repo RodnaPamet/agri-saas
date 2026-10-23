@@ -38,34 +38,50 @@
  * would be three exemptions explaining that the variables do not exist — a
  * guard arguing with its own documentation. `a-scar-is-not-a-wound`.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 
-/** Block and line comments removed, so prose cannot create a requirement. */
-function stripComments(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-}
+/**
+ * Comments blanked, so prose cannot create a requirement.
+ *
+ * `blankNonCode` rather than a local stripper, for two reasons the repo has
+ * already paid for: `comment-stripper-order` caps block-first strippers and
+ * this one WAS one (#1497 — stripping block comments before line comments lets
+ * a `/*` inside a `//` line open a phantom block), and #2106 is the same helper
+ * being fixed for astral characters after a `split('')` shrank a 290-line file
+ * to 210. Both are mistakes a fresh local copy gets to make again.
+ *
+ * `strings: false` (the default) is deliberate: the population is built from
+ * `process.env.NEXT_PUBLIC_X` member access, which is code either way, and
+ * `src/env.ts`'s schema keys are object keys rather than string literals. The
+ * one `NEXT_PUBLIC_*` that lives in a string — `flagName:
+ * "NEXT_PUBLIC_ENABLE_CANVAS_PRESENCE"`, a test export nothing reads — is
+ * excluded by the `process.env.` prefix, not by blanking.
+ */
+const codeOf = (source: string): string => blankNonCode(source);
 
-function walk(dir: string, out: string[] = []): string[] {
-    for (const entry of readdirSync(dir)) {
-        if (entry === 'node_modules' || entry === '.next') continue;
-        const p = path.join(dir, entry);
-        if (statSync(p).isDirectory()) walk(p, out);
-        else if (/\.(ts|tsx|mjs)$/.test(entry)) out.push(p);
-    }
-    return out;
-}
-
-const SRC_FILES = walk(path.join(ROOT, 'src'));
+/**
+ * `collectSourceFiles` rather than a hand-rolled walk, which
+ * `file-collection-is-not-silently-empty` caps for the #875 reason: a renamed
+ * root must name itself rather than quietly contributing zero files to a total
+ * that still looks like an answer.
+ */
+const SRC_FILES = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.ts', '.tsx', '.mjs'],
+});
 
 /**
  * Declared in the typed env — the keys `src/env.ts` promises the app.
  * Taken from the `runtimeEnv` map and the client schema alike by matching the
  * whole file after comment-stripping, because either half alone misses one.
  */
-const ENV_TS = stripComments(readFileSync(path.join(ROOT, 'src/env.ts'), 'utf8'));
+const ENV_TS = codeOf(readFileSync(path.join(ROOT, 'src/env.ts'), 'utf8'));
 const DECLARED = new Set(ENV_TS.match(/NEXT_PUBLIC_[A-Z0-9_]+/g) ?? []);
 
 /**
@@ -75,7 +91,7 @@ const DECLARED = new Set(ENV_TS.match(/NEXT_PUBLIC_[A-Z0-9_]+/g) ?? []);
  */
 const RAW_READS = new Map<string, string[]>();
 for (const file of SRC_FILES) {
-    const code = stripComments(readFileSync(file, 'utf8'));
+    const code = codeOf(readFileSync(file, 'utf8'));
     for (const m of code.matchAll(/process\.env\.(NEXT_PUBLIC_[A-Z0-9_]+)/g)) {
         RAW_READS.set(m[1], [...(RAW_READS.get(m[1]) ?? []), path.relative(ROOT, file)]);
     }
@@ -190,9 +206,15 @@ describe('every NEXT_PUBLIC_* the app reads is settable at build time (#2009)', 
         }
     });
 
-    it('CONTROL: stripComments removes prose but keeps code', () => {
-        expect(stripComments('// NEXT_PUBLIC_A\nconst x = 1;')).not.toContain('NEXT_PUBLIC_A');
-        expect(stripComments('/* NEXT_PUBLIC_B */\nconst y = 2;')).not.toContain('NEXT_PUBLIC_B');
-        expect(stripComments('const z = process.env.NEXT_PUBLIC_C;')).toContain('NEXT_PUBLIC_C');
+    it('CONTROL: the comment blanker removes prose but keeps code', () => {
+        // Asserted on the shared helper as THIS guard uses it, not on the
+        // helper's own contract — its tests own that. What matters here is
+        // that the population derivation cannot see a name in prose.
+        expect(codeOf('// NEXT_PUBLIC_A\nconst x = 1;')).not.toContain('NEXT_PUBLIC_A');
+        expect(codeOf('/* NEXT_PUBLIC_B */\nconst y = 2;')).not.toContain('NEXT_PUBLIC_B');
+        expect(codeOf('const z = process.env.NEXT_PUBLIC_C;')).toContain('NEXT_PUBLIC_C');
+        // The ordering #1497 is about: a `/*` inside a line comment must not
+        // open a block that swallows the code after it.
+        expect(codeOf('// a /* b\nconst d = process.env.NEXT_PUBLIC_E;')).toContain('NEXT_PUBLIC_E');
     });
 });
