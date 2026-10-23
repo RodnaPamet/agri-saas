@@ -578,30 +578,62 @@ export interface FieldSprayGroup {
 }
 
 /**
- * Split the period's treatments into one sheet per field.
+ * Split the period's treatments into one sheet per SPRAYED field.
  *
- * Two properties matter more than the grouping itself, because this feeds a
- * legally-filed register:
+ * Three properties, because this feeds a legally-filed register. The first two
+ * are why the orphan group below cannot be simplified away; the third is the
+ * owner's fourth ruling on #2183.
+ *
  *   • NO LINE IS LOST. A treatment whose field is not in `fields` — the
  *     field list is capped at MAX_FIELD_SHEETS, the spray lines are not —
  *     lands in a trailing group with a BLANK strip rather than being
  *     filtered away. A vanished spray is an unrecorded chemical application.
  *   • NO LINE IS DUPLICATED. Printing one treatment under two fields would
  *     claim an application that never happened.
- * `tests/pdf/farm-record-diary.test.ts` asserts both directly.
+ *   • NO SHEET WITHOUT A LINE. A parcel of the block that was not sprayed in
+ *     the period gets no sheet at all (owner ruling, #2183 ask 4: "only
+ *     parcels sprayed in the period get a spraying sheet. Blank parcel sheets
+ *     go as well").
+ *
+ * `tests/pdf/farm-record-diary.test.ts` asserts all three directly.
+ *
+ * ## The third does not endanger the first
+ *
+ * `.filter((g) => g.lines.length > 0)` drops only groups built from `fields`,
+ * never the orphan group — and a group can be empty only when no line names
+ * its parcel, which is precisely the case where that line is somewhere else.
+ * Concretely: if `groups` comes back empty while lines exist, then no line
+ * matched any field, so every line is an orphan and the branch below carries
+ * all of them. Dropping empty groups can therefore never drop a line.
+ *
+ * ## Why a BLOCK register had blank sheets and a TREATMENT one never did
+ *
+ * `fields` is built from `parcels`, and that query is scoped two different
+ * ways (`:1379-1388`): a treatment-scoped document limits it to the parcels
+ * the treatment touched, while a block-scoped one takes EVERY live parcel of
+ * the block. So the per-treatment ДНЕВНИК already honoured this ruling via
+ * #1740 and only the block register printed sheets for untreated parcels.
  */
 export function groupSprayLinesByField(
     fields: FieldHeaderData[],
     sprayLines: SprayLineData[],
 ): FieldSprayGroup[] {
-    const groups: FieldSprayGroup[] = fields.map((f) => ({
-        field: f,
-        lines: sprayLines.filter((l) => l.parcelId === f.parcelId),
-    }));
+    const groups: FieldSprayGroup[] = fields
+        .map((f) => ({
+            field: f,
+            lines: sprayLines.filter((l) => l.parcelId === f.parcelId),
+        }))
+        // #2183 ask 4. See the docblock for why this cannot lose a line.
+        .filter((g) => g.lines.length > 0);
     const knownFields = new Set(fields.map((f) => f.parcelId));
     const orphanLines = sprayLines.filter((l) => !l.parcelId || !knownFields.has(l.parcelId));
-    // The same branch gives an idle period its one blank sheet, so the
-    // section is never absent from the document.
+    // `!groups.length` is the no-line-lost net, NOT a blank sheet for an idle
+    // period: this used to be described as giving an idle period its one blank
+    // sheet "so the section is never absent", which stopped being true twice
+    // over. The caller gates on `sprayLines.length > 0` (#2183 asks 1-2, an
+    // empty section is now omitted), and ruling 5 refuses a block that
+    // recorded nothing at all — so an idle period never reaches here, and if
+    // it did, a lone empty sheet is the thing the ruling removes.
     if (orphanLines.length || !groups.length) {
         groups.push({ field: null, lines: orphanLines });
     }
