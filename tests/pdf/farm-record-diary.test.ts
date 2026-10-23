@@ -24,6 +24,8 @@ import {
     type SprayLineData,
     type FertilizeLineData,
     type FarmProfileData,
+    isRegisterEmpty,
+    type ObservationData,
 } from '@/app-layer/reports/pdf/farm-record-diary';
 
 function collect(doc: PDFKit.PDFDocument): Promise<Buffer> {
@@ -506,5 +508,114 @@ describe('fmtDate — an Invalid Date must not render digits (#1575)', () => {
     it('still renders blank for null and undefined', () => {
         expect(fmtDate(null)).toBe('');
         expect(fmtDate(undefined)).toBe('');
+    });
+});
+
+/**
+ * An empty DATA section is left out; the two blank forms stay (#2183).
+ *
+ * ## Why these count PAGES
+ *
+ * The obvious test — render, then search the buffer for «ПРОВЕДЕНИ ХИМИЧНИ
+ * ОБРАБОТКИ» — cannot work, and the `fmtDate` suite above already paid for
+ * finding out: once a Unicode font is embedded PDFKit writes text as GLYPH
+ * INDICES, so a buffer search finds nothing whether the section rendered or
+ * not. Each section opens with `doc.addPage(...)`, so the page count is a real
+ * observable — and it is what a farmer sees, because the difference is pages
+ * they hold.
+ *
+ * ## The distinction the ruling turns on
+ *
+ * Five sections. THREE carry data: observations, chemical treatments,
+ * fertilizers. TWO are ruled forms that arrive EMPTY on purpose — the sampling
+ * sheet and the ОДБХ inspector result — for completion by hand. Nothing in the
+ * phrase "omit empty sections" distinguishes them, which is why the last case
+ * here exists.
+ */
+describe('ДНЕВНИК omits an empty data section (#2183)', () => {
+    const OBS: ObservationData[] = [
+        {
+            occurredAt: new Date('2026-05-02T08:00:00Z'),
+            phenophase: null,
+            disease: null,
+            pest: 'Житна пиявица',
+            derived: false,
+        },
+    ];
+
+    /** Cover + sampling + ОДБХ: the floor a document never goes below. */
+    const STRUCTURAL_PAGES = 3;
+
+    const only = (over: Partial<FarmRecordData>): FarmRecordData => ({
+        ...fixture(PROFILE),
+        sprayLines: [],
+        fertilizeLines: [],
+        observations: [],
+        fields: FIELDS,
+        ...over,
+    });
+
+    test('drops the OBSERVATIONS page when nothing was observed', async () => {
+        const withObs = await pageCount(only({ sprayLines: [SPRAY[0]], observations: OBS }));
+        const without = await pageCount(only({ sprayLines: [SPRAY[0]] }));
+        expect(withObs - without).toBe(1);
+    });
+
+    test('drops the FERTILIZER page when nothing was applied', async () => {
+        const withFert = await pageCount(only({ sprayLines: [SPRAY[0]], fertilizeLines: FERT }));
+        const without = await pageCount(only({ sprayLines: [SPRAY[0]] }));
+        expect(withFert - without).toBe(1);
+    });
+
+    test('drops every CHEMICAL sheet when nothing was sprayed', async () => {
+        // `groupSprayLinesByField` manufactures one blank group for an idle
+        // period — its own comment says so — which is the behaviour reversed
+        // here. With no lines the section must not appear at all, rather than
+        // appear once and empty.
+        //
+        // ONE field in both arms, because the section is filed PER FIELD: with
+        // the fixture's two fields the difference is 2, which is correct and
+        // measures the per-field split rather than the omission.
+        const sprayed = await pageCount(
+            only({ sprayLines: [SPRAY[0]], observations: OBS, fields: [FIELDS[0]] }),
+        );
+        const notSprayed = await pageCount(only({ observations: OBS, fields: [FIELDS[0]] }));
+        expect(sprayed - notSprayed).toBe(1);
+    });
+
+    test('KEEPS the sampling and ОДБХ sheets, which are blank by design', async () => {
+        // The one case "omit empty sections" would get wrong. A document with a
+        // single observation and nothing else still carries the two ruled forms
+        // an inspector writes on: cover + observations + those two.
+        expect(await pageCount(only({ observations: OBS }))).toBe(STRUCTURAL_PAGES + 1);
+    });
+});
+
+describe('isRegisterEmpty (#2183)', () => {
+    const OBS: ObservationData[] = [
+        { occurredAt: new Date(0), phenophase: null, disease: null, pest: 'x', derived: false },
+    ];
+    const bare = (over: Partial<FarmRecordData> = {}): FarmRecordData => ({
+        ...fixture(PROFILE),
+        sprayLines: [],
+        fertilizeLines: [],
+        observations: [],
+        ...over,
+    });
+
+    test('is true when all three data sections are empty', () => {
+        expect(isRegisterEmpty(bare())).toBe(true);
+    });
+
+    test('does NOT count `fields` — a block has parcels whether or not anything happened', () => {
+        // Counting them would make every register non-empty and the check
+        // inert, which is a gate that cannot fail.
+        expect(isRegisterEmpty(bare({ fields: FIELDS }))).toBe(true);
+    });
+
+    test('is false when any ONE data section has a row', () => {
+        expect(isRegisterEmpty(bare({ sprayLines: [SPRAY[0]] }))).toBe(false);
+        expect(isRegisterEmpty(bare({ fertilizeLines: FERT }))).toBe(false);
+        expect(isRegisterEmpty(bare({ observations: OBS }))).toBe(false);
     });
 });
