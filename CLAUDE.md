@@ -1218,10 +1218,18 @@ you have, add nothing new, and the two market surfaces close.
 - **Gate at the usecase, except where the usecase has no tenant.** Trends is
   gated at its three ROUTES because `getPriceTrends` / `getMarketNews` take no
   `RequestContext` and their payload is Redis-cached across tenants. Uploads
-  are gated once at `ingestUploadedFile`, the choke point every record-backed
-  upload reaches. `tests/guards/past-due-capability-coverage.test.ts` derives
-  its population from the filesystem, so a new exchange or trends USECASE
-  fails until somebody records whether it is gated or deliberately open.
+  are gated at **every path that stores bytes**, which is five call sites and
+  not one: `ingestUploadedFile` plus `uploadEvidenceFile`,
+  `uploadLogEntryPhoto`, `stageLocationSpatialImport` and the evidence-imports
+  route. This paragraph used to call `ingestUploadedFile` "the choke point
+  every record-backed upload reaches"; measured 2026-10-23 it was reached by
+  two of six, and the other four stored bytes past the gate (#2030).
+  `tests/guards/past-due-capability-coverage.test.ts` is what keeps the claim
+  true: §1-§4 derive an exchange/trends population from the filesystem, and
+  §5 derives an upload population from **who calls
+  `FileRepository.markStored`** — so a new upload surface fails until it gates
+  or is recorded as exempt. Do not re-write this as a single choke point
+  without making it one first.
 
 **See `docs/billing.md`** for the full operator + developer runbook,
 the reasoning behind plan limits, the failure-shape contract

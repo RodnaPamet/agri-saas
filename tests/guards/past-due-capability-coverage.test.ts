@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { RESTRICTED_CAPABILITIES } from '@/lib/billing/past-due';
 
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = join(__dirname, '..', '..');
 
@@ -136,6 +137,76 @@ describe('§4 the open list has no stale entries', () => {
             expect(reason.length).toBeGreaterThan(40);
             expect(reason).not.toMatch(/TODO|TBD|FIXME/i);
             expect(path).toBeTruthy();
+        }
+    });
+});
+
+/**
+ * ── §5 — every path that STORES UPLOAD BYTES carries the `upload` gate ──
+ *
+ * §2 above asks whether each withheld capability has a gate *somewhere*, and
+ * `upload` satisfied it with a single call inside `ingestUploadedFile`. That
+ * is exactly the hole #2030 measured: one call site, and four other paths
+ * writing bytes past it.
+ *
+ * CLAUDE.md (~1221), `entitlements.ts` and `ingest.ts` each assert that
+ * `ingestUploadedFile` is "the choke point every record-backed upload
+ * reaches". Measured 2026-10-23 it was reached by two of six. The prose
+ * generalised a claim no guard ranged over — §1-§4's population is exchange
+ * and trends by design, so it could never have failed for `evidence.ts`
+ * however long that stayed ungated.
+ *
+ * So this population is derived from the thing the convention is ABOUT: who
+ * calls `FileRepository.markStored`, which is what turns stored bytes into a
+ * `FileRecord`. A name regex cannot notice a new upload surface; this does.
+ *
+ * Comments are blanked before matching. `route.ts` carries the words
+ * `assertTenantNotPastDueRestricted` and `ingestUploadedFile` in a docblock
+ * explaining why the gate is there, and a guard that counted prose would pass
+ * on the explanation rather than the code.
+ */
+const UPLOAD_WRITER_EXEMPT: Record<string, string> = {
+    'src/app-layer/repositories/FileRepository.ts':
+        'Defines `markStored`; it is the write primitive rather than an upload surface. Gating here would gate every caller including the gated ones, and would fire on internal re-stamps that are not uploads.',
+};
+
+const UPLOAD_WRITERS = ALL.map(rel).filter((p) => {
+    if (UPLOAD_WRITER_EXEMPT[p]) return false;
+    const code = blankNonCode(readFileSync(join(ROOT, p), 'utf8'));
+    return /FileRepository\.markStored\s*\(/.test(code);
+});
+
+describe('§5 every upload-byte path carries the `upload` gate (#2030)', () => {
+    it('finds upload writers at all — not vacuously passing', () => {
+        console.log(
+            `[past-due] upload-writers=${UPLOAD_WRITERS.length}\n  ` +
+                UPLOAD_WRITERS.join('\n  '),
+        );
+        // Six at the time of writing. A floor rather than equality so a new
+        // surface does not have to edit this number, but high enough that a
+        // collector returning [] or one file fails instead of passing.
+        expect(UPLOAD_WRITERS.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it.each(UPLOAD_WRITERS)('%s gates the upload', (path) => {
+        const code = blankNonCode(readFileSync(join(ROOT, path), 'utf8'));
+        const gatesDirectly = /assert(?:Tenant)?NotPastDueRestricted\s*\([^)]*'upload'/.test(code);
+        // `ingestUploadedFile` gates internally, so a path that delegates to
+        // it is covered — that is the convention working, not a bypass.
+        const delegates = /ingestUploadedFile\s*\(/.test(code);
+        expect(
+            gatesDirectly || delegates
+                ? 'gated'
+                : `${path} stores upload bytes with no 'upload' gate and no ingestUploadedFile`,
+        ).toBe('gated');
+    });
+
+    it('the exempt list has no stale entries', () => {
+        // Same discipline as §4: cover that outlives its path is cover that
+        // protects nothing.
+        const present = new Set(ALL.map(rel));
+        for (const p of Object.keys(UPLOAD_WRITER_EXEMPT)) {
+            expect(present.has(p)).toBe(true);
         }
     });
 });

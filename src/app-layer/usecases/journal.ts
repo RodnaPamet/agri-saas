@@ -9,7 +9,7 @@ import {
     type LogQuantityInput,
 } from '../repositories/JournalRepository';
 import { FileRepository } from '../repositories/FileRepository';
-import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
+import { assertNotPastDueRestricted, assertTenantNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { recordHarvestLot } from './inventory';
 import { recordYieldFromHarvest, type HarvestYieldResult } from './yield-record';
 import { advancePlantingStatusForLinks } from './crop-planning';
@@ -642,6 +642,22 @@ export async function uploadLogEntryPhoto(
     idempotencyKey?: string | null,
 ) {
     assertCanWrite(ctx);
+
+    // #2030 — the past-due gate, HERE rather than inherited.
+    //
+    // CLAUDE.md, `entitlements.ts` and `ingest.ts` each ASSERTED, until this
+    // change, that uploads were gated once at `ingestUploadedFile` — "the choke
+    // point every record-backed upload reaches". Measured 2026-10-23: two of
+    // six paths reached it, and `assertTenantNotPastDueRestricted` had exactly
+    // ONE call site in the repository. This path was not it, so a past-due
+    // tenant could still store bytes through it. All three now say so.
+    //
+    // `journal.ts` does call `assertNotPastDueRestricted(ctx, 'journal.create')`
+    // — in `createLogEntryImpl`, a DIFFERENT function. This one is exported and
+    // routed at `POST /api/t/{slug}/journal/{id}/files`, so an attachment to an
+    // existing entry never traversed that check. #2030 described the attachment
+    // as riding along on the entry's capability; it does not.
+    await assertTenantNotPastDueRestricted(ctx.tenantId, 'upload');
 
     // `file.type` is the CLIENT's claim; the bytes are checked below. Same
     // contract as the evidence upload — see the note there.
