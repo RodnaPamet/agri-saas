@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/hooks';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { ToggleGroup } from '@/components/ui/toggle-group';
@@ -28,6 +29,7 @@ interface OutboxStats {
 
 export default function NotificationSettingsPage() {
     const t = useTranslations('admin.notificationSettings');
+    const toast = useToast();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [tab, setTab] = useState<'settings' | 'stats'>('settings');
@@ -73,10 +75,17 @@ export default function NotificationSettingsPage() {
             });
             const data = await res.json();
             if (res.ok) {
-                alert(t('jobSuccess', { message: data.message }) + '\n' + JSON.stringify(data.stats, null, 2));
-                fetchData(); // Refresh stats
+                // #2224. The stats object is NOT in the message any more. It
+                // used to be `JSON.stringify(data.stats, null, 2)` appended to
+                // an `alert()`, which is a pretty-printed object in a modal the
+                // user dismisses — while this page already has a stats tab that
+                // renders the same numbers. `fetchData()` below refreshes it, so
+                // the data lands where it belongs and the toast says only what
+                // happened.
+                toast.success(t('jobSuccess', { message: data.message }));
+                fetchData();
             } else {
-                alert(t('jobError', { error: data.error || t('failedToTrigger') }));
+                toast.error(t('jobError', { error: data.error || t('failedToTrigger') }));
             }
         } finally {
             setRunningJob(null);

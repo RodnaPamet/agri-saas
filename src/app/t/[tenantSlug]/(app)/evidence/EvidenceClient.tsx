@@ -52,6 +52,7 @@ import { EvidenceGallery } from '@/components/ui/EvidenceGallery';
 import { TimestampTooltip } from '@/components/ui/timestamp-tooltip';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { useToast } from '@/components/ui/hooks';
 import { useCelebration } from '@/components/ui/hooks';
 import { isAllEvidenceCurrent } from '@/lib/evidence-freshness';
 import { toApiSearchParams } from '@/lib/filters/url-sync';
@@ -147,6 +148,7 @@ export function EvidenceClient(props: EvidenceClientProps) {
 
 function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translations: t }: EvidenceClientProps) {
     const tr = useTranslations('evidence');
+    const toast = useToast();
     // Stabilise across renders so dependent useCallbacks don't get a
     // fresh identity every cycle (was a real exhaustive-deps warning).
     const apiUrl = useCallback(
@@ -385,7 +387,20 @@ function EvidencePageInner({ initialEvidence, tenantSlug, permissions, translati
             await invalidateEvidence();
         } catch (e) {
             await invalidateEvidence(); // roll back to server truth
-            alert(e instanceof Error ? e.message : `Failed to ${verb} evidence`);
+            // #2224. `toast.error` and not an InlineNotice: this is a transient
+            // failure of a row action in a list, which is the case
+            // `journal/[id]/page.tsx` already answers with a toast at two
+            // sites. An inline notice would need somewhere to live on a page
+            // whose content is the list itself.
+            //
+            // The TITLE is localised; the server's message rides in
+            // `description`, which is the same detail the `alert()` showed.
+            toast.error(
+                isArchived
+                    ? tr('client.archiveFailed')
+                    : tr('client.unarchiveFailed'),
+                { description: e instanceof Error ? e.message : undefined },
+            );
         }
     };
 
