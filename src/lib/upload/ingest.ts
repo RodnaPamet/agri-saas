@@ -187,10 +187,22 @@ export async function ingestUploadedFile(
     const declaredMime = file.type || 'application/octet-stream';
     const originalName = file.name || opts.fallbackName;
 
-    // Before any bytes are read or written. One call here covers evidence,
-    // journal attachments, invoices and the importers, because this is the
-    // choke point every record-backed upload reaches — gating the routes
-    // instead would be N sites and a new one would escape silently (#1325).
+    // Before any bytes are read or written.
+    //
+    // This comment used to say one call here "covers evidence, journal
+    // attachments, invoices and the importers, because this is the choke point
+    // every record-backed upload reaches". It did not. Measured 2026-10-23
+    // (#2030): two of six byte-writing paths reached this function, and
+    // `assertTenantNotPastDueRestricted` had exactly ONE call site in the
+    // repository — this one. Evidence, journal attachments, spatial import and
+    // the evidence importer each stored bytes past it.
+    //
+    // The old comment's own warning was right and arrived too late: "gating the
+    // routes instead would be N sites and a new one would escape silently
+    // (#1325)". Four had already escaped. The gate now lives at all five
+    // sites, and §5 of `past-due-capability-coverage` derives its population
+    // from who calls `FileRepository.markStored` — so what stops the next
+    // escape is the guard, not this function's position.
     //
     // The MAP is unaffected: the owner's ruling keeps parcels and imagery
     // VISIBLE and stops only new uploads, so nothing here touches reads.

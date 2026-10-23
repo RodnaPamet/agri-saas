@@ -1,4 +1,5 @@
 import { RequestContext } from '../types';
+import { assertTenantNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { assertCanWrite } from '../policies/common';
 import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -59,6 +60,16 @@ export async function stageLocationSpatialImport(
     file: SpatialImportInput,
 ): Promise<SpatialImportStageResult> {
     assertCanWrite(ctx);
+
+    // #2030 — the past-due gate, HERE rather than inherited.
+    //
+    // CLAUDE.md, `entitlements.ts` and `ingest.ts` each ASSERTED, until this
+    // change, that uploads were gated once at `ingestUploadedFile` — "the choke
+    // point every record-backed upload reaches". Measured 2026-10-23: two of
+    // six paths reached it, and `assertTenantNotPastDueRestricted` had exactly
+    // ONE call site in the repository. This path was not it, so a past-due
+    // tenant could still store bytes through it. All three now say so.
+    await assertTenantNotPastDueRestricted(ctx.tenantId, 'upload');
 
     // 1 — format detection + per-format byte cap. detectFormat returns
     //     null for an unsupported type (the route already 415s on

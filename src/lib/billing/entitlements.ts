@@ -251,12 +251,17 @@ export async function assertNotPastDueRestricted(
 /**
  * The same gate for a caller that holds a tenant id and no `RequestContext`.
  *
- * `ingestUploadedFile` is the one that needs it, and it is also the most
- * valuable place to gate: CLAUDE.md's upload convention makes it the choke
- * point every record-backed upload reaches, so one call here covers evidence,
- * journal attachments, invoices and the importers without touching any of
- * them. `BillingAccount` is not RLS-scoped, so reading it on the global client
- * is correct rather than a shortcut.
+ * `ingestUploadedFile` needs it, and so do four other paths — this had ONE
+ * call site until #2030, and the three places that justified that (here,
+ * CLAUDE.md, and `ingest.ts`) all asserted a choke point the code did not
+ * have. Measured 2026-10-23: two of six byte-writing paths reached
+ * `ingestUploadedFile`. It is now called from all five, and §5 of
+ * `past-due-capability-coverage` derives its population from who calls
+ * `FileRepository.markStored`, so a sixth surface fails the build rather than
+ * inheriting a claim.
+ *
+ * `BillingAccount` is not RLS-scoped, so reading it on the global client is
+ * correct rather than a shortcut.
  */
 export async function assertTenantNotPastDueRestricted(
     tenantId: string,

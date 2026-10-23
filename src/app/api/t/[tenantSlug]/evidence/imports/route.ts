@@ -28,6 +28,7 @@ import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import { scanUploadedBuffer } from '@/lib/storage/av-scan';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { assertTenantNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { env } from '@/env';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { logger } from '@/lib/observability/logger';
@@ -94,6 +95,21 @@ export const POST = withApiErrorHandling(
                 { status: 415 },
             );
         }
+
+        // #2030 — the past-due gate, HERE rather than inherited.
+        //
+        // CLAUDE.md, `entitlements.ts` and `ingest.ts` each ASSERTED, until
+        // this change, that uploads were gated once at `ingestUploadedFile` —
+        // "the choke point every record-backed upload reaches". Measured
+        // 2026-10-23: two of six paths reached it, and
+        // `assertTenantNotPastDueRestricted` had exactly ONE call site in the
+        // repository. This route was not it, so a past-due tenant could still
+        // stage an evidence bundle through it. All three now say so.
+        //
+        // Placed AFTER the cheap format rejections and BEFORE the first byte is
+        // written: a 415 for a file we would refuse anyway costs the caller
+        // nothing and tells them something more useful than a billing error.
+        await assertTenantNotPastDueRestricted(ctx.tenantId, 'upload');
 
         // ── Stage to storage ───────────────────────────────────────
         const storage = getStorageProvider();
