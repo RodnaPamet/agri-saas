@@ -190,8 +190,29 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/tasks/{taskId}',
         operationId: 'deleteTask',
         summary: 'Delete a task',
-        description: 'Soft delete — reads filter it out, the row survives.',
+        description:
+            '**A HARD delete.** The row is removed and its children cascade — comments, ' +
+            'links and evidence links go with it. This said "Soft delete — reads filter it ' +
+            'out, the row survives", which was wrong: `Task.deletedAt` exists and is ' +
+            'indexed, and the repository filters on it, but nothing writes it on this ' +
+            'path. Corrected 2026-10-23 (#2187).\n\n' +
+            '**Creator-or-admin** (#2187). A writer who did not create the task is refused ' +
+            'with `TASK_DELETE_NOT_PERMITTED`, closing an asymmetry #2169 opened: editing ' +
+            'was gated and deleting was not, so the weaker permission guarded the more ' +
+            'destructive verb. The check reads `createdByUserId` off the STORED row.\n\n' +
+            '`POST /tasks/bulk/delete` raises the SAME code and is **all-or-nothing**: if ' +
+            'any selected task was created by somebody else, nothing is deleted and the ' +
+            'error carries `refused` and `selected` counts so a client can say how many. A ' +
+            'partial success would leave the farmer reconciling an outcome against their ' +
+            'own selection with no way to tell which rows went.',
         tags: ['Tasks'],
+        extraResponses: codedErrorResponses({
+            403:
+                'Signed in, but not permitted to delete THIS task.\n\n' +
+                '- `TASK_DELETE_NOT_PERMITTED` — created by somebody else and this caller ' +
+                'is not a farm admin. On the bulk route it carries `refused` / `selected`.\n' +
+                '- `WRITE_FORBIDDEN_FOR_ROLE` — the role cannot modify records at all.',
+        }),
         params: TaskParams,
         success: {
             status: 200,

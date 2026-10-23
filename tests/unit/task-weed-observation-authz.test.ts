@@ -78,6 +78,10 @@ jest.mock('../../src/app-layer/policies/task.policies', () => ({
     // rather than the mock — so every suite that mocks this module lists
     // every export, whether or not it exercises this one.
     assertCanEditTask: jest.fn(),
+    // #2187 — the delete half of the same rule. Listed for the reason
+    // above: a partial mock throws on a new export at the CALL site.
+    assertCanDeleteTask: jest.fn(),
+    assertCanDeleteTasks: jest.fn(),
 }));
 
 import { createParcelWeedObservation } from '@/app-layer/usecases/parcel-history';
