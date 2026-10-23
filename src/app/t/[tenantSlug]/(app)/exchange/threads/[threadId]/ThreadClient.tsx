@@ -29,6 +29,7 @@ import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { ReportButton } from '@/components/trust-safety/ReportButton';
 import { BlockPersonButton } from '@/components/trust-safety/BlockPersonButton';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 
 /** The wire shape of `getExchangeThread` — dates arrive as ISO strings. */
@@ -76,6 +77,7 @@ export function ThreadClient({
 }) {
     const { formatDateTime } = useDateFormat();
     const t = useTranslations('exchange.messaging');
+    const triggerUndoToast = useToastWithUndo();
     const tenantHref = useTenantHref();
     const buildApiUrl = useTenantApiUrl();
     const [draft, setDraft] = useState('');
@@ -159,16 +161,50 @@ export function ThreadClient({
         }
     }, [buildApiUrl, threadId, mutate]);
 
+    /**
+     * Epic 67 — a 5s undo window before the message is deleted (#2193).
+     *
+     * This was a bare `apiDelete`: one tap removed a message from a live
+     * negotiation with no confirmation and no way back. Note the contrast with
+     * `toggleBlock` just above, which deliberately has NO ceremony because
+     * blocking is reversible from the same button — a delete is not, which is
+     * the distinction that decides which gets a window.
+     *
+     * The optimistic step filters the message out of the cached thread so the
+     * composer and the list agree during the countdown; `restore` puts the
+     * whole snapshot back rather than re-inserting at an index, because a
+     * message that arrived meanwhile would make an index wrong.
+     */
     const remove = useCallback(
-        async (messageId: string) => {
-            try {
-                await apiDelete(buildApiUrl(`/exchange/messages/${messageId}`));
-                await mutate();
-            } catch {
-                setSendError(true);
-            }
+        (messageId: string) => {
+            let snapshot: ThreadDetail | undefined;
+            void mutate(
+                (cur) => {
+                    snapshot = cur;
+                    return cur
+                        ? { ...cur, messages: cur.messages.filter((m) => m.id !== messageId) }
+                        : cur;
+                },
+                { revalidate: false },
+            );
+            const restore = () => {
+                void mutate(snapshot, { revalidate: false });
+            };
+            triggerUndoToast({
+                action: () => apiDelete(buildApiUrl(`/exchange/messages/${messageId}`)),
+                undoAction: restore,
+                onCommit: () => {
+                    void mutate();
+                },
+                onError: () => {
+                    restore();
+                    setSendError(true);
+                },
+                message: t('messageRemoved'),
+                undoMessage: t('undo'),
+            });
         },
-        [buildApiUrl, mutate],
+        [buildApiUrl, mutate, t, triggerUndoToast],
     );
 
     // The other person on this thread, for the person-block control.

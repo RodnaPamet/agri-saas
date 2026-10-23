@@ -115,7 +115,8 @@
             "onboardingDesc": "Two quick steps and your records start working for you.",
             "dismiss": "Dismiss",
             "sampleHint": "Not ready to enter real data? Explore with a sample farm first.",
-            "trySample": "Try it with sample data"
+            "trySample": "Try it with sample data",
+            "undo": "Undo"
         },
         "myFarmTasks": {
             "title": "My Farm Tasks",
@@ -1398,7 +1399,10 @@
             "imageAfterSave": "Save the draft first, then add artwork to it.",
             "imageHint": "Resized and converted to WebP in your browser; camera metadata is stripped before upload. Scanned for malware on arrival.",
             "imageNotAnImage": "That file could not be read as an image.",
-            "imageUploadFailed": "The image could not be uploaded."
+            "imageUploadFailed": "The image could not be uploaded.",
+            "imageRemoved": "Image deleted",
+            "imageRemoveFailed": "The deletion was not saved",
+            "undo": "Undo"
         },
         "companies": {
             "title": "Suppliers",
@@ -2159,7 +2163,9 @@
             "add": "Add",
             "remove": "Remove",
             "amountInvalid": "Enter a valid amount.",
-            "saveFailed": "Could not save the payment."
+            "saveFailed": "Could not save the payment.",
+            "paymentRemoved": "Payment removed",
+            "undo": "Undo"
         },
         "rentRoll": {
             "title": "Rent roll",
@@ -2194,7 +2200,9 @@
             "endDate": "End date",
             "documentRef": "Contract №",
             "documentRefPlaceholder": "e.g. Contract №123/2024",
-            "saveFailed": "Could not save the lease."
+            "saveFailed": "Could not save the lease.",
+            "leaseRemoved": "Lease removed",
+            "undo": "Undo"
         },
         "rent": {
             "title": "Rent",
@@ -3827,7 +3835,9 @@
             "remove": "Remove",
             "backToInbox": "Messages",
             "you": "You",
-            "them": "Them"
+            "them": "Them",
+            "messageRemoved": "Message deleted",
+            "undo": "Undo"
         }
     },
     "grain": {

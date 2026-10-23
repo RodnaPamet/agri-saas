@@ -25,6 +25,7 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useToastWithUndo } from '@/components/ui/hooks';
 
 /** Longest edge after downscale. A promotion card renders far smaller. */
 const MAX_EDGE = 1200;
@@ -63,6 +64,7 @@ export function PromotionImageField({
     onChange: (mediaUrl: string | null) => void;
 }) {
     const t = useTranslations('admin.promotions');
+    const triggerUndoToast = useToastWithUndo();
     const buildUrl = useTenantApiUrl();
     const inputRef = useRef<HTMLInputElement>(null);
     const [busy, setBusy] = useState(false);
@@ -103,17 +105,39 @@ export function PromotionImageField({
         }
     };
 
-    const remove = async () => {
+    /**
+     * Epic 67 — a 5s undo window before the artwork is deleted (#2193).
+     *
+     * It was a bare `fetch(..., { method: 'DELETE' })` whose result was never
+     * read: the image vanished from the form on click, and a failed delete
+     * looked identical to a successful one. Promotion artwork is uploaded
+     * rather than typed, so the cost of a mis-click is finding the file again.
+     *
+     * The optimistic step is `onChange(null)` and the rollback is
+     * `onChange(previous)` — the parent form holds the value, so there is no
+     * cache to touch.
+     */
+    const remove = () => {
         if (!promotionId) return;
-        setBusy(true);
-        try {
-            await fetch(buildUrl(`/admin/promotions/${promotionId}/image`), {
-                method: 'DELETE',
-            });
-            onChange(null);
-        } finally {
-            setBusy(false);
-        }
+        const previous = mediaUrl;
+        onChange(null);
+        triggerUndoToast({
+            action: async () => {
+                const res = await fetch(buildUrl(`/admin/promotions/${promotionId}/image`), {
+                    method: 'DELETE',
+                });
+                // The old code ignored the response entirely. A 4xx here means
+                // the artwork is still there, and the form was saying otherwise.
+                if (!res.ok) throw new Error(String(res.status));
+            },
+            undoAction: () => onChange(previous),
+            onError: () => {
+                onChange(previous);
+                setError(t('imageRemoveFailed'));
+            },
+            message: t('imageRemoved'),
+            undoMessage: t('undo'),
+        });
     };
 
     if (!promotionId) {

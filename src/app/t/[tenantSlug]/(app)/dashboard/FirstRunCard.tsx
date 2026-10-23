@@ -9,7 +9,7 @@ import { Heading } from '@/components/ui/typography';
 import { Button } from '@/components/ui/button';
 import { ProgressCircle } from '@/components/ui/progress-circle';
 import { CircleCheckFill, CircleDotted } from '@/components/ui/icons/nucleo';
-import { useLocalStorage, useToast } from '@/components/ui/hooks';
+import { useLocalStorage, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { apiPost, apiDelete } from '@/lib/api-client';
 import {
@@ -53,6 +53,7 @@ export default function FirstRunCard({
     onChanged?: () => void;
 }) {
     const t = useTranslations('dashboard.firstRun');
+    const triggerUndoToast = useToastWithUndo();
     const router = useRouter();
     const href = useTenantHref();
     const buildUrl = useTenantApiUrl();
@@ -105,17 +106,34 @@ export default function FirstRunCard({
         }
     }
 
-    async function clearSample() {
-        setBusy(true);
-        try {
-            await apiDelete(buildUrl('/sample-data'));
-            await refresh();
-            toast.success(t('sampleCleared'));
-        } catch {
-            toast.error(t('sampleClearError'), { description: t('tryAgain') });
-        } finally {
-            setBusy(false);
-        }
+    /**
+     * Epic 67 — a 5s undo window before the demo rows go (#2193).
+     *
+     * An undo toast rather than a confirm dialog, deliberately. CLAUDE.md
+     * reserves the typed-confirmation modal for top-level entity deletion
+     * whose cascading consequences make five seconds too short; clearing
+     * sample data is the opposite case — the rows are demo data the farmer
+     * seeded on purpose, removing them is the normal step before going live,
+     * and it can simply be seeded again. A confirm here would be ceremony
+     * around a low-harm action.
+     *
+     * No optimistic step: the card's own `hasSample` branch flips when
+     * `refresh()` lands after the commit, and faking it would mean this
+     * component deciding what the server holds.
+     */
+    function clearSample() {
+        triggerUndoToast({
+            action: () => apiDelete(buildUrl('/sample-data')),
+            onCommit: () => {
+                void refresh();
+                toast.success(t('sampleCleared'));
+            },
+            onError: () => {
+                toast.error(t('sampleClearError'), { description: t('tryAgain') });
+            },
+            message: t('sampleCleared'),
+            undoMessage: t('undo'),
+        });
     }
 
     // ── Sample-data mode — the farm is running on seeded demo rows ──

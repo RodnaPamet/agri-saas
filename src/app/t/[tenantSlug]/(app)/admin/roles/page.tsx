@@ -41,6 +41,7 @@ import { Combobox, ComboboxOption } from '@/components/ui/combobox';
 import { Tooltip } from '@/components/ui/tooltip';
 import { DataTable, createColumns, useBulkDelete } from '@/components/ui/table';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ListPageShell } from '@/components/layout/ListPageShell';
 import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading, Eyebrow } from '@/components/ui/typography';
@@ -334,6 +335,7 @@ export default function CustomRolesPage() {
     const [showCreate, setShowCreate] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [pendingDelete, setPendingDelete] = useState<CustomRole | null>(null);
 
     // ─── Data Fetching ───
     const fetchRoles = useCallback(async () => {
@@ -404,12 +406,24 @@ export default function CustomRolesPage() {
         }
     }
 
-    async function handleDelete(role: CustomRole) {
-        const memberWarning = role._count.memberships > 0
-            ? t('memberWarning', { count: role._count.memberships })
-            : '';
-        if (!confirm(t('confirmDelete', { name: role.name }) + memberWarning)) return;
+    /**
+     * Epic 67 (#2193). This asked with a native `confirm()`, which CLAUDE.md
+     * bans by name — "never write a `confirm()` blocking dialog … those are
+     * the anti-patterns Epic 67 replaces". It blocks the main thread, cannot
+     * be styled or translated beyond its button labels, and on a phone it
+     * renders as a browser chrome sheet that looks nothing like the product.
+     *
+     * A ConfirmDialog rather than the undo toast, deliberately: deleting a
+     * custom role CLEARS the memberships that point at it — the response even
+     * reports `membersCleared` — so the consequence cascades to other people's
+     * access. CLAUDE.md reserves the confirm for exactly that, and five
+     * seconds is the wrong instrument when the blast radius is other users.
+     */
+    function handleDelete(role: CustomRole) {
+        setPendingDelete(role);
+    }
 
+    async function performDelete(role: CustomRole) {
         setError(null);
         setSuccess(null);
         try {
@@ -693,6 +707,28 @@ export default function CustomRolesPage() {
                 </div>
             </ListPageShell.Body>
             {roleDeleteDialog}
+            {/* The SINGLE delete's dialog. Its bulk sibling above has had a
+                proper one since `useBulkDelete` landed; only this path was
+                still asking with a native `confirm()` (#2193). */}
+            {pendingDelete ? (
+                <ConfirmDialog
+                    showModal
+                    setShowModal={() => setPendingDelete(null)}
+                    tone="danger"
+                    title={t('confirmDelete', { name: pendingDelete.name })}
+                    description={
+                        pendingDelete._count.memberships > 0
+                            ? t('memberWarning', { count: pendingDelete._count.memberships })
+                            : undefined
+                    }
+                    confirmLabel={t('deleteRole')}
+                    onConfirm={async () => {
+                        const role = pendingDelete;
+                        setPendingDelete(null);
+                        await performDelete(role);
+                    }}
+                />
+            ) : null}
         </ListPageShell>
     );
 }
