@@ -69,11 +69,25 @@
  * with a narrowed message set. The client runtime is the page's own
  * requirement, not leakage.
  *
- * **All three that ARE leakage arrive through one static import** — `./providers`
- * — traced over the static graph: sonner directly, cmdk and radix via
- * `components/command-palette`, swr via `SWRPersistenceProvider`. That is the
- * arithmetic #1971's `next/dynamic` rejection was missing: it was computed for
- * 8,895 bytes of sonner, and the edge actually carries four libraries.
+ * They all arrive through one static import — `./providers` — but they do NOT
+ * all arrive through one MODULE, and that distinction cost a wrong prediction.
+ * `cmdk` came only from `components/command-palette`, so lazy-loading the
+ * palette removed it (measured: 25 script URLs where there were 27, and no cmdk
+ * on the page). `radix` did not go with it, because it has three sites and none
+ * is the palette:
+ *
+ *   components/ui/modal.tsx    → @radix-ui/react-dialog, react-visually-hidden
+ *   components/ui/tooltip.tsx  → @radix-ui/react-tooltip
+ *
+ * Both are mount-time primitives inside the `Providers` subtree, so they leave
+ * only if all of `Providers` goes lazy — declined on 2026-10-23 because it would
+ * put SWR config and the toaster behind a second request on every app page load.
+ *
+ * The reason I predicted otherwise is worth keeping: my import tracer matched
+ * only SINGLE-quoted specifiers, and `tooltip.tsx` writes
+ * `from "@radix-ui/react-tooltip"`. That hid 358 of 426 reachable modules, so
+ * the "96 → 68 modules" figure was an artefact of quote style rather than a
+ * measurement.
  *
  * What #1872 DID remove is the MOUNTING, which is what the assertions below
  * establish and all they ever established. The rendering change was real and

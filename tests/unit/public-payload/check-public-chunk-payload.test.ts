@@ -102,12 +102,12 @@ function run(lhrDir: string, build: string) {
 }
 
 describe('check-public-chunk-payload.mjs', () => {
-    it('passes when exactly the two baselined libraries are present', () => {
+    it('passes when exactly the three baselined libraries are present', () => {
         // The state the first CI run measured. Every one of the five is
         // baselined, so the check is green — and the only thing left that can
         // fail it is a SIXTH library, which is the honest limit of a baseline
         // this size.
-        const { lhrDir, build } = fixture({ 'a.js': ['sonner'], 'b.js': ['swr'] });
+        const { lhrDir, build } = fixture({ 'a.js': ['sonner', 'radix'], 'b.js': ['swr'] });
         const r = run(lhrDir, build);
         expect(r.status).toBe(0);
     });
@@ -133,7 +133,9 @@ describe('check-public-chunk-payload.mjs', () => {
         // the rest and the reader would fix one and re-run.
         // cmdk and radix are outside the baseline since #2225, so they are
         // already the "new library" case without shrinking anything.
-        for (const name of ['cmdk', 'radix']) {
+        // radix is baselined again since #2225's prediction was half wrong, so
+        // cmdk is the one library left that this fixture can present as new.
+        for (const name of ['cmdk']) {
             expect(out).toContain(`${name} reaches the public page`);
         }
     });
@@ -156,7 +158,7 @@ describe('check-public-chunk-payload.mjs', () => {
         expect(r.status).toBe(1);
         // Every baseline entry is absent here, and each must be reported —
         // the baseline is five entries since the first CI run.
-        for (const name of ['sonner', 'swr']) {
+        for (const name of ['sonner', 'swr', 'radix']) {
             expect(r.out).toContain(`BASELINE names ${name}`);
         }
     });

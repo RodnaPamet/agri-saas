@@ -105,18 +105,35 @@ export const PROVIDER_ONLY = [
  * boundary on first paint to save ~3 KB of transfer on one page. #1971 measured
  * that trade and judged it not worth taking on its own.
  *
- * **`cmdk` and `radix` are NOT here any more, and that is a prediction this
- * check adjudicates (#2225).** `providers.tsx` now imports the palette through
+ * **`cmdk` is gone; `radix` is not, and this check is what established the
+ * difference (#2225).** `providers.tsx` imports the palette through
  * `next/dynamic` and the provider from its own module rather than the barrel
- * that re-exports both, so the static graph from `layout.tsx` no longer reaches
- * either library — measured as 96 reachable modules before and 68 after. If
- * that is right they leave the public payload; if it is wrong, this check fails
- * with "cmdk reaches the public page" and the prediction was simply false.
+ * that re-exports both. I predicted both libraries would leave, dropped both
+ * from this baseline, and the check failed with "radix reaches the public
+ * page" — so the prediction was half right and the baseline is corrected here.
  *
- * `swr` stays because `SWRPersistenceProvider` is needed at mount, and `sonner`
- * because the toaster is. Owner chose the palette-only change (2026-10-23) over
- * lazy-loading all of `Providers`, which would have put SWR config and the
- * toaster behind a second request on every app page load.
+ * MEASURED after the change: 25 script URLs where there were 27, and
+ * `on the public page: radix, sonner, swr` — no cmdk.
+ *
+ * Radix was never only the palette's. Traced over the static graph, it has
+ * three sites and none is the command palette:
+ *
+ *   components/ui/modal.tsx    -> @radix-ui/react-dialog, react-visually-hidden
+ *   components/ui/tooltip.tsx  -> @radix-ui/react-tooltip
+ *
+ * Both are mount-time UI primitives inside the `Providers` subtree —
+ * `TooltipProvider` is mounted directly — so they go only if all of `Providers`
+ * goes lazy, which the owner declined on 2026-10-23 because it would put SWR
+ * config and the toaster behind a second request on every app page load.
+ *
+ * `swr` stays for the same reason: `SWRPersistenceProvider` is needed at mount.
+ *
+ * **Why I got radix wrong is worth recording.** My import tracer's regex
+ * matched only SINGLE-quoted specifiers, and `tooltip.tsx` writes
+ * `from "@radix-ui/react-tooltip"` with double quotes. That one assumption hid
+ * 358 of 426 reachable modules — the graph I reported as "96 before, 68 after"
+ * was an artefact of the quote style, not a measurement. The direction was
+ * real; the numbers were not.
  *
  * **The history: these were here because the first CI run found them, and #1971
  * said they were absent.** That issue reports "Confirmed absent, so #1872 did do its
@@ -144,7 +161,7 @@ export const PROVIDER_ONLY = [
  * Which is the honest limit of a baseline this size: it no longer proves the
  * public surface is clean, only that it is not getting dirtier.
  */
-export const BASELINE = new Set(['sonner', 'swr']);
+export const BASELINE = new Set(['sonner', 'swr', 'radix']);
 
 export function lhrFiles(dir) {
     if (!existsSync(dir)) throw new Error(`no Lighthouse report directory at ${dir}`);
