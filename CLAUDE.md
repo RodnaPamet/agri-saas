@@ -244,7 +244,19 @@ inspecting container logs, a manual restart — execute it directly via
 `gcloud compute ssh`; do not ask the operator to do it by hand. But a
 **structural** compose change goes through the repo + `deploy/apply.sh`,
 NOT a hand-edit on the VM. Back up any file before editing it (the
-`<file>.bak.<timestamp>` convention).
+`<file>.bak.<timestamp>` convention) — and **prune with
+`deploy/prune-backups.sh`, which is how that convention stays bounded**
+(#2082). `/opt/agrent/` reached 34 copies of `.env`, each a full set of
+production credentials unencrypted beside the live file with no expiry, from
+three naming styles and nothing that removed them. Nothing in this repo wrote
+them: they came from ad-hoc commands and agent sessions, each sensibly backing
+up and none cleaning up. The script is a DRY RUN by default, prints the DELETE
+list rather than a keep-list (the earlier ad-hoc prune mixed a newline list
+with a space-delimited `case` and deleted the three files it meant to keep),
+and refuses to remove any `.env` backup holding a key NAME the live file lacks
+— that check is what found a `DATA_ENCRYPTION_KEY_PREVIOUS` present nowhere
+else. **`Caddyfile` is excluded by default**: it is the one file no repo
+tracks, so its snapshots are the only record of the hand edits.
 
 **Backups: one disk, one daily snapshot — per stack.** Postgres lives
 in a local Docker volume on each instance's boot disk (`agrent-pgdata`
