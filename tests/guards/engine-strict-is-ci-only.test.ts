@@ -47,38 +47,62 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const ACTION = '.github/actions/setup-node-prisma/action.yml';
 const CHECKER = 'scripts/check-node-version.mjs';
 
-/** Lines that are not comments — `.npmrc` comments start with `#` or `;`. */
-const npmrcSettings = () =>
-    read('.npmrc')
+/**
+ * Setting lines in an `.npmrc`, given its TEXT.
+ *
+ * Takes the text rather than reading the file, and that is the fix for a real
+ * finding: as a file-reading helper it was UNOBSERVABLE. `.npmrc` holds no
+ * settings now, so its true return value is `[]` — identical to what a
+ * neutered `return []` produces, and identical to what every assertion
+ * expected. `Selector teeth` flagged it as a dead selector and was right.
+ *
+ * Parameterised, the same function is falsifiable on a literal that DOES hold
+ * a setting, which is what the control below does.
+ */
+function npmrcSettings(text: string): string[] {
+    return text
         .split(/\r?\n/)
         .map((l) => l.trim())
         .filter((l) => l !== '' && !l.startsWith('#') && !l.startsWith(';'));
+}
 
 describe('the node-version guarantee is not in .npmrc (#2230)', () => {
-    it('.npmrc sets no engine-strict', () => {
-        // The whole point: this file is read by every npm on earth, including a
-        // third party's runner whose node version is not ours to choose.
-        for (const line of npmrcSettings()) {
-            expect(line).not.toMatch(/^engine[-_]strict\s*=/i);
+    it('every mention of engine-strict in .npmrc is a COMMENT', () => {
+        // Asserted over the MENTIONS, not over the settings, and the difference
+        // is the whole lesson: `.npmrc` now holds no settings at all — its one
+        // setting is what moved — so a loop over `npmrcSettings()` ranges over
+        // an EMPTY list and passes whatever the file says.
+        //
+        // `Selector teeth` caught exactly that: neutering `npmrcSettings()` to
+        // `return []` left every assertion green, because `[]` is also the true
+        // answer. An extraction that empties passes a negated assertion.
+        //
+        // So this iterates lines that DO mention the setting — a population the
+        // file guarantees is non-empty, because the prose explains where it
+        // went — and requires each to be commented out.
+        const lines = read('.npmrc').split(/\r?\n/);
+        const mentions = lines.filter((l) => /engine[-_]strict/i.test(l));
+        expect(mentions.length).toBeGreaterThan(0);
+        for (const line of mentions) {
+            expect(line.trim()).toMatch(/^[#;]/);
         }
     });
 
-    it('CONTROL: the comment filter can still SEE a setting', () => {
-        // `.npmrc` is now entirely prose — it held one setting and that setting
-        // moved — so asserting the real file has a setting would be wrong. What
-        // has to be true is that the filter would NOTICE one, otherwise the
-        // assertion above passes over an empty list for the wrong reason.
-        //
-        // Proved against literals rather than the file, because the file is the
-        // thing under test.
-        const parse = (text: string) =>
-            text
-                .split(/\r?\n/)
-                .map((l) => l.trim())
-                .filter((l) => l !== '' && !l.startsWith('#') && !l.startsWith(';'));
-        expect(parse('# a comment\nengine-strict=true\n')).toEqual(['engine-strict=true']);
-        expect(parse('; also a comment\n\n')).toEqual([]);
-        expect(npmrcSettings()).toEqual([]);
+    it('.npmrc holds no settings at all — stated positively', () => {
+        // The companion fact, as an equality rather than an absence. It is
+        // informative on its own: if a setting ever appears here, the question
+        // "is it engine-strict?" becomes live again and the assertion above
+        // starts ranging over something.
+        expect(npmrcSettings(read('.npmrc'))).toEqual([]);
+    });
+
+    it('CONTROL: the parser finds a setting when there is one', () => {
+        // The assertion that makes the empty result above mean something. A
+        // `return []` mutant passes every statement about the real file — its
+        // true value IS `[]` — and fails only here.
+        expect(npmrcSettings('# a comment\nengine-strict=true\n')).toEqual(['engine-strict=true']);
+        expect(npmrcSettings('; also a comment\n\n')).toEqual([]);
+        expect(npmrcSettings('fund=false\nengine-strict=true')).toHaveLength(2);
     });
 
     it('.npmrc still EXPLAINS where the guarantee went', () => {
