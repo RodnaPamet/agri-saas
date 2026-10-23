@@ -590,6 +590,32 @@ describe('the public-profile editor', () => {
             expect(oblastTrigger().textContent).toContain('oblastUnlisted');
         });
 
+        it('can be UNSET again — the field is optional', async () => {
+            // #2068's second open question: a picker needs a way back to empty
+            // rather than trapping a farm in an oblast. The primitive clears by
+            // re-selecting the chosen option, which reaches this component as
+            // `null`; the one line that has to be right is
+            // `setSelected={(o) => setOblast(o?.value ?? '')}`, and an `o.value`
+            // there would throw on exactly this gesture.
+            mockFetch([{ ok: true, body: DRAFT }]);
+            render(<PublicProfileClient baseUrl={BASE} />);
+            await waitFor(() => {
+                expect(screen.getByDisplayValue('pobeda')).toBeInTheDocument();
+            });
+            expect(oblastTrigger().textContent).toContain('Добрич / Dobrich');
+
+            const user = userEvent.setup();
+            await user.click(oblastTrigger());
+            // The already-selected option; clicking it is the clear gesture.
+            await user.click(await screen.findByRole('option', { name: /Добрич \/ Dobrich/ }));
+
+            await waitFor(() => {
+                expect(oblastTrigger().textContent).not.toContain('Добрич / Dobrich');
+            });
+            // Back to the placeholder, not to a blank trigger with a stale value.
+            expect(oblastTrigger().textContent).toContain('oblastPlaceholder');
+        });
+
         it('CONTROL: a canonical value does NOT take the unlisted branch', async () => {
             // Without this, an `oblastUnlisted` label applied unconditionally
             // would satisfy the case above while mislabelling all 28.
