@@ -556,6 +556,11 @@ describe('deleteTask', () => {
         mockGetById.mockResolvedValueOnce({
             id: 't1', title: 'My task', type: 'TASK', status: 'OPEN', practiceId: null,
             createdByUserId: 'user-1',
+            // #2220: stated, not omitted. `assertTaskIsNotTreatmentShare`
+            // permits ONLY an explicit null — `undefined` refuses, which is
+            // the fail-safe direction for a delete that cascades register
+            // lines. A fixture silent on this has not considered it.
+            treatmentGroupId: null,
         } as never);
 
         await deleteTask(makeRequestContext('EDITOR'), 't1');
@@ -605,6 +610,11 @@ describe('deleteTask — creator-or-admin (#2187)', () => {
         mockGetById.mockResolvedValueOnce({
             id: 't1', title: 'Mine', type: 'TASK', status: 'OPEN', practiceId: null,
             createdByUserId: 'user-1',
+            // #2220: stated, not omitted. `assertTaskIsNotTreatmentShare`
+            // permits ONLY an explicit null — `undefined` refuses, which is
+            // the fail-safe direction for a delete that cascades register
+            // lines. A fixture silent on this has not considered it.
+            treatmentGroupId: null,
         } as never);
 
         await deleteTask(makeRequestContext('EDITOR'), 't1');
@@ -634,6 +644,7 @@ describe('deleteTask — creator-or-admin (#2187)', () => {
         mockGetById.mockResolvedValueOnce({
             id: 't1', title: 'Theirs', type: 'TASK', status: 'OPEN', practiceId: null,
             createdByUserId: 'somebody-else',
+            treatmentGroupId: null,
         } as never);
 
         await deleteTask(makeRequestContext('ADMIN'), 't1');
@@ -671,6 +682,8 @@ describe('bulkDeleteTask — all-or-nothing (#2187)', () => {
 
     const row = (id: string, by: string) => ({
         id, title: id, type: 'TASK', createdByUserId: by,
+        // #2220 — the bulk refusal reads this; see the note above.
+        treatmentGroupId: null,
     });
 
     it('deletes every row when they are all the caller\'s own', async () => {
@@ -739,5 +752,141 @@ describe('bulkDeleteTask — all-or-nothing (#2187)', () => {
         const result = await bulkDeleteTask(makeRequestContext('EDITOR'), ['nope']);
         expect(result).toEqual({ deleted: 0 });
         expect(deleteMany).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * A treatment's task is not deletable through the TASK route (#2220).
+ *
+ * The defect: four child models cascade on this delete and `OperationParcel`
+ * is one of them — those rows ARE the lines the БАБХ ДНЕВНИК prints. So this
+ * route destroyed register lines from a filed regulatory document while
+ * `deleteDiaryTreatment`, for the same intent, flags them reversibly.
+ *
+ * Authorisation was never the gap: both paths are creator-or-admin, so nobody
+ * reached it who could not already withdraw the treatment. The OUTCOME
+ * differed, and nothing said which one you were getting.
+ */
+describe('deleteTask — a treatment share is refused (#2220)', () => {
+    const txWith = (del: jest.Mock) =>
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ ...TX, task: { delete: del } } as never),
+        );
+
+    const row = (over: Record<string, unknown> = {}) => ({
+        id: 't1', title: 'Spraying — block A', type: 'FIELD_OPERATION',
+        status: 'RESOLVED', practiceId: null, createdByUserId: 'user-1',
+        treatmentGroupId: null, ...over,
+    });
+
+    it('REFUSES a task carrying a treatmentGroupId, and deletes nothing', async () => {
+        const del = jest.fn();
+        txWith(del);
+        mockGetById.mockResolvedValueOnce(row({ treatmentGroupId: 'grp-1' }) as never);
+
+        await expect(
+            deleteTask(makeRequestContext('OWNER'), 't1'),
+        ).rejects.toMatchObject({ code: 'TASK_BELONGS_TO_TREATMENT', status: 409 });
+        expect(del).not.toHaveBeenCalled();
+    });
+
+    it('names the field a client needs to build the withdrawal call', async () => {
+        // Without `reference` the client knows it may not delete here and has
+        // nothing to call instead. The handle IS the path parameter of
+        // `DELETE /journal/treatments/{treatmentGroupId}`.
+        txWith(jest.fn());
+        mockGetById.mockResolvedValueOnce(row({ treatmentGroupId: 'grp-1' }) as never);
+
+        await expect(
+            deleteTask(makeRequestContext('OWNER'), 't1'),
+        ).rejects.toMatchObject({ params: { reference: 'treatmentGroupId' } });
+    });
+
+    it('still deletes a FIELD_OPERATION that is NOT part of a treatment', async () => {
+        // The positive control, and the reason the check reads
+        // `treatmentGroupId` rather than `type`: an operation planned through
+        // POST /locations/{id}/operations leaves the column null, and the
+        // withdrawal route keys on a group it does not have — so refusing by
+        // type would stran it with no alternative.
+        const del = jest.fn().mockResolvedValue({});
+        txWith(del);
+        mockGetById.mockResolvedValueOnce(row() as never);
+
+        await deleteTask(makeRequestContext('OWNER'), 't1');
+        expect(del).toHaveBeenCalledWith({ where: { id: 't1' } });
+    });
+
+    it('the PERMISSION refusal wins when both apply', async () => {
+        // Ordering, asserted because it is a choice: a non-creator deleting a
+        // treatment share breaks two rules. They get the permission answer,
+        // which is the one true of them regardless of the row — telling them
+        // "use the withdrawal route" when they may not withdraw it either
+        // would send them somewhere that also refuses.
+        const del = jest.fn();
+        txWith(del);
+        mockGetById.mockResolvedValueOnce(
+            row({ createdByUserId: 'somebody-else', treatmentGroupId: 'grp-1' }) as never,
+        );
+
+        await expect(
+            deleteTask(makeRequestContext('EDITOR'), 't1'),
+        ).rejects.toMatchObject({ code: 'TASK_DELETE_NOT_PERMITTED' });
+        expect(del).not.toHaveBeenCalled();
+    });
+
+    it('an ABSENT treatmentGroupId refuses — fail-safe, and deliberate', async () => {
+        // `=== null` permits, so `undefined` refuses. Pinned because the
+        // obvious "simplification" is `if (!task.treatmentGroupId) return`,
+        // which would permit a caller that had selected the column away.
+        //
+        // The asymmetry is the point: refusing wrongly blocks a delete, which
+        // is annoying and recoverable. Permitting wrongly destroys register
+        // lines from a filed document, which is not. Prisma always returns the
+        // column, so this costs nothing in production.
+        const del = jest.fn();
+        txWith(del);
+        const { treatmentGroupId: _omitted, ...withoutTheField } = row();
+        mockGetById.mockResolvedValueOnce(withoutTheField as never);
+
+        await expect(
+            deleteTask(makeRequestContext('OWNER'), 't1'),
+        ).rejects.toMatchObject({ code: 'TASK_BELONGS_TO_TREATMENT' });
+        expect(del).not.toHaveBeenCalled();
+    });
+});
+
+describe('bulkDeleteTask — treatment shares refuse the WHOLE call (#2220)', () => {
+    const txWith = (findMany: jest.Mock, deleteMany: jest.Mock) =>
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({ ...TX, task: { findMany, deleteMany } } as never),
+        );
+
+    const row = (id: string, grp: string | null) => ({
+        id, title: id, type: 'FIELD_OPERATION', createdByUserId: 'user-1',
+        treatmentGroupId: grp,
+    });
+
+    it('refuses the whole selection when ANY row is a share', async () => {
+        const deleteMany = jest.fn();
+        txWith(jest.fn().mockResolvedValue([row('a', null), row('b', 'grp-1')]), deleteMany);
+
+        await expect(
+            bulkDeleteTask(makeRequestContext('OWNER'), ['a', 'b']),
+        ).rejects.toMatchObject({
+            code: 'TASK_BELONGS_TO_TREATMENT',
+            params: { refused: 1, selected: 2 },
+        });
+        // All-or-nothing, same as #2187: the refusal lands BEFORE the write, so
+        // "none were deleted" is true rather than hopeful.
+        expect(deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('deletes the selection when none of them are shares', async () => {
+        const deleteMany = jest.fn().mockResolvedValue({ count: 2 });
+        txWith(jest.fn().mockResolvedValue([row('a', null), row('b', null)]), deleteMany);
+
+        const out = await bulkDeleteTask(makeRequestContext('OWNER'), ['a', 'b']);
+        expect(out).toEqual({ deleted: 2 });
+        expect(deleteMany).toHaveBeenCalled();
     });
 });

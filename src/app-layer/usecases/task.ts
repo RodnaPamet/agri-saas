@@ -17,7 +17,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 import { env } from '@/env';
-import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
+import { badRequest, codedBadRequest, codedConflict, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { validateTaskMetadata } from '../schemas/json-columns.schemas';
 import { logger } from '@/lib/observability/logger';
@@ -289,6 +289,59 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 // this function is the thing that writes it. It is not.
 // `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both
 // halves so this note cannot quietly become false.
+/**
+ * A treatment's task may not be deleted through the TASK route (#2220).
+ *
+ * ## What the hard delete actually takes
+ *
+ * Four child models cascade, and `OperationParcel` is one of them — those rows
+ * ARE the lines the БАБХ ДНЕВНИК prints (`renderFarmRecordDiary` joins
+ * `Location -> taskLink -> DONE operationParcel`), and `TaskLink` is the
+ * LOCATION link it joins through. So deleting a treatment's task destroys
+ * register lines from a filed regulatory document, permanently.
+ *
+ * Meanwhile `deleteDiaryTreatment` — the purpose-built route for the same
+ * intent — goes to real trouble to avoid exactly that: it flags the tasks and
+ * entries, leaves DONE lines intact, is audited as a withdrawal, and is
+ * reversible through `restoreDiaryTreatment` and «Кошче».
+ *
+ * Authorisation was never the gap. Both paths are creator-or-admin (#2175,
+ * #2187), so nobody reaches this who could not already withdraw the treatment.
+ * What differed was the OUTCOME, and nothing told the caller which one they
+ * were getting.
+ *
+ * ## Why `treatmentGroupId` and not `type`
+ *
+ * Refusing every `FIELD_OPERATION` would be broader than the defect.
+ * `createFieldOperation` has two callers: `POST /locations/{id}/operations`,
+ * which plans an operation and leaves `treatmentGroupId` NULL, and
+ * `recordDiaryTreatment`, which passes one. The column is nullable and indexed
+ * (`@@index([tenantId, treatmentGroupId])`), and `field-operation.ts` describes
+ * it as stamping "the task as one block's share of a treatment" — so it is the
+ * exact discriminator, and a planned operation stays deletable here, which
+ * matters because the withdrawal route keys on a group it does not have.
+ *
+ * ## 409 and not 403
+ *
+ * The caller is permitted; the ROUTE is wrong for this row. `codedConflict`
+ * carries that, the way `TREATMENT_MIXED_AUTHORSHIP` next door does, and
+ * `reference` names the field a client should use to build the right call.
+ *
+ * Not in `task.policies.ts` deliberately: that file is the authorization hub,
+ * and this is not an authorization rule. Putting it there would file a routing
+ * precondition among the permission checks.
+ */
+function assertTaskIsNotTreatmentShare(task: { treatmentGroupId: string | null }) {
+    if (task.treatmentGroupId === null) return;
+    throw codedConflict(
+        'TASK_BELONGS_TO_TREATMENT',
+        'This task is one block\'s share of a recorded treatment. Deleting it would '
+            + 'destroy the treatment\'s register lines. Withdraw the treatment instead, '
+            + 'which is reversible.',
+        { reference: 'treatmentGroupId' },
+    );
+}
+
 export async function deleteTask(ctx: RequestContext, taskId: string) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
@@ -298,6 +351,10 @@ export async function deleteTask(ctx: RequestContext, taskId: string) {
         // has already fetched — no extra query, and no way for a caller to
         // name its own authorship.
         assertCanDeleteTask(ctx, existing);
+        // #2220. After the permission check, because "you may not" and "not
+        // through this route" are different answers and the caller should get
+        // the permission one first when both apply.
+        assertTaskIsNotTreatmentShare(existing);
         await db.task.delete({ where: { id: taskId } });
         await logEvent(db, ctx, {
             action: 'TASK_DELETED',
@@ -326,7 +383,15 @@ export async function bulkDeleteTask(
     const result = await runInTenantContext(ctx, async (db) => {
         const rows = await db.task.findMany({
             where: { id: { in: taskIds }, tenantId: ctx.tenantId },
-            select: { id: true, title: true, type: true, createdByUserId: true },
+            // `treatmentGroupId` for #2220's refusal. Selected here rather
+            // than re-queried, same as `createdByUserId` for #2187.
+            select: {
+                id: true,
+                title: true,
+                type: true,
+                createdByUserId: true,
+                treatmentGroupId: true,
+            },
         });
         if (rows.length === 0) return { deleted: 0 };
 
@@ -335,6 +400,20 @@ export async function bulkDeleteTask(
         // Note it runs on the rows that EXIST: an id the tenant does not own
         // was already filtered out above and is not something to refuse over.
         assertCanDeleteTasks(ctx, rows);
+
+        // #2220, all-or-nothing for the same reason #2187 is: a partial
+        // success would leave the farmer reconciling which of their selected
+        // rows went, and here the ones that went took register lines with
+        // them. Asserted BEFORE the deleteMany.
+        const shares = rows.filter((r) => r.treatmentGroupId !== null);
+        if (shares.length > 0) {
+            throw codedConflict(
+                'TASK_BELONGS_TO_TREATMENT',
+                'Some of the selected tasks are shares of recorded treatments, so none '
+                    + 'were deleted. Withdraw those treatments instead, which is reversible.',
+                { refused: shares.length, selected: rows.length },
+            );
+        }
 
         await db.task.deleteMany({
             where: { id: { in: rows.map((r) => r.id) }, tenantId: ctx.tenantId },
