@@ -251,10 +251,44 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 
 // ─── Delete ───
 //
-// Hard delete. The Task model's child rows (TaskComment / TaskLink /
-// TaskWatcher) all cascade via `onDelete: Cascade`, so removing the
-// task row cleans up its comments, entity links, and watchers in one
-// statement. Gated on write permission (same tier as edit) and audited.
+// Hard delete. FOUR child models cascade via `onDelete: Cascade`, not the
+// three this comment used to list: TaskComment, TaskLink, TaskWatcher — and
+// **OperationParcel**. Gated on write permission AND creator-or-admin
+// (#2187, `assertCanDeleteTask`) — the same tier as edit — and audited.
+//
+// The fourth one is why the blast radius is bigger than "a to-do and its
+// comments". `OperationParcel` rows ARE the lines the БАБХ ДНЕВНИК prints
+// (`farm-record-diary.ts` joins `Location -> taskLink -> DONE
+// operationParcel`), and `TaskLink` is the LOCATION link it joins through. So
+// deleting a FIELD_OPERATION task here removes register lines from a filed
+// regulatory document, permanently, with no Trash and no restore. Nothing on
+// this path filters `type`, so it is reachable for any task — see #2220.
+//
+// ## THE OTHER DELETE ON THIS TABLE IS SOFT, AND THAT IS DELIBERATE
+//
+// `Task.deletedAt` exists, is indexed as `@@index([tenantId, deletedAt])`,
+// and `WorkItemRepository` filters on it. None of that is dead: a TREATMENT
+// withdrawal writes it. `deleteDiaryTreatment` soft-deletes the treatment's
+// tasks and its journal entries, `restoreDiaryTreatment` puts them back, and
+// `listDeletedTreatments` is the Trash behind it.
+//
+// So one table carries two delete semantics, chosen by the route:
+//
+//   DELETE /journal/treatments/{treatmentGroupId}  -> soft, restorable
+//   DELETE /tasks/{id}  and the bulk delete        -> hard, children cascade
+//
+// Owner ruling 2026-10-23 (#2215): THIS STAYS. A register entry is a filed
+// record, so withdrawing one has to be reversible; an ordinary task is not,
+// and making the whole table soft would buy a cascade question (do comments,
+// links and watchers inherit the flag, or join through the parent?) and a
+// purge obligation for GDPR, in exchange for recovering to-do items nobody
+// asked to recover.
+//
+// Recorded here because the asymmetry is invisible from either route, and
+// because a reader who finds `deletedAt` on the model will otherwise assume
+// this function is the thing that writes it. It is not.
+// `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both
+// halves so this note cannot quietly become false.
 export async function deleteTask(ctx: RequestContext, taskId: string) {
     assertCanWriteTasks(ctx);
     const result = await runInTenantContext(ctx, async (db) => {
