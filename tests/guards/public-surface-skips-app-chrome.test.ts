@@ -22,8 +22,31 @@
  * the route's client chunks. That property needs build output, and the cheap
  * alternative — asserting the static import still exists, so the residue is
  * tracked — would be a guard against a FIX: it would fail the moment somebody
- * legitimately removed the import. #1971 holds the measurement and the two
- * options for acting on it.
+ * legitimately removed the import.
+ *
+ * **It is asserted elsewhere, since #1971**, by
+ * `scripts/ci/check-public-chunk-payload.mjs`, run as a step on the Lighthouse
+ * `public-farm` leg — the only page load in CI with the
+ * `social.public-profile` flag on and a seeded profile row. It reads that
+ * run's reports, maps each Script URL back to a file in `.next`, and fails on
+ * a provider-only library that is not in its baseline. `sonner` is in that
+ * baseline with the reason; a heavier static import landing beside `Providers`
+ * is not, and fails there.
+ *
+ * Two things learned building it, recorded so nobody repeats them:
+ *
+ *   - **A build manifest cannot answer this.** Measured 2026-10-23: the
+ *     client-reference manifests for `/f/[handle]` and for `/login` list the
+ *     SAME 134 clientModules. The app router writes a global client registry
+ *     per route file, not a per-route payload list, so `clientModules` returns
+ *     an identical answer for every route — a detector with no discriminating
+ *     power. `app-build-manifest.json` does not exist in this Next version.
+ *   - **Two of #1971's own markers were unfalsifiable.** It reported "no
+ *     `SWRConfig`, no `floating-ui` anywhere in the public page's chunks" as
+ *     confirmation that #1872 worked. Neither string appears anywhere in a
+ *     production build — `SWRConfig` is an identifier and minifiers rename
+ *     them, and `@floating-ui` ships no distinctive surviving literal. The
+ *     rest of that measurement stands.
  *
  * What #1872 DID remove is the bulk, and that is confirmed by the same
  * measurement: no next-intl client runtime, no SWR, no cmdk, no radix and no
