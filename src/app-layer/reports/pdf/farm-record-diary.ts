@@ -1698,9 +1698,16 @@ export async function generateSeasonDiaryPdf(
         // treatment later WITHDRAWN still selects the location and then
         // gathers nothing. Without this it would contribute a lone cover page.
         //
-        // NOT COVERED BY A TEST — see #2201. Removing this line reddens
-        // nothing today, which is exactly why the gap is written down rather
-        // than left for someone to discover by deleting it.
+        // COVERED, #2201: `season ДНЕВНИК skips an EMPTY location without
+        // dropping the rest` in `tests/integration/farm-record-diary.test.ts`.
+        // Deleting this line takes the composed document from 2 pages to 3 —
+        // the extra one is this location's lone cover.
+        //
+        // The test needs TWO locations and that is not incidental. With the
+        // empty one alone, `rendered` reaches 0 and the refusal below fires,
+        // which is indistinguishable from the skip: the case passes with this
+        // line deleted. It took a second location that really prints for the
+        // assertion to have teeth.
         if (isRegisterEmpty(data)) continue;
         if (!first) doc.addPage({ size: 'A4', layout: 'portrait' });
         renderFarmRecordDiary(doc, data, BG_LABELS, false);

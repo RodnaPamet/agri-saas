@@ -20,8 +20,9 @@ import {
     gatherFarmRecord,
     generateFarmRecordDiaryPdf,
     generateSeasonDiaryPdf,
+    isRegisterEmpty,
 } from '@/app-layer/reports/pdf/farm-record-diary';
-import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
+import { recordDiaryTreatment, deleteDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -495,5 +496,165 @@ describeFn('season ДНЕВНИК for a season that recorded nothing (#2183)', (
         const doc = await generateSeasonDiaryPdf(ctx(), { seasonId: activeSeasonId });
         expect(doc).toBeTruthy();
         expect(doc.bufferedPageRange().count).toBeGreaterThan(0);
+    });
+});
+
+
+/**
+ * The season diary SKIPS a location whose register gathers empty (#2201).
+ *
+ * `generateSeasonDiaryPdf` has two defences and they are not the same one:
+ *
+ *   - `if (rendered === 0) throw REGISTER_EMPTY_FOR_PERIOD` — a season where
+ *     NOTHING printed. Covered by the describe above.
+ *   - `if (isRegisterEmpty(data)) continue` — ONE location of several printed
+ *     nothing. This was covered by nothing: removing the line left 17 passed,
+ *     0 failed, which is how the gap was found and why it is being closed.
+ *
+ * ## Why no existing fixture reaches it
+ *
+ * A location is selected by the season's own query — locations with a DONE
+ * `operationParcel` line whose `completedAt` falls in the window — and that
+ * query does NOT filter `task.deletedAt`. `gatherFarmRecord` DOES, since
+ * #2184. A WITHDRAWN treatment is exactly the state where those two disagree:
+ * `deleteDiaryTreatment` sets `Task.deletedAt` and flips only PENDING lines to
+ * SKIPPED, so a DONE line keeps its status and its `completedAt`. The location
+ * is still selected, and then gathers nothing.
+ *
+ * ## Why a second location is required, not a convenience
+ *
+ * With the withdrawn location ALONE, `rendered` reaches 0 and the refusal
+ * fires — indistinguishable from the skip, so the test would pass with the
+ * skip deleted. The assertion only has teeth when another location really
+ * prints: then the composed document must be exactly that location's pages,
+ * with no extra cover page from the empty one.
+ *
+ * ## The window
+ *
+ * August-September 2026 because every other fixture in this file works in May
+ * 2026 or 2019. The season query is tenant-wide, so a collision would put a
+ * third location into the composed document and the page-count comparison
+ * below would stop meaning anything.
+ */
+describeFn('season ДНЕВНИК skips an EMPTY location without dropping the rest (#2201)', () => {
+    const S = `s2201-${randomUUID().slice(0, 8)}`;
+    const WINDOW_FROM = '2026-08-01';
+    const WINDOW_TO = '2026-09-30';
+    /** In the window, and in the PAST — `recordDiaryTreatment` refuses a future day. */
+    const DAY = '2026-09-15';
+
+    let seasonId = '';
+    let liveLocationId = '';
+    let withdrawnLocationId = '';
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        const unit = await prisma.unit.create({
+            data: { key: `l-ha-${S}`, name: 'L/ha', symbol: 'L/ha', measure: 'RATE' },
+        });
+        const item = await prisma.item.create({
+            data: {
+                tenantId: TENANT_ID,
+                name: `ПРЗ ${S}`,
+                category: 'PESTICIDE',
+                defaultUnitId: unit.id,
+            },
+        });
+
+        const mkLocation = async (name: string) =>
+            (await prisma.location.create({
+                data: { tenantId: TENANT_ID, name: `${name} ${S}` },
+                select: { id: true },
+            })).id;
+        liveLocationId = await mkLocation('Жива нива');
+        withdrawnLocationId = await mkLocation('Оттеглена нива');
+
+        const mkParcel = async (locationId: string, name: string) =>
+            (await prisma.parcel.create({
+                data: {
+                    tenantId: TENANT_ID,
+                    locationId,
+                    name: `${name} ${S}`,
+                    cropType: 'Wheat',
+                    areaHa: 4,
+                },
+                select: { id: true },
+            })).id;
+        const liveParcel = await mkParcel(liveLocationId, 'Ж-1');
+        const withdrawnParcel = await mkParcel(withdrawnLocationId, 'О-1');
+
+        const spray = (parcelIds: string[], note: string) => ({
+            kind: 'SPRAY' as const,
+            occurredOn: DAY,
+            parcelIds,
+            productItemId: item.id,
+            doseValue: 2,
+            doseUnitId: unit.id,
+            targetNote: note,
+        });
+
+        await recordDiaryTreatment(ctx(), spray([liveParcel], `цел-${S}-жива`), `${S}-live`);
+        const gone = await recordDiaryTreatment(
+            ctx(),
+            spray([withdrawnParcel], `цел-${S}-оттеглена`),
+            `${S}-gone`,
+        );
+        // The withdrawal is the whole fixture: it makes the location empty
+        // while leaving it selectable.
+        await deleteDiaryTreatment(ctx(), gone.treatmentGroupId);
+
+        const season = await prisma.season.create({
+            data: {
+                tenantId: TENANT_ID,
+                name: `${S}-season`,
+                startDate: new Date(`${WINDOW_FROM}T00:00:00Z`),
+                endDate: new Date(`${WINDOW_TO}T23:59:59Z`),
+            },
+            select: { id: true },
+        });
+        seasonId = season.id;
+    });
+
+    it('builds the state the skip exists for: one location empty, the other not', async () => {
+        // The fixture's own premise, asserted rather than assumed. If a later
+        // change makes the withdrawn location non-empty — a farm-wide
+        // observation landing in the window would do it — THIS fails and says
+        // so, instead of the page-count test below failing for a reason that
+        // looks like the generator's fault.
+        const withdrawn = await gatherFarmRecordData(
+            ctx(),
+            withdrawnLocationId,
+            WINDOW_FROM,
+            WINDOW_TO,
+        );
+        const live = await gatherFarmRecordData(ctx(), liveLocationId, WINDOW_FROM, WINDOW_TO);
+
+        expect(isRegisterEmpty(withdrawn)).toBe(true);
+        expect(isRegisterEmpty(live)).toBe(false);
+        // Named, so a failure says WHICH section carried content.
+        expect(withdrawn.sprayLines).toHaveLength(0);
+        expect(withdrawn.observations).toHaveLength(0);
+        expect(live.sprayLines).toHaveLength(1);
+    });
+
+    it('composes EXACTLY the working location, with no cover page for the empty one', async () => {
+        const seasonDoc = await generateSeasonDiaryPdf(ctx(), { seasonId });
+        const liveOnly = await generateFarmRecordDiaryPdf(ctx(), {
+            locationId: liveLocationId,
+            from: WINDOW_FROM,
+            to: WINDOW_TO,
+        });
+
+        const seasonPages = seasonDoc.bufferedPageRange().count;
+        const livePages = liveOnly.bufferedPageRange().count;
+
+        // Not 0 === 0. With the skip removed the empty location contributes a
+        // cover (and a page break, since `first` is already false for it), so
+        // `seasonPages` rises above `livePages` and this equality is what
+        // notices. PDFKit writes text as glyph indices once a Unicode font is
+        // embedded, so the page COUNT is the observable here — searching the
+        // buffer for a section title proves nothing.
+        expect(livePages).toBeGreaterThan(0);
+        expect(seasonPages).toBe(livePages);
     });
 });
