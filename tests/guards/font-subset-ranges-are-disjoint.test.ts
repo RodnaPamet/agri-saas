@@ -110,7 +110,7 @@ function overlap(a: Pair[], b: Pair[]): number[] {
     return hits;
 }
 
-const hex = (c: number) => (null);
+const hex = (c: number) => `U+${c.toString(16).toUpperCase()}`;
 const faces = parseFaces(CSS);
 
 describe('font subset ranges are disjoint within a family (#1969)', () => {
