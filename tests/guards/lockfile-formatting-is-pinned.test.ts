@@ -79,7 +79,6 @@ describe('package-lock.json formatting is pinned (#2188)', () => {
     it(`is indented with ${PINNED_INDENT} spaces, matching what npm writes`, () => {
         const text = lockfileText();
         const indent = measureIndent(text);
-        // eslint-disable-next-line no-console
         console.log(
             `[lockfile-format] indent ${indent} (pinned ${PINNED_INDENT}); ` +
                 `${text.split('\n').length} lines; ` +
