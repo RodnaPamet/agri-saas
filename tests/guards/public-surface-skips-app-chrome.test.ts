@@ -48,9 +48,26 @@
  *     them, and `@floating-ui` ships no distinctive surviving literal. The
  *     rest of that measurement stands.
  *
- * What #1872 DID remove is the bulk, and that is confirmed by the same
- * measurement: no next-intl client runtime, no SWR, no cmdk, no radix and no
- * floating-ui appear in the public page's chunks.
+ * **That sentence used to continue "What #1872 DID remove is the bulk, and
+ * that is confirmed by the same measurement: no next-intl client runtime, no
+ * SWR, no cmdk, no radix and no floating-ui appear in the public page's
+ * chunks." It is not true, and the check above is what found out.** Run against
+ * a real `public-farm` page load, all four of the detectable ones ARE there:
+ *
+ *   radix             27156-….js, 95891-….js
+ *   cmdk              58750-….js, layout-….js      <- the root layout's chunk
+ *   swr               82696-….js, 90901-….js
+ *   next-intl-client  9714-….js
+ *
+ * None is in `rootMainFiles` (webpack / react-dom / main-app, which every route
+ * loads and no layout change can reach), so it is not shared-runtime noise.
+ * Whether this is a regression since 2026-10-16 or a gap the original
+ * measurement missed is #2225.
+ *
+ * What #1872 DID remove is the MOUNTING, which is what the assertions below
+ * establish and all they ever established. The rendering change was real and
+ * the correctness win — ⌘K no longer opens the application's search from a
+ * stranger's page — survives intact. It is the PAYLOAD claim that was wrong.
  *
  * `/f/{handle}` is a page a stranger opens from a shared link. It used to
  * mount the whole app tree: a ⌘K command palette, a shortcut help overlay, a

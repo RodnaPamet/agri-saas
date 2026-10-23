@@ -103,30 +103,41 @@ function run(lhrDir: string, build: string) {
 }
 
 describe('check-public-chunk-payload.mjs', () => {
-    it('passes when only the BASELINE library is on the page', () => {
-        const { lhrDir, build } = fixture({ 'a.js': ['sonner'], 'b.js': [] });
+    it('passes when exactly the five baselined libraries are present', () => {
+        // The state the first CI run measured. Every one of the five is
+        // baselined, so the check is green — and the only thing left that can
+        // fail it is a SIXTH library, which is the honest limit of a baseline
+        // this size.
+        const { lhrDir, build } = fixture({
+            'a.js': ['sonner', 'cmdk'],
+            'b.js': ['radix', 'swr', 'next-intl-client'],
+        });
         const r = run(lhrDir, build);
-        expect(r.out).toContain('[public-payload]');
         expect(r.status).toBe(0);
     });
 
-    it('FAILS when a new provider-only library reaches the page', () => {
-        // The property: a heavier static import landing beside `Providers`.
-        const { lhrDir, build } = fixture({ 'a.js': ['sonner'], 'b.js': ['cmdk'] });
-        const r = run(lhrDir, build);
+    it('FAILS on a library outside the baseline — the whole point', () => {
+        // Simulated by shrinking the baseline, because all five known
+        // libraries are currently in it: a test that could not express "a new
+        // one arrived" would be green forever.
+        const { lhrDir, build } = fixture({
+            'a.js': ['sonner', 'cmdk'],
+            'b.js': ['radix', 'swr', 'next-intl-client'],
+        });
+        const src = fs.readFileSync(SCRIPT, 'utf8');
+        const shrunk = path.join(tmp, 'shrunk.mjs');
+        fs.writeFileSync(
+            shrunk,
+            src.replace(/export const BASELINE = new Set\(\[[\s\S]*?\]\);/, "export const BASELINE = new Set(['sonner']);"),
+        );
+        const r = spawnSync('node', [shrunk, lhrDir, build], { encoding: 'utf8' });
+        const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
         expect(r.status).toBe(1);
-        expect(r.out).toContain('cmdk reaches the public page');
-        expect(r.out).toContain('b.js');
-    });
-
-    it('names EVERY new library, not just the first', () => {
-        // A loop that reported one and returned would hide the rest, and the
-        // reader would fix one and re-run.
-        const { lhrDir, build } = fixture({ 'a.js': ['sonner', 'radix'], 'b.js': ['swr'] });
-        const r = run(lhrDir, build);
-        expect(r.status).toBe(1);
-        expect(r.out).toContain('radix reaches the public page');
-        expect(r.out).toContain('swr reaches the public page');
+        // Every one, not just the first: a loop that returned early would hide
+        // the rest and the reader would fix one and re-run.
+        for (const name of ['cmdk', 'radix', 'swr', 'next-intl-client']) {
+            expect(out).toContain(`${name} reaches the public page`);
+        }
     });
 
     it('CONTROL: fails when a marker is findable NOWHERE in the build', () => {
@@ -145,7 +156,52 @@ describe('check-public-chunk-payload.mjs', () => {
         const { lhrDir, build } = fixture({ 'a.js': [], 'b.js': [] });
         const r = run(lhrDir, build);
         expect(r.status).toBe(1);
-        expect(r.out).toContain('BASELINE names sonner');
+        // Every baseline entry is absent here, and each must be reported —
+        // the baseline is five entries since the first CI run.
+        for (const name of ['sonner', 'cmdk', 'radix', 'swr', 'next-intl-client']) {
+            expect(r.out).toContain(`BASELINE names ${name}`);
+        }
+    });
+
+    it('resolves a PERCENT-ENCODED dynamic-segment chunk path', () => {
+        // An app-router dynamic segment is a literal `[handle]` on disk and
+        // `%5Bhandle%5D` in the URL. Without decoding, the public route's OWN
+        // page chunk resolves to nothing — the one chunk most likely to carry
+        // route-specific code is the one never scanned. The first CI run
+        // reported exactly this as an unresolved URL.
+        const build = path.join(tmp, 'build');
+        const dir = path.join(build, 'static', 'chunks', 'app', 'f', '[handle]');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'page-abc.js'), `/* ${MARKERS.sonner} */\nexport {};\n`);
+        const sinkDir = path.join(build, 'static', 'chunks');
+        fs.writeFileSync(
+            path.join(sinkDir, 'kitchen-sink.js'),
+            `${Object.values(MARKERS).map((m) => `/* ${m} */`).join('\n')}\nexport {};\n`,
+        );
+        const lhrDir = path.join(tmp, 'reports');
+        fs.mkdirSync(lhrDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(lhrDir, 'lhr-1700000000001.json'),
+            JSON.stringify({
+                audits: {
+                    'network-requests': {
+                        details: {
+                            items: [
+                                {
+                                    url: 'http://localhost:3006/_next/static/chunks/app/f/%5Bhandle%5D/page-abc.js',
+                                    resourceType: 'Script',
+                                },
+                            ],
+                        },
+                    },
+                },
+            }),
+        );
+        const r = run(lhrDir, build);
+        // It must RESOLVE (no "did not resolve"), and so must see the sonner
+        // inside it — which the baseline then tolerates.
+        expect(r.out).not.toContain('did not resolve');
+        expect(r.out).toContain('1 resolved under');
     });
 
     it('fails when a script URL does not resolve to a file', () => {

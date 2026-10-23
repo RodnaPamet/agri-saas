@@ -82,11 +82,35 @@ export const PROVIDER_ONLY = [
  * `sonner` is here rather than fixed because the fix is a `next/dynamic` import
  * of `Providers`, which costs the whole application surface a lazy chunk
  * boundary on first paint to save ~3 KB of transfer on one page. #1971 measured
- * that trade and judged it not worth taking on its own. What this check buys is
- * the other half: a heavier static import landing beside `Providers` fails here
- * rather than being found by somebody reading a trace a month later.
+ * that trade and judged it not worth taking on its own.
+ *
+ * **The other four are here because the first CI run found them, and #1971 said
+ * they were absent.** That issue reports "Confirmed absent, so #1872 did do its
+ * job: no MISSING_MESSAGE, no SWRConfig, no cmdk-, no data-radix" — and this
+ * check, run against a real `public-farm` page load, found all four:
+ *
+ *   radix             27156-….js, 95891-….js
+ *   cmdk              58750-….js, layout-….js
+ *   swr               82696-….js, 90901-….js
+ *   next-intl-client  9714-….js
+ *
+ * None of those is in `rootMainFiles` (webpack / react-dom / main-app, which
+ * every route loads and no layout change can reach), so this is not
+ * shared-runtime noise — `layout-….js` is the root layout's own chunk. Whether
+ * that is a regression since 2026-10-16 or a gap the original measurement
+ * missed is #2225; the baseline records what IS, so the
+ * check can start failing on a SIXTH library instead of staying red about five.
+ *
+ * Which is the honest limit of a baseline this size: it no longer proves the
+ * public surface is clean, only that it is not getting dirtier.
  */
-export const BASELINE = new Set(['sonner']);
+export const BASELINE = new Set([
+    'sonner',
+    'cmdk',
+    'radix',
+    'swr',
+    'next-intl-client',
+]);
 
 export function lhrFiles(dir) {
     if (!existsSync(dir)) throw new Error(`no Lighthouse report directory at ${dir}`);
@@ -125,11 +149,21 @@ export function scriptUrlsFromLhrs(files) {
     return { urls: [...urls].sort(), audited };
 }
 
-/** `/_next/static/chunks/x.js` -> `<buildDir>/static/chunks/x.js`, or null. */
+/**
+ * `/_next/static/chunks/x.js` -> `<buildDir>/static/chunks/x.js`, or null.
+ *
+ * The pathname is DECODED, and that is not cosmetic. An app-router dynamic
+ * segment is a literal `[handle]` on disk and percent-encoded in the URL, so
+ * the public route's own page chunk arrives as
+ * `/_next/static/chunks/app/f/%5Bhandle%5D/page-<hash>.js`. Without decoding it
+ * resolves to nothing — and the chunk most likely to carry route-specific code
+ * is then the one chunk never scanned. Found on this check's first CI run,
+ * which reported it as an unresolved URL rather than skipping it.
+ */
 export function resolveChunk(url, buildDir) {
     let pathname;
     try {
-        pathname = new URL(url).pathname;
+        pathname = decodeURIComponent(new URL(url).pathname);
     } catch {
         return null;
     }
