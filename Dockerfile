@@ -55,6 +55,29 @@ ARG NEXT_PUBLIC_MAPTILER_KEY=""
 ENV NEXT_PUBLIC_MAPTILER_KEY=$NEXT_PUBLIC_MAPTILER_KEY
 ARG NEXT_PUBLIC_MAP_BASEMAP_STYLE="hybrid"
 ENV NEXT_PUBLIC_MAP_BASEMAP_STYLE=$NEXT_PUBLIC_MAP_BASEMAP_STYLE
+# Every OTHER `NEXT_PUBLIC_*` the app declares has to be here too, or it is
+# not merely unset in production — it is UNSETTABLE (#2009). `next build`
+# inlines these into the client bundle, so a variable that reaches no ARG is
+# baked `undefined` into every image ever built, and setting it on the VM or in
+# `/opt/agrent/.env` does nothing at all. That is #1982 verbatim:
+# `NEXT_PUBLIC_NOTIFICATIONS_SSE` gated a channel from the client, reached no
+# ARG, and the channel was unreachable rather than off for months.
+#
+# Measured 2026-10-23: `SENTRY_DSN` is PRESENT on the VM, so server-side error
+# reporting is live, while `NEXT_PUBLIC_SENTRY_DSN` was absent AND unsettable —
+# browser errors went nowhere and no configuration change could alter that.
+#
+# All three default EMPTY, and `src/env.ts` sets `emptyStringAsUndefined: true`,
+# so an unset value is `undefined` exactly as before this block existed.
+# `initClientSentry` returns early on a falsy DSN. So adding them changes no
+# behaviour until an operator supplies a value, which is the point.
+# `tests/guards/next-public-vars-are-settable.test.ts` holds the parity.
+ARG NEXT_PUBLIC_SENTRY_DSN=""
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+ARG NEXT_PUBLIC_SENTRY_RELEASE=""
+ENV NEXT_PUBLIC_SENTRY_RELEASE=$NEXT_PUBLIC_SENTRY_RELEASE
+ARG NEXT_PUBLIC_PRIVACY_URL=""
+ENV NEXT_PUBLIC_PRIVACY_URL=$NEXT_PUBLIC_PRIVACY_URL
 # `next build` OOMs on the ~2 GB default V8 heap when it can't reuse a cached
 # build layer (any app-source change) on the private-repo CI runners — exit
 # 134 / SIGABRT. Lift it here as the CI workflow's build/jest jobs do; the

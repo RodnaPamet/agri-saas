@@ -221,6 +221,19 @@ jobs:
                       BUILD_SHA=${{ github.sha }}
                       NEXT_PUBLIC_MAPTILER_KEY=${{ vars.NEXT_PUBLIC_MAPTILER_KEY }}
                       NEXT_PUBLIC_MAP_BASEMAP_STYLE=${{ vars.NEXT_PUBLIC_MAP_BASEMAP_STYLE || 'hybrid' }}
+                      # An unset repository variable expands EMPTY, which
+                      # `src/env.ts` turns back into `undefined`
+                      # (`emptyStringAsUndefined: true`) — so these are inert
+                      # until somebody sets them, and settable the moment they
+                      # do. Before #2009 they were neither: the client bundle
+                      # baked `undefined` and no configuration could change it.
+                      NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+                      NEXT_PUBLIC_PRIVACY_URL=${{ vars.NEXT_PUBLIC_PRIVACY_URL }}
+                      # Derived, not configured — the same value BUILD_SHA
+                      # carries, so a client-side Sentry event can be tied to
+                      # the commit that produced the bundle without anybody
+                      # maintaining a second variable.
+                      NEXT_PUBLIC_SENTRY_RELEASE=${{ github.sha }}
 
             # ── The three gates CI runs, now against the SHIPPED artifact ──
             # Identical instruments to ci.yml's docker job, deliberately: the
