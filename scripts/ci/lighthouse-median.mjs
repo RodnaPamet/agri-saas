@@ -92,12 +92,75 @@ export function summarise(reports) {
         const values = reports
             .map((r) => r?.audits?.[key]?.numericValue)
             .filter((v) => typeof v === 'number' && Number.isFinite(v));
-        return { label, unit, value: median(values), samples: values.length };
+        return {
+            label,
+            unit,
+            value: median(values),
+            samples: values.length,
+            // Carried alongside the median, because the median ALONE cannot
+            // tell a reader whether a verdict near the bound means anything —
+            // see `renderSpread`.
+            min: values.length ? Math.min(...values) : null,
+            max: values.length ? Math.max(...values) : null,
+        };
     });
     const scores = reports
         .map((r) => r?.categories?.performance?.score)
         .filter((v) => typeof v === 'number' && Number.isFinite(v));
     return { rows, score: median(scores), scoreSamples: scores.length, runs: reports.length };
+}
+
+/**
+ * The run-to-run SPREAD, under the table — #2207.
+ *
+ * ## Why the median alone is not enough
+ *
+ * The `Gate: Lighthouse mobile budget` turns one of these medians into a
+ * pass/fail, and on `/f/{handle}` the headroom is about the size of the
+ * instrument's own variation. #2207 records the budget flipping
+ * pass -> fail -> pass across three commits of one PR whose rendered page was
+ * byte-identical; the measurement that settled it was that the middle commit
+ * changed one line in a test file.
+ *
+ * A median with no spread beside it cannot distinguish those two worlds, and
+ * this table was the one place a reader looked. Measured on `/f/lighthouse` in
+ * one 5-run job: LCP values 2066, 4105, 4122, 4124, 4282 — a 2,215 ms spread
+ * against a 3,800 ms bound. The median was 4,122 ms, and the same page on
+ * `main` medianed 3,365 ms the same evening.
+ *
+ * ## Why a LINE and not two more columns
+ *
+ * `tests/unit/ci/lighthouse-median.test.ts` pins eleven exact table rows, and
+ * those assertions are real controls over the median arithmetic. Widening the
+ * table would have rewritten all of them to match new output, which is the
+ * shape of change that quietly removes a test's teeth. A line below the table
+ * adds the information and leaves every existing assertion measuring what it
+ * was written to measure.
+ *
+ * Spread is reported for metrics with at least TWO samples. With one sample
+ * there is no run-to-run variation to report, and printing `0 ms` would state
+ * a precision the run never established.
+ */
+export function renderSpread(summary) {
+    const fmtv = (v, unit) => (unit === 'ms' ? `${Math.round(v)}` : v.toFixed(3));
+    const parts = summary.rows
+        .filter((r) => r.samples >= 2 && r.min !== null && r.max !== null)
+        .map(
+            (r) =>
+                `${r.label} ${fmtv(r.min, r.unit)}-${fmtv(r.max, r.unit)}`
+                + `${r.unit === 'ms' ? ' ms' : ''} (spread ${fmtv(r.max - r.min, r.unit)}`
+                + `${r.unit === 'ms' ? ' ms' : ''})`,
+        );
+    if (parts.length === 0) {
+        // Said out loud rather than omitted: a reader who knows the line exists
+        // must not read its absence as "the runs agreed".
+        return '_Spread: not reported — fewer than 2 samples per metric._';
+    }
+    return (
+        `_Spread, min-max: ${parts.join(' · ')}._\n\n`
+        + '_A budget breach smaller than the spread above cannot be separated from runner'
+        + ' noise by this run (#2207)._'
+    );
 }
 
 function render(summary, url) {
@@ -116,6 +179,8 @@ function render(summary, url) {
         `| Performance score | ${
             summary.score === null ? 'n/a' : Math.round(summary.score * 100)
         } | ${summary.scoreSamples} |`,
+        '',
+        renderSpread(summary),
         '',
         '_Diagnostic only — Lighthouse is not a required status check._',
     ];

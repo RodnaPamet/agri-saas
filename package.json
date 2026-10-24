@@ -176,7 +176,7 @@
         "next": "16.4.2",
         "next-auth": "4.24.15",
         "next-intl": "^4.14.9",
-        "nodemailer": "^10.0.14",
+        "nodemailer": "^10.1.4",
         "openai": "^7.27.0",
         "pdf-lib": "1.17.1",
         "pdfkit": "^0.20.2",
@@ -283,7 +283,7 @@
         "@grpc/grpc-js": "^1.14.4",
         "find-my-way": "^9.7.0",
         "openai": {
-            "undici": "^7.29.1"
+            "undici": "^7.30.1"
         },
         "@visx/axis": {
             "react": "$react"
