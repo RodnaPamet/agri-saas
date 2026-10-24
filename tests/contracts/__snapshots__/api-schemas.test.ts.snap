@@ -16354,6 +16354,158 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TreatmentDefinition 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "description": "The GROUP’s version, to be sent back as \`If-Match\` on a correction. From the treatment’s own row (#2172), not from the lines: \`OperationParcel.version\` is per row and a correction may ADD or DROP a parcel, so there is no stable set of row versions to compare against. \`0\` for a treatment recorded before the group row existed — the backfill starts at 0 rather than claiming a version it never served."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "SPRAY",
+        "FERTILIZE"
+      ]
+    },
+    "occurredOn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The farm day, from the first completed line. Null when no line is marked yet."
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "applicationTechnique": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "targetNote": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "productItemId": {
+      "type": "string"
+    },
+    "productName": {
+      "type": "string"
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "From the PRODUCT, not the line — it is a property of the registration."
+    },
+    "doseValue": {
+      "type": "number"
+    },
+    "doseUnitId": {
+      "type": "string"
+    },
+    "waterRateValue": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "waterRateUnitId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "quarantinePeriodDays": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "POINT-IN-TIME. Nothing records what the period WAS when an old line was completed, so this is what was captured then — including nothing. Do not substitute today’s product value: it would make the document authoritative about a number nobody captured."
+    },
+    "phenophase": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "POINT-IN-TIME, same reasoning. A plausible guess would make a regulated document authoritative about something nobody observed."
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TreatmentDefinitionLine"
+      }
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "version",
+    "kind",
+    "occurredOn",
+    "title",
+    "applicationTechnique",
+    "targetNote",
+    "productItemId",
+    "productName",
+    "pppRegistrationNo",
+    "doseValue",
+    "doseUnitId",
+    "waterRateValue",
+    "waterRateUnitId",
+    "quarantinePeriodDays",
+    "phenophase",
+    "lines"
+  ],
+  "description": "A recorded treatment’s COMPLETE definition, field-for-field re-submittable as the create body. That is the requirement rather than a convenience: a correction replaces the definition, so anything this cannot express is a field a correction would silently drop."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TreatmentDefinitionLine 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcelId": {
+      "type": "string"
+    },
+    "parcelName": {
+      "type": "string"
+    },
+    "locationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The block the parcel sits in — the treatment’s fan-out key."
+    },
+    "treatedAreaHa": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "**NULL means the WHOLE parcel**, and it is not an empty value. The register prints \`treatedAreaHa ?? parcel.areaHa\`, so substituting the parcel area here would turn an absence into a claim — and a correction that round-tripped this prefill would then persist a number nobody typed. Send it back as null to leave it meaning the whole parcel."
+    }
+  },
+  "required": [
+    "parcelId",
+    "parcelName",
+    "locationId",
+    "treatedAreaHa"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TreatmentSummary 1`] = `
 "{
   "type": "object",
