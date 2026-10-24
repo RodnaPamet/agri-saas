@@ -15,6 +15,8 @@
  *     and the AWS S3Client (`send(HeadBucketCommand)`).
  *   - Tests use the actual route handler — no HTTP server, just call GET().
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { jest } from '@jest/globals';
 
 // ─── Mocks (declared BEFORE the route imports it) ──────────────────
@@ -232,22 +234,69 @@ describe('OI-3 readyz — timeout handling', () => {
         mockS3Send.mockResolvedValue({ $metadata: { httpStatusCode: 200 } });
     });
 
-    it('classifies a hung database query as error=timeout (and the probe still completes)', async () => {
+    it('classifies a hung database query as error=timeout', async () => {
         // Never-resolving promise — the route's Promise.race must
         // win via the 2s timeout, otherwise this test would hang.
         mockQueryRaw.mockImplementation(() => new Promise(() => { /* never resolves */ }));
 
-        const start = Date.now();
         const { status, body } = await callReadyz();
-        const elapsed = Date.now() - start;
 
         expect(status).toBe(503);
         expect(body.checks.database.status).toBe('error');
         expect(body.checks.database.error).toBe('timeout');
-        // Probe must complete within ~check timeout (2s) + a little
-        // for jest scheduling. 5s gives a generous ceiling.
-        expect(elapsed).toBeLessThan(5000);
     }, 10_000);
+
+    /**
+     * ── WHY THERE IS NO `expect(elapsed).toBeLessThan(...)` ABOVE ── #2246
+     *
+     * There was: `elapsed < 5000`, commented "Probe must complete within
+     * ~check timeout (2s) + a little for jest scheduling." It measured the
+     * machine rather than the route, and it failed at **7,042 ms** during
+     * `npm run verify:changed`, whose derived population is 657 suites run
+     * with `--runInBand`. Alone on an idle tree this file passes in 11.5 s.
+     * 3,000 ms of headroom is generous for one suite and short for 657 — and
+     * it failed on the command this repo offers as its pre-push check, which
+     * trains exactly the habit that check exists to prevent.
+     *
+     * Two properties were tangled in it, and both are still covered:
+     *
+     *   - **The probe completes rather than hangs.** Proven by `callReadyz()`
+     *     resolving at all: a hung route never returns, and the 10,000 ms jest
+     *     timeout on these cases is what reports it. A wall-clock assertion
+     *     adds nothing.
+     *   - **The route's timeout is ~2s, not 60s.** That is what the bound was
+     *     really guarding, and it is a statement about `CHECK_TIMEOUT_MS`.
+     *
+     * A fake clock was tried first, as the behavioural version of this, and
+     * abandoned: `callReadyz` does `jest.resetModules()` and a fresh
+     * `require`, and under `useFakeTimers` the probe never settled even after
+     * 32 s of fake time. Not worth fighting the harness for a value that can
+     * be read directly — and the three cases above already prove the timeout
+     * BEHAVES, on the database, redis and storage paths alike. What is left to
+     * assert is only its magnitude.
+     */
+    it('declares a 2s check timeout and applies it to EVERY dependency', () => {
+        const route = readFileSync(
+            join(__dirname, '..', '..', 'src', 'app', 'api', 'readyz', 'route.ts'),
+            'utf8',
+        );
+
+        // The value. This is an uptime probe, so its own timeout has to stay
+        // well inside the interval that calls it.
+        const declared = /^const CHECK_TIMEOUT_MS = (\d+);$/m.exec(route);
+        expect(declared).not.toBeNull();
+        expect(Number(declared![1])).toBe(2000);
+
+        // And its USE, because a constant nothing passes is just a number.
+        // Every `withTimeout` call must take the constant rather than a
+        // literal, so a dependency added later cannot quietly get its own
+        // budget. The count is asserted too: a refactor that removed the calls
+        // would otherwise satisfy "they all use the constant" with none.
+        const used = [...route.matchAll(/withTimeout\([^;]*?,\s*([A-Za-z_$][\w$]*|\d+)\s*,/g)]
+            .map((m) => m[1]);
+        expect(used.length).toBeGreaterThanOrEqual(3);
+        expect([...new Set(used)]).toEqual(['CHECK_TIMEOUT_MS']);
+    });
 
     it('classifies a hung redis ping as error=timeout', async () => {
         mockQueryRaw.mockResolvedValue([{ '?column?': 1 }]);
