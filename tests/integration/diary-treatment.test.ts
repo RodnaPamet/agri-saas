@@ -1546,3 +1546,64 @@ describeFn('getDiaryTreatmentCorrections (DB-backed, #2172)', () => {
         ).rejects.toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
     });
 });
+
+describeFn('the definition carries unit SYMBOLS, so a trail can be read (#2172)', () => {
+    /**
+     * Why symbols are on the definition at all.
+     *
+     * The correction trail stores a whole `previous` definition so an inspector
+     * can read what a value used to be. A client holding only `doseUnitId` — a
+     * cuid — can say the dose CHANGED but not what it was, which is how the
+     * phone ended up showing «Променено» for a dose instead of «Беше: 2 L/ha».
+     */
+    it('carries the dose unit symbol beside its id', async () => {
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `sym-${TAG}`);
+        const def = await getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId);
+        expect(def.doseUnitId).toBe(unitId);
+        expect(def.doseUnitSymbol).toBe('L/ha');
+        // Null rather than absent when there is no water rate — the field is
+        // declared nullable, so a client can tell "none" from "not sent".
+        expect(def.waterRateUnitSymbol).toBeNull();
+    });
+
+    it('a corrected dose UNIT returns the NEW symbol, not the previous one', async () => {
+        // The inconsistency this guards: `correctedView` moves `doseUnitId` on
+        // a correction, and a definition returning the new id beside the old
+        // symbol would render a dose that was never recorded.
+        const other = await globalPrisma.unit.create({
+            data: { key: `ml-dca-${TAG}`, name: 'ml/dca', symbol: 'ml/dca', measure: 'RATE' },
+        });
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `sym-unit-${TAG}`);
+        const before = await getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId);
+
+        const out = await correctDiaryTreatment(
+            ctx(),
+            rec.treatmentGroupId,
+            { doseUnitId: other.id },
+            before.version,
+        );
+        expect(out.doseUnitId).toBe(other.id);
+        expect(out.doseUnitSymbol).toBe('ml/dca');
+
+        // And a re-read agrees, so the response was not the only place it moved.
+        const after = await getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId);
+        expect(after.doseUnitSymbol).toBe('ml/dca');
+    });
+
+    it('the TRAIL\'s previous carries the symbol, which is the point', async () => {
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `sym-trail-${TAG}`);
+        const before = await getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId);
+        await correctDiaryTreatment(
+            ctx(),
+            rec.treatmentGroupId,
+            { doseValue: before.doseValue + 1 },
+            before.version,
+        );
+
+        const trail = await getDiaryTreatmentCorrections(ctx(), rec.treatmentGroupId);
+        expect(trail.corrections).toHaveLength(1);
+        // «Беше: 2 L/ha» is renderable from this and nothing else.
+        expect(trail.corrections[0].previous?.doseValue).toBe(before.doseValue);
+        expect(trail.corrections[0].previous?.doseUnitSymbol).toBe('L/ha');
+    });
+});

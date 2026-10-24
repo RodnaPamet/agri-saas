@@ -1113,8 +1113,24 @@ export interface TreatmentDefinition {
     pppRegistrationNo: string | null;
     doseValue: number;
     doseUnitId: string;
+    /**
+     * The dose unit's SYMBOL, beside its id.
+     *
+     * The id alone cannot be rendered. The correction trail stores a whole
+     * `previous` definition so an inspector can read what a value used to be,
+     * and «Беше: 2» is not a dose — the phone had to show «Променено» for the
+     * dose because the only unit it had was a cuid. Asked for by the agrent-ios
+     * session once it started building «Корекции» against the trail.
+     *
+     * Carried rather than resolved by the client: a trail entry is a historical
+     * record, and a client resolving ids against TODAY's unit catalogue would
+     * render a symbol the row never meant if a unit were ever renamed.
+     */
+    doseUnitSymbol: string | null;
     waterRateValue: number | null;
     waterRateUnitId: string | null;
+    /** The water-rate unit's symbol, on the same terms as `doseUnitSymbol`. */
+    waterRateUnitSymbol: string | null;
     /**
      * Point-in-time observations, carried through unchanged.
      *
@@ -1266,6 +1282,11 @@ async function loadTreatmentForEdit(
             // parcel.areaHa)` (#2284).
             parcel: { select: { name: true, locationId: true, areaHa: true } },
             product: { select: { name: true, pppRegistrationNo: true } },
+            // The symbols, so a stored `previous` can be READ rather than just
+            // compared. Two relations rather than a separate unit lookup: the
+            // row already joins both for the register.
+            doseUnit: { select: { symbol: true } },
+            waterRateUnit: { select: { symbol: true } },
         },
         orderBy: [{ parcelId: 'asc' }],
     });
@@ -1314,8 +1335,10 @@ async function loadTreatmentForEdit(
             pppRegistrationNo: first.product.pppRegistrationNo ?? null,
             doseValue: Number(first.doseValue),
             doseUnitId: first.doseUnitId,
+            doseUnitSymbol: first.doseUnit?.symbol ?? null,
             waterRateValue: first.waterRateValue == null ? null : Number(first.waterRateValue),
             waterRateUnitId: first.waterRateUnitId ?? null,
+            waterRateUnitSymbol: first.waterRateUnit?.symbol ?? null,
             quarantinePeriodDays: first.quarantinePeriodDays ?? null,
             phenophase: first.phenophase ?? null,
             lines: lines.map((l) => ({
@@ -1670,11 +1693,17 @@ export async function correctDiaryTreatment(
                 ? [input.waterRateUnitId]
                 : []),
         ];
+        // The symbols come back with the existence check rather than in a
+        // second read: a corrected unit id must not be returned beside the
+        // PREVIOUS unit's symbol, which is the same inconsistency the product
+        // fields avoid by being assembled from the validated row.
+        const unitSymbols = new Map<string, string | null>();
         if (unitIdsToCheck.length > 0) {
             const found = await db.unit.findMany({
                 where: { id: { in: unitIdsToCheck } },
-                select: { id: true },
+                select: { id: true, symbol: true },
             });
+            for (const u of found) unitSymbols.set(u.id, u.symbol ?? null);
             const missing = unitIdsToCheck.filter((id) => !found.some((u) => u.id === id));
             if (missing.length > 0) {
                 throw codedBadRequest('REFERENCE_NOT_IN_TENANT', 'That unit does not exist.', {
@@ -1995,6 +2024,19 @@ export async function correctDiaryTreatment(
                       productItemId: newProduct.id,
                       productName: newProduct.name,
                       pppRegistrationNo: newProduct.pppRegistrationNo,
+                  }
+                : {}),
+            // A corrected unit carries its symbol, read above with the
+            // existence check.
+            ...(changedScalars.includes('doseUnitId')
+                ? { doseUnitSymbol: unitSymbols.get(effDoseUnitId) ?? null }
+                : {}),
+            ...(changedScalars.includes('waterRateUnitId')
+                ? {
+                      waterRateUnitSymbol:
+                          effWaterRateUnitId == null
+                              ? null
+                              : (unitSymbols.get(effWaterRateUnitId) ?? null),
                   }
                 : {}),
             // The treated areas are per line, so they move on `lines` rather
