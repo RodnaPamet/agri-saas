@@ -380,7 +380,21 @@ jobs:
             # final — re-rolling it would turn a regression gate into a
             # coin toss with three flips.
             if grep -q 'Checking assertions against' "$log"; then
-              echo "::error::Lighthouse BUDGET failed (attempt ${attempt}/3, exit ${status}). Not retried — this is a verdict about the page, not a lost measurement."
+              # The MEASUREMENT first — #2207. The annotation that used to be
+              # the only line here said "this is a verdict about the page",
+              # which asserts a CAUSE that a 5-run median on a shared runner
+              # cannot establish: the budget flipped pass -> fail -> pass
+              # across three commits of one PR whose rendered page was
+              # byte-identical. The policy below is unchanged and still right;
+              # what changed is that the reader is now told the metric, the
+              # bound, the breach and the run-to-run spread.
+              #
+              # `|| true` because a REPORTER must never decide the job. The
+              # `exit "$status"` below is what fails it, and a reporter that
+              # could crash the step would be a worse defect than the message
+              # it replaces.
+              node scripts/ci/lighthouse-breach.mjs "$log" || true
+              echo "::error::Lighthouse BUDGET failed (attempt ${attempt}/3, exit ${status}). Not retried: a budget failure is a verdict, not a lost measurement. What was measured is in the annotation above."
               exit "$status"
             fi
             if [ "$status" -eq 124 ]; then

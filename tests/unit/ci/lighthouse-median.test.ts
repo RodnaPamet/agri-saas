@@ -180,6 +180,48 @@ describe('lighthouse-median', () => {
         expect(out.indexOf('/aaa')).toBeLessThan(out.indexOf('/zzz'));
     });
 
+    /**
+     * ── THE SPREAD LINE (#2207) ──
+     *
+     * Added because the median alone could not answer the question the gate
+     * raises. `/f/lighthouse` has roughly a budget's worth of headroom and a
+     * measured 2,215 ms run-to-run spread, so a reader looking at "LCP
+     * 4122 ms" beside a failed 3,800 ms budget had no way to tell a regression
+     * from a slow runner. These assert the spread is REPORTED, with its range,
+     * and that a single sample makes no spread claim at all.
+     */
+    it('reports the min-max spread beneath the table', () => {
+        const dir = makeDir({
+            'lhr-1.json': JSON.stringify(lhr(2066, 1200, 0.01, 0.5)),
+            'lhr-2.json': JSON.stringify(lhr(4122, 1200, 0.01, 0.5)),
+            'lhr-3.json': JSON.stringify(lhr(4282, 1200, 0.01, 0.5)),
+        });
+        const { out } = run(dir);
+        // The median is what the table says...
+        expect(out).toContain('| LCP | 4122 ms | 3 |');
+        // ...and the spread is what makes that median readable.
+        expect(out).toContain('LCP 2066-4282 ms (spread 2216 ms)');
+    });
+
+    it('warns that a breach smaller than the spread is not separable', () => {
+        const dir = makeDir({
+            'lhr-1.json': JSON.stringify(lhr(2066, 1200, 0.01, 0.5)),
+            'lhr-2.json': JSON.stringify(lhr(4282, 1200, 0.01, 0.5)),
+        });
+        expect(run(dir).out).toContain('cannot be separated from runner noise');
+    });
+
+    it('makes no spread claim from a single run', () => {
+        // One sample measures no run-to-run variation. Printing `spread 0 ms`
+        // would state a precision this run never established — the same
+        // silence-reads-as-agreement shape the empty-directory case avoids.
+        const dir = makeDir({ 'lhr-1.json': JSON.stringify(lhr(4000, 1200, 0.01, 0.5)) });
+        const { out } = run(dir);
+        expect(out).toContain('| LCP | 4000 ms | 1 |');
+        expect(out).toContain('Spread: not reported');
+        expect(out).not.toContain('spread 0 ms');
+    });
+
     it('does not drop a report whose url is missing', () => {
         // A malformed report must still be counted somewhere rather than
         // vanishing into a group nobody renders.
