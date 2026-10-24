@@ -181,6 +181,112 @@ describe('lighthouse-breach (#2207)', () => {
         expect((out.match(/::error::/g) ?? []).length).toBe(2);
     });
 
+    /**
+     * ── WARNINGS ARE NOT FAILURES ── #2207
+     *
+     * lhci prints both levels in one table, and the first version of this
+     * script matched only `failure for`. So a WARNING block never started, and
+     * its `expected`/`found`/`all values` overwrote the preceding failure's.
+     *
+     * Measured on run 40096890340, which is where this was found: the
+     * annotation read `largest-contentful-paint: 0.770 vs bound >=0.800` — the
+     * failure's name carrying the warning's numbers — and it INVERTED the
+     * verdict. The real figures were 4133 ms against 3800 with a 143 ms
+     * spread, so the breach was 2.3x the spread; what it printed said the
+     * spread was 1.7x the breach and the run could not separate a regression
+     * from noise.
+     *
+     * A line this parser cannot recognise must never be attributed to the
+     * block before it. That is the property these cover.
+     */
+    const WARNING_AFTER_FAILURE = [
+        'Checking assertions against 1 URL(s), 5 total run(s)',
+        `  ${c('31', 'X')}  ${c('1', 'largest-contentful-paint')} failure for ${c('1', 'maxNumericValue')} assertion`,
+        '        Largest Contentful Paint',
+        '',
+        `        expected: ${c('32', '<=3800')}`,
+        `           found: ${c('31', '4133.156')}`,
+        `      ${c('2', 'all values: 4027.303, 4170.728, 4124.582, 4142.91, 4133.156')}`,
+        '',
+        `  ${c('33', '!')}  ${c('1', 'categories.performance')} warning for ${c('1', 'minScore')} assertion`,
+        `        expected: ${c('32', '>=0.8')}`,
+        `           found: ${c('31', '0.77')}`,
+        `      ${c('2', 'all values: 0.73, 0.76, 0.77, 0.78, 0.78')}`,
+    ].join('\n');
+
+    it("a warning's numbers never land under the failure's name", () => {
+        const { out } = run(writeLog(WARNING_AFTER_FAILURE));
+        const errors = out.split('\n').filter((l) => l.startsWith('::error::'));
+        expect(errors).toHaveLength(1);
+        // The FAILURE's own figures, not the warning's.
+        expect(errors[0]).toContain('largest-contentful-paint');
+        expect(errors[0]).toContain('4133 ms vs bound <=3800 ms');
+        expect(errors[0]).toContain('over by 333 ms');
+        expect(errors[0]).toContain('5-run spread 143 ms');
+        // The exact wrong output this fixes.
+        expect(errors[0]).not.toContain('0.770');
+        expect(errors[0]).not.toContain('>=0.800');
+    });
+
+    it('and the verdict is the right way round', () => {
+        // The inversion is the part that matters: 333 ms over with a 143 ms
+        // spread is a breach LARGER than the variation, which is the opposite
+        // of what the conflated numbers said.
+        const { out } = run(writeLog(WARNING_AFTER_FAILURE));
+        const error = out.split('\n').find((l) => l.startsWith('::error::'))!;
+        expect(error).toContain("larger than this page's measured run-to-run variation");
+        expect(error).not.toContain('cannot separate a regression');
+    });
+
+    it('the warning is still reported, as a warning', () => {
+        // Suppressing it would be the other failure mode: a real signal
+        // dropped because it was inconvenient to classify.
+        const { out } = run(writeLog(WARNING_AFTER_FAILURE));
+        const warns = out.split('\n').filter((l) => l.startsWith('::warning::'));
+        expect(warns.some((l) => l.includes('categories.performance'))).toBe(true);
+        expect(warns.some((l) => l.includes('a WARNING and not the failure'))).toBe(true);
+        expect(warns.some((l) => l.includes('0.770 vs bound >=0.800'))).toBe(true);
+    });
+
+    it('a table of warnings ALONE is reported as format drift', () => {
+        // The gate only runs this script because it decided a budget failed,
+        // so parsing no failure at all means the parse no longer matches what
+        // lhci prints — which must be loud rather than an empty pass.
+        const body = [
+            'Checking assertions against 1 URL(s), 5 total run(s)',
+            `  ${c('33', '!')}  ${c('1', 'categories.performance')} warning for ${c('1', 'minScore')} assertion`,
+            `        expected: ${c('32', '>=0.8')}`,
+            `           found: ${c('31', '0.77')}`,
+        ].join('\n');
+        const { code, out } = run(writeLog(body));
+        expect(code).toBe(0);
+        expect(out).not.toContain('::error::');
+        expect(out).toContain('NO failure');
+        expect(out).toContain('the format may have changed');
+    });
+
+    it('an UNRECOGNISED header still cannot corrupt the block before it', () => {
+        // The safety net behind the header pattern. A second `expected:`
+        // inside one block means a heading this parser did not match sat
+        // between them, so it starts a fresh block rather than overwriting —
+        // and says the name is unknown instead of borrowing one.
+        const body = [
+            'Checking assertions against 1 URL(s), 5 total run(s)',
+            `  ${c('31', 'X')}  ${c('1', 'largest-contentful-paint')} failure for ${c('1', 'maxNumericValue')} assertion`,
+            `        expected: ${c('32', '<=3800')}`,
+            `           found: ${c('31', '4133.156')}`,
+            '  ~~ some future lhci heading this parser does not know ~~',
+            `        expected: ${c('32', '>=0.8')}`,
+            `           found: ${c('31', '0.77')}`,
+        ].join('\n');
+        const { out } = run(writeLog(body));
+        const errors = out.split('\n').filter((l) => l.startsWith('::error::'));
+        expect(errors.length).toBe(2);
+        expect(errors[0]).toContain('largest-contentful-paint');
+        expect(errors[0]).toContain('4133 ms vs bound <=3800 ms');
+        expect(errors[1]).toContain('(unnamed assertion)');
+    });
+
     it('warns, and exits 0, when the log holds a table it cannot parse', () => {
         // Format drift must be loud. A reporter that printed nothing here
         // would leave the gate's bare verdict standing and look like it had
