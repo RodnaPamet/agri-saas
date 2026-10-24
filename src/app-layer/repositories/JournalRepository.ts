@@ -669,21 +669,6 @@ export class JournalRepository {
         return out;
     }
 
-    /**
-     * Soft-deleted entries only — the Trash view. Deliberately a separate
-     * method rather than an `includeDeleted` flag on `_buildWhere`, so the
-     * live-list invariant (`deletedAt: null`) stays unconditional and can't be
-     * switched off by a stray filter object.
-     */
-    static async listDeleted(db: PrismaTx, ctx: RequestContext) {
-        return db.logEntry.findMany({
-            where: { tenantId: ctx.tenantId, deletedAt: { not: null } },
-            include: ENTRY_LIST_INCLUDE,
-            orderBy: { deletedAt: 'desc' },
-            take: 200,
-        });
-    }
-
     private static _buildWhere(ctx: RequestContext, filters?: LogEntryFilters): Prisma.LogEntryWhereInput {
         const where: Prisma.LogEntryWhereInput = { tenantId: ctx.tenantId, deletedAt: null };
 
@@ -1103,24 +1088,22 @@ export class JournalRepository {
         });
     }
 
-    /** Soft-delete: stamp deletedAt + deletedByUserId. */
-    static async softDelete(db: PrismaTx, ctx: RequestContext, id: string) {
-        return db.logEntry.update({
-            where: { id },
-            data: { deletedAt: new Date(), deletedByUserId: ctx.userId ?? null },
-        });
-    }
-
-    /** Restore a soft-deleted entry. */
-    static async restore(db: PrismaTx, ctx: RequestContext, id: string) {
-        return db.logEntry.update({
-            where: { id },
-            data: { deletedAt: null, deletedByUserId: null },
-        });
-    }
-
-    /** Hard delete — cascades to LogQuantity / LogLocation / LogEquipment / LogEntryFile. */
-    static async purge(db: PrismaTx, ctx: RequestContext, id: string) {
+    /**
+     * Delete an entry outright — cascades to LogQuantity / LogLocation /
+     * LogEquipment / LogEntryFile.
+     *
+     * This was three methods until 2026-10-24: `softDelete` stamped
+     * `deletedAt`, `restore` cleared it, and `purge` did what this one does
+     * now. The owner removed «Кошче» — "what's deleted is deleted" — so the
+     * flag has no reader and the other two have no purpose.
+     *
+     * `LogEntry` is NOT in `SOFT_DELETE_MODELS`, so this really is a delete.
+     * That matters: on a model that IS in the allowlist, the extension would
+     * rewrite it into a `deletedAt` update and nothing would cascade. See
+     * #2242 — a `Task` delete reads exactly like this one and behaves
+     * differently.
+     */
+    static async hardDelete(db: PrismaTx, ctx: RequestContext, id: string) {
         await db.logEntry.delete({ where: { id } });
         return true;
     }

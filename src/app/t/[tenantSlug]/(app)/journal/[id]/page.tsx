@@ -146,10 +146,14 @@ export default function JournalDetailPage() {
     }, []);
 
     /**
-     * Delete the entry — Epic 67 undo pattern. The delete is SOFT, but
-     * restoring it is ADMIN-ONLY (`restoreLogEntry` opens with assertCanAdmin),
-     * so an EDITOR who deletes by mistake cannot put it back. That is why the
-     * undo window and the interlocks carry real weight here.
+     * Delete the entry — Epic 67 undo pattern, and since 2026-10-24 the undo
+     * window is the ONLY recovery there is.
+     *
+     * This used to read "the delete is SOFT, but restoring it is ADMIN-ONLY, so
+     * an EDITOR who deletes by mistake cannot put it back". The owner then
+     * removed «Кошче» — "what's deleted is deleted" — so the delete is now
+     * physical and NOBODY can put it back, admin included. Every argument below
+     * for the undo window and the interlocks got stronger, not weaker.
      *
      * Navigation lives in `onCommit`, not in this body — that is the whole of
      * #887. `useToastWithUndo` deliberately does not re-throw, so a rejected
@@ -360,9 +364,10 @@ export default function JournalDetailPage() {
                                 // this page, so Edit is reachable between the
                                 // click and the commit. An edit saved in that
                                 // window is silently destroyed 5s later, and
-                                // `restoreLogEntry` is assertCanAdmin — an
-                                // EDITOR cannot recover it. Closed here rather
-                                // than left for the operator to discover.
+                                // since «Кошче» went there is no restore at
+                                // all — not for an EDITOR, not for an admin.
+                                // Closed here rather than left for the
+                                // operator to discover.
                                 disabled={deletePending}
                                 id="edit-journal-btn"
                                 aria-label={t('editEntry')}

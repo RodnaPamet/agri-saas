@@ -67,11 +67,6 @@ const EXEMPTIONS: Record<string, string> = {
         "Admin sub-page, one fixed entity type + inline publish/edit practices — bounded global catalogue, no faceted filtering.",
     "src/app/t/[tenantSlug]/(app)/admin/companies/CompaniesAdminClient.tsx":
         "Admin sub-page, one fixed entity type + inline edit practice — bounded supplier roster, no faceted filtering.",
-    // Journal Trash — a bounded ADMIN-only soft-deleted list reached in-page
-    // from the journal toggle. Restore/purge affordances only; the parent
-    // journal list owns the faceted filters.
-    "src/app/t/[tenantSlug]/(app)/journal/DeletedJournalView.tsx":
-        "Bounded ADMIN Trash sub-view — restore/purge only, filters live on the parent journal list.",
     // Assets Trash (B2) — a bounded ADMIN-only soft-deleted list reached
     // in-page from the assets toggle. Restore/purge affordances only; no
     // faceted filtering (the parent list owns filters).

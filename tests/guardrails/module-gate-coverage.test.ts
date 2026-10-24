@@ -42,8 +42,6 @@ const MODULE_GATED_ROUTES: ReadonlyArray<{
     { file: 'src/app/api/t/[tenantSlug]/journal/route.ts', module: 'JOURNAL' },
     { file: 'src/app/api/t/[tenantSlug]/journal/[id]/route.ts', module: 'JOURNAL' },
     { file: 'src/app/api/t/[tenantSlug]/journal/[id]/files/route.ts', module: 'JOURNAL' },
-    { file: 'src/app/api/t/[tenantSlug]/journal/[id]/restore/route.ts', module: 'JOURNAL' },
-    { file: 'src/app/api/t/[tenantSlug]/journal/[id]/purge/route.ts', module: 'JOURNAL' },
     // Certification / compliance (GRC) domain — every list/create entry
     // point is gated behind CERTIFICATION. A simple-mode farm tenant (plan
     // below the CERTIFICATION tier, or the module toggled off) gets a 403

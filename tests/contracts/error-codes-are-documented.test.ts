@@ -355,9 +355,7 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // two 409 descriptions now NAME it, so it is documented rather than
     // excused. Deleted rather than commented out — a baseline is a list of
     // debts, and a paid one is not a debt with a note on it.
-    'JOURNAL_ENTRY_NOT_DELETED',
     'JOURNAL_ENTRY_NOT_FOUND',
-    'JOURNAL_ENTRY_NOT_SOFT_DELETED',
     'JOURNAL_FILE_LINK_NOT_FOUND',
     'JOURNAL_TITLE_REQUIRED',
     'LISTING_NOT_FOUND',

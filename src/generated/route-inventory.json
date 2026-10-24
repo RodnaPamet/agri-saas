@@ -1594,13 +1594,15 @@
     },
     {
       "path": "/api/t/{tenantSlug}/journal/{id}/purge",
-      "status": "live",
-      "documented": true
+      "status": "retired",
+      "documented": true,
+      "reason": "Retired 2026-10-24 with «Кошче». Purge existed to make a soft delete permanent; the delete is permanent on the first call now, so this had nothing left to do."
     },
     {
       "path": "/api/t/{tenantSlug}/journal/{id}/restore",
-      "status": "live",
-      "documented": true
+      "status": "retired",
+      "documented": true,
+      "reason": "Retired 2026-10-24 with «Кошче». Owner ruling: \"what's deleted is deleted\" — the entry DELETE is physical now, so there is no soft-deleted row to restore. The client-side 5-second undo replaces it and runs BEFORE the request is sent. The phone dropped its trash in agrent-ios #413."
     },
     {
       "path": "/api/t/{tenantSlug}/knowledge",

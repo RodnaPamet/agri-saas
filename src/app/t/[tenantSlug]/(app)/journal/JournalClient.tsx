@@ -16,7 +16,6 @@ import { Download, Plus, Trash } from '@/components/ui/icons/nucleo';
 import { apiDelete } from '@/lib/api-client';
 import { parseContentDispositionFilename } from '@/lib/http/content-disposition';
 import { Tooltip } from '@/components/ui/tooltip';
-import { DeletedJournalView } from './DeletedJournalView';
 import { journalSwipeKind } from './swipe-eligibility';
 import { Fab } from '@/components/ui/fab';
 import { createColumns } from '@/components/ui/table';
@@ -133,10 +132,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
     const prefetchData = usePrefetchTenant();
     const t = useTranslations('journal');
     const te = useTranslations('journalEnums');
-    const tTrash = useTranslations('journal.trash');
     const toast = useToast();
-    // B1 — in-page ADMIN Trash (no new navbar entry).
-    const [showDeleted, setShowDeleted] = useState(false);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
 
     const filterCtx = useFilters();
@@ -664,12 +660,6 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
         [tenantSlug, t, te, pdfBusyFor, downloadTreatmentPdf],
     );
 
-    // Swap the whole surface into the Trash view. Placed after every hook so
-    // hook order stays stable.
-    if (showDeleted && permissions.canAdmin) {
-        return <DeletedJournalView tenantSlug={tenantSlug} onBack={() => setShowDeleted(false)} />;
-    }
-
     return (
         <EntityListPage<JournalRow>
             className="gap-section"
@@ -682,20 +672,6 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                 description: t('description'),
                 actions: (
                     <>
-                        {/* Trash — ADMIN-only, matching restore/purge. */}
-                        {permissions.canAdmin && (
-                            <Tooltip content={tTrash('title')}>
-                                <Button
-                                    variant="secondary"
-                                    size="icon"
-                                    onClick={() => setShowDeleted(true)}
-                                    id="journal-trash-btn"
-                                    aria-label={tTrash('title')}
-                                >
-                                    <Trash className="size-4" />
-                                </Button>
-                            </Tooltip>
-                        )}
                         {permissions.canWrite && (
                             <Button
                                 variant="primary"

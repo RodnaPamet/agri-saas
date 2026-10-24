@@ -78,7 +78,7 @@ const LogEntryLike = z.object(logEntryShape).passthrough().openapi('LogEntry');
  *
  * ONLY the paged `{ rows, nextCursor }` shape. `JournalRepository.listPaginated`
  * is the single method that attaches it; the bare-array default
- * (`listLogEntries`) and the `?deleted=` trash view (`listDeletedLogEntries`)
+ * (`listLogEntries`). The `?deleted=` trash view went with «Кошче» (2026-10-24)
  * do not. That is why this extends the row type for one branch of the union
  * rather than being added to `LogEntry` itself — on the other two shapes the
  * field genuinely is not there, and declaring it would be the same kind of lie
@@ -381,7 +381,7 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                 'treatment".',
             schema: z.union([
                 // `?deleted=…` — the recycle-bin view. NO `treatment`:
-                // `listDeletedLogEntries` does not fold.
+                // the removed `?deleted=` trash view did not fold.
                 z.object({ entries: z.array(LogEntryLike) }),
                 // Paged — the ONLY shape carrying `treatment`, because
                 // `JournalRepository.listPaginated` is the only method that
@@ -672,7 +672,13 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         path: '/api/t/{tenantSlug}/journal/{id}',
         operationId: 'deleteJournalEntry',
         summary: 'Soft-delete a journal entry',
-        description: 'Soft delete — the row survives and an admin can restore it via `restoreLogEntry`.',
+        description:
+            'DELETE — the row is erased, and its LogQuantity / LogLocation / '
+            + 'LogEquipment / LogEntryFile children cascade with it. Owner ruling '
+            + '2026-10-24 removed «Кошче» entirely: there is no trash listing, no '
+            + 'restore and no purge, because there is nothing left to restore. The '
+            + 'client-side 5-second undo is the only recovery, and it happens BEFORE '
+            + 'the request is sent.',
         tags: ['Journal'],
         params: EntryParams,
         success: { status: 200, description: 'Deleted.', schema: z.object({ success: z.literal(true) }) },
@@ -751,41 +757,6 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'Detached. The file itself still exists.',
             schema: z.object({ success: z.boolean() }),
-        },
-    });
-
-    op(registry, {
-        method: 'post',
-        path: '/api/t/{tenantSlug}/journal/{id}/restore',
-        operationId: 'restoreJournalEntry',
-        summary: 'Restore a soft-deleted entry',
-        description:
-            'Brings a soft-deleted entry back into the register. DELETE on an entry is soft precisely so this exists: the ДНЕВНИК is a filed record, and an operator deleting the wrong row must not be a permanent loss.',
-        tags: ['Journal'],
-        params: EntryParams,
-        success: {
-            status: 200,
-            description: 'The restored entry.',
-            schema: z.object({ id: z.string() }).passthrough().openapi('RestoredLogEntry', {
-                description: 'The entry as it is once restored.',
-            }),
-        },
-    });
-
-    op(registry, {
-        method: 'post',
-        path: '/api/t/{tenantSlug}/journal/{id}/purge',
-        operationId: 'purgeJournalEntry',
-        summary: 'Permanently destroy a soft-deleted entry',
-        description:
-            'IRREVERSIBLE. This is the one that actually removes the row, and it is a SEPARATE route from DELETE on purpose — a register that can be emptied by the same verb that hides a row is not a register.' +
-            '\n\nThere is no restore after this. A client should treat it as a distinct, confirmed action rather than as the second half of a delete flow.',
-        tags: ['Journal'],
-        params: EntryParams,
-        success: {
-            status: 200,
-            description: 'Purged. Nothing to restore.',
-            schema: z.object({ success: z.boolean(), purged: z.boolean() }),
         },
     });
 

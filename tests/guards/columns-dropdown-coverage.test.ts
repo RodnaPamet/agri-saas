@@ -56,9 +56,6 @@ const EXEMPTIONS: Record<string, string> = {
         "(b) lean curation roster — five fixed columns (offer/status/window/enquiries/actions); every one is load-bearing for support, so there is nothing to hide behind a gear.",
     "admin/companies/CompaniesAdminClient.tsx":
         "(b) lean supplier roster — four fixed columns (company/contact/offers/actions); nothing optional to toggle.",
-    // Journal Trash — bounded ADMIN soft-deleted sub-view.
-    "journal/DeletedJournalView.tsx":
-        "(c) lean Trash roster — five fixed columns (entry/type/occurred/deleted/actions); the parent journal list owns the column-visibility gear.",
     // Assets Trash (B2) — bounded ADMIN soft-deleted sub-view.
     "assets/DeletedAssetsView.tsx":
         "(c) lean Trash roster — five fixed columns (name/type/keeper/deleted/actions); the parent assets list owns the column-visibility gear.",
