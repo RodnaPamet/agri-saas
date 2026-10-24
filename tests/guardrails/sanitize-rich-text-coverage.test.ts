@@ -358,7 +358,7 @@ const SEAM_COVERED: Readonly<
             'per-field, not weaker. УРН is the holding’s registration ' +
             'number — encrypted beside eik because it identifies a named ' +
             'producer to the state. This entry used to describe the seam by ' +
-            'reference to FarmProfile.egn, which #2258 removed; the seam is ' +
+            'reference to FarmProfile.egn, which #2257 removed; the seam is ' +
             'unchanged, it just has one fewer field passing through it.',
     },
 };

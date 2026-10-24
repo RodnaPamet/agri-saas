@@ -75,7 +75,7 @@ type HideColumn = 'hideTagline' | 'hideAbout' | 'hideOblast' | 'hideCrops';
  *
  * ── v2's text was NARROWED in place on 2026-10-24, deliberately not bumped ──
  *
- * #2258 dropped `FarmProfile.egn`, and v2 listed ЕГН among the fields that are
+ * #2257 dropped `FarmProfile.egn`, and v2 listed ЕГН among the fields that are
  * NOT published. That sentence now names a field the product does not hold, so
  * it was removed from the text while this constant stayed at `v2`.
  *

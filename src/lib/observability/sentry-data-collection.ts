@@ -27,7 +27,7 @@
  * that should reach a third party.
  *
  * This used to cite `FarmProfile.egn`, a Bulgarian national identity number.
- * That column was dropped in #2258, which makes the case here STRONGER rather
+ * That column was dropped in #2257, which makes the case here STRONGER rather
  * than weaker: the field is still accepted on the wire so a client sending one
  * can be refused instead of silently stripped, so an ЕГН can still arrive in a
  * request BODY — it just never reaches the database. A refused value lives for
@@ -96,7 +96,7 @@ export const SENTRY_DATA_COLLECTION: SentryDataCollection = {
     httpHeaders: { request: false, response: false },
     /**
      * No body in either direction — this is where lessor names live, and where
-     * a REFUSED ЕГН still arrives (#2258: no column, but the key is accepted
+     * a REFUSED ЕГН still arrives (#2257: no column, but the key is accepted
      * so it can be 400'd rather than silently dropped).
      */
     httpBodies: [],

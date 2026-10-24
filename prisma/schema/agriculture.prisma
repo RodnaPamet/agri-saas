@@ -879,7 +879,7 @@ model TenantModuleSettings {
 /// encrypted-fields manifest (src/lib/security/encrypted-fields.ts) — stored
 /// as ciphertext, never searched (the row is fetched by tenantId only).
 ///
-/// **There is deliberately no `egn` column.** One existed until #2258: the
+/// **There is deliberately no `egn` column.** One existed until #2257: the
 /// prescribed БАБХ form (Прил. 1 към заповед РД 11-3194/31.12.2021) has a
 /// boxed ЕГН field on its cover, and this model mirrored the paper. Owner
 /// ruling 2026-10-24 is that the product does not hold a national identity
@@ -913,7 +913,7 @@ model FarmProfile {
   /// identifying the HOLDING to the state, and it is what a subsidy or
   /// inspection reference cites.
   ///
-  /// Carries more weight since #2258 dropped `egn`. A producer who is a
+  /// Carries more weight since #2257 dropped `egn`. A producer who is a
   /// natural person rather than a company may have no ЕИК at all, so for them
   /// this is the only identifier the ДНЕВНИК cover can print — which is why
   /// the ЕГН box was replaced by ЕИК + УРН and not by ЕИК alone.

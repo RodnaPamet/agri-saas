@@ -25,7 +25,7 @@
 //  ЕГН, ЕИК, УРН and address and expects zero hits in the HTML,
 //  JSON-LD, OG image and API. `FarmProfile` — the private model — has
 //  `eik` and `urn` (encrypted at rest), `address`, `municipality` and
-//  `settlement`. It had `egn` too until #2258 dropped the column, so
+//  `settlement`. It had `egn` too until #2257 dropped the column, so
 //  P6.10 now seeds one PII field fewer — there is no ЕГН anywhere to
 //  leak, which is a stronger position than a projection that omits it. None of those columns EXIST on `PublicFarmProfile`,
 //  so a projection writer cannot leak them by forgetting an allowlist

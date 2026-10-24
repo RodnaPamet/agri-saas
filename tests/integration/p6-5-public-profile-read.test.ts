@@ -100,7 +100,7 @@ describeFn('readPublicFarmProfile', () => {
 
         // P6.10 asks for zero hits of these in the HTML. They never reach the
         // process: the columns do not exist on the projection.
-        // `urn` in place of the dropped `egn` (#2258) — a name with no column
+        // `urn` in place of the dropped `egn` (#2257) — a name with no column
         // behind it cannot fail this.
         for (const pii of ['eik', 'urn', 'address', 'municipality', 'settlement', 'tenantId']) {
             expect(Object.keys(view as object)).not.toContain(pii);

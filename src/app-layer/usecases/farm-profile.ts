@@ -16,7 +16,7 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
  * manifest — this usecase reads/writes plaintext; the Prisma extension does
  * the crypto transparently.
  *
- * There is no `egn`. The column was dropped in #2258 on the owner's ruling of
+ * There is no `egn`. The column was dropped in #2257 on the owner's ruling of
  * 2026-10-24 — see the Prisma model header. The KEY is still accepted on the
  * wire and refused when it carries a value; `egn` below says why.
  *
@@ -40,7 +40,7 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
 export interface FarmProfileFields {
     producerName?: string | null;
     /**
-     * ACCEPTED, never stored — there is no column behind it (#2258).
+     * ACCEPTED, never stored — there is no column behind it (#2257).
      *
      * Kept on the input type so a body carrying `egn` can be REFUSED rather
      * than stripped. `UpdateFarmProfileSchema` ends in `.strip()`, so deleting
@@ -109,7 +109,7 @@ const PROFILE_FIELDS = [
  * the farmer's own number on their own profile. That reasoning was sound about
  * consent and wrong about retention: holding a national identity number at all
  * is the exposure, whoever it belongs to. Owner ruling 2026-10-24 removed the
- * column (#2258), so there is nothing to make editable or not.
+ * column (#2257), so there is nothing to make editable or not.
  */
 const EDITABLE_PROFILE_FIELDS = PROFILE_FIELDS.filter(
     (f) => f !== 'eik',
@@ -433,7 +433,7 @@ export async function upsertFarmProfile(
                 }
             }
 
-            // ── `egn` is refused only when it carries a VALUE (#2258) ──
+            // ── `egn` is refused only when it carries a VALUE (#2257) ──
             //
             // There is no column any more. The key is still accepted by the
             // schema, and that is deliberate: `UpdateFarmProfileSchema` ends

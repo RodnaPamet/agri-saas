@@ -23,7 +23,7 @@
  *
  * `eik` and `urn` are encrypted at rest by the pii middleware
  * (`encrypted-fields.ts`: `FarmProfile: ['eik', 'urn']`). There is no `egn`
- * to seed — #2258 dropped the column — so this suite is one PII field
+ * to seed — #2257 dropped the column — so this suite is one PII field
  * narrower than it was, which is the point of that change. Seeding them
  * through the raw client would store the plaintext and then every "no hits"
  * assertion would be measuring a ciphertext that never resembled the search

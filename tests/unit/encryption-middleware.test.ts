@@ -94,7 +94,7 @@ describe('ENCRYPTED_FIELDS manifest', () => {
         // The exact-list assertion is the point of this test, so adding a field
         // to the manifest is SUPPOSED to redden it — a manifest that quietly
         // grows is one nobody reviewed.
-        // No `egn`: #2258 dropped the column on the owner's 2026-10-24
+        // No `egn`: #2257 dropped the column on the owner's 2026-10-24
         // ruling, and the manifest entry went with it.
         expect(getEncryptedFields('FarmProfile')).toEqual(['eik', 'urn']);
     });

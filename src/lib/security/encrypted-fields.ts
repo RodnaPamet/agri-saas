@@ -185,7 +185,7 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  fetched by tenantId only (never searched by these columns), so
     //  in-place encryption is safe — no `contains`/`orderBy`.
     //
-    //  `egn` was the third entry until #2258 dropped the column (owner ruling
+    //  `egn` was the third entry until #2257 dropped the column (owner ruling
     //  2026-10-24). Removing a name from this manifest normally risks
     //  ORPHANING ciphertext, because the `'*'` fan-out matches field NAMES
     //  across the whole file and narrowing stops the middleware DECRYPTING as

@@ -21,7 +21,7 @@ import { cn } from '@/lib/cn';
 // optional; the paper form tolerates blanks. eik/urn are encrypted at rest
 // (Epic B manifest) — this page only ever sees plaintext.
 //
-// No ЕГН field: the column was dropped in #2258 (owner ruling 2026-10-24).
+// No ЕГН field: the column was dropped in #2257 (owner ruling 2026-10-24).
 const PROFILE_FIELDS = [
     'producerName',
     'eik',

@@ -27,7 +27,7 @@
  * identifier being asked for, not to the number existing. But the product no
  * longer stores one anywhere.
  *
- * Until #2258 this paragraph said `FarmProfile.egn` legitimately stored one
+ * Until #2257 this paragraph said `FarmProfile.egn` legitimately stored one
  * because the БАБХ ДНЕВНИК (Прил. 1 към заповед РД 11-3194/31.12.2021) has a
  * field for it "and a sole trader's form is invalid without it". That second
  * clause is left on the record rather than quietly deleted, because the owner

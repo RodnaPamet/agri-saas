@@ -80,7 +80,7 @@ describe('the allowlist covers FarmBrand exactly', () => {
         // …and they are on the private model, so the absence above is a
         // decision about where they live rather than them not existing.
         const privateModel = scalarFieldsOf('FarmProfile');
-        // `egn` was in both lists until #2258 dropped the column. Replaced by
+        // `egn` was in both lists until #2257 dropped the column. Replaced by
         // `urn` rather than just deleted: an entry naming a field that exists
         // nowhere passes the first loop for free and cannot fail the second.
         for (const pii of ['eik', 'urn', 'address', 'municipality', 'settlement']) {

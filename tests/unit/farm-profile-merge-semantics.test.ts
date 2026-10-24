@@ -159,7 +159,7 @@ describe('farm-profile merge semantics (#1176)', () => {
     });
 
     it('an explicit null DOES clear', async () => {
-        // Was written with `egn`, which #2258 removed. `address` is the same
+        // Was written with `egn`, which #2257 removed. `address` is the same
         // kind of field for this purpose — an ordinary editable string — and
         // unlike `egn` it is still writable, so the assertion can still fail.
         await upsertFarmProfile(makeCtx(), { urn: '123', address: null });
@@ -239,7 +239,7 @@ describe('farm-profile merge semantics (#1176)', () => {
         // column takes its own default (null) and is set later by staff
         // verification (P3.9).
         //
-        // 13 → 12 (#2258): `egn` left because the COLUMN left. Different
+        // 13 → 12 (#2257): `egn` left because the COLUMN left. Different
         // reason from `eik` — that one is still a column and still readable,
         // this one does not exist.
         expect(Object.keys(create).length).toBe(12);

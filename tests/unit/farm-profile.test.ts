@@ -64,7 +64,7 @@ describe('farm-profile usecase', () => {
         expect(p.producerName).toBeNull();
         expect(p.urn).toBeNull();
         expect(p.odbhCity).toBeNull();
-        // No `egn` key at all — the column was dropped (#2258), and a shape
+        // No `egn` key at all — the column was dropped (#2257), and a shape
         // that still carried a null one would let a client keep a field
         // bound to it and never notice.
         expect(Object.hasOwn(p, 'egn')).toBe(false);
@@ -102,7 +102,7 @@ describe('farm-profile usecase', () => {
         expect(arg.update.odbhCity).toBe('Пловдив'); // sanitised (tags stripped)
     });
 
-    // ── `egn` is accepted on the wire and refused, never stored (#2258) ──
+    // ── `egn` is accepted on the wire and refused, never stored (#2257) ──
     //
     // The column is gone. The KEY is still in `UpdateFarmProfileSchema`
     // because that object ends in `.strip()`, so deleting the property would

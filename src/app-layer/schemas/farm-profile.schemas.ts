@@ -42,7 +42,7 @@ export const UpdateFarmProfileSchema = z
     .object({
         producerName: z.string().max(300).nullable().optional(),
         /**
-         * Accepted and ALWAYS REFUSED when it carries a value (#2258).
+         * Accepted and ALWAYS REFUSED when it carries a value (#2257).
          *
          * There is no `egn` column — owner ruling 2026-10-24 dropped it, and
          * the response schema carries no such field. This property survives

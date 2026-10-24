@@ -843,7 +843,7 @@ export function renderFarmRecordDiary(
     //
     // The prescribed form (Прил. 1 към заповед РД 11-3194/31.12.2021) puts a
     // boxed ЕГН (10 cells) above the ЕИК here, and this cover printed one
-    // until #2258. It is GONE on the owner's ruling of 2026-10-24: the product
+    // until #2257. It is GONE on the owner's ruling of 2026-10-24: the product
     // holds no national identity number, so there is no value to print and a
     // row of ten empty boxes on a regulator-facing document would invite
     // somebody to fill it in by hand.

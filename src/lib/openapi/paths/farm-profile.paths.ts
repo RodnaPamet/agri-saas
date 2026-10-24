@@ -29,7 +29,7 @@
  * must treat them as sensitive on screen and in logs even though they arrive
  * looking ordinary.
  *
- * The RESPONSE carries no `egn` (#2258 dropped the column). The REQUEST still
+ * The RESPONSE carries no `egn` (#2257 dropped the column). The REQUEST still
  * accepts the key so that a client sending one is refused with a coded 400
  * rather than having it silently stripped — see the schema's own note.
  */
@@ -53,7 +53,7 @@ const FarmProfileSchema = z
          * register. Distinct from `eik`, which is the COMPANY; this is the
          * number a subsidy or inspection reference cites. Encrypted at rest.
          *
-         * Printed on the ДНЕВНИК cover since #2258, where it replaced the
+         * Printed on the ДНЕВНИК cover since #2257, where it replaced the
          * boxed ЕГН: a producer who is a natural person may have no ЕИК, so
          * this can be the only identifier the document carries.
          */
