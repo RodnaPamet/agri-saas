@@ -630,3 +630,125 @@ describeFn('getDiaryTreatment (DB-backed)', () => {
      * because it is true of all 126 of its call sites and not of this one.
      */
 });
+
+/**
+ * The TreatmentGroup row, and the two decisions its migration rests on (#2172).
+ *
+ * Owner ruling 2026-10-24: the treatment gets a row, so a correction has a unit
+ * to commit in and somewhere to keep a version that survives a correction
+ * ADDING or DROPPING a parcel.
+ *
+ * Both assertions below are about the BACKFILL statement rather than the table
+ * shape, because the backfill is where this could silently do the wrong thing:
+ * it ran against a tree with zero treatments, where `0 rows created from 0
+ * source rows` is a count that cannot fail. So the statement is re-executed
+ * here against seeded data, including the case that decided the primary key.
+ */
+describeFn('TreatmentGroup backfill (DB-backed, #2172)', () => {
+    /** The migration's backfill, verbatim. */
+    const BACKFILL = `
+        INSERT INTO "TreatmentGroup" ("id", "tenantId", "createdAt", "updatedAt")
+        SELECT DISTINCT t."treatmentGroupId", t."tenantId", MIN(t."createdAt"), MAX(t."updatedAt")
+          FROM "Task" t
+         WHERE t."treatmentGroupId" IS NOT NULL
+         GROUP BY t."treatmentGroupId", t."tenantId"
+        ON CONFLICT ("tenantId", "id") DO NOTHING`;
+
+    it('creates ONE row per (handle, tenant) — a handle shared by two farms is two groups', async () => {
+        // The case that made the primary key `(tenantId, id)` rather than `id`.
+        // `Task.treatmentGroupId` can be the request's Idempotency-Key, which is
+        // scoped per tenant, so two farms can legitimately carry the same
+        // handle — and the test above (`does not find another farm's treatment
+        // under the same handle`) already relies on exactly that. A global
+        // primary key would make this INSERT violate itself on real data.
+        const shared = `${TAG}-shared-handle`;
+        for (const t of [tenantId, otherTenantId]) {
+            await globalPrisma.task.create({
+                data: {
+                    tenantId: t,
+                    title: `Shared ${TAG}`,
+                    type: 'FIELD_OPERATION',
+                    createdByUserId: userId,
+                    treatmentGroupId: shared,
+                },
+            });
+        }
+
+        await globalPrisma.$executeRawUnsafe(BACKFILL);
+
+        const groups = await globalPrisma.treatmentGroup.findMany({
+            where: { id: shared },
+            orderBy: { tenantId: 'asc' },
+        });
+        expect(groups).toHaveLength(2);
+        expect(groups.map((g: { tenantId: string }) => g.tenantId).sort()).toEqual(
+            [tenantId, otherTenantId].sort(),
+        );
+        // Both carry the SAME handle, which is the whole point.
+        expect(new Set(groups.map((g: { id: string }) => g.id))).toEqual(new Set([shared]));
+        // Version starts at 0: nothing has corrected these, and a backfilled row
+        // claiming a version it never served would be a lie a client could act on.
+        expect(groups.every((g: { version: number }) => g.version === 0)).toBe(true);
+    });
+
+    it('does NOT create a group for a manual journal entry', async () => {
+        // The backfill reads `Task`, not `LogEntry`, and this is why.
+        // `LogEntry.treatmentGroupId` is NOT NULL and an entry belonging to no
+        // treatment gets its OWN unique value so it folds to itself — a
+        // nullable key would collapse every manual entry into one ghost row via
+        // `DISTINCT ON`. So most LogEntry handles name no treatment, and
+        // backfilling from there would create one group per manual entry a farm
+        // has ever written.
+        const entry = await globalPrisma.logEntry.create({
+            data: {
+                tenantId,
+                createdByUserId: userId,
+                // An OBSERVATION, which is the manual kind — a treatment writes
+                // INPUT_APPLICATION entries from a completed task line.
+                type: 'OBSERVATION',
+                title: `Manual ${TAG}`,
+                occurredAt: new Date(),
+            },
+        });
+        // It has a handle — that is the schema's design, not an accident.
+        expect(entry.treatmentGroupId).toBeTruthy();
+
+        await globalPrisma.$executeRawUnsafe(BACKFILL);
+
+        const group = await globalPrisma.treatmentGroup.findFirst({
+            where: { tenantId, id: entry.treatmentGroupId },
+        });
+        expect(group).toBeNull();
+    });
+
+    it('a correction cannot point at another farm\'s treatment — the FK carries the tenant', async () => {
+        // The composite FK is what makes this structural rather than left to
+        // the RLS policy alone: a (tenantId, groupId) pair that does not match
+        // a real group has no referent.
+        const mine = `${TAG}-fk-mine`;
+        await globalPrisma.task.create({
+            data: {
+                tenantId,
+                title: `FK ${TAG}`,
+                type: 'FIELD_OPERATION',
+                createdByUserId: userId,
+                treatmentGroupId: mine,
+            },
+        });
+        await globalPrisma.$executeRawUnsafe(BACKFILL);
+
+        // The control: it inserts fine for the OWNING tenant, so the refusal
+        // below is about the tenant and not about the row being malformed.
+        await expect(
+            globalPrisma.treatmentCorrection.create({
+                data: { tenantId, groupId: mine, previous: {}, changedFields: ['doseValue'] },
+            }),
+        ).resolves.toBeTruthy();
+
+        await expect(
+            globalPrisma.treatmentCorrection.create({
+                data: { tenantId: otherTenantId, groupId: mine, previous: {}, changedFields: [] },
+            }),
+        ).rejects.toThrow();
+    });
+});

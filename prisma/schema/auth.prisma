@@ -200,6 +200,8 @@ model Tenant {
   inventoryLots              InventoryLot[]
   stockTransactions          StockTransaction[]
   logEntries                 LogEntry[]
+  treatmentGroups            TreatmentGroup[]
+  treatmentCorrections       TreatmentCorrection[]
   logLocations               LogLocation[]
   logEquipments              LogEquipment[]
   assetMaintenance           AssetMaintenance[]
