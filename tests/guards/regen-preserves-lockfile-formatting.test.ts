@@ -184,6 +184,15 @@ describe('merge-main-regenerating re-apply (#2253)', () => {
         // The reason this script exists instead of `npm install`. 34 on a
         // glibc host today; asserted against the file rather than the
         // constant so a legitimate dependency change moves both together.
+        //
+        // NOTE ON COVERAGE, because the mutation sweep found it: the script
+        // also carries its own `libc !== libcBefore` tripwire, and disabling
+        // that tripwire fails NOTHING here. That is not a gap in this test —
+        // it is that a surgical JSON patch cannot drop a `libc` key by
+        // construction, so no input reachable through this surface makes the
+        // tripwire fire. Its value is against a FUTURE edit that rebuilds
+        // `lock.packages` instead of patching it, which is exactly how a full
+        // `npm install` loses them. Stated rather than left looking covered.
         const { lock, out } = runReapply(DELTA);
         expect(countLibc(lock)).toBe(countLibc(ORIGINAL_LOCK));
         expect(out).toContain(`libc entries preserved: ${countLibc(ORIGINAL_LOCK)}`);
