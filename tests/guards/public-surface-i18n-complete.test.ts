@@ -46,6 +46,7 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
 
 import { PUBLIC_SURFACE_NAMESPACES, publicSurfaceMessages } from '@/lib/i18n/public-surface';
+import { SHARED_NAMESPACES } from '@/lib/i18n/shared-namespaces';
 
 /** The public surface's own render tree. */
 const EXTRA_FILES = ['src/app/not-found.tsx', 'src/app/error.tsx'];
@@ -95,7 +96,13 @@ describe('the public i18n payload covers what the public surface reads', () => {
     });
 
     it('every namespace a public-surface file reads is SENT to it', () => {
-        const listed = new Set<string>(PUBLIC_SURFACE_NAMESPACES);
+        // PUBLIC plus SHARED, because that is what `publicSurfaceMessages`
+        // actually sends. `notFound` moved to `shared` in #2264 —
+        // `src/app/not-found.tsx` renders on every surface, and the namespace
+        // being in `public` meant a 404 under `/login` threw MISSING_MESSAGE.
+        // Comparing against the public list alone would now fail on a file
+        // whose namespace IS delivered, which is a false alarm, not teeth.
+        const listed = new Set<string>([...PUBLIC_SURFACE_NAMESPACES, ...SHARED_NAMESPACES]);
         const unlisted: string[] = [];
 
         for (const abs of FILES) {
@@ -147,7 +154,9 @@ describe('the public i18n payload covers what the public surface reads', () => {
             // only if the namespaces are still listed. Assert it carries real
             // copy.
             expect(sentBytes).toBeGreaterThan(100);
-            expect(Object.keys(sent).length).toBe(PUBLIC_SURFACE_NAMESPACES.length);
+            expect(Object.keys(sent).length).toBe(
+                PUBLIC_SURFACE_NAMESPACES.length + SHARED_NAMESPACES.length,
+            );
 
             // 1% is ~8x today's 0.12% — deliberately loose, because this is a
             // REGRESSION bound on a payload that should never grow by an order

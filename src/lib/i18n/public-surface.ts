@@ -63,7 +63,9 @@ export const PUBLIC_SURFACE_PREFIXES = ['/f'] as const;
  * translates — and omitting it would make the 404 page show raw keys, on the
  * one path a stranger is most likely to hit.
  */
-export const PUBLIC_SURFACE_NAMESPACES = ['publicFarm', 'notFound'] as const;
+import { SHARED_NAMESPACES } from './shared-namespaces';
+
+export const PUBLIC_SURFACE_NAMESPACES = ['publicFarm'] as const;
 
 /** Request header the middleware sets so the root layout can branch. */
 export const PUBLIC_SURFACE_HEADER = 'x-agrent-public-surface';
@@ -93,7 +95,11 @@ export function isPublicSurface(pathname: string): boolean {
  */
 export function publicSurfaceMessages<T extends Record<string, unknown>>(all: T): Partial<T> {
     const out: Partial<T> = {};
-    for (const ns of PUBLIC_SURFACE_NAMESPACES) {
+    // PUBLIC plus SHARED. `notFound` moved to `shared` in #2264 because
+    // `src/app/not-found.tsx` renders on every surface, and this trim is what
+    // the public page's CLIENT receives — leaving shared out would have fixed
+    // the auth surface by breaking the public one.
+    for (const ns of [...PUBLIC_SURFACE_NAMESPACES, ...SHARED_NAMESPACES]) {
         if (ns in all) out[ns as keyof T] = all[ns as keyof T];
     }
     return out;

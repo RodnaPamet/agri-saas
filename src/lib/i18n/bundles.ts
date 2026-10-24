@@ -27,6 +27,7 @@
  * operator catalogue to serve an anonymous page — `src/i18n.ts` loads the
  * public bundle alone when the middleware marks the request public.
  */
+import { SHARED_NAMESPACES } from './shared-namespaces';
 import { AUTH_SURFACE_NAMESPACES } from './auth-surface';
 import { PUBLIC_SURFACE_NAMESPACES } from './public-surface';
 
@@ -36,15 +37,24 @@ export type Bundle = (typeof BUNDLES)[number];
 /**
  * Namespaces read by BOTH the public tree and the operator app.
  *
- * EMPTY today, and that is a measurement rather than an oversight: the public
- * surface reads only `PUBLIC_SURFACE_NAMESPACES`, which
- * `public-surface-i18n-complete.test.ts` derives from `src/app/f/**` plus the
- * root error pages and asserts against this list.
+ * `notFound` lives here since #2264, and it is the case this category was kept
+ * empty FOR: the day a namespace needs a home that is not one surface's.
  *
- * Add a namespace here — not to both `public` and `app` — when a public page
- * starts reading something the app also reads.
+ * `src/app/not-found.tsx` renders on EVERY surface — a 404 under `/login` is
+ * still a 404 — but the namespace was in `public`, which `bundlesFor('auth')`
+ * excludes along with `app`. So a 404 on the sign-in surface threw
+ * `MISSING_MESSAGE: notFound` and, with no `getMessageFallback` configured,
+ * printed the key path. Measured at 360 occurrences per E2E run across two
+ * independent `main` runs.
+ *
+ * It could not simply be added to `auth` as well: a namespace lives in exactly
+ * ONE bundle, which `scripts/i18n-diff.mjs` enforces as `duplicated` and
+ * refuses to commit.
+ *
+ * Add a namespace here — not to two bundles — when a page on more than one
+ * surface reads it.
  */
-export const SHARED_NAMESPACES: readonly string[] = [];
+export { SHARED_NAMESPACES } from './shared-namespaces';
 
 /**
  * Which bundle a namespace belongs in.
