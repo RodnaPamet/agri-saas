@@ -12,7 +12,7 @@ import { createLogEntryWithAudit } from './journal-write';
 import { ModuleSettingsRepository } from '../repositories/ModuleSettingsRepository';
 import { AuditLogRepository } from '../repositories/AuditLogRepository';
 import { resolveEnabledModules } from '@/lib/modules';
-import { applyRate, convert, canConvert, isRateUnit } from '@/lib/units/unit-conversion';
+import { computeAppliedQuantity } from '@/lib/units/applied-quantity';
 import {
     appendStockTransaction,
     appendLotLink,
@@ -520,7 +520,7 @@ async function recordInputApplicationImpl(
         };
     }
 
-    const [parcel, product] = await Promise.all([
+    const [parcel, product, lineRow] = await Promise.all([
         db.parcel.findFirst({
             where: { id: line.parcelId, tenantId: ctx.tenantId },
             select: { name: true, areaHa: true },
@@ -528,6 +528,18 @@ async function recordInputApplicationImpl(
         db.item.findFirst({
             where: { id: line.productItemId, tenantId: ctx.tenantId },
             select: { id: true, name: true, defaultUnitId: true },
+        }),
+        // The TREATED area, read from the row rather than taken off `line`
+        // (#2284). `line` is a literal the caller builds, and the caller that
+        // sets a treated area — `markOperationParcelImpl` — writes it with an
+        // `updateMany`, which returns no row, through a three-way branch whose
+        // third arm leaves the column UNCHANGED. Reconstructing the effective
+        // value from the options would mean duplicating that branch here and
+        // keeping the copy in step with it. This runs inside the same
+        // transaction and after that write, so the row is the authority.
+        db.operationParcel.findFirst({
+            where: { id: line.id, tenantId: ctx.tenantId },
+            select: { treatedAreaHa: true },
         }),
     ]);
     if (!parcel || !product) {
@@ -541,31 +553,18 @@ async function recordInputApplicationImpl(
     const doseUnit = units.find((u) => u.id === line.doseUnitId);
     const productUnit = units.find((u) => u.id === product.defaultUnitId);
 
-    // Dimensionally-correct consumption via the typed unit layer:
-    //   - a RATE dose (L/ha) applied over the parcel area yields the rate's
-    //     NUMERATOR unit, then converts into the product's stock unit
-    //     (L/ha × ha = L; deducting into an mL lot scales ×1000), and
-    //   - a flat dose converts dose-unit → product-unit when both are known.
-    // Falls back to the legacy "assume the units match" multiply when a unit
-    // isn't in the conversion catalog or the dimensions can't reconcile
-    // (e.g. a volume rate into a weight lot — no density), so unregistered
-    // units keep working exactly as before. The guards (`isRateUnit` /
-    // `canConvert`) ensure the conversion helpers never throw here.
-    const areaHa = parcel.areaHa !== null ? toNum(parcel.areaHa) : 0;
-    const dose = toNum(line.doseValue);
-    let consumedRaw: number;
-    if (doseUnit?.measure === 'RATE' && doseUnit.key && isRateUnit(doseUnit.key)) {
-        const applied = applyRate(dose, doseUnit.key, areaHa, 'ha');
-        consumedRaw =
-            productUnit?.key && canConvert(applied.unitKey, productUnit.key)
-                ? convert(applied.value, applied.unitKey, productUnit.key)
-                : applied.value;
-    } else if (doseUnit?.key && productUnit?.key && canConvert(doseUnit.key, productUnit.key)) {
-        consumedRaw = convert(dose, doseUnit.key, productUnit.key);
-    } else {
-        consumedRaw = doseUnit?.measure === 'RATE' ? dose * areaHa : dose;
-    }
-    const consumed = Math.round(consumedRaw * 1e4) / 1e4;
+    // Dimensionally-correct consumption over the TREATED area, in
+    // `computeAppliedQuantity` so the #2172 correction route recomputes it the
+    // same way instead of carrying a second copy of the arithmetic. The unit
+    // branches, the legacy fallback and the `treatedAreaHa ?? areaHa` coalesce
+    // that #2284 was about are all documented on that module.
+    const consumed = computeAppliedQuantity({
+        doseValue: toNum(line.doseValue),
+        doseUnit,
+        productUnit,
+        treatedAreaHa: lineRow?.treatedAreaHa == null ? null : toNum(lineRow.treatedAreaHa),
+        parcelAreaHa: parcel.areaHa === null ? null : toNum(parcel.areaHa),
+    });
 
     // 1 — journal record (the compliant spray record).
     let journalEntryId: string | null = null;
