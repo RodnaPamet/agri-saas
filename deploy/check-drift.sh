@@ -195,9 +195,21 @@ fi
 #   - a Go template ABORTS the whole command on one missing key, and
 #     `watchtower` has no `StopTimeout`, so a template returned nothing for all
 #     three containers and the comparison refused for the wrong reason;
-#   - `Config.Env` holds the real secrets, so only Name, Cmd and StopTimeout
-#     are allowed to cross. `compare-running-state.py` additionally refuses to
-#     render any declaration that interpolates a variable.
+#   - `Config.Env` holds the real secrets, so only Name, Cmd, StopTimeout and
+#     HostConfig.LogConfig are allowed to cross — a PROJECTION allowlist, and
+#     the reason to extend it one field at a time. `LogConfig` is a driver name
+#     and two size caps; it carries no credential.
+#     `compare-running-state.py` additionally refuses to render any declaration
+#     that interpolates a variable.
+#
+# The containers are selected BY COMPOSE PROJECT LABEL, not by a name list.
+# Three reasons, and the first is the bug this check was written after: a
+# hand-written name (`agrent-watchtower-1`) does not exist, so the inspect
+# returned nothing and the comparison examined zero containers. Second, the
+# label is what Docker itself uses, so it cannot disagree with the stack —
+# measured 2026-10-24 it selects exactly the 8 agrent containers and excludes
+# the 14 belonging to the co-tenant product on this host (see CLAUDE.md).
+# Third, a renamed project selects NOTHING, and an empty read already fails.
 #
 # `|` cannot be used as a separator here: it is eaten by one of the shell
 # layers between this script and the remote command. Hence JSON.
@@ -206,12 +218,13 @@ printf '\n'
 RUNNING_JSON="$(mktemp)"
 trap 'rm -f "$RUNNING_JSON"' EXIT
 if ! gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command \
-    'sudo docker inspect agrent-watchtower agrent-app agrent-worker | python3 -c "
+    'sudo docker inspect $(sudo docker ps --filter label=com.docker.compose.project=agrent -q) | python3 -c "
 import sys, json
 print(json.dumps([{
     \"Name\": d.get(\"Name\", \"\"),
     \"Config\": {\"Cmd\": d.get(\"Config\", {}).get(\"Cmd\"),
                 \"StopTimeout\": d.get(\"Config\", {}).get(\"StopTimeout\")},
+    \"HostConfig\": {\"LogConfig\": d.get(\"HostConfig\", {}).get(\"LogConfig\")},
 } for d in json.load(sys.stdin)]))
 "' > "$RUNNING_JSON" 2>&1; then
     err "could not inspect the running containers on ${VM_NAME}."
