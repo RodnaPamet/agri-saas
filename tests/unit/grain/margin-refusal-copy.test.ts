@@ -14,7 +14,16 @@
 import { marginRefusalCopyKey } from '@/app/t/[tenantSlug]/(app)/grain/calculator/components';
 import { readCatalogue } from '../../helpers/catalogue';
 
-const calc = (readCatalogue('bg') as Record<string, Record<string, Record<string, string>>>)
+/**
+ * Through `unknown`, because `Catalogue` is a recursive message tree and does
+ * not structurally overlap a plain nested record — `tsc` refuses the direct
+ * cast even though jest ran the file happily, which is the gap that puts a
+ * green local run against a red Typecheck job.
+ *
+ * The real check is the `typeof … === 'string'` assertion below; this cast
+ * only gets the indexing past the compiler.
+ */
+const calc = (readCatalogue('bg') as unknown as Record<string, Record<string, Record<string, string>>>)
     .grain.calculator;
 
 describe('each refusal reason gets its OWN sentence', () => {
