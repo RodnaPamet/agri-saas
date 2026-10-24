@@ -40,11 +40,25 @@
 # One address per line. `#` comments and blank lines ignored. Addresses are
 # compared literally, as Caddy writes them in the block header.
 #
-# Recorded 2026-09-27 from /opt/agrent/Caddyfile (4 blocks live, 1 described
-# here). Wildcards are deliberately NOT supported: a pattern would quietly
-# absorb the next foreign domain, which is the surprise this file prevents.
+# Recorded 2026-09-27 from /opt/agrent/Caddyfile. Wildcards are deliberately
+# NOT supported: a pattern would quietly absorb the next foreign domain, which
+# is the surprise this file prevents.
+#
+# RE-MEASURED 2026-10-24 (#2223): five blocks live, not four. One is ours
+# (`35-187-80-26.sslip.io, app.agrent.bg`); the other four are playerz, across
+# the SIX addresses below. The two `staging.*` entries are new since the
+# original recording — exactly the "appeared out of band and nobody recorded
+# it" condition this list exists to raise, and it did raise it. They are added
+# rather than argued with: the file's job is to make the difference
+# unsurprising, not to make it go away.
 
+# ── playerz (production) ──
 app.playerz.bg
 playerz.35-187-80-26.sslip.io
 playerz.bg
 www.playerz.bg
+
+# ── playerz-staging ── two containers on this host (app, centrifugo), added
+# after the 2026-09-27 recording.
+staging.35-187-80-26.sslip.io
+staging.playerz.bg
