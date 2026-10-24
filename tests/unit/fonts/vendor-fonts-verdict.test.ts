@@ -208,6 +208,24 @@ describe('vendor-fonts verdict (#2200)', () => {
         expect(out.was.length).toBeLessThan(long.length);
     });
 
+    it('refuses --write-lock and --accept-descriptors together', () => {
+        // Offline-testable because the argv check runs before any fetch, which
+        // is also the only part of `main()` a unit test can reach.
+        //
+        // Worth pinning for a second reason: the first version of
+        // --accept-descriptors was DEAD CODE. Its block sat after the
+        // `if (!write)` verify arm, so passing the flag printed the verify's
+        // descriptor message and exited 1 before reaching it. Found by running
+        // the flag, not by reading it. This at least proves the flag is parsed.
+        const r = spawnSync('node', [SCRIPT, '--write-lock', '--accept-descriptors'], {
+            encoding: 'utf8',
+        });
+        expect(r.status).not.toBe(0);
+        expect(`${r.stdout}${r.stderr}`).toContain('mutually exclusive');
+        // And it fails on the ARGV, before fetching anything.
+        expect(`${r.stdout}${r.stderr}`).not.toContain('[fonts]');
+    });
+
     it('importing the module does NOT run the vendoring', () => {
         // The guard that makes everything above possible. Measured while
         // adding it: a bare `await import()` of this file ran `main()`, hit
