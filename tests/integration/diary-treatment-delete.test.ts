@@ -42,6 +42,7 @@ import {
     getDiaryTreatment,
     deleteDiaryTreatment,
 } from '@/app-layer/usecases/diary-treatment';
+import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -380,5 +381,133 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(String(details?.summary ?? '')).toMatch(/journal entr/i);
         expect(details?.entityName).toBe('Treatment');
         expect((details?.before as Record<string, unknown>)?.complete).toBe(false);
+    });
+});
+
+describeFn('mayDelete and mayCorrect on the folded journal row (DB-backed, #2172)', () => {
+    /**
+     * Whether the two permits are RIGHT, against a real database.
+     *
+     * `tests/unit/repositories/journal-repository.test.ts` is a CLAUSE test with
+     * an empty `task` double, and its comment said whether the flag is right
+     * "is covered against a real database in
+     * tests/integration/diary-treatment-delete.test.ts". It was not — no
+     * integration test asserted either flag anywhere. The comment named the
+     * right file and the coverage did not exist. This is that coverage.
+     *
+     * Both flags, because `canDeleteTreatment` and `canEditTreatment` are
+     * byte-identical today and the fields are separate anyway: #2280 asks the
+     * owner whether to narrow deletion now a withdrawal is irreversible, and a
+     * client gating «Коригирай» on `mayDelete` would then lose it for creators
+     * who may still correct.
+     */
+    const permitsFor = async (
+        c: Parameters<typeof listLogEntriesPaginated>[0],
+        handle: string,
+    ) => {
+        const page = (await listLogEntriesPaginated(c, { limit: 50 })) as {
+            items: Array<{
+                treatment?: {
+                    treatmentGroupId: string;
+                    mayDelete?: boolean;
+                    mayCorrect?: boolean;
+                } | null;
+            }>;
+        };
+        const row = page.items
+            .map((i) => i.treatment)
+            .find((t) => t?.treatmentGroupId === handle);
+        expect(row).toBeTruthy();
+        return row!;
+    };
+
+    it('the CREATOR who is not an admin gets BOTH permits', async () => {
+        const handle = `permits-creator-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        // EDITOR, same userId: the creator arm, with canAdmin false. An OWNER
+        // would pass through the admin arm and prove the wrong thing.
+        const row = await permitsFor(ctx('EDITOR'), handle);
+        expect(row.mayDelete).toBe(true);
+        expect(row.mayCorrect).toBe(true);
+    });
+
+    it('a WRITER who did not record it gets NEITHER', async () => {
+        const handle = `permits-stranger-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        const stranger = makeRequestContext('EDITOR', {
+            userId: `${userId}-someone-else`,
+            tenantId,
+            tenantSlug: `${TAG}-t`,
+        });
+        const row = await permitsFor(stranger, handle);
+        expect(row.mayDelete).toBe(false);
+        expect(row.mayCorrect).toBe(false);
+    });
+
+    it('an ADMIN who did not record it gets both — the admin arm', async () => {
+        const handle = `permits-admin-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        const admin = makeRequestContext('OWNER', {
+            userId: `${userId}-an-admin`,
+            tenantId,
+            tenantSlug: `${TAG}-t`,
+        });
+        const row = await permitsFor(admin, handle);
+        expect(row.mayDelete).toBe(true);
+        expect(row.mayCorrect).toBe(true);
+    });
+
+    it('MIXED authorship refuses both, admins included', async () => {
+        // The arm no row can express, and the reason the flags are computed on
+        // the server at all. A second author under one handle leaves "who may
+        // correct this" with no single answer, so the usecase 409s — for an
+        // admin too — and the control has to be absent for both of them.
+        const handle = `permits-mixed-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        const tasks = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: handle },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+        });
+        // A SECOND task under the same handle, by someone else — the reused
+        // handle this rule exists for. A REAL user row, unlike the stranger
+        // contexts above: those are refused before any write, but
+        // `Task.createdByUserId` is a foreign key and writing one is the point
+        // here.
+        const secondEmail = `${TAG}-second@ag.test`;
+        const secondAuthor = await globalPrisma.user.create({
+            data: {
+                email: secondEmail,
+                emailHash: hashForLookup(secondEmail),
+                name: 'Second Author',
+            },
+        });
+        await globalPrisma.task.create({
+            data: {
+                tenantId,
+                title: `Second author ${TAG}`,
+                type: 'FIELD_OPERATION',
+                createdByUserId: secondAuthor.id,
+                assigneeUserId: userId,
+                treatmentGroupId: handle,
+            },
+        });
+        expect(tasks.length).toBeGreaterThan(0);
+
+        const asAdmin = await permitsFor(ctx('OWNER'), handle);
+        expect(asAdmin.mayDelete).toBe(false);
+        expect(asAdmin.mayCorrect).toBe(false);
+    });
+
+    it('both fields are PRESENT and boolean, which is what the clients read', async () => {
+        // iOS reads `mayCorrect === false` and treats an absent field as a
+        // permit, because an absent field is a row cached before it existed.
+        // That only works while the server actually sends it — an omitted field
+        // and a `false` one are the same `!flag` and opposite `=== false`.
+        const handle = `permits-shape-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        const row = await permitsFor(ctx('EDITOR'), handle);
+        expect(typeof row.mayDelete).toBe('boolean');
+        expect(typeof row.mayCorrect).toBe('boolean');
     });
 });

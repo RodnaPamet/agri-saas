@@ -58,10 +58,15 @@ function makeDb() {
         // moment a page has rows — the SECOND time this file has learnt that
         // lesson, after `$queryRaw` above.
         //
-        // Empty, for the same reason: these are CLAUSE tests. Whether the flag
-        // is RIGHT is covered against a real database in
+        // Empty, for the same reason: these are CLAUSE tests. Whether the
+        // flags are RIGHT is covered against a real database in
         // `tests/integration/diary-treatment-delete.test.ts`, where authorship
-        // can differ between rows in ways a double cannot express.
+        // can differ between rows in ways a double cannot express — both
+        // `mayDelete` and `mayCorrect` (#2172), including the mixed-authorship
+        // arm that refuses admins too.
+        //
+        // That sentence was false when written: it named the right file and no
+        // integration test asserted either flag. The coverage exists now.
         task: model(),
     };
 }

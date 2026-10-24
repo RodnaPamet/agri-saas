@@ -907,8 +907,9 @@ export async function deleteDiaryTreatment(
     if (creators.size !== 1) {
         throw codedConflict(
             'TREATMENT_MIXED_AUTHORSHIP',
-            'This treatment has tasks recorded by more than one person, so it cannot be '
-                + 'removed as a whole. Ask an administrator.',
+            'This treatment was recorded by more than one person, so it cannot be '
+                + 'corrected or withdrawn as a whole. The restriction applies to '
+                + 'administrators too.',
             { reference: 'treatmentGroupId' },
         );
     }
@@ -1221,8 +1222,9 @@ async function loadTreatmentForEdit(
     if (creators.size !== 1) {
         throw codedConflict(
             'TREATMENT_MIXED_AUTHORSHIP',
-            'This treatment has tasks recorded by more than one person, so it cannot be '
-                + 'corrected as a whole. Ask an administrator.',
+            'This treatment was recorded by more than one person, so it cannot be '
+                + 'corrected or withdrawn as a whole. The restriction applies to '
+                + 'administrators too.',
             { reference: 'treatmentGroupId' },
         );
     }
@@ -1719,4 +1721,138 @@ function correctedView(
     // exists to prevent.
     if (changed.includes('occurredOn') && day) out.occurredOn = day.key;
     return out;
+}
+
+/** One filed correction, as an inspector reads it. */
+export interface TreatmentCorrectionEntry {
+    correctedAt: string;
+    /**
+     * A DISPLAY NAME, not a user id.
+     *
+     * `null` when the correction was filed by a job with no actor, or when the
+     * account has since been removed — which is honest: the record says a
+     * correction happened and declines to name someone it cannot name, rather
+     * than printing an opaque id into «Коригирано от …».
+     */
+    correctedBy: string | null;
+    changedFields: string[];
+    /** The whole definition as it stood BEFORE this correction. */
+    previous: TreatmentDefinition | null;
+}
+
+export interface TreatmentCorrectionTrail {
+    treatmentGroupId: string;
+    /** The treatment's current version, so a client can tell a stale trail. */
+    version: number;
+    /** Newest first. Empty for a treatment nobody has corrected. */
+    corrections: TreatmentCorrectionEntry[];
+}
+
+/**
+ * The correction history of a treatment (#2172).
+ *
+ * ## Why this is a READ gate, where the prefill is a write gate
+ *
+ * `getDiaryTreatmentDefinition` requires `canWrite` and then creator-or-admin,
+ * because its body exists to be edited. This one exists to be READ: the owner
+ * asked (via #392, 22 Oct) that a corrected entry show «Коригирано на … от …»
+ * with the previous values readable for an inspector. An inspector is exactly
+ * the person the prefill's 403 is for, so putting the trail behind that gate
+ * would hide it from its audience. `assertCanRead`, therefore — anyone who can
+ * see the treatment in the journal can see that it was corrected and what it
+ * said before.
+ *
+ * That is not a widening of what a reader may learn. Every `previous` is a
+ * definition of the SAME treatment they are already looking at; the only new
+ * fact is that a value used to be different, which is the fact the record
+ * exists to state.
+ *
+ * ## The actor is resolved to a name here, not stored as one
+ *
+ * `TreatmentCorrection.correctedByUserId` keeps the id, and the name is looked
+ * up per read. Storing the display name at correction time would freeze it, so
+ * a later rename would leave the register attributing a correction to a name
+ * its owner no longer uses — and `User.name` is encrypted at rest, so a copy on
+ * this row would be a second place to keep that promise.
+ *
+ * One extra query, bounded by the corrections of ONE treatment rather than by
+ * the page: `TreatmentCorrection` has no `User` relation to include, and adding
+ * one is a migration for a join this does not need.
+ */
+export async function getDiaryTreatmentCorrections(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+): Promise<TreatmentCorrectionTrail> {
+    assertCanRead(ctx);
+
+    const handle = treatmentGroupId.trim();
+    if (!handle) {
+        throw codedNotFound(
+            'TREATMENT_NOT_FOUND',
+            'No treatment was recorded under that handle.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        // The treatment must EXIST, and existence is established from the tasks
+        // rather than from the trail. A handle with no corrections and a handle
+        // that was never used both have an empty trail, and answering 200 with
+        // `corrections: []` to the second would confirm a treatment that is not
+        // there — the existence-hiding 404 stays contentless.
+        const tasks = await db.task.findMany({
+            where: { tenantId: ctx.tenantId, treatmentGroupId: handle, deletedAt: null },
+            select: { id: true },
+            take: 1,
+        });
+        if (tasks.length === 0) {
+            throw codedNotFound(
+                'TREATMENT_NOT_FOUND',
+                'No treatment was recorded under that handle.',
+                { reference: 'treatmentGroupId' },
+            );
+        }
+
+        const [group, rows] = await Promise.all([
+            db.treatmentGroup.findUnique({
+                where: { tenantId_id: { tenantId: ctx.tenantId, id: handle } },
+                select: { version: true },
+            }),
+            db.treatmentCorrection.findMany({
+                where: { tenantId: ctx.tenantId, groupId: handle },
+                select: {
+                    correctedAt: true,
+                    correctedByUserId: true,
+                    changedFields: true,
+                    previous: true,
+                },
+                orderBy: { correctedAt: 'desc' },
+                // Bounded. A treatment corrected hundreds of times is not a
+                // shape to design for, but it is a shape a client should not
+                // have to receive in one payload.
+                take: 50,
+            }),
+        ]);
+
+        const actorIds = [...new Set(rows.map((r) => r.correctedByUserId).filter((v): v is string => !!v))];
+        const names = new Map<string, string | null>();
+        if (actorIds.length > 0) {
+            const users = await db.user.findMany({
+                where: { id: { in: actorIds } },
+                select: { id: true, name: true },
+            });
+            for (const u of users) names.set(u.id, u.name ?? null);
+        }
+
+        return {
+            treatmentGroupId: handle,
+            version: group?.version ?? 0,
+            corrections: rows.map((r) => ({
+                correctedAt: r.correctedAt.toISOString(),
+                correctedBy: r.correctedByUserId ? (names.get(r.correctedByUserId) ?? null) : null,
+                changedFields: [...r.changedFields],
+                previous: (r.previous ?? null) as unknown as TreatmentDefinition | null,
+            })),
+        };
+    });
 }

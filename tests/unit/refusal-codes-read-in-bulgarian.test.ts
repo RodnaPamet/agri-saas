@@ -95,7 +95,7 @@ const BATCH_2: ReadonlyArray<[code: string, english: string]> = [
     // throws it any more, and a code with copy but no thrower is a translation
     // somebody maintains for a refusal that cannot happen.
     ['TREATMENT_DELETE_NOT_PERMITTED', 'Only the person who recorded this treatment, or a farm administrator, can remove it.'],
-    ['TREATMENT_MIXED_AUTHORSHIP', 'This treatment has tasks recorded by more than one person, so it cannot be removed as a whole. Ask an administrator.'],
+    ['TREATMENT_MIXED_AUTHORSHIP', "This treatment was recorded by more than one person, so it cannot be corrected or withdrawn as a whole. The restriction applies to administrators too."],
     ['TREATMENT_NO_PARCELS', 'Select at least one parcel that was treated.'],
     ['UPLOAD_INFECTED', 'This image was rejected by the malware scanner.'],
     ['UPLOAD_SCANNER_UNAVAILABLE', 'The malware scanner is unavailable, so the image was not stored.'],

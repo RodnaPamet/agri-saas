@@ -31,6 +31,7 @@ import {
     getDiaryTreatment,
     getDiaryTreatmentDefinition,
     correctDiaryTreatment,
+    getDiaryTreatmentCorrections,
 } from '@/app-layer/usecases/diary-treatment';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -1296,6 +1297,101 @@ describeFn('correctDiaryTreatment (DB-backed, #2172)', () => {
     it('404s an unknown handle without saying whether it exists elsewhere', async () => {
         await expect(
             correctDiaryTreatment(ctx(), `${KEY}-nope`, { targetNote: 'x' }),
+        ).rejects.toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
+    });
+});
+
+describeFn('getDiaryTreatmentCorrections (DB-backed, #2172)', () => {
+    const KEY = `trail-${TAG}`;
+
+    const recorded = async (suffix: string) => {
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `${KEY}-${suffix}`);
+        return rec.treatmentGroupId;
+    };
+
+    it('an uncorrected treatment has an EMPTY trail, not a 404', async () => {
+        const handle = await recorded('none');
+        const trail = await getDiaryTreatmentCorrections(ctx(), handle);
+        expect(trail).toMatchObject({ treatmentGroupId: handle, version: 0, corrections: [] });
+    });
+
+    it('carries when, who by NAME, the changed fields and the whole previous state', async () => {
+        const handle = await recorded('one');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await correctDiaryTreatment(
+            ctx(),
+            handle,
+            { targetNote: 'Brown rust', occurredOn: '2026-03-07' },
+            before.version,
+        );
+
+        const trail = await getDiaryTreatmentCorrections(ctx(), handle);
+        expect(trail.version).toBe(1);
+        expect(trail.corrections).toHaveLength(1);
+        const c = trail.corrections[0];
+        expect([...c.changedFields].sort()).toEqual(['occurredOn', 'targetNote']);
+        expect(Date.parse(c.correctedAt)).not.toBeNaN();
+        // A NAME, not an id — this is what «Коригирано от …» prints. The
+        // fixture's user is created with one, and `User.name` is encrypted at
+        // rest, so this also proves the read decrypts rather than handing back
+        // ciphertext.
+        expect(c.correctedBy).toBe('Diary Treat User');
+        expect(c.correctedBy).not.toBe(userId);
+        // The WHOLE previous definition, parcels included.
+        expect(c.previous).toMatchObject({
+            targetNote: before.targetNote,
+            occurredOn: before.occurredOn,
+            doseValue: before.doseValue,
+        });
+        expect(c.previous?.lines).toHaveLength(3);
+    });
+
+    it('is NEWEST first across several corrections', async () => {
+        const handle = await recorded('many');
+        let v = (await getDiaryTreatmentDefinition(ctx(), handle)).version;
+        for (const note of ['first', 'second', 'third']) {
+            v = (await correctDiaryTreatment(ctx(), handle, { targetNote: note }, v)).version;
+        }
+        const trail = await getDiaryTreatmentCorrections(ctx(), handle);
+        expect(trail.corrections).toHaveLength(3);
+        // Each row holds the state BEFORE its own correction, so newest-first
+        // means the newest row's `previous` is the second note.
+        expect(trail.corrections[0].previous?.targetNote).toBe('second');
+        expect(trail.corrections[2].previous?.targetNote).toBe(baseInput().targetNote);
+        expect(trail.version).toBe(3);
+    });
+
+    it('is readable by someone who may NOT correct it — the whole point', async () => {
+        // The prefill 403s for this caller. An inspector is exactly who needs
+        // to read «Коригирано на … от …» with the previous values, so sharing
+        // that gate would hide the trail from its audience.
+        const handle = await recorded('reader');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await correctDiaryTreatment(ctx(), handle, { targetNote: 'Corrected' }, before.version);
+
+        const reader = makeRequestContext('READER', {
+            userId: `${userId}-an-inspector`,
+            tenantId,
+            tenantSlug: `${TAG}-t`,
+        });
+
+        // The control: the prefill really does refuse this caller, or the test
+        // below proves nothing about a difference in gates.
+        await expect(getDiaryTreatmentDefinition(reader, handle)).rejects.toMatchObject({
+            code: expect.stringMatching(/NOT_PERMITTED|FORBIDDEN/),
+        });
+
+        const trail = await getDiaryTreatmentCorrections(reader, handle);
+        expect(trail.corrections).toHaveLength(1);
+        expect(trail.corrections[0].previous?.targetNote).toBe(baseInput().targetNote);
+    });
+
+    it('404s an unknown handle rather than answering an empty trail', async () => {
+        // Existence comes from the TASKS, not the trail: a handle with no
+        // corrections and a handle nobody used both have an empty trail, and
+        // a 200 would confirm a treatment that is not there.
+        await expect(
+            getDiaryTreatmentCorrections(ctx(), `${KEY}-never-used`),
         ).rejects.toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
     });
 });

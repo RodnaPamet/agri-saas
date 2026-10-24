@@ -16350,6 +16350,10 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
       "type": "boolean",
       "description": "Whether THIS caller may withdraw this treatment — computed server-side so a client can offer «Изтрий» only where pressing it would succeed. It is not a \`createdByUserId\` field, deliberately: the rule is creator-or-admin AND single authorship, and the second arm refuses admins too, so no field on one row can express it. False on an ordinary manual entry, which has no treatment to withdraw. Advisory, not the control: the route re-checks and answers 403 \`TREATMENT_DELETE_NOT_PERMITTED\` or 409 \`TREATMENT_MIXED_AUTHORSHIP\`."
     },
+    "mayCorrect": {
+      "type": "boolean",
+      "description": "Whether THIS caller may CORRECT this treatment (#2172) — the flag to gate «Коригирай» on.\\n\\n**Do not reuse \`mayDelete\` for this.** The two rules agree today, and they are separate fields because #2280 asks the owner whether to narrow deletion now that a withdrawal is irreversible. If it narrows, a client gating the correction on \`mayDelete\` would silently hide «Коригирай» from the creators who may still correct — a control missing from the person entitled to it, with nothing failing.\\n\\nSame two arms as its sibling: creator-or-admin AND single authorship, the second refusing admins too. False on an ordinary manual entry, which has no treatment to correct. Advisory, not the control: \`PUT …/definition\` re-checks and answers 403 \`TREATMENT_EDIT_NOT_PERMITTED\` or 409 \`TREATMENT_MIXED_AUTHORSHIP\`.\\n\\n**Read it as \`mayCorrect === false\`, never \`!mayCorrect\`.** An ABSENT field is a row cached before the field existed, and this list reads through a persistent cache; treating absence as denial hides the control from the person who recorded the treatment. A stale permit costs one refusal, a stale denial costs a farmer their own record."
+    },
     "kind": {
       "type": [
         "string",
@@ -16432,6 +16436,7 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
     "treatmentGroupId",
     "occurredOn",
     "mayDelete",
+    "mayCorrect",
     "kind",
     "productName",
     "parcelCount",
@@ -16445,6 +16450,84 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
     "quarantinePeriodDays",
     "earliestHarvestOn",
     "recordedInDiary"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TreatmentCorrectionEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "correctedAt": {
+      "type": "string",
+      "format": "date-time",
+      "example": "2026-10-24T18:40:00.000Z"
+    },
+    "correctedBy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "A DISPLAY NAME, not a user id — this is what «Коригирано от …» prints. Resolved per read rather than stored on the row: a stored name would freeze at correction time, so a later rename would leave the register attributing a correction to a name its owner no longer uses.\\n\\n\`null\` when the correction was filed by a job with no actor, or when the account has since been removed. That is deliberate — the record says a correction happened and declines to name someone it cannot name, rather than printing an opaque id at a farmer."
+    },
+    "changedFields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Which fields THIS correction changed, by name. A correction that changed nothing files no row at all, so this is never empty.",
+      "example": [
+        "targetNote",
+        "occurredOn"
+      ]
+    },
+    "previous": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/TreatmentDefinition"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The WHOLE definition as it stood before this correction, not a diff (owner decision 2026-10-24). A diff needs the reader to already hold the state it was a diff against, and the point of the record is that the state is gone."
+        }
+      ]
+    }
+  },
+  "required": [
+    "correctedAt",
+    "correctedBy",
+    "changedFields",
+    "previous"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TreatmentCorrectionTrail 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "description": "The treatment’s CURRENT version, so a client holding an older one can tell its trail is stale without a second read."
+    },
+    "corrections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TreatmentCorrectionEntry"
+      },
+      "description": "Newest first, capped at 50. Empty for a treatment nobody has corrected — which is what a client should check before showing «Коригирано на …»."
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "version",
+    "corrections"
   ]
 }"
 `;
