@@ -15771,6 +15771,14 @@
           "doseUnitId": {
             "type": "string"
           },
+          "doseUnitSymbol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The dose unit’s SYMBOL, beside its id, because the id cannot be rendered.\n\nIt exists for the correction TRAIL. That stores a whole `previous` definition so an inspector can read what a value used to be, and «Беше: 2» is not a dose — a client holding only a cuid can say the dose CHANGED but not what it was.\n\nCarried rather than resolved client-side on purpose: a trail entry is a historical record, and resolving ids against TODAY’s unit catalogue would render a symbol the row never meant if a unit were ever renamed.",
+            "example": "L/ha"
+          },
           "waterRateValue": {
             "type": [
               "number",
@@ -15782,6 +15790,14 @@
               "string",
               "null"
             ]
+          },
+          "waterRateUnitSymbol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The water-rate unit’s symbol, on the same terms as `doseUnitSymbol`.",
+            "example": "L/ha"
           },
           "quarantinePeriodDays": {
             "type": [
@@ -15817,8 +15833,10 @@
           "pppRegistrationNo",
           "doseValue",
           "doseUnitId",
+          "doseUnitSymbol",
           "waterRateValue",
           "waterRateUnitId",
+          "waterRateUnitSymbol",
           "quarantinePeriodDays",
           "phenophase",
           "lines"

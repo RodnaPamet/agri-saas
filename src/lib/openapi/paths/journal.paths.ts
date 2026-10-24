@@ -342,8 +342,23 @@ const TreatmentDefinition = z
         }),
         doseValue: z.number(),
         doseUnitId: z.string(),
+        doseUnitSymbol: z.string().nullable().openapi({
+            description:
+                'The dose unit\u2019s SYMBOL, beside its id, because the id cannot be rendered.\n\n'
+                + 'It exists for the correction TRAIL. That stores a whole `previous` definition so '
+                + 'an inspector can read what a value used to be, and \u00abБеше: 2\u00bb is not a dose \u2014 a '
+                + 'client holding only a cuid can say the dose CHANGED but not what it was.\n\n'
+                + 'Carried rather than resolved client-side on purpose: a trail entry is a '
+                + 'historical record, and resolving ids against TODAY\u2019s unit catalogue would '
+                + 'render a symbol the row never meant if a unit were ever renamed.',
+            example: 'L/ha',
+        }),
         waterRateValue: z.number().nullable(),
         waterRateUnitId: z.string().nullable(),
+        waterRateUnitSymbol: z.string().nullable().openapi({
+            description: 'The water-rate unit\u2019s symbol, on the same terms as `doseUnitSymbol`.',
+            example: 'L/ha',
+        }),
         quarantinePeriodDays: z.number().int().nullable().openapi({
             description:
                 'POINT-IN-TIME. Nothing records what the period WAS when an old line was completed, so '
