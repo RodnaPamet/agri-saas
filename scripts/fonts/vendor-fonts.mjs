@@ -142,17 +142,71 @@ async function fetchBytes(url) {
  * backbone. `font-display: swap` matches the `&display=swap` the remote import
  * requested, so first-paint behaviour is unchanged.
  */
-function renderFontFace(face, file) {
+function renderFontFace(face, file, weight) {
     return [
         '@font-face {',
         `    font-family: '${face.family}';`,
         `    font-style: ${face.style};`,
-        `    font-weight: ${face.weight};`,
+        `    font-weight: ${weight};`,
         '    font-display: swap;',
         `    src: url('/fonts/${file}') format('woff2');`,
         `    unicode-range: ${face.unicodeRange};`,
         '}',
     ].join('\n');
+}
+
+/**
+ * ── ONE FACE PER FILE, WITH THE AXIS RANGE ── #2203
+ *
+ * These are VARIABLE fonts carrying `wght 100-900`, and the previous output
+ * declared one `@font-face` per weight Google lists — 72 of them, each pinned
+ * to a single discrete `font-weight`. Per CSS Fonts 4 that pins the axis too:
+ * a face declaring `font-weight: 600` clamps `wght` to `[600, 600]`, so any
+ * requested weight that selects it renders at exactly 600.
+ *
+ * The product asks for `font-[560]` on every button. Measured in Chromium
+ * against this repo's own `inter-latin.woff2`, with a deliberately-absent
+ * family as the control:
+ *
+ *     pinned (72 faces)   40px   500:272.406  560:272.406  600:272.406
+ *     ranged (17 faces)   40px   500:272.406  560:271.406  600:272.406
+ *
+ * So 560 rendered as 600, and a range gives it a width of its own. Owner ruled
+ * on 2026-10-24 to honour the requested weight.
+ *
+ * ## The range is the VENDORED one, not the file's full axis
+ *
+ * `font-weight: 300 800` for Inter is the span of the weights actually
+ * vendored, not the `100 900` the file carries. Deliberate: a weight below the
+ * vendored set clamps exactly as it does today, so this change moves only the
+ * weights BETWEEN two vendored stops. Declaring `100 900` would additionally
+ * alter rendering for weights nobody has reviewed — Onest at 400 currently
+ * renders 500 and would start rendering 400.
+ *
+ * Grouping is by FILE, which the lock makes exact: 72 faces resolve to 17
+ * files, and the group is one per (family, subset, style) — verified to be a
+ * 1:1 correspondence with the files rather than assumed.
+ */
+export function groupFacesByFile(faces) {
+    const groups = new Map();
+    for (const face of faces) {
+        const key = face.file;
+        if (!groups.has(key)) groups.set(key, { face, file: face.file, weights: [] });
+        groups.get(key).weights.push(Number(face.weight));
+    }
+    return [...groups.values()].map((g) => {
+        const min = Math.min(...g.weights);
+        const max = Math.max(...g.weights);
+        return {
+            ...g,
+            // A single-weight group stays a single weight. `font-weight: 500 500`
+            // is legal but says less than `500`, and a family that really does
+            // ship one weight should not read as a range.
+            weight: min === max ? `${min}` : `${min} ${max}`,
+            min,
+            max,
+        };
+    });
 }
 
 /**
@@ -181,7 +235,15 @@ function renderStylesheet(blocks) {
         ' */',
         '',
     ].join('\n');
-    return `${header}${blocks.map(({ face, file }) => renderFontFace(face, file)).join('\n\n')}\n`;
+    // Grouped, so each FILE gets one face carrying its weight range — #2203.
+    // `blocks` arrives one-per-face; `groupFacesByFile` keys on the filename,
+    // which the lock shows is 1:1 with (family, subset, style).
+    const grouped = groupFacesByFile(
+        blocks.map(({ face, file }) => ({ ...face, file })),
+    );
+    return `${header}${grouped
+        .map(({ face, file, weight }) => renderFontFace(face, file, weight))
+        .join('\n\n')}\n`;
 }
 
 
@@ -427,6 +489,36 @@ export function verdictFor(diff) {
 async function main() {
     const write = process.argv.includes('--write-lock');
     const acceptDescriptors = process.argv.includes('--accept-descriptors');
+
+    /**
+     * Regenerate `fonts.css` from the LOCK alone — #2203.
+     *
+     * Short-circuited before the fetch, deliberately and for two reasons. It
+     * needs no network: the lock is the record of what Google served and the
+     * stylesheet is derived from it, so a CSS-only change (the weight-range
+     * grouping this flag was added for) must not depend on what Google serves
+     * today. And placing a branch AFTER the verify arm is how
+     * `--accept-descriptors` shipped as unreachable dead code — the verify ran
+     * first and exited. Checked by running it, so this one goes first.
+     */
+    if (process.argv.includes('--write-css')) {
+        let existing;
+        try {
+            existing = JSON.parse(await readFile(LOCK, 'utf8'));
+        } catch {
+            throw new Error('No lock file. --write-css renders the lock; it cannot create one.');
+        }
+        const blocks = existing.faces.map((face) => ({ face, file: face.file }));
+        const css = renderStylesheet(blocks);
+        await writeFile(CSS_OUT, css);
+        const faceCount = (css.match(/@font-face/g) ?? []).length;
+        console.log(
+            `Rendered fonts.css from the lock: ${existing.faces.length} locked face(s) -> `
+                + `${faceCount} @font-face block(s). No network, no font files written.`,
+        );
+        return;
+    }
+
     if (write && acceptDescriptors) {
         throw new Error(
             '--write-lock and --accept-descriptors are mutually exclusive: the first rewrites '

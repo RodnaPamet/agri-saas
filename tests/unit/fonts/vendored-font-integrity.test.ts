@@ -129,33 +129,79 @@ describe('vendored fonts — the lock is the record of what was measured', () =>
 });
 
 describe('fonts.css declares exactly the locked faces', () => {
-    it('declares one @font-face per locked face', () => {
-        expect(declared.length).toBe(lock.faces.length);
+    /**
+     * ── ONE FACE PER FILE, CARRYING THE AXIS RANGE ── #2203
+     *
+     * This used to assert one `@font-face` per LOCKED FACE — 72 of them, each
+     * pinned to a discrete `font-weight`. That pinning clamps the variable
+     * `wght` axis to `[w, w]`, so `font-[560]` on every button in the product
+     * rendered at 600. Measured in Chromium against this repo's own
+     * `inter-latin.woff2`, with the faces' load status asserted so a silent
+     * fallback could not be mistaken for a result:
+     *
+     *     pinned   40px  400:266.406  500:272.406  550:272.406  560:272.406  600:272.406  700:274.406
+     *     ranged   40px  400:266.406  500:272.406  550:271.406  560:271.406  600:272.406  700:274.406
+     *
+     * Everything from 500 to 600 collapsed onto one width; with the range,
+     * 550/560/570 get their own. Owner ruled on 2026-10-24 to honour the
+     * requested weight, so the generator emits one face per FILE whose
+     * `font-weight` is the span of that file's locked weights.
+     *
+     * The assertions below are STRONGER than the count they replace, not
+     * weaker, and that matters because the lazy way to fix a test that fails
+     * on an intended change is to delete it. The old one checked a number;
+     * these check that every locked weight is inside its file's declared
+     * range, that the endpoints are exactly the group's own min and max — so a
+     * range wider than the vendored set fails — and that the `unicode-range`
+     * still matches the lock face for face.
+     */
+    const byFile = new Map<string, LockedFace[]>();
+    for (const f of lock.faces) {
+        if (!byFile.has(f.file)) byFile.set(f.file, []);
+        byFile.get(f.file)!.push(f);
+    }
+
+    it('declares one @font-face per FILE, not per weight', () => {
+        // The denominator beside the claim: 72 locked faces, 17 files.
+        expect({ declared: declared.length, files: byFile.size, lockedFaces: lock.faces.length })
+            .toEqual({ declared: byFile.size, files: byFile.size, lockedFaces: lock.faces.length });
+        expect(declared.length).toBeLessThan(lock.faces.length);
     });
 
-    /**
-     * Keyed on family|weight|range, NOT on the filename. Since #2199 one file
-     * serves every weight of a family, so `declared.find(x => x.file === file)`
-     * returns whichever weight happens to be declared first and the weight
-     * assertion below would compare face 600 against face 500's declaration —
-     * green or red by declaration order rather than by correctness.
-     */
-    it.each(
-        lock.faces.map(
-            (f) => [`${f.family} ${f.subset} ${f.weight}`, f] as const,
-        ),
-    )('%s is declared with the locked file, family, weight and unicode-range', (_label, face) => {
-        const d = declared.find(
-            (x) =>
-                x.family === face.family
-                && x.weight === face.weight
-                && x.unicodeRange === face.unicodeRange,
-        );
-        expect(d).toBeDefined();
-        // The face's own file, so a mis-pointed src is caught rather than
-        // absorbed by several faces legitimately sharing one.
-        expect(d!.file).toBe(face.file);
-    });
+    it.each([...byFile.entries()].map(([file, faces]) => [file, faces] as const))(
+        '%s declares exactly its locked weight span, with the locked unicode-range',
+        (file, faces) => {
+            const d = declared.find((x) => x.file === file);
+            expect(d).toBeDefined();
+
+            const weights = faces.map((f) => Number(f.weight)).sort((a, b) => a - b);
+            const min = weights[0];
+            const max = weights[weights.length - 1];
+            // `500` for a single-weight group, `500 700` otherwise — a
+            // `500 500` would be legal and would say less than `500`.
+            expect(d!.weight).toBe(min === max ? `${min}` : `${min} ${max}`);
+
+            // Every locked weight must be INSIDE the declared range, which is
+            // the property the clamp broke.
+            for (const w of weights) {
+                expect({ file, weight: w, inRange: w >= min && w <= max })
+                    .toEqual({ file, weight: w, inRange: true });
+            }
+
+            // One `unicode-range` per file, and it must be the one the lock
+            // records for every face in the group — a group whose faces
+            // disagreed could not be collapsed at all.
+            const ranges = [...new Set(faces.map((f) => f.unicodeRange))];
+            expect(ranges).toHaveLength(1);
+            expect(d!.unicodeRange).toBe(ranges[0]);
+
+            // And the family, so a collapse cannot merge two families onto one
+            // file.
+            const families = [...new Set(faces.map((f) => f.family))];
+            expect(families).toHaveLength(1);
+            expect(d!.family).toBe(families[0]);
+        },
+    );
 
     it('ships no font file that the CSS does not declare, and declares none it does not ship', () => {
         const onDisk = readdirSync(FONT_DIR).filter((f) => f.endsWith('.woff2')).sort();
@@ -233,7 +279,13 @@ describe('the CSS reaches no third party', () => {
 
     it('every src is a same-origin /fonts/ path', () => {
         const srcs = [...css.matchAll(/src:\s*url\(([^)]+)\)/g)].map((m) => m[1]);
-        expect(srcs.length).toBe(lock.faces.length);
+        // One per FILE since #2203 collapsed the per-weight faces, not one per
+        // locked face. Counted against the distinct files the lock names, so
+        // this stays a real denominator rather than becoming `srcs.length`
+        // compared with itself.
+        const lockedFiles = new Set(lock.faces.map((f) => f.file));
+        expect(srcs.length).toBe(lockedFiles.size);
+        expect(srcs.length).toBeGreaterThan(0);
         for (const s of srcs) expect(s).toMatch(/^'\/fonts\/[^']+\.woff2'$/);
     });
 });
