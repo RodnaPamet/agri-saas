@@ -239,6 +239,32 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
             'and the published `SuspendAccount` schema are separate zod objects, so narrowing ' +
             'one left the other documenting the old contract until this change.',
     },
+    {
+        kind: 'schema-removed',
+        schema: 'RestoredLogEntry',
+        contractVersion: 3,
+        pr: 2254,
+        date: '2026-10-24',
+        why:
+            'Nothing can be restored any more. It was the response body of POST ' +
+            '/api/t/{tenantSlug}/journal/{id}/restore, which this same PR RETIRES under the ' +
+            'owner\'s «Кошче» ruling: the journal-entry DELETE is physical now, so there is no ' +
+            'soft-deleted row for a restore to return. Importers under src/: ZERO — it existed ' +
+            'only as that route\'s declared response, so the removal takes the schema and its ' +
+            'single producer out together. That is the DIFFERENCE from the AuthRegisterRequest ' +
+            'entry above, which was an orphan the spec kept publishing for a route retired ' +
+            'hundreds of PRs earlier; here the spec never gets to advertise a restore response ' +
+            'for a route that 404s, because both leave in one change. The classifier\'s harm ' +
+            'statement — "a client decoding it fails outright" — needs a client: the only ' +
+            'decoder was the phone\'s trash screen, and agrent-ios removed «Кошче» in its #413, ' +
+            'MERGED 2026-10-23, so the client change landed BEFORE this removal rather than ' +
+            'chasing it. The web decoder, DeletedJournalView.tsx, is deleted in this PR. The ' +
+            'undo a farmer actually uses is now client-side and fires before the request is ' +
+            'sent, so it needs no route and no schema. Owner authorised directly on 2026-10-24 ' +
+            '— asked whether entry-level trash went too and ruled "everything deleted is gone" ' +
+            '— recorded here because this file carries the owner\'s approval and not an ' +
+            'agent\'s own judgement.',
+    },
 ];
 
 /** True when `entry` covers `finding`. */
