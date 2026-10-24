@@ -168,6 +168,10 @@ function withServerDerived(
                 occupiedAreaHa: row.occupiedAreaHa,
                 standingCropValue: row.standingCropValue,
                 attributableCost: row.cashCostTotal,
+                // #2259: taken from the row, like the rest. The margin is only
+                // subtractable when the cost currency agrees with this, and a
+                // hardcoded value here would make every fixture agree.
+                priceCurrency: row.priceCurrency,
                 standingCropExcludedCount: 0,
                 unvaluedNoUnitCost: row.unvaluedNoUnitCost,
                 unvaluedUnitMismatch: row.unvaluedUnitMismatch,
@@ -725,7 +729,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
             data({
                 rows: [
                     wheatRow(),
-                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', netWorth: 4_000 }),
+                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', costCurrencyCodes: ['BGN'], netWorth: 4_000 }),
                 ],
             }),
         );
@@ -1177,7 +1181,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
             data({
                 rows: [
                     wheatRow(),
-                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', netWorth: 4_000 }),
+                    wheatRow({ commodity: 'barley', priceCurrency: 'BGN', costCurrencyCodes: ['BGN'], netWorth: 4_000 }),
                 ],
             }),
         );
@@ -1253,6 +1257,10 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
                     wheatRow({
                         commodity: 'rapeseed',
                         priceCurrency: 'BGN',
+                        // #2259: the COST currency has to move with the price
+                        // one, or this is a BGN crop whose costs are in EUR and
+                        // its margin is correctly refused rather than blended.
+                        costCurrencyCodes: ['BGN'],
                         standingCropValue: 40_000,
                         cashCostTotal: 15_000,
                         netWorth: 20_000,
@@ -1262,6 +1270,10 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
                     wheatRow({
                         commodity: 'sunflower',
                         priceCurrency: 'BGN',
+                        // #2259: the COST currency has to move with the price
+                        // one, or this is a BGN crop whose costs are in EUR and
+                        // its margin is correctly refused rather than blended.
+                        costCurrencyCodes: ['BGN'],
                         standingCropValue: 20_000,
                         cashCostTotal: 15_000,
                         netWorth: 5_000,

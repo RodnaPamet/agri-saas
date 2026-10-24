@@ -26,7 +26,7 @@
  *
  * @module lib/grain/margin-scale
  */
-import type { PerAreaRefusalCode } from './per-area';
+import type { PerAreaMarginRefusalCode, PerAreaRefusalCode } from './per-area';
 import type { UncertaintyState } from './uncertainty';
 
 export interface MarginScaleInput {
@@ -34,6 +34,15 @@ export interface MarginScaleInput {
     /** `perArea.marginPerDca` — SIGNED, null when the per-dca figure was refused. */
     marginPerDca: number | null;
     refusalCode: PerAreaRefusalCode | null;
+    /**
+     * Why the margin was refused (#2259) — carried so an undrawable bar can
+     * say the RIGHT thing.
+     *
+     * Without it the renderer had only `refusalCode`, which describes the
+     * VALUE side, and fell through to "no market price" for a row whose price
+     * was fine and whose costs were in two currencies.
+     */
+    marginRefusalCode: PerAreaMarginRefusalCode | null;
     uncertainty: UncertaintyState;
     priceCurrency: string | null;
 }

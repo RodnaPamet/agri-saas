@@ -61,6 +61,7 @@ function row(over: Partial<CommodityNetWorthRow> = {}): CommodityNetWorthRow {
             costAreaDca: 120,
             costCurrency: null,
             costRefusalCode: null,
+            marginRefusalCode: null,
             standingValuePerDca: 210,
             attributableCostPerDca: 90,
             marginPerDca: 120,

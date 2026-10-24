@@ -11,6 +11,7 @@
  *     value and cost are in two different ones.
  */
 import { foldFarmPerArea, type FarmPerAreaInput } from '@/lib/grain/farm-per-area';
+import { computePerArea } from '@/lib/grain/per-area';
 import { UNCERTAINTY } from '@/lib/grain/uncertainty';
 
 function row(over: {
@@ -167,6 +168,60 @@ describe('currencies are never blended (#1614)', () => {
         expect(bgn.without.marginPerDca).toEqual([]);
         // Its COST still counts — that figure has a currency.
         expect(bgn.costAreaDca).toBe(200);
+    });
+});
+
+describe('the row level now guarantees what this fold used to check (#2259)', () => {
+    it('excludes NOTHING that computePerArea admitted', () => {
+        // The fold keeps explicit cost-currency checks as belt and braces. This
+        // asserts they are no longer DOING anything: every row the row level
+        // gave a margin to must survive the fold. A row appearing in
+        // `without.marginPerDca` here would mean #2259 has regressed upstream,
+        // which is the only way these checks could start mattering again.
+        //
+        // Built through the REAL computePerArea rather than hand-written
+        // fixtures, because the point is the two modules agreeing.
+        const inputs = [
+            { costCurrencies: ['BGN'], priceCurrency: 'BGN' },
+            { costCurrencies: [], priceCurrency: 'BGN' },
+            { costCurrencies: ['BGN', 'EUR'], priceCurrency: 'BGN' },
+            { costCurrencies: ['EUR'], priceCurrency: 'BGN' },
+        ];
+        const rows = inputs.map((over, i) => {
+            const perArea = computePerArea({
+                standingCropAreaHa: 12.5,
+                occupiedAreaHa: 12.5,
+                standingCropValue: 15_000,
+                attributableCost: 5_000,
+                standingCropExcludedCount: 0,
+                unvaluedNoUnitCost: 0,
+                unvaluedUnitMismatch: 0,
+                unattributedCostEntries: 0,
+                payrollAllocated: false,
+                ...over,
+            });
+            return {
+                commodity: `crop${i}`,
+                priceCurrency: over.priceCurrency,
+                perArea,
+                unvaluedNoUnitCost: 0,
+                unvaluedUnitMismatch: 0,
+                unattributedCostEntries: 0,
+                payrollAllocated: false,
+                netWorth: 1,
+            };
+        });
+
+        // A control: the four inputs really do split, so this is not a sweep
+        // over four identical rows.
+        const admitted = rows.filter((r) => r.perArea.marginPerDca != null).map((r) => r.commodity);
+        expect(admitted).toEqual(['crop0', 'crop1']);
+
+        const out = foldFarmPerArea(rows);
+        for (const entry of out.byCurrency) {
+            // Nothing the row level admitted is excluded here.
+            expect(entry.without.marginPerDca.filter((c) => admitted.includes(c))).toEqual([]);
+        }
     });
 });
 

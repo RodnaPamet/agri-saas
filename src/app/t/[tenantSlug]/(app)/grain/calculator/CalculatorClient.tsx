@@ -121,6 +121,7 @@ import {
     CommodityStrip,
     ExclusionsCard,
     MarginPerDcaCard,
+    marginRefusalCopyKey,
     SumLine,
 } from './components';
 import { foldMarginScales } from '@/lib/grain/margin-scale';
@@ -518,6 +519,7 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 rows.map((r) => ({
                     commodity: r.commodity,
                     marginPerDca: r.perArea.marginPerDca,
+                    marginRefusalCode: r.perArea.marginRefusalCode,
                     refusalCode: r.perArea.refusalCode,
                     uncertainty: r.perArea.uncertainty,
                     priceCurrency: r.priceCurrency,
@@ -1211,9 +1213,7 @@ function CommodityDetailCard({
                         </span>
                         {row.perArea.marginPerDca == null ? (
                             <span className="text-xs text-content-attention">
-                                {row.perArea.refusalCode === 'NO_STANDING_CROP_AREA'
-                                    ? tc('perAreaNoArea')
-                                    : tc('perAreaNoValue')}
+                                {tc(marginRefusalCopyKey(row.perArea.marginRefusalCode))}
                             </span>
                         ) : (
                             <span

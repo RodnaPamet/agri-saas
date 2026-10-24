@@ -61,17 +61,23 @@
  *
  * ── Why a refused cost EXCLUDES the row from the farm margin ───────────
  *
- * A row's own `marginPerDca` can be present while its `attributableCostPerDca`
- * is refused for mixed cost currencies — and in that state the row's margin
- * has blended the currencies the cost rate declined to blend. That is #2259,
- * a pre-existing defect in `computePerArea` which this module does not try to
- * fix and must not inherit: folding such a row in would put a figure denominated
- * in no currency at all into the farm's margin.
+ * A row's own `marginPerDca` used to be present while its
+ * `attributableCostPerDca` was refused for mixed cost currencies — the row's
+ * margin having blended the currencies the cost rate declined to blend. That
+ * was #2259, and this fold was written to refuse inheriting it.
  *
- * So a row contributes to the farm margin only when its cost rate is present
- * AND its cost currency agrees with its price currency. Everything else is
- * named in `without.marginPerDca`, which is what that list is for. This keeps
- * the farm figure correct however #2259 is resolved.
+ * **#2259 is FIXED at the row level now**: `computePerArea` withholds the
+ * margin whenever the cost cannot be subtracted, and says which side failed
+ * through `marginRefusalCode`. So `marginPerDca != null` is already the
+ * guarantee this function used to have to establish for itself.
+ *
+ * The explicit checks below STAY anyway, and that is a choice rather than
+ * leftover code: this fold's correctness should not depend on a sibling
+ * module's invariant holding, and the whole reason #2259 existed is that
+ * `computePerArea` contradicted itself one field apart. Belt and braces on a
+ * figure that is wrong in units when it is wrong at all. They are no longer
+ * expected to EXCLUDE anything, which a test pins — a row they exclude that
+ * the row level admitted would mean the row-level fix has regressed.
  *
  * `costCurrency === null` COUNTS as agreement, and that is not laxity: net
  * worth assumes the tenant's display currency in exactly that situation
