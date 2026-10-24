@@ -61,6 +61,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readCatalogue } from '../helpers/catalogue';
 import * as ts from 'typescript';
+import { blankNonCode } from '../helpers/blank-non-code';
 import { keyInRange, resolveTranslationCalls } from '../helpers/i18n-key-resolver';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -297,10 +298,12 @@ describe('Destructive-action vocabulary (Roadmap-4 PR-9, #2226)', () => {
         // over-reach again.
         const byRegex = new Set<string>();
         for (const f of tsxFiles(path.join(ROOT, 'src'))) {
-            const code = fs
-                .readFileSync(f, 'utf-8')
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/.*/g, '');
+            // `blankNonCode`, not a regex pair: stripping BLOCK comments before
+            // LINE ones is the #1442/#1497 defect — a line comment containing
+            // a block-open opens a block as far as a regex is concerned and
+            // eats every real line to the next close. `comment-stripper-order`
+            // caught this control doing exactly that.
+            const code = blankNonCode(fs.readFileSync(f, 'utf-8'));
             if (/tone\s*=\s*["']danger["']/.test(code)) {
                 byRegex.add(path.relative(ROOT, f).split(path.sep).join('/'));
             }
