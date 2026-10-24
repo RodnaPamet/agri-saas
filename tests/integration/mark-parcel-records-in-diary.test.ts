@@ -65,7 +65,8 @@ beforeAll(async () => {
     });
     const location = await globalPrisma.location.create({ data: { tenantId, name: `Block ${TAG}` } });
     // areaHa is REQUIRED for this fixture to be able to deduct at all.
-    // `recordInputApplication` computes `consumed` as dose x area, and reads a
+    // `recordInputApplication` computes `consumed` as dose x the TREATED area
+    // (`treatedAreaHa ?? areaHa` since #2284), and reads a
     // null area as 0 — so with no area the operator control deducted nothing
     // and the "diary does not deduct" assertion passed for the wrong reason.
     // Measured: the control failed with `consumed: 0` until this was set.
@@ -254,5 +255,103 @@ describeFn('recordedInDiary reaches the journal entry a mark emits (DB-backed)',
             select: { id: true },
         });
         expect(all).toHaveLength(1);
+    });
+});
+
+describeFn('the recorded quantity follows the TREATED area (DB-backed, #2284)', () => {
+    /**
+     * A fresh parcel and line per case, rather than the shared fixture's.
+     *
+     * The marks in `beforeAll` happen in a load-bearing ORDER — the diary mark
+     * has to run while stock is still available, or its suppression assertion
+     * proves nothing — so adding a case to that sequence would put a second
+     * constraint on an order that already barely holds.
+     *
+     * Note which branch this exercises. The fixture's unit key is `l-ha-<tag>`,
+     * which is NOT in the conversion catalogue, so `isRateUnit` is false and the
+     * computation takes the LEGACY `dose * area` fallback. That is deliberate
+     * here: the fallback is the arm an unregistered unit lands in, it is the one
+     * most likely to be left behind by a fix to the typed arms, and it is what
+     * this farm's own units would hit.
+     */
+    const freshLine = async (name: string, dose = 2) => {
+        const src = await globalPrisma.operationParcel.findUnique({
+            where: { id: operatorLine },
+            select: { productItemId: true, parcel: { select: { locationId: true } } },
+        });
+        const parcel = await globalPrisma.parcel.create({
+            data: {
+                tenantId,
+                locationId: src!.parcel.locationId!,
+                name: `${name} ${TAG}`,
+                cropType: 'Wheat',
+                areaHa: 10,
+            },
+        });
+        return (await globalPrisma.operationParcel.create({
+            data: {
+                tenantId,
+                taskId,
+                parcelId: parcel.id,
+                productItemId: src!.productItemId,
+                doseValue: dose,
+                doseUnitId: unitId,
+                status: 'PENDING',
+            },
+        })).id;
+    };
+
+    const quantityOn = async (lineId: string) => {
+        const entry = await globalPrisma.logEntry.findFirst({
+            where: { tenantId, operationParcelId: lineId, type: 'INPUT_APPLICATION' },
+            select: { quantities: { select: { value: true } } },
+        });
+        expect(entry).not.toBeNull();
+        expect(entry!.quantities).toHaveLength(1);
+        return Number(entry!.quantities[0].value);
+    };
+
+    it('a PARTIAL treated area records the PARTIAL quantity', async () => {
+        // The whole of #2284. 2 L/ha over 2 of a 10 ha block is 4 L; before the
+        // fix this entry said 20 — the quantity of a treatment of the whole
+        // block, on a line whose own column says 2 ha, in a record an inspector
+        // reads. Reachable from the phone since 20 October.
+        const line = await freshLine('P-partial');
+        await markOperationParcel(ctx(), taskId, line, 'DONE', 'partly treated', 0, {
+            recordedInDiary: true,
+            treatedAreaHa: 2,
+        });
+        expect(await quantityOn(line)).toBe(4);
+    });
+
+    it('a WHOLE-parcel line still records the whole parcel — the control', async () => {
+        // Without this, a fix that read zero, or the line's area, or nothing at
+        // all would satisfy the case above. This is the operator path through
+        // Задачи, where `treatedAreaHa` is always null and the parcel area is
+        // the right answer.
+        const line = await freshLine('P-whole');
+        await markOperationParcel(ctx(), taskId, line, 'DONE', 'treated whole', 0, {
+            recordedInDiary: true,
+        });
+        expect(await quantityOn(line)).toBe(20);
+    });
+
+    it('the TREATED area is read from the ROW, not from the mark options', async () => {
+        // The third arm of the caller's three-way branch: `treatedAreaHa` was
+        // set on an EARLIER write and this mark does not mention it, so the
+        // column keeps its value and the quantity must still honour it.
+        //
+        // Reconstructing the area from `opts` would pass both cases above and
+        // fail this one — which is why the computation re-reads the row inside
+        // the same transaction instead of trusting the caller's literal.
+        const line = await freshLine('P-preset');
+        await globalPrisma.operationParcel.update({
+            where: { id: line },
+            data: { treatedAreaHa: 3 },
+        });
+        await markOperationParcel(ctx(), taskId, line, 'DONE', 'area set earlier', 0, {
+            recordedInDiary: true,
+        });
+        expect(await quantityOn(line)).toBe(6);
     });
 });
