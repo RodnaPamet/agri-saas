@@ -3,30 +3,37 @@
  *
  * ## Why this is a rendered test and not a source grep
  *
- * The claim is about what the BROWSER is told: which image is eager, which
- * carries the priority hint, and that exactly one does. A grep for
- * `fetchPriority` matches the explanatory comments beside each attribute as
- * readily as the attributes themselves — this component carries several
- * paragraphs naming the string — so a source assertion here would pass on the
- * prose after the code was removed. Reading the DOM cannot.
+ * The claim is about what the BROWSER is told. A grep for `fetchPriority`
+ * matches this component's explanatory prose as readily as an attribute — it
+ * names the string four times in comments and zero times in code — so a source
+ * assertion here would pass on the paragraphs after the attribute was removed,
+ * and would pass on the paragraphs if someone added it back. Reading the DOM
+ * cannot do either.
  *
- * ## What went wrong, so the assertions have a subject
+ * ## What is pinned, and why the shape is "nothing claims it"
  *
- * `fetchPriority="high"` sat on the logo, on the reasoning that it was "the
- * likeliest LCP element now that the page has an image at all". Measured
- * across 20 Lighthouse runs in four independent jobs, the LCP element was a
- * gallery thumbnail 20 times and the logo zero: the logo's box is `h-24 w-24`
- * (96x96 = 9,216 px^2) and a thumbnail paints 175x131 = 22,925 px^2.
+ * The LCP element on `/f/{handle}` is a gallery thumbnail, not the logo:
+ * 175x131 against 96x96, measured in 20 of 20 Lighthouse runs across four
+ * jobs. The logo used to carry `fetchPriority="high"` on the stated reasoning
+ * that it was "the likeliest LCP element", which was false.
  *
- * Meanwhile all six thumbnails were indistinguishable to the browser — every
- * one `loading="lazy"`, all issued inside the same millisecond at `High` — so
- * they finished staggered and LCP landed on whichever of the largest-painting
- * ones finished first, at roughly 395 ms per finishing place. That is a race,
- * and it let the page's LCP move ~800 ms with no change to a byte it served.
+ * The obvious repair — move the hint to the first thumbnail — was built,
+ * merged and MEASURED, and it does nothing:
  *
- * So the properties worth pinning are: the hint is on a thumbnail, the first
- * thumbnail starts ahead of the rest, and only ONE element claims it — a
- * second claimant would restore the tie this exists to break.
+ *   - Chrome already assigns every media request on this page `High`. From the
+ *     network records: 7 requests, `High` x7, before any hint existed.
+ *   - Two Lighthouse jobs with the hint gave LCP medians of 3414 ms and
+ *     3421 ms, against 3365 ms and 3331 ms without it, and the ~4,180 ms upper
+ *     mode still appeared (4194 ms).
+ *
+ * The ~395 ms per finishing place is six route handlers, each running two
+ * database queries under a 4x CPU throttle — server cost, not network
+ * queueing, and a priority hint cannot touch it.
+ *
+ * So the contract is deliberately "the logo is eager, the gallery is lazy, and
+ * NOTHING claims a priority hint". The last of those is the one worth a test:
+ * it fails if someone re-adds the hint, which sends them to the measurement
+ * instead of letting them repeat it.
  */
 import { render, screen } from '@testing-library/react';
 
@@ -44,6 +51,7 @@ const PHOTOS = [
     '/api/public/media/eee5',
     '/api/public/media/fff6',
 ];
+const LOGO = '/api/public/media/logo0';
 
 function profileOf(over: Partial<PublicFarmBodyProfile> = {}): PublicFarmBodyProfile {
     return {
@@ -52,7 +60,7 @@ function profileOf(over: Partial<PublicFarmBodyProfile> = {}): PublicFarmBodyPro
         oblast: 'Добрич',
         crops: ['пшеница', 'слънчоглед'],
         about: 'Семейно стопанство в Добруджа, трето поколение.',
-        logoUrl: '/api/public/media/logo0',
+        logoUrl: LOGO,
         photoUrls: PHOTOS,
         ...over,
     };
@@ -66,19 +74,16 @@ const LABELS: PublicFarmBodyLabels = {
     photoAlt: (n) => `Снимка ${n}`,
 };
 
-/** Every `<img>` the component rendered, in document order. */
-function images(): HTMLImageElement[] {
-    return Array.from(document.querySelectorAll('img'));
-}
-
-const thumbnails = () => images().filter((i) => i.getAttribute('src') !== '/api/public/media/logo0');
-const logo = () => images().find((i) => i.getAttribute('src') === '/api/public/media/logo0');
+const images = () => Array.from(document.querySelectorAll('img'));
+const thumbnails = () => images().filter((i) => i.getAttribute('src') !== LOGO);
+const logo = () => images().find((i) => i.getAttribute('src') === LOGO);
 
 /**
- * React lower-cases `fetchPriority` to the `fetchpriority` content attribute,
- * so the DOM is read through the attribute rather than the property. Checked
- * both spellings so a React change that keeps the camelCase form cannot make
- * these assertions quietly unobservable.
+ * React lower-cases `fetchPriority` to the `fetchpriority` content attribute.
+ * Both spellings are read, so a React change that keeps the camelCase form
+ * cannot make these assertions quietly unobservable — which matters more for a
+ * negative assertion than a positive one, because an unobservable negative
+ * passes.
  */
 const priorityOf = (el: Element) =>
     el.getAttribute('fetchpriority') ?? el.getAttribute('fetchPriority');
@@ -86,95 +91,74 @@ const priorityOf = (el: Element) =>
 describe('PublicFarmBody images (#2251)', () => {
     it('renders the gallery it is supposed to — the positive control', () => {
         // Without this, every assertion below could range over zero
-        // thumbnails and pass.
+        // thumbnails and pass, and the "nothing claims a hint" assertions
+        // would pass over nothing at all.
         render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
         expect(thumbnails()).toHaveLength(PHOTOS.length);
         expect(logo()).toBeDefined();
         expect(images()).toHaveLength(PHOTOS.length + 1);
     });
 
-    it('the FIRST thumbnail is eager and carries the priority hint', () => {
-        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
-        const first = thumbnails()[0];
-        expect(first.getAttribute('src')).toBe(PHOTOS[0]);
-        expect(first.getAttribute('loading')).toBe('eager');
-        expect(priorityOf(first)).toBe('high');
-    });
-
-    it('every other thumbnail stays lazy and claims nothing', () => {
-        // The rest keep `lazy` so a visitor who never scrolls does not pay for
-        // all six at once — the cost the section's own move downward addressed.
-        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
-        const rest = thumbnails().slice(1);
-        expect(rest).toHaveLength(PHOTOS.length - 1);
-        for (const img of rest) {
-            expect({
-                src: img.getAttribute('src'),
-                loading: img.getAttribute('loading'),
-                priority: priorityOf(img),
-            }).toEqual({ src: img.getAttribute('src'), loading: 'lazy', priority: null });
-        }
-    });
-
-    it('exactly ONE element claims the highest priority', () => {
-        // The property that makes the hint a tie-break. Two claimants is the
-        // state this change exists to leave: six indistinguishable requests
-        // racing, with LCP landing on whichever finished first.
-        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
-        const claimants = images().filter((i) => priorityOf(i) === 'high');
-        expect(claimants.map((i) => i.getAttribute('src'))).toEqual([PHOTOS[0]]);
-    });
-
-    it('the logo is eager but does NOT outrank the element that wins', () => {
-        // It is above the fold, so it loads eagerly; it is 2.5x smaller than a
-        // thumbnail, so it cannot be the LCP element and must not hold the
-        // ranking against one.
+    it('the logo is eager, because it is above the fold', () => {
         render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
         expect(logo()!.getAttribute('loading')).toBe('eager');
-        expect(priorityOf(logo()!)).toBeNull();
     });
 
-    it('with NO gallery the logo keeps the hint, rather than nothing having it', () => {
-        // Deliberately conservative: nothing measures the photoless farm, so
-        // that case is left as it was instead of changed silently. The hint
-        // follows the only image on the page.
-        render(<PublicFarmBody profile={profileOf({ photoUrls: [] })} labels={LABELS} />);
-        expect(thumbnails()).toHaveLength(0);
-        expect(priorityOf(logo()!)).toBe('high');
-        expect(logo()!.getAttribute('loading')).toBe('eager');
+    it('every thumbnail is lazy', () => {
+        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
+        const seen = thumbnails().map((i) => i.getAttribute('loading'));
+        expect(seen).toEqual(PHOTOS.map(() => 'lazy'));
     });
 
-    it('with no logo the first thumbnail still carries it', () => {
-        // The two conditions are independent, and a farm with photographs and
-        // no logo must not end up with an unhinted LCP element.
-        render(<PublicFarmBody profile={profileOf({ logoUrl: null })} labels={LABELS} />);
-        const imgs = images();
-        expect(imgs).toHaveLength(PHOTOS.length);
-        expect(imgs.filter((i) => priorityOf(i) === 'high').map((i) => i.getAttribute('src'))).toEqual(
-            [PHOTOS[0]],
+    it('NOTHING claims a priority hint — the measured negative result', () => {
+        // The assertion that fails if the hint comes back. It was tried,
+        // merged and measured: Chrome already gives all 7 media requests
+        // `High`, and the LCP median did not move (3414/3421 with it against
+        // 3365/3331 without). Re-adding it should fail here and send the
+        // reader to the component's comment rather than to another Lighthouse
+        // run.
+        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
+        const claimants = images()
+            .filter((i) => priorityOf(i) !== null)
+            .map((i) => `${i.getAttribute('src')} -> ${priorityOf(i)}`);
+        expect(claimants).toEqual([]);
+    });
+
+    it('the negative assertion is OBSERVABLE — the control for it', () => {
+        // An attribute reader that cannot see the attribute would make the
+        // test above pass forever. This proves `priorityOf` observes a real
+        // `fetchpriority`, so its emptiness above means something.
+        render(<img alt="" src="/x" fetchPriority="high" />);
+        const probe = document.querySelector('img[src="/x"]')!;
+        expect(priorityOf(probe)).toBe('high');
+    });
+
+    it('holds for a photoless farm and for a logoless one', () => {
+        // The two conditions are independent and neither reintroduces a hint.
+        const { unmount } = render(
+            <PublicFarmBody profile={profileOf({ photoUrls: [] })} labels={LABELS} />,
         );
-    });
-
-    it('a single photograph is the hinted one, not an unhinted special case', () => {
-        render(<PublicFarmBody profile={profileOf({ photoUrls: [PHOTOS[0]] })} labels={LABELS} />);
-        expect(thumbnails()).toHaveLength(1);
-        expect(priorityOf(thumbnails()[0])).toBe('high');
-        expect(thumbnails()[0].getAttribute('loading')).toBe('eager');
-        // And the logo yields to it even though there is only one photograph.
+        expect(thumbnails()).toHaveLength(0);
+        expect(logo()!.getAttribute('loading')).toBe('eager');
         expect(priorityOf(logo()!)).toBeNull();
+        unmount();
+
+        render(<PublicFarmBody profile={profileOf({ logoUrl: null })} labels={LABELS} />);
+        expect(logo()).toBeUndefined();
+        expect(thumbnails()).toHaveLength(PHOTOS.length);
+        expect(images().filter((i) => priorityOf(i) !== null)).toEqual([]);
     });
 
-    it('the premise behind all of this is still in the markup', () => {
-        // The ordering that makes a thumbnail the LCP element and not the logo
-        // is a SIZE relationship, and it lives in these class names. If the
-        // logo grows or the grid shrinks, the measurement above stops applying
-        // and this test should be the thing that says so.
+    it('the size premise behind all of this is still in the markup', () => {
+        // Why a thumbnail and not the logo is the LCP element is a SIZE
+        // relationship, and it lives in these class names. If the logo grows
+        // or the grid shrinks, every measurement quoted in this file and in
+        // the component stops applying, and this is the assertion that should
+        // say so.
         render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
         const logoBox = screen.getByTestId('public-farm-logo');
         expect(logoBox.className).toContain('h-24');
         expect(logoBox.className).toContain('w-24');
-        // The grid cells are a fixed 4:3 box, which is what paints larger than
-        // 96x96 at two columns on a 390px viewport.
         const cell = thumbnails()[0].closest('li');
         expect(cell?.className).toContain('aspect-[4/3]');
         expect(cell?.parentElement?.className).toContain('grid-cols-2');
