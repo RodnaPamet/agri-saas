@@ -15,6 +15,7 @@ import {
     PUBLIC_SURFACE_NAMESPACES,
     PUBLIC_SURFACE_HEADER,
 } from '@/lib/i18n/public-surface';
+import { SHARED_NAMESPACES } from '@/lib/i18n/shared-namespaces';
 
 const ROOT = path.resolve(__dirname, '../..');
 const load = (locale: string): Record<string, unknown> =>
@@ -49,11 +50,21 @@ describe('isPublicSurface', () => {
 });
 
 describe('publicSurfaceMessages', () => {
-    it('keeps the listed namespaces and drops the rest', () => {
+    it('keeps the listed namespaces PLUS shared, and drops the rest', () => {
         const all = load('bg');
         const subset = publicSurfaceMessages(all);
 
-        expect(Object.keys(subset).sort()).toEqual([...PUBLIC_SURFACE_NAMESPACES].sort());
+        // PUBLIC plus SHARED since #2264. `notFound` moved to `shared` because
+        // `src/app/not-found.tsx` renders on every surface, and this trim is
+        // what the public page's CLIENT receives — leaving shared out would
+        // have fixed the auth surface by breaking the public one.
+        expect(Object.keys(subset).sort()).toEqual(
+            [...PUBLIC_SURFACE_NAMESPACES, ...SHARED_NAMESPACES].sort(),
+        );
+        // And it still DROPS: the point of the trim is that `app` never
+        // reaches an anonymous visitor.
+        expect(Object.keys(subset)).not.toContain('common');
+        expect(Object.keys(subset)).not.toContain('commandPalette');
         // The denominator, so a catalogue that collapsed to a handful of
         // namespaces could not make the saving below look impressive.
         expect(Object.keys(all).length).toBeGreaterThan(50);
