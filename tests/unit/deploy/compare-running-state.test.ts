@@ -32,35 +32,70 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const SCRIPT = path.join(REPO_ROOT, 'deploy/compare-running-state.py');
 
+const LOGGING = `    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+`;
+
+/**
+ * Every service declares `logging`, as the real manifest does through its
+ * `x-logging` anchor — which `yaml.safe_load` resolves, so the comparator sees
+ * the expanded dict rather than an alias.
+ *
+ * `clamav` is here with NO `container_name` on purpose: it is the one service
+ * on the real VM without one, so it is the case that exercises the
+ * `<project>-<service>-1` fallback. Getting that wrong is how the first
+ * attempt at this check inspected nothing and reported success.
+ */
 const COMPOSE = `services:
   app:
     image: x
+    container_name: agrent-app
     stop_grace_period: 30s
-  worker:
+${LOGGING}  worker:
     image: x
+    container_name: agrent-worker
     stop_grace_period: 30s
-  redis:
+${LOGGING}  redis:
     image: r
+    container_name: agrent-redis
     command: redis-server --requirepass "\${REDIS_PASSWORD:?required}"
-  watchtower:
+${LOGGING}  watchtower:
     image: w
+    container_name: agrent-watchtower
     command: --label-enable --cleanup --interval 300 --stop-timeout 30s
-`;
+${LOGGING}  clamav:
+    image: c
+${LOGGING}`;
 
 const WATCHTOWER_CMD = [
     '--label-enable', '--cleanup', '--interval', '300', '--stop-timeout', '30s',
 ];
 
 type Entry = Record<string, unknown>;
-const container = (name: string, cfg: Record<string, unknown>): Entry => ({
+
+/** The declared log settings, as Docker stores them — every value a STRING. */
+const LOG_OK = { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } };
+
+const container = (
+    name: string,
+    cfg: Record<string, unknown>,
+    log: unknown = LOG_OK,
+): Entry => ({
     Name: `/${name}`,
     Config: cfg,
+    HostConfig: { LogConfig: log },
 });
 
 const AGREEING: Entry[] = [
     container('agrent-watchtower', { Cmd: WATCHTOWER_CMD }),
     container('agrent-app', { StopTimeout: 30 }),
     container('agrent-worker', { StopTimeout: 30 }),
+    container('agrent-redis', { Cmd: ['redis-server'] }),
+    // No `container_name` in the compose, so the comparator must derive this.
+    container('agrent-clamav-1', {}),
 ];
 
 const dirs: string[] = [];
@@ -88,7 +123,11 @@ describe('compare-running-state (#2189)', () => {
         // The count, because "N of M compared" is what shows this check
         // narrowing while still green — the issue was only found by counting
         // services by hand.
-        expect(out).toMatch(/3 create-time setting\(s\) compared across 3 of 4 service\(s\)/);
+        // Five services now, all five covered: three explicit pairs plus a
+        // `logging` comparison DERIVED for every service that declares it. The
+        // figure is asserted rather than the words, because "N of M" narrowing
+        // while staying green is exactly what this print is for.
+        expect(out).toMatch(/8 create-time setting\(s\) compared across 5 of 5 service\(s\)/);
     });
 
     it('catches the REAL drift: watchtower missing its flag', () => {
@@ -180,5 +219,96 @@ describe('compare-running-state (#2189)', () => {
         const { code, out } = run(AGREEING, 'services:\n  app:\n    image: x\n');
         expect(code).toBe(1);
         expect(out).toContain('absent from the compose file');
+    });
+
+    describe('logging — the other create-time setting (#2189)', () => {
+        it('catches a log option the container never adopted', () => {
+            // The real hazard: `x-logging` is read at CREATE time, exactly like
+            // `stop_grace_period`, so a manifest edit to the rotation caps that
+            // nobody recreated for leaves the container writing under the OLD
+            // ones while check-drift reports the file byte-identical.
+            const { code, out } = run(
+                AGREEING.map((e) =>
+                    (e.Name === '/agrent-worker'
+                        ? container('agrent-worker', { StopTimeout: 30 }, {
+                            Type: 'json-file',
+                            Config: { 'max-size': '100m', 'max-file': '3' },
+                        })
+                        : e),
+                ),
+            );
+            expect(code).toBe(1);
+            expect(out).toContain(
+                'worker: log option max-size differs — declared 10m, running 100m',
+            );
+        });
+
+        it('catches a changed DRIVER, which loses the logs entirely', () => {
+            const { code, out } = run(
+                AGREEING.map((e) =>
+                    (e.Name === '/agrent-app'
+                        ? container('agrent-app', { StopTimeout: 30 }, {
+                            Type: 'local',
+                            Config: { 'max-size': '10m', 'max-file': '3' },
+                        })
+                        : e),
+                ),
+            );
+            expect(code).toBe(1);
+            expect(out).toContain('app: log driver differs — declared json-file, running local');
+        });
+
+        it('an UNSET option is named as unset, not reported as matching', () => {
+            // `running_opts.get(key)` is None here. Reading a missing option as
+            // agreement is the same failure as reading an empty inspect as
+            // agreement, one level down.
+            const { code, out } = run(
+                AGREEING.map((e) =>
+                    (e.Name === '/agrent-app'
+                        ? container('agrent-app', { StopTimeout: 30 }, {
+                            Type: 'json-file',
+                            Config: { 'max-size': '10m' },
+                        })
+                        : e),
+                ),
+            );
+            expect(code).toBe(1);
+            expect(out).toContain('app: log option max-file differs — declared 3, running (unset)');
+        });
+
+        it('an ABSENT LogConfig refuses rather than agreeing', () => {
+            const { code, out } = run(
+                AGREEING.map((e) =>
+                    (e.Name === '/agrent-app'
+                        ? container('agrent-app', { StopTimeout: 30 }, null)
+                        : e),
+                ),
+            );
+            expect(code).toBe(1);
+            expect(out).toContain('app: HostConfig.LogConfig absent');
+            expect(out).toContain('refusing to call that agreement');
+        });
+
+        it('compares options as STRINGS, so unquoting a YAML value is not drift', () => {
+            // `max-file: "3"` reads as a string and a bare `3` as an int, while
+            // Docker stores every option value as a string. Comparing raw would
+            // report drift on an edit that only removed a pair of quotes —
+            // a false alarm in a check that runs weekly and must stay readable.
+            const unquoted = COMPOSE.replace(/max-file: "3"/g, 'max-file: 3');
+            const { code, out } = run(AGREEING, unquoted);
+            expect(out).not.toContain('max-file differs');
+            expect(code).toBe(0);
+        });
+
+        it('derives the container name for a service with no container_name', () => {
+            // `clamav` has none, so the name must come from
+            // `<project>-<service>-1`. A wrong derivation reports a missing
+            // container — the original #2189 mistake — rather than passing.
+            const { code, out } = run(
+                AGREEING.filter((e) => e.Name !== '/agrent-clamav-1'),
+            );
+            expect(code).toBe(1);
+            expect(out).toContain("no running container named 'agrent-clamav-1'");
+        });
     });
 });

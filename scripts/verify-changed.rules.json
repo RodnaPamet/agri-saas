@@ -47,9 +47,10 @@
             "when": "^(deploy|docker-compose|Dockerfile)",
             "run": [
                 "tests/guards",
-                "tests/guardrails"
+                "tests/guardrails",
+                "tests/unit/deploy"
             ],
-            "why": "Compose/image guards assert drift against the repo-canonical files and the env template."
+            "why": "Compose/image guards assert drift against the repo-canonical files and the env template. tests/unit/deploy holds the EXECUTING tests for the deploy scripts — compare-running-state.py's exit codes, prune-backups.sh, verify-image-deps.mjs — which a structural guard cannot cover, since what matters there is what the script DOES. Those three suites sat outside this rule: #2288 created that root and did not add the line, so a change to the comparator never ran the suite written for it."
         },
         {
             "when": "^(package\\.json|package-lock\\.json)$",

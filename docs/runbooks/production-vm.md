@@ -156,15 +156,49 @@ Exit 2 is **not** a pass — it means the question was not answered. On
 exit 1, reconcile the VM's change back INTO the repo file and commit it;
 do not hand-edit the VM to match.
 
-**Nothing checks the Caddyfile.** `check-drift.sh` sha256-compares
-`docker-compose.vm.yml` and only that, and `apply.sh` copies only that,
-so a hand-edit to `/opt/agrent/Caddyfile` is invisible to every check in
-this repo. Diff it by hand whenever you touch either copy:
+**The Caddyfile's site SET is checked; its CONTENT is not.** `apply.sh`
+copies only `docker-compose.vm.yml`, and `check-drift.sh` sha256-compares
+only that — a hash of the Caddyfile would be permanently red, because
+`deploy/Caddyfile` is a deliberate PARTIAL copy of a hand-assembled file
+serving a co-tenant product (see `deploy/caddy-foreign-sites.txt`). What
+it does compare is the set of site addresses, in both directions: a live
+site that is neither ours nor recorded, a recorded site the VM no longer
+serves, and a site the repo describes that the VM does not answer. So a
+new block cannot appear unnoticed, while a changed *directive* inside an
+existing block still can. Diff it by hand whenever you touch either copy:
 
 ```bash
 gcloud compute ssh agrent --zone europe-west1-b \
   --command "sudo cat /opt/agrent/Caddyfile" | diff - deploy/Caddyfile
 ```
+
+**A create-time setting needs a RECREATE, and `up -d` is the apply.** Some
+compose fields are read when a container is created, not on every start —
+`stop_grace_period`, the `x-logging` driver and its rotation caps, a
+service's `command`. Editing one and running nothing leaves the file and
+the process disagreeing while the sha256 above reports byte-identity. That
+is #2189: `watchtower` ran from 2026-07-04 without the `--stop-timeout 30s`
+its own declaration named, and both copies of the manifest were identical
+throughout.
+
+```bash
+# After a structural change to a create-time setting:
+gcloud compute ssh agrent --zone europe-west1-b \
+  --command "cd /opt/agrent && sudo docker compose -f docker-compose.vm.yml \
+             up -d <service>"
+```
+
+**`watchtower` is never recreated by watchtower** — it does not carry the
+label it acts on — so its own flags only ever change by a manual `up -d
+watchtower`. `app` and `worker` pick a create-time change up on the next
+image deploy, since Watchtower recreates them then; everything else needs
+the command above.
+
+`check-drift.sh` reports this axis now (`deploy/compare-running-state.py`),
+comparing the running `command`, `stop_grace_period` and `logging` against
+what the manifest declares and printing how many settings across how many
+services it covered. A count well under the service total means the check
+has narrowed, not that the VM is healthy.
 
 One difference is known and intentional as of 2026-09-10: the live ACME
 contact defaults to a personal address and `deploy/Caddyfile` records the

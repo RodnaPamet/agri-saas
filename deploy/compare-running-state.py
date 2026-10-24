@@ -21,7 +21,11 @@ moment a setting is read at CREATE time. The compose file predicted exactly
 this, in the block that drifted: "`watchtower` itself is not watchtower-enabled
 and needs a manual `up -d` to adopt its new flag."
 
-── WHY AN EXPLICIT ALLOWLIST AND NOT EVERY SERVICE ──
+── WHY AN EXPLICIT ALLOWLIST FOR `command`, AND NOT FOR `logging` ──
+
+The allowlist below governs `command` and `stop_grace_period`. `logging` is
+DERIVED instead -- every service in the manifest that declares it, 8 of 8 --
+and the difference between the two is the whole reason the allowlist exists.
 
 Two reasons, and the first is a secret-handling one.
 
@@ -31,6 +35,12 @@ holds the VALUE. So a general "compare every service's Cmd" would read a live
 credential out of `docker inspect` and print it on a mismatch. The pairs below
 are enumerated so that cannot happen by accident, and `assert_no_secret_shape`
 refuses to render any value that looks interpolated.
+
+A log driver and its size caps are not that: no service interpolates them, and
+the values are `json-file`, `10m`, `3`. So `logging` gets the coverage the
+manifest supports rather than the narrow coverage `Cmd` has to accept -- which
+moves the denominator from 3 of 8 services to 8 of 8, and a check covering one
+service in three is exactly what the printed count is for.
 
 Second, a general `docker compose config` vs `docker inspect` diff is mostly
 noise -- defaults, generated names, resolved paths -- and this runs weekly, so
@@ -47,8 +57,12 @@ rule for the same reason.
 Usage:
     compare-running-state.py <compose.yml> <inspect.json>
 
-`inspect.json` is the output of `docker inspect` for the containers named by
-the pairs below, as a JSON array.
+`inspect.json` is the output of `docker inspect` as a JSON array, for every
+container in the compose project -- `check-drift.sh` selects them by the
+`com.docker.compose.project` label rather than by name, and projects only the
+four keys that are safe to move off the VM. A container named by a pair but
+absent from that array is a FAILURE, never agreement: that is the case that
+started this issue.
 """
 from __future__ import annotations
 
@@ -69,6 +83,95 @@ PAIRS = [
     ('app', 'agrent-app', 'stop_grace_period'),
     ('worker', 'agrent-worker', 'stop_grace_period'),
 ]
+
+# The compose project, which is also the container-name prefix.
+#
+# There is no top-level `name:` in the manifest, so Docker takes the project
+# from the DIRECTORY — `/opt/agrent`. Named here rather than inlined because it
+# is a GUESS about the deployment, not a fact about the file, and a wrong one
+# fails loudly: the comparison reports `no running container named X` and lists
+# what it DID inspect.
+COMPOSE_PROJECT = 'agrent'
+
+# `logging` is compared for EVERY service that declares it, derived from the
+# compose rather than listed above.
+#
+# The allowlist exists for a secret-handling reason that does not apply here: a
+# general `Cmd` comparison would read `redis`\'s resolved `--requirepass`, while
+# a log driver and its size caps carry no credential. So this field gets the
+# coverage the manifest supports — 8 of 8 services — instead of the three the
+# `Cmd` rule has to be narrow for.
+#
+# It belongs in a CREATE-TIME check because that is exactly what it is: the
+# `x-logging` block\'s own comment is what `stop_grace_period`\'s cites when it
+# says applying it needs a recreate. A service whose log rotation was changed in
+# the manifest and never recreated keeps writing unbounded files, and the file
+# and the process agree on nothing while `check-drift.sh` reports byte-identity.
+LOGGING_FIELD = 'logging'
+
+
+def container_for(service: str, decl: dict) -> str:
+    """The container name Docker gives a service.
+
+    `container_name` when the manifest sets one — seven of eight services do —
+    and otherwise the compose default `<project>-<service>-1`. Derived rather
+    than enumerated because a hand-written name is what broke the first attempt
+    at this check: `agrent-watchtower-1` does not exist, the inspect returned
+    nothing, and the comparison examined zero containers while reporting
+    success. `clamav` is the one service here with no `container_name`, so it
+    is the case that keeps this branch honest.
+    """
+    explicit = decl.get('container_name')
+    if explicit:
+        return str(explicit)
+    return f'{COMPOSE_PROJECT}-{service}-1'
+
+
+def logging_pairs(services: dict) -> list[tuple[str, str, str]]:
+    """Every service declaring `logging`, as (service, container, field)."""
+    return [
+        (name, container_for(name, decl), LOGGING_FIELD)
+        for name, decl in sorted(services.items())
+        if isinstance(decl, dict) and decl.get(LOGGING_FIELD) is not None
+    ]
+
+
+def compare_logging(service: str, declared, entry: dict) -> list[str]:
+    """`HostConfig.LogConfig` against the manifest\'s `logging:` block.
+
+    Docker splits the declaration across two keys — `Type` for the driver and
+    `Config` for the options — and stores every option VALUE as a string, while
+    YAML reads `max-file: "3"` as a string and a bare `3` as an int. So options
+    are compared as strings; comparing raw would report drift on a manifest edit
+    that only removed a pair of quotes.
+    """
+    problems: list[str] = []
+    log = entry.get('HostConfig', {}).get('LogConfig')
+    if log is None:
+        # Not agreement. An absent key means the projection dropped it or the
+        # inspect shape changed, and calling that "in sync" is the failure this
+        # whole script exists to refuse.
+        return [f'{service}: HostConfig.LogConfig absent from docker inspect — '
+                f'refusing to call that agreement']
+
+    want_driver = str(declared.get('driver', ''))
+    running_driver = str(log.get('Type', ''))
+    if want_driver and running_driver != want_driver:
+        problems.append(
+            f'{service}: log driver differs — declared {want_driver}, '
+            f'running {running_driver or "(none)"}'
+        )
+
+    want_opts = {str(k): str(v) for k, v in (declared.get('options') or {}).items()}
+    running_opts = {str(k): str(v) for k, v in (log.get('Config') or {}).items()}
+    for key, want in sorted(want_opts.items()):
+        running = running_opts.get(key)
+        if running != want:
+            problems.append(
+                f'{service}: log option {key} differs — declared {want}, '
+                f'running {running if running is not None else "(unset)"}'
+            )
+    return problems
 
 INTERPOLATED = re.compile(r'\$\{[^}]+\}')
 
@@ -137,7 +240,12 @@ def main() -> int:
     problems = []
     skipped = []
 
-    for service, container, field in PAIRS:
+    # Explicit pairs plus the derived logging population. Derived SECOND so a
+    # hand-listed pair always wins if the two ever name the same (service,
+    # field), rather than the answer depending on dict ordering.
+    pairs = [*PAIRS, *logging_pairs(services)]
+
+    for service, container, field in pairs:
         decl = services.get(service)
         if decl is None:
             problems.append(f'{service}: named in PAIRS but absent from the compose file')
@@ -192,6 +300,9 @@ def main() -> int:
                     f'{service}: stop timeout differs — declared {want_s}s, '
                     f'running {int(running_raw)}s'
                 )
+        elif field == LOGGING_FIELD:
+            compared += 1
+            problems.extend(compare_logging(service, declared, entry))
         else:
             problems.append(f'{service}: PAIRS names an unsupported field {field!r}')
 
@@ -199,9 +310,10 @@ def main() -> int:
     # compared" is the reading that shows the check narrowing while still
     # green, and this issue was only found by counting by hand.
     total_services = len(services)
+    covered = len({p[0] for p in pairs})
     print(
         f'[running-state] {compared} create-time setting(s) compared across '
-        f'{len({p[0] for p in PAIRS})} of {total_services} service(s)'
+        f'{covered} of {total_services} service(s)'
         + (f'; skipped: {", ".join(skipped)}' if skipped else '')
     )
 
