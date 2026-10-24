@@ -301,11 +301,18 @@ const ROOT = path.resolve(__dirname, '../..');
 // Raised by the farm-task edit gate (#2169), which is a RENDERED suite
 // precisely because the sixteen guards naming that component all read source
 // text and none of them mounts it.
-// 267 is this branch's own measured live count. Raised by
-// `mobile-card-swipe-action.test.tsx` (#2175), which covers the platform seam
-// the swipe adds to `MobileCardList` — the card list every list page in the
-// product renders, so a regression there is not journal-local.
-const RENDERED_TEST_FLOOR = 267;
+// 268 is this branch's own measured live count. Raised by
+// `public-farm-body.test.tsx` (#2251), which pins which image on `/f/{handle}`
+// carries the LCP priority hint. It is a RENDERED suite because the claim is
+// about what the browser is told, and that component now names
+// `fetchPriority` in several paragraphs of prose explaining the measurement —
+// so a source grep would match the comments after the attribute was removed.
+//
+// Previously 267, raised by `mobile-card-swipe-action.test.tsx` (#2175), which
+// covers the platform seam the swipe adds to `MobileCardList` — the card list
+// every list page in the product renders, so a regression there is not
+// journal-local.
+const RENDERED_TEST_FLOOR = 268;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
