@@ -47,16 +47,10 @@
 import { readCatalogue } from '../helpers/catalogue';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as ts from 'typescript';
+import { resolveTranslationCalls } from '../helpers/i18n-key-resolver';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = ['src/app', 'src/components', 'src/lib'];
-
-/** next-intl's two namespace-binding entry points. */
-const BINDERS = new Set(['useTranslations', 'getTranslations']);
-
-/** `t.rich('key', …)` / `t.raw` / `t.markup` take a key in the same slot. */
-const KEYED_MEMBERS = new Set(['rich', 'raw', 'markup', 'has']);
 
 interface Finding {
     file: string;
@@ -98,40 +92,6 @@ function sourceFiles(): string[] {
     return out;
 }
 
-/** Extracts `useTranslations('ns')` → 'ns'; `useTranslations()` → '' (absolute keys). */
-function namespaceOf(init: ts.Node): string | null {
-    let call: ts.CallExpression | null = null;
-    if (ts.isCallExpression(init)) call = init;
-    else if (ts.isAwaitExpression(init) && ts.isCallExpression(init.expression)) call = init.expression;
-    if (!call) return null;
-
-    const callee = call.expression;
-    const name = ts.isIdentifier(callee)
-        ? callee.text
-        : ts.isPropertyAccessExpression(callee)
-          ? callee.name.text
-          : null;
-    if (!name || !BINDERS.has(name)) return null;
-
-    const arg = call.arguments[0];
-    if (arg === undefined) return '';
-    if (ts.isStringLiteralLike(arg)) return arg.text;
-    // `getTranslations({ locale, namespace: 'x' })`
-    if (ts.isObjectLiteralExpression(arg)) {
-        for (const prop of arg.properties) {
-            if (
-                ts.isPropertyAssignment(prop) &&
-                ts.isIdentifier(prop.name) &&
-                prop.name.text === 'namespace' &&
-                ts.isStringLiteralLike(prop.initializer)
-            ) {
-                return prop.initializer.text;
-            }
-        }
-    }
-    return null; // dynamic namespace — unresolvable, so its calls are skipped
-}
-
 interface ScanResult {
     findings: Finding[];
     staticCalls: number;
@@ -139,142 +99,31 @@ interface ScanResult {
 }
 
 /**
- * Scope-aware scan. A stack of maps; each entry is either a namespace string
- * (a translations binding) or `null` (any other binding of that name, which
- * SHADOWS an outer translations binding and must suppress checking).
+ * Resolve one file's keys and report the ones no catalogue has.
+ *
+ * The scope-chain resolution this used to carry inline now lives in
+ * `tests/helpers/i18n-key-resolver.ts`, extracted for #2226 so
+ * `destructive-vocabulary` could resolve `confirmLabel={t('key')}` through the
+ * same code instead of a second copy. A copy would have drifted: this
+ * resolution has been corrected twice already — #1703's positional
+ * `Promise.all` destructuring, and the shadowing rule — and the extraction
+ * immediately found a third defect the inline version had, where a
+ * destructured name set a placeholder key that nothing read, so it never
+ * shadowed at all. The helper's contract test pins all three.
  */
 function scanFile(file: string, known: Set<string>, res: ScanResult): void {
-    const text = fs.readFileSync(file, 'utf8');
-    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const scopes: Map<string, string | null>[] = [new Map()];
-
-    const resolve = (name: string): string | null | undefined => {
-        for (let i = scopes.length - 1; i >= 0; i--) {
-            if (scopes[i].has(name)) return scopes[i].get(name);
+    const { calls, counts } = resolveTranslationCalls(file);
+    res.staticCalls += counts.staticCalls;
+    res.dynamicCalls += counts.dynamicCalls;
+    for (const call of calls) {
+        if (!known.has(call.key)) {
+            res.findings.push({
+                file: path.relative(REPO_ROOT, file),
+                line: call.line,
+                key: call.key,
+            });
         }
-        return undefined;
-    };
-
-    const declare = (name: ts.BindingName, ns: string | null): void => {
-        if (ts.isIdentifier(name)) scopes[scopes.length - 1].set(name.text, ns);
-        // A destructured name that is NOT resolved positionally below still
-        // has to shadow an outer translations binding, or `const [t] = pair()`
-        // would let an enclosing `t` answer for it.
-        else scopes[scopes.length - 1].set('__destructured__', null);
-    };
-
-    /**
-     * Pair an array pattern with `Promise.all([...])` by POSITION.
-     *
-     * This replaced the comment "Destructuring never yields a translations
-     * function here", which was true when written and is now false in four
-     * page files:
-     *
-     *     // t/[tenantSlug]/(app)/evidence/page.tsx:26
-     *     const [t, tc, ctx] = await Promise.all([
-     *         getTranslations('evidence'),
-     *         getTranslations('common'),
-     *         getTenantCtx({ tenantSlug }),
-     *     ]);
-     *
-     * Because the pattern bound nothing for `t`, `resolve('t')` returned
-     * `undefined` and all 56 literal calls in those files were SKIPPED rather
-     * than checked — this guard exists to catch a reference to a key that is
-     * not in the catalogue, and it was blind to the files most at risk of one.
-     * Nothing failed to say so, which is how a safety argument expires. Refs
-     * #1703.
-     *
-     * A position that is not a translator factory binds `null`, keeping the
-     * shadowing rule above.
-     */
-    const declarePositional = (
-        pattern: ts.ArrayBindingPattern,
-        init: ts.Expression,
-    ): boolean => {
-        let call: ts.Expression = init;
-        if (ts.isAwaitExpression(call)) call = call.expression;
-        if (!ts.isCallExpression(call)) return false;
-        if (!ts.isPropertyAccessExpression(call.expression)) return false;
-        if (call.expression.name.text !== 'all') return false;
-        const arr = call.arguments[0];
-        if (arr === undefined || !ts.isArrayLiteralExpression(arr)) return false;
-
-        pattern.elements.forEach((el, i) => {
-            if (!ts.isBindingElement(el) || !ts.isIdentifier(el.name)) return;
-            const part = arr.elements[i];
-            scopes[scopes.length - 1].set(
-                el.name.text,
-                part === undefined ? null : namespaceOf(part),
-            );
-        });
-        return true;
-    };
-
-    const visit = (node: ts.Node): void => {
-        const opensScope =
-            ts.isFunctionDeclaration(node) ||
-            ts.isFunctionExpression(node) ||
-            ts.isArrowFunction(node) ||
-            ts.isMethodDeclaration(node) ||
-            ts.isBlock(node) ||
-            ts.isForStatement(node) ||
-            ts.isForOfStatement(node) ||
-            ts.isForInStatement(node) ||
-            ts.isCatchClause(node);
-
-        if (opensScope) scopes.push(new Map());
-
-        // Parameters shadow: `items.map((t) => …)` must not be read as a binding.
-        if (ts.isFunctionLike(node)) {
-            for (const p of node.parameters) declare(p.name, null);
-        }
-
-        if (ts.isVariableDeclaration(node) && node.initializer) {
-            const positional =
-                ts.isArrayBindingPattern(node.name) &&
-                declarePositional(node.name, node.initializer);
-            if (!positional) declare(node.name, namespaceOf(node.initializer));
-        }
-
-        if (ts.isCallExpression(node)) {
-            const callee = node.expression;
-            let ident: string | null = null;
-            if (ts.isIdentifier(callee)) {
-                ident = callee.text;
-            } else if (
-                ts.isPropertyAccessExpression(callee) &&
-                ts.isIdentifier(callee.expression) &&
-                KEYED_MEMBERS.has(callee.name.text)
-            ) {
-                ident = callee.expression.text;
-            }
-
-            if (ident !== null) {
-                const ns = resolve(ident);
-                if (typeof ns === 'string') {
-                    const arg = node.arguments[0];
-                    if (arg !== undefined && ts.isStringLiteralLike(arg) && !ts.isTemplateExpression(arg)) {
-                        res.staticCalls++;
-                        const full = ns ? `${ns}.${arg.text}` : arg.text;
-                        if (!known.has(full)) {
-                            res.findings.push({
-                                file: path.relative(REPO_ROOT, file),
-                                line: sf.getLineAndCharacterOfPosition(arg.getStart(sf)).line + 1,
-                                key: full,
-                            });
-                        }
-                    } else {
-                        res.dynamicCalls++;
-                    }
-                }
-            }
-        }
-
-        ts.forEachChild(node, visit);
-        if (opensScope) scopes.pop();
-    };
-
-    visit(sf);
+    }
 }
 
 describe('i18n — every static t() key resolves to a real message', () => {
