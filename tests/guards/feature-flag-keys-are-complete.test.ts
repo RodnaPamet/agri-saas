@@ -136,7 +136,6 @@ const DERIVED = [
 describe('every gated flag key is enumerable and listed (#2009)', () => {
     it('[flag-keys] ranges over a real population', () => {
         const viaConstant = RESOLVED.filter((r) => r.kind === 'constant').length;
-        // eslint-disable-next-line no-console
         console.log(
             `[flag-keys] ${DERIVED.length} key(s) from ${SITES.length} call site(s) across `
                 + `${FILES.length} file(s); ${RESOLVED.length - viaConstant - UNRESOLVED.length} `

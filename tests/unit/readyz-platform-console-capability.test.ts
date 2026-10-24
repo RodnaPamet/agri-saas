@@ -149,12 +149,24 @@ describe('GET /api/readyz — capabilities.platformConsole is REPORTED, never GA
         expect(status).toBe(200);
     });
 
-    it('the three existing capabilities are still reported alongside it', async () => {
+    it('the other capabilities are still reported alongside it', async () => {
         // A new key must not displace its siblings: the response shape is read
         // by operators and by `infra/alerts/external-uptime.yml`'s matcher.
+        //
+        // This is an exact-set assertion, so ADDING a capability lands here by
+        // design — `featureFlags` (#2291) is the first to do so. That is the
+        // ratchet working: a fifth reading on the endpoint the uptime check
+        // probes should cost a visible line, not arrive unnoticed.
         const { body } = await probe();
 
         expect(Object.keys(body.capabilities).sort())
-            .toEqual(['basemap', 'email', 'lookupKey', 'platformConsole', 'satellite']);
+            .toEqual([
+                'basemap',
+                'email',
+                'featureFlags',
+                'lookupKey',
+                'platformConsole',
+                'satellite',
+            ]);
     });
 });
