@@ -353,7 +353,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                                 src/lib/offline/client-data-retention.ts.
                             */}
                             <ClientDataRetentionSweep />
-                            <Providers userId={sessionUserId}>{children}</Providers>
+                            <Providers userId={sessionUserId} isAuthSurface={isAuthSurface}>
+                                {children}
+                            </Providers>
                         </>
                     )}
                 </NextIntlClientProvider>

@@ -67,7 +67,22 @@ function resolveAlias(spec: string): string | null {
     return null;
 }
 
-/** Every file reachable from the auth entry points, and what each reads. */
+/**
+ * Every file reachable from the login PAGE, and what each reads.
+ *
+ * ONE entry point, and that is the limit of this file's coverage — said here
+ * because the plural used to be in this comment and it read as more. The root
+ * LAYOUT renders on the same request and is outside this walk entirely, which
+ * is how `src/app/providers.tsx` came to mount two overlays reading `app`
+ * namespaces on a surface that does not load them (#2264, measured at 2160
+ * MISSING_MESSAGE per E2E run between them).
+ *
+ * Not fixed by widening this entry list: the overlays are now gated on
+ * `isAuthSurface`, and a static import walk cannot see a runtime condition —
+ * it would find the namespaces and fail on a correct tree. That property has
+ * its own guard, `auth-surface-skips-global-overlays.test.ts`, which grades the
+ * gate instead of the graph.
+ */
 function walkAuthSurface(): { files: Set<string>; namespaces: Set<string> } {
     const entry = join(REPO_ROOT, 'src/app/login/page.tsx');
     const files = new Set<string>();
@@ -95,7 +110,8 @@ describe('the auth i18n payload covers what the auth surface reads (#2011)', () 
         // assertion below went vacuous — the failure this whole file guards
         // against, applied to itself.
         console.log(
-            `[auth-i18n] ${walk.files.size} file(s) reachable from /login, ` +
+            `[auth-i18n] ${walk.files.size} file(s) reachable from the login PAGE ` +
+                `(the root layout's tree is NOT in this walk — see the header), ` +
                 `${walk.namespaces.size} namespace(s) read, ${AUTH_SURFACE_NAMESPACES.length} listed`,
         );
         expect(walk.files.size).toBeGreaterThan(1);
