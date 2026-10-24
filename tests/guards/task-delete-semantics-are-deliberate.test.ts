@@ -41,6 +41,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { blankNonCode } from '../helpers/blank-non-code';
+import { SOFT_DELETE_MODELS } from '@/lib/soft-delete';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
 const REPO = path.resolve(__dirname, '..', '..');
@@ -58,8 +59,22 @@ describe('the task path calls delete — which the extension makes SOFT', () => 
         expect(c).toContain('db.task.deleteMany(');
     });
 
+    it('Task is IN the soft-delete allowlist, so the call is NOT the semantics', () => {
+        // The one assertion here that bridges source and behaviour, and it
+        // reads the allowlist rather than the call site. Everything above is
+        // true of the file while the delete is an update.
+        //
+        // The OBSERVABLE lives in
+        // `tests/integration/task-delete-is-soft.test.ts` — a real client
+        // against a real database. This is the cheap guard that says which
+        // world we are in; that one proves it.
+        expect(SOFT_DELETE_MODELS.has('Task')).toBe(true);
+    });
+
     /**
-     * ⚠ WHAT THIS SUITE CANNOT SEE — #2242.
+     * ⚠ WHAT THIS SUITE CANNOT SEE — #2242, and it is worth keeping even now
+     * that `Task` has left the allowlist, because the blindness is structural
+     * rather than a property of this one model.
      *
      * This file reads SOURCE. `Task` is in `SOFT_DELETE_MODELS`, and
      * `withSoftDeleteExtension` (`src/lib/prisma.ts:459`) rewrites both calls

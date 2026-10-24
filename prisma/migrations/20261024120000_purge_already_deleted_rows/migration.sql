@@ -1,0 +1,45 @@
+-- Erase rows already carrying `deletedAt`, for the three soft-delete models
+-- that own no stored bytes.
+--
+-- Owner ruling 2026-10-24: «Кошче» goes — "what's deleted is deleted" — and,
+-- asked what 'deleted' should mean, the owner chose "erased from the database:
+-- the rows are physically deleted, with no trace beyond the audit log line".
+-- This applies that retroactively to rows flagged before the ruling.
+--
+-- ## Why these three and not all five
+--
+-- `SOFT_DELETE_MODELS` is Asset, Evidence, FileRecord, Task, Contract. Two of
+-- them point at stored bytes and are deliberately NOT here:
+--
+--   FileRecord  owns `pathKey` — the only pointer to the object
+--   Evidence    points at a FileRecord
+--
+-- `src/app-layer/usecases/evidence-bytes.ts` exists because a raw
+-- `DELETE FROM` on those tables leaves the object on disk: "the product
+-- REPORTS the evidence purged, emits a DATA_PURGED audit entry saying so, and
+-- the file remains on the volume and readable — which is a retention and GDPR
+-- failure". SQL cannot reach object storage, so deleting those rows here would
+-- recreate that failure at scale and irreversibly. They stay with
+-- `purgeSoftDeletedOlderThan`, which deletes the bytes alongside the row.
+--
+-- ## `Task` is NOT here, and that is the second revision of this migration
+--
+-- It was, because this shipped alongside `Task` leaving `SOFT_DELETE_MODELS` —
+-- and the retention sweep iterates that list, so once Task was out nothing
+-- would ever have purged a flagged Task row. That removal was reverted: it
+-- breaks `withDeleted()` for a non-allowlisted model, and 32 of 45 `db.task.*`
+-- reads lean on the extension to inject `deletedAt: null` rather than naming
+-- it. With Task still in the list its flagged rows keep their retention sweep
+-- and need nothing here.
+--
+-- ## Scope
+--
+-- `deletedAt IS NOT NULL` only. A live row cannot match. Children cascade via
+-- the `onDelete: Cascade` relations they already declare — for `Task` that is
+-- TaskComment, TaskLink, TaskWatcher and OperationParcel, which is the cascade
+-- that never fired while the delete was being rewritten into an UPDATE.
+--
+-- Irreversible. No count was taken first; the owner chose to skip that.
+
+DELETE FROM "Contract" WHERE "deletedAt" IS NOT NULL;
+DELETE FROM "Asset"    WHERE "deletedAt" IS NOT NULL;
