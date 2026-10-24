@@ -6754,6 +6754,7 @@
         "TREATMENT_MIXED_AUTHORSHIP": "This treatment was recorded by more than one person, so it cannot be corrected or withdrawn as a whole. The restriction applies to administrators too.",
         "TREATMENT_NOT_FOUND": "No treatment was recorded under that handle.",
         "TREATMENT_NO_PARCELS": "Select at least one parcel that was treated.",
+        "TREATMENT_WATER_RATE_INCOMPLETE": "A water rate needs both a value and a unit. Send both, or clear both.",
         "TREATMENT_TITLE_REQUIRED": "A treatment needs a title. Clear the other fields instead, or withdraw it.",
         "UNKNOWN_COMMODITY": "\"{commodity}\" is not a commodity this platform sets a price for.",
         "UNKNOWN_TASK_STATUS": "That task status is not recognised.",

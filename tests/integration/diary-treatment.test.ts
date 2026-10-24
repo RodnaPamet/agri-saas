@@ -1128,58 +1128,161 @@ describeFn('correctDiaryTreatment (DB-backed, #2172)', () => {
         expect(out.targetNote).toBe('Unguarded');
     });
 
-    it('refuses a CHANGED dose, product or water rate by name', async () => {
+    it('corrects the DOSE and recomputes the journal quantity', async () => {
         const handle = await recorded('dose');
         const before = await getDiaryTreatmentDefinition(ctx(), handle);
 
-        await expect(
-            correctDiaryTreatment(ctx(), handle, { doseValue: before.doseValue + 1 }, before.version),
-        ).rejects.toMatchObject({
-            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
-            params: { reference: 'doseValue' },
+        const qtyBefore = await globalPrisma.logQuantity.findMany({
+            where: { tenantId, logEntry: { treatmentGroupId: handle } },
+            select: { value: true },
         });
-
-        await expect(
-            correctDiaryTreatment(ctx(), handle, { waterRateValue: 200 }, before.version),
-        ).rejects.toMatchObject({
-            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
-            params: { reference: 'waterRateValue' },
-        });
-
-        // Nothing was written by either refusal.
-        const after = await getDiaryTreatmentDefinition(ctx(), handle);
-        expect(after.version).toBe(before.version);
-        expect(after.doseValue).toBe(before.doseValue);
-    });
-
-    it('ACCEPTS an unchanged dose sent alongside a real correction (#1352)', async () => {
-        // The control for the test above, and the reason the refusal compares
-        // VALUES rather than noticing a key. #1352: an unconditional `eik`
-        // refusal 400'd every farm-profile save from the owner's phone, because
-        // the editor PUTs every field on every save. This editor does too.
-        const handle = await recorded('unchanged-dose');
-        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(qtyBefore.length).toBeGreaterThan(0);
 
         const out = await correctDiaryTreatment(
             ctx(),
             handle,
+            { doseValue: before.doseValue * 3 },
+            before.version,
+        );
+        expect(out.doseValue).toBe(before.doseValue * 3);
+
+        // Every LINE carries the new dose.
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: handle } },
+            select: { doseValue: true },
+        });
+        expect(lines.every((l) => Number(l.doseValue) === before.doseValue * 3)).toBe(true);
+
+        // And so does the journal entry's recorded quantity. This is the half
+        // that would otherwise print the quantity of the dose that was
+        // replaced, beside the corrected dose, in the same record.
+        const qtyAfter = await globalPrisma.logQuantity.findMany({
+            where: { tenantId, logEntry: { treatmentGroupId: handle } },
+            select: { value: true },
+        });
+        expect(qtyAfter).toHaveLength(qtyBefore.length);
+        const sumBefore = qtyBefore.reduce((a, q) => a + Number(q.value), 0);
+        const sumAfter = qtyAfter.reduce((a, q) => a + Number(q.value), 0);
+        expect(sumAfter).toBeCloseTo(sumBefore * 3, 4);
+    });
+
+    it('corrects the PRODUCT, and recomposes an auto-generated entry title', async () => {
+        const handle = await recorded('product');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        const other = await globalPrisma.item.create({
+            data: {
+                tenantId,
+                name: `Other prod ${TAG}`,
+                category: 'PESTICIDE',
+                defaultUnitId: unitId,
+                pppRegistrationNo: 'ZZR-9999',
+            },
+        });
+
+        const out = await correctDiaryTreatment(
+            ctx(),
+            handle,
+            { productItemId: other.id },
+            before.version,
+        );
+        // The response carries the product's OWN properties, read from the row
+        // rather than derived from the id.
+        expect(out.productItemId).toBe(other.id);
+        expect(out.productName).toBe(`Other prod ${TAG}`);
+        expect(out.pppRegistrationNo).toBe('ZZR-9999');
+
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: handle } },
+            select: { productItemId: true },
+        });
+        expect(lines.every((l) => l.productItemId === other.id)).toBe(true);
+
+        // The composed title names the product, so it has to move with it.
+        const entries = await globalPrisma.logEntry.findMany({
+            where: { tenantId, treatmentGroupId: handle, type: 'INPUT_APPLICATION' },
+            select: { title: true, titleKey: true, titleParams: true },
+        });
+        expect(entries.length).toBeGreaterThan(0);
+        for (const e of entries) {
+            expect(e.title).toContain(`Other prod ${TAG}`);
+            expect(e.titleKey).toBeTruthy();
+            expect((e.titleParams as Record<string, unknown>).product).toBe(`Other prod ${TAG}`);
+        }
+    });
+
+    it('does NOT overwrite a title a person typed themselves', async () => {
+        // `isAutoGeneratedTitle` is the guard. A farmer who retyped the title of
+        // their own entry must not lose it because the product was corrected —
+        // and the tell is `titleKey`, not the string.
+        const handle = await recorded('handtitle');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        await globalPrisma.logEntry.updateMany({
+            where: { tenantId, treatmentGroupId: handle, type: 'INPUT_APPLICATION' },
+            data: { title: 'Моят собствен запис', titleKey: null },
+        });
+
+        const other = await globalPrisma.item.create({
+            data: {
+                tenantId,
+                name: `Third prod ${TAG}`,
+                category: 'PESTICIDE',
+                defaultUnitId: unitId,
+            },
+        });
+        await correctDiaryTreatment(ctx(), handle, { productItemId: other.id }, before.version);
+
+        const entries = await globalPrisma.logEntry.findMany({
+            where: { tenantId, treatmentGroupId: handle, type: 'INPUT_APPLICATION' },
+            select: { title: true },
+        });
+        expect(entries.every((e) => e.title === 'Моят собствен запис')).toBe(true);
+    });
+
+    it('corrects a per-parcel TREATED AREA and its quantity, keeping the set', async () => {
+        const handle = await recorded('area');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(before.lines.every((l) => l.treatedAreaHa === null)).toBe(true);
+
+        const target = before.lines[0].parcelId;
+        const out = await correctDiaryTreatment(
+            ctx(),
+            handle,
             {
-                doseValue: before.doseValue,
-                doseUnitId: before.doseUnitId,
-                productItemId: before.productItemId,
-                targetNote: 'Corrected with the dose echoed back',
+                parcels: before.lines.map((l) => ({
+                    parcelId: l.parcelId,
+                    treatedAreaHa: l.parcelId === target ? 2 : null,
+                })),
             },
             before.version,
         );
         expect(out.version).toBe(1);
-        expect(out.targetNote).toBe('Corrected with the dose echoed back');
+        expect(out.lines.find((l) => l.parcelId === target)?.treatedAreaHa).toBe(2);
+        expect(out.lines.filter((l) => l.parcelId !== target).every((l) => l.treatedAreaHa === null))
+            .toBe(true);
+
+        // The corrected parcel's own line, and the quantity that follows it
+        // (#2284: the quantity is dose × the TREATED area).
+        const line = await globalPrisma.operationParcel.findFirst({
+            where: { tenantId, task: { treatmentGroupId: handle }, parcelId: target },
+            select: { id: true, treatedAreaHa: true },
+        });
+        expect(Number(line!.treatedAreaHa)).toBe(2);
+        const q = await globalPrisma.logQuantity.findFirst({
+            where: { tenantId, logEntry: { operationParcelId: line!.id } },
+            select: { value: true },
+        });
+        // dose 2 over 2 ha treated = 4, where the whole 10 ha parcel gave 20.
+        expect(Number(q!.value)).toBe(4);
     });
 
-    it('tells a changed parcel SET apart from a changed treated AREA', async () => {
-        const handle = await recorded('parcels');
+    it('still refuses ADDING or DROPPING a parcel', async () => {
+        // The one case left, and the one the TreatmentGroup row was designed
+        // for: it changes how many rows the treatment has and which blocks it
+        // spans, so it needs the per-block fan-out, not a column update.
+        const handle = await recorded('set');
         const before = await getDiaryTreatmentDefinition(ctx(), handle);
-
-        // Dropping a parcel — the case the TreatmentGroup row was designed for.
         await expect(
             correctDiaryTreatment(
                 ctx(),
@@ -1196,24 +1299,72 @@ describeFn('correctDiaryTreatment (DB-backed, #2172)', () => {
             params: { reference: 'parcels' },
         });
 
-        // Same set, one area changed — a different refusal, so a client can
-        // tell "not yet" from "not like that".
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after.version).toBe(before.version);
+        expect(after.lines).toHaveLength(3);
+    });
+
+    it('raises the SAME refusals recording would', async () => {
+        // A correction must not be a way to put a value into the register that
+        // recording it would have refused.
+        const handle = await recorded('refusals');
+        const v = (await getDiaryTreatmentDefinition(ctx(), handle)).version;
+
+        // A product of ANOTHER farm — a 400 that does not confirm it exists there.
+        const foreign = await globalPrisma.item.create({
+            data: {
+                tenantId: otherTenantId,
+                name: `Foreign prod ${TAG}`,
+                category: 'PESTICIDE',
+                defaultUnitId: unitId,
+            },
+        });
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { productItemId: foreign.id }, v),
+        ).rejects.toMatchObject({
+            code: 'REFERENCE_NOT_IN_TENANT',
+            params: { reference: 'productItemId' },
+        });
+
+        // A SAMPLE product, which the farm record cannot name.
+        const sample = await globalPrisma.item.create({
+            data: {
+                tenantId,
+                name: `Sample prod ${TAG}`,
+                category: 'PESTICIDE',
+                defaultUnitId: unitId,
+                isArchetype: true,
+            },
+        });
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { productItemId: sample.id }, v),
+        ).rejects.toMatchObject({ code: 'PRODUCT_IS_SAMPLE_ARCHETYPE' });
+
+        // A water rate value with no unit.
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { waterRateValue: 200 }, v),
+        ).rejects.toMatchObject({ code: 'TREATMENT_WATER_RATE_INCOMPLETE' });
+
+        // A treated area larger than its parcel — the fixture's are 10 ha.
+        const lines = (await getDiaryTreatmentDefinition(ctx(), handle)).lines;
         await expect(
             correctDiaryTreatment(
                 ctx(),
                 handle,
                 {
-                    parcels: before.lines.map((l, i) => ({
+                    parcels: lines.map((l, i) => ({
                         parcelId: l.parcelId,
-                        treatedAreaHa: i === 0 ? 1.5 : l.treatedAreaHa,
+                        treatedAreaHa: i === 0 ? 999 : null,
                     })),
                 },
-                before.version,
+                v,
             ),
-        ).rejects.toMatchObject({
-            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
-            params: { reference: 'treatedAreaHa' },
-        });
+        ).rejects.toMatchObject({ code: 'TREATMENT_AREA_EXCEEDS_PARCEL' });
+
+        // None of the four wrote anything.
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after.version).toBe(v);
+        expect(after.productItemId).toBe(itemId);
     });
 
     it('refuses a blank title rather than writing NULL into a NOT NULL column', async () => {
