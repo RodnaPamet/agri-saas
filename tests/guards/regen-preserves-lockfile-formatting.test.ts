@@ -159,9 +159,23 @@ describe('merge-main-regenerating re-apply (#2253)', () => {
         // The denominator beside the claim. 3 is one added line plus the
         // comma flip on the entry it displaced from last position; the bug
         // this guards produced 56,769.
+        //
+        // BOUNDED ON BOTH SIDES, and that is not cosmetic: `<= 3` alone is
+        // satisfied by a `changedLines` that returns 0, which the selector
+        // audit duly reported as a dead selector. The insertion MUST change
+        // something, so the floor is 1.
         const { pkg, lock } = runReapply(DELTA);
-        expect(changedLines(ORIGINAL_PKG, pkg)).toBeLessThanOrEqual(3);
-        expect(changedLines(ORIGINAL_LOCK, lock)).toBeLessThanOrEqual(3);
+        for (const [label, before, after] of [
+            ['package.json', ORIGINAL_PKG, pkg],
+            ['package-lock.json', ORIGINAL_LOCK, lock],
+        ] as const) {
+            const n = changedLines(before, after);
+            expect({ label, inRange: n >= 1 && n <= 3, n }).toEqual({
+                label,
+                inRange: true,
+                n,
+            });
+        }
     });
 
     it('the one line is the dependency, in both files', () => {
@@ -194,8 +208,16 @@ describe('merge-main-regenerating re-apply (#2253)', () => {
         // `lock.packages` instead of patching it, which is exactly how a full
         // `npm install` loses them. Stated rather than left looking covered.
         const { lock, out } = runReapply(DELTA);
-        expect(countLibc(lock)).toBe(countLibc(ORIGINAL_LOCK));
-        expect(out).toContain(`libc entries preserved: ${countLibc(ORIGINAL_LOCK)}`);
+        // ANCHORED first. Comparing the count only against itself passes for a
+        // `countLibc` that returns the same wrong thing twice — the selector
+        // audit reported exactly that, with `return ''`. So assert the real
+        // population exists before asserting it is preserved. 26 is the floor
+        // `image-build-install-resilience` already uses, so the two move
+        // together rather than pinning a number twice.
+        const before = countLibc(ORIGINAL_LOCK);
+        expect(before).toBeGreaterThanOrEqual(26);
+        expect(countLibc(lock)).toBe(before);
+        expect(out).toContain(`libc entries preserved: ${before}`);
     });
 
     it('does nothing at all when there is no delta', () => {
