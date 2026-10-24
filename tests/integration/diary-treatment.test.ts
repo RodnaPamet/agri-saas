@@ -1299,3 +1299,87 @@ describeFn('correctDiaryTreatment (DB-backed, #2172)', () => {
         ).rejects.toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
     });
 });
+
+describeFn('parcels[] reaches the line it belongs to (DB-backed, #2072 part B)', () => {
+    /**
+     * The storage half of the per-parcel treated area, which nothing covered.
+     *
+     * Found while answering a different question. #2284 says the journal
+     * quantity ignores `treatedAreaHa`; the production census for it returned
+     * ZERO rows carrying one — out of 19 lines, 15 journal entries and 2
+     * treatments — even though the iPhone has sent `parcels[].treatedAreaHa`
+     * since 20 October. An empty population is consistent with two different
+     * worlds: no farmer has recorded a partly-treated parcel, or the payload
+     * never reaches the column. Only the second is a bug, and nothing in the
+     * suite told them apart.
+     *
+     * It is the first: the area does land. These tests are what says so, and
+     * what would catch it stopping.
+     */
+    it('stores the treated area on the NAMED parcel and leaves the others NULL', async () => {
+        const rec = await recordDiaryTreatment(
+            ctx(),
+            { ...baseInput(), parcels: [{ parcelId: parcelA1, treatedAreaHa: 2 }] },
+            `parcels-one-${TAG}`,
+        );
+
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: rec.treatmentGroupId } },
+            select: { parcelId: true, treatedAreaHa: true },
+        });
+        expect(lines).toHaveLength(3);
+        const area = new Map(lines.map((l) => [l.parcelId, l.treatedAreaHa]));
+        expect(Number(area.get(parcelA1))).toBe(2);
+        // NULL, not the parcel's own 10 — null MEANS the whole parcel, and
+        // filling it in would turn an unstated area into a stated one.
+        expect(area.get(parcelA2)).toBeNull();
+        expect(area.get(parcelB1)).toBeNull();
+    });
+
+    it('lands on a parcel in the SECOND block too', async () => {
+        // The treatment fans out to one `Task` per block and applies the areas
+        // in a loop over each task's lines. A per-block regression — the map
+        // consumed by the first task, or keyed per task rather than per parcel —
+        // would leave the second block's area null while the first one's landed,
+        // and the test above would not notice.
+        const rec = await recordDiaryTreatment(
+            ctx(),
+            {
+                ...baseInput(),
+                parcels: [
+                    { parcelId: parcelA1, treatedAreaHa: 1.5 },
+                    { parcelId: parcelB1, treatedAreaHa: 4.25 },
+                ],
+            },
+            `parcels-blocks-${TAG}`,
+        );
+
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: rec.treatmentGroupId } },
+            select: { parcelId: true, treatedAreaHa: true, taskId: true },
+        });
+        const area = new Map(lines.map((l) => [l.parcelId, l.treatedAreaHa]));
+        expect(Number(area.get(parcelA1))).toBe(1.5);
+        expect(Number(area.get(parcelB1))).toBe(4.25);
+        expect(area.get(parcelA2)).toBeNull();
+        // And the two really are on different TASKS, or "spans blocks" is not
+        // what this test measured. The fan-out writes one task per block, so
+        // distinct task ids is the fan-out having happened — `Task` carries no
+        // `locationId` of its own, the block link is a `TaskLink` row.
+        expect(new Set(lines.map((l) => l.taskId)).size).toBe(2);
+        expect(new Set([area.get(parcelA1), area.get(parcelB1)]).size).toBe(2);
+    });
+
+    it('refuses an area larger than the parcel', async () => {
+        // The fixture's parcels are 10 ha. Asserted here because the storage
+        // tests above would happily persist 999 and the register would print a
+        // treated area bigger than the field it was applied to.
+        await expect(
+            recordDiaryTreatment(
+                ctx(),
+                { ...baseInput(), parcels: [{ parcelId: parcelA1, treatedAreaHa: 999 }] },
+                `parcels-over-${TAG}`,
+            ),
+        ).rejects.toMatchObject({ code: 'TREATMENT_AREA_EXCEEDS_PARCEL' });
+    });
+});
