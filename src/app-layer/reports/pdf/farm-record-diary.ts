@@ -62,6 +62,17 @@ export interface DiaryLabels {
      * Bulgarian regulatory form, not localised copy.
      */
     derivedNote: string;
+    /**
+     * The footnote under a treatments table, printed only when a row in THAT
+     * table carries a correction marker (#2172).
+     *
+     * Owner decision 2026-10-24: a corrected treatment prints its CORRECTED
+     * values plus a «Забележка» note. So the table states what is true now and
+     * the note discloses that it was not always what it says — which is the
+     * half a regulator cannot otherwise see, the previous values living in the
+     * `TreatmentCorrection` trail rather than on the form.
+     */
+    correctedNote: string;
     chemicalSection: string;
     fertilizerSection: string;
     samplingSection: string;
@@ -116,6 +127,9 @@ export const BG_LABELS: DiaryLabels = {
     // document that explains a convention it never uses reads as careless.
     derivedNote:
         '* Редовете, отбелязани със звездичка, са изведени от проведените химични обработки и не представляват самостоятелно обследване.',
+    correctedNote:
+        'Забележка: Редовете, отбелязани с (к), са коригирани след първоначалното вписване. '
+        + 'Отпечатаните стойности са актуалните; предишните се съхраняват в системата.',
     chemicalSection: 'ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ',
     fertilizerSection: 'УПОТРЕБЕНИ МИНЕРАЛНИ И ОРГАНИЧНИ ТОРОВЕ',
     samplingSection: 'ВЗЕТИ ПРОБИ',
@@ -253,6 +267,15 @@ export interface FieldHeaderData {
 
 export interface SprayLineData {
     /**
+     * This line belongs to a treatment that has been CORRECTED (#2172).
+     *
+     * Per TREATMENT, not per line: a correction is atomic across the group, so
+     * every line of a corrected treatment carries it. Optional so every caller
+     * that predates the trail keeps compiling and prints an unmarked row —
+     * absent means "no correction on record", which for those rows is true.
+     */
+    corrected?: boolean;
+    /**
      * Which field this treatment was carried out on. The chemical section
      * is GROUPED by it: a per-field header strip above a table of other
      * fields' rows would misattribute them, which is the whole defect this
@@ -291,6 +314,15 @@ export interface SprayLineData {
 }
 
 export interface FertilizeLineData {
+    /**
+     * This line belongs to a treatment that has been CORRECTED (#2172).
+     *
+     * Per TREATMENT, not per line: a correction is atomic across the group, so
+     * every line of a corrected treatment carries it. Optional so every caller
+     * that predates the trail keeps compiling and prints an unmarked row —
+     * absent means "no correction on record", which for those rows is true.
+     */
+    corrected?: boolean;
     completedAt: Date | null;
     productName: string;
     activeIngredient: string | null;
@@ -438,7 +470,13 @@ export function buildChemicalRows(lines: SprayLineData[]): string[][] {
             .join(' / ');
         return [
             String(i + 1),
-            fmtDate(l.completedAt),
+            // The marker goes on the DATE, and `(к)` rather than `*`: column 11
+            // of this table carries the form's OWN asterisk (the чл. 84 ал. 1
+            // note on the person), so an asterisk here would be read as that
+            // one. The date because the whole ROW was corrected, not one of its
+            // values — the same reasoning the derived-observation marker
+            // records. Short because this column is ~51pt wide at weight 1.1.
+            l.corrected ? `${fmtDate(l.completedAt)} (к)` : fmtDate(l.completedAt),
             l.targetNote ?? '',
             l.productName,
             l.dose,
@@ -457,7 +495,8 @@ export function buildChemicalRows(lines: SprayLineData[]): string[][] {
 export function buildFertilizerRows(lines: FertilizeLineData[]): string[][] {
     return lines.map((l, i) => [
         String(i + 1),
-        fmtDate(l.completedAt),
+        // Same marker and same reasoning as the chemical table.
+        l.corrected ? `${fmtDate(l.completedAt)} (к)` : fmtDate(l.completedAt),
         [l.productName, l.activeIngredient].filter(Boolean).join('; '),
         l.dose,
         toDka(l.treatedAreaHa ?? l.areaHa),
@@ -968,6 +1007,18 @@ export function renderFarmRecordDiary(
             chemRows,
             Math.max(0, 6 - chemRows.length),
         );
+        // The disclosure, per FIELD table and only where a row in THAT table is
+        // marked (#2172). Scoped to the group rather than the document: the
+        // register is filed per field, so a note under a sheet whose own rows
+        // are all untouched would point at nothing on the page.
+        if (group.lines.some((l) => l.corrected)) {
+            doc.fontSize(7)
+                .fillColor(MUTED)
+                .text(L.correctedNote, doc.page.margins.left, doc.y + 4, {
+                    width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+                });
+            doc.fillColor(INK);
+        }
     }
 
     // ── PORTRAIT: fertilizers ───────────────────────────────────────
@@ -994,6 +1045,17 @@ export function renderFarmRecordDiary(
             fertRows,
             Math.max(0, 6 - fertRows.length),
         );
+
+        // Same disclosure for торене. One table for the whole document here,
+        // not one per field, so the condition is the document's lines.
+        if (data.fertilizeLines.some((l) => l.corrected)) {
+            doc.fontSize(7)
+                .fillColor(MUTED)
+                .text(L.correctedNote, doc.page.margins.left, doc.y + 4, {
+                    width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+                });
+            doc.fillColor(INK);
+        }
     }
 
     // ── ВЗЕТИ ПРОБИ and РЕЗУЛТАТ ОТ ПРОВЕРКАТА: NOT RENDERED ────────
@@ -1218,6 +1280,9 @@ export async function gatherFarmRecord(
                               title: true,
                               key: true,
                               assigneeUserId: true,
+                              // The treatment handle, to ask which of these carry a
+                              // correction on record (#2172).
+                              treatmentGroupId: true,
                           },
                       },
                       product: {
@@ -1298,6 +1363,31 @@ export async function gatherFarmRecord(
             for (const mem of members) memberByUser.set(mem.userId, mem);
         }
 
+        // Which of these treatments carry a correction — ONE query for the
+        // document, keyed on the handles the lines actually reference.
+        //
+        // `distinct` rather than a count: the marker is a boolean and a
+        // treatment corrected five times is marked once. Bounded by the handles
+        // on this register rather than by the tenant's corrections.
+        const correctedHandles = new Set<string>();
+        {
+            const handles = [
+                ...new Set(
+                    lines
+                        .map((l) => l.task.treatmentGroupId)
+                        .filter((h): h is string => typeof h === 'string' && h.length > 0),
+                ),
+            ];
+            if (handles.length > 0) {
+                const rows = await db.treatmentCorrection.findMany({
+                    where: { tenantId: ctx.tenantId, groupId: { in: handles } },
+                    select: { groupId: true },
+                    distinct: ['groupId'],
+                });
+                for (const r of rows) correctedHandles.add(r.groupId);
+            }
+        }
+
         const sprayLines: SprayLineData[] = [];
         const fertilizeLines: FertilizeLineData[] = [];
         for (const l of lines) {
@@ -1307,6 +1397,9 @@ export async function gatherFarmRecord(
             const dose = `${Number(l.doseValue)} ${l.doseUnit?.symbol ?? ''}`.trim();
             const areaHa = l.parcel?.areaHa != null ? Number(l.parcel.areaHa) : null;
             const treatedAreaHa = l.treatedAreaHa != null ? Number(l.treatedAreaHa) : null;
+            const corrected = l.task.treatmentGroupId
+                ? correctedHandles.has(l.task.treatmentGroupId)
+                : false;
 
             if (opType === 'FERTILIZE') {
                 fertilizeLines.push({
@@ -1316,6 +1409,7 @@ export async function gatherFarmRecord(
                     dose,
                     areaHa,
                     treatedAreaHa,
+                    corrected,
                 });
             } else {
                 sprayLines.push({
@@ -1326,6 +1420,7 @@ export async function gatherFarmRecord(
                     dose,
                     areaHa,
                     treatedAreaHa,
+                    corrected,
                     phenophase: l.phenophase ?? null,
                     applicationTechnique:
                         cond?.applicationTechnique ?? l.task.applicationTechnique ?? null,
