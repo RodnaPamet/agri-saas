@@ -351,25 +351,44 @@ describe('Soft-Delete Targets', () => {
         expect(SOFT_DELETE_TARGETS.length).toBeGreaterThan(0);
     });
 
-    // Both halves named GRC models (Practice / Policy / Vendor) that left
-    // the registry with the teardown. The PROPERTY each was asserting is
-    // that the hasDeletedAt split is real in both directions — that some
-    // models already carry the column and some still need it — which does
-    // not depend on which models those happen to be.
-    it('the hasDeletedAt split is populated on both sides', () => {
+    // Both halves once named GRC models (Practice / Policy / Vendor) that left
+    // the registry with the teardown, and the property was rewritten then to
+    // "the split is real in both directions" so it would not depend on which
+    // models happened to be listed.
+    //
+    // REVERSED AGAIN 2026-10-24, and this time the property itself is done
+    // rather than relocated: EVERY target now carries the column, so the
+    // `needed` side is empty by completion. It was only ever non-empty because
+    // `FileRecord` and `Task` were recorded as lacking a column both had — a
+    // hand-kept flag standing next to the schema that was the real answer,
+    // which is the error #2242 is about.
+    it('every soft-delete target carries the deletedAt column', () => {
         const existing = SOFT_DELETE_TARGETS.filter((t) => t.hasDeletedAt);
         const needed = SOFT_DELETE_TARGETS.filter((t) => !t.hasDeletedAt);
         expect(existing.length).toBeGreaterThan(0);
-        expect(needed.length).toBeGreaterThan(0);
+        // `needed` is EMPTY as of 2026-10-24, and that is the finished state
+        // rather than a broken assertion: every remaining target carries the
+        // column. It was non-empty because `FileRecord` and `Task` were
+        // recorded as lacking it while both had it all along — a hand-kept
+        // flag beside a schema that was the real answer (#2242). `Task` has
+        // since left the list and `FileRecord`'s flag is corrected.
+        //
+        // Kept as a one-way ratchet: if a target is ever added WITHOUT the
+        // column, this goes red and the split has a populated side again.
+        // A one-way ratchet: a target added WITHOUT the column reddens this,
+        // which is the only way the split becomes meaningful again.
+        expect(needed).toEqual([]);
         expect(existing.length + needed.length).toBe(SOFT_DELETE_TARGETS.length);
-        // Asset and Evidence are the surviving P0 pair; FileRecord and Task
-        // are the surviving not-yet-migrated pair. Named so a regression
-        // that empties one side is visible, not just counted.
+        // Named rather than counted, so a regression that drops one is
+        // visible. `Task` is deliberately absent — it left the list when its
+        // delete became physical.
         expect(existing.map((t) => t.model)).toEqual(
             expect.arrayContaining(['Asset', 'Evidence']),
         );
-        expect(needed.map((t) => t.model)).toEqual(
-            expect.arrayContaining(['FileRecord', 'Task']),
-        );
+        // `FileRecord` and `Task` were named here as the not-yet-migrated
+        // pair. Neither belongs: FileRecord always had the column and its flag
+        // was simply wrong, and Task has left the registry entirely. The
+        // assertion that replaces them is `needed` being empty, above.
+        expect(needed).toHaveLength(0);
     });
 });

@@ -188,8 +188,23 @@ export function isFieldAppEncrypted(model: string, field: string): boolean {
 export const SOFT_DELETE_TARGETS = [
     { model: 'Asset',      hasDeletedAt: true,  priority: 'P0' },
     { model: 'Evidence',   hasDeletedAt: true,  priority: 'P0' },
-    { model: 'FileRecord', hasDeletedAt: false, priority: 'P1' },
-    { model: 'Task',       hasDeletedAt: false, priority: 'P2' },
+    // `hasDeletedAt` was FALSE on both of the next two until 2026-10-24, and
+    // both models have had the column all along. The flag is hand-maintained
+    // while the schema is the real answer, so it went stale with nothing
+    // failing — `SOFT_DELETE_MODELS` derives from the `model` names and
+    // ignores this field, which is why nobody noticed.
+    //
+    // It is not inert: `encryption.test.ts` partitions this list by it.
+    //
+    // `Task` STAYS in this registry. Taking it out was tried on 2026-10-24 and
+    // reverted, because the consequences are not local: `withDeleted()` throws
+    // a Prisma validation error for a non-allowlisted model (the magic key is
+    // only stripped for members), and 32 of 45 `db.task.*` reads rely on the
+    // extension to inject `deletedAt: null` rather than naming it — so flagged
+    // rows would surface in the task list and the due-notification sweep.
+    // Doing it means auditing those 32 reads first. See #2242.
+    { model: 'FileRecord', hasDeletedAt: true,  priority: 'P1' },
+    { model: 'Task',       hasDeletedAt: true,  priority: 'P2' },
     // Grain (2026-07-25). Contract shipped with the full soft-delete
     // trio and a soft-deleting usecase but was registered nowhere, so
     // `retentionUntil` was written by nothing and read by nothing.
