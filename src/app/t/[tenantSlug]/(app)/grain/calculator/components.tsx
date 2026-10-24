@@ -94,6 +94,8 @@ export function marginRefusalCopyKey(code: string | null): string {
             return 'marginPerDcaCurrencyUnrecorded';
         case 'NO_OCCUPIED_AREA':
             return 'marginPerDcaNoCostArea';
+        case 'COST_PRICE_CURRENCY_MISMATCH':
+            return 'marginPerDcaMismatch';
         default:
             // NO_STANDING_CROP_VALUE, and the null fallback.
             return 'perAreaNoValue';

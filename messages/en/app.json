@@ -4358,6 +4358,7 @@
             "comparisonAria": "Choose a crop to expand below",
             "marginPerDcaLabel": "Standing crop margin",
             "marginPerDcaValue": "{value} / dca",
+            "marginPerDcaMismatch": "This crop's costs are in a different currency from its market price, so the margin per decare is not computed — no exchange rate is applied.",
             "marginPerDcaMixedCurrency": "This crop's costs are recorded in more than one currency, so the margin per decare is not computed — subtracting them would distort it.",
             "marginPerDcaCurrencyUnrecorded": "The lease currency is not recorded in the contract, so the margin per decare is not computed.",
             "marginPerDcaNoCostArea": "No parcel is recorded with this crop, so the cost cannot be attributed and the margin per decare is not computed.",
