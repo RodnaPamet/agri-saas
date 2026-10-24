@@ -31,30 +31,30 @@
 /// Tenant-scoped (like Item) so each farm curates its own list; seeded
 /// from OpenFarm CC0 defaults. The agronomic numbers live on CropVariety.
 model CropType {
-  id              String    @id @default(cuid())
-  tenantId        String
-  key             String?
-  name            String
+  id                 String    @id @default(cuid())
+  tenantId           String
+  key                String?
+  name               String
   /// Canonical commodity slug derived from `name` via `normalizeCommodity`,
   /// or null when the crop is not a traded commodity — most of the catalogue,
   /// since Tomato and Lettuce have no grain market. Present so a farm growing
   /// wheat can be joined to the wheat price series; the catalogue itself stays
   /// free text, because a tenant curates it.
   commodityCanonical String?
-  family          String? // botanical family, e.g. "Solanaceae"
-  category        String? // loose grouping, e.g. "fruiting", "leafy green"
-  notes           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  family             String? // botanical family, e.g. "Solanaceae"
+  category           String? // loose grouping, e.g. "fruiting", "leafy green"
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   /// "Try it with sample data" tag — see Location.isSampleData. The grain
   /// calculator needs the whole CropType -> Season -> CropPlan -> Planting
   /// chain to report anything, so the sample dataset carries it; without
   /// these flags the rows would be indistinguishable from a farmer's real
   /// planning and `clearSampleData` could not find them.
-  isSampleData    Boolean   @default(false)
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
+  isSampleData       Boolean   @default(false)
+  deletedAt          DateTime?
+  deletedByUserId    String?
+  retentionUntil     DateTime?
 
   tenant    Tenant        @relation(fields: [tenantId], references: [id])
   varieties CropVariety[]
@@ -142,16 +142,16 @@ model Season {
   /// chain to report anything, so the sample dataset carries it; without
   /// these flags the rows would be indistinguishable from a farmer's real
   /// planning and `clearSampleData` could not find them.
-  isSampleData    Boolean   @default(false)
+  isSampleData    Boolean      @default(false)
   deletedAt       DateTime?
   deletedByUserId String?
   retentionUntil  DateTime?
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id])
-  cropPlans       CropPlan[]
-  contracts       Contract[]
-  yieldRecords    YieldRecord[]
-  costEntries     CostEntry[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  cropPlans    CropPlan[]
+  contracts    Contract[]
+  yieldRecords YieldRecord[]
+  costEntries  CostEntry[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, key])
@@ -191,7 +191,7 @@ model CropPlan {
   /// chain to report anything, so the sample dataset carries it; without
   /// these flags the rows would be indistinguishable from a farmer's real
   /// planning and `clearSampleData` could not find them.
-  isSampleData    Boolean   @default(false)
+  isSampleData        Boolean        @default(false)
   deletedAt           DateTime?
   deletedByUserId     String?
   retentionUntil      DateTime?
@@ -252,20 +252,20 @@ model Planting {
   /// chain to report anything, so the sample dataset carries it; without
   /// these flags the rows would be indistinguishable from a farmer's real
   /// planning and `clearSampleData` could not find them.
-  isSampleData    Boolean   @default(false)
+  isSampleData        Boolean        @default(false)
   deletedAt           DateTime?
   deletedByUserId     String?
   retentionUntil      DateTime?
 
-  tenant          Tenant           @relation(fields: [tenantId], references: [id])
-  cropPlan        CropPlan         @relation(fields: [cropPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  variety         CropVariety?     @relation(fields: [cropVarietyId, tenantId], references: [id, tenantId])
-  location        Location?        @relation(fields: [locationId, tenantId], references: [id, tenantId])
-  parcel          Parcel?          @relation(fields: [parcelId, tenantId], references: [id, tenantId])
-  logPlantings    LogPlanting[]
-  agroSignals     AgroSignal[]
-  yieldRecords    YieldRecord[]
-  costEntries     CostEntry[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  cropPlan     CropPlan      @relation(fields: [cropPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  variety      CropVariety?  @relation(fields: [cropVarietyId, tenantId], references: [id, tenantId])
+  location     Location?     @relation(fields: [locationId, tenantId], references: [id, tenantId])
+  parcel       Parcel?       @relation(fields: [parcelId, tenantId], references: [id, tenantId])
+  logPlantings LogPlanting[]
+  agroSignals  AgroSignal[]
+  yieldRecords YieldRecord[]
+  costEntries  CostEntry[]
 
   @@unique([id, tenantId])
   // Stable identity for a succession within a plan — regenerate UPSERTS

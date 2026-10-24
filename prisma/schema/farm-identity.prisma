@@ -73,27 +73,27 @@
 /// candidate set before promoting anything to VERIFIED, and re-hash the
 /// row it promotes. Do not read the index as the whole guarantee.
 model FarmIdentityClaim {
-  id       String @id @default(cuid())
+  id              String                  @id @default(cuid())
   /// The claiming farm. A plain column rather than a relation, matching
   /// every other tenant-scoped model here, and the column RLS scopes by.
-  tenantId String
+  tenantId        String
   /// Blind index over the ЕИК: `hashForLookup(eik, 'eik')`. 64 hex chars.
   /// Never the plaintext — see the file header.
-  eikHash  String
-  status   FarmIdentityClaimStatus @default(PENDING)
+  eikHash         String
+  status          FarmIdentityClaimStatus @default(PENDING)
   /// The person who made the claim, for the audit trail and so a staff
   /// reviewer can see who to contact. Not `app.user_id`-scoped: the claim
   /// belongs to the farm, and a colleague must be able to see it.
   claimedByUserId String
   /// Set when a reviewer promotes the claim. Null in every other state,
   /// including DISPUTED — a disputed claim was never verified.
-  verifiedAt DateTime?
+  verifiedAt      DateTime?
   /// Set when a claim collides with an existing VERIFIED one. Kept
   /// separately from `updatedAt` so a sweep can find disputes by age
   /// without inferring the reason for the last write.
-  disputedAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  disputedAt      DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   /// Reads are "this farm's claims" and "is this ЕИК claimed"; both are
   /// indexed. The partial UNIQUE index on `eikHash` lives in the

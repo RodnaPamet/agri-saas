@@ -13,23 +13,23 @@
 /// needed.
 
 model Task {
-  id               String            @id @default(cuid())
-  tenantId         String
-  type             WorkItemType      @default(TASK)
-  title            String
-  description      String?
-  severity         WorkItemSeverity  @default(MEDIUM)
-  priority         WorkItemPriority  @default(P2)
-  status           WorkItemStatus    @default(OPEN)
-  source           WorkItemSource?   @default(MANUAL)
-  key              String?
-  resolution       String?
-  dueAt            DateTime?
-  completedAt      DateTime?
-  createdByUserId  String
-  assigneeUserId   String?
-  reviewerUserId   String?
-  metadataJson     Json?
+  id                   String              @id @default(cuid())
+  tenantId             String
+  type                 WorkItemType        @default(TASK)
+  title                String
+  description          String?
+  severity             WorkItemSeverity    @default(MEDIUM)
+  priority             WorkItemPriority    @default(P2)
+  status               WorkItemStatus      @default(OPEN)
+  source               WorkItemSource?     @default(MANUAL)
+  key                  String?
+  resolution           String?
+  dueAt                DateTime?
+  completedAt          DateTime?
+  createdByUserId      String
+  assigneeUserId       String?
+  reviewerUserId       String?
+  metadataJson         Json?
   // Agriculture (БАБХ farm-record) — persisted so the ДНЕВНИК generator can
   // split SPRAY rows (химични обработки) from FERTILIZE rows (торове)
   // without re-deriving from the title. Nullable: legacy FIELD_OPERATION
@@ -43,7 +43,7 @@ model Task {
   // (tenantId, clientMutationId) and returns the original task instead of
   // minting a duplicate. Nullable + NULLS-DISTINCT: online creates without a
   // key are unconstrained (every NULL is unique to Postgres).
-  clientMutationId String?
+  clientMutationId     String?
   /// The treatment this task is one block's share of (#1740).
   ///
   /// The two-step diary record covers parcels across SEVERAL blocks and
@@ -65,27 +65,27 @@ model Task {
   ///
   /// Nullable, and null for every task that is not part of a diary treatment,
   /// which is every task that exists today.
-  treatmentGroupId String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  deletedAt        DateTime?
-  deletedByUserId  String?
-  retentionUntil   DateTime?
-  assignee         User?             @relation("TaskAssignee", fields: [assigneeUserId], references: [id])
-  createdBy        User              @relation("TaskCreator", fields: [createdByUserId], references: [id])
-  reviewer         User?             @relation("TaskReviewer", fields: [reviewerUserId], references: [id])
-  tenant           Tenant            @relation(fields: [tenantId], references: [id])
-  comments         TaskComment[]
-  links            TaskLink[]
-  watchers         TaskWatcher[]
+  treatmentGroupId     String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  deletedAt            DateTime?
+  deletedByUserId      String?
+  retentionUntil       DateTime?
+  assignee             User?               @relation("TaskAssignee", fields: [assigneeUserId], references: [id])
+  createdBy            User                @relation("TaskCreator", fields: [createdByUserId], references: [id])
+  reviewer             User?               @relation("TaskReviewer", fields: [reviewerUserId], references: [id])
+  tenant               Tenant              @relation(fields: [tenantId], references: [id])
+  comments             TaskComment[]
+  links                TaskLink[]
+  watchers             TaskWatcher[]
   // Evidence attached directly to this task — the task Evidence tab
   // mirrors the practice Evidence tab. `Evidence.taskId` is the source
   // pointer that also powers the "uploaded from" back-reference on the
   // evidence detail surface.
-  evidence         Evidence[]
+  evidence             Evidence[]
   // Agriculture (Feature 1) — per-parcel prescription lines when this
   // task is a FIELD_OPERATION (spray job).
-  operationParcels OperationParcel[]
+  operationParcels     OperationParcel[]
 
   @@unique([tenantId, key])
   // Offline idempotency ledger — a replayed FIELD_OPERATION create dedupes
@@ -105,7 +105,6 @@ model Task {
   // prefix of `[tenantId, dueAt, status]` below, so the planner
   // never needs both.
   @@index([tenantId, dueAt, status])
-
   /// Resolve a treatment handle to its per-block tasks (#1740). Partial, on
   /// the non-null rows only: every task that is not part of a diary treatment
   /// carries null here, and Task is among the busiest tables in the schema.

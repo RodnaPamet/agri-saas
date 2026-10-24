@@ -44,18 +44,18 @@
 /// (NOT encrypted — every tenant can read them). Write access is guarded in
 /// the usecase layer by `ctx.tenantId === sellerTenantId`.
 model ExchangeListing {
-  id                String                @id @default(cuid())
+  id                      String                @id @default(cuid())
   /// Owning tenant — plain FK to Tenant.id (NOT a tenantId RLS column).
-  sellerTenantId    String
+  sellerTenantId          String
   /// User within the seller tenant who created the listing.
-  sellerUserId      String
-  side              ExchangeSide
+  sellerUserId            String
+  side                    ExchangeSide
   /// Product class (#11) — CULTURE / FERTILIZER / SEEDS / PRODUCT. Existing
   /// rows backfill to CULTURE (crops) in the migration.
-  kind              ExchangeKind          @default(CULTURE)
-  commodity         String
-  quantityTonnes    Decimal               @db.Decimal(14, 3)
-  pricePerTonne     Decimal?              @db.Decimal(12, 2)
+  kind                    ExchangeKind          @default(CULTURE)
+  commodity               String
+  quantityTonnes          Decimal               @db.Decimal(14, 3)
+  pricePerTonne           Decimal?              @db.Decimal(12, 2)
   /// The marketplace is EURO-denominated: every new listing is written as
   /// "EUR" (the create schema accepts nothing else) and the legacy BGN rows
   /// were CONVERTED — not relabelled — at the legally fixed 1.95583 BGN/EUR
@@ -65,17 +65,17 @@ model ExchangeListing {
   /// rows that exist: USD floats, so those rows keep their own amount and
   /// label and are excluded from every cross-listing aggregate. See
   /// src/lib/exchange/currency.ts — the one place this policy is decided.
-  priceCurrency     String                @default("EUR")
+  priceCurrency           String                @default("EUR")
   /// Bulgaria oblast code (ISO 3166-2 style, e.g. "BG-16") — see
   /// src/lib/geo/bulgaria-regions.ts.
-  regionCode        String
-  regionName        String
-  lat               Float
-  lon               Float
+  regionCode              String
+  regionName              String
+  lat                     Float
+  lon                     Float
   /// PUBLIC blurb — sanitized plaintext, NOT encrypted.
-  description       String?
+  description             String?
   /// Opt-in public seller name (a tenant may stay anonymous).
-  sellerDisplayName String?
+  sellerDisplayName       String?
   /// Whether this listing is published AS THE FARM — P6.7 (#1816).
   ///
   /// `sellerDisplayName` above is free text a seller types, so it cannot say
@@ -101,15 +101,15 @@ model ExchangeListing {
   /// depends on it — the same split #1850 and #1873 used for
   /// `FarmBrand.indexable`. `tests/guards/exchange-publish-as-farm-has-no-writer-yet.test.ts`
   /// holds that claim and has to be deleted by the PR that adds the writer.
-  publishAsFarm     Boolean @default(false)
+  publishAsFarm           Boolean               @default(false)
   /// Seller's chosen contact for THIS listing (phone / email / whatever they
   /// want a counterparty to use). NEVER public: withheld from every feed and
   /// detail projection, and revealed to ONE buyer only when the seller accepts
   /// that buyer's inquiry. Per-listing rather than per-tenant so a seller can
   /// route different offers to different people, and so an anonymous seller
   /// can still be reachable after a deal without publishing anything.
-  sellerContact     String?
-  status            ExchangeListingStatus @default(ACTIVE)
+  sellerContact           String?
+  status                  ExchangeListingStatus @default(ACTIVE)
   /// Hidden from other farms because the SELLER asked to delete their account
   /// (#1655). NULL means visible; a timestamp means withheld for the 30-day
   /// grace period and restored verbatim if they cancel.
@@ -121,9 +121,9 @@ model ExchangeListing {
   /// decision, and overwriting it would destroy the information the restore
   /// needs and conflate a platform action with a human one.
   suppressedForDeletionAt DateTime?
-  expiresAt         DateTime?
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
+  expiresAt               DateTime?
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
 
   inquiries ExchangeInquiry[]
 
@@ -205,15 +205,15 @@ model ExchangeInquiry {
 /// So: no tenantId. Neither party owns the row — that is the whole point —
 /// and the RLS policy admits BOTH, exactly as the inquiry policy does.
 model ExchangeThread {
-  id               String    @id @default(cuid())
-  listingId        String
+  id                 String    @id @default(cuid())
+  listingId          String
   /// The tenant that opened the thread. The other party is the listing's
   /// `sellerTenantId`, which is why this row needs no tenantId of its own.
   ///
   /// Still here, and still load-bearing, after #1298 made conversations
   /// per-PERSON: it is what the block check and the notification fan-out scope
   /// by, and what RLS uses to find the party farms' admins.
-  inquirerTenantId String
+  inquirerTenantId   String
   /// The PERSON who opened the thread — the buyer-side principal (#1298).
   ///
   /// Thread identity moved from (listing, inquirer tenant) to (listing,
@@ -224,9 +224,9 @@ model ExchangeThread {
   /// handed a thread they may not read.
   ///
   /// The seller-side principal needs no column: it is `listing.sellerUserId`.
-  inquirerUserId   String
+  inquirerUserId     String
   /// Denormalised so the inbox can sort without joining every message.
-  lastMessageAt    DateTime  @default(now())
+  lastMessageAt      DateTime  @default(now())
   /// SUPERSEDED by `ExchangeThreadRead` (#1298), and kept only so a rollback
   /// to the previous image reads a correct pointer rather than a stale one.
   ///
@@ -238,11 +238,11 @@ model ExchangeThread {
   /// them. Do not add a reader.
   sellerLastReadAt   DateTime?
   inquirerLastReadAt DateTime?
-  closedAt         DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  closedAt           DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  listing  ExchangeListing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing  ExchangeListing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
   messages ExchangeMessage[]
   reads    ExchangeThreadRead[]
 
@@ -290,16 +290,16 @@ model ExchangeThreadRead {
 /// the other party's scrollback — they remember reading something that is now
 /// absent, which reads as data loss rather than as a retraction.
 model ExchangeMessage {
-  id             String    @id @default(cuid())
-  threadId       String
+  id               String    @id @default(cuid())
+  threadId         String
   /// Which side sent it. Stored rather than derived so a message stays
   /// attributable after a listing is edited or a thread is closed.
-  senderTenantId String
-  senderUserId   String
+  senderTenantId   String
+  senderUserId     String
   /// Plain text, sanitised on write. Chat is the highest-risk surface in any
   /// product: text one tenant writes and another tenant's browser renders.
-  body           String
-  deletedAt      DateTime?
+  body             String
+  deletedAt        DateTime?
   /// Client-supplied `Idempotency-Key`, scoped to the SENDER.
   ///
   /// A farmer on a bad link taps send twice and the phone retries; without
@@ -312,12 +312,10 @@ model ExchangeMessage {
   /// Postgres, so callers that send no key are unaffected. Mirrors
   /// `LogEntry.clientMutationId` and `Task.clientMutationId`.
   clientMutationId String?
-  createdAt      DateTime  @default(now())
+  createdAt        DateTime  @default(now())
 
   thread ExchangeThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
-  @@index([threadId, createdAt])
-  @@index([senderTenantId])
   /// Scoped to the sending PERSON since #1298, not their farm.
   ///
   /// It was `[senderTenantId, clientMutationId]`. With conversations private
@@ -326,6 +324,8 @@ model ExchangeMessage {
   /// send would silently dedupe into the other's message. The scope has to
   /// follow whoever the key belongs to.
   @@unique([senderUserId, clientMutationId])
+  @@index([threadId, createdAt])
+  @@index([senderTenantId])
 }
 
 /// A seller refusing further contact from one tenant.

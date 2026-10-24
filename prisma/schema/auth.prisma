@@ -28,40 +28,40 @@
 // ─────────────────────────────────────────────────────────────────
 
 model Tenant {
-  id                                String                             @id @default(cuid())
-  name                              String
-  slug                              String                             @unique
+  id                       String                       @id @default(cuid())
+  name                     String
+  slug                     String                       @unique
   /// Hub-and-spoke parent (Epic O-1). Nullable for backward compatibility:
   /// existing tenants migrated before the organization layer landed have
   /// no parent. New tenants created via `/api/org/{slug}/tenants` are
   /// always linked. ON DELETE SET NULL so removing an org doesn't take
   /// its tenants with it — orphaned tenants behave like the legacy
   /// pre-org model.
-  organizationId                    String?
+  organizationId           String?
   /// RQ3-OB-A — the tenant's display currency for every monetary
   /// surface (ALE chips, LEC ticks, breach tasks, PDFs). One symbol
   /// per tenant; the canonical formatter takes it as its symbol arg.
-  currencySymbol                    String                             @default("€")
+  currencySymbol           String                       @default("€")
   /// How machinery capital is expensed into the /costs rollup.
   /// Defaults to NONE, so an existing tenant's cost figures do not
   /// silently change the day this ships — depreciation only appears
   /// once a farm opts in and sets a useful life on its machines.
-  depreciationMethod                DepreciationMethod                 @default(NONE)
-  industry                          String?
-  scope                             String?
-  context                           String?
-  interestedParties                 String?
-  boundaries                        String?
-  exclusions                        String?
-  reminderDaysBefore                Int                                @default(14)
-  maxRiskScale                      Int                                @default(5)
+  depreciationMethod       DepreciationMethod           @default(NONE)
+  industry                 String?
+  scope                    String?
+  context                  String?
+  interestedParties        String?
+  boundaries               String?
+  exclusions               String?
+  reminderDaysBefore       Int                          @default(14)
+  maxRiskScale             Int                          @default(5)
   /// Soft-delete (org admin panel "remove tenant"). When set, the
   /// tenant is filtered out of tenant resolution (getTenantContext →
   /// 404), the org portfolio list, the tenant picker, and the JWT
   /// membership claims — making it inaccessible — while the underlying
   /// data is retained for compliance + possible restore. A hard purge
   /// is a separate, deliberate operation.
-  deletedAt                         DateTime?
+  deletedAt                DateTime?
   /// Epic B.2 — wrapped per-tenant Data Encryption Key.
   /// Shape: the existing `encryptField()` envelope (`v1:base64(...)`),
   /// wrapping a 32-byte random DEK. See `src/lib/security/tenant-keys.ts`.
@@ -69,7 +69,7 @@ model Tenant {
   /// script lands. The runtime integration phase may treat `NULL` as
   /// "use the global KEK directly" (current behaviour) or generate a
   /// DEK lazily on first use.
-  encryptedDek                      String?
+  encryptedDek             String?
   /// Epic B — previous wrapped DEK, retained during a per-tenant DEK
   /// rotation. Envelope: identical to `encryptedDek` — `v1:base64(...)`
   /// produced by `wrapDek()` from `src/lib/security/tenant-keys.ts`.
@@ -93,7 +93,7 @@ model Tenant {
   /// CHECK constraint (`Tenant_previousEncryptedDek_differs`) enforces
   /// this at the storage layer so a rotation bug cannot silently
   /// produce identical values in both columns.
-  previousEncryptedDek              String?
+  previousEncryptedDek     String?
   /// Per-tenant override of the audit-readiness scoring weights.
   /// NULL means use the hardcoded defaults
   /// (ISO27001 / NIS2 / GENERIC) shipped with the platform. Shape
@@ -103,112 +103,112 @@ model Tenant {
   /// inner object's weights must sum to 1.0; values outside [0,1]
   /// or sums > 1.0 are rejected at the usecase layer.
   /// Audit Coherence S5 (2026-05-22).
-  readinessWeightsJson              Json?
-  createdAt                         DateTime                           @default(now())
-  updatedAt                         DateTime                           @updatedAt
-  assets                            Asset[]
-  auditLogs                         AuditLog[]
-  billingAccount                    BillingAccount?
-  billingEvents                     BillingEvent[]
-  evidence                          Evidence[]
-  fileRecords                       FileRecord[]
-  integrationConnections            IntegrationConnection[]
-  integrationExecutions             IntegrationExecution[]
-  integrationWebhookEvents          IntegrationWebhookEvent[]
-  notifications                     Notification[]
-  pushSubscriptions                 PushSubscription[]
-  aiUsageEvents                     AiUsageEvent[]
-  notificationOutbox                NotificationOutbox[]
-  reminderHistories                 ReminderHistory[]
-  tasks                             Task[]
-  taskComments                      TaskComment[]
-  taskLinks                         TaskLink[]
-  taskWatchers                      TaskWatcher[]
-  identityProviders                 TenantIdentityProvider[]
-  entraGroupMappings                TenantEntraGroupMapping[]
-  invites                           TenantInvite[]
-  memberships                       TenantMembership[]
-  notificationSettings              TenantNotificationSettings?
-  onboarding                        TenantOnboarding?
-  scimTokens                        TenantScimToken[]
-  scimGroups                        ScimGroup[]
-  securitySettings                  TenantSecuritySettings?
-  identityLinks                     UserIdentityLink[]
-  mfaEnrollments                    UserMfaEnrollment[]
-  userNotificationPrefs             UserNotificationPreference[]
+  readinessWeightsJson     Json?
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  assets                   Asset[]
+  auditLogs                AuditLog[]
+  billingAccount           BillingAccount?
+  billingEvents            BillingEvent[]
+  evidence                 Evidence[]
+  fileRecords              FileRecord[]
+  integrationConnections   IntegrationConnection[]
+  integrationExecutions    IntegrationExecution[]
+  integrationWebhookEvents IntegrationWebhookEvent[]
+  notifications            Notification[]
+  pushSubscriptions        PushSubscription[]
+  aiUsageEvents            AiUsageEvent[]
+  notificationOutbox       NotificationOutbox[]
+  reminderHistories        ReminderHistory[]
+  tasks                    Task[]
+  taskComments             TaskComment[]
+  taskLinks                TaskLink[]
+  taskWatchers             TaskWatcher[]
+  identityProviders        TenantIdentityProvider[]
+  entraGroupMappings       TenantEntraGroupMapping[]
+  invites                  TenantInvite[]
+  memberships              TenantMembership[]
+  notificationSettings     TenantNotificationSettings?
+  onboarding               TenantOnboarding?
+  scimTokens               TenantScimToken[]
+  scimGroups               ScimGroup[]
+  securitySettings         TenantSecuritySettings?
+  identityLinks            UserIdentityLink[]
+  mfaEnrollments           UserMfaEnrollment[]
+  userNotificationPrefs    UserNotificationPreference[]
   // Epic G-3 — normalized vendor questionnaire templates.
-  syncMappings                      IntegrationSyncMapping[]
-  customRoles                       TenantCustomRole[]
-  userInterests                     UserInterest[]                     @relation("TenantUserInterest")
-  apiKeys                           TenantApiKey[]
-  complianceSnapshots               ComplianceSnapshot[]
-  automationRules                   AutomationRule[]
-  automationExecutions              AutomationExecution[]
+  syncMappings             IntegrationSyncMapping[]
+  customRoles              TenantCustomRole[]
+  userInterests            UserInterest[]               @relation("TenantUserInterest")
+  apiKeys                  TenantApiKey[]
+  complianceSnapshots      ComplianceSnapshot[]
+  automationRules          AutomationRule[]
+  automationExecutions     AutomationExecution[]
   // denorm-tenantId Phase 1 inverse relations.
-  evidenceReviews                   EvidenceReview[]
+  evidenceReviews          EvidenceReview[]
   // PolicyPracticeLink denormalisation (single-table follow-on).
   // Epic G-4 — Access Review Campaigns.
-  accessReviews                     AccessReview[]
-  accessReviewDecisions             AccessReviewDecision[]
+  accessReviews            AccessReview[]
+  accessReviewDecisions    AccessReviewDecision[]
   // Epic G-5 — practice exception register.
   // Roadmap-26 PR-A — persisted process maps (xyflow canvases).
-  processMaps                       ProcessMap[]
-  processNodes                      ProcessNode[]
-  processEdges                      ProcessEdge[]
-  processEdgePractices               ProcessEdgePractice[]
+  processMaps              ProcessMap[]
+  processNodes             ProcessNode[]
+  processEdges             ProcessEdge[]
+  processEdgePractices     ProcessEdgePractice[]
   // Epic P5-PR-A — process map snapshots.
-  processMapSnapshots               ProcessMapSnapshot[]
+  processMapSnapshots      ProcessMapSnapshot[]
   // Hub-and-spoke (Epic O-1).
-  organization                      Organization?                      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organization             Organization?                @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   // Agriculture domain (Feature 1).
-  locations                Location[]
-  parcels                  Parcel[]
-  parcelCropSeasons        ParcelCropSeason[]
-  parcelWeedObservations   ParcelWeedObservation[]
-  parcelLeases             ParcelLease[]
-  leasePayments            LeasePayment[]
-  items                    Item[]
-  operationParcels         OperationParcel[]
+  locations                  Location[]
+  parcels                    Parcel[]
+  parcelCropSeasons          ParcelCropSeason[]
+  parcelWeedObservations     ParcelWeedObservation[]
+  parcelLeases               ParcelLease[]
+  leasePayments              LeasePayment[]
+  items                      Item[]
+  operationParcels           OperationParcel[]
   // Crop planning domain.
-  cropTypes                CropType[]
-  cropVarieties            CropVariety[]
-  seasons                  Season[]
-  cropPlans                CropPlan[]
-  plantings                Planting[]
-  logPlantings             LogPlanting[]
+  cropTypes                  CropType[]
+  cropVarieties              CropVariety[]
+  seasons                    Season[]
+  cropPlans                  CropPlan[]
+  plantings                  Planting[]
+  logPlantings               LogPlanting[]
   // Agro-intel domain.
-  weatherObservations      WeatherObservation[]
-  dataStreams              DataStream[]
-  dataStreamReadings       DataStreamReading[]
-  agroSignals              AgroSignal[]
+  weatherObservations        WeatherObservation[]
+  dataStreams                DataStream[]
+  dataStreamReadings         DataStreamReading[]
+  agroSignals                AgroSignal[]
   // WP-2 — per-tenant module gating.
-  moduleSettings           TenantModuleSettings?
+  moduleSettings             TenantModuleSettings?
   // БАБХ farm-record — one-per-tenant farm identity block.
-  farmProfile              FarmProfile?
+  farmProfile                FarmProfile?
   // P6.1 — the PUBLIC face of the same farm. Sibling to farmProfile
   // deliberately: that one holds ЕГН/ЕИК/address and stays private,
   // this one holds what an owner chooses to publish.
-  farmBrand                FarmBrand?
+  farmBrand                  FarmBrand?
   // Enterprise-grain domain.
-  contracts                Contract[]
-  yieldRecords             YieldRecord[]
-  grainDeliveries          GrainDelivery[]
-  costEntries              CostEntry[]
+  contracts                  Contract[]
+  yieldRecords               YieldRecord[]
+  grainDeliveries            GrainDelivery[]
+  costEntries                CostEntry[]
   costEntryAllocationParcels CostEntryAllocationParcel[]
   // Phase 1 — inventory ledger + journal.
-  inventoryLots            InventoryLot[]
-  stockTransactions        StockTransaction[]
-  logEntries               LogEntry[]
-  logLocations             LogLocation[]
-  logEquipments            LogEquipment[]
-  assetMaintenance         AssetMaintenance[]
-  logEntryFiles            LogEntryFile[]
-  lotLinks                 LotLink[]
-  knowledgeArticles        KnowledgeArticle[]
-  knowledgeArticleVersions KnowledgeArticleVersion[]
-  knowledgeAcks            KnowledgeAcknowledgement[]
-  knowledgeChunks          KnowledgeChunk[]
+  inventoryLots              InventoryLot[]
+  stockTransactions          StockTransaction[]
+  logEntries                 LogEntry[]
+  logLocations               LogLocation[]
+  logEquipments              LogEquipment[]
+  assetMaintenance           AssetMaintenance[]
+  logEntryFiles              LogEntryFile[]
+  lotLinks                   LotLink[]
+  knowledgeArticles          KnowledgeArticle[]
+  knowledgeArticleVersions   KnowledgeArticleVersion[]
+  knowledgeAcks              KnowledgeAcknowledgement[]
+  knowledgeChunks            KnowledgeChunk[]
 
   @@index([organizationId])
 }
@@ -288,15 +288,15 @@ model OrgMembership {
 // @unique. No HMAC — the entropy (256 bits) is the security
 // boundary. A 7-day TTL is enforced on creation.
 model OrgInvite {
-  id             String    @id @default(cuid())
-  organizationId String
-  email          String
-  role           OrgRole   @default(ORG_READER)
-  token          String    @unique
-  invitedById    String
-  expiresAt      DateTime
-  acceptedAt     DateTime?
-  revokedAt      DateTime?
+  id                  String    @id @default(cuid())
+  organizationId      String
+  email               String
+  role                OrgRole   @default(ORG_READER)
+  token               String    @unique
+  invitedById         String
+  expiresAt           DateTime
+  acceptedAt          DateTime?
+  revokedAt           DateTime?
   /// As `TenantInvite` above (#1769). An org invite and a workspace invite are
   /// separate MODELS reached through the same `sendInviteEmail`, so a bounce
   /// handler that knew only one of them would silently no-op for half the
@@ -305,8 +305,8 @@ model OrgInvite {
   /// rather than taking a second one.
   deliveryFailureKind String?
   deliveryFailedAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   invitedBy    User         @relation("OrgInviteInviter", fields: [invitedById], references: [id])
@@ -634,7 +634,7 @@ model AccessReviewDecision {
 }
 
 model User {
-  id                            String                       @id @default(cuid())
+  id             String    @id @default(cuid())
   // GAP-21: `email` and `name` are stored encrypted at rest. The
   // schema field names map to the encrypted DB columns; the
   // pii-middleware encrypts on write and decrypts on read so
@@ -650,11 +650,11 @@ model User {
   // structural ratchet at
   // tests/guardrails/pii-hash-not-null.test.ts. The schema-DB
   // drift on this single field is intentional and documented.
-  email                         String                       @map("emailEncrypted")
-  emailHash                     String?                      @unique
-  passwordHash                  String?
-  name                          String?                      @map("nameEncrypted")
-  emailVerified                 DateTime?
+  email          String    @map("emailEncrypted")
+  emailHash      String?   @unique
+  passwordHash   String?
+  name           String?   @map("nameEncrypted")
+  emailVerified  DateTime?
   /// Apple told us this address is a PRIVATE RELAY (#1675).
   ///
   /// From the `is_private_email` claim on a verified Apple identity token —
@@ -676,11 +676,11 @@ model User {
   /// matches an existing row (this route's own docblock), which means a relay
   /// user always takes the create path; on the account-LINK path the stored
   /// address is the user's real one and must not be relabelled.
-  isPrivateRelay                Boolean?
-  image                         String?
-  createdAt                     DateTime                     @default(now())
-  updatedAt                     DateTime                     @updatedAt
-  sessionVersion                Int                          @default(0)
+  isPrivateRelay Boolean?
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sessionVersion Int       @default(0)
   /// T00 — persisted UI language preference (BCP-ish short code, e.g.
   /// "en" / "bg"). Drives the `NEXT_LOCALE` cookie the server reads to
   /// pick the next-intl message catalogue; a returning user's device is
@@ -695,7 +695,7 @@ model User {
   /// Reading the two as one number is how a recipient-addressed email
   /// ends up in the wrong language — see `RECIPIENT_FALLBACK_LOCALE` in
   /// `src/lib/email/inquiry-email.ts`.
-  uiLanguage                    String                       @default("bg")
+  uiLanguage     String    @default("bg")
 
   // P3.1 — which terms this person accepted, and when.
   //
@@ -710,7 +710,7 @@ model User {
   // superseded value to stay a member of the live type. Compare against
   // `TERMS_VERSION` from `@/lib/legal/terms` to tell whether somebody is
   // behind.
-  acceptedTermsAt               DateTime?
+  acceptedTermsAt DateTime?
   /// When platform moderation withheld this account's access (P5.9, #1600).
   ///
   /// A TIMESTAMP rather than a boolean, because "suspended since when" is a
@@ -725,7 +725,7 @@ model User {
   /// Reached on every authenticated request through `getSessionOrThrow`, so it
   /// is indexed — see `@@index([suspendedAt])` below, which also makes "who is
   /// currently suspended" answerable without a full scan.
-  suspendedAt                   DateTime?
+  suspendedAt     DateTime?
 
   /// When this person asked for their account to be deleted (P5.6, #1597).
   ///
@@ -740,12 +740,12 @@ model User {
   /// a moderator lifts it, while this is self-inflicted and self-cancellable.
   /// Collapsing them would send an Art 17 statement to somebody who asked to
   /// leave, and would let a person cancel a suspension.
-  deletionRequestedAt           DateTime?
+  deletionRequestedAt DateTime?
 
   /// WHO asked — the distinction `deletionRequestedAt` alone cannot carry
   /// (#1671). NULL reads as `SELF`; see `DeletionInitiator` for why that is the
   /// safe direction here and what it is paying for.
-  deletionRequestedBy           DeletionInitiator?
+  deletionRequestedBy DeletionInitiator?
 
   /// When a MODERATOR terminated this account (#1667).
   ///
@@ -764,7 +764,7 @@ model User {
   /// erasure the person asked for themselves survives as theirs and a
   /// moderator's is cleared — which is the behaviour #1676 already had, reused
   /// unchanged rather than reimplemented as a takeover-and-demote.
-  terminatedAt                  DateTime?
+  terminatedAt DateTime?
 
   /// When pseudonymisation actually ran (P5.6, #1597).
   ///
@@ -779,8 +779,8 @@ model User {
   /// lookup hash follows the email automatically — `pii-middleware` derives
   /// `emailHash` from `email` on every write that sets it — so the ORIGINAL
   /// address matches nothing and the person may register again.
-  pseudonymisedAt               DateTime?
-  acceptedTermsVersion          String?
+  pseudonymisedAt      DateTime?
+  acceptedTermsVersion String?
 
   /// Bottom-row tab arrangement, synced across the user's devices.
   ///
@@ -893,11 +893,11 @@ model User {
   knowledgeAcks                 KnowledgeAcknowledgement[]
   // Enterprise-grain — payroll/labour cost register.
   costEntriesCreated            CostEntry[]                  @relation("CostEntryCreator")
-  featureFlagCohorts FeatureFlagCohortMember[] @relation("FeatureFlagCohortMemberships")
+  featureFlagCohorts            FeatureFlagCohortMember[]    @relation("FeatureFlagCohortMemberships")
   // P6.1 — the person's own public identity. One per USER, not per
   // membership: a person exists once across every farm they belong to,
   // which is what TenantMembership is for.
-  personProfile      PersonProfile?
+  personProfile                 PersonProfile?
 
   /// P5.9 (#1600). Read on every authenticated request via the suspension
   /// check, and the index also answers "who is currently suspended" — a
@@ -1183,9 +1183,9 @@ model NativeRefreshToken {
 /// Only the SHA-256 of the code is stored, like `PasswordResetToken` and
 /// `NativeRefreshToken`.
 model NativeAuthCode {
-  id            String    @id @default(cuid())
+  id            String                @id @default(cuid())
   /// SHA-256 of the raw code. Unique so the exchange is one indexed read.
-  codeHash      String    @unique
+  codeHash      String                @unique
   /// The session the exchanged tokens will hang from.
   ///
   /// NULL for a `PENDING_MFA` ticket, and that is the point. Writing the
@@ -1207,7 +1207,7 @@ model NativeAuthCode {
   /// Where the code is delivered. Validated against an allowlist at issue so
   /// this can never become an open redirect.
   redirectUri   String
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime              @default(now())
   /// SECONDS, not minutes. The code is handed over in a redirect the OS may
   /// log; its whole security model is that it is stale almost immediately.
   expiresAt     DateTime
@@ -1220,7 +1220,7 @@ model NativeAuthCode {
   /// the ticket is consumed — a 6-digit code is guessable by brute force in
   /// a way a 32-byte code is not, so the ticket needs a limit its sibling
   /// does not.
-  mfaAttempts   Int       @default(0)
+  mfaAttempts   Int                   @default(0)
 
   session UserSession? @relation("SessionAuthCodes", fields: [userSessionId], references: [id], onDelete: Cascade)
 
@@ -1409,15 +1409,15 @@ model UserMfaEnrollment {
 }
 
 model TenantInvite {
-  id          String    @id @default(cuid())
-  tenantId    String
-  email       String
-  role        Role      @default(READER)
-  token       String    @unique
-  invitedById String
-  expiresAt   DateTime
-  acceptedAt  DateTime?
-  revokedAt   DateTime?
+  id                  String    @id @default(cuid())
+  tenantId            String
+  email               String
+  role                Role      @default(READER)
+  token               String    @unique
+  invitedById         String
+  expiresAt           DateTime
+  acceptedAt          DateTime?
+  revokedAt           DateTime?
   /// Set by the Resend delivery webhook when THIS invite's email came back
   /// undeliverable (#1769). Before this, a bounced invite and an unopened one
   /// were the same row, so the admin screen's main question — "has my invite
@@ -1436,10 +1436,10 @@ model TenantInvite {
   /// older ones from.
   deliveryFailureKind String?
   deliveryFailedAt    DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  invitedBy   User      @relation(fields: [invitedById], references: [id])
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  invitedBy           User      @relation(fields: [invitedById], references: [id])
+  tenant              Tenant    @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, email])
   @@index([token])

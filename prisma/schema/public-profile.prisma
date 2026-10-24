@@ -118,7 +118,7 @@ model FarmBrand {
   ///
   /// Ships one release BEFORE the editor that writes it, so a rollback in
   /// that window costs nothing — see this migration's `.down.sql`.
-  indexable Boolean @default(false)
+  indexable     Boolean @default(false)
   /// Per-field visibility — P6.6 (#1815), owner ruling 2026-10-15.
   ///
   /// One flag per OPTIONAL published field. The eye toggle in the editor sets
@@ -308,7 +308,6 @@ model PublicFarmProfile {
   /// installs; without it a GIN index on text is useless for similarity.
   @@index([displayName(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([displayNameLatin(ops: raw("gin_trgm_ops"))], type: Gin)
-
   /// Public thumbnail authorisation — #2160.
   ///
   /// `resolvePublicMedia` answers "is this hash published by somebody?" with

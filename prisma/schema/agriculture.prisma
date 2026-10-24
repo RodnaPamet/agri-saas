@@ -202,7 +202,7 @@ model NewsDerivedEvent {
 /// so an official-feed entry and an AI reading of a news article are never
 /// indistinguishable on screen.
 model SupportScheme {
-  id      String @id @default(cuid())
+  id      String  @id @default(cuid())
   title   String
   summary String?
 
@@ -258,7 +258,7 @@ model SupportScheme {
   reviewedAt   DateTime?
   /// Free-text platform-admin identifier (requestId), not a User FK — these
   /// routes are PLATFORM_ADMIN_API_KEY-gated with no user session.
-  reviewedBy String?
+  reviewedBy   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -279,16 +279,16 @@ model SupportScheme {
 /// seed of the full inventory module. attributesJson carries
 /// regulatory metadata (active ingredient, REI/PHI) until promoted.
 model Item {
-  id              String       @id @default(cuid())
-  tenantId        String
-  name            String
-  category        ItemCategory
-  sku             String?
-  defaultUnitId   String
+  id                   String       @id @default(cuid())
+  tenantId             String
+  name                 String
+  category             ItemCategory
+  sku                  String?
+  defaultUnitId        String
   /// Low-stock alert threshold in defaultUnit (InvenTree pattern). The
   /// lots list surfaces "low stock" when SUM(lot.quantityOnHand) drops
   /// below it; null disables the check.
-  reorderLevel    Decimal?     @db.Decimal(14, 3)
+  reorderLevel         Decimal?     @db.Decimal(14, 3)
   /// БАБХ farm-record regulatory fields (structured, not attributesJson —
   /// the ДНЕВНИК generator reads these directly). quarantinePeriodDays is
   /// the карантинен срок на ПРЗ; "най-ранна дата за прибиране" is computed
@@ -315,14 +315,14 @@ model Item {
   /// a refusal: none of the three was designed as a provenance marker, and a
   /// false positive blocks an operator from filing real work. So the flag is
   /// explicit, and the backfill required ALL THREE signals to agree.
-  isArchetype     Boolean      @default(false)
-  attributesJson  Json?
-  createdByUserId String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
+  isArchetype          Boolean      @default(false)
+  attributesJson       Json?
+  createdByUserId      String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  deletedAt            DateTime?
+  deletedByUserId      String?
+  retentionUntil       DateTime?
 
   tenant         Tenant            @relation(fields: [tenantId], references: [id])
   defaultUnit    Unit              @relation("ItemDefaultUnit", fields: [defaultUnitId], references: [id])
@@ -330,7 +330,7 @@ model Item {
   operationLines OperationParcel[]
   lots           InventoryLot[]
 
-  costEntries    CostEntry[]
+  costEntries CostEntry[]
 
   @@unique([id, tenantId])
   @@index([tenantId, category])
@@ -380,28 +380,28 @@ model Location {
   deletedByUserId String?
   retentionUntil  DateTime?
 
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  owner         User?          @relation("LocationOwner", fields: [ownerUserId], references: [id])
-  createdBy     User?          @relation("LocationCreator", fields: [createdByUserId], references: [id])
-  spatialFile   FileRecord?    @relation("LocationSpatialFile", fields: [spatialFileId], references: [id])
-  parcels       Parcel[]
-  inventoryLots InventoryLot[]
-  logLocations  LogLocation[]
-  cropPlans     CropPlan[]
-  plantings     Planting[]
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  owner               User?                @relation("LocationOwner", fields: [ownerUserId], references: [id])
+  createdBy           User?                @relation("LocationCreator", fields: [createdByUserId], references: [id])
+  spatialFile         FileRecord?          @relation("LocationSpatialFile", fields: [spatialFileId], references: [id])
+  parcels             Parcel[]
+  inventoryLots       InventoryLot[]
+  logLocations        LogLocation[]
+  cropPlans           CropPlan[]
+  plantings           Planting[]
   weatherObservations WeatherObservation[]
   dataStreams         DataStream[]
   agroSignals         AgroSignal[]
   yieldRecords        YieldRecord[]
   /// Machines parked/kept at this location (Asset.locationId).
   assets              Asset[]
+  costEntries         CostEntry[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, key])
   @@index([tenantId, name])
   @@index([tenantId, status])
   @@index([tenantId, kind])
-  costEntries     CostEntry[]
 }
 
 /// One polygon imported from the spatial file. geometry is PostGIS
@@ -409,21 +409,21 @@ model Location {
 /// (never client-written). propertiesJson preserves the source
 /// feature's attributes.
 model Parcel {
-  id              String                                       @id @default(cuid())
-  tenantId        String
-  locationId      String
-  key             String?
-  name            String
-  cropType        String?
+  id                 String                                       @id @default(cuid())
+  tenantId           String
+  locationId         String
+  key                String?
+  name               String
+  cropType           String?
   /// Bulgarian КАИС cadastral identifier `EKATTE.masiv.parcel`
   /// (e.g. `68134.8360.729`), parsed from the source attributes at import.
-  cadastralId     String?
+  cadastralId        String?
   /// 5-digit EKATTE settlement prefix of `cadastralId` (leading zeros
   /// significant), indexed for per-settlement cadastre lookups.
-  ekatte          String?
-  geometry        Unsupported("geometry(MultiPolygon, 4326)")?
-  areaHa          Decimal?                                     @db.Decimal(12, 4)
-  propertiesJson  Json?
+  ekatte             String?
+  geometry           Unsupported("geometry(MultiPolygon, 4326)")?
+  areaHa             Decimal?                                     @db.Decimal(12, 4)
+  propertiesJson     Json?
   /// Human-readable soil label (USDA texture class, e.g. "Silty clay
   /// loam", or a WRB group) derived from the modelled soil profile.
   /// A MODELLED ESTIMATE from open data (SoilGrids), never a lab result.
@@ -431,19 +431,19 @@ model Parcel {
   /// diary's per-field header names it ("Дерманци (20688)"). Backfilled from
   /// the spatial import's `virtual_ek`; blank for КАИС-imported parcels,
   /// which carry no equivalent.
-  landDistrict    String?
+  landDistrict       String?
   /// Местност — the traditional field name ("ЛЕШНИЦА, ПЪТИЩА И КАНАЛИ").
   /// Backfilled from the spatial import's `mestnost`.
-  locality        String?
+  locality           String?
   /// Склад за растителна продукция. No import carries it — entered by hand
   /// or left blank, exactly as on the paper form.
-  produceStore    String?
-  soilType        String?
+  produceStore       String?
+  soilType           String?
   /// Structured soil profile — the SoilGrids-derived reading + provenance:
   /// { wrbClass?, textureClass, sandPct, siltPct, clayPct, phH2o, socGkg,
   ///   bulkDensity, depth, uncertainty?, provider, fetchedAt }.
   /// Null until the async soil-fetch job populates it ("soil pending").
-  soilJson        Json?
+  soilJson           Json?
   /// When the most recent spatial import of this parcel's LOCATION did not
   /// find a matching shape for this row, and therefore left it behind.
   ///
@@ -457,22 +457,23 @@ model Parcel {
   /// thing from a client's point of view: nothing to warn about.
   absentFromImportAt DateTime?
   /// "Try it with sample data" tag — see Location.isSampleData.
-  isSampleData    Boolean                                      @default(false)
-  createdAt       DateTime                                     @default(now())
-  updatedAt       DateTime                                     @updatedAt
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
+  isSampleData       Boolean                                      @default(false)
+  createdAt          DateTime                                     @default(now())
+  updatedAt          DateTime                                     @updatedAt
+  deletedAt          DateTime?
+  deletedByUserId    String?
+  retentionUntil     DateTime?
 
-  tenant         Tenant            @relation(fields: [tenantId], references: [id])
-  location       Location          @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  operationLines OperationParcel[]
-  plantings      Planting[]
-  cropPlans      CropPlan[]
-  leases         ParcelLease[]
-  cropSeasons      ParcelCropSeason[]
-  weedObservations ParcelWeedObservation[]
+  tenant               Tenant                      @relation(fields: [tenantId], references: [id])
+  location             Location                    @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  operationLines       OperationParcel[]
+  plantings            Planting[]
+  cropPlans            CropPlan[]
+  leases               ParcelLease[]
+  cropSeasons          ParcelCropSeason[]
+  weedObservations     ParcelWeedObservation[]
   costEntryAllocations CostEntryAllocationParcel[]
+  costEntries          CostEntry[]
 
   @@unique([id, tenantId])
   @@index([tenantId, locationId])
@@ -482,7 +483,6 @@ model Parcel {
   @@index([tenantId, locationId, deletedAt])
   // Per-settlement cadastre lookups (КАИС): find every parcel in an EKATTE.
   @@index([tenantId, ekatte])
-  costEntries     CostEntry[]
 }
 
 /// A land-use agreement (аренда/наем) under which the tenant farms a parcel it
@@ -515,9 +515,10 @@ model ParcelLease {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parcel   Parcel         @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  payments LeasePayment[]
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parcel      Parcel         @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  payments    LeasePayment[]
+  costEntries CostEntry[]
 
   /// Cross-tenant row barrier — lets LeasePayment carry the composite
   /// [leaseId, tenantId] FK so a payment can never point at another tenant's lease.
@@ -525,7 +526,6 @@ model ParcelLease {
   @@index([tenantId, parcelId])
   // Rent-roll / expiry scans (3/3): leases ending within a window, per tenant.
   @@index([tenantId, endDate])
-  costEntries CostEntry[]
 }
 
 /// What was sown in a parcel, per year — the archive.
@@ -627,8 +627,8 @@ model ParcelWeedObservation {
   /// key are unconstrained (every NULL is unique to Postgres).
   clientMutationId String?
 
-  tenant           Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parcel           Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parcel Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([tenantId, clientMutationId])
   @@unique([id, tenantId])
@@ -759,21 +759,21 @@ model CadastreOwner {
 /// one OperationParcel with its product + dose. The job auto-resolves
 /// when every line is DONE/SKIPPED.
 model OperationParcel {
-  id                String                @id @default(cuid())
-  tenantId          String
-  taskId            String // the FIELD_OPERATION Task (simple FK; Task has no [id,tenantId] barrier)
-  parcelId          String
-  productItemId     String
-  doseValue         Decimal               @db.Decimal(14, 4)
-  doseUnitId        String
+  id                   String                @id @default(cuid())
+  tenantId             String
+  taskId               String // the FIELD_OPERATION Task (simple FK; Task has no [id,tenantId] barrier)
+  parcelId             String
+  productItemId        String
+  doseValue            Decimal               @db.Decimal(14, 4)
+  doseUnitId           String
   // Water-carrier rate for the spray tank (per-decare), set only on the
   // treatment line. Per-parcel total water = waterRateValue × parcel dca.
-  waterRateValue    Decimal?              @db.Decimal(14, 4)
-  waterRateUnitId   String?
-  targetNote        String?
-  status            ParcelOperationStatus @default(PENDING)
-  completedAt       DateTime?
-  completedByUserId String?
+  waterRateValue       Decimal?              @db.Decimal(14, 4)
+  waterRateUnitId      String?
+  targetNote           String?
+  status               ParcelOperationStatus @default(PENDING)
+  completedAt          DateTime?
+  completedByUserId    String?
   /// Карантинен срок in days AS IT APPLIED ON THE DAY this line was marked
   /// done, captured per line rather than re-read from the product (#1775).
   ///
@@ -821,20 +821,20 @@ model OperationParcel {
   /// nullable — a parcel with no recorded area has nothing to bound against
   /// and nothing to default to, so such a line accepts any positive value and
   /// prints it.
-  treatedAreaHa        Decimal? @db.Decimal(12, 4)
+  treatedAreaHa        Decimal?              @db.Decimal(12, 4)
   // Optimistic-lock counter — bumped on every mutation. A queued offline mark
   // captures the version it saw and sends it back as `If-Match` on replay; the
   // server rejects the write with 409 STALE_DATA if the row moved on
   // meanwhile (a supervisor edited the job), so a hours-late replay can't
   // silently clobber newer server state. Idempotency stops duplication; this
   // stops staleness.
-  version           Int                   @default(0)
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
+  version              Int                   @default(0)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
-  tenant      Tenant     @relation(fields: [tenantId], references: [id])
-  task        Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  parcel      Parcel     @relation(fields: [parcelId, tenantId], references: [id, tenantId])
+  tenant        Tenant     @relation(fields: [tenantId], references: [id])
+  task          Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  parcel        Parcel     @relation(fields: [parcelId, tenantId], references: [id, tenantId])
   product       Item       @relation(fields: [productItemId, tenantId], references: [id, tenantId])
   doseUnit      Unit       @relation("OperationParcelDoseUnit", fields: [doseUnitId], references: [id])
   waterRateUnit Unit?      @relation("OperationParcelWaterUnit", fields: [waterRateUnitId], references: [id])
@@ -856,14 +856,14 @@ model OperationParcel {
 /// is a Postgres enum array; absence of a row means "all modules
 /// enabled" (resolved in src/lib/modules.ts). Tenant-scoped → RLS trio.
 model TenantModuleSettings {
-  id             String      @id @default(cuid())
-  tenantId       String      @unique
-  enabledModules ModuleKey[]
+  id                 String      @id @default(cuid())
+  tenantId           String      @unique
+  enabledModules     ModuleKey[]
   // Optional per-tenant Meteobot station dashboard URL, embedded on /climate
   // via a scoped CSP frame-src (validated to a meteobot.com host — #14).
   meteobotStationUrl String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 }
@@ -875,17 +875,24 @@ model TenantModuleSettings {
 /// Tenant (`tenantId @unique`, singleton config like TenantModuleSettings)
 /// → RLS trio in the migration, no soft-delete.
 ///
-/// egn (ЕГН — personal ID) and eik (ЕИК — company ID) are SENSITIVE and
-/// registered in the Epic B encrypted-fields manifest
-/// (src/lib/security/encrypted-fields.ts) — stored as ciphertext, never
-/// searched (the row is fetched by tenantId only).
+/// eik (ЕИК — company ID) and urn are SENSITIVE and registered in the Epic B
+/// encrypted-fields manifest (src/lib/security/encrypted-fields.ts) — stored
+/// as ciphertext, never searched (the row is fetched by tenantId only).
+///
+/// **There is deliberately no `egn` column.** One existed until #2258: the
+/// prescribed БАБХ form (Прил. 1 към заповед РД 11-3194/31.12.2021) has a
+/// boxed ЕГН field on its cover, and this model mirrored the paper. Owner
+/// ruling 2026-10-24 is that the product does not hold a national identity
+/// number at all — the column was overwritten and dropped, and the cover now
+/// prints ЕИК and УРН instead. Do not re-add it to mirror the form; the form
+/// is why it was here and the ruling is that the form does not get to decide
+/// this. ЕГН typed into the ЕИК box is still REFUSED (`looksLikeEgn` in
+/// src/lib/bg-identifiers.ts), which is the opposite concern and stays.
 model FarmProfile {
   id                         String   @id @default(cuid())
   tenantId                   String   @unique
   /// Име/фирма на земеделския производител.
   producerName               String?
-  /// ЕГН — encrypted at rest (Epic B manifest).
-  egn                        String?
   /// ЕИК — encrypted at rest (Epic B manifest).
   eik                        String?
   address                    String?
@@ -902,12 +909,17 @@ model FarmProfile {
   /// ОДБХ гр.
   odbhCity                   String?
   /// УРН — the farmer's registration number on the МЗХ земеделски-стопанин
-  /// register. DISTINCT from `eik` (the company) and `egn` (the person), both
-  /// already here: this is the number identifying the HOLDING to the state, and
-  /// it is what a subsidy or inspection reference cites.
+  /// register. DISTINCT from `eik`: that is the COMPANY, this is the number
+  /// identifying the HOLDING to the state, and it is what a subsidy or
+  /// inspection reference cites.
   ///
-  /// Encrypted at rest alongside egn/eik — it identifies a named producer, and
-  /// the manifest already treats the company number that way.
+  /// Carries more weight since #2258 dropped `egn`. A producer who is a
+  /// natural person rather than a company may have no ЕИК at all, so for them
+  /// this is the only identifier the ДНЕВНИК cover can print — which is why
+  /// the ЕГН box was replaced by ЕИК + УРН and not by ЕИК alone.
+  ///
+  /// Encrypted at rest beside eik — it identifies a named producer, and the
+  /// manifest already treats the company number that way.
   urn                        String?
   /// Declared size of the holding, in HECTARES.
   ///
@@ -992,8 +1004,8 @@ model FarmProfile {
 /// deliberate act with a known date, which turns staleness from silent into
 /// visible. That is the property that matters for a regulatory figure.
 model PppRegisterImport {
-  id         String   @id @default(cuid())
-  importedAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  importedAt   DateTime  @default(now())
   /// The operator who uploaded it, as an OPAQUE id rather than a relation.
   ///
   /// Deliberate: GDPR erasure deletes `User` rows, and a relation would
@@ -1003,10 +1015,10 @@ model PppRegisterImport {
   /// register must outlive them.
   importedById String
   /// The uploaded file's name, for the operator to recognise what is live.
-  sourceName String
+  sourceName   String
   /// Rows accepted. Stored rather than counted on read so "the import that
   /// silently parsed three rows" is visible beside its date.
-  entryCount Int
+  entryCount   Int
   /// Stamped LAST, after every entry row is written.
   ///
   /// Any read must consider only imports with a non-null `completedAt`, which
@@ -1017,7 +1029,7 @@ model PppRegisterImport {
   /// otherwise become the live national register missing two thirds of its
   /// rows — and a miss returns nothing, which is indistinguishable from "no
   /// product is approved for this crop".
-  completedAt DateTime?
+  completedAt  DateTime?
 
   entries PppRegisterEntry[]
 
@@ -1029,25 +1041,25 @@ model PppRegisterImport {
 /// The register is NATIONAL: identical for every farm, so not tenant-scoped —
 /// the same decision as `MarketPriceSeries`, and for the same reason.
 model PppRegisterEntry {
-  id       String @id @default(cuid())
-  importId String
+  id                   String   @id @default(cuid())
+  importId             String
   /// As the register spells it. Matching a farm's own crop to this is the
   /// read's problem, not the import's — storing a normalised guess here would
   /// bake one matching rule into the data.
-  crop        String
-  productName String
+  crop                 String
+  productName          String
   /// ЗЗР рег. № — the RELIABLE key. A product name differs by spelling,
   /// transliteration and trade dress; a registration number does not, which
   /// is why a read should prefer it and fall back to the name.
-  pppRegistrationNo String?
+  pppRegistrationNo    String?
   /// What the product is approved against for this crop.
-  pests String[]
+  pests                String[]
   /// A RANGE, because the register quotes one. A single value is stored with
   /// both bounds equal rather than in a separate column, so a reader never has
   /// to ask which of two shapes it is looking at.
-  doseMin  Decimal? @db.Decimal(14, 4)
-  doseMax  Decimal? @db.Decimal(14, 4)
-  doseUnit String?
+  doseMin              Decimal? @db.Decimal(14, 4)
+  doseMax              Decimal? @db.Decimal(14, 4)
+  doseUnit             String?
   /// Карантинен срок in days.
   quarantinePeriodDays Int?
   /// The register says this product is WITHDRAWN.
@@ -1056,7 +1068,7 @@ model PppRegisterEntry {
   /// dose for a withdrawn product is worse than no suggestion at all. Kept as
   /// a row rather than dropped at import so the withdrawal is a fact the
   /// product can state, not an absence it has to infer.
-  withdrawn Boolean @default(false)
+  withdrawn            Boolean  @default(false)
 
   import PppRegisterImport @relation(fields: [importId], references: [id], onDelete: Cascade)
 

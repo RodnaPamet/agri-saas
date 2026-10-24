@@ -59,24 +59,24 @@ enum PushPlatform {
 }
 
 model PushSubscription {
-  id        String   @id @default(cuid())
-  tenantId  String
-  userId    String
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
 
   /// Which transport reaches this row (#1764). Defaulted to WEB so every row
   /// that existed before the column is valid, and so an older image — which
   /// does not know the column exists — keeps writing rows that satisfy the
   /// `PushSubscription_web_shape` CHECK.
-  platform  PushPlatform @default(WEB)
+  platform PushPlatform @default(WEB)
 
   /// Web Push only. Nullable because an APNs row has no endpoint — NOT
   /// because a Web Push row may omit it: `PushSubscription_web_shape` still
   /// requires all three of these whenever `platform = WEB`, so the constraint
   /// the original NOT NULL expressed is intact. Per-platform nullability is
   /// what let this stay ONE table without weakening either shape.
-  endpoint  String?
-  p256dh    String?
-  auth      String?
+  endpoint String?
+  p256dh   String?
+  auth     String?
 
   /// APNs only — a 64-hex-character opaque device token, not a URL.
   /// `PushSubscription_ios_shape` requires it whenever `platform = IOS` and
@@ -652,9 +652,9 @@ model ProcessEdge {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  tenant     Tenant               @relation(fields: [tenantId], references: [id])
-  processMap ProcessMap           @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  practices   ProcessEdgePractice[]
+  tenant     Tenant                @relation(fields: [tenantId], references: [id])
+  processMap ProcessMap            @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  practices  ProcessEdgePractice[]
 
   @@unique([processMapId, edgeKey])
   @@unique([id, tenantId])
@@ -672,7 +672,7 @@ model ProcessEdgePractice {
   processMapId String
   edgeId       String
   // Client-stable id, scoped to the edge.
-  practiceKey   String
+  practiceKey  String
   label        String
   // Free-form payload for the edge-mounted practice card. This used
   // to sit below a nullable `practiceId` FK pointing at the GRC

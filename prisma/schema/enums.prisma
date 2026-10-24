@@ -99,23 +99,20 @@ enum OrgDashboardWidgetType {
   DRILLDOWN_CTAS // Drill-down navigation cards (practices / risks / evidence)
 }
 
-
 /**
  * The two APNs environments — #1764 step 3.
- *
  * Not a boolean, and not a free string. A boolean (`isSandbox`) reads
  * backwards half the time and gives the absent case no spelling; a string
  * invites `"sandbox"`, `"dev"` and `"Development"` to mean the same thing in
  * three rows. Apple's own names are these two.
- *
  * The WIRE form is lower-case — a client sends `"development"` or
  * `"production"` — because that is what `aps-environment` in a provisioning
  * profile says, and translating at the boundary is cheaper than asking every
  * client to shout.
  */
 enum ApnsEnvironment {
-    DEVELOPMENT
-    PRODUCTION
+  DEVELOPMENT
+  PRODUCTION
 }
 
 enum AssetType {
@@ -174,18 +171,6 @@ enum DepreciationMethod {
   NONE
   STRAIGHT_LINE
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 enum EvidenceType {
   FILE
@@ -304,9 +289,6 @@ enum TaskLinkRelation {
   MITIGATED_BY
 }
 
-
-
-
 /// Knowledge Base — mirrors PolicyStatus with a simpler lifecycle (no
 /// IN_REVIEW/APPROVED approval gate): authors draft, publish, then archive.
 enum KnowledgeArticleStatus {
@@ -336,13 +318,6 @@ enum KnowledgeChunkSourceType {
   LABEL
   EXTERNAL
 }
-
-
-
-
-
-
-
 
 enum ReviewCadence {
   MONTHLY
@@ -472,8 +447,6 @@ enum OnboardingStatus {
   SKIPPED
 }
 
-
-
 enum IdentityProviderType {
   SAML
   OIDC
@@ -504,20 +477,6 @@ enum NativeAuthCodePurpose {
   /// TOTP code. Carries no claims and is not a credential for anything else.
   PENDING_MFA
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 enum BillingPlan {
   FREE
@@ -624,8 +583,6 @@ enum AccessReviewDecisionType {
   MODIFY
 }
 
-
-
 /// Roadmap-26 PR-A — Process Map lifecycle.
 ///
 ///   DRAFT    — being authored, not yet published. Default for
@@ -646,9 +603,6 @@ enum ProcessCanvasMode {
   DOCUMENT
   AUTOMATION
 }
-
-
-
 
 // ═══════════════════════════════════════════════════════════════════
 //  AGRICULTURE DOMAIN (Feature 1 — spray-prescription map module)

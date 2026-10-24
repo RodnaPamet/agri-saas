@@ -50,8 +50,8 @@
 /// rollups SUM them); the negotiated `terms` + `pricingNotes` narrative
 /// is encrypted at rest. Tenant-scoped.
 model Contract {
-  id              String         @id @default(cuid())
-  tenantId        String
+  id                 String         @id @default(cuid())
+  tenantId           String
   /// Optional link to the marketing-year Season. Drives the org
   /// portfolio's per-season contracted-vs-produced rollup
   /// (`getPortfolioGrainSummary().perSeason`), which pairs these
@@ -61,23 +61,23 @@ model Contract {
   /// WIDER set than the live-book headline. See
   /// `CONTRACTED_SEASON_STATUSES` in
   /// `src/app-layer/domain/contract-status.ts`.
-  seasonId        String?
+  seasonId           String?
   /// External contract reference / number — the reference printed on
   /// the paper the farmer is holding. Unique per tenant among LIVE
   /// rows: the DB index is PARTIAL (`WHERE deletedAt IS NULL`, see
   /// migration 20260725140000) so deleting a contract releases its
   /// number for re-use. Prisma cannot express a partial index, so the
   /// `@@unique` below states the logical constraint.
-  key             String?
+  key                String?
   /// Buyer (SALE) or supplier (PURCHASE) name — plaintext, filterable.
-  counterparty    String
+  counterparty       String
   /// Commodity traded, e.g. "Wheat", "Malting Barley" — plaintext.
   ///
   /// This stays FREE TEXT on purpose: it is what the farmer typed off the
   /// paper contract in their hand, and "Malting Barley" is not "Barley" —
   /// the distinction is commercially real, and destroying it to gain a join
   /// key would be a bad trade. The canonical slug lives beside it instead.
-  commodity       String?
+  commodity          String?
   /// Canonical commodity slug derived from `commodity` via
   /// `normalizeCommodity` (src/lib/market/commodity-vocabulary.ts), or null
   /// when the free text names something the vocabulary does not cover.
@@ -87,32 +87,32 @@ model Contract {
   /// makes "am I selling above or below market?" expressible at all. Written
   /// on every create/update, backfilled by 20260805090000_commodity_canonical.
   commodityCanonical String?
-  type            ContractType   @default(SALE)
-  status          ContractStatus @default(DRAFT)
+  type               ContractType   @default(SALE)
+  status             ContractStatus @default(DRAFT)
   /// Contracted volume in metric tonnes — plaintext (SUM'd by rollups).
-  volumeTonnes    Decimal?       @db.Decimal(14, 3)
+  volumeTonnes       Decimal?       @db.Decimal(14, 3)
   /// Agreed price per tonne — plaintext. Contract value =
   /// `volumeTonnes × pricePerTonne`, computed Decimal-exactly by
   /// `computeContractValue` (`src/lib/grain/contract-value.ts`) and
   /// surfaced per row + as a per-currency book total on the list. Values
   /// are NEVER summed across `priceCurrency`.
-  pricePerTonne   Decimal?       @db.Decimal(14, 2)
-  priceCurrency   String?
-  deliveryStart   DateTime?
+  pricePerTonne      Decimal?       @db.Decimal(14, 2)
+  priceCurrency      String?
+  deliveryStart      DateTime?
   /// End of the agreed delivery window. Backs the "closing soon" /
   /// "overdue" signal on ACTIVE contracts (`deriveContractWindowState`)
   /// and the daily `contract-delivery-window-sweep` job — the
   /// `[tenantId, deliveryEnd]` index below is what that sweep scans.
-  deliveryEnd     DateTime?
+  deliveryEnd        DateTime?
   /// ENCRYPTED (Epic B manifest) — full negotiated contract terms.
-  terms           String?
+  terms              String?
   /// ENCRYPTED (Epic B manifest) — pricing basis / premium rationale.
-  pricingNotes    String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
+  pricingNotes       String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  deletedAt          DateTime?
+  deletedByUserId    String?
+  retentionUntil     DateTime?
 
   tenant     Tenant          @relation(fields: [tenantId], references: [id])
   season     Season?         @relation(fields: [seasonId, tenantId], references: [id, tenantId])
@@ -150,7 +150,7 @@ model Contract {
 /// carries no free-text commentary, so the Epic-B split holds by
 /// construction rather than by manifest entry.
 model GrainDelivery {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   tenantId        String
   /// The contract this movement is delivered against.
   contractId      String
@@ -159,11 +159,11 @@ model GrainDelivery {
   /// Delivered mass in metric tonnes — plaintext (SUM'd by the
   /// fulfilment rollup). Non-null: a delivery of "unknown" tonnes
   /// cannot close any part of a contract.
-  tonnes          Decimal  @db.Decimal(14, 3)
+  tonnes          Decimal   @db.Decimal(14, 3)
   /// Weighbridge ticket / delivery-note reference — plaintext.
   reference       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
   deletedByUserId String?
   retentionUntil  DateTime?
@@ -184,14 +184,14 @@ model GrainDelivery {
 /// (yield rollups SUM them); only the commercial `valuationNotes` is
 /// encrypted. Tenant-scoped.
 model YieldRecord {
-  id              String    @id @default(cuid())
-  tenantId        String
+  id                 String    @id @default(cuid())
+  tenantId           String
   /// Optional link to the Planting whose harvest this realises.
-  plantingId      String?
+  plantingId         String?
   /// Optional link to the field (Location) the produce came off.
-  locationId      String?
+  locationId         String?
   /// Optional link to the marketing-year Season.
-  seasonId        String?
+  seasonId           String?
   /// The journal HARVEST entry this record was minted from, when the farmer
   /// recorded the harvest ONCE and asked for it to count as both stock and
   /// yield. NULL for a yield typed directly on /grain/yield.
@@ -203,10 +203,10 @@ model YieldRecord {
   /// entered store instead of presenting two unrelated tonnages.
   /// UNIQUE (with tenantId, below) — one harvest entry mints at most one
   /// yield record, which is what makes the journal→yield effect idempotent.
-  logEntryId      String?
+  logEntryId         String?
   /// Commodity harvested, e.g. "Wheat" — plaintext. Free text, as on
   /// Contract: it is what was recorded at the weighbridge.
-  commodity       String?
+  commodity          String?
   /// Offline exactly-once. The outbox replays a queued write with its item id
   /// as the `Idempotency-Key`; the usecase dedupes on (tenantId,
   /// clientMutationId) and returns the ORIGINAL row instead of minting a
@@ -217,15 +217,15 @@ model YieldRecord {
   /// This is a FINANCIAL record, which is why it is worth the column: without
   /// it a lost response followed by a retry silently books the same cost
   /// twice and changes net worth, and nothing on the server would refuse it.
-  clientMutationId String?
+  clientMutationId   String?
   /// Canonical commodity slug derived from `commodity` — the join key to
   /// MarketPriceSeries. See Contract.commodityCanonical.
   commodityCanonical String?
-  harvestedAt     DateTime?
+  harvestedAt        DateTime?
   /// Gross harvested mass in metric tonnes — plaintext (SUM'd by rollups).
-  grossTonnes     Decimal?  @db.Decimal(14, 3)
+  grossTonnes        Decimal?  @db.Decimal(14, 3)
   /// Moisture % at which grossTonnes was measured — plaintext.
-  moisturePct     Decimal?  @db.Decimal(5, 2)
+  moisturePct        Decimal?  @db.Decimal(5, 2)
   /// grossTonnes expressed at the 14% standard moisture basis, so two
   /// harvests measured at different moistures can be summed and ranked.
   ///
@@ -242,16 +242,16 @@ model YieldRecord {
   /// assuming they were at standard. See src/lib/grain/moisture.ts for the
   /// formula and tests/guards/generated-columns.test.ts for the guard that
   /// keeps application code from writing it.
-  netTonnesStd    Decimal?  @db.Decimal(14, 3)
+  netTonnesStd       Decimal?  @db.Decimal(14, 3)
   /// Harvested area in hectares — plaintext (drives t/ha).
-  areaHa          Decimal?  @db.Decimal(12, 4)
+  areaHa             Decimal?  @db.Decimal(12, 4)
   /// ENCRYPTED (Epic B manifest) — commercial valuation commentary.
-  valuationNotes  String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
+  valuationNotes     String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+  deletedByUserId    String?
+  retentionUntil     DateTime?
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id])
   planting Planting? @relation(fields: [plantingId, tenantId], references: [id, tenantId])
@@ -266,13 +266,13 @@ model YieldRecord {
   // Also indexes the FK (logEntryId leads), satisfying the Layer-B index
   // guardrail.
   @@unique([logEntryId, tenantId])
+  @@unique([tenantId, clientMutationId])
   @@index([tenantId, plantingId])
   @@index([tenantId, locationId])
   @@index([tenantId, seasonId])
   @@index([tenantId, harvestedAt])
   /// Join key to MarketPriceSeries.
   @@index([tenantId, commodityCanonical])
-  @@unique([tenantId, clientMutationId])
 }
 
 /// A single cost a farmer entered, with an optional invoice.
@@ -307,9 +307,9 @@ model YieldRecord {
 /// executing test, because a row with two links would appear on two pages
 /// and be counted twice by anything summing per-domain.
 model CostEntry {
-  id              String       @id @default(cuid())
-  tenantId        String
-  category        CostCategory
+  id                     String              @id @default(cuid())
+  tenantId               String
+  category               CostCategory
   /// Offline exactly-once. The outbox replays a queued write with its item id
   /// as the `Idempotency-Key`; the usecase dedupes on (tenantId,
   /// clientMutationId) and returns the ORIGINAL row instead of minting a
@@ -320,12 +320,12 @@ model CostEntry {
   /// This is a FINANCIAL record, which is why it is worth the column: without
   /// it a lost response followed by a retry silently books the same cost
   /// twice and changes net worth, and nothing on the server would refuse it.
-  clientMutationId String?
+  clientMutationId       String?
   /// Plaintext — cost figures are SUMmed in-DB, and Decimal columns cannot
   /// carry the Epic B ciphertext (a "v2:"-prefixed base64 STRING) anyway.
   /// Listing it in the encryption manifest would fail SILENTLY: the
   /// middleware skips every non-string value without logging.
-  amount          Decimal      @db.Decimal(14, 2)
+  amount                 Decimal             @db.Decimal(14, 2)
   /// The per-decare figure AS THE FARMER TYPED IT, when they typed one.
   ///
   /// `amount` stays authoritative — it is what every SUM, margin and
@@ -344,7 +344,7 @@ model CostEntry {
   /// rather than a rate. Defaulting it to `amount / area` for those rows would
   /// make every entry look like a rate entry and destroy that distinction —
   /// the same reason `bottomTabOrder` keeps `null` and `[]` apart.
-  amountPerDca    Decimal?     @db.Decimal(14, 4)
+  amountPerDca           Decimal?            @db.Decimal(14, 4)
   /// How the farmer arrived at a PAYROLL figure, when they used the breakdown.
   ///
   /// Owner decision 2026-10-09: salaries are entered per year, "either a total
@@ -361,33 +361,33 @@ model CostEntry {
   /// Both or neither — one without the other cannot be rendered ("3 people ×
   /// ?") and is a client bug. PAYROLL only, like `leaseId` is RENT only.
   payrollHeadcount       Int?
-  payrollAnnualPerPerson Decimal?  @db.Decimal(14, 2)
+  payrollAnnualPerPerson Decimal?            @db.Decimal(14, 2)
   /// ISO-4217 code, e.g. "BGN" / "EUR". Plaintext, and mirrors
   /// `Contract.priceCurrency`. Never blended — there is no FX table in
   /// this repo, so consumers group BY currency or refuse.
-  currency        String
+  currency               String
   /// The date the cost was incurred. Drives the list's newest-first sort.
-  incurredOn      DateTime
+  incurredOn             DateTime
   /// Who was paid. Deliberately NOT encrypted: the manifest bans
   /// `contains` / `startsWith` / `orderBy` on encrypted columns and makes
   /// GROUP BY impossible (randomised AES-GCM gives one group per row),
   /// which would foreclose the supplier filter and any typeahead. A
   /// supplier's name on an invoice is not the commercial detail the
   /// manifest protects. sanitizePlainText'd before persisting.
-  supplier        String?
+  supplier               String?
   /// ENCRYPTED (Epic B manifest) — free text that can carry commercial
   /// terms. sanitizePlainText'd before encryption.
-  description     String?
+  description            String?
   /// The invoice, if one was attached. A caller must verify the
   /// FileRecord is `STORED` and not soft-deleted before pointing here —
   /// see `assertUsableInvoice`.
-  invoiceFileId   String?
-  plantingId      String?
-  seasonId        String?
-  locationId      String?
-  parcelId        String?
+  invoiceFileId          String?
+  plantingId             String?
+  seasonId               String?
+  locationId             String?
+  parcelId               String?
   /// Set only when `category = RENT`. The lease this payment settles.
-  leaseId         String?
+  leaseId                String?
   /// The PRODUCT this cost bought — fertiliser, fuel, seed, chemical.
   ///
   /// A sixth domain link, added because the inventory surface had no
@@ -399,7 +399,7 @@ model CostEntry {
   /// CONSUMPTION-based (see the `CostCategory` docblock), so this link is
   /// what lets a product page SHOW its purchases beside its consumption —
   /// not what merges them.
-  itemId          String?
+  itemId                 String?
   /// Canonical commodity slug — set ONLY when `allocationBasis = CROP`.
   ///
   /// Derived from the farmer's crop pick via `normalizeCommodity`
@@ -422,7 +422,7 @@ model CostEntry {
   /// columns ARE indexed because they join to the price series; this one does
   /// not. Should it ever become a list facet, that is a `[tenantId,
   /// commodityCanonical]` composite AND a `LIST_QUERY_INDEXES` entry.
-  commodityCanonical String?
+  commodityCanonical     String?
   /// Which land this cost is spread across — see `CostAllocationBasis`.
   ///
   /// Defaults to TARGET so every row written before this column keeps its
@@ -431,32 +431,33 @@ model CostEntry {
   /// become a list facet, that is a new `[tenantId, allocationBasis,
   /// incurredOn]` composite AND a `LIST_QUERY_INDEXES` entry, which the
   /// index guardrail matches order-sensitively.
-  allocationBasis CostAllocationBasis @default(TARGET)
-  createdByUserId String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  deletedAt       DateTime?
-  deletedByUserId String?
-  retentionUntil  DateTime?
+  allocationBasis        CostAllocationBasis @default(TARGET)
+  createdByUserId        String?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  deletedAt              DateTime?
+  deletedByUserId        String?
+  retentionUntil         DateTime?
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id])
-  planting    Planting?    @relation(fields: [plantingId, tenantId], references: [id, tenantId])
-  season      Season?      @relation(fields: [seasonId, tenantId], references: [id, tenantId])
-  location    Location?    @relation(fields: [locationId, tenantId], references: [id, tenantId])
-  parcel      Parcel?      @relation(fields: [parcelId, tenantId], references: [id, tenantId])
-  lease       ParcelLease? @relation(fields: [leaseId, tenantId], references: [id, tenantId])
-  item        Item?        @relation(fields: [itemId, tenantId], references: [id, tenantId])
+  tenant            Tenant                      @relation(fields: [tenantId], references: [id])
+  planting          Planting?                   @relation(fields: [plantingId, tenantId], references: [id, tenantId])
+  season            Season?                     @relation(fields: [seasonId, tenantId], references: [id, tenantId])
+  location          Location?                   @relation(fields: [locationId, tenantId], references: [id, tenantId])
+  parcel            Parcel?                     @relation(fields: [parcelId, tenantId], references: [id, tenantId])
+  lease             ParcelLease?                @relation(fields: [leaseId, tenantId], references: [id, tenantId])
+  item              Item?                       @relation(fields: [itemId, tenantId], references: [id, tenantId])
   /// Referenced by `id` alone, not the usual `[id, tenantId]` tenant
   /// barrier: `FileRecord` carries no `@@unique([id, tenantId])`, and the
   /// existing precedent (`LogEntry.fileRecord`, journal.prisma:171) does
   /// the same. Same-tenant ownership is therefore a USECASE obligation —
   /// `assertUsableInvoice` checks it alongside STORED and not-deleted.
-  invoiceFile FileRecord?  @relation(fields: [invoiceFileId], references: [id])
-  createdBy   User?        @relation("CostEntryCreator", fields: [createdByUserId], references: [id])
+  invoiceFile       FileRecord?                 @relation(fields: [invoiceFileId], references: [id])
+  createdBy         User?                       @relation("CostEntryCreator", fields: [createdByUserId], references: [id])
   /// Populated only when `allocationBasis = PARCEL_SUBSET`.
   allocationParcels CostEntryAllocationParcel[]
 
   @@unique([id, tenantId])
+  @@unique([tenantId, clientMutationId])
   /// List filter+sort shape: newest-incurred-first, tenant-scoped, with the
   /// category facet applied (`listCostEntries` default
   /// `orderBy: [{ incurredOn: 'desc' }, { id: 'desc' }]`).
@@ -473,9 +474,7 @@ model CostEntry {
   @@index([tenantId, leaseId])
   @@index([tenantId, itemId])
   @@index([tenantId, invoiceFileId])
-  @@unique([tenantId, clientMutationId])
 }
-
 
 /// The parcels a `PARCEL_SUBSET` cost entry is spread across.
 ///
