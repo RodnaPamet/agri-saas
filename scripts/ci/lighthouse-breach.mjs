@@ -72,8 +72,35 @@ export const normalise = (s) =>
 const EXPECTED = /^\s*expected:\s*([<>]=?)\s*([\d.]+)\s*$/;
 const FOUND = /^\s*found:\s*([\d.]+)\s*$/;
 const ALL_VALUES = /^\s*all values:\s*(.+?)\s*$/;
-/** the row heading: `<mark>  largest-contentful-paint failure for maxNumericValue assertion` */
-const HEADER = /^\s*\S*\s*(\S+)\s+failure for\s+(\S+)\s+assertion\s*$/;
+/**
+ * The row heading, for a FAILURE or a WARNING — #2207, and the distinction is
+ * the whole point of this patch.
+ *
+ * lhci prints both levels in one table:
+ *
+ *     X   largest-contentful-paint failure for maxNumericValue assertion
+ *           expected: <=3800
+ *              found: 4133.156
+ *         all values: 4027.303, 4170.728, 4124.582, 4142.91, 4133.156
+ *     !   categories.performance warning for minScore assertion
+ *           expected: >=0.8
+ *              found: 0.77
+ *         all values: 0.73, 0.76, 0.77, 0.78, 0.78
+ *
+ * The first version matched only `failure for`, so the WARNING never started a
+ * block and its `expected`/`found`/`all values` overwrote the failure's.
+ * Measured on run 40096890340: the annotation read
+ * `largest-contentful-paint: 0.770 vs bound >=0.800` — the failure's name
+ * carrying the warning's numbers — and it inverted the verdict. The real
+ * figures were 4133 ms against 3800 with a 143 ms spread, so the breach was
+ * 2.3x the spread; what it printed said the spread was 1.7x the breach and the
+ * run could not tell a regression from noise.
+ *
+ * The metric is `(.+?)` rather than `\S+` because a warning's subject can be
+ * several words, and a name this cannot parse is worse than useless — it gets
+ * attributed to whatever block came before.
+ */
+const HEADER = /^\s*\S*\s*(.+?)\s+(failure|warning) for\s+(\S+)\s+assertion\s*$/;
 
 /**
  * Parse the failed-assertion blocks out of an lhci `assert` log.
@@ -93,12 +120,28 @@ export function parseBreaches(text) {
         const header = HEADER.exec(line);
         if (header) {
             if (cur) breaches.push(cur);
-            cur = { metric: header[1], assertion: header[2], values: [] };
+            cur = {
+                metric: header[1],
+                level: header[2],
+                assertion: header[3],
+                values: [],
+            };
             continue;
         }
         if (!cur) continue;
         const expected = EXPECTED.exec(line);
         if (expected) {
+            /**
+             * A SECOND `expected:` inside one block means a header this parser
+             * did not recognise sat between them. Start a fresh block rather
+             * than overwrite, and mark it unnamed — the safety net behind the
+             * header pattern above, because the failure mode is not a missing
+             * line but a correct line attributed to the wrong metric.
+             */
+            if (Number.isFinite(cur.bound)) {
+                breaches.push(cur);
+                cur = { metric: '(unnamed assertion)', level: 'unknown', values: [] };
+            }
             cur.comparator = expected[1];
             cur.bound = Number(expected[2]);
             continue;
@@ -118,6 +161,17 @@ export function parseBreaches(text) {
     }
     if (cur) breaches.push(cur);
     return breaches.filter((b) => Number.isFinite(b.bound) && Number.isFinite(b.found));
+}
+
+/**
+ * Only the FAILURES, which are what the gate's exit code is about.
+ *
+ * A warning is real information and is counted in the output, but it must
+ * never be the headline of a message explaining why the job failed — that is
+ * the defect this split exists to prevent.
+ */
+export function failuresOnly(breaches) {
+    return breaches.filter((b) => b.level !== 'warning');
 }
 
 /** ms for a timing metric, 3 decimals for a unitless one like CLS. */
@@ -180,18 +234,33 @@ function main() {
         console.log(`::warning::lighthouse-breach: could not read ${logPath}: ${err.message}`);
         return;
     }
+    const failures = failuresOnly(breaches);
+    const warnings = breaches.filter((b) => b.level === 'warning');
+
     if (breaches.length === 0) {
         // Loud, not silent. The gate reaches this script only because lhci
-        // printed an assertion table, so finding no failed assertion in it
-        // means the parse has gone stale — which must not look like a clean
-        // run.
+        // printed an assertion table, so finding no assertion in it means the
+        // parse has gone stale — which must not look like a clean run.
         console.log(
-            '::warning::lighthouse-breach: the log holds an assertion table but no failed'
+            '::warning::lighthouse-breach: the log holds an assertion table but no'
                 + ' assertion was parsed from it — the format may have changed.',
         );
         return;
     }
-    for (const breach of breaches) console.log(`::error::Lighthouse budget — ${describe(breach)}`);
+
+    // FAILURES as errors, warnings as warnings, and never the other way round.
+    // A warning's numbers appearing under a failure's name is the defect this
+    // separation exists for.
+    for (const f of failures) console.log(`::error::Lighthouse budget — ${describe(f)}`);
+    for (const w of warnings) {
+        console.log(`::warning::Lighthouse budget, a WARNING and not the failure — ${describe(w)}`);
+    }
+    if (failures.length === 0) {
+        console.log(
+            `::warning::lighthouse-breach: parsed ${warnings.length} warning(s) and NO failure,`
+                + ' yet the gate treated this as a budget failure — the format may have changed.',
+        );
+    }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('lighthouse-breach.mjs')) main();
