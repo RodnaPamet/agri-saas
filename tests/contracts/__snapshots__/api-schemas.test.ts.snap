@@ -3761,7 +3761,7 @@ exports[`API contract — per-schema snapshots schema: CorrectDiaryTreatment 1`]
       "maxItems": 500
     }
   },
-  "description": "A correction to a recorded treatment. Only the title, the application technique, the target note, the quarantine period, the phenophase and the farm day are corrected today; a CHANGED dose, product, water rate or parcel list is refused by name with \`TREATMENT_CORRECTION_FIELD_UNSUPPORTED\`, while an UNCHANGED one is accepted, so a client may safely send the whole definition back."
+  "description": "A correction to a recorded treatment. Every field here is corrected except the parcel SET: adding or dropping a parcel is refused with \`TREATMENT_CORRECTION_FIELD_UNSUPPORTED\` and \`params.reference: parcels\`, because it changes how many rows the treatment has and which blocks it spans. The treated AREAS inside \`parcels\` are correctable. An unchanged parcel set is accepted, so a client may safely send the whole definition back on every save."
 }"
 `;
 

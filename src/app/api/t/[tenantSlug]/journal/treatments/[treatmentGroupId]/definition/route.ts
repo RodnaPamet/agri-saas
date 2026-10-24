@@ -87,11 +87,16 @@ export const GET = withApiErrorHandling(
  *
  * ## What it refuses, and why that is not silence
  *
- * A CHANGED dose, product, water rate or parcel list answers 400
- * `TREATMENT_CORRECTION_FIELD_UNSUPPORTED` with the field names in
- * `params.reference`. An UNCHANGED one is accepted, so the editor may send the
- * whole definition back — see `CorrectDiaryTreatmentSchema`, where #1352 is the
- * precedent in both directions.
+ * Adding or dropping a PARCEL: 400 `TREATMENT_CORRECTION_FIELD_UNSUPPORTED`
+ * with `params.reference: parcels`. Everything else on the definition is
+ * corrected, including the dose, the product, the water rate and the per-parcel
+ * treated area — each of which recomputes the affected journal entries so the
+ * ДНЕВНИК cannot print the quantity of a dose that was replaced.
+ *
+ * The refusal is CONDITIONAL: an unchanged parcel set is accepted, so the
+ * editor may send the whole definition back — see
+ * `CorrectDiaryTreatmentSchema`, where #1352 is the precedent in both
+ * directions.
  */
 export const PUT = withApiErrorHandling(
     withValidatedBody(

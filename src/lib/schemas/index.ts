@@ -1108,9 +1108,9 @@ export type RecordDiaryTreatmentBody = z.infer<typeof RecordDiaryTreatmentSchema
  * so every field a correction could plausibly change is declared here even when
  * the usecase refuses it — the dose, the product, the water rate and the parcel
  * list included. Declared, they reach `correctDiaryTreatment` and come back as
- * a named `TREATMENT_CORRECTION_FIELD_UNSUPPORTED`; stripped, they would be
- * dropped and answered 200, and the operator would reopen the form to find the
- * dose they corrected still showing the old value.
+ * through to the usecase and corrected; stripped, they would be dropped and
+ * answered 200, and the operator would reopen the form to find the dose they
+ * corrected still showing the old value.
  *
  * Bounds mirror `RecordDiaryTreatmentSchema` field for field, so a value the
  * record path accepted cannot be rejected by the path that corrects it.
@@ -1149,11 +1149,12 @@ export const CorrectDiaryTreatmentSchema = z
     .strip()
     .openapi('CorrectDiaryTreatment', {
         description:
-            'A correction to a recorded treatment. Only the title, the application technique, '
-            + 'the target note, the quarantine period, the phenophase and the farm day are '
-            + 'corrected today; a CHANGED dose, product, water rate or parcel list is refused '
-            + 'by name with `TREATMENT_CORRECTION_FIELD_UNSUPPORTED`, while an UNCHANGED one is '
-            + 'accepted, so a client may safely send the whole definition back.',
+            'A correction to a recorded treatment. Every field here is corrected except the '
+            + 'parcel SET: adding or dropping a parcel is refused with '
+            + '`TREATMENT_CORRECTION_FIELD_UNSUPPORTED` and `params.reference: parcels`, because '
+            + 'it changes how many rows the treatment has and which blocks it spans. The treated '
+            + 'AREAS inside `parcels` are correctable. An unchanged parcel set is accepted, so a '
+            + 'client may safely send the whole definition back on every save.',
     });
 
 export type CorrectDiaryTreatmentBody = z.infer<typeof CorrectDiaryTreatmentSchema>;
