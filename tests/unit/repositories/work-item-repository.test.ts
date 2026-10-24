@@ -1043,13 +1043,16 @@ describe('TaskLinkRepository', () => {
         });
     });
 
-    it('does unlink a row inside the tenant', async () => {
-        // Positive half of the guard above.
-        db.taskLink.findFirst.mockResolvedValue({ id: 'link-1' });
+    it('does unlink a row inside the tenant, and RETURNS it', async () => {
+        // Positive half of the guard above. It returns the deleted row rather
+        // than `true` since #2109: `removeTaskLink` needs the target to put in
+        // its audit payload, and the pre-read already has it.
+        const row = { id: 'link-1', taskId: 'task-9', entityType: 'Parcel', entityId: 'parcel-3', relation: 'BLOCKS' };
+        db.taskLink.findFirst.mockResolvedValue(row);
 
         const result = await TaskLinkRepository.unlink(asTx(db), ctx, 'link-1');
 
-        expect(result).toBe(true);
+        expect(result).toEqual(row);
         expect(db.taskLink.delete).toHaveBeenCalledWith({ where: { id: 'link-1' } });
     });
 });

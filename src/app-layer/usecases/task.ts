@@ -1105,7 +1105,22 @@ export async function addTaskLink(ctx: RequestContext, taskId: string, entityTyp
             entityType: 'Task',
             entityId: taskId,
             details: `Linked to ${entityType} ${entityId}`,
-            detailsJson: { category: 'relationship', operation: 'linked', sourceEntity: 'Task' },
+            // The TARGET belongs in the structured payload, not only in the
+            // prose and `metadata` (#2109). `RelationshipSchema` requires
+            // sourceId / targetEntity / targetId, and without them the row
+            // recorded that something was linked without recording to what —
+            // a reader of the `AuditDetails` union got a member-less row.
+            // The Evidence pair in this same file (`attachEvidenceToTask`)
+            // already did it this way; these two were the inconsistency.
+            detailsJson: {
+                category: 'relationship',
+                operation: 'linked',
+                sourceEntity: 'Task',
+                sourceId: taskId,
+                targetEntity: entityType,
+                targetId: entityId,
+                ...(relation ? { relation } : {}),
+            },
             metadata: { entityType, entityId, relation },
         });
         return link;
@@ -1123,8 +1138,20 @@ export async function removeTaskLink(ctx: RequestContext, linkId: string) {
             action: 'TASK_UNLINKED',
             entityType: 'Task',
             entityId: linkId,
-            details: 'Removed task link',
-            detailsJson: { category: 'relationship', operation: 'unlinked', sourceEntity: 'Task' },
+            details: `Removed link to ${result.entityType} ${result.entityId}`,
+            // Named from the deleted row, which `unlink` now returns instead
+            // of `true` — see its docblock. Before this the row said only
+            // "Removed task link" and carried a link id, so neither the prose
+            // nor the payload said what had been unlinked.
+            detailsJson: {
+                category: 'relationship',
+                operation: 'unlinked',
+                sourceEntity: 'Task',
+                sourceId: result.taskId,
+                targetEntity: result.entityType,
+                targetId: result.entityId,
+                ...(result.relation ? { relation: result.relation } : {}),
+            },
         });
         return result;
     });

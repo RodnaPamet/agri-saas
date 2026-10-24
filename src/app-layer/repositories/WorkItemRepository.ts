@@ -641,11 +641,24 @@ export class TaskLinkRepository {
         });
     }
 
+    /**
+     * Returns the DELETED ROW, not `true` (#2109).
+     *
+     * The pre-read already exists — it is the tenant scope, since
+     * `delete({ where: { id } })` runs unscoped and without it any link id is
+     * deletable cross-tenant. It was being discarded, which left
+     * `removeTaskLink` unable to say WHAT was unlinked: its audit row carried
+     * `category: 'relationship'` with no `targetEntity` and no `targetId`, so
+     * the record said a link was removed and not which.
+     *
+     * `null` still means "not yours or not there", so the caller's truthiness
+     * check is unchanged.
+     */
     static async unlink(db: PrismaTx, ctx: RequestContext, linkId: string) {
         const link = await db.taskLink.findFirst({ where: { id: linkId, tenantId: ctx.tenantId } });
         if (!link) return null;
         await db.taskLink.delete({ where: { id: linkId } });
-        return true;
+        return link;
     }
 }
 
