@@ -8,7 +8,8 @@ import {
     codedNotFound,
     staleData,
 } from '@/lib/errors/types';
-import { runInTenantContext } from '@/lib/db-context';
+import { afterCommit } from '@/lib/db/after-commit';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { createTask } from './task';
 import { WorkItemRepository, TaskLinkRepository } from '../repositories/WorkItemRepository';
 import { ParcelRepository } from '../repositories/ParcelRepository';
@@ -726,6 +727,21 @@ export async function markOperationParcel(
         /** Третирани площи in HECTARES; absent leaves the column alone (#2072). */
         treatedAreaHa?: number | null;
         treatmentGroupId?: string;
+        /**
+         * Join the CALLER's transaction instead of opening one (#2172).
+         *
+         * The #2172 correction route has to add or drop a parcel atomically
+         * with the rest of a correction, and a nested `$transaction` on the same
+         * client is not a nested transaction — it takes another connection and
+         * deadlocks on the rows the outer one holds. So the caller passes its
+         * `db` and this function writes inside it.
+         *
+         * Absent, the behaviour is exactly as before: open a tenant transaction
+         * of its own. The `farm-record-pdf` enqueue moved to `afterCommit` so it
+         * fires after the OUTERMOST transaction either way — standalone, that is
+         * the same commit it already waited for.
+         */
+        tx?: PrismaTx;
     },
 ) {
     return traceAgUsecase('field-operation.markOperationParcel', ctx, () =>
@@ -749,9 +765,24 @@ async function markOperationParcelImpl(
         /** Третирани площи in HECTARES; absent leaves the column alone (#2072). */
         treatedAreaHa?: number | null;
         treatmentGroupId?: string;
+        /**
+         * Join the CALLER's transaction instead of opening one (#2172).
+         *
+         * The #2172 correction route has to add or drop a parcel atomically
+         * with the rest of a correction, and a nested `$transaction` on the same
+         * client is not a nested transaction — it takes another connection and
+         * deadlocks on the rows the outer one holds. So the caller passes its
+         * `db` and this function writes inside it.
+         *
+         * Absent, the behaviour is exactly as before: open a tenant transaction
+         * of its own. The `farm-record-pdf` enqueue moved to `afterCommit` so it
+         * fires after the OUTERMOST transaction either way — standalone, that is
+         * the same commit it already waited for.
+         */
+        tx?: PrismaTx;
     },
 ) {
-    const result = await runInTenantContext(ctx, async (db) => {
+    const run = async (db: PrismaTx) => {
         const line = await db.operationParcel.findFirst({
             where: { id: lineId, taskId, tenantId: ctx.tenantId },
             include: {
@@ -1078,32 +1109,46 @@ async function markOperationParcelImpl(
             },
         });
 
-        return { success: true, resolved, application, version: line.version + 1 };
-    });
-
-    // БАБХ farm-record — when the job auto-resolves, regenerate the location's
-    // current-season ДНЕВНИК into its Farm-records register. Enqueued AFTER
-    // the tenant tx commits, fire-and-forget + fail-open: a Redis outage must
-    // never roll back the completion the operator just recorded. jobId keyed
-    // on the task dedups repeated resolve transitions.
-    if (result.resolved) {
-        try {
-            await enqueue(
-                'farm-record-pdf',
-                { tenantId: ctx.tenantId, taskId },
-                { jobId: `farm-record-${taskId}` },
-            );
-        } catch (err) {
-            logger.warn('farm-record-pdf enqueue failed (task completion unaffected)', {
-                component: 'usecase',
-                tenantId: ctx.tenantId,
-                taskId,
-                error: err instanceof Error ? err.message : String(err),
+        // БАБХ farm-record — when the job auto-resolves, regenerate the
+        // location's current-season ДНЕВНИК into its Farm-records register.
+        // Fire-and-forget + fail-open: a Redis outage must never roll back the
+        // completion the operator just recorded. jobId keyed on the task dedups
+        // repeated resolve transitions.
+        //
+        // `afterCommit` rather than a statement after the transaction, which is
+        // where this lived. Standalone the two are the same commit — but once a
+        // caller can pass its own `tx` (#2172), "after the statement" would run
+        // while the CALLER's transaction is still open, enqueueing a
+        // regeneration for a correction that may still roll back. `afterCommit`
+        // fires after the OUTERMOST transaction, which is the guarantee this
+        // comment claimed all along.
+        if (resolved) {
+            afterCommit('farm-record-pdf:mark-operation-parcel', async () => {
+                try {
+                    await enqueue(
+                        'farm-record-pdf',
+                        { tenantId: ctx.tenantId, taskId },
+                        { jobId: `farm-record-${taskId}` },
+                    );
+                } catch (err) {
+                    logger.warn('farm-record-pdf enqueue failed (task completion unaffected)', {
+                        component: 'usecase',
+                        tenantId: ctx.tenantId,
+                        taskId,
+                        error: err instanceof Error ? err.message : String(err),
+                    });
+                }
             });
         }
-    }
 
-    return result;
+        return { success: true, resolved, application, version: line.version + 1 };
+    };
+
+    // The caller's transaction when it supplied one, otherwise our own. Not
+    // `runInTenantContext` unconditionally: a nested `$transaction` on the same
+    // client takes another connection and deadlocks on the rows the outer one
+    // holds.
+    return opts?.tx ? await run(opts.tx) : await runInTenantContext(ctx, run);
 }
 
 /**
