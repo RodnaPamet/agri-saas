@@ -1788,6 +1788,30 @@ export async function correctDiaryTreatment(
                 const doseUnit = units.find((u) => u.id === effDoseUnitId);
                 const productUnit = units.find((u) => u.id === product.defaultUnitId);
 
+                // Every entry of the treatment in ONE read, keyed by its line.
+                // Addressed by `treatmentGroupId` — the same key the withdrawal
+                // uses to reach a treatment's entries — rather than one
+                // `findFirst` per parcel, which is an N+1 over the parcels of a
+                // treatment and is what `query-shape-guardrails` refuses.
+                const entryRows = await db.logEntry.findMany({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        treatmentGroupId: handle,
+                        type: 'INPUT_APPLICATION',
+                    },
+                    select: {
+                        id: true,
+                        titleKey: true,
+                        operationParcelId: true,
+                        quantities: { select: { id: true } },
+                    },
+                });
+                const entryByLine = new Map(
+                    entryRows
+                        .filter((e) => e.operationParcelId != null)
+                        .map((e) => [e.operationParcelId as string, e]),
+                );
+
                 for (const line of lines) {
                     const treated = areas
                         ? (areas.get(line.parcelId) ?? null)
@@ -1803,18 +1827,7 @@ export async function correctDiaryTreatment(
                             line.parcel.areaHa == null ? null : Number(line.parcel.areaHa),
                     });
 
-                    const entry = await db.logEntry.findFirst({
-                        where: {
-                            tenantId: ctx.tenantId,
-                            operationParcelId: line.id,
-                            type: 'INPUT_APPLICATION',
-                        },
-                        select: {
-                            id: true,
-                            titleKey: true,
-                            quantities: { select: { id: true } },
-                        },
-                    });
+                    const entry = entryByLine.get(line.id);
                     if (!entry) continue;
 
                     // The same three states `recordInputApplication` writes: a
