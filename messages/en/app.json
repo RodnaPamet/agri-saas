@@ -6746,7 +6746,6 @@
         "THREAD_PERSON_BLOCKED": "You have blocked this person. Unblock them to continue the conversation.",
         "TREATMENT_ABANDONED": "This treatment was abandoned by an administrator. Do not send it again — record it afresh under a new key if the work still needs a register entry.",
         "TREATMENT_AREA_EXCEEDS_PARCEL": "The treated area cannot exceed the parcel's own area. Enter an area no larger than the parcel, or leave it empty to record the whole parcel.",
-        "TREATMENT_CORRECTION_FIELD_UNSUPPORTED": "This field cannot be corrected yet. The dose, the product, the water rate and the parcel list are changed by withdrawing the treatment and recording it again.",
         "TREATMENT_CORRECTION_NEW_BLOCK": "A correction can only add a parcel in a block this treatment already covers. Record the other block as its own treatment.",
         "TREATMENT_CORRECTION_WOULD_EMPTY": "A correction cannot remove every parcel. Withdraw the treatment instead.",
         "TREATMENT_DATE_INVALID": "The treatment date must be a calendar day in the form YYYY-MM-DD.",

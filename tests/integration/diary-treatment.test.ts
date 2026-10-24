@@ -1277,33 +1277,6 @@ describeFn('correctDiaryTreatment (DB-backed, #2172)', () => {
         expect(Number(q!.value)).toBe(4);
     });
 
-    it('still refuses ADDING or DROPPING a parcel', async () => {
-        // The one case left, and the one the TreatmentGroup row was designed
-        // for: it changes how many rows the treatment has and which blocks it
-        // spans, so it needs the per-block fan-out, not a column update.
-        const handle = await recorded('set');
-        const before = await getDiaryTreatmentDefinition(ctx(), handle);
-        await expect(
-            correctDiaryTreatment(
-                ctx(),
-                handle,
-                {
-                    parcels: before.lines
-                        .slice(1)
-                        .map((l) => ({ parcelId: l.parcelId, treatedAreaHa: l.treatedAreaHa })),
-                },
-                before.version,
-            ),
-        ).rejects.toMatchObject({
-            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
-            params: { reference: 'parcels' },
-        });
-
-        const after = await getDiaryTreatmentDefinition(ctx(), handle);
-        expect(after.version).toBe(before.version);
-        expect(after.lines).toHaveLength(3);
-    });
-
     it('raises the SAME refusals recording would', async () => {
         // A correction must not be a way to put a value into the register that
         // recording it would have refused.
