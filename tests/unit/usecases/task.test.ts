@@ -110,7 +110,10 @@ import {
     bulkSetTaskDueDate,
     deleteTask,
     bulkDeleteTask,
+    addTaskLink,
+    removeTaskLink,
 } from '@/app-layer/usecases/task';
+import { AuditDetailsSchema } from '@/lib/audit/event-schema';
 import { createBulkTaskSummaryNotification } from '@/app-layer/notifications/bulk-task-summary';
 import { runInTenantContext } from '@/lib/db-context';
 import {
@@ -138,6 +141,8 @@ const mockAssign = WorkItemRepository.assign as jest.MockedFunction<typeof WorkI
 const mockBulkSetStatus = WorkItemRepository.bulkSetStatus as jest.MockedFunction<typeof WorkItemRepository.bulkSetStatus>;
 const mockListByIds = WorkItemRepository.listByIds as jest.MockedFunction<typeof WorkItemRepository.listByIds>;
 const mockLinkList = TaskLinkRepository.listByTask as jest.MockedFunction<typeof TaskLinkRepository.listByTask>;
+const mockLink = TaskLinkRepository.link as jest.MockedFunction<typeof TaskLinkRepository.link>;
+const mockUnlink = TaskLinkRepository.unlink as jest.MockedFunction<typeof TaskLinkRepository.unlink>;
 const mockCommentAdd = TaskCommentRepository.add as jest.MockedFunction<typeof TaskCommentRepository.add>;
 const mockSanitize = sanitizePlainText as jest.MockedFunction<typeof sanitizePlainText>;
 const mockEmitEvent = emitAutomationEvent as jest.MockedFunction<typeof emitAutomationEvent>;
@@ -888,5 +893,119 @@ describe('bulkDeleteTask — treatment shares refuse the WHOLE call (#2220)', ()
         const out = await bulkDeleteTask(makeRequestContext('OWNER'), ['a', 'b']);
         expect(out).toEqual({ deleted: 2 });
         expect(deleteMany).toHaveBeenCalled();
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// #2109 — the relationship audit payload NAMES ITS TARGET
+//
+// `detailsJson` is validated on the write path by the permissive
+// `AuditDetailsJsonSchema` (one flat object, `.passthrough()`), never by the
+// canonical `AuditDetailsSchema` — a discriminated union whose members are
+// `.strict()`. So these two call sites wrote
+//
+//     { category: 'relationship', operation: 'linked', sourceEntity: 'Task' }
+//
+// and nothing complained, even though `RelationshipSchema` requires
+// `sourceId`, `targetEntity` and `targetId`. The audit row recorded that
+// something had been linked without recording to WHAT, and a reader written
+// against the `AuditDetails` union received a row matching no member.
+//
+// Asserted through the CANONICAL schema rather than by comparing to a literal:
+// a `toEqual` on the object I just wrote would pass whatever the schema says,
+// which is the shape of mistake this whole issue is about.
+//
+// These were also the only two of ten `relationship` writes that were
+// incomplete — the Evidence pair in the same file already did it properly —
+// so this is an inconsistency inside one file rather than a missing convention.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('relationship audit payloads satisfy the canonical schema (#2109)', () => {
+    /** The `detailsJson` from the single `logEvent` call, parsed strictly. */
+    const parseLoggedDetails = () => {
+        expect(mockLog).toHaveBeenCalledTimes(1);
+        const payload = mockLog.mock.calls[0][2] as { detailsJson?: unknown };
+        return AuditDetailsSchema.safeParse(payload.detailsJson);
+    };
+
+    it('control: the canonical schema REJECTS the old payload', () => {
+        // Without this the two assertions below pass against a schema that
+        // accepts anything — which is exactly what the permissive one on the
+        // write path does, and why nothing caught this for months.
+        const old = { category: 'relationship', operation: 'linked', sourceEntity: 'Task' };
+        const result = AuditDetailsSchema.safeParse(old);
+        expect(result.success).toBe(false);
+    });
+
+    it('addTaskLink records the source AND the target', async () => {
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+        mockLink.mockResolvedValue({ id: 'link-1' } as never);
+
+        await addTaskLink(makeRequestContext('EDITOR'), 'task-9', 'Parcel', 'parcel-3', 'BLOCKS');
+
+        const result = parseLoggedDetails();
+        expect(result.success).toBe(true);
+        expect(result.success && result.data).toMatchObject({
+            category: 'relationship',
+            operation: 'linked',
+            sourceEntity: 'Task',
+            sourceId: 'task-9',
+            targetEntity: 'Parcel',
+            targetId: 'parcel-3',
+            relation: 'BLOCKS',
+        });
+    });
+
+    it('addTaskLink omits `relation` rather than sending undefined', async () => {
+        // `RelationshipSchema` is `.strict()` and `relation` is `.optional()`.
+        // The caller's `relation` argument is optional, so a spread is used
+        // instead of always setting the key.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+        mockLink.mockResolvedValue({ id: 'link-1' } as never);
+
+        await addTaskLink(makeRequestContext('EDITOR'), 'task-9', 'Parcel', 'parcel-3');
+
+        const result = parseLoggedDetails();
+        expect(result.success).toBe(true);
+        const details = mockLog.mock.calls[0][2] as { detailsJson: Record<string, unknown> };
+        expect(Object.hasOwn(details.detailsJson, 'relation')).toBe(false);
+    });
+
+    it('removeTaskLink names the target it deleted, from the returned row', async () => {
+        // `unlink` returns the deleted row since #2109 — the tenant-scoping
+        // pre-read already had it and was discarding it, which is why this
+        // call site could not say what it had unlinked.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+        mockUnlink.mockResolvedValue({
+            id: 'link-1',
+            taskId: 'task-9',
+            entityType: 'Parcel',
+            entityId: 'parcel-3',
+            relation: 'BLOCKS',
+        } as never);
+
+        await removeTaskLink(makeRequestContext('EDITOR'), 'link-1');
+
+        const result = parseLoggedDetails();
+        expect(result.success).toBe(true);
+        expect(result.success && result.data).toMatchObject({
+            category: 'relationship',
+            operation: 'unlinked',
+            sourceEntity: 'Task',
+            sourceId: 'task-9',
+            targetEntity: 'Parcel',
+            targetId: 'parcel-3',
+        });
+    });
+
+    it('removeTaskLink refuses a link that is not in the tenant', async () => {
+        // The scoping half, restated here because the audit change rides on
+        // `unlink`'s return value and a null must still throw rather than be
+        // read as a row.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+        mockUnlink.mockResolvedValue(null as never);
+
+        await expect(removeTaskLink(makeRequestContext('EDITOR'), 'link-foreign')).rejects.toThrow();
+        expect(mockLog).not.toHaveBeenCalled();
     });
 });
