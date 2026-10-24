@@ -1,9 +1,8 @@
 {
     "Admin/FarmProfileEditing": {
-        "admin.farmProfile.fieldHints.urn": "Уникалният регистрационен номер от ДФЗ (ИСАК) — различен от ЕИК и ЕГН.",
+        "admin.farmProfile.fieldHints.urn": "Уникалният регистрационен номер от ДФЗ (ИСАК) — различен от ЕИК.",
         "admin.farmProfile.fields.address": "Адрес по регистрация / на управление",
         "admin.farmProfile.fields.agricultureDirectorateCity": "ОД „Земеделие“ гр.",
-        "admin.farmProfile.fields.egn": "ЕГН",
         "admin.farmProfile.fields.eik": "ЕИК",
         "admin.farmProfile.fields.municipality": "Община",
         "admin.farmProfile.fields.odbhCity": "ОДБХ гр.",

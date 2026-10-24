@@ -433,6 +433,29 @@ export async function upsertFarmProfile(
                 }
             }
 
+            // ── `egn` is refused only when it carries a VALUE (#2258) ──
+            //
+            // There is no column any more. The key is still accepted by the
+            // schema, and that is deliberate: `UpdateFarmProfileSchema` ends
+            // in `.strip()`, so deleting the property would make zod drop an
+            // `egn` the caller sent without a word, and a client that believes
+            // it stored a national identity number would be told it succeeded.
+            //
+            // CONDITIONAL for the same reason `eik` above is, and it is the
+            // same client: the iOS editor PUTs every field on every save, so
+            // it mentions `egn` whether or not anyone typed one. An
+            // unconditional refusal would 400 every farm-profile save from the
+            // owner's phone — which is exactly the regression #1352 records
+            // having caused. So a null or blank `egn` is a silent no-op (that
+            // is what a GET returns now, and echoing it back is not an attempt
+            // to write), and only a real value is refused.
+            if (said('egn') && norm(input.egn) !== null) {
+                throw codedBadRequest(
+                    'FARM_PROFILE_EGN_NOT_COLLECTED',
+                    'ЕГН is no longer collected or stored.',
+                );
+            }
+
             if (!mentionedAnything) {
                 const current = await db.farmProfile.findUnique({
                     where: { tenantId: ctx.tenantId },

@@ -21,8 +21,10 @@
  *
  * ## Why the seed goes through the APP client
  *
- * `egn`, `eik` and `urn` are encrypted at rest by the pii middleware
- * (`encrypted-fields.ts`: `FarmProfile: ['egn', 'eik', 'urn']`). Seeding them
+ * `eik` and `urn` are encrypted at rest by the pii middleware
+ * (`encrypted-fields.ts`: `FarmProfile: ['eik', 'urn']`). There is no `egn`
+ * to seed — #2258 dropped the column — so this suite is one PII field
+ * narrower than it was, which is the point of that change. Seeding them
  * through the raw client would store the plaintext and then every "no hits"
  * assertion would be measuring a ciphertext that never resembled the search
  * string in the first place — a pass for the wrong reason. `address`,
@@ -75,7 +77,6 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const RUN = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
 
 const PII = {
-    egn: `EGN-${RUN}`,
     eik: `EIK-${RUN}`,
     urn: `URN-${RUN}`,
     address: `ADDRESS-${RUN}-ул. Тайна 7`,
@@ -167,7 +168,6 @@ describeFn('P6.10 — no private farm identity on a public surface', () => {
             where: { tenantId: tenants[0] },
         });
         expect(row).not.toBeNull();
-        expect(row?.egn).toBe(PII.egn);
         expect(row?.eik).toBe(PII.eik);
         expect(row?.urn).toBe(PII.urn);
         expect(row?.address).toBe(PII.address);
@@ -235,7 +235,7 @@ describeFn('P6.10 — no private farm identity on a public surface', () => {
         // one.
         await globalPrisma.publicFarmProfile.update({
             where: { handle },
-            data: { tagline: `leaked ${PII.egn}` },
+            data: { tagline: `leaked ${PII.eik}` },
         });
 
         const row = await globalPrisma.publicFarmProfile.findUnique({ where: { handle } });

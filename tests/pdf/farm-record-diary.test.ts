@@ -40,8 +40,8 @@ function collect(doc: PDFKit.PDFDocument): Promise<Buffer> {
 
 const PROFILE: FarmProfileData = {
     producerName: 'ЕТ „Иван Петров“',
-    egn: '7501011234',
     eik: '203456789',
+    urn: '1234567890',
     address: 'с. Труд, ул. Роза 5',
     municipality: 'Марица',
     settlement: 'Труд',
@@ -293,8 +293,8 @@ describe('farm-record-diary — render smoke', () => {
     test('tolerates an all-blank FarmProfile (dotted lines, no throw)', async () => {
         const blank: FarmProfileData = {
             producerName: null,
-            egn: null,
             eik: null,
+            urn: null,
             address: null,
             municipality: null,
             settlement: null,

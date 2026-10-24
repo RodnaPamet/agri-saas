@@ -6195,12 +6195,6 @@
               "null"
             ]
           },
-          "egn": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "eik": {
             "type": [
               "string",
@@ -6283,7 +6277,6 @@
         },
         "required": [
           "producerName",
-          "egn",
           "eik",
           "urn",
           "address",
@@ -6298,7 +6291,7 @@
           "version",
           "eikVerification"
         ],
-        "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null."
+        "description": "The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. There is no egn: the product does not hold a national identity number. sizeHa is a number and grainProduced is an array that is [] rather than null."
       },
       "FarmProfileStaleDataError": {
         "type": "object",

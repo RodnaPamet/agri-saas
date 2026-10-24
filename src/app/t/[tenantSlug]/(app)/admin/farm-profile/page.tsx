@@ -18,11 +18,12 @@ import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { cn } from '@/lib/cn';
 
 // БАБХ ДНЕВНИК — the one-per-tenant farm identity block. Every field is
-// optional; the paper form tolerates blanks. egn/eik are encrypted at rest
+// optional; the paper form tolerates blanks. eik/urn are encrypted at rest
 // (Epic B manifest) — this page only ever sees plaintext.
+//
+// No ЕГН field: the column was dropped in #2258 (owner ruling 2026-10-24).
 const PROFILE_FIELDS = [
     'producerName',
-    'egn',
     'eik',
     'urn',
     'address',
@@ -48,7 +49,6 @@ type Profile = Record<ProfileKey, string>;
  */
 const TEXT_FIELDS: { key: ProfileKey; encrypted?: boolean }[] = [
     { key: 'producerName' },
-    { key: 'egn', encrypted: true },
     { key: 'eik', encrypted: true },
     { key: 'urn', encrypted: true },
     { key: 'address' },

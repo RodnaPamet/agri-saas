@@ -180,11 +180,20 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     TaskComment: ['body'],
 
     // ─── Agriculture — БАБХ farm-record ────────────────
-    //  ЕГН (personal ID) + ЕИК (company ID) on the one-per-tenant farm
-    //  profile. Sensitive identifiers printed on the ДНЕВНИК; encrypted at
-    //  rest. The row is fetched by tenantId only (never searched by these
-    //  columns), so in-place encryption is safe — no `contains`/`orderBy`.
-    FarmProfile: ['egn', 'eik', 'urn'],
+    //  ЕИК (company ID) + УРН on the one-per-tenant farm profile. Sensitive
+    //  identifiers printed on the ДНЕВНИК; encrypted at rest. The row is
+    //  fetched by tenantId only (never searched by these columns), so
+    //  in-place encryption is safe — no `contains`/`orderBy`.
+    //
+    //  `egn` was the third entry until #2258 dropped the column (owner ruling
+    //  2026-10-24). Removing a name from this manifest normally risks
+    //  ORPHANING ciphertext, because the `'*'` fan-out matches field NAMES
+    //  across the whole file and narrowing stops the middleware DECRYPTING as
+    //  well as encrypting — see the #1222 note below. It does not here:
+    //  `egn` was a column on FarmProfile and on no other model, and the
+    //  column itself is gone in the same change, so there is no table left
+    //  holding a `v2:` value under that name.
+    FarmProfile: ['eik', 'urn'],
 
     // ─── Land administration — lease counterparty PII ──
     //  The landlord's name (and ЕИК when they're a legal entity) is

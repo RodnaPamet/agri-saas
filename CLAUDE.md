@@ -815,7 +815,7 @@ and `docs/rls-tenant-isolation.md` for the RLS deep dive.
 ### Field Encryption (Epic B)
 
 Business-content fields (`Task.description`, `Task.resolution`,
-`TaskComment.body`, `ParcelLease.lessorName`, `FarmProfile.egn`,
+`TaskComment.body`, `ParcelLease.lessorName`, `FarmProfile.eik`,
 `Contract.terms`, …) are encrypted at rest by a Prisma `$extends({ query })`
 client extension (`src/lib/prisma.ts`). The manifest is
 `src/lib/security/encrypted-fields.ts`.

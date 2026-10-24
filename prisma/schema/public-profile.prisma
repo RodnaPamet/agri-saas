@@ -24,8 +24,10 @@
 //  rather than a matter of discipline. P6.10's hardening test seeds
 //  ЕГН, ЕИК, УРН and address and expects zero hits in the HTML,
 //  JSON-LD, OG image and API. `FarmProfile` — the private model — has
-//  `egn` and `eik` (encrypted at rest), `address`, `municipality` and
-//  `settlement`. None of those columns EXIST on `PublicFarmProfile`,
+//  `eik` and `urn` (encrypted at rest), `address`, `municipality` and
+//  `settlement`. It had `egn` too until #2258 dropped the column, so
+//  P6.10 now seeds one PII field fewer — there is no ЕГН anywhere to
+//  leak, which is a stronger position than a projection that omits it. None of those columns EXIST on `PublicFarmProfile`,
 //  so a projection writer cannot leak them by forgetting an allowlist
 //  entry: there is nowhere for the value to land. The allowlist (P6.1
 //  PR 2) is the second line, not the only one.

@@ -41,6 +41,23 @@ import { z } from 'zod';
 export const UpdateFarmProfileSchema = z
     .object({
         producerName: z.string().max(300).nullable().optional(),
+        /**
+         * Accepted and ALWAYS REFUSED when it carries a value (#2258).
+         *
+         * There is no `egn` column — owner ruling 2026-10-24 dropped it, and
+         * the response schema carries no such field. This property survives
+         * for exactly the reason given for `eik` below: `.strip()` at the
+         * bottom of this object would make zod discard an `egn` the caller
+         * sent without a word, and a client that believes it stored a national
+         * identity number would be told it succeeded.
+         *
+         * Refused CONDITIONALLY — only a non-null value — because the iOS
+         * editor PUTs every field on every save, so it mentions `egn` whether
+         * or not anyone typed one. #1352 records that an unconditional refusal
+         * on `eik` 400'd every farm-profile save from the owner's phone;
+         * agrent-ios confirmed on 2026-10-24 that builds ≤13.1 still echo a
+         * stored `egn` back, which the migration has made null.
+         */
         egn: z.string().max(20).nullable().optional(),
         /**
          * Present in the contract and REJECTED at the usecase (#1352).
@@ -49,14 +66,17 @@ export const UpdateFarmProfileSchema = z
          * number a reviewer found in the Търговски регистър — never
          * self-asserted. But it stays in this schema for two reasons:
          *
-         * 1. Removing a published property is a breaking change, and
-         *    `tests/contracts/openapi-breaking-change.test.ts` is absolute
-         *    about that with no waiver mechanism. It is right to be: a client
-         *    built against the old contract is a real client.
-         * 2. More importantly, `.strip()` would DROP an `eik` key silently,
-         *    which looks to a client exactly like a successful write. An
-         *    explicit refusal tells them; silence lets them believe they set
-         *    a regulator-facing number that was discarded.
+         * 1. Removing a published property is a breaking change. There IS a
+         *    waiver now — `tests/contracts/acknowledged-breaking-changes.ts`,
+         *    which did not exist when this note was written and takes an
+         *    owner-approved entry per break — so this reason no longer
+         *    decides it on its own. A client built against the old contract
+         *    is still a real client.
+         * 2. And this is what actually decides it: `.strip()` would DROP an
+         *    `eik` key silently, which looks to a client exactly like a
+         *    successful write. An explicit refusal tells them; silence lets
+         *    them believe they set a regulator-facing number that was
+         *    discarded.
          *
          * So the property is accepted syntactically and refused with a coded
          * 400 in `upsertFarmProfile`.
