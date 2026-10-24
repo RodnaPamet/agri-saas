@@ -270,3 +270,133 @@ model LogEntryFile {
   @@unique([logEntryId, fileRecordId])
   @@index([tenantId, logEntryId])
 }
+
+/// The treatment as a ROW, so a correction has something to commit in (#2172).
+///
+/// ## Why this exists at all
+///
+/// A treatment has always been a SHARED HANDLE rather than a thing:
+/// `treatmentGroupId` is one value carried on N `Task` rows and N `LogEntry`
+/// rows, indexed on both, with no row of its own. That is enough to FOLD the
+/// ДНЕВНИК list and enough to withdraw a treatment, and it was deliberately
+/// not more.
+///
+/// It is not enough to CORRECT one, and #2172 recorded exactly why:
+///
+///   - **Nothing to commit in.** The existing write is atomic PER BLOCK, not
+///     across the treatment — #1740's explicit decision, where a partial
+///     failure leaves the committed blocks recorded and the replay path
+///     finishes the job. A correction has no replay path, so a partial
+///     correction would leave the register matching NEITHER the old nor the new
+///     definition. On a regulated document that is worse than a refusal.
+///   - **Nowhere to put a version.** `OperationParcel.version` is per ROW, and
+///     a correction may ADD or DROP a parcel or a product, so "all N row
+///     versions must match" has no stable N to compare against. That is the
+///     iOS session's argument and it is the sharp form of the problem.
+///
+/// Owner ruling 2026-10-24: give the group a row. One thing to lock, one
+/// version to bump, one owner for the correction trail.
+///
+/// ## The id is the HANDLE, not a new identifier
+///
+/// `@id` with no default: the value comes from the existing
+/// `Task.treatmentGroupId` / `LogEntry.treatmentGroupId`. Minting a second
+/// identifier would mean two spellings of one thing and a join to get from
+/// either table to the group.
+///
+/// A plain `String` rather than a uuid column, because the handle is not always
+/// a uuid: `Task.treatmentGroupId`'s own docblock records that its value is the
+/// request's `Idempotency-Key` when one is sent and a server-minted UUID
+/// otherwise, which lets a client derive the handle before the response
+/// arrives.
+///
+/// ## No FK from LogEntry, deliberately
+///
+/// `LogEntry.treatmentGroupId` is NOT NULL and an entry belonging to no
+/// treatment gets its OWN unique value — so it folds to itself and the Дневник
+/// needs no second code path. (A nullable key would be worse than untidy:
+/// `DISTINCT ON` treats all NULLs as ONE value, which was measured collapsing
+/// 4 manual entries into 1 ghost row.) So most `LogEntry.treatmentGroupId`
+/// values name no treatment and an FK would refuse every manual journal entry.
+///
+/// The discriminator for a real treatment is `Task.treatmentGroupId IS NOT
+/// NULL`: only `recordDiaryTreatment` writes it, and it is null for every task
+/// that is not part of a diary treatment.
+model TreatmentGroup {
+  /// The shared handle — see the model note. No default: the caller supplies it.
+  ///
+  /// NOT a primary key on its own: the handle is unique PER TENANT, not
+  /// globally. `Task.treatmentGroupId`'s value can be the request's
+  /// `Idempotency-Key`, and idempotency keys are scoped
+  /// `@@unique([tenantId, clientMutationId])` — so two farms can legitimately
+  /// send the same key and a global `@id` would make the backfill violate its
+  /// own primary key on exactly that data. `@@id([tenantId, id])` below, which
+  /// is also the `[id, tenantId]` idiom `Parcel` and `Item` already use for
+  /// composite references.
+  id        String
+  tenantId  String
+  /// Bumped by ANY write to the group or to one of its lines (#2172).
+  ///
+  /// Distinct from `OperationParcel.version`, which stays per row and keeps
+  /// serving the offline parcel-mark replay. This one answers a different
+  /// question — "has the treatment's DEFINITION moved under me" — which a
+  /// per-row version cannot, because a correction can change the row set.
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id])
+  corrections TreatmentCorrection[]
+
+  @@id([tenantId, id])
+  @@index([tenantId, updatedAt])
+}
+
+/// One correction to a recorded treatment. APPEND-ONLY (#2172).
+///
+/// ## The whole previous definition, never a diff
+///
+/// Owner ruling 2026-10-24, and the iOS session's argument for it: a diff makes
+/// a reader reconstruct a regulated record. `previous` carries the treatment's
+/// complete definition as it stood before the correction, so reading the trail
+/// never requires replaying anything.
+///
+/// ## `changedFields` labels without freezing a taxonomy
+///
+/// Three `OperationParcel` columns are deliberately point-in-time, each with
+/// written no-backfill reasoning: `quarantinePeriodDays` (nothing records what
+/// the period WAS), `phenophase` (a plausible guess would make a regulated
+/// document authoritative about something nobody observed), and `treatedAreaHa`
+/// (NULL means the WHOLE parcel). Correcting a mistyped observation is
+/// different in kind from correcting the product or the dose: one restates what
+/// was observed, the other fixes a record of what happened.
+///
+/// So the names of the changed fields are stored and the CLASSIFICATION is not.
+/// A reader can label a correction "one observation, one fact" from the names,
+/// and which fields count as observations can change later without a migration
+/// and without re-labelling history that cannot be re-derived.
+model TreatmentCorrection {
+  id                String   @id @default(cuid())
+  tenantId          String
+  groupId           String
+  /// The treatment's COMPLETE definition before this correction.
+  previous          Json
+  /// Top-level field names that changed. See the model note on why the kind is
+  /// derived from these rather than stored.
+  changedFields     String[]
+  correctedAt       DateTime @default(now())
+  /// Null when the actor is not a user session — the same convention as
+  /// `deletedByUserId` elsewhere. Authorship on a farm record, so it is covered
+  /// by the farm's own retention duty rather than by tenantless erasure.
+  correctedByUserId String?
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id])
+  /// Composite, matching the group's tenant-scoped key. This is also what makes
+  /// a correction unable to point at another tenant's treatment: the FK itself
+  /// carries the tenant, so a mismatched pair has no referent rather than
+  /// relying on the RLS policy alone to notice.
+  group  TreatmentGroup @relation(fields: [tenantId, groupId], references: [tenantId, id], onDelete: Cascade)
+
+  @@index([tenantId, groupId])
+  @@index([tenantId, correctedAt])
+}
