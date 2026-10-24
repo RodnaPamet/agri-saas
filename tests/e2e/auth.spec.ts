@@ -40,6 +40,93 @@ async function doLogin(page: Page) {
 }
 
 test.describe('Authentication Flow', () => {
+    /**
+     * ── THE AUTH SURFACE RESOLVES EVERY MESSAGE IT RENDERS ── #2264
+     *
+     * `/login` used to throw `MISSING_MESSAGE` thousands of times per CI run.
+     * `src/app/providers.tsx` is rendered by the ROOT layout on every request
+     * and mounted the command palette and the shortcut-help overlay
+     * unconditionally, while `bundlesFor('auth')` returns `['auth', 'shared']`
+     * — so neither overlay's copy was loaded and next-intl, which has no
+     * `getMessageFallback` configured here, rendered the KEY PATH to a
+     * stranger on the product's front door. Measured on two main runs:
+     * `commandPalette` 1320, `shortcutHelp` 840, `notFound` 360, `common` 240.
+     *
+     * #2265 fixed it by gating both mounts on `isAuthSurface` and moving
+     * `notFound` into the `shared` bundle, and
+     * `tests/guards/auth-surface-skips-global-overlays.test.ts` holds the
+     * gating in place.
+     *
+     * What nothing held was the OUTCOME. The issue's own acceptance was "the
+     * error count going to zero", and that was checked by grepping a job log
+     * by hand. This asserts it.
+     *
+     * Deliberately NOT done by failing `e2e-utils`' console handler on any
+     * error: that handler logs rather than throws on purpose — "so the
+     * genuinely benign occurrences stay greppable noise instead of failing
+     * unrelated specs" — and promoting anything there reaches every spec in
+     * the suite. This spec attaches its own listener instead.
+     */
+    test('renders no MISSING_MESSAGE, in the browser or the HTML (#2264)', async ({ page, request }) => {
+        const missing: string[] = [];
+        page.on('console', (m) => {
+            if (m.text().includes('MISSING_MESSAGE')) missing.push(`console: ${m.text()}`);
+        });
+        page.on('pageerror', (e) => {
+            if (e.message.includes('MISSING_MESSAGE')) missing.push(`pageerror: ${e.message}`);
+        });
+
+        await gotoLoginReady(page);
+
+        // CONTROL, before the assertion means anything: prove the listener can
+        // SEE a MISSING_MESSAGE. A negative assertion whose observer is broken
+        // passes forever, and this one is the whole test.
+        await page.evaluate(() => console.error('MISSING_MESSAGE: observability probe'));
+        await expect
+            .poll(() => missing.filter((m) => m.includes('observability probe')).length, {
+                timeout: 5_000,
+            })
+            .toBe(1);
+        missing.length = 0;
+
+        // Now the real surface. Reload so anything thrown during render is
+        // caught by the listener that is now attached.
+        await gotoLoginReady(page);
+        await page.waitForTimeout(1_000);
+        expect(missing).toEqual([]);
+
+        /**
+         * The SERVER half, which a console listener cannot see.
+         *
+         * When a message is missing, next-intl renders the key path into the
+         * markup, so the served HTML is the observable — and the loaded
+         * bundles are serialised into it too, which makes the same HTML a
+         * check on WHICH bundles loaded.
+         *
+         * `notFound` is asserted PRESENT, not absent. #2265 moved it from
+         * `public` into `shared` precisely so the auth surface would have it,
+         * and `bundlesFor('auth')` returns `['auth', 'shared']` — so its keys
+         * belong in this HTML. Asserting its absence is the mistake I made
+         * first, and it would have failed CI for the fix working.
+         *
+         * The two overlay namespaces live in `app`, which this surface must
+         * never load. Asserting their absence also holds what #2099 bought:
+         * `/login` used to serialise all 5,787 keys into what a stranger
+         * downloads, and a widened auth bundle would start giving that back.
+         */
+        const res = await request.get('/login');
+        expect(res.status()).toBe(200);
+        const html = await res.text();
+        for (const ns of ['commandPalette.', 'shortcutHelp.']) {
+            expect({ ns, present: html.includes(ns) }).toEqual({ ns, present: false });
+        }
+        // And the positive control for the bundle arithmetic: a surface that
+        // loaded NOTHING would satisfy the two absences above.
+        expect({ ns: 'notFound', present: html.includes('notFound') })
+            .toEqual({ ns: 'notFound', present: true });
+    });
+
+
     test('login page loads and shows sign-in options', async ({ page }) => {
         await gotoLoginReady(page);
 
