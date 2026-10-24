@@ -30,10 +30,20 @@
  * database queries under a 4x CPU throttle — server cost, not network
  * queueing, and a priority hint cannot touch it.
  *
- * So the contract is deliberately "the logo is eager, the gallery is lazy, and
- * NOTHING claims a priority hint". The last of those is the one worth a test:
- * it fails if someone re-adds the hint, which sends them to the measurement
- * instead of letting them repeat it.
+ * So the contract is "the logo is eager, the FIRST GALLERY ROW is eager, the
+ * deferred photographs are lazy, and NOTHING claims a priority hint".
+ *
+ * The gallery half changed in #1814, and the reason it had been wrong is worth
+ * keeping: everything above argues about `fetchPriority`, and "the gallery is
+ * lazy" rode along as though the same measurement covered it. It does not.
+ * `loading` decides WHEN a request is dispatched, `fetchPriority` the ORDER of
+ * requests already in flight — and Lighthouse priced the dispatch wait at
+ * Load Delay 1705 ms of a 3326 ms LCP on main `906d11a83`, scoring
+ * `lcp-lazy-loaded` 0 in all five runs. Two measured results on two axes, and
+ * reading one as settling the other is how a visible LCP element stayed lazy.
+ *
+ * The deferred row must STAY lazy: a collapsed `<details>` gives it no box, and
+ * an image with no box is never fetched. Same attribute, opposite reason.
  */
 import { render, screen } from '@testing-library/react';
 
@@ -42,6 +52,16 @@ import {
     type PublicFarmBodyLabels,
     type PublicFarmBodyProfile,
 } from '@/components/public-profile/public-farm-body';
+
+/**
+ * The component's `EAGER_PHOTO_COUNT`, restated here deliberately.
+ *
+ * Importing it would make the test agree with the component by construction —
+ * a change to 4 would move both sides and assert nothing. This is the number
+ * the MEASUREMENT justifies: `grid-cols-2` is the mobile layout and Lighthouse
+ * measures a 390px viewport, so two is exactly the first row.
+ */
+const EAGER_PHOTO_COUNT_EXPECTED = 2;
 
 const PHOTOS = [
     '/api/public/media/aaa1',
@@ -105,10 +125,30 @@ describe('PublicFarmBody images (#2251)', () => {
         expect(logo()!.getAttribute('loading')).toBe('eager');
     });
 
-    it('every thumbnail is lazy', () => {
+    it('the FIRST ROW is eager and the rest lazy — #1814', () => {
+        // Changed from "every thumbnail is lazy", which was an inherited
+        // default rather than a measured decision: the justification in this
+        // file's docblock is entirely about the `fetchPriority` hint, which is
+        // a different axis. `loading` decides WHEN a request is dispatched;
+        // `fetchPriority` decides the ORDER of requests already in flight.
+        //
+        // One of these two IS the LCP element, inside a 390x844 viewport that
+        // Lighthouse never scrolls, so lazy only delayed it. Priced on main
+        // `906d11a83`: Load Delay 1705 ms of a 3326 ms LCP, with
+        // `lcp-lazy-loaded` scoring 0 in all five runs.
+        //
+        // The split is the point, so both halves are asserted together: eager
+        // for the visible row, lazy for the deferred one, where lazy is what
+        // stops the fetch happening at all.
         render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
         const seen = thumbnails().map((i) => i.getAttribute('loading'));
-        expect(seen).toEqual(PHOTOS.map(() => 'lazy'));
+        expect(seen).toEqual(
+            PHOTOS.map((_, i) => (i < EAGER_PHOTO_COUNT_EXPECTED ? 'eager' : 'lazy')),
+        );
+        // And the counts, so a change to the constant cannot make this vacuous
+        // in either direction.
+        expect(seen.filter((v) => v === 'eager')).toHaveLength(EAGER_PHOTO_COUNT_EXPECTED);
+        expect(seen.filter((v) => v === 'lazy').length).toBeGreaterThan(0);
     });
 
     it('NOTHING claims a priority hint — the measured negative result', () => {
