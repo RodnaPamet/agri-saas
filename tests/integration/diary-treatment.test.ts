@@ -1669,6 +1669,12 @@ describeFn('correctDiaryTreatment: adding and dropping a parcel (DB-backed, #217
             where: { tenantId, task: { treatmentGroupId: handle }, parcelId: parcelA2 },
             select: { id: true },
         });
+        const entryId = (
+            await globalPrisma.logEntry.findFirst({
+                where: { tenantId, operationParcelId: gone!.id, type: 'INPUT_APPLICATION' },
+                select: { id: true },
+            })
+        )?.id;
 
         await correctDiaryTreatment(
             ctx(),
@@ -1679,13 +1685,24 @@ describeFn('correctDiaryTreatment: adding and dropping a parcel (DB-backed, #217
 
         const after = await getDiaryTreatmentDefinition(ctx(), handle);
         expect(after.lines.map((l) => l.parcelId).sort()).toEqual([parcelA1, parcelB1].sort());
-        // The ENTRY too. `LogEntry.operationParcel` has no onDelete, so Prisma
-        // would SET NULL and leave it live, listed and printed.
+
+        // The ENTRY too — and asserted BY ITS OWN ID, not by its link.
+        //
+        // Counting `operationParcelId: <lineId>` reads zero whether the entry
+        // was deleted or merely orphaned: `LogEntry.operationParcel` declares
+        // no `onDelete`, so deleting the line SETS THAT COLUMN NULL and the
+        // query stops matching. Mutation-proved — removing the entry deletion
+        // left that assertion green, which is the exact mechanism this test
+        // exists to cover.
+        expect(entryId).toBeTruthy();
+        expect(await globalPrisma.logEntry.count({ where: { id: entryId! } })).toBe(0);
+        // And nothing orphaned survives under the treatment's own key, which is
+        // what the journal list and the register fold on.
         expect(
             await globalPrisma.logEntry.count({
-                where: { tenantId, operationParcelId: gone!.id },
+                where: { tenantId, treatmentGroupId: handle },
             }),
-        ).toBe(0);
+        ).toBe(2);
     });
 
     it('soft-deletes a block left with no lines, and releases its key', async () => {
