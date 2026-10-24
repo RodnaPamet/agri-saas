@@ -27,6 +27,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { markOperationParcel } from '@/app-layer/usecases/field-operation';
+import { runInTenantContext } from '@/lib/db-context';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -353,5 +354,98 @@ describeFn('the recorded quantity follows the TREATED area (DB-backed, #2284)', 
             recordedInDiary: true,
         });
         expect(await quantityOn(line)).toBe(6);
+    });
+});
+
+describeFn('markOperationParcel joins the caller\'s transaction when given one (#2172)', () => {
+    /**
+     * The whole point of `opts.tx`, and the half that a behaviour-preserving
+     * refactor cannot demonstrate: that the write is now ATOMIC WITH the
+     * caller.
+     *
+     * Asserted by making the caller's transaction FAIL after the mark. If the
+     * mark joined it, the line reverts; if it opened its own, the mark survives
+     * a caller that rolled back — which is precisely the state the #2172
+     * correction route must never leave behind.
+     *
+     * The second case is the control. Without it, a `tx` that was silently
+     * ignored would satisfy nothing and look like a pass, because an unmarked
+     * line is also what a mark that never ran produces.
+     */
+    const freshLine = async (name: string) => {
+        const src = await globalPrisma.operationParcel.findUnique({
+            where: { id: operatorLine },
+            select: { productItemId: true, parcel: { select: { locationId: true } } },
+        });
+        const parcel = await globalPrisma.parcel.create({
+            data: {
+                tenantId,
+                locationId: src!.parcel.locationId!,
+                name: `${name} ${TAG}`,
+                cropType: 'Wheat',
+                areaHa: 10,
+            },
+        });
+        return (await globalPrisma.operationParcel.create({
+            data: {
+                tenantId,
+                taskId,
+                parcelId: parcel.id,
+                productItemId: src!.productItemId,
+                doseValue: 2,
+                doseUnitId: unitId,
+                status: 'PENDING',
+            },
+        })).id;
+    };
+
+    const statusOf = async (lineId: string) =>
+        (await globalPrisma.operationParcel.findUnique({
+            where: { id: lineId },
+            select: { status: true },
+        }))!.status;
+
+    it('rolls the mark BACK when the caller\'s transaction fails', async () => {
+        const line = await freshLine('TX-joined');
+        const boom = new Error('the caller failed after the mark');
+
+        await expect(
+            runInTenantContext(ctx(), async (db) => {
+                await markOperationParcel(ctx(), taskId, line, 'DONE', 'joined', 0, {
+                    recordedInDiary: true,
+                    tx: db,
+                });
+                throw boom;
+            }),
+        ).rejects.toBe(boom);
+
+        // The mark is gone with the transaction that contained it.
+        expect(await statusOf(line)).toBe('PENDING');
+        // And so is the journal entry it would have written — the half that
+        // would otherwise leave a regulated record for work that was undone.
+        expect(
+            await globalPrisma.logEntry.count({
+                where: { tenantId, operationParcelId: line, type: 'INPUT_APPLICATION' },
+            }),
+        ).toBe(0);
+    });
+
+    it('WITHOUT tx it commits independently — the control', async () => {
+        // The same failing caller. Without `tx` the mark opens its own
+        // transaction, commits, and survives — which is the behaviour every
+        // existing caller relies on and must keep.
+        const line = await freshLine('TX-separate');
+        const boom = new Error('the caller failed after the mark');
+
+        await expect(
+            runInTenantContext(ctx(), async () => {
+                await markOperationParcel(ctx(), taskId, line, 'DONE', 'separate', 0, {
+                    recordedInDiary: true,
+                });
+                throw boom;
+            }),
+        ).rejects.toBe(boom);
+
+        expect(await statusOf(line)).toBe('DONE');
     });
 });
