@@ -39,14 +39,6 @@
             "review": "2026-11-18"
         },
         {
-            "spec": "theme-first-paint.spec.ts",
-            "title": "a first visit: the inline script corrects it DURING head parsing",
-            "issue": 1862,
-            "firstSeen": "2026-10-06",
-            "review": "2027-01-15",
-            "reason": "RE-POINTED 2026-10-15 from #1329, which is CLOSED: its cause (the ServiceWorkerRegistrar first-install reload) was real and its fix shipped 2026-10-14, but the same shape recurred afterwards in a sibling spec and exhausted all three attempts, so the explanation does not cover this family any more. #1862 carries that evidence. A pointer at a closed issue reads as tracked while nothing tracks it (#1803). Original note follows. --- CAUSE IDENTIFIED 2026-10-11, and it was none of the symptoms previously recorded here. `ServiceWorkerRegistrar` is mounted in the ROOT layout, listens for `controllerchange` and calls `window.location.reload()`. On a first visit `public/sw.js` installs, activates and calls `self.clients.claim()`, which fires `controllerchange` — so the page RELOADS mid-test. Intermittent in this spec specifically because `recordFirstPaint` throttles the CPU 4x, which makes the activation-versus-reads race variable. Three symptoms, one cause. (1) `expect(log.fcp).not.toBeNull()` null — #1610 waited for the paint observer; right about the observer, and it then unmasked the next symptom. (2) `Execution context was destroyed` — #1621 re-read the NEW document, on the stated reasoning that the property was document-independent. It is NOT: the first document persists the theme choice, so the reloaded document is served the correct theme, needs no correction and reads 0 mutations legitimately. That turned a crash into a confident WRONG ANSWER. (3) `expect(after.mutations).toHaveLength(1)` received 0 — that wrong answer, which reddened #1624. FIXED by `test.use({ serviceWorkers: 'block' })` on the describe: this spec asks whether the theme reaches the first paint, the worker is irrelevant to that and was corrupting the measurement, and the PWA's own behaviour is covered by the offline specs. KEPT one cycle only to classify a residual instrument flake — every known cause is now closed, so delete it if it stays green to the review date."
-        },
-        {
             "spec": "tooltip-and-copy.spec.ts",
             "title": "task detail header — task.key is copyable via CopyText",
             "issue": 1862,
