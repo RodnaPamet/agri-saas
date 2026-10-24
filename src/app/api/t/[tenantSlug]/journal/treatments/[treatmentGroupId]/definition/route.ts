@@ -1,9 +1,15 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
-import { getDiaryTreatmentDefinition } from '@/app-layer/usecases/diary-treatment';
+import {
+    getDiaryTreatmentDefinition,
+    correctDiaryTreatment,
+} from '@/app-layer/usecases/diary-treatment';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { withValidatedBody } from '@/lib/validation/route';
+import { CorrectDiaryTreatmentSchema } from '@/lib/schemas';
 import { jsonResponse } from '@/lib/api-response';
+import { parseIfMatch, etagFor } from '@/lib/http/if-match';
 
 /**
  * A recorded treatment's COMPLETE definition, for a correction to prefill (#2172).
@@ -44,6 +50,71 @@ export const GET = withApiErrorHandling(
         await assertModuleEnabled(ctx, 'JOURNAL');
 
         const definition = await getDiaryTreatmentDefinition(ctx, params.treatmentGroupId);
-        return jsonResponse(definition);
+        // The version travels BOTH ways: in the body, where the form reads it,
+        // and as a strong ETag, which is what `parseIfMatch` accepts verbatim.
+        // A client that echoes the header needs to reformat nothing, and one
+        // that ignores it still has the field.
+        return jsonResponse(definition, { headers: { ETag: etagFor(definition.version) } });
     },
+);
+
+/**
+ * Correct a recorded treatment (#2172).
+ *
+ * ## `PUT` on the definition, not `PATCH` on the treatment
+ *
+ * The body is the whole definition because that is what the editor holds and
+ * what the prefill handed it. Every field is optional all the same, and an
+ * absent field is not a change — so this is idempotent in the way `PUT` is
+ * meant to be: sending the same body twice leaves one correction on the record,
+ * because the second send finds nothing changed and writes nothing at all.
+ *
+ * ## `If-Match` carries the GROUP version
+ *
+ * Not a line version. A correction writes every line of the treatment and the
+ * set of lines is itself correctable later, so there is no stable tuple of row
+ * versions for a client to send back; `TreatmentGroup.version` exists to be the
+ * one thing it can (#2279). Present-but-unparseable is a 400 by `parseIfMatch`
+ * — #1182's lesson, where a `/^\d+$/` test fell through to UNGUARDED on `"5"`,
+ * the strong tag a well-behaved client actually sends.
+ *
+ * An ABSENT `If-Match` is allowed through, unguarded, matching every other
+ * versioned route in the product. That is a deliberate asymmetry and not a
+ * strong one: the correction is still atomic and still trailed, so the loss a
+ * missing precondition admits is a last-write-wins overwrite between two people
+ * correcting the same treatment at once — recoverable from the
+ * `TreatmentCorrection` row, which records the whole previous state.
+ *
+ * ## What it refuses, and why that is not silence
+ *
+ * A CHANGED dose, product, water rate or parcel list answers 400
+ * `TREATMENT_CORRECTION_FIELD_UNSUPPORTED` with the field names in
+ * `params.reference`. An UNCHANGED one is accepted, so the editor may send the
+ * whole definition back — see `CorrectDiaryTreatmentSchema`, where #1352 is the
+ * precedent in both directions.
+ */
+export const PUT = withApiErrorHandling(
+    withValidatedBody(
+        CorrectDiaryTreatmentSchema,
+        async (
+            req: NextRequest,
+            {
+                params: paramsPromise,
+            }: { params: Promise<{ tenantSlug: string; treatmentGroupId: string }> },
+            body,
+        ) => {
+            const params = await paramsPromise;
+            const ctx = await getTenantCtx(params, req);
+            await assertModuleEnabled(ctx, 'JOURNAL');
+
+            const expectedVersion = parseIfMatch(req.headers.get('If-Match'));
+            const definition = await correctDiaryTreatment(
+                ctx,
+                params.treatmentGroupId,
+                body,
+                expectedVersion,
+            );
+            return jsonResponse(definition, { headers: { ETag: etagFor(definition.version) } });
+        },
+    ),
 );

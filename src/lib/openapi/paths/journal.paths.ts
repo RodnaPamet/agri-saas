@@ -14,6 +14,7 @@ import {
     CreateLogEntrySchema,
     UpdateLogEntrySchema,
     RecordDiaryTreatmentSchema,
+    CorrectDiaryTreatmentSchema,
 } from '@/lib/schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import { codedErrorResponses, op } from './helpers';
@@ -698,6 +699,88 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                     + 'person who recorded the treatment nor a farm administrator. The same rule as the '
                     + 'withdrawal, deliberately: a correction must not be easier to make than a '
                     + 'removal.',
+            }),
+        },
+    }),
+    op(registry, {
+        method: 'put',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/definition',
+        operationId: 'correctDiaryTreatment',
+        summary: 'Correct a recorded treatment',
+        description:
+            'Corrects a treatment already in the \u0414\u041d\u0415\u0412\u041d\u0418\u041a, atomically across every block it '
+            + 'touched (#2172). One transaction writes the tasks, the register lines, the journal '
+            + 'entries\u2019 day, a `TreatmentCorrection` trail row and the group version bump \u2014 so a '
+            + 'correction that fails leaves the treatment exactly as it was.\n\n'
+            + '**What is corrected today**: `title`, `applicationTechnique`, `targetNote`, '
+            + '`quarantinePeriodDays`, `phenophase` and `occurredOn`. None of the six feeds the '
+            + 'quantity the journal entry records, so correcting one cannot leave that number '
+            + 'describing a treatment it no longer matches.\n\n'
+            + '**What is refused, BY NAME**: a CHANGED `doseValue`, `doseUnitId`, `productItemId`, '
+            + '`waterRateValue`, `waterRateUnitId` or parcel list answers `400` '
+            + '`TREATMENT_CORRECTION_FIELD_UNSUPPORTED` with the field names in `params.reference` '
+            + '(`parcels` when the parcel SET changed, `treatedAreaHa` when only an area did \u2014 so a '
+            + 'client can tell \u201cnot yet\u201d from \u201cnot like that\u201d). An UNCHANGED value is '
+            + 'accepted, so a client may send the whole definition back; the refusal compares VALUES, '
+            + 'never merely the presence of a key, which is #1352\u2019s lesson in both directions.\n\n'
+            + '**A correction that changes nothing writes nothing** \u2014 no version bump, no trail '
+            + 'row, `200` with the definition unchanged. The editor saves the whole form, so a save '
+            + 'with no edits is the common case, and it must not invalidate every other client\u2019s '
+            + '`If-Match` or file a row asserting that a farmer altered a regulated record.\n\n'
+            + '**No stock moves.** A diary treatment never deducted any (owner ruling 2026-10-13, '
+            + 'carried by `recordedInDiary` suppressing the CONSUMPTION), so a correction has no '
+            + 'inventory consequence to reverse. That is what makes this a column update rather than '
+            + 'a reversal and a re-application.\n\n'
+            + 'Gated exactly as the prefill is: `canWrite`, then SINGLE AUTHORSHIP '
+            + '(`409 TREATMENT_MIXED_AUTHORSHIP`), then creator-or-admin '
+            + '(`403 TREATMENT_EDIT_NOT_PERMITTED`). A blank `title` is `400` '
+            + '`TREATMENT_TITLE_REQUIRED`: the column is NOT NULL, so clearing it would be a database '
+            + 'error on a field the form lets you empty.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        headers: z.object({
+            'If-Match': z
+                .string()
+                .optional()
+                .openapi({
+                    description:
+                        'The `version` you last read from `GET ./definition` \u2014 as a bare integer '
+                        + '(`5`) or a strong entity-tag (`"5"`), both accepted, which is what the '
+                        + '`ETag` on that response already sends back verbatim. Unlike the '
+                        + 'field-operations lock, the quoted form IS parsed here (#1182).\n\n'
+                        + 'ABSENT skips the precondition entirely \u2014 last-write-wins, matching every '
+                        + 'other versioned route. PRESENT-but-unreadable is a `400`, never a '
+                        + 'fall-through: `IF_MATCH_EMPTY`, `IF_MATCH_WEAK_TAG` or '
+                        + '`IF_MATCH_MALFORMED`. A caller who sent the header meant to send a '
+                        + 'version, and guessing on their behalf is how a lost update happens '
+                        + 'quietly.\n\n'
+                        + 'The precondition is on the GROUP version, not a line version: a '
+                        + 'correction writes every line and the set of lines is itself correctable '
+                        + 'later, so there is no stable tuple of row versions to echo back.',
+                    example: '"3"',
+                }),
+        }),
+        body: CorrectDiaryTreatmentSchema,
+        success: {
+            status: 200,
+            description:
+                'The corrected definition, with `version` already incremented. The response also '
+                + 'carries it as an `ETag`, so the next correction needs no extra read.',
+            schema: TreatmentDefinition,
+        },
+        extraResponses: {
+            ...codedErrorResponses({
+                403:
+                    '`error.code` is `TREATMENT_EDIT_NOT_PERMITTED` when the caller is neither the '
+                    + 'person who recorded the treatment nor a farm administrator \u2014 the same rule '
+                    + 'as the withdrawal, deliberately: a correction must not be easier to make than '
+                    + 'a removal.',
+                409:
+                    '`TREATMENT_MIXED_AUTHORSHIP` when the handle carries tasks written by more than '
+                    + 'one person, which binds admins too. `STALE_DATA` when `If-Match` named a '
+                    + 'version that is no longer current \u2014 someone else corrected the treatment '
+                    + 'while this editor was open. The previous state is recoverable from the '
+                    + '`TreatmentCorrection` trail either way.',
             }),
         },
     }),
