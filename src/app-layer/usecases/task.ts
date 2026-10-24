@@ -251,64 +251,65 @@ export async function updateTask(ctx: RequestContext, taskId: string, patch: {
 
 // ─── Delete ───
 //
-// Hard delete. FOUR child models cascade via `onDelete: Cascade`, not the
-// three this comment used to list: TaskComment, TaskLink, TaskWatcher — and
-// **OperationParcel**. Gated on write permission AND creator-or-admin
-// (#2187, `assertCanDeleteTask`) — the same tier as edit — and audited.
+// ⚠ SOFT delete, despite what the call reads like. `Task` is in
+// `SOFT_DELETE_MODELS`, and `withSoftDeleteExtension` (`src/lib/prisma.ts:459`)
+// rewrites `db.task.delete` into `update({ data: { deletedAt } })` before it
+// reaches the database. Measured through the real tenant client:
 //
-// The fourth one is why the blast radius is bigger than "a to-do and its
-// comments". `OperationParcel` rows ARE the lines the БАБХ ДНЕВНИК prints
-// (`farm-record-diary.ts` joins `Location -> taskLink -> DONE
-// operationParcel`), and `TaskLink` is the LOCATION link it joins through. So
-// deleting a FIELD_OPERATION task here removes register lines from a filed
-// regulatory document, permanently, with no Trash and no restore. Nothing on
-// this path filters `type`, so it is reachable for any task — see #2220.
+//     delete     -> SOFT (deletedAt=true)
+//     deleteMany -> SOFT (deletedAt=true)
 //
-// ## THE OTHER DELETE ON THIS TABLE IS SOFT, AND THAT IS DELIBERATE
+// This said "Hard delete, FOUR child models cascade" until 2026-10-24, and
+// the unit test beside it is still named "deletes the row (children cascade)"
+// — it injects a mock transaction, and a mock cannot see an extension. Both
+// were wrong in the same direction; that is #2242.
 //
-// `Task.deletedAt` exists, is indexed as `@@index([tenantId, deletedAt])`,
-// and `WorkItemRepository` filters on it. None of that is dead: a TREATMENT
-// withdrawal writes it. `deleteDiaryTreatment` soft-deletes the treatment's
-// tasks and its journal entries, `restoreDiaryTreatment` puts them back, and
-// `listDeletedTreatments` is the Trash behind it.
+// **Nothing cascades**, because an update is not a delete. `TaskComment`,
+// `TaskLink`, `TaskWatcher` and `OperationParcel` all declare
+// `onDelete: Cascade` and none of it fires — so the БАБХ register lines a
+// FIELD_OPERATION task owns SURVIVE this call untouched.
 //
-// So one table carries two delete semantics, chosen by the route:
-//
-//   DELETE /journal/treatments/{treatmentGroupId}  -> soft, restorable
-//   DELETE /tasks/{id}  and the bulk delete        -> hard, children cascade
-//
-// Owner ruling 2026-10-23 (#2215): THIS STAYS. A register entry is a filed
-// record, so withdrawing one has to be reversible; an ordinary task is not,
-// and making the whole table soft would buy a cascade question (do comments,
-// links and watchers inherit the flag, or join through the parent?) and a
-// purge obligation for GDPR, in exchange for recovering to-do items nobody
-// asked to recover.
-//
-// Recorded here because the asymmetry is invisible from either route, and
-// because a reader who finds `deletedAt` on the model will otherwise assume
-// this function is the thing that writes it. It is not.
-// `tests/guards/task-delete-semantics-are-deliberate.test.ts` pins both
-// halves so this note cannot quietly become false.
+// Gated on write permission AND creator-or-admin (#2187,
+// `assertCanDeleteTask`) — the same tier as edit — and audited. The rows are
+// erased later by `purgeSoftDeletedOlderThan`, which iterates
+// `SOFT_DELETE_MODELS` with raw SQL that deliberately bypasses the extension.
 /**
  * A treatment's task may not be deleted through the TASK route (#2220).
  *
- * ## What the hard delete actually takes
+ * ## The original justification was FALSE, and is corrected here
  *
- * Four child models cascade, and `OperationParcel` is one of them — those rows
- * ARE the lines the БАБХ ДНЕВНИК prints (`renderFarmRecordDiary` joins
- * `Location -> taskLink -> DONE operationParcel`), and `TaskLink` is the
- * LOCATION link it joins through. So deleting a treatment's task destroys
- * register lines from a filed regulatory document, permanently.
+ * This guard was written on the claim that the task delete destroys register
+ * lines: four child models declare `onDelete: Cascade`, `OperationParcel`
+ * among them, and those rows ARE the lines the БАБХ ДНЕВНИК prints.
  *
- * Meanwhile `deleteDiaryTreatment` — the purpose-built route for the same
- * intent — goes to real trouble to avoid exactly that: it flags the tasks and
- * entries, leaves DONE lines intact, is audited as a withdrawal, and is
- * reversible through `restoreDiaryTreatment` and «Кошче».
+ * The cascades are real and none of them fire. `Task` is in
+ * `SOFT_DELETE_MODELS`, so the delete is an UPDATE, and an update cascades
+ * nothing — the register lines survive this call untouched. #2242 records how
+ * that went unnoticed through a source-reading guard and a mock-injecting
+ * unit test, both green.
  *
- * Authorisation was never the gap. Both paths are creator-or-admin (#2175,
- * #2187), so nobody reaches this who could not already withdraw the treatment.
- * What differed was the OUTCOME, and nothing told the caller which one they
- * were getting.
+ * ## The REASON changed on 2026-10-24, and the refusal survived it
+ *
+ * This guard was written when `deleteDiaryTreatment` was soft and restorable,
+ * and its argument was recoverability: one route destroyed register lines,
+ * the other merely flagged them. The owner then removed «Кошче» — "what's
+ * deleted is deleted" — so the withdrawal erases the same rows. The original
+ * reason is gone.
+ *
+ * The refusal stays, on two reasons that do not depend on it:
+ *
+ *   • ATOMICITY. A treatment is N tasks, one per block. The withdrawal takes
+ *     the whole group by its handle; this route takes ONE block's share and
+ *     leaves the rest — a half-treatment whose register prints some blocks
+ *     and not others, which nothing downstream can describe.
+ *   • THE AUDIT ROW. The withdrawal writes one event naming the treatment and
+ *     the counts it took. This path writes a generic `ENTITY_DELETED` on a
+ *     Task, and since the ruling made the audit log the ONLY surviving trace,
+ *     the difference between those two rows is now the whole difference.
+ *
+ * Authorisation was never the gap either way: both paths are creator-or-admin
+ * (#2175, #2187), so nobody reaches this who could not already delete the
+ * treatment. What differs is the SHAPE of what they get.
  *
  * ## Why `treatmentGroupId` and not `type`
  *
@@ -335,9 +336,9 @@ function assertTaskIsNotTreatmentShare(task: { treatmentGroupId: string | null }
     if (task.treatmentGroupId === null) return;
     throw codedConflict(
         'TASK_BELONGS_TO_TREATMENT',
-        'This task is one block\'s share of a recorded treatment. Deleting it would '
-            + 'destroy the treatment\'s register lines. Withdraw the treatment instead, '
-            + 'which is reversible.',
+        'This task is one block\'s share of a recorded treatment. Delete the whole '
+            + 'treatment instead — removing one block would leave the rest of it '
+            + 'behind, half recorded.',
         { reference: 'treatmentGroupId' },
     );
 }
@@ -410,7 +411,7 @@ export async function bulkDeleteTask(
             throw codedConflict(
                 'TASK_BELONGS_TO_TREATMENT',
                 'Some of the selected tasks are shares of recorded treatments, so none '
-                    + 'were deleted. Withdraw those treatments instead, which is reversible.',
+                    + 'were deleted. Delete those treatments whole instead.',
                 { refused: shares.length, selected: rows.length },
             );
         }

@@ -3,11 +3,16 @@
  * (#2215, owner ruling 2026-10-23).
  *
  * `Task.deletedAt` is indexed and filtered on, and for a long time it looked
- * like scaffolding nobody wired up. It is not: a TREATMENT withdrawal writes
- * it, with a restore and a Trash behind it, while the generic task delete is
- * `db.task.delete`. The owner ruled the asymmetry stays — a register entry is
- * a filed record, so withdrawing one must be reversible; an ordinary task
- * carries no such obligation.
+ * like scaffolding nobody wired up. On 2026-10-23 that was wrong — a TREATMENT
+ * withdrawal wrote it, with a restore and a Trash behind it — and the owner
+ * ruled the asymmetry should stay, because a register entry is a filed record
+ * that must be reversible.
+ *
+ * On 2026-10-24 the owner removed «Кошче» altogether: "what's deleted is
+ * deleted". So the column IS now scaffolding nobody writes, and the two routes
+ * agree. Both rulings are recorded because the second overrides reasoning the
+ * first had considered, and a reader who sees only the outcome cannot tell
+ * that apart from an oversight.
  *
  * ## Why a guard for a ruling that changed no behaviour
  *
@@ -46,40 +51,79 @@ const read = (rel: string): string => fs.readFileSync(path.join(REPO, rel), 'utf
 /** Comments and string literals blanked, so prose cannot satisfy a code assertion. */
 const code = (rel: string): string => blankNonCode(read(rel));
 
-describe('the hard path is hard, in code and not only in prose', () => {
-    it('`deleteTask` and `bulkDeleteTask` destroy the row', () => {
+describe('the task path calls delete — which the extension makes SOFT', () => {
+    it('`deleteTask` and `bulkDeleteTask` call delete / deleteMany', () => {
         const c = code(HARD);
         expect(c).toContain('db.task.delete(');
         expect(c).toContain('db.task.deleteMany(');
     });
 
-    it('nothing on that path writes `deletedAt`', () => {
-        // The failure this catches: a well-meant conversion to a soft delete
-        // that leaves both docblocks describing a hard one. `deletedAt` may
-        // appear in a FILTER elsewhere in the file, so the assertion is about
-        // a WRITE — `deletedAt:` followed by a value, inside an update.
-        const c = code(HARD);
-        expect(c).not.toMatch(/db\.task\.update(Many)?\([^)]*deletedAt/s);
+    /**
+     * ⚠ WHAT THIS SUITE CANNOT SEE — #2242.
+     *
+     * This file reads SOURCE. `Task` is in `SOFT_DELETE_MODELS`, and
+     * `withSoftDeleteExtension` (`src/lib/prisma.ts:459`) rewrites both calls
+     * above into `update({ data: { deletedAt } })` before they reach the
+     * database. Measured through the real tenant client:
+     *
+     *     delete     -> SOFT (deletedAt=true)
+     *     deleteMany -> SOFT (deletedAt=true)
+     *
+     * An earlier version of this suite asserted "nothing on that path writes
+     * `deletedAt`" and PASSED, which is true of the file and false of the
+     * behaviour. It is blind by construction: no scan of a call site can see
+     * something rewriting the call. The assertion is gone rather than fixed,
+     * because there is no regex that closes that gap — the replacement is a
+     * DB-backed case, tracked in #2242.
+     */
+    it('records that the call shape is not the semantics', () => {
+        // A deliberate non-assertion would be worse than none. What IS
+        // checkable here: the file tells the reader where the truth is.
+        expect(read(HARD)).toMatch(/SOFT_DELETE_MODELS|#2242/);
     });
 
-    it('the file points the reader at the soft path', () => {
+    it('the file points the reader at the TREATMENT path', () => {
         // The cross-reference is load-bearing: the asymmetry is invisible from
         // either route, so each has to name the other.
         expect(read(HARD)).toContain('deleteDiaryTreatment');
     });
 });
 
-describe('the soft path is soft, with a restore', () => {
-    it('the withdrawal SETS `deletedAt` on the tasks', () => {
-        expect(code(SOFT)).toMatch(/db\.task\.updateMany\([^)]*deletedAt:\s*now/s);
+/**
+ * REWRITTEN 2026-10-24. This describe was `the soft path is soft, with a
+ * restore`, and every assertion in it is now false by ruling rather than by
+ * drift: «Кошче» is gone and the treatment delete is physical.
+ *
+ * The guard's PURPOSE survives the reversal unchanged — two routes delete
+ * rows from one table, and each file's docblock describes the other, so each
+ * can go stale silently. What changed is which facts it pins.
+ */
+describe('the treatment path erases what the extension would otherwise spare', () => {
+    it('deletes the register LINES explicitly, not by cascade', () => {
+        // The crux. `Task` is in `SOFT_DELETE_MODELS`, so the extension
+        // rewrites its delete into an UPDATE — and an update cascades
+        // NOTHING. Relying on `onDelete: Cascade` here leaves every
+        // `OperationParcel` row in place and the ДНЕВНИК still printing a
+        // treatment the farmer erased.
+        //
+        // This assertion is the one that would have caught #2242: the source
+        // reads `db.task.delete`, which looks hard and is not.
+        expect(code(SOFT)).toMatch(/db\.operationParcel\.deleteMany\(/);
     });
 
-    it('the restore CLEARS it', () => {
-        expect(code(SOFT)).toMatch(/deletedAt:\s*null,\s*deletedByUserId:\s*null/s);
+    it('it deletes the journal entries EXPLICITLY', () => {
+        // The load-bearing one. `LogEntry.operationParcel` is an optional
+        // relation with no `onDelete`, so Prisma defaults it to SET NULL:
+        // cascading from the task would leave every entry alive with a null
+        // `operationParcelId`. A refactor that "simplifies" this away relies
+        // on a cascade that does not exist, and the entries come back as
+        // orphans with nothing pointing at them.
+        expect(code(SOFT)).toMatch(/db\.logEntry\.deleteMany\(/);
     });
 
-    it('a Trash lists what was withdrawn', () => {
-        expect(code(SOFT)).toContain('export async function listDeletedTreatments');
+    it('nothing restores a treatment any more', () => {
+        expect(code(SOFT)).not.toContain('export async function restoreDiaryTreatment');
+        expect(code(SOFT)).not.toContain('export async function listDeletedTreatments');
     });
 
     it('the file points the reader at the hard path', () => {

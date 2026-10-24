@@ -576,9 +576,9 @@ export class JournalRepository {
      * row per (handle, author), so it is bounded by the PAGE like its sibling
      * above and never by the tasks behind it.
      *
-     * `deletedAt: null` matches what this list shows. The withdrawn listing
-     * folds its own authorship from rows it already reads — see
-     * `listDeletedTreatments`.
+     * `deletedAt: null` matches what this list shows. There is no withdrawn
+     * listing to keep in step with any more: «Кошче» went on 2026-10-24 and a
+     * withdrawn treatment's rows are deleted outright.
      */
     private static async _treatmentAuthorship(
         db: PrismaTx,

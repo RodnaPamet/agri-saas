@@ -41,8 +41,6 @@ import {
     recordDiaryTreatment,
     getDiaryTreatment,
     deleteDiaryTreatment,
-    restoreDiaryTreatment,
-    listDeletedTreatments,
 } from '@/app-layer/usecases/diary-treatment';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -145,7 +143,7 @@ async function recordPartial(handle: string) {
 }
 
 describeFn('abandoning an unfinished treatment (DB-backed)', () => {
-    it('REMOVES a complete treatment, and keeps its handle so a restore is exact', async () => {
+    it('ERASES a complete treatment\'s entries and register lines', async () => {
         // This asserted the OPPOSITE until 2026-10-22: a 409 TREATMENT_COMPLETE,
         // on the reasoning that a finished treatment is a БАБХ record and that
         // dropping it here would be 'a convenience route that drops БАБХ
@@ -165,192 +163,49 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         const result = await deleteDiaryTreatment(ctx(), handle);
         expect(result.tasks).toBe(before.length);
 
+        // REVERSED 2026-10-24. This used to assert the rows SURVIVED with
+        // `deletedAt` set, and that the handle was KEPT so a restore could be
+        // exact. «Кошче» is gone and the owner chose "erased from the
+        // database", so every one of those expectations is now the opposite.
+        // The arms are unchanged — the same treatment, the same reads — which
+        // is what makes the reversal legible.
+        // The task row SURVIVES as a flagged shell. `Task` is in
+        // `SOFT_DELETE_MODELS`, so the extension rewrites the delete into an
+        // update — which is also why the lines below had to be deleted
+        // explicitly rather than left to a cascade that never fires.
+        // `purgeSoftDeletedOlderThan` erases the shell on its schedule.
         const tasks = await globalPrisma.task.findMany({
             where: { tenantId, treatmentGroupId: handle },
-            select: { id: true, deletedAt: true, clientMutationId: true },
-            orderBy: { id: 'asc' },
         });
+        expect(tasks.length).toBeGreaterThan(0);
         expect(tasks.every((t) => t.deletedAt !== null)).toBe(true);
-        const entries = await globalPrisma.logEntry.findMany({ where: { tenantId, treatmentGroupId: handle } });
-        expect(entries.length).toBeGreaterThan(0);
-        expect(entries.every((e) => e.deletedAt !== null)).toBe(true);
 
-        // The handle is KEPT for a complete treatment, which is what makes the
-        // restore exact. The incomplete path releases it so a dead-end handle
-        // can be re-sent, and the value is recorded nowhere — so releasing it
-        // here would quietly make a restore lossy. Only a DB-backed test can
-        // see this: the column is the entire record of it.
-        expect(tasks.map((t) => t.clientMutationId)).toEqual(
-            before.map((t) => t.clientMutationId),
-        );
-        expect(tasks.every((t) => t.clientMutationId !== null)).toBe(true);
-
-        // DONE lines untouched: their own record of what happened stays true
-        // even though the entry they wrote is withdrawn, and it is what a
-        // restore brings back rather than rebuilding.
-        const lines = await globalPrisma.operationParcel.findMany({
-            where: { tenantId, taskId: { in: tasks.map((t) => t.id) } },
-            select: { status: true },
-        });
-        expect(lines.length).toBeGreaterThan(0);
-        expect(lines.every((l) => l.status === 'DONE')).toBe(true);
-    });
-
-    it('a restore puts the treatment back, entries and all', async () => {
-        const handle = `restore-${randomUUID()}`;
-        await recordDiaryTreatment(ctx(), input(), handle);
-        await deleteDiaryTreatment(ctx(), handle);
-
-        const restored = await restoreDiaryTreatment(ctx(), handle);
-        expect(restored.tasks).toBeGreaterThan(0);
-        expect(restored.entries).toBeGreaterThan(0);
-
-        const tasks = await globalPrisma.task.findMany({ where: { tenantId, treatmentGroupId: handle } });
-        expect(tasks.every((t) => t.deletedAt === null)).toBe(true);
-        expect(tasks.every((t) => t.deletedByUserId === null)).toBe(true);
-        const entries = await globalPrisma.logEntry.findMany({ where: { tenantId, treatmentGroupId: handle } });
-        expect(entries.length).toBeGreaterThan(0);
-        expect(entries.every((e) => e.deletedAt === null)).toBe(true);
-    });
-
-    it('restoring a treatment nobody withdrew is NOT FOUND, not a silent no-op', async () => {
-        // The lookup is `deletedAt: { not: null }`, the inverse of the delete's.
-        // Without that, restoring a live treatment updates zero rows and
-        // reports success — which reads as 'restored' to a client.
-        const handle = `live-${randomUUID()}`;
-        await recordDiaryTreatment(ctx(), input(), handle);
-        await expect(restoreDiaryTreatment(ctx(), handle)).rejects.toMatchObject({
-            code: 'TREATMENT_NOT_FOUND',
-        });
-    });
-
-    it('the deleted listing folds N tasks into ONE treatment', async () => {
-        // A treatment over several blocks is several tasks, and a trash view
-        // listing it once per task would invite several restores of one thing.
-        const handle = `folded-${randomUUID()}`;
-        await recordDiaryTreatment(ctx(), input(), handle);
-        await deleteDiaryTreatment(ctx(), handle);
-
-        const { treatments } = await listDeletedTreatments(ctx());
-        const mine = treatments.filter((t) => t.treatmentGroupId === handle);
-        expect(mine).toHaveLength(1);
-        expect(mine[0].taskCount).toBeGreaterThan(0);
-    });
-
-    it('the «Кошче» listing names WHAT was withdrawn, not only when', async () => {
-        // The restore screen cannot fetch per row to label it: a withdrawn
-        // handle stops resolving, which the next assertion proves rather than
-        // assumes. So a listing of bare dates would be unusable — a farmer
-        // picking a row has to recognise the spraying. Raised in review by
-        // agrent-ios (#395) before the phone built against it.
-        const handle = `summary-${randomUUID()}`;
-        await recordDiaryTreatment(ctx(), input(), handle);
-        await deleteDiaryTreatment(ctx(), handle);
-
-        // The reason the summary has to be ON the listing.
-        expect(await getDiaryTreatment(ctx(), handle)).toBeNull();
-
-        const { treatments } = await listDeletedTreatments(ctx());
-        const row = treatments.find((t) => t.treatmentGroupId === handle);
-        expect(row).toBeDefined();
-        expect(row!.productName).toBeTruthy();
-        expect(row!.blockNames.length).toBeGreaterThan(0);
-        expect(row!.parcelCount).toBeGreaterThan(0);
-        expect(row!.totalAreaHa).toBeGreaterThan(0);
-        expect(row!.kind).toBeTruthy();
-        expect(row!.occurredOn).toBe(DAY);
-    });
-
-    it('mayRestore answers for THIS caller, not for the farm', async () => {
-        // The flag exists so the phone offers «Възстанови» only where it would
-        // succeed, so the property worth asserting is that it DISAGREES between
-        // two callers on one row — a flag that is simply true everywhere would
-        // pass a presence check and tell a client nothing.
-        const handle = `mayrestore-${randomUUID()}`;
-        await recordDiaryTreatment(ctx(), input(), handle);
-        await deleteDiaryTreatment(ctx(), handle);
-
-        const asCreator = await listDeletedTreatments(ctx('EDITOR' as Role));
-        expect(asCreator.treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(
-            true,
-        );
-
-        const stranger = makeRequestContext('EDITOR', {
-            userId: `${userId}-someone-else`,
-            tenantId,
-            tenantSlug: `${TAG}-t`,
-        });
-        const asStranger = await listDeletedTreatments(stranger);
-        expect(asStranger.treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(
-            false,
-        );
-    });
-
-    it('mayRestore is FALSE for a mixed-authorship handle, admin included', async () => {
-        // The arm no client could compute for itself, and the reason `mayDelete`
-        // is a server-side flag rather than a `createdByUserId` field: a reused
-        // handle is refused 409 for EVERYBODY, so an admin seeing `true` here
-        // would be offered a restore that cannot succeed.
-        const handle = `mixed-${randomUUID()}`;
-        await recordDiaryTreatment(ctx(), input(), handle);
-        await deleteDiaryTreatment(ctx(), handle);
-
-        // Forge the second author directly. The usecase refuses to CREATE this
-        // state — one treatment is written by one person in one request — so it
-        // has to be written rather than recorded, and the fixture is a single
-        // block, so there is only one task to start from. Clone it under the
-        // same handle with a different author: that is precisely the reused
-        // handle the 409 exists for.
-        const first = await globalPrisma.task.findFirstOrThrow({
+        // The entries are the ones a cascade would MISS.
+        // `LogEntry.operationParcel` is optional and declares no `onDelete`,
+        // so Prisma defaults it to SET NULL — without the explicit delete they
+        // would still be here with a null `operationParcelId`. Asserting on
+        // `treatmentGroupId` rather than the link is deliberate: that column
+        // survives a SET NULL, so a surviving row is still findable by it.
+        const entries = await globalPrisma.logEntry.findMany({
             where: { tenantId, treatmentGroupId: handle },
         });
-        // `createMany` because its input is SCALARS only — a cloned row has no
-        // relation objects to satisfy. Four fields are dropped rather than
-        // copied, and each one is a constraint rather than taste:
-        // `clientMutationId` and `key` are both UNIQUE per tenant, so carrying
-        // either over fails on the constraint instead of producing the state
-        // under test; `metadataJson` is a nullable Json, whose `null` Prisma
-        // will not accept back as an input value; and the timestamps are the
-        // database's to set.
-        const {
-            id: _id,
-            createdAt: _c,
-            updatedAt: _u,
-            clientMutationId: _k,
-            metadataJson: _m,
-            key: clonedFrom,
-            ...rest
-        } = first;
-        // A REAL second user, because `createdByUserId` is a foreign key. The
-        // `mayRestore` test above gets away with a made-up id only because its
-        // refusal lands before any write touches the column.
-        const otherEmail = `${TAG}-second@ag.test`;
-        const secondAuthor = await globalPrisma.user.create({
-            data: {
-                email: otherEmail,
-                emailHash: hashForLookup(otherEmail),
-                name: 'Second Author',
-            },
-            select: { id: true },
-        });
-        await globalPrisma.task.createMany({
-            data: [
-                {
-                    ...rest,
-                    key: `${clonedFrom}-dup`,
-                    createdByUserId: secondAuthor.id,
-                },
-            ],
-        });
+        expect(entries).toHaveLength(0);
 
-        const { treatments } = await listDeletedTreatments(ctx());
-        expect(treatments.find((t) => t.treatmentGroupId === handle)!.mayRestore).toBe(false);
-
-        // And the route agrees with the flag — which is the whole point of
-        // computing it from the same predicate.
-        await expect(restoreDiaryTreatment(ctx(), handle)).rejects.toMatchObject({
-            code: 'TREATMENT_MIXED_AUTHORSHIP',
+        // The register lines, deleted EXPLICITLY — the assertion that would
+        // have passed for the wrong reason if written as a cascade check.
+        // Nothing cascades from an update, so without the explicit delete
+        // these rows survive and the ДНЕВНИК keeps printing them.
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, taskId: { in: before.map((t) => t.id) } },
         });
+        expect(lines).toHaveLength(0);
+
+        // The handle is KEPT for a complete treatment, unchanged: the shell
+        // row still occupies `@@unique([tenantId, clientMutationId])`.
+        const kept = await globalPrisma.task.findFirst({
+            where: { tenantId, clientMutationId: { in: before.map((t) => t.clientMutationId!) } },
+        });
+        expect(kept).not.toBeNull();
     });
 
     it('404s on a handle nobody recorded', async () => {
@@ -417,7 +272,7 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(tasks.every((t) => t.deletedAt === null)).toBe(true);
     });
 
-    it('soft-deletes the tasks and the entries, and SKIPS the unfinished lines', async () => {
+    it('ERASES the entries and ALL lines, and flags the task shell', async () => {
         const handle = `partial-${randomUUID()}`;
         const { pendingLine, doneLine } = await recordPartial(handle);
 
@@ -426,30 +281,33 @@ describeFn('abandoning an unfinished treatment (DB-backed)', () => {
         expect(before).toMatchObject({ complete: false });
 
         const result = await deleteDiaryTreatment(ctx(), handle);
-        expect(result).toMatchObject({ treatmentGroupId: handle, tasks: 1, lines: 1 });
+        // `lines` now counts what was DELETED — both of them — where it used
+        // to count only the PENDING ones moved to SKIPPED.
+        expect(result).toMatchObject({ treatmentGroupId: handle, tasks: 1, lines: 2 });
         expect(result.entries).toBeGreaterThan(0);
 
-        // Tasks: soft, not hard — the row and its audit history stay.
+        // The task shell stays, flagged. `Task` is in `SOFT_DELETE_MODELS`, so
+        // the extension turns its delete into an update — which is exactly why
+        // the lines below are deleted EXPLICITLY and not left to a cascade.
         const tasks = await globalPrisma.task.findMany({ where: { tenantId, treatmentGroupId: handle } });
         expect(tasks).toHaveLength(1);
         expect(tasks[0].deletedAt).not.toBeNull();
         expect(tasks[0].deletedByUserId).toBe(userId);
 
-        // Entries: withdrawn, and still on disk.
+        // Entries: GONE. Owner ruling 2026-10-24 — "what's deleted is
+        // deleted". `LogEntry` is not in the allowlist, so this delete is real.
         const entries = await globalPrisma.logEntry.findMany({ where: { tenantId, treatmentGroupId: handle } });
-        expect(entries.length).toBeGreaterThan(0);
-        expect(entries.every((e) => e.deletedAt !== null)).toBe(true);
+        expect(entries).toHaveLength(0);
 
-        // The unfinished line is SKIPPED — `OperationParcel` has no
-        // `deletedAt`, and SKIPPED is the state the completion pass already
-        // refuses to touch, so the remainder cannot be marked later.
+        // BOTH lines gone, the unfinished one and the completed one. This
+        // asserted `SKIPPED` and `DONE` respectively until the ruling: the
+        // PENDING line was moved to a state the completion pass would not
+        // touch, and the DONE line was left because its record of what
+        // happened stayed true. Neither survives an erase.
         const pending = await globalPrisma.operationParcel.findUnique({ where: { id: pendingLine } });
-        expect(pending?.status).toBe('SKIPPED');
-
-        // The line that DID complete keeps its own status. Its record of what
-        // happened stays true even though the entry it wrote is withdrawn.
+        expect(pending).toBeNull();
         const done = await globalPrisma.operationParcel.findUnique({ where: { id: doneLine } });
-        expect(done?.status).toBe('DONE');
+        expect(done).toBeNull();
     });
 
     it('REFUSES a resend of an abandoned handle rather than recreating it', async () => {
