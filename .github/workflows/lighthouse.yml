@@ -360,6 +360,10 @@ jobs:
         run: |
           log=/tmp/lhci.log
           started=$SECONDS
+          # Budget breaches seen so far. A breach must REPRODUCE to fail the
+          # job (#2207) — see the branch below for why that is not the same as
+          # retrying until it passes.
+          breaches=0
           for attempt in 1 2 3; do
             rm -rf .lighthouseci
             status=0
@@ -372,13 +376,44 @@ jobs:
               --collect.url="${{ matrix.url }}" > "$log" 2>&1 || status=$?
             cat "$log"
             if [ "$status" -eq 0 ]; then
+              if [ "$breaches" -gt 0 ]; then
+                # Named, not swallowed. A breach that did not reproduce is
+                # still a data point about this page sitting on its bound, and
+                # a silent pass would hide the very flapping #2207 opened on.
+                echo "::warning::Lighthouse budget breached on an earlier attempt and PASSED on re-collection (${breaches} breach(es), $((SECONDS - started))s). Treated as a mode draw rather than a regression — see the measurement above. The page is sitting close enough to its bound that the 5-run median can land either side (#2207)."
+              fi
               echo "::notice::Lighthouse passed in $((SECONDS - started))s (attempt ${attempt}/3)"
               exit 0
             fi
             # Reaching the assertion stage means every run collected and a
-            # BUDGET was judged. That is a result about the page, so it is
-            # final — re-rolling it would turn a regression gate into a
-            # coin toss with three flips.
+            # BUDGET was judged — a result about the page rather than a lost
+            # measurement.
+            #
+            # It is judged TWICE before it fails, which is a change from the
+            # original "never re-roll a verdict" rule and needs its reason on
+            # the record. That rule was right about the danger — retrying until
+            # it passes is not a budget — and wrong about the instrument. This
+            # page's LCP is BIMODAL, measured: clusters at ~3,350 ms and
+            # ~4,180 ms with the 3,800 ms bound sitting between them, so which
+            # side the 5-run median lands on is partly a draw. Four 5-run jobs
+            # on one commit, two per side, are what settled #2239 in both
+            # directions; a single verdict could not.
+            #
+            # Requiring the breach to REPRODUCE is not retrying until it
+            # passes:
+            #
+            #   - A second breach FAILS the job, and #2239's regression
+            #     breached twice (medians 4122 ms then 4172 ms) — it would
+            #     still have been caught.
+            #   - A pass after a breach is announced as a warning, not hidden.
+            #   - The loop is still capped at three attempts, so the arithmetic
+            #     above is unchanged: this spends an attempt it already had.
+            #
+            # The alternative in #2207 — warn whenever the breach is smaller
+            # than the spread — would have SUPPRESSED that real 800 ms
+            # regression, whose first breach was 322 ms against a 2,215 ms
+            # spread. On a bimodal metric a wide spread is two populations, not
+            # low confidence in the median.
             if grep -q 'Checking assertions against' "$log"; then
               # The MEASUREMENT first — #2207. The annotation that used to be
               # the only line here said "this is a verdict about the page",
@@ -394,8 +429,14 @@ jobs:
               # could crash the step would be a worse defect than the message
               # it replaces.
               node scripts/ci/lighthouse-breach.mjs "$log" || true
-              echo "::error::Lighthouse BUDGET failed (attempt ${attempt}/3, exit ${status}). Not retried: a budget failure is a verdict, not a lost measurement. What was measured is in the annotation above."
-              exit "$status"
+              breaches=$((breaches + 1))
+              if [ "$breaches" -ge 2 ]; then
+                echo "::error::Lighthouse BUDGET failed TWICE (attempt ${attempt}/3, exit ${status}, $((SECONDS - started))s). A breach that reproduces on a fresh collection is a verdict about the page, not a lost measurement or a mode draw. Both measurements are in the annotations above."
+                exit "$status"
+              fi
+              echo "::warning::Lighthouse budget breached on attempt ${attempt}/3 — re-collecting ONCE to require the verdict to reproduce (#2207). A second breach fails the job; this is not retrying until it passes."
+              sleep 10
+              continue
             fi
             if [ "$status" -eq 124 ]; then
               # No bound in this message, deliberately. It said "after 600s"
@@ -413,6 +454,17 @@ jobs:
             fi
             sleep 10
           done
+          # An unreproduced breach is UNMEASURED, not cleared. Reaching here
+          # with a breach on the record means the attempts ran out before the
+          # re-collection could happen — collection failures ate them — so the
+          # reproduction requirement was never actually tested. Failing is the
+          # only honest direction: the alternative lets a real regression
+          # through whenever the runner is also flaky, which is the
+          # absence-reads-as-success shape.
+          if [ "$breaches" -gt 0 ]; then
+            echo "::error::Lighthouse budget breached ${breaches} time(s) and the attempts ran out before it could be re-collected ($((SECONDS - started))s). Failing: an unreproduced breach is unmeasured, not cleared."
+            exit 1
+          fi
           echo "::error::Lighthouse collection failed 3/3 after $((SECONDS - started))s"
           exit 1
 
