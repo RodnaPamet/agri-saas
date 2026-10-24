@@ -574,6 +574,31 @@ export async function recordDiaryTreatment(
         }
     }
 
+    // ── The group row, before the blocks ────────────────────────────────
+    //
+    // #2172 gave the treatment a row so a correction has a unit to commit in
+    // and somewhere to keep a version. This is where it comes into existence.
+    //
+    // BEFORE the loop, not inside it and not after: each block is its own
+    // transaction (`createFieldOperation`), and this write is atomic PER BLOCK
+    // by #1740's decision, so a partial failure leaves the committed blocks
+    // recorded. Creating the group first means a partial treatment still has a
+    // group row — the same shape it has today, plus the row — and the replay
+    // path finishes the job. Creating it afterwards would leave the one state
+    // nothing can describe: recorded blocks with no group.
+    //
+    // `upsert`, because the replay path re-enters this function with the same
+    // handle and a second `create` would fail on the primary key. The update
+    // branch is deliberately EMPTY: a replay is the same write arriving twice,
+    // not a change, so it must not bump `version`.
+    await runInTenantContext(ctx, (db) =>
+        db.treatmentGroup.upsert({
+            where: { tenantId_id: { tenantId: ctx.tenantId, id: treatmentGroupId } },
+            create: { id: treatmentGroupId, tenantId: ctx.tenantId },
+            update: {},
+        }),
+    );
+
     for (const [locationId, blockParcelIds] of byBlock) {
         // NO `as CreateFieldOperationInput` here, deliberately. The first
         // version of this object carried one, and it hid two real errors that

@@ -48,10 +48,17 @@ export const GET = withApiErrorHandling(
  * longer ADMIN-only: it is the treatment's creator or a farm admin
  * (`TREATMENT_DELETE_NOT_PERMITTED`).
  *
- * The delete is SOFT, AUDITED and RESTORABLE through `./restore`, and the
- * register stops printing the treatment — `farm-record-diary.ts` filters
- * `task.deletedAt` on the lines it prints. That last part is what makes it a
- * withdrawal rather than a view-level hide.
+ * The delete is AUDITED and the register stops printing the treatment —
+ * `farm-record-diary.ts` filters `task.deletedAt` on the lines it prints. That
+ * last part is what makes it a withdrawal rather than a view-level hide.
+ *
+ * It is **no longer RESTORABLE**, and this docblock said it was until #2172
+ * went looking. `./restore` was removed with «Кошче» in #2254 (owner ruling
+ * 2026-10-24, "everything deleted is gone"), and the withdrawal now physically
+ * deletes the `OperationParcel` lines and the `LogEntry` rows while
+ * soft-deleting only the tasks. Reversibility was one of the three protections
+ * the 2026-10-22 widening of this gate rested on — #2280 carries that back to
+ * the owner.
  *
  * See `deleteDiaryTreatment` for what the owner ruled, what the earlier ruling
  * traded, and why the remaining protections are shaped as they are. The old

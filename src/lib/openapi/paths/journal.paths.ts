@@ -16,7 +16,7 @@ import {
     RecordDiaryTreatmentSchema,
 } from '@/lib/schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 
 // ZodObjects, because that is what the generator reads to build inline
 // parameters — see the note on OperationInput.params.
@@ -279,6 +279,70 @@ const TreatmentPdfBody = z.string().openapi({
     format: 'binary',
     description: 'The \u0414\u041d\u0415\u0412\u041d\u0418\u041a pages for this treatment, as a PDF document.',
 });
+
+const TreatmentDefinitionLine = z
+    .object({
+        parcelId: z.string(),
+        parcelName: z.string(),
+        locationId: z.string().nullable().openapi({
+            description: 'The block the parcel sits in \u2014 the treatment\u2019s fan-out key.',
+        }),
+        treatedAreaHa: z.number().nullable().openapi({
+            description:
+                '**NULL means the WHOLE parcel**, and it is not an empty value. The register prints '
+                + '`treatedAreaHa ?? parcel.areaHa`, so substituting the parcel area here would turn an '
+                + 'absence into a claim \u2014 and a correction that round-tripped this prefill would then '
+                + 'persist a number nobody typed. Send it back as null to leave it meaning the whole parcel.',
+        }),
+    })
+    .openapi('TreatmentDefinitionLine');
+
+const TreatmentDefinition = z
+    .object({
+        treatmentGroupId: z.string(),
+        version: z.number().int().openapi({
+            description:
+                'The GROUP\u2019s version, to be sent back as `If-Match` on a correction. From the '
+                + 'treatment\u2019s own row (#2172), not from the lines: `OperationParcel.version` is per '
+                + 'row and a correction may ADD or DROP a parcel, so there is no stable set of row '
+                + 'versions to compare against. `0` for a treatment recorded before the group row '
+                + 'existed \u2014 the backfill starts at 0 rather than claiming a version it never served.',
+        }),
+        kind: z.enum(['SPRAY', 'FERTILIZE']),
+        occurredOn: z.string().nullable().openapi({
+            description: 'The farm day, from the first completed line. Null when no line is marked yet.',
+        }),
+        title: z.string().nullable(),
+        applicationTechnique: z.string().nullable(),
+        targetNote: z.string().nullable(),
+        productItemId: z.string(),
+        productName: z.string(),
+        pppRegistrationNo: z.string().nullable().openapi({
+            description: 'From the PRODUCT, not the line \u2014 it is a property of the registration.',
+        }),
+        doseValue: z.number(),
+        doseUnitId: z.string(),
+        waterRateValue: z.number().nullable(),
+        waterRateUnitId: z.string().nullable(),
+        quarantinePeriodDays: z.number().int().nullable().openapi({
+            description:
+                'POINT-IN-TIME. Nothing records what the period WAS when an old line was completed, so '
+                + 'this is what was captured then \u2014 including nothing. Do not substitute today\u2019s '
+                + 'product value: it would make the document authoritative about a number nobody captured.',
+        }),
+        phenophase: z.string().nullable().openapi({
+            description:
+                'POINT-IN-TIME, same reasoning. A plausible guess would make a regulated document '
+                + 'authoritative about something nobody observed.',
+        }),
+        lines: z.array(TreatmentDefinitionLine),
+    })
+    .openapi('TreatmentDefinition', {
+        description:
+            'A recorded treatment\u2019s COMPLETE definition, field-for-field re-submittable as the '
+            + 'create body. That is the requirement rather than a convenience: a correction replaces the '
+            + 'definition, so anything this cannot express is a field a correction would silently drop.',
+    });
 
 const TreatmentSummary = z
     .object({
@@ -591,6 +655,52 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         },
     });
 
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/definition',
+        operationId: 'getDiaryTreatmentDefinition',
+        summary: 'A recorded treatment\u2019s full definition, for a correction to prefill',
+        description:
+            'Every field of the treatment as it was recorded, plus the GROUP version to send back as '
+            + '`If-Match` on the correction (#2172).\n\n'
+            + '**A sub-resource rather than fields on `GET ../`.** That one is the summary the journal '
+            + 'detail view reads \u2014 it takes ONE line and selects `completedAt` and `phenophase`. '
+            + 'Widening it would put every parcel, every treated area, the product, the dose and both '
+            + 'units on the payload of every journal detail read, for the one caller about to open a '
+            + 'correction form.\n\n'
+            + '**This is a WRITE-gated read**, in this order: `canWrite`, then SINGLE AUTHORSHIP, then '
+            + 'creator-or-admin. So a reader who can see the treatment in the journal gets `403` here. '
+            + 'That is deliberate \u2014 the body is the whole record and its only purpose is to be '
+            + 'edited and sent back.\n\n'
+            + '`409` `TREATMENT_MIXED_AUTHORSHIP` when the handle carries tasks written by more than '
+            + 'one person: there is then no single creator for the permission rule to admit, and that '
+            + 'binds admins too. The same refusal the withdrawal raises, for the same reason.\n\n'
+            + '`404` `TREATMENT_NOT_FOUND` for an unknown handle AND for a handle whose tasks exist '
+            + 'with no lines \u2014 the stranded shape a partial write leaves. There is no definition to '
+            + 'correct, and saying so beats returning a shell the form would fill with defaults and '
+            + 'save as if it were the record.\n\n'
+            + '**Do not probe this to decide whether to OFFER the control.** The journal list already '
+            + 'carries a server-computed `mayDelete` over the same population and the edit rule is the '
+            + 'same creator-or-admin test; offering a control that 403s is worse than an absent one.\n\n'
+            + 'The handle is a PATH segment rather than a query parameter: iOS writes the full URL '
+            + 'including the query string to the device log, unsuppressably.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'The treatment\u2019s complete definition and its group version.',
+            schema: TreatmentDefinition,
+        },
+        extraResponses: {
+            ...codedErrorResponses({
+                403:
+                    '`error.code` is `TREATMENT_EDIT_NOT_PERMITTED` when the caller is neither the '
+                    + 'person who recorded the treatment nor a farm administrator. The same rule as the '
+                    + 'withdrawal, deliberately: a correction must not be easier to make than a '
+                    + 'removal.',
+            }),
+        },
+    }),
     op(registry, {
         method: 'get',
         path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/farm-record',

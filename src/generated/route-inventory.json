@@ -1572,6 +1572,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/definition",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/farm-record",
       "status": "live",
       "documented": true

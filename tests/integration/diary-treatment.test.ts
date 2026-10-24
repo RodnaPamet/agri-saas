@@ -26,7 +26,11 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { recordDiaryTreatment, getDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
+import {
+    recordDiaryTreatment,
+    getDiaryTreatment,
+    getDiaryTreatmentDefinition,
+} from '@/app-layer/usecases/diary-treatment';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -750,5 +754,172 @@ describeFn('TreatmentGroup backfill (DB-backed, #2172)', () => {
                 data: { tenantId: otherTenantId, groupId: mine, previous: {}, changedFields: [] },
             }),
         ).rejects.toThrow();
+    });
+});
+
+/**
+ * `getDiaryTreatmentDefinition` — the correction prefill (#2172).
+ *
+ * The property that matters is RE-SUBMITTABILITY: a correction replaces the
+ * definition, so anything the prefill cannot express is a field a correction
+ * would silently drop. So the first test asserts the whole shape against the
+ * input it was recorded from rather than spot-checking fields.
+ */
+describeFn('getDiaryTreatmentDefinition (DB-backed, #2172)', () => {
+    const KEY = `def-${TAG}`;
+
+    it('returns the definition it was recorded from, field for field', async () => {
+        const input = baseInput();
+        const rec = await recordDiaryTreatment(ctx(), input, KEY);
+
+        const def = await getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId);
+
+        // Every scalar the create accepted comes back as it went in.
+        expect(def).toMatchObject({
+            treatmentGroupId: rec.treatmentGroupId,
+            kind: input.kind,
+            occurredOn: input.occurredOn,
+            productItemId: input.productItemId,
+            doseValue: input.doseValue,
+            doseUnitId: input.doseUnitId,
+            targetNote: input.targetNote,
+            applicationTechnique: input.applicationTechnique,
+        });
+        // And every parcel, which is what `getDiaryTreatment` cannot give: it
+        // reads the lines with `take: 1`.
+        expect(def.lines.map((l) => l.parcelId).sort()).toEqual([...input.parcelIds].sort());
+        expect(def.lines.every((l) => l.parcelName.length > 0)).toBe(true);
+    });
+
+    it('carries the GROUP version, and recordDiaryTreatment created the row', async () => {
+        // The gap this closes: #2279 added the table and backfilled EXISTING
+        // groups. Without this, a treatment recorded afterwards would have no
+        // group row and the prefill would report a version it never served.
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `${KEY}-ver`);
+
+        const row = await globalPrisma.treatmentGroup.findUnique({
+            where: { tenantId_id: { tenantId, id: rec.treatmentGroupId } },
+        });
+        expect(row).not.toBeNull();
+        expect(row!.version).toBe(0);
+
+        const def = await getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId);
+        expect(def.version).toBe(0);
+    });
+
+    it('a replay does NOT bump the version — it is the same write arriving twice', async () => {
+        const key = `${KEY}-replay`;
+        const one = await recordDiaryTreatment(ctx(), baseInput(), key);
+        const two = await recordDiaryTreatment(ctx(), baseInput(), key);
+        expect(two.replayed).toBe(true);
+
+        const row = await globalPrisma.treatmentGroup.findUnique({
+            where: { tenantId_id: { tenantId, id: one.treatmentGroupId } },
+        });
+        // The upsert's update branch is empty for exactly this reason.
+        expect(row!.version).toBe(0);
+    });
+
+    it('leaves treatedAreaHa NULL, because null means the WHOLE parcel', async () => {
+        // The prefill must not substitute `parcel.areaHa`: the register prints
+        // `treatedAreaHa ?? parcel.areaHa`, so filling it in would turn an
+        // absence into a claim — and a correction round-tripping this prefill
+        // would then persist a number nobody typed.
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `${KEY}-area`);
+
+        const def = await getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId);
+
+        // The base input sets no per-parcel areas, so every line is whole-parcel.
+        expect(def.lines.every((l) => l.treatedAreaHa === null)).toBe(true);
+    });
+
+    it('refuses MIXED AUTHORSHIP, which binds admins too', async () => {
+        // The same 409 the withdrawal raises: a handle carrying tasks written by
+        // more than one person has no single creator for the permission rule to
+        // admit, so there is no safe answer to "may you correct this".
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `${KEY}-mixed`);
+        const other = await globalPrisma.user.create({
+            data: {
+                email: `${TAG}-second@ag.test`,
+                emailHash: hashForLookup(`${TAG}-second@ag.test`),
+                name: 'Second Author',
+            },
+        });
+        await globalPrisma.task.create({
+            data: {
+                tenantId,
+                title: `Interloper ${TAG}`,
+                type: 'FIELD_OPERATION',
+                createdByUserId: other.id,
+                treatmentGroupId: rec.treatmentGroupId,
+            },
+        });
+
+        // An OWNER — canAdmin — is still refused.
+        await expect(
+            getDiaryTreatmentDefinition(ctx(), rec.treatmentGroupId),
+        ).rejects.toMatchObject({ code: 'TREATMENT_MIXED_AUTHORSHIP' });
+    });
+
+    it('refuses a writer who did not record it, and admits an admin who did not', async () => {
+        const rec = await recordDiaryTreatment(ctx(), baseInput(), `${KEY}-perm`);
+        const stranger = await globalPrisma.user.create({
+            data: {
+                email: `${TAG}-stranger@ag.test`,
+                emailHash: hashForLookup(`${TAG}-stranger@ag.test`),
+                name: 'Stranger',
+            },
+        });
+
+        // An EDITOR who is not the creator: refused.
+        await expect(
+            getDiaryTreatmentDefinition(
+                makeRequestContext('EDITOR', {
+                    userId: stranger.id,
+                    tenantId,
+                    tenantSlug: `${TAG}-t`,
+                }),
+                rec.treatmentGroupId,
+            ),
+        ).rejects.toMatchObject({ code: 'TREATMENT_EDIT_NOT_PERMITTED' });
+
+        // An OWNER who is not the creator: admitted. The control, so the
+        // refusal above is about authorship rather than about the handle.
+        await expect(
+            getDiaryTreatmentDefinition(
+                makeRequestContext('OWNER', {
+                    userId: stranger.id,
+                    tenantId,
+                    tenantSlug: `${TAG}-t`,
+                }),
+                rec.treatmentGroupId,
+            ),
+        ).resolves.toMatchObject({ treatmentGroupId: rec.treatmentGroupId });
+    });
+
+    it('404s a handle whose tasks exist with NO lines — the stranded shape', async () => {
+        // A partial write that failed before any line landed. There is no
+        // definition to correct, and saying so beats returning a shell the form
+        // would fill with defaults and save as if it were the record.
+        const handle = `${TAG}-stranded`;
+        await globalPrisma.task.create({
+            data: {
+                tenantId,
+                title: `Stranded ${TAG}`,
+                type: 'FIELD_OPERATION',
+                createdByUserId: userId,
+                treatmentGroupId: handle,
+            },
+        });
+
+        await expect(getDiaryTreatmentDefinition(ctx(), handle)).rejects.toMatchObject({
+            code: 'TREATMENT_NOT_FOUND',
+        });
+    });
+
+    it('404s an unknown handle rather than leaking that it is unknown differently', async () => {
+        await expect(
+            getDiaryTreatmentDefinition(ctx(), `${TAG}-nope`),
+        ).rejects.toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
     });
 });
