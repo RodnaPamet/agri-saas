@@ -2571,6 +2571,35 @@
               "null"
             ]
           },
+          "marginRefusalCode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "NO_STANDING_CROP_AREA",
+                  "NO_STANDING_CROP_VALUE"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "NO_OCCUPIED_AREA",
+                  "COST_CURRENCY_MIXED",
+                  "COST_CURRENCY_UNRECORDED"
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "COST_PRICE_CURRENCY_MISMATCH"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why `marginPerDca` is null. Non-null exactly when it is null. A UNION of the value and cost vocabularies rather than a list of its own, because a margin needs both sides and is refused for either side’s reason — so there is nothing new to translate. Added in #2259, which fixed a margin that was computed whenever the VALUE figures were, ignoring the cost refusal: a crop with costs in two currencies had `attributableCostPerDca: null` with `COST_CURRENCY_MIXED` and a `marginPerDca` built from that same un-addable sum, reported as `exact`."
+          },
           "costCurrency": {
             "type": [
               "string",
@@ -2620,12 +2649,13 @@
           "standingValuePerDca",
           "attributableCostPerDca",
           "marginPerDca",
+          "marginRefusalCode",
           "costCurrency",
           "costRefusalCode",
           "uncertainty",
           "refusalCode"
         ],
-        "description": "Per-decare figures over the terms that share a standing-crop area. marginPerDca is a margin over a subset of net worth’s terms, not net worth per decare."
+        "description": "Per-decare figures over the terms that share a standing-crop area. marginPerDca is a margin over a subset of net worth’s terms, not net worth per decare. It needs BOTH sides: when `costRefusalCode` is set the cost cannot be subtracted, so the margin is withheld too and `marginRefusalCode` says which side failed (#2259)."
       },
       "CalculatorRow": {
         "type": "object",

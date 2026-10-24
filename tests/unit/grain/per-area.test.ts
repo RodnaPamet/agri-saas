@@ -41,6 +41,7 @@ const base = {
     // "the tenant's display currency", NOT a refusal — so every pre-existing
     // expectation holds unchanged and the currency cases are new tests below.
     costCurrencies: [] as readonly string[],
+    priceCurrency: 'BGN' as string | null,
     standingCropExcludedCount: 0,
     unvaluedNoUnitCost: 0,
     unattributedCostEntries: 0,
@@ -398,14 +399,104 @@ describe('the cost rate carries its own currency (#1512)', () => {
     });
 
     it('the cost currency does not touch the VALUE figures — the control', () => {
-        // The cost rate stands alone in BOTH directions. A currency refusal
-        // that silently withheld the margin would be #1606 in reverse.
+        // The cost rate stands alone in BOTH directions: a currency refusal
+        // must not withhold a figure that does not use the cost.
+        //
+        // This used to assert `marginPerDca` too, on the reasoning that
+        // withholding it would be "#1606 in reverse". That mirror is false and
+        // #1606's own table says so — it lists `marginPerDca` as "needs both".
+        // What #1606 removed was an over-gate on the COST rate, which
+        // genuinely needs neither a price nor a yield estimate. The margin is
+        // the one figure that needs both sides, so gating it on the cost is
+        // the real dependency rather than a mirror of that mistake. See
+        // `the margin is REFUSED when the cost cannot be subtracted` below.
         const mixed = computePerArea({ ...base, costCurrencies: ['BGN', 'EUR'] });
         const clean = computePerArea({ ...base, costCurrencies: ['BGN'] });
 
-        expect(mixed.marginPerDca).toBe(clean.marginPerDca);
         expect(mixed.standingValuePerDca).toBe(clean.standingValuePerDca);
+        expect(mixed.areaDca).toBe(clean.areaDca);
         expect(mixed.refusalCode).toBe(clean.refusalCode);
+    });
+
+    it('the margin is REFUSED when the cost cannot be subtracted (#2259)', () => {
+        // The defect: this module withheld the cost RATE because two
+        // currencies cannot be added, and then published a margin built from
+        // that same un-addable sum — and labelled it `exact`. Measured before
+        // the fix: attributableCostPerDca null with COST_CURRENCY_MIXED, and
+        // marginPerDca 30.
+        const r = computePerArea({ ...base, costCurrencies: ['BGN', 'EUR'] });
+
+        expect(r.attributableCostPerDca).toBeNull();
+        expect(r.costRefusalCode).toBe('COST_CURRENCY_MIXED');
+        // The figure that blended them is gone, and says why.
+        expect(r.marginPerDca).toBeNull();
+        expect(r.marginRefusalCode).toBe('COST_CURRENCY_MIXED');
+        // And the VALUE side is untouched — the control above, restated here
+        // so this test cannot pass by withholding everything.
+        expect(r.standingValuePerDca).not.toBeNull();
+    });
+
+    it('ONE cost currency that is not the price currency refuses the margin, keeping the rate (#2259)', () => {
+        // The half of #2259 that the cost-refusal codes do NOT cover. A single
+        // EUR cost currency is not a refusal — the rate is a perfectly good
+        // "20 EUR/dca" and #1606 is explicit that it stands alone — but it
+        // cannot be subtracted from a BGN value.
+        const r = computePerArea({ ...base, costCurrencies: ['EUR'], priceCurrency: 'BGN' });
+
+        // The rate SURVIVES, labelled with its own currency.
+        expect(r.attributableCostPerDca).not.toBeNull();
+        expect(r.costCurrency).toBe('EUR');
+        expect(r.costRefusalCode).toBeNull();
+        // The subtraction does not.
+        expect(r.marginPerDca).toBeNull();
+        expect(r.marginRefusalCode).toBe('COST_PRICE_CURRENCY_MISMATCH');
+        // Mirrors net worth, which refuses the same farm with its own
+        // COST_PRICE_CURRENCY_MISMATCH. The per-dca margin was the one figure
+        // that did not.
+    });
+
+    it('a MATCHING single currency subtracts normally — the control', () => {
+        // Without this the test above passes on any rule that refuses every
+        // single-currency row.
+        const r = computePerArea({ ...base, costCurrencies: ['BGN'], priceCurrency: 'BGN' });
+        expect(r.marginPerDca).toBe(80);
+        expect(r.marginRefusalCode).toBeNull();
+    });
+
+    it('an EMPTY cost-currency set still subtracts, matching net worth', () => {
+        // The journal path never writes `costCurrency`, so an unlabelled
+        // magnitude is the common case and is treated as the tenant's display
+        // currency. Refusing it would withhold the margin on most farms.
+        const r = computePerArea({ ...base, costCurrencies: [], priceCurrency: 'BGN' });
+        expect(r.marginPerDca).toBe(80);
+        expect(r.marginRefusalCode).toBeNull();
+    });
+
+    it('the unrecorded-rent sentinel refuses the margin too, for the same reason', () => {
+        const r = computePerArea({ ...base, costCurrencies: [UNKNOWN] });
+        expect(r.marginPerDca).toBeNull();
+        expect(r.marginRefusalCode).toBe('COST_CURRENCY_UNRECORDED');
+    });
+
+    it('marginRefusalCode is non-null EXACTLY when marginPerDca is null', () => {
+        // The pair is the contract, the same way costRefusalCode pairs with
+        // its own rate. A refused margin with no code is the dash this module
+        // exists to avoid, and a code beside a real number is a lie.
+        const cases = [
+            { ...base },
+            { ...base, costCurrencies: ['BGN', 'EUR'] },
+            { ...base, costCurrencies: [UNKNOWN] },
+            { ...base, standingCropValue: null },
+            { ...base, standingCropAreaHa: 0 },
+            { ...base, occupiedAreaHa: 0 },
+        ];
+        for (const input of cases) {
+            const r = computePerArea(input);
+            expect({
+                margin: r.marginPerDca === null,
+                code: r.marginRefusalCode !== null,
+            }).toEqual({ margin: r.marginPerDca === null, code: r.marginPerDca === null });
+        }
     });
 
     it('a NON-FINITE occupied area reports 0 decares on BOTH return paths', () => {

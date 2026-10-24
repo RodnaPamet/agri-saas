@@ -1736,6 +1736,11 @@ function finalizeRow(
             // currency at all; this is the same set net worth decides on, handed
             // to the figure that needs it.
             costCurrencies: [...cashCostCurrencies],
+            // Read only to decide whether the cost may be SUBTRACTED from the
+            // value (#2259). Net worth already refuses a single cost currency
+            // that disagrees with the price currency — `COST_PRICE_CURRENCY_MISMATCH`
+            // above — and the per-decare margin was the one figure that did not.
+            priceCurrency,
             standingCropExcludedCount: a.standingCropExcludedCount,
             unvaluedNoUnitCost: a.unvaluedNoUnitCost,
             unvaluedUnitMismatch: a.unvaluedUnitMismatch,

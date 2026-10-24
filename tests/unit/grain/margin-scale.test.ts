@@ -18,11 +18,15 @@
  */
 import { foldMarginScales } from '@/lib/grain/margin-scale';
 import { UNCERTAINTY } from '@/lib/grain/uncertainty';
+import type { PerAreaMarginRefusalCode } from '@/lib/grain/per-area';
 
 const row = (over: Partial<Parameters<typeof foldMarginScales>[0][number]> = {}) => ({
     commodity: 'wheat',
     marginPerDca: 80 as number | null,
     refusalCode: null,
+    // #2259: the scale carries the MARGIN's refusal so an undrawable bar can
+    // name the right cause instead of falling through to "no market price".
+    marginRefusalCode: null as PerAreaMarginRefusalCode | null,
     uncertainty: UNCERTAINTY.EXACT,
     priceCurrency: 'EUR' as string | null,
     ...over,

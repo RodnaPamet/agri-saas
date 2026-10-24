@@ -69,6 +69,49 @@ export type PerAreaCostRefusalCode =
     | 'COST_CURRENCY_MIXED'
     | 'COST_CURRENCY_UNRECORDED';
 
+/**
+ * Why the MARGIN was withheld (#2259).
+ *
+ * A margin needs BOTH sides, so it is refused for either side's reason — hence
+ * the union rather than a fourth list of its own. A client renders whichever
+ * sentence it already renders for that code; there is nothing new to translate.
+ *
+ * ## The defect this fixes
+ *
+ * The margin used to be computed whenever the VALUE figures were computable,
+ * ignoring `costRefusalCode` entirely. So with a crop's costs recorded in two
+ * currencies this module did both of these at once:
+ *
+ *     attributableCostPerDca: null          <- withheld: cannot add BGN to EUR
+ *     costRefusalCode       : COST_CURRENCY_MIXED
+ *     marginPerDca          : 30            <- (5000 BGN - 2000 of BGN+EUR) / 100
+ *     uncertainty           : 'exact'       <- and unqualified
+ *
+ * It declined to blend the currencies and then published a figure that had
+ * blended them, labelled as needing no qualification. Measured, not inferred.
+ *
+ * The margin is now refused whenever either side is, which makes
+ * `marginRefusalCode` non-null exactly when `marginPerDca` is null — the same
+ * pairing `costRefusalCode` has with its own rate, and a test pins it.
+ */
+export type PerAreaMarginRefusalCode =
+    | PerAreaRefusalCode
+    | PerAreaCostRefusalCode
+    /**
+     * One cost currency, and it is not the price currency.
+     *
+     * The only margin refusal that is NOT inherited from one of the other two
+     * vocabularies, and it has to exist: a cost rate of 20 EUR/dca is a
+     * perfectly good figure and #1606 is explicit that the cost rate stands
+     * alone, so it is NOT withheld. But it cannot be subtracted from a value in
+     * BGN, and no FX is ever invented here.
+     *
+     * Mirrors `COST_PRICE_CURRENCY_MISMATCH` on net worth
+     * (`grain-net-worth.ts:1659`), which refuses the same farm for the same
+     * reason. The per-decare margin was the one figure that did not.
+     */
+    | 'COST_PRICE_CURRENCY_MISMATCH';
+
 export interface PerAreaInput {
     /** INCLUDED-planting area. See the denominator trap above. */
     standingCropAreaHa: number;
@@ -107,6 +150,15 @@ export interface PerAreaInput {
      * structured cost data, which are the ones #1512 was filed about.
      */
     costCurrencies: readonly string[];
+    /**
+     * The currency `standingCropValue` is in — read ONLY to decide whether the
+     * cost may be subtracted from it (#2259).
+     *
+     * `null` means no market price, in which case `standingCropValue` is null
+     * too and the margin is already refused for that reason, so this never
+     * decides anything on its own.
+     */
+    priceCurrency: string | null;
     /** Plantings of this commodity dropped for a missing yield estimate. */
     standingCropExcludedCount: number;
     unvaluedNoUnitCost: number;
@@ -150,6 +202,15 @@ export interface PerAreaFigures {
      * area — and the two must not be mistaken for each other.
      */
     marginPerDca: number | null;
+    /**
+     * Why `marginPerDca` is null, when it is (#2259).
+     *
+     * Non-null exactly when `marginPerDca` is null, which a test pins — the
+     * pair is the contract, the same way `costRefusalCode` pairs with the cost
+     * rate. A margin refused with no code is the dash this module exists to
+     * avoid.
+     */
+    marginRefusalCode: PerAreaMarginRefusalCode | null;
     /**
      * The currency `attributableCostPerDca` is denominated in.
      *
@@ -262,12 +323,41 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
             costCurrency: attributableCostPerDca == null ? null : costCurrency,
             costRefusalCode,
             marginPerDca: null,
+            // The VALUE side failed, so that is the reason to report even when
+            // the cost side failed too: a farmer with no standing-crop value
+            // fixes the yield estimate, not their cost currencies.
+            marginRefusalCode: refusalCode,
             uncertainty: UNCERTAINTY.REFUSED,
             refusalCode,
         };
     }
 
     const value = input.standingCropValue as number;
+    /**
+     * The margin needs a USABLE cost, not merely a value (#2259).
+     *
+     * `input.attributableCost` is one pre-summed number, and when
+     * `costRefusalCode` is set that sum is exactly the one whose currencies
+     * were found not to combine — so subtracting it produces a figure
+     * denominated in nothing. The cost RATE is already withheld for that
+     * reason twenty lines up; the margin is built from the same sum and has to
+     * follow, or the module contradicts itself one field later.
+     */
+    /**
+     * Three ways the subtraction is not available, and the cost RATE survives
+     * the third.
+     *
+     * An EMPTY cost-currency set counts as agreement, matching net worth's own
+     * empty-set branch: an unlabelled magnitude is treated as the tenant's
+     * display currency, which is the assumption the product already makes
+     * wherever it prints a cost. Refusing it here would withhold the margin on
+     * every farm that enters costs through the journal, which never writes
+     * `costCurrency`.
+     */
+    const currencyMismatch =
+        costCurrency != null && input.priceCurrency != null && costCurrency !== input.priceCurrency;
+    const marginRefusalCode: PerAreaMarginRefusalCode | null =
+        costRefusalCode ?? (currencyMismatch ? 'COST_PRICE_CURRENCY_MISMATCH' : null);
     return {
         areaDca,
         costAreaDca: reportedCostAreaDca,
@@ -275,7 +365,11 @@ export function computePerArea(input: PerAreaInput): PerAreaFigures {
         attributableCostPerDca,
         costCurrency: attributableCostPerDca == null ? null : costCurrency,
         costRefusalCode,
-        marginPerDca: round2((value - input.attributableCost) / areaDca),
+        marginPerDca:
+            marginRefusalCode == null
+                ? round2((value - input.attributableCost) / areaDca)
+                : null,
+        marginRefusalCode,
         uncertainty: perAreaUncertainty(input),
         refusalCode: null,
     };

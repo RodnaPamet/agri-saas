@@ -72,6 +72,35 @@ interface SumLineProps {
 }
 
 /**
+ * Which sentence explains a refused per-decare MARGIN (#2259).
+ *
+ * One mapping because there are two renderers — the per-commodity detail and
+ * the margin scale's undrawable rows — and they were both reading
+ * `refusalCode`, which describes the VALUE side. A crop with a fine market
+ * price and costs in two currencies therefore read «Няма пазарна цена», which
+ * is false and sends the farmer to fix the wrong thing.
+ *
+ * The cost-side codes get their own sentences rather than reusing
+ * `costPerDcaMixedCurrency`: those say the COST per decare is not computed,
+ * which is true but is not what this line is about.
+ */
+export function marginRefusalCopyKey(code: string | null): string {
+    switch (code) {
+        case 'NO_STANDING_CROP_AREA':
+            return 'perAreaNoArea';
+        case 'COST_CURRENCY_MIXED':
+            return 'marginPerDcaMixedCurrency';
+        case 'COST_CURRENCY_UNRECORDED':
+            return 'marginPerDcaCurrencyUnrecorded';
+        case 'NO_OCCUPIED_AREA':
+            return 'marginPerDcaNoCostArea';
+        default:
+            // NO_STANDING_CROP_VALUE, and the null fallback.
+            return 'perAreaNoValue';
+    }
+}
+
+/**
  * One term of `standing + onHand − produceRent − cost = netWorth`.
  *
  * The sign is rendered, not implied by colour or position, because the
@@ -572,9 +601,7 @@ function MarginScaleGroupRows({
                                     {labelFor(item.commodity)}
                                 </span>
                                 <span className="text-content-attention">
-                                    {item.refusalCode === 'NO_STANDING_CROP_AREA'
-                                        ? tc('perAreaNoArea')
-                                        : tc('perAreaNoValue')}
+                                    {tc(marginRefusalCopyKey(item.marginRefusalCode))}
                                 </span>
                             </li>
                         );

@@ -131,6 +131,20 @@ export const PerAreaFiguresSchema = z
          * mistaken for each other.
          */
         marginPerDca: z.number().nullable(),
+        marginRefusalCode: z
+            .union([
+                PerAreaRefusalCodeSchema,
+                PerAreaCostRefusalCodeSchema,
+                // The one margin-only reason: a single cost currency that is
+                // not the price currency. The cost RATE survives it (#1606),
+                // so it belongs to neither of the other two vocabularies.
+                z.literal('COST_PRICE_CURRENCY_MISMATCH'),
+            ])
+            .nullable()
+            .openapi({
+                description:
+                    'Why `marginPerDca` is null. Non-null exactly when it is null. A UNION of the value and cost vocabularies rather than a list of its own, because a margin needs both sides and is refused for either side’s reason — so there is nothing new to translate. Added in #2259, which fixed a margin that was computed whenever the VALUE figures were, ignoring the cost refusal: a crop with costs in two currencies had `attributableCostPerDca: null` with `COST_CURRENCY_MIXED` and a `marginPerDca` built from that same un-addable sum, reported as `exact`.',
+            }),
         costCurrency: z
             .string()
             .nullable()
@@ -147,7 +161,7 @@ export const PerAreaFiguresSchema = z
     })
     .openapi('CalculatorPerAreaFigures', {
         description:
-            'Per-decare figures over the terms that share a standing-crop area. marginPerDca is a margin over a subset of net worth’s terms, not net worth per decare.',
+            'Per-decare figures over the terms that share a standing-crop area. marginPerDca is a margin over a subset of net worth’s terms, not net worth per decare. It needs BOTH sides: when `costRefusalCode` is set the cost cannot be subtracted, so the margin is withheld too and `marginRefusalCode` says which side failed (#2259).',
     });
 assertMirrors<Equals<z.infer<typeof PerAreaFiguresSchema>, PerAreaFigures>>();
 
