@@ -271,6 +271,37 @@ describe('farm-record-diary — render smoke', () => {
         expect(pdf.includes(Buffer.from('DejaVu'))).toBe(true);
     });
 
+    test('a CORRECTED line renders, footnote and all (#2172)', async () => {
+        // A smoke test, on the same terms as its siblings: PDFKit writes text as
+        // glyphs, so the «Забележка» caption cannot be asserted in the bytes.
+        // What this DOES catch is the failure mode that matters for a new print
+        // site — a caption branch that throws, which would take the whole
+        // register down for any farmer who had ever corrected a treatment, and
+        // only for them.
+        const data = fixture(PROFILE);
+        const corrected: FarmRecordData = {
+            ...data,
+            sprayLines: data.sprayLines.map((l, i) => (i === 0 ? { ...l, corrected: true } : l)),
+            fertilizeLines: data.fertilizeLines.map((l, i) =>
+                i === 0 ? { ...l, corrected: true } : l,
+            ),
+        };
+        const doc = createPdfDocument({
+            tenantName: 'Северна нива',
+            reportTitle: 'Дневник',
+            generatedAt: new Date(0).toISOString(),
+            fontFamily: 'unicode',
+        });
+        expect(() => renderFarmRecordDiary(doc, corrected, BG_LABELS)).not.toThrow();
+        const pdf = await collect(doc);
+        expect(pdf.slice(0, 5).toString()).toBe('%PDF-');
+
+        // The page COUNT is unchanged, which is the assertion with teeth here:
+        // a caption drawn without a height check can push a table onto a new
+        // sheet, and the register is filed one field per sheet.
+        expect(await pageCount(corrected)).toBe(await pageCount(data));
+    });
+
     test('an unparseable period does not throw the render (#1575)', async () => {
         // A smoke test only, and labelled as such: PDFKit writes text as GLYPH
         // INDICES once a Unicode font is embedded, so searching the buffer for

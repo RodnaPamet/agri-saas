@@ -22,7 +22,12 @@ import {
     generateSeasonDiaryPdf,
     isRegisterEmpty,
 } from '@/app-layer/reports/pdf/farm-record-diary';
-import { recordDiaryTreatment, deleteDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
+import {
+    recordDiaryTreatment,
+    deleteDiaryTreatment,
+    getDiaryTreatmentDefinition,
+    correctDiaryTreatment,
+} from '@/app-layer/usecases/diary-treatment';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -656,5 +661,112 @@ describeFn('season ДНЕВНИК skips an EMPTY location without dropping the r
         // buffer for a section title proves nothing.
         expect(livePages).toBeGreaterThan(0);
         expect(seasonPages).toBe(livePages);
+    });
+});
+
+describeFn('ДНЕВНИК discloses a corrected treatment (#2172)', () => {
+    /**
+     * The end-to-end half of the correction marker.
+     *
+     * `buildChemicalRows` marking a line it is TOLD is corrected is covered in
+     * `tests/pdf/corrected-treatment-note.test.ts` against a literal. What that
+     * cannot show is whether the gatherer ever sets the flag — which is the
+     * half that decides whether a regulator sees the disclosure at all.
+     *
+     * Its own fixture rather than the treatment-scoped block's: correcting a
+     * shared treatment would put the earlier tests' assertions behind an
+     * ordering constraint they do not declare.
+     */
+    const T = `corrnote-${randomUUID().slice(0, 8)}`;
+    const DAY = '2026-05-14';
+    const CORRECTED = `${T}-corrected`;
+    const UNTOUCHED = `${T}-untouched`;
+    let block = '';
+    let parcelOne = '';
+    let parcelTwo = '';
+    let unit = '';
+    let item = '';
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        unit = (await prisma.unit.create({
+            data: { key: `l-ha-${T}`, name: 'L/ha', symbol: 'L/ha', measure: 'RATE' },
+        })).id;
+        item = (await prisma.item.create({
+            data: {
+                tenantId: TENANT_ID,
+                name: `ПРЗ ${T}`,
+                category: 'PESTICIDE',
+                defaultUnitId: unit,
+                quarantinePeriodDays: 14,
+            },
+        })).id;
+        block = (await prisma.location.create({
+            data: { tenantId: TENANT_ID, name: `Блок ${T}` },
+        })).id;
+        const mk = async (name: string) =>
+            (await prisma.parcel.create({
+                data: {
+                    tenantId: TENANT_ID,
+                    locationId: block,
+                    name: `${name} ${T}`,
+                    cropType: 'Wheat',
+                    areaHa: 6,
+                },
+            })).id;
+        parcelOne = await mk('K-1');
+        parcelTwo = await mk('K-2');
+
+        const spray = (parcelIds: string[], note: string) => ({
+            kind: 'SPRAY' as const,
+            occurredOn: DAY,
+            parcelIds,
+            productItemId: item,
+            doseValue: 2,
+            doseUnitId: unit,
+            targetNote: note,
+        });
+        await recordDiaryTreatment(ctx(), spray([parcelOne, parcelTwo], `цел-${T}-c`), CORRECTED);
+        // The control: same day, same block, same product, never corrected.
+        await recordDiaryTreatment(ctx(), spray([parcelOne], `цел-${T}-u`), UNTOUCHED);
+
+        const before = await getDiaryTreatmentDefinition(ctx(), CORRECTED);
+        await correctDiaryTreatment(ctx(), CORRECTED, { targetNote: 'Коригирана цел' }, before.version);
+    });
+
+    it('marks EVERY line of a corrected treatment', async () => {
+        // Every line, because a correction is atomic across the group. One
+        // marked line beside three unmarked ones would tell a regulator that
+        // part of the treatment was original.
+        const data = await gatherFarmRecord(ctx(), {
+            kind: 'treatment',
+            treatmentGroupId: CORRECTED,
+        });
+        expect(data.sprayLines).toHaveLength(2);
+        expect(data.sprayLines.every((l) => l.corrected === true)).toBe(true);
+        // And the printed values are the CORRECTED ones, which is the other
+        // half of the owner's decision.
+        expect(data.sprayLines.every((l) => l.targetNote === 'Коригирана цел')).toBe(true);
+    });
+
+    it('leaves an UNCORRECTED treatment unmarked — the control', async () => {
+        // Same day, same block, same product: only the handle separates them.
+        // Without this, a gatherer that marked everything would satisfy the
+        // test above.
+        const data = await gatherFarmRecord(ctx(), {
+            kind: 'treatment',
+            treatmentGroupId: UNTOUCHED,
+        });
+        expect(data.sprayLines).toHaveLength(1);
+        expect(data.sprayLines[0].corrected).toBe(false);
+    });
+
+    it('marks the corrected rows of a BLOCK register without marking the others', async () => {
+        // The register a farmer actually prints is per block and per period, so
+        // it carries both treatments. The marker has to survive that scope.
+        const data = await gatherFarmRecordData(ctx(), block, '2026-05-01', '2026-05-31');
+        const byNote = new Map(data.sprayLines.map((l) => [l.targetNote, l.corrected]));
+        expect(byNote.get('Коригирана цел')).toBe(true);
+        expect(byNote.get(`цел-${T}-u`)).toBe(false);
     });
 });
