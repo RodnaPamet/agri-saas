@@ -44,7 +44,8 @@ let unitId = '';
 let tenantId = '';
 let parcelA = '';   // 10 ha
 let parcelB = '';   // 4 ha
-let parcelNoArea = ''; // areaHa NULL
+let parcelNoArea = '';
+let parcelOtherBlock = ''; // areaHa NULL
 let itemId = '';
 
 const ctx = () => makeRequestContext('OWNER', { userId, tenantId, tenantSlug: `${TAG}-t` });
@@ -70,6 +71,15 @@ beforeAll(async () => {
         })).id;
     parcelA = await mk(`A ${TAG}`, 10);
     parcelB = await mk(`B ${TAG}`, 4);
+    // A parcel in a SECOND block. Everything above sits in one block, so
+    // without this nothing here exercises the fan-out: a treatment writes one
+    // `Task` per block and applies the areas in a loop over each task's lines.
+    const blockTwo = (await prisma.location.create({
+        data: { tenantId, name: `Block two ${TAG}` },
+    })).id;
+    parcelOtherBlock = (await prisma.parcel.create({
+        data: { tenantId, locationId: blockTwo, name: `C ${TAG}`, cropType: 'Wheat', areaHa: 8 },
+    })).id;
     // A real possibility: a parcel with no measured area.
     parcelNoArea = await mk(`N ${TAG}`, null);
     itemId = (await prisma.item.create({
@@ -177,6 +187,27 @@ describeFn('treated area per parcel', () => {
         // 3, not 14. The parcels are 10 + 4 ha; summing those would report
         // more than four times what was actually treated.
         expect(row?.totalAreaHa).toBe(3);
+    });
+
+    it('lands on a parcel in a DIFFERENT block', async () => {
+        // The fan-out. Every other case here is within one block, so a map
+        // consumed by the first task — or keyed per task rather than per parcel
+        // — would store the first area and silently leave the second block's
+        // line whole. The register prints per block, so that line would claim
+        // the whole field was treated.
+        const res = await recordDiaryTreatment(ctx(), {
+            ...base([parcelA, parcelOtherBlock]),
+            parcels: [
+                { parcelId: parcelA, treatedAreaHa: 1.5 },
+                { parcelId: parcelOtherBlock, treatedAreaHa: 4.25 },
+            ],
+        });
+        const lines = await linesOf(res.taskIds);
+        const area = new Map(lines.map((l) => [l.parcelId, l.treatedAreaHa]));
+        expect(Number(area.get(parcelA))).toBe(1.5);
+        expect(Number(area.get(parcelOtherBlock))).toBe(4.25);
+        // Two TASKS, or "a different block" is not what this measured.
+        expect(new Set(lines.map((l) => l.taskId)).size).toBe(2);
     });
 
     it('clears the area when a line is reverted to PENDING', async () => {

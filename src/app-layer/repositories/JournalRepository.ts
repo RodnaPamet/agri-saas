@@ -5,7 +5,7 @@ import { buildCursorWhere, computePageInfo, clampLimit } from '@/lib/pagination'
 import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { AssetRepository } from './AssetRepository';
-import { canDeleteTreatment } from '@/app-layer/policies/task.policies';
+import { canDeleteTreatment, canEditTreatment } from '@/app-layer/policies/task.policies';
 
 export interface LogQuantityInput {
     measure:
@@ -281,7 +281,7 @@ function buildTreatmentSummary(
         } | null;
     },
     agg: { parcelCount: number; totalAreaHa: number; blockNames: string[] } | undefined,
-    mayDelete: boolean,
+    permits: { mayDelete: boolean; mayCorrect: boolean },
 ): Record<string, unknown> {
     const line = entry.operationParcel;
     // The DAY as the FARM sees it, for every row.
@@ -305,11 +305,17 @@ function buildTreatmentSummary(
     return {
         treatmentGroupId: entry.treatmentGroupId,
         occurredOn,
-        // Whether THIS caller may withdraw it — computed here rather than left
-        // to the client, because the rule has an arm no row can express (see
-        // `_treatmentAuthorship`) and an offered «Изтрий» that 403s is worse
-        // than an absent one.
-        mayDelete,
+        // Whether THIS caller may withdraw it, and whether they may correct it
+        // — both computed here rather than left to the client, because the rule
+        // has an arm no row can express (see `_treatmentAuthorship`) and an
+        // offered «Изтрий» or «Коригирай» that 403s is worse than an absent one.
+        //
+        // Read these as `=== false`, never `!flag`: an ABSENT field is a row
+        // cached before it existed, and the journal list reads through a
+        // persistent SWR cache. A stale permit costs one refusal; a stale
+        // denial costs a farmer their own record.
+        mayDelete: permits.mayDelete,
+        mayCorrect: permits.mayCorrect,
         kind: line?.task?.operationType ?? null,
         productName: line?.product?.name ?? null,
         parcelCount: agg?.parcelCount ?? 0,
@@ -508,12 +514,24 @@ export class JournalRepository {
                     // The 403 arm AND the 409 arm, because the control has to
                     // be absent for both. A treatment with no tasks under its
                     // handle — a free-hand entry folding to itself — has no
-                    // author to compare against, so it is not deletable
-                    // through the treatment route at all.
+                    // author to compare against, so it is neither deletable nor
+                    // correctable through the treatment route at all.
+                    //
+                    // TWO flags from one authorship lookup, and they are
+                    // separate fields even though the two rules agree TODAY.
+                    // #2280 asks the owner whether to narrow deletion now that
+                    // a withdrawal is irreversible; if it narrows, a client
+                    // reusing `mayDelete` for «Коригирай» would silently hide
+                    // the correction from the creators who may still correct.
+                    // Asked for by the agrent-ios session before it built the
+                    // control on the wrong flag.
                     (() => {
                         const a = authorship.get(e.treatmentGroupId);
-                        if (!a || a.mixedAuthorship) return false;
-                        return canDeleteTreatment(ctx, a);
+                        if (!a || a.mixedAuthorship) return { mayDelete: false, mayCorrect: false };
+                        return {
+                            mayDelete: canDeleteTreatment(ctx, a),
+                            mayCorrect: canEditTreatment(ctx, a),
+                        };
                     })(),
                 ),
             })),

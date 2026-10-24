@@ -119,6 +119,25 @@ const Treatment = z
                 'withdraw. Advisory, not the control: the route re-checks and answers 403 ' +
                 '`TREATMENT_DELETE_NOT_PERMITTED` or 409 `TREATMENT_MIXED_AUTHORSHIP`.',
         }),
+        mayCorrect: z.boolean().openapi({
+            description:
+                'Whether THIS caller may CORRECT this treatment (#2172) — the flag to gate ' +
+                '«Коригирай» on.\n\n' +
+                '**Do not reuse `mayDelete` for this.** The two rules agree today, and they are ' +
+                'separate fields because #2280 asks the owner whether to narrow deletion now that ' +
+                'a withdrawal is irreversible. If it narrows, a client gating the correction on ' +
+                '`mayDelete` would silently hide «Коригирай» from the creators who may still ' +
+                'correct — a control missing from the person entitled to it, with nothing failing.\n\n' +
+                'Same two arms as its sibling: creator-or-admin AND single authorship, the second ' +
+                'refusing admins too. False on an ordinary manual entry, which has no treatment ' +
+                'to correct. Advisory, not the control: `PUT …/definition` re-checks and answers ' +
+                '403 `TREATMENT_EDIT_NOT_PERMITTED` or 409 `TREATMENT_MIXED_AUTHORSHIP`.\n\n' +
+                '**Read it as `mayCorrect === false`, never `!mayCorrect`.** An ABSENT field is a ' +
+                'row cached before the field existed, and this list reads through a persistent ' +
+                'cache; treating absence as denial hides the control from the person who recorded ' +
+                'the treatment. A stale permit costs one refusal, a stale denial costs a farmer ' +
+                'their own record.',
+        }),
         kind: z.string().nullable().openapi({ description: '`SPRAY` or `FERTILIZE`.' }),
         productName: z.string().nullable(),
         parcelCount: z.number().int().openapi({
@@ -344,6 +363,52 @@ const TreatmentDefinition = z
             + 'create body. That is the requirement rather than a convenience: a correction replaces the '
             + 'definition, so anything this cannot express is a field a correction would silently drop.',
     });
+
+const TreatmentCorrectionEntry = z
+    .object({
+        correctedAt: z.string().openapi({ example: '2026-10-24T18:40:00.000Z' }),
+        correctedBy: z.string().nullable().openapi({
+            description:
+                'A DISPLAY NAME, not a user id \u2014 this is what «\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043e\u0442 \u2026» prints. Resolved per read rather than '
+                + 'stored on the row: a stored name would freeze at correction time, so a later '
+                + 'rename would leave the register attributing a correction to a name its owner no '
+                + 'longer uses.\n\n'
+                + '`null` when the correction was filed by a job with no actor, or when the account '
+                + 'has since been removed. That is deliberate \u2014 the record says a correction '
+                + 'happened and declines to name someone it cannot name, rather than printing an '
+                + 'opaque id at a farmer.',
+        }),
+        changedFields: z.array(z.string()).openapi({
+            description:
+                'Which fields THIS correction changed, by name. A correction that changed nothing '
+                + 'files no row at all, so this is never empty.',
+            example: ['targetNote', 'occurredOn'],
+        }),
+        previous: TreatmentDefinition.nullable().openapi({
+            description:
+                'The WHOLE definition as it stood before this correction, not a diff (owner '
+                + 'decision 2026-10-24). A diff needs the reader to already hold the state it was '
+                + 'a diff against, and the point of the record is that the state is gone.',
+        }),
+    })
+    .openapi('TreatmentCorrectionEntry');
+
+const TreatmentCorrectionTrail = z
+    .object({
+        treatmentGroupId: z.string(),
+        version: z.number().int().openapi({
+            description:
+                'The treatment\u2019s CURRENT version, so a client holding an older one can tell its '
+                + 'trail is stale without a second read.',
+        }),
+        corrections: z.array(TreatmentCorrectionEntry).openapi({
+            description:
+                'Newest first, capped at 50. Empty for a treatment nobody has corrected \u2014 which '
+                + 'is what a client should check before showing «\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043d\u0430 \u2026».',
+        }),
+    })
+    .openapi('TreatmentCorrectionTrail');
+
 
 const TreatmentSummary = z
     .object({
@@ -627,7 +692,7 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             '| `200` | withdrawn — the body reports how many tasks, entries and lines it touched |\n' +
             '| `404` `TREATMENT_NOT_FOUND` | no treatment under that handle, or it was already withdrawn |\n' +
             '| `403` `TREATMENT_DELETE_NOT_PERMITTED` | not the treatment\'s creator and not a farm admin |\n' +
-            '| `409` `TREATMENT_MIXED_AUTHORSHIP` | recorded by more than one person, so it cannot be removed as a whole |\n\n' +
+            '| `409` `TREATMENT_MIXED_AUTHORSHIP` | recorded by more than one person, so it cannot be corrected or withdrawn as a whole \u2014 admins included |\n\n' +
             'Afterwards the handle stops resolving — this `GET` and `.../farm-record` both ' +
             'answer `404`. There is no deleted-treatment listing and no restore: both routes ' +
             'were removed with «Кошче».\n\n' +
@@ -782,6 +847,40 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                     + 'while this editor was open. The previous state is recoverable from the '
                     + '`TreatmentCorrection` trail either way.',
             }),
+        },
+    }),
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/corrections',
+        operationId: 'getDiaryTreatmentCorrections',
+        summary: 'A treatment\u2019s correction history',
+        description:
+            'Every correction filed against a treatment, newest first, each with when, who, which '
+            + 'fields changed and the whole definition as it stood before (#2172).\n\n'
+            + '**This is a READ gate, where `./definition` is a WRITE gate \u2014 and that difference is '
+            + 'the point.** The prefill requires `canWrite` then creator-or-admin, because its body '
+            + 'exists to be edited. The owner asked that a corrected entry show '
+            + '«\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043d\u0430 \u2026 \u043e\u0442 \u2026» with the previous values readable for an INSPECTOR, and an '
+            + 'inspector is precisely who the prefill\u2019s 403 is for. Sharing that gate would hide '
+            + 'the trail from its audience, so this one is `canRead`: anyone who can see the '
+            + 'treatment in the journal can see that it was corrected and what it said before.\n\n'
+            + 'No new class of fact reaches a reader. Every `previous` is a definition of the same '
+            + 'treatment they are already looking at; the new fact is that a value used to be '
+            + 'different, which is what the record exists to state.\n\n'
+            + '**Its own path rather than fields on `./definition`**, for two reasons beyond the '
+            + 'gate: the trail is unbounded where a definition is one object, so folding it in '
+            + 'would put a growing list on every correction prefill \u2014 and a client showing '
+            + '«\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043d\u0430 \u2026» on a journal row needs the trail without wanting an editor.\n\n'
+            + '`404` `TREATMENT_NOT_FOUND` for an unknown handle. Existence is established from the '
+            + 'TASKS, not from the trail: a handle with no corrections and a handle that was never '
+            + 'used both have an empty trail, and answering `200` with `corrections: []` to the '
+            + 'second would confirm a treatment that is not there.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'The treatment\u2019s corrections, newest first.',
+            schema: TreatmentCorrectionTrail,
         },
     }),
     op(registry, {
