@@ -1607,3 +1607,187 @@ describeFn('the definition carries unit SYMBOLS, so a trail can be read (#2172)'
         expect(trail.corrections[0].previous?.doseUnitSymbol).toBe('L/ha');
     });
 });
+
+describeFn('correctDiaryTreatment: adding and dropping a parcel (DB-backed, #2172)', () => {
+    const KEY = `pset-${TAG}`;
+
+    /** Record a treatment over an explicit parcel list. */
+    const recorded = async (suffix: string, parcelIds: string[]) => {
+        const rec = await recordDiaryTreatment(
+            ctx(),
+            { ...baseInput(), parcelIds },
+            `${KEY}-${suffix}`,
+        );
+        return rec.treatmentGroupId;
+    };
+    const asSet = (ids: string[]) => ids.map((parcelId) => ({ parcelId, treatedAreaHa: null }));
+
+    it('ADDS a parcel in a block the treatment already covers, with its journal entry', async () => {
+        // parcelA1 and parcelA2 share blockA, so adding A2 needs no new task.
+        const handle = await recorded('add', [parcelA1, parcelB1]);
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(before.lines).toHaveLength(2);
+
+        const out = await correctDiaryTreatment(
+            ctx(),
+            handle,
+            { parcels: asSet([parcelA1, parcelB1, parcelA2]) },
+            before.version,
+        );
+        // The RETURNED definition reflects the new set — re-read, not patched.
+        expect(out.lines.map((l) => l.parcelId).sort()).toEqual(
+            [parcelA1, parcelA2, parcelB1].sort(),
+        );
+        expect(out.version).toBe(before.version + 1);
+
+        const line = await globalPrisma.operationParcel.findFirst({
+            where: { tenantId, task: { treatmentGroupId: handle }, parcelId: parcelA2 },
+            select: { id: true, status: true, doseValue: true, productItemId: true, completedAt: true },
+        });
+        expect(line).not.toBeNull();
+        // Marked DONE with the treatment's own values, not defaults.
+        expect(line!.status).toBe('DONE');
+        expect(Number(line!.doseValue)).toBe(before.doseValue);
+        expect(line!.productItemId).toBe(before.productItemId);
+        expect(line!.completedAt?.toISOString().slice(0, 10)).toBe(before.occurredOn);
+
+        // And the journal entry, which is why this goes through
+        // markOperationParcel rather than a bare row insert.
+        const entry = await globalPrisma.logEntry.findFirst({
+            where: { tenantId, operationParcelId: line!.id, type: 'INPUT_APPLICATION' },
+            select: { treatmentGroupId: true, recordedInDiary: true },
+        });
+        expect(entry).not.toBeNull();
+        expect(entry!.treatmentGroupId).toBe(handle);
+        expect(entry!.recordedInDiary).toBe(true);
+    });
+
+    it('DROPS a parcel and its journal entry together', async () => {
+        const handle = await recorded('drop', [parcelA1, parcelA2, parcelB1]);
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        const gone = await globalPrisma.operationParcel.findFirst({
+            where: { tenantId, task: { treatmentGroupId: handle }, parcelId: parcelA2 },
+            select: { id: true },
+        });
+
+        await correctDiaryTreatment(
+            ctx(),
+            handle,
+            { parcels: asSet([parcelA1, parcelB1]) },
+            before.version,
+        );
+
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after.lines.map((l) => l.parcelId).sort()).toEqual([parcelA1, parcelB1].sort());
+        // The ENTRY too. `LogEntry.operationParcel` has no onDelete, so Prisma
+        // would SET NULL and leave it live, listed and printed.
+        expect(
+            await globalPrisma.logEntry.count({
+                where: { tenantId, operationParcelId: gone!.id },
+            }),
+        ).toBe(0);
+    });
+
+    it('soft-deletes a block left with no lines, and releases its key', async () => {
+        const handle = await recorded('empty-block', [parcelA1, parcelB1]);
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        const tasksBefore = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: handle, deletedAt: null },
+            select: { id: true, clientMutationId: true },
+        });
+        expect(tasksBefore).toHaveLength(2);
+
+        // Drop every parcel of blockB — its task has nothing left.
+        await correctDiaryTreatment(
+            ctx(),
+            handle,
+            { parcels: asSet([parcelA1]) },
+            before.version,
+        );
+
+        const live = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: handle, deletedAt: null },
+            select: { id: true },
+        });
+        expect(live).toHaveLength(1);
+
+        // The emptied task's key is RELEASED. A soft row keeps occupying
+        // @@unique([tenantId, clientMutationId]) while the replay lookup filters
+        // deletedAt: null, so re-recording that block under this handle would
+        // die on the constraint instead of replaying.
+        const emptied = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: handle, deletedAt: { not: null } },
+            select: { clientMutationId: true },
+        });
+        expect(emptied).toHaveLength(1);
+        expect(emptied[0].clientMutationId).toBeNull();
+    });
+
+    it('REFUSES removing every parcel — that is a withdrawal', async () => {
+        const handle = await recorded('empty-all', [parcelA1, parcelA2]);
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { parcels: [] }, before.version),
+        ).rejects.toMatchObject({ code: 'TREATMENT_CORRECTION_WOULD_EMPTY' });
+
+        // Untouched: the withdrawal has its own route, permission and audit.
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after.lines).toHaveLength(2);
+        expect(after.version).toBe(before.version);
+    });
+
+    it('REFUSES a parcel in a block the treatment never recorded', async () => {
+        // On principle, not for want of a mechanism: the register prints one
+        // table per block, so a block never recorded is a treatment never
+        // recorded.
+        const handle = await recorded('new-block', [parcelA1]);
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await expect(
+            correctDiaryTreatment(
+                ctx(),
+                handle,
+                { parcels: asSet([parcelA1, parcelB1]) },
+                before.version,
+            ),
+        ).rejects.toMatchObject({
+            code: 'TREATMENT_CORRECTION_NEW_BLOCK',
+            params: { reference: 'parcels' },
+        });
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after.lines).toHaveLength(1);
+        expect(after.version).toBe(before.version);
+    });
+
+    it('REFUSES a parcel of another farm without confirming it exists', async () => {
+        const handle = await recorded('foreign', [parcelA1, parcelA2]);
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await expect(
+            correctDiaryTreatment(
+                ctx(),
+                handle,
+                { parcels: asSet([parcelA1, parcelA2, otherTenantParcel]) },
+                before.version,
+            ),
+        ).rejects.toMatchObject({ code: 'REFERENCE_NOT_IN_TENANT' });
+    });
+
+    it('files the set change in the trail, so the previous parcels are recoverable', async () => {
+        const handle = await recorded('trail-set', [parcelA1, parcelA2, parcelB1]);
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await correctDiaryTreatment(
+            ctx(),
+            handle,
+            { parcels: asSet([parcelA1, parcelB1]) },
+            before.version,
+        );
+
+        const trail = await getDiaryTreatmentCorrections(ctx(), handle);
+        expect(trail.corrections).toHaveLength(1);
+        expect(trail.corrections[0].changedFields).toContain('parcels');
+        // The whole previous definition, so the dropped parcel is still named
+        // somewhere after its line and entry are gone.
+        expect(trail.corrections[0].previous?.lines.map((l) => l.parcelId).sort()).toEqual(
+            [parcelA1, parcelA2, parcelB1].sort(),
+        );
+    });
+});

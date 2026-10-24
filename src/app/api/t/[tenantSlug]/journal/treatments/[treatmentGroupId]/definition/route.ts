@@ -87,16 +87,16 @@ export const GET = withApiErrorHandling(
  *
  * ## What it refuses, and why that is not silence
  *
- * Adding or dropping a PARCEL: 400 `TREATMENT_CORRECTION_FIELD_UNSUPPORTED`
- * with `params.reference: parcels`. Everything else on the definition is
- * corrected, including the dose, the product, the water rate and the per-parcel
- * treated area — each of which recomputes the affected journal entries so the
- * ДНЕВНИК cannot print the quantity of a dose that was replaced.
+ * Everything on the definition is corrected, the parcel list included. Two
+ * shapes are refused, each for its own reason: a list that removes EVERY parcel
+ * (`TREATMENT_CORRECTION_WOULD_EMPTY` — that is a withdrawal, which has its own
+ * route and releases the handle) and a parcel in a block this treatment never
+ * recorded (`TREATMENT_CORRECTION_NEW_BLOCK` — the register prints one table
+ * per block, so that is a treatment of its own).
  *
- * The refusal is CONDITIONAL: an unchanged parcel set is accepted, so the
- * editor may send the whole definition back — see
- * `CorrectDiaryTreatmentSchema`, where #1352 is the precedent in both
- * directions.
+ * An unchanged list is accepted, so the editor may send the whole definition
+ * back — see `CorrectDiaryTreatmentSchema`, where #1352 is the precedent in
+ * both directions.
  */
 export const PUT = withApiErrorHandling(
     withValidatedBody(
