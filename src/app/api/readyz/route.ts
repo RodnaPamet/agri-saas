@@ -49,8 +49,12 @@
  *       "platformConsole": { "state": "unconfigured" | "misconfigured"
  *                                    | "reachable" | "unknown" },
  *       "email":     { "provider": "resend" | "smtp" | "console", "sends": boolean },
- *       "lookupKey": { "pinned": boolean }   // false => the master KEK is
+ *       "lookupKey": { "pinned": boolean },  // false => the master KEK is
  *                                            // NOT safely rotatable (P1.1)
+ *       "featureFlags": { "state": "complete" | "incomplete" | "unknown",
+ *                         "missingRows": string[], "referenced": N,
+ *                         "orphanRows": N }  // a referenced key with no row is
+ *                                            // a surface off for everybody
  *     },
  *     "latencyMs": N           // total probe time
  *   }
@@ -73,6 +77,7 @@ import { emailCapabilityStatus } from '@/lib/email/provider-selection';
 import { isLookupKeyPinned } from '@/lib/security/encryption';
 import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { platformConsoleCapability } from '@/lib/auth/platform-console-capability';
+import { featureFlagsCapability } from '@/lib/feature-flags-capability';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
 import { logger } from '@/lib/observability/logger';
@@ -317,6 +322,24 @@ export async function GET() {
     // — `slug` and `deletedAt` are not encrypted.
     const platformConsole = await platformConsoleCapability(prisma);
 
+    // #2009 / #2291 — does every flag key the code gates on have a row? Fifth
+    // instance of the same argument, and the silence here is doubly by design:
+    // a missing row is OFF, and `assertFeatureEnabled` 404s rather than 403s
+    // for anti-enumeration, so a surface whose key was never inserted is
+    // indistinguishable from one that does not exist. Measured 2026-10-24: two
+    // of six referenced keys had no row, and with `social.public-profile`
+    // enabled the public farm page rendered while every photograph 404'd.
+    //
+    // OUTSIDE `checks`/`failed` like its four siblings, and here that matters
+    // most of all: #2009 says plainly that a startup assertion is the wrong
+    // shape because "a container that refuses to boot because a flag row is
+    // missing turns a dark feature into an outage". This can never 503.
+    //
+    // Same injected-client rule as the console capability above, for the same
+    // dmmf reason. `FeatureFlag` is tenantless and `key` is not encrypted, so
+    // the raw client is also the right one.
+    const featureFlags = await featureFlagsCapability(prisma);
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -341,7 +364,7 @@ export async function GET() {
             version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
             checks,
             failed,
-            capabilities: { satellite, basemap, email, lookupKey, platformConsole },
+            capabilities: { satellite, basemap, email, lookupKey, platformConsole, featureFlags },
             latencyMs: Date.now() - start,
         },
         { status: allOk ? 200 : 503 },
