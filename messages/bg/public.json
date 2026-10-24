@@ -3,6 +3,7 @@
         "aboutTitle": "За стопанството",
         "cropsTitle": "Култури",
         "logoAlt": "Логото на {farm}",
+        "morePhotos": "Още {n} снимки",
         "oblast": "Област {oblast}",
         "photoAlt": "Снимка {n} от {farm}"
     }
