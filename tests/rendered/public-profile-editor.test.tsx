@@ -493,11 +493,39 @@ describe('the public-profile editor', () => {
             }
 
             // LOADING strategy, which is a performance contract rather than a
-            // detail: `/f/.*` is gated on LCP at 2200 ms as an ERROR. The logo
-            // is above the fold and must not be lazy; the gallery must be, or
-            // six photographs compete with the heading for that budget.
+            // detail: `/f/.*` is gated on LCP, and the preview must show the
+            // contract the real page ships or it is previewing a different
+            // page.
+            //
+            // REWRITTEN for #2251. This used to assert the whole gallery was
+            // lazy, with the reasoning that otherwise "six photographs compete
+            // with the heading for that budget". They were all lazy and they
+            // competed anyway — `loading="lazy"` delays the REQUEST, it does
+            // not take an in-viewport image out of the LCP candidates, and the
+            // measured LCP element was a gallery thumbnail in 20 of 20 runs
+            // across four jobs. Six identical lazy requests at `High`, issued
+            // in the same millisecond, finish staggered, and LCP lands on
+            // whichever of the largest-painting ones finishes first: ~395 ms
+            // per place. The bound named here was stale too — it is 3,800 ms,
+            // not 2,200 ms.
+            //
+            // The contract now is a deliberate tie-break: ONE thumbnail starts
+            // ahead, the rest stay lazy so a visitor who never scrolls does
+            // not pay for all six, and only one element claims the ranking.
             expect(logo.querySelector('img')).toHaveAttribute('loading', 'eager');
-            expect(imgs[0]).toHaveAttribute('loading', 'lazy');
+            expect(imgs[0]).toHaveAttribute('loading', 'eager');
+            expect(imgs[0]).toHaveAttribute('fetchpriority', 'high');
+            for (const img of imgs.slice(1)) {
+                expect(img).toHaveAttribute('loading', 'lazy');
+                expect(img).not.toHaveAttribute('fetchpriority');
+            }
+            // Exactly one claimant, which is what makes it a tie-break. The
+            // logo yields: it is 96x96 against a thumbnail's 175x131 and
+            // cannot be the LCP element while a thumbnail is in view.
+            const claimants = [logo.querySelector('img'), ...imgs].filter(
+                (i) => i?.getAttribute('fetchpriority') === 'high',
+            );
+            expect(claimants).toEqual([imgs[0]]);
         });
 
         it('renders NO image boxes when the farm has none', async () => {
