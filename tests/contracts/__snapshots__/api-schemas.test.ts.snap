@@ -3761,7 +3761,7 @@ exports[`API contract — per-schema snapshots schema: CorrectDiaryTreatment 1`]
       "maxItems": 500
     }
   },
-  "description": "A correction to a recorded treatment. Every field here is corrected except the parcel SET: adding or dropping a parcel is refused with \`TREATMENT_CORRECTION_FIELD_UNSUPPORTED\` and \`params.reference: parcels\`, because it changes how many rows the treatment has and which blocks it spans. The treated AREAS inside \`parcels\` are correctable. An unchanged parcel set is accepted, so a client may safely send the whole definition back on every save."
+  "description": "A correction to a recorded treatment. Every field here is corrected, the parcel list included: \`parcels\` is the SET, so a parcel absent from it is dropped and one not already on the treatment is added. Two shapes are refused — a list that empties the treatment (\`TREATMENT_CORRECTION_WOULD_EMPTY\`; that is a withdrawal, which has its own route) and a parcel in a block the treatment never recorded (\`TREATMENT_CORRECTION_NEW_BLOCK\`). An unchanged list is accepted, so a client may safely send the whole definition back on every save."
 }"
 `;
 

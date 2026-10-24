@@ -1226,6 +1226,8 @@ async function loadTreatmentForEdit(
      */
     lines: Array<{
         id: string;
+        /** The block's task — a parcel ADDED to that block joins this row. */
+        taskId: string;
         parcelId: string;
         parcel: { name: string; areaHa: unknown };
         treatedAreaHa: unknown;
@@ -1266,6 +1268,7 @@ async function loadTreatmentForEdit(
         where: { tenantId: ctx.tenantId, taskId: { in: tasks.map((t) => t.id) } },
         select: {
             id: true,
+            taskId: true,
             parcelId: true,
             productItemId: true,
             doseValue: true,
@@ -1353,6 +1356,7 @@ async function loadTreatmentForEdit(
         lineIds: lines.map((l) => l.id),
         lines: lines.map((l) => ({
             id: l.id,
+            taskId: l.taskId,
             parcelId: l.parcelId,
             parcel: { name: l.parcel.name, areaHa: l.parcel.areaHa },
             treatedAreaHa: l.treatedAreaHa,
@@ -1388,9 +1392,15 @@ export interface CorrectDiaryTreatmentInput {
     /**
      * The parcels and their treated areas.
      *
-     * The SET must match what the treatment already has — adding or dropping a
-     * parcel is refused, because it changes how many rows the treatment has and
-     * which blocks it spans. The AREAS inside it are correctable, per parcel.
+     * The whole list, as the definition returns it. A parcel absent from it is
+     * DROPPED and one not already on the treatment is ADDED, so this is the
+     * set and not a patch.
+     *
+     * Two shapes are refused: a list that empties the treatment (that is a
+     * withdrawal, which has its own route and releases the handle), and a
+     * parcel in a block the treatment never recorded (the register prints one
+     * table per block, so a block never recorded is a treatment never
+     * recorded).
      */
     parcels?: Array<{ parcelId: string; treatedAreaHa: number | null }>;
 }
@@ -1408,9 +1418,9 @@ export interface CorrectDiaryTreatmentInput {
  * `treatedAreaHa` is corrected too but is not in this list: it is per PARCEL,
  * arrives inside `parcels[]`, and is detected separately.
  *
- * Only the parcel SET is still refused. Adding or dropping a parcel changes how
- * many rows the treatment has and which blocks it spans, which needs the
- * per-block fan-out and its replay path rather than a column update.
+ * The parcel SET is correctable too, via `parcels` — an added parcel gets a row
+ * and then goes through `markOperationParcel` so it has the journal entry, the
+ * audit event and the БАБХ conditions snapshot its siblings have.
  */
 const CORRECTABLE_FIELDS = [
     'title',
@@ -1441,35 +1451,17 @@ function blankToNull<T>(v: T): T | null {
     return typeof v === 'string' && v.trim() === '' ? null : v;
 }
 
-/**
- * Which requested changes this route will not make, by NAME.
- *
- * One thing is left: adding or dropping a PARCEL. That changes how many rows
- * the treatment has and which blocks it spans, so it needs the per-block
- * fan-out `recordDiaryTreatment` performs and the replay path behind it, not a
- * column update. It is the case the `TreatmentGroup` row was designed for and
- * it gets its own change.
- *
- * Everything else is now correctable. The dose, the dose unit, the product, the
- * water rate and the per-parcel treated area were refused while the quantity
- * arithmetic lived inline in `recordInputApplication`; #2289 extracted it to
- * `computeAppliedQuantity`, so a correction recomputes each entry through the
- * same function that first wrote it rather than a second copy.
- *
- * The refusal stays CONDITIONAL — fired only when the submitted parcel set
- * actually differs. #1352 is the precedent: an unconditional `eik` refusal
- * 400'd every farm-profile save from the owner's phone, because the editor PUTs
- * every field on every save. This editor does too.
- */
-function unsupportedChanges(
+/** Which parcels a correction adds and which it drops, or `null` for no change. */
+function parcelSetChange(
     previous: TreatmentDefinition,
     input: CorrectDiaryTreatmentInput,
-): string[] {
-    if (input.parcels === undefined) return [];
+): { added: string[]; dropped: string[] } | null {
+    if (input.parcels === undefined) return null;
     const was = new Set(previous.lines.map((l) => l.parcelId));
     const now = new Set(input.parcels.map((p) => p.parcelId));
-    const sameSet = was.size === now.size && [...was].every((id) => now.has(id));
-    return sameSet ? [] : ['parcels'];
+    const added = [...now].filter((id) => !was.has(id));
+    const dropped = [...was].filter((id) => !now.has(id));
+    return added.length === 0 && dropped.length === 0 ? null : { added, dropped };
 }
 
 /**
@@ -1603,25 +1595,92 @@ export async function correctDiaryTreatment(
             );
         }
 
-        const refused = unsupportedChanges(previous, input);
-        if (refused.length > 0) {
-            throw codedBadRequest(
-                'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
-                'A correction cannot add or remove a parcel. Withdraw the treatment and record '
-                    + 'it again with the parcels you meant.',
-                { reference: refused.join(',') },
-            );
-        }
-
         const changedScalars = CORRECTABLE_FIELDS.filter((f) => {
             if (input[f] === undefined) return false;
             if (f === 'occurredOn') return input.occurredOn !== previous.occurredOn;
             return blankToNull(input[f]) !== blankToNull(previous[f]);
         });
         const areas = changedTreatedAreas(previous, input);
-        const changed: string[] = [...changedScalars, ...(areas ? ['treatedAreaHa'] : [])];
+        const setChange = parcelSetChange(previous, input);
+        const changed: string[] = [
+            ...changedScalars,
+            ...(areas ? ['treatedAreaHa'] : []),
+            ...(setChange ? ['parcels'] : []),
+        ];
 
         if (changed.length === 0) return previous;
+
+        // ── The two parcel-set changes this route declines, and why ──
+        const blockOfAdded = new Map<string, string>();
+        if (setChange) {
+            // Dropping EVERY parcel is a withdrawal wearing a correction's
+            // clothes. The withdrawal has its own route, its own permission and
+            // its own audit event, and it releases the idempotency key so the
+            // handle stays resumable — none of which a correction does. Leaving
+            // a treatment with zero lines would also print a Дневник entry with
+            // no rows, which is not a record of anything.
+            if (setChange.dropped.length >= previous.lines.length) {
+                throw codedBadRequest(
+                    'TREATMENT_CORRECTION_WOULD_EMPTY',
+                    'A correction cannot remove every parcel. Withdraw the treatment instead.',
+                    { reference: 'parcels' },
+                );
+            }
+
+            if (setChange.added.length > 0) {
+                const addedParcels = await db.parcel.findMany({
+                    where: { id: { in: setChange.added }, tenantId: ctx.tenantId },
+                    select: { id: true, locationId: true },
+                });
+                // A parcel of another farm: 400 and no echo of the id, the same
+                // choice the record path makes, so a refusal does not confirm
+                // the row exists in someone else's tenant.
+                if (addedParcels.length !== setChange.added.length) {
+                    throw codedBadRequest(
+                        'REFERENCE_NOT_IN_TENANT',
+                        'One of those parcels is not in this farm.',
+                        { reference: 'parcels' },
+                    );
+                }
+
+                // A parcel in a block the treatment never recorded is refused
+                // ON PRINCIPLE rather than for want of a mechanism.
+                //
+                // The ДНЕВНИК resolves a treatment's block through its task's
+                // location link and prints one table per block, so a block that
+                // was never recorded would appear as its own sheet with its own
+                // row — which is what recording a second treatment produces,
+                // and that is the honest shape for work on a block you did not
+                // record. A correction that silently manufactured a new block's
+                // task would also need the per-block replay path, and would mean
+                // a «коригирано» marker standing for an entry that never
+                // existed in any earlier version of the document.
+                // The blocks this treatment covers, from the definition
+                // already loaded — `TreatmentDefinitionLine` carries each
+                // line's `locationId` precisely because the register resolves a
+                // block that way. No query, and no second notion of "which
+                // blocks" to keep in step with the prefill's.
+                const blocks = new Set(
+                    previous.lines
+                        .map((l) => l.locationId)
+                        .filter((id): id is string => id != null),
+                );
+                const foreign = addedParcels.filter(
+                    (pa) => pa.locationId == null || !blocks.has(pa.locationId),
+                );
+                for (const pa of addedParcels) {
+                    if (pa.locationId != null) blockOfAdded.set(pa.id, pa.locationId);
+                }
+                if (foreign.length > 0) {
+                    throw codedBadRequest(
+                        'TREATMENT_CORRECTION_NEW_BLOCK',
+                        'A correction can only add a parcel in a block this treatment already '
+                            + 'covers. Record the other block as its own treatment.',
+                        { reference: 'parcels' },
+                    );
+                }
+            }
+        }
 
         // ── What the corrected treatment will be, before anything is written ──
         //
@@ -1746,6 +1805,56 @@ export async function correctDiaryTreatment(
             }
         }
 
+        // ── Dropped parcels ──
+        //
+        // The journal ENTRIES go first and explicitly, because nothing else
+        // reaches them: `LogEntry.operationParcel` is an optional relation with
+        // no `onDelete`, so Prisma's default is SET NULL — deleting the line
+        // would leave its entry live, listed and printed, with a null link and
+        // its `treatmentGroupId` intact. That is the same trap the withdrawal
+        // documents, and it is invisible unless you read the schema for a
+        // relation that declares no action.
+        let remainingLineIds = lineIds;
+        if (setChange && setChange.dropped.length > 0) {
+            const dropped = new Set(setChange.dropped);
+            const droppedLineIds = lines.filter((l) => dropped.has(l.parcelId)).map((l) => l.id);
+            remainingLineIds = lineIds.filter((id) => !droppedLineIds.includes(id));
+
+            await db.logEntry.deleteMany({
+                where: { tenantId: ctx.tenantId, operationParcelId: { in: droppedLineIds } },
+            });
+            await db.operationParcel.deleteMany({
+                where: { tenantId: ctx.tenantId, id: { in: droppedLineIds } },
+            });
+
+            // A task left with NO lines is a shell the register would print as
+            // a block with an empty table. Soft-deleted, and its idempotency
+            // key RELEASED — `<handle>:<locationId>` would otherwise stay
+            // occupied by a row the replay lookup cannot see (it filters
+            // `deletedAt: null`), so re-recording that block under this handle
+            // would die on the unique constraint. The withdrawal records that
+            // reasoning; the same shape applies here.
+            const populated = new Set(
+                (
+                    await db.operationParcel.groupBy({
+                        by: ['taskId'],
+                        where: { tenantId: ctx.tenantId, taskId: { in: taskIds } },
+                    })
+                ).map((g) => g.taskId),
+            );
+            const emptied = taskIds.filter((id) => !populated.has(id));
+            if (emptied.length > 0) {
+                await db.task.updateMany({
+                    where: { tenantId: ctx.tenantId, id: { in: emptied }, deletedAt: null },
+                    data: {
+                        deletedAt: new Date(),
+                        deletedByUserId: ctx.userId ?? null,
+                        clientMutationId: null,
+                    },
+                });
+            }
+        }
+
         // ── The lines ──
         const lineData: Record<string, unknown> = {};
         if (changedScalars.includes('targetNote')) {
@@ -1766,7 +1875,7 @@ export async function correctDiaryTreatment(
         }
         if (Object.keys(lineData).length > 0) {
             await db.operationParcel.updateMany({
-                where: { tenantId: ctx.tenantId, id: { in: lineIds } },
+                where: { tenantId: ctx.tenantId, id: { in: remainingLineIds } },
                 data: lineData,
             });
         }
@@ -1929,7 +2038,7 @@ export async function correctDiaryTreatment(
             await db.operationParcel.updateMany({
                 where: {
                     tenantId: ctx.tenantId,
-                    id: { in: lineIds },
+                    id: { in: remainingLineIds },
                     completedAt: { not: null },
                 },
                 data: { completedAt: day.day },
@@ -1944,6 +2053,85 @@ export async function correctDiaryTreatment(
                 where: { tenantId: ctx.tenantId, treatmentGroupId: handle },
                 data: { occurredAt: day.day },
             });
+        }
+
+        // ── Added parcels ──
+        //
+        // Created as a row and then MARKED, rather than written whole here.
+        // `markOperationParcel` is what gives a line its `INPUT_APPLICATION`
+        // entry, its audit event and the БАБХ conditions snapshot the register
+        // reads for the applicator's certificates — so an added parcel that
+        // skipped it would print in the ДНЕВНИК with a blank applicator beside
+        // siblings that have one. It joins THIS transaction via `opts.tx`
+        // (#2302); without that a nested `$transaction` would deadlock on the
+        // rows this one holds.
+        if (setChange && setChange.added.length > 0) {
+            // Which task covers which block. `previous.lines` knows a parcel's
+            // block and `lines` knows its task, so the join is in hand.
+            const taskOfBlock = new Map<string, string>();
+            for (const pl of previous.lines) {
+                if (pl.locationId == null) continue;
+                const row = lines.find((l) => l.parcelId === pl.parcelId);
+                if (row) taskOfBlock.set(pl.locationId, row.taskId);
+            }
+
+            // The farm day the added line is stamped with: the corrected one
+            // when the day moved, otherwise the day the treatment already
+            // carries. Parsed rather than re-derived from an instant — reading
+            // a calendar day back out of a UTC instant is the mistake
+            // `parseTreatmentDay` exists to prevent.
+            const effOccurredAt =
+                day?.day ?? (previous.occurredOn ? parseTreatmentDay(previous.occurredOn).day : undefined);
+
+            for (const parcelId of setChange.added) {
+                const block = blockOfAdded.get(parcelId);
+                const taskId = block ? taskOfBlock.get(block) : undefined;
+                // Unreachable: the refusal above rejects a parcel whose block
+                // this treatment does not cover. Asserted rather than assumed,
+                // because silently skipping a parcel would answer 200 to a
+                // correction that did not happen.
+                if (!taskId) {
+                    throw codedBadRequest(
+                        'TREATMENT_CORRECTION_NEW_BLOCK',
+                        'A correction can only add a parcel in a block this treatment already '
+                            + 'covers. Record the other block as its own treatment.',
+                        { reference: 'parcels' },
+                    );
+                }
+
+                const created = await db.operationParcel.create({
+                    data: {
+                        tenantId: ctx.tenantId,
+                        taskId,
+                        parcelId,
+                        productItemId: effProductItemId,
+                        doseValue: effDoseValue,
+                        doseUnitId: effDoseUnitId,
+                        waterRateValue: effWaterRateValue,
+                        waterRateUnitId: effWaterRateUnitId,
+                        // The CORRECTED annotations, not the stored ones: an
+                        // added line belongs to the treatment as it now reads.
+                        targetNote: changedScalars.includes('targetNote')
+                            ? blankToNull(input.targetNote)
+                            : previous.targetNote,
+                    },
+                    select: { id: true },
+                });
+
+                await markOperationParcel(ctx, taskId, created.id, 'DONE', null, 0, {
+                    tx: db,
+                    recordedInDiary: true,
+                    treatmentGroupId: handle,
+                    ...(effOccurredAt ? { occurredAt: effOccurredAt } : {}),
+                    treatedAreaHa: areas ? (areas.get(parcelId) ?? null) : null,
+                    phenophase: changedScalars.includes('phenophase')
+                        ? blankToNull(input.phenophase)
+                        : previous.phenophase,
+                    quarantinePeriodDays: changedScalars.includes('quarantinePeriodDays')
+                        ? (input.quarantinePeriodDays ?? null)
+                        : previous.quarantinePeriodDays,
+                });
+            }
         }
 
         // ── The tasks, one per block ──
@@ -2009,6 +2197,20 @@ export async function correctDiaryTreatment(
                 summary: `${changed.length} field(s) corrected across ${taskIds.length} block(s)`,
             },
         });
+
+        // A changed parcel SET is re-read rather than patched.
+        //
+        // Every other field is assembled from what was written, which is cheap
+        // and exact. The line LIST is not a field — rows were created and
+        // destroyed, each added one carrying values `markOperationParcel`
+        // derived rather than values this function chose. Reconstructing that
+        // here would be a second implementation of the assembly, and the first
+        // thing it would get wrong is the one an editor shows back to the
+        // farmer.
+        if (setChange) {
+            const after = await loadTreatmentForEdit(db, ctx, handle);
+            return after.definition;
+        }
 
         return {
             ...previous,
