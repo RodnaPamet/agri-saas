@@ -162,8 +162,55 @@ node -e '
 const fs = require("fs");
 const added = JSON.parse(process.argv[1]);
 if (!added.length) { console.log("  no dependency delta to re-apply"); process.exit(0); }
-const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+
+/**
+ * Read a JSON file AND the indent it is written with — #2253.
+ *
+ * The indent is a property of the FILE, not of this script. npm preserves
+ * whatever a lockfile already has, so a constant here is a second copy of the
+ * answer that can drift from the file and from
+ * tests/guards/lockfile-formatting-is-pinned.test.ts. It had already drifted:
+ * this wrote the lockfile with indent 2 while the file is indent 4, which
+ * reflows all 28,388 lines (1,188,206 -> 1,009,958 bytes) and trips the very
+ * guard that exists for it.
+ *
+ * It had not fired because the early exit above skips the write whenever a
+ * main merge brings no dependency delta, which is the common case.
+ */
+const readJson = (path) => {
+    const raw = fs.readFileSync(path, "utf8");
+    const second = raw.split("\n")[1] ?? "";
+    const indent = (/^([ \t]*)\S/.exec(second) || [, "    "])[1].length || 4;
+    return { raw, indent, data: JSON.parse(raw) };
+};
+
+/**
+ * Prove the serialiser reproduces the file BEFORE writing a modified one.
+ *
+ * A measured indent is still a guess about everything else the serialiser
+ * does — key order, escaping, the trailing newline. If re-serialising the
+ * UNMODIFIED data does not reproduce the original bytes, this script is not
+ * the right tool for the file and must refuse rather than reformat 28,000
+ * lines as a side effect of adding one dependency.
+ */
+const assertRoundTrips = (path, { raw, indent, data }) => {
+    if (JSON.stringify(data, null, indent) + "\n" === raw) return indent;
+    console.error(
+        `  !! ${path}: a JSON round-trip at indent ${indent} does not reproduce the file.\n` +
+        "     Refusing to write it — that would reformat the whole file. Re-apply the\n" +
+        "     dependency delta by hand and check what else differs."
+    );
+    process.exit(1);
+};
+
+const pkgFile = readJson("package.json");
+const lockFile = readJson("package-lock.json");
+const pkgIndent = assertRoundTrips("package.json", pkgFile);
+const lockIndent = assertRoundTrips("package-lock.json", lockFile);
+const pkg = pkgFile.data;
+const lock = lockFile.data;
+const libcBefore = Object.values(lock.packages).filter((p) => p.libc).length;
+
 for (const [name, range] of added) {
     pkg.dependencies[name] = range;
     lock.packages[""].dependencies[name] = range;
@@ -171,10 +218,18 @@ for (const [name, range] of added) {
 const sortObj = (o) => Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
 pkg.dependencies = sortObj(pkg.dependencies);
 lock.packages[""].dependencies = sortObj(lock.packages[""].dependencies);
-fs.writeFileSync("package.json", JSON.stringify(pkg, null, 4) + "\n");
-fs.writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n");
+fs.writeFileSync("package.json", JSON.stringify(pkg, null, pkgIndent) + "\n");
+fs.writeFileSync("package-lock.json", JSON.stringify(lock, null, lockIndent) + "\n");
+
 const libc = Object.values(lock.packages).filter((p) => p.libc).length;
-console.log(`  re-applied ${added.length} dependency declaration(s); libc entries preserved: ${libc}`);
+if (libc !== libcBefore) {
+    console.error(`  !! libc entries changed ${libcBefore} -> ${libc}, which this path must never do.`);
+    process.exit(1);
+}
+console.log(
+    `  re-applied ${added.length} dependency declaration(s) at indent ` +
+    `${pkgIndent}/${lockIndent}; libc entries preserved: ${libc}`
+);
 ' "$ADDED_DEPS"
 
 npm run db:generate >/dev/null 2>&1 && echo "  prisma client regenerated"
