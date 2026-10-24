@@ -52,6 +52,11 @@ import type {
 } from '@/lib/grain/per-area';
 import type { BreakEvenFigures, BreakEvenRefusalCode } from '@/lib/grain/break-even';
 import type { FarmNetWorthTotal } from '@/lib/grain/farm-total';
+import type {
+    FarmPerAreaCurrencyTotal,
+    FarmPerAreaFigures,
+    FarmPerAreaOmissions,
+} from '@/lib/grain/farm-per-area';
 import type { ExclusionEntry } from '@/lib/grain/exclusion-labels';
 import type { GrainImputedLandCharge } from '@/app-layer/usecases/grain-net-worth';
 // TYPE-only, so no component module is pulled into a server bundle.
@@ -183,6 +188,49 @@ export const FarmNetWorthTotalSchema = z
             'One currency’s farm-level total. refusedCommodities names what is missing from it, so a total is never quietly short.',
     });
 assertMirrors<Equals<z.infer<typeof FarmNetWorthTotalSchema>, FarmNetWorthTotal>>();
+
+export const FarmPerAreaOmissionsSchema = z
+    .object({
+        standingValuePerDca: z.array(z.string()),
+        attributableCostPerDca: z.array(z.string()),
+        marginPerDca: z.array(z.string()),
+    })
+    .openapi('CalculatorFarmPerAreaOmissions', {
+        description:
+            'Which commodities each farm rate leaves out, sorted. Compare two lists to say «Без: …» once rather than per figure: when they are equal, one sentence covers the whole block.',
+    });
+assertMirrors<Equals<z.infer<typeof FarmPerAreaOmissionsSchema>, FarmPerAreaOmissions>>();
+
+export const FarmPerAreaCurrencyTotalSchema = z
+    .object({
+        /** `null` = the tenant's display currency, as on `PerAreaFigures.costCurrency`. */
+        currency: z.string().nullable(),
+        areaDca: z.number(),
+        costAreaDca: z.number(),
+        standingValuePerDca: z.number().nullable(),
+        attributableCostPerDca: z.number().nullable(),
+        marginPerDca: z.number().nullable(),
+        without: FarmPerAreaOmissionsSchema,
+        /** Qualifies `marginPerDca`, composed from the rows that contributed. */
+        uncertainty: UncertaintyStateSchema,
+    })
+    .openapi('CalculatorFarmPerArea', {
+        description:
+            'One currency’s farm-level per-decare rates. TWO denominators, and each figure divides by its own: areaDca is the yield-covered area behind standingValuePerDca and marginPerDca, costAreaDca is the occupied land behind attributableCostPerDca. Display each rate beside ITS denominator — showing the other contradicts it, exactly as on a row (#1512). Value and margin are in `currency` because they follow the row’s price currency; the cost rate is in it because it follows perArea.costCurrency, a DIFFERENT field, so one row can contribute its value here and its cost to another entry. A null currency means the tenant’s display currency, not an absence. marginPerDca excludes any row whose cost rate was refused, so it never blends currencies; `without.marginPerDca` names those.',
+    });
+assertMirrors<Equals<z.infer<typeof FarmPerAreaCurrencyTotalSchema>, FarmPerAreaCurrencyTotal>>();
+
+export const FarmPerAreaFiguresSchema = z
+    .object({
+        /** Σ land over EVERY row — the farm’s size. NOT a rate’s denominator. */
+        areaDca: z.number(),
+        byCurrency: z.array(FarmPerAreaCurrencyTotalSchema),
+    })
+    .openapi('CalculatorFarmPerAreaFigures', {
+        description:
+            'The farm’s per-decare answer. `areaDca` is the farm’s LAND — every row’s occupied area, including crops whose rates were all refused — and is currency-independent, so it is deliberately NOT the denominator of anything in byCurrency. Read a rate’s denominator from its own entry.',
+    });
+assertMirrors<Equals<z.infer<typeof FarmPerAreaFiguresSchema>, FarmPerAreaFigures>>();
 
 export const ExclusionEntrySchema = z
     .object({
@@ -359,6 +407,7 @@ export const CalculatorDataSchema = z
         /** The farm-level answer — one total per currency, folded server-side. */
         farm: z.object({
             totals: z.array(FarmNetWorthTotalSchema),
+            perArea: FarmPerAreaFiguresSchema,
             refusedWithoutCurrency: z.array(z.string()),
         }),
         exclusions: CalculatorExclusionsSchema,

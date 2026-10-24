@@ -4338,6 +4338,9 @@
                 "RENT_CURRENCY_UNRECORDED": "The lease does not record a currency for rent, so it cannot be combined with market-priced assets without inventing one.",
                 "COST_PRICE_CURRENCY_MISMATCH": "Costs are in {costCurrency} and the market price is in {priceCurrency}; no currency conversion is performed."
             },
+            "allCrops": "All",
+            "cropFilterLabel": "Crop",
+            "farmPerAreaWithout": "Without: {names}",
             "farmTotalTitle": "Whole farm",
             "farmTotalLabel": "Net worth, whole farm",
             "farmCommodityTitle": "{commodity} on its own",

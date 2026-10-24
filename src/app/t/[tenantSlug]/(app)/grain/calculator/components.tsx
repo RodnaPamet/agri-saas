@@ -264,7 +264,11 @@ export interface CommodityStripItem {
 
 interface CommodityStripProps {
     items: readonly CommodityStripItem[];
-    selected: string;
+    /**
+     * `null` marks NOTHING, which is «Всички» (#2249): every crop is rendered
+     * below, so highlighting one would claim a focus the page does not have.
+     */
+    selected: string | null;
     onSelect: (commodity: string) => void;
 }
 

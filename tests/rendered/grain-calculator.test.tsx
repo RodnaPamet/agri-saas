@@ -39,9 +39,11 @@
 import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
 import { foldFarmTotals } from '@/lib/grain/farm-total';
+import { foldFarmPerArea } from '@/lib/grain/farm-per-area';
 import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
 import { computePerArea } from '@/lib/grain/per-area';
 import { computeBreakEven } from '@/lib/grain/break-even';
@@ -310,6 +312,9 @@ function data(over: Partial<CalculatorData> = {}): CalculatorData {
         rows,
         farm: {
             totals: foldFarmTotals(rows),
+            // The REAL fold, not a stub: these tests render the farm block, so
+            // a hand-written zero would exercise the empty branch only.
+            perArea: foldFarmPerArea(rows),
             refusedWithoutCurrency: rows
                 .filter((r) => r.netWorth == null && r.priceCurrency == null)
                 .map((r) => r.commodity)
@@ -347,6 +352,23 @@ afterEach(restoreViewport);
 // PHONE — the operator's real device. Panels stack; everything below
 // the fold still has to be present in the DOM and readable.
 // ─────────────────────────────────────────────────────────────────────
+
+/**
+ * The FIRST crop's net-worth sum.
+ *
+ * «Всички» is the default view since #2249 and renders one section per crop,
+ * so there are as many of these groups as there are crops. Every assertion
+ * below is about the shape of ONE sum — one signed column, exactly one net
+ * figure, both asset terms named — which is a per-crop property, so the first
+ * one is a fair witness and `within()` keeps the others out.
+ *
+ * Deliberately NOT a page-wide `getByText`: that was what these tests did, and
+ * it started throwing "found multiple elements" the moment the page began
+ * answering for every crop at once — which is the feature, not a regression.
+ */
+function firstSum(): HTMLElement {
+    return screen.getAllByRole('group', { name: COPY.waterfallAria })[0];
+}
 
 describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
     it('names the cost metric on screen', () => {
@@ -409,7 +431,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
 
         // Still both named. What changed is that they are TERMS in one
         // arithmetic, not two panels each ending in their own total.
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         expect(within(sum).getByText(COPY.panelStandingTitle)).toBeVisible();
         expect(within(sum).getByText(COPY.panelOnHandTitle)).toBeVisible();
         expect(within(sum).getByText(COPY.panelStandingSubtitle)).toBeVisible();
@@ -421,7 +443,9 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         renderPage();
 
         // 12.5 ha × DCA_PER_HA = 125 dca.
-        expect(screen.getByText(`125 ${COPY.areaUnit}`)).toBeVisible();
+        // Scoped to one crop's sum: every crop in the fixture is 125 dca, so
+        // the all-crops page shows the figure once per section.
+        expect(within(firstSum()).getByText(`125 ${COPY.areaUnit}`)).toBeVisible();
     });
 
     it('says that a payroll figure is an allocation, not a measurement', () => {
@@ -472,7 +496,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // assertion mean "claimed once HERE" rather than "appears once on
         // the page" — the weaker claim would start passing the day a
         // second surface repeats the figure.
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         expect(within(sum).getAllByText(COPY.netWorthLabel)).toHaveLength(1);
 
         // And the retired idiom is gone in both its parts — the per-asset
@@ -498,7 +522,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         //     −750   rent paid in grain
         //   −5,500   farm cost
         //   =18,750  net worth
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         expect(within(sum).getByText('+€15,000')).toBeVisible();
         expect(within(sum).getByText('+€10,000')).toBeVisible();
         expect(within(sum).getByText('−€750')).toBeVisible();
@@ -514,7 +538,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         setViewport('mobile');
         renderPage();
 
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         expect(within(sum).getByText(COPY.produceRentLabel)).toBeVisible();
         expect(within(sum).getByText('−€750')).toBeVisible();
     });
@@ -546,7 +570,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         setViewport('mobile');
         renderPage(data({ rows: [wheatRow({ unvaluedNoUnitCost: 2 })] }));
 
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         expect(
             within(sum).getByText(
                 COPY.uncertaintyAtMost.replace('{value}', '€18,750'),
@@ -562,7 +586,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         setViewport('mobile');
         renderPage(data({ rows: [wheatRow({ unvaluedUnitMismatch: 1 })] }));
 
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         expect(
             within(sum).getByText(
                 COPY.uncertaintyAtLeast.replace('{value}', '−€5,500'),
@@ -576,7 +600,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         setViewport('mobile');
         renderPage(data({ rows: [wheatRow()] }));
 
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         expect(within(sum).getByText('€18,750')).toBeVisible();
         expect(
             within(sum).queryByText(
@@ -614,7 +638,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         setViewport('mobile');
         renderPage(data({ rows: [maizeRow()] }));
 
-        const sum = screen.getByRole('group', { name: COPY.waterfallAria });
+        const sum = firstSum();
         // The RESULT's em-dash specifically. The two asset terms also show
         // one — maize has no price, so neither is valued — and that is
         // correct, which is why this cannot be a bare text query.
@@ -1061,7 +1085,7 @@ describe('grain calculator — on a PHONE (setViewport("mobile"))', () => {
         // the same refusal for the same crop, which is the point of it —
         // an undrawable crop is listed there rather than vanishing. Two
         // surfaces stating one refusal is agreement, not duplication.
-        const answer = screen.getByRole('group', { name: COPY.waterfallAria });
+        const answer = firstSum();
         expect(within(answer).getByText(COPY.perAreaNoArea)).toBeVisible();
     });
 
@@ -1777,5 +1801,120 @@ describe('cost per decare is rendered, with its own denominator (#1512)', () => 
         );
 
         expect(screen.getByText(COPY.costPerDcaCurrencyUnrecorded)).toBeVisible();
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// #2249 — «Всички» / per-crop parity with the phone.
+//
+// The owner saw the phone's version and asked that the web match it: a
+// dropdown with «Всички» on top, the whole farm's figures above, each crop's
+// section below, and crop names in the brand gold.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('the crop view (#2249)', () => {
+    const VIEW_KEY = 'agri.grain.calculator.view.acme';
+
+    beforeEach(() => {
+        setViewport('desktop');
+        window.localStorage.clear();
+    });
+    afterEach(() => window.localStorage.clear());
+
+    it('defaults to «Всички» and renders EVERY crop, not one behind a toggle', () => {
+        renderPage();
+
+        // Two crops in the fixture, so two sums. This is the whole point of
+        // the change: a three-crop farm used to need three clicks.
+        expect(screen.getAllByRole('group', { name: COPY.waterfallAria })).toHaveLength(2);
+        expect(
+            screen.getByText(COPY.farmCommodityTitle.replace('{commodity}', COPY_COMMODITY.wheat)),
+        ).toBeVisible();
+        expect(
+            screen.getByText(COPY.farmCommodityTitle.replace('{commodity}', COPY_COMMODITY.maize)),
+        ).toBeVisible();
+    });
+
+    it('offers «Всички» first in the dropdown', async () => {
+        renderPage();
+
+        await userEvent.click(screen.getByRole('combobox'));
+        const options = screen.getAllByRole('option').map((o) => o.textContent);
+        expect(options[0]).toContain(COPY.allCrops);
+        expect(options).toHaveLength(3); // «Всички» + two crops
+    });
+
+    it('shows ONLY the chosen crop once one is picked', async () => {
+        renderPage();
+
+        await userEvent.click(screen.getByRole('combobox'));
+        await userEvent.click(screen.getByRole('option', { name: new RegExp(COPY_COMMODITY.maize) }));
+
+        // One section, and it is maize's. A heading is not rendered for a
+        // single section — there is nothing to tell apart.
+        expect(screen.getAllByRole('group', { name: COPY.waterfallAria })).toHaveLength(1);
+        expect(
+            screen.queryByText(
+                COPY.farmCommodityTitle.replace('{commodity}', COPY_COMMODITY.wheat),
+            ),
+        ).toBeNull();
+    });
+
+    it('renders NO dropdown on a single-crop farm', () => {
+        // «Всички» would only repeat the one crop, and a control whose options
+        // show the same page is worse than no control.
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(screen.queryByRole('combobox')).toBeNull();
+    });
+
+    it('puts the crop name in the brand gold', () => {
+        // `Palette.accent` on the phone; the owner asked for it by name.
+        renderPage();
+        const heading = screen.getByText(
+            COPY.farmCommodityTitle.replace('{commodity}', COPY_COMMODITY.wheat),
+        );
+        expect(heading).toHaveClass('text-brand-default');
+    });
+
+    it('falls back to «Всички» when the remembered crop is no longer grown', () => {
+        // A farmer who focused sunflower last season and does not grow it now
+        // must not meet an empty page, nor silently get a neighbouring crop.
+        window.localStorage.setItem(VIEW_KEY, JSON.stringify('sunflower'));
+        renderPage();
+
+        expect(screen.getAllByRole('group', { name: COPY.waterfallAria })).toHaveLength(2);
+    });
+
+    it('remembers a crop that IS still grown', () => {
+        window.localStorage.setItem(VIEW_KEY, JSON.stringify('maize'));
+        renderPage();
+
+        // One section. `useLocalStorage` hydrates in an effect, so this also
+        // pins that the effect actually runs rather than the page staying on
+        // its SSR-safe «Всички» first paint.
+        expect(screen.getAllByRole('group', { name: COPY.waterfallAria })).toHaveLength(1);
+    });
+});
+
+describe('the farm block carries per-decare figures (#2249)', () => {
+    beforeEach(() => setViewport('desktop'));
+
+    it('shows the farm rates beside the farm total', () => {
+        renderPage();
+
+        const labels = [COPY.areaLabel, COPY.colStandingValue, COPY.costPerDcaLabel, COPY.marginPerDcaLabel];
+        for (const label of labels) {
+            // getAllBy: the per-crop sections name some of these too. What
+            // matters is that the FARM block now has its own set.
+            expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+        }
+        expect(screen.getByText(COPY.farmTotalTitle)).toBeVisible();
+    });
+
+    it('does not show the farm block at all on a single-crop farm', () => {
+        // Unchanged rule: a farm answer that only repeats the one crop below
+        // is noise. The per-decare figures inherit it rather than reopening it.
+        renderPage(data({ rows: [wheatRow()] }));
+        expect(screen.queryByText(COPY.farmTotalTitle)).toBeNull();
     });
 });

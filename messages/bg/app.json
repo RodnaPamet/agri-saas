@@ -4338,6 +4338,9 @@
                 "RENT_CURRENCY_UNRECORDED": "Договорът за аренда не записва валута за рентата, затова тя не може да се съчетае с активи, оценени по пазарна цена, без да се измисли такава.",
                 "COST_PRICE_CURRENCY_MISMATCH": "Разходите са в {costCurrency}, а пазарната цена е в {priceCurrency}; не се извършва конвертиране на валута."
             },
+            "allCrops": "Всички",
+            "cropFilterLabel": "Култура",
+            "farmPerAreaWithout": "Без: {names}",
             "farmTotalTitle": "Цялото стопанство",
             "farmTotalLabel": "Нетна стойност за цялото стопанство",
             "farmCommodityTitle": "{commodity} поотделно",

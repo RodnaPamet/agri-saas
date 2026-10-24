@@ -125,7 +125,7 @@ function result(rows: CommodityNetWorthRow[]): GrainNetWorthResult {
         generatedAt: '2026-09-21T10:00:00.000Z',
         seasonId: 's1',
         rows,
-        farm: { totals: [], refusedWithoutCurrency: [] },
+        farm: { totals: [], perArea: { areaDca: 0, byCurrency: [] }, refusedWithoutCurrency: [] },
         exclusions: {
             plantingsMissingYieldEstimate: [],
             plantingsUnknownCommodity: [],
