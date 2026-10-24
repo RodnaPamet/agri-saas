@@ -3502,6 +3502,98 @@
         "additionalProperties": {},
         "description": "A contract as the LIST returns it: the model plus computed fulfilment, value and benchmark. The encrypted terms/pricingNotes are NOT projected on a list — fetch the contract itself for those."
       },
+      "CorrectDiaryTreatment": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "applicationTechnique": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          },
+          "targetNote": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "quarantinePeriodDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 365
+          },
+          "phenophase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "occurredOn": {
+            "type": "string",
+            "description": "The corrected calendar day, `YYYY-MM-DD`. Validated by the usecase, which refuses a day that does not exist with `TREATMENT_DATE_INVALID` rather than letting `new Date(string)` resolve it against the server zone."
+          },
+          "productItemId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "doseValue": {
+            "type": "number"
+          },
+          "doseUnitId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "waterRateValue": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "waterRateUnitId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "parcels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "parcelId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "treatedAreaHa": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "parcelId",
+                "treatedAreaHa"
+              ]
+            },
+            "maxItems": 500
+          }
+        },
+        "description": "A correction to a recorded treatment. Only the title, the application technique, the target note, the quarantine period, the phenophase and the farm day are corrected today; a CHANGED dose, product, water rate or parcel list is refused by name with `TREATMENT_CORRECTION_FIELD_UNSUPPORTED`, while an UNCHANGED one is accepted, so a client may safely send the whole definition back."
+      },
       "CostDefaults": {
         "type": "object",
         "properties": {
@@ -17389,6 +17481,180 @@
           },
           "404": {
             "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "correctDiaryTreatment",
+        "summary": "Correct a recorded treatment",
+        "description": "Corrects a treatment already in the ДНЕВНИК, atomically across every block it touched (#2172). One transaction writes the tasks, the register lines, the journal entries’ day, a `TreatmentCorrection` trail row and the group version bump — so a correction that fails leaves the treatment exactly as it was.\n\n**What is corrected today**: `title`, `applicationTechnique`, `targetNote`, `quarantinePeriodDays`, `phenophase` and `occurredOn`. None of the six feeds the quantity the journal entry records, so correcting one cannot leave that number describing a treatment it no longer matches.\n\n**What is refused, BY NAME**: a CHANGED `doseValue`, `doseUnitId`, `productItemId`, `waterRateValue`, `waterRateUnitId` or parcel list answers `400` `TREATMENT_CORRECTION_FIELD_UNSUPPORTED` with the field names in `params.reference` (`parcels` when the parcel SET changed, `treatedAreaHa` when only an area did — so a client can tell “not yet” from “not like that”). An UNCHANGED value is accepted, so a client may send the whole definition back; the refusal compares VALUES, never merely the presence of a key, which is #1352’s lesson in both directions.\n\n**A correction that changes nothing writes nothing** — no version bump, no trail row, `200` with the definition unchanged. The editor saves the whole form, so a save with no edits is the common case, and it must not invalidate every other client’s `If-Match` or file a row asserting that a farmer altered a regulated record.\n\n**No stock moves.** A diary treatment never deducted any (owner ruling 2026-10-13, carried by `recordedInDiary` suppressing the CONSUMPTION), so a correction has no inventory consequence to reverse. That is what makes this a column update rather than a reversal and a re-application.\n\nGated exactly as the prefill is: `canWrite`, then SINGLE AUTHORSHIP (`409 TREATMENT_MIXED_AUTHORSHIP`), then creator-or-admin (`403 TREATMENT_EDIT_NOT_PERMITTED`). A blank `title` is `400` `TREATMENT_TITLE_REQUIRED`: the column is NOT NULL, so clearing it would be a database error on a field the form lets you empty.",
+        "tags": [
+          "Journal"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "treatmentGroupId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The `version` you last read from `GET ./definition` — as a bare integer (`5`) or a strong entity-tag (`\"5\"`), both accepted, which is what the `ETag` on that response already sends back verbatim. Unlike the field-operations lock, the quoted form IS parsed here (#1182).\n\nABSENT skips the precondition entirely — last-write-wins, matching every other versioned route. PRESENT-but-unreadable is a `400`, never a fall-through: `IF_MATCH_EMPTY`, `IF_MATCH_WEAK_TAG` or `IF_MATCH_MALFORMED`. A caller who sent the header meant to send a version, and guessing on their behalf is how a lost update happens quietly.\n\nThe precondition is on the GROUP version, not a line version: a correction writes every line and the set of lines is itself correctable later, so there is no stable tuple of row versions to echo back.",
+              "example": "\"3\""
+            },
+            "required": false,
+            "description": "The `version` you last read from `GET ./definition` — as a bare integer (`5`) or a strong entity-tag (`\"5\"`), both accepted, which is what the `ETag` on that response already sends back verbatim. Unlike the field-operations lock, the quoted form IS parsed here (#1182).\n\nABSENT skips the precondition entirely — last-write-wins, matching every other versioned route. PRESENT-but-unreadable is a `400`, never a fall-through: `IF_MATCH_EMPTY`, `IF_MATCH_WEAK_TAG` or `IF_MATCH_MALFORMED`. A caller who sent the header meant to send a version, and guessing on their behalf is how a lost update happens quietly.\n\nThe precondition is on the GROUP version, not a line version: a correction writes every line and the set of lines is itself correctable later, so there is no stable tuple of row versions to echo back.",
+            "name": "If-Match",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectDiaryTreatment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The corrected definition, with `version` already incremented. The response also carries it as an `ETag`, so the next correction needs no extra read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TreatmentDefinition"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`error.code` is `TREATMENT_EDIT_NOT_PERMITTED` when the caller is neither the person who recorded the treatment nor a farm administrator — the same rule as the withdrawal, deliberately: a correction must not be easier to make than a removal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`TREATMENT_MIXED_AUTHORSHIP` when the handle carries tasks written by more than one person, which binds admins too. `STALE_DATA` when `If-Match` named a version that is no longer current — someone else corrected the treatment while this editor was open. The previous state is recoverable from the `TreatmentCorrection` trail either way.",
             "content": {
               "application/json": {
                 "schema": {

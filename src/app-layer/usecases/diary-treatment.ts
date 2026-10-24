@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import { dayKeyInTz, FARM_TIME_ZONE, farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
 import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
@@ -7,9 +8,15 @@ import {
     assertCanEditTreatment,
     canDeleteTreatment,
 } from '../policies/task.policies';
-import { codedBadRequest, codedClientError, codedConflict, codedNotFound } from '@/lib/errors/types';
+import {
+    codedBadRequest,
+    codedClientError,
+    codedConflict,
+    codedNotFound,
+    staleData,
+} from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { withDeleted } from '@/lib/soft-delete';
 import { createFieldOperation, markOperationParcel } from './field-operation';
 import type { CreateFieldOperationInput } from './field-operation';
@@ -1157,86 +1164,121 @@ export async function getDiaryTreatmentDefinition(
         );
     }
 
-    return runInTenantContext(ctx, async (db) => {
-        const tasks = await db.task.findMany({
-            where: { tenantId: ctx.tenantId, treatmentGroupId: handle, deletedAt: null },
-            select: {
-                id: true,
-                createdByUserId: true,
-                operationType: true,
-                title: true,
-                applicationTechnique: true,
-            },
-            orderBy: { createdAt: 'asc' },
-        });
-        if (tasks.length === 0) {
-            throw codedNotFound(
-                'TREATMENT_NOT_FOUND',
-                'No treatment was recorded under that handle.',
-                { reference: 'treatmentGroupId' },
-            );
-        }
+    return runInTenantContext(
+        ctx,
+        async (db) => (await loadTreatmentForEdit(db, ctx, handle)).definition,
+    );
+}
 
-        const creators = new Set(tasks.map((t) => t.createdByUserId));
-        if (creators.size !== 1) {
-            throw codedConflict(
-                'TREATMENT_MIXED_AUTHORSHIP',
-                'This treatment has tasks recorded by more than one person, so it cannot be '
-                    + 'corrected as a whole. Ask an administrator.',
-                { reference: 'treatmentGroupId' },
-            );
-        }
-        assertCanEditTreatment(ctx, { createdByUserId: tasks[0].createdByUserId });
+/**
+ * The read, the gates and the assembly behind BOTH the prefill and the
+ * correction, taking `db` so each caller supplies its own transaction.
+ *
+ * Factored out rather than letting the correction call
+ * `getDiaryTreatmentDefinition`: that opens its OWN `runInTenantContext`, and a
+ * correction has to read the prior state and write the new one inside ONE
+ * transaction. Across two, a concurrent write lands between them and the
+ * `previous` filed in the trail describes a state that never preceded the
+ * change it is filed against.
+ *
+ * It also keeps the two shapes identical by construction. The form prefills
+ * from the GET and the trail stores the same object, so a field that drifted
+ * between two assemblies would make `previous` disagree with what the operator
+ * was actually shown — in the one record whose entire purpose is to say what
+ * the values used to be.
+ */
+async function loadTreatmentForEdit(
+    db: PrismaTx,
+    ctx: RequestContext,
+    handle: string,
+): Promise<{
+    definition: TreatmentDefinition;
+    /** One per block, oldest first. */
+    taskIds: string[];
+    /** Every register line of the treatment, for the per-line writes. */
+    lineIds: string[];
+}> {
+    const tasks = await db.task.findMany({
+        where: { tenantId: ctx.tenantId, treatmentGroupId: handle, deletedAt: null },
+        select: {
+            id: true,
+            createdByUserId: true,
+            operationType: true,
+            title: true,
+            applicationTechnique: true,
+        },
+        orderBy: { createdAt: 'asc' },
+    });
+    if (tasks.length === 0) {
+        throw codedNotFound(
+            'TREATMENT_NOT_FOUND',
+            'No treatment was recorded under that handle.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
 
-        const lines = await db.operationParcel.findMany({
-            where: { tenantId: ctx.tenantId, taskId: { in: tasks.map((t) => t.id) } },
-            select: {
-                parcelId: true,
-                productItemId: true,
-                doseValue: true,
-                doseUnitId: true,
-                waterRateValue: true,
-                waterRateUnitId: true,
-                targetNote: true,
-                quarantinePeriodDays: true,
-                phenophase: true,
-                treatedAreaHa: true,
-                completedAt: true,
-                parcel: { select: { name: true, locationId: true } },
-                product: { select: { name: true, pppRegistrationNo: true } },
-            },
-            orderBy: [{ parcelId: 'asc' }],
-        });
-        if (lines.length === 0) {
-            // A treatment with tasks and no lines is the stranded shape
-            // `recordDiaryTreatment` documents: a partial write that failed
-            // before any line landed. There is no definition to correct, and
-            // saying so is better than returning a shell the form would fill
-            // with defaults and then save as if it were the record.
-            throw codedNotFound(
-                'TREATMENT_NOT_FOUND',
-                'That treatment has no recorded parcel lines, so there is nothing to correct.',
-                { reference: 'treatmentGroupId' },
-            );
-        }
+    const creators = new Set(tasks.map((t) => t.createdByUserId));
+    if (creators.size !== 1) {
+        throw codedConflict(
+            'TREATMENT_MIXED_AUTHORSHIP',
+            'This treatment has tasks recorded by more than one person, so it cannot be '
+                + 'corrected as a whole. Ask an administrator.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+    assertCanEditTreatment(ctx, { createdByUserId: tasks[0].createdByUserId });
 
-        // The group row, for the version a correction sends back. `findUnique`
-        // on the composite key — the handle is unique PER TENANT, not globally.
-        const group = await db.treatmentGroup.findUnique({
-            where: { tenantId_id: { tenantId: ctx.tenantId, id: handle } },
-            select: { version: true },
-        });
+    const lines = await db.operationParcel.findMany({
+        where: { tenantId: ctx.tenantId, taskId: { in: tasks.map((t) => t.id) } },
+        select: {
+            id: true,
+            parcelId: true,
+            productItemId: true,
+            doseValue: true,
+            doseUnitId: true,
+            waterRateValue: true,
+            waterRateUnitId: true,
+            targetNote: true,
+            quarantinePeriodDays: true,
+            phenophase: true,
+            treatedAreaHa: true,
+            completedAt: true,
+            parcel: { select: { name: true, locationId: true } },
+            product: { select: { name: true, pppRegistrationNo: true } },
+        },
+        orderBy: [{ parcelId: 'asc' }],
+    });
+    if (lines.length === 0) {
+        // A treatment with tasks and no lines is the stranded shape
+        // `recordDiaryTreatment` documents: a partial write that failed before
+        // any line landed. There is no definition to correct, and saying so is
+        // better than returning a shell the form would fill with defaults and
+        // then save as if it were the record.
+        throw codedNotFound(
+            'TREATMENT_NOT_FOUND',
+            'That treatment has no recorded parcel lines, so there is nothing to correct.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
 
-        // One treatment is one product at one dose across its blocks — that is
-        // what `recordDiaryTreatment` writes from a single input. Read from the
-        // first line rather than asserted uniform: a mixed set would mean the
-        // lines had been edited individually through the parcel-mark path, and
-        // #2172's correction route is the thing that will settle what that
-        // means. Until then the prefill shows the treatment as it was RECORDED.
-        const first = lines[0];
-        const stamped = lines.find((l) => l.completedAt != null);
+    // The group row, for the version a correction sends back. `findUnique` on
+    // the composite key — the handle is unique PER TENANT, not globally.
+    const group = await db.treatmentGroup.findUnique({
+        where: { tenantId_id: { tenantId: ctx.tenantId, id: handle } },
+        select: { version: true },
+    });
 
-        return {
+    // One treatment is one product at one dose across its blocks — that is what
+    // `recordDiaryTreatment` writes from a single input. Read from the first
+    // line rather than asserted uniform: a mixed set would mean the lines had
+    // been edited individually through the parcel-mark path, and #2172's
+    // correction route is the thing that will settle what that means. Until
+    // then the prefill shows the treatment as it was RECORDED.
+    const first = lines[0];
+    const stamped = lines.find((l) => l.completedAt != null);
+
+    return {
+        definition: {
             treatmentGroupId: handle,
             version: group?.version ?? 0,
             kind: tasks[0].operationType === 'FERTILIZE' ? 'FERTILIZE' : 'SPRAY',
@@ -1262,6 +1304,419 @@ export async function getDiaryTreatmentDefinition(
                 // NULL stays NULL — see `TreatmentDefinitionLine`.
                 treatedAreaHa: l.treatedAreaHa == null ? null : Number(l.treatedAreaHa),
             })),
-        };
+        },
+        taskIds: tasks.map((t) => t.id),
+        lineIds: lines.map((l) => l.id),
+    };
+}
+
+/**
+ * What a correction may change.
+ *
+ * Every field is optional and an ABSENT field is not a change. The phone's
+ * editor sends the whole definition back on every save, so a correction request
+ * is mostly fields equal to what is already stored — which is why the refusals
+ * below compare values instead of merely noticing a key.
+ */
+export interface CorrectDiaryTreatmentInput {
+    /**
+     * `Task.title` is NOT NULL, so this is not nullable and a blank is refused
+     * rather than written. Clearing it would be a 500 from the database on a
+     * field the form lets you empty.
+     */
+    title?: string;
+    applicationTechnique?: string | null;
+    targetNote?: string | null;
+    quarantinePeriodDays?: number | null;
+    phenophase?: string | null;
+    occurredOn?: string;
+    /**
+     * Accepted but not yet corrected — see `UNSUPPORTED_BY_DESIGN`. Declared on
+     * the input so an unchanged round-trip of the whole definition is not
+     * refused, and so the refusal when one DOES change can name the field.
+     */
+    productItemId?: string;
+    doseValue?: number;
+    doseUnitId?: string;
+    waterRateValue?: number | null;
+    waterRateUnitId?: string | null;
+    parcels?: Array<{ parcelId: string; treatedAreaHa: number | null }>;
+}
+
+/**
+ * The fields this route corrects today.
+ *
+ * All six are annotations or the farm day: none of them feeds the quantity
+ * `recordInputApplication` computes and writes onto the journal entry, so
+ * correcting one cannot leave that number describing a treatment that no longer
+ * matches it. The dose, the product and the treated area all do feed it, and
+ * are refused for that reason rather than forgotten — see below.
+ */
+const CORRECTABLE_FIELDS = [
+    'title',
+    'applicationTechnique',
+    'targetNote',
+    'quarantinePeriodDays',
+    'phenophase',
+    'occurredOn',
+] as const;
+
+type CorrectableField = (typeof CORRECTABLE_FIELDS)[number];
+
+/**
+ * Blank text is NULL, for every nullable field.
+ *
+ * The editor clears a field to `''`, not to `null`, and a stored `''` would
+ * print as an empty «Вредител» column rather than an absent one. Normalising on
+ * the way in also makes the change detection honest: clearing an already-empty
+ * field is then not a change, so it neither burns a version nor files a
+ * correction that corrected nothing.
+ */
+function blankToNull<T>(v: T): T | null {
+    return typeof v === 'string' && v.trim() === '' ? null : v;
+}
+
+/**
+ * Which requested changes this route will not make, by NAME.
+ *
+ * ## Why these are refused, and refused rather than ignored
+ *
+ * The dose, the dose unit, the product and the per-parcel treated area all feed
+ * the quantity `recordInputApplication` computes (`dose x area`, converted
+ * through the unit layer) and writes onto each line's `INPUT_APPLICATION`
+ * journal entry — and the product additionally composes that entry's title.
+ * Correcting one here without recomputing that entry would leave the Дневник
+ * showing the old number beside the new dose.
+ *
+ * Doing it properly means ONE source of truth for that computation, which today
+ * lives inline in `recordInputApplication` and is also where #2284 is — the
+ * quantity is computed over the whole parcel and ignores `treatedAreaHa`.
+ * Extracting the maths and fixing #2284 is the same change, and it should land
+ * before a correction route starts depending on it, not after.
+ *
+ * Silently dropping them was the other option and is the worse one. #1352 is
+ * the precedent in both directions: an UNCONDITIONAL `eik` refusal 400'd every
+ * farm-profile save from the owner's phone, because the editor PUTs every field
+ * on every save — so the refusal is CONDITIONAL, firing only when the submitted
+ * value actually differs from the stored one. A `.strip()`-style silent discard
+ * is what the same issue showed to be worse still: the operator sees a 200,
+ * reopens the form, and the dose they corrected is the old one.
+ */
+function unsupportedChanges(
+    previous: TreatmentDefinition,
+    input: CorrectDiaryTreatmentInput,
+): string[] {
+    const refused: string[] = [];
+    if (input.productItemId !== undefined && input.productItemId !== previous.productItemId) {
+        refused.push('productItemId');
+    }
+    if (input.doseValue !== undefined && Number(input.doseValue) !== previous.doseValue) {
+        refused.push('doseValue');
+    }
+    if (input.doseUnitId !== undefined && input.doseUnitId !== previous.doseUnitId) {
+        refused.push('doseUnitId');
+    }
+    // The water rate feeds no computed quantity, so it is not refused for the
+    // journal-entry reason the others are. It is refused because it is a VALUE
+    // AND ITS UNIT: accepting one without the other would store a rate of
+    // 200 of nothing, and validating that the unit is actually a rate unit is
+    // the same unit-layer work the dose correction needs. The pair travels with
+    // the dose, not with the annotations.
+    if (input.waterRateValue !== undefined
+        && (input.waterRateValue ?? null) !== previous.waterRateValue) {
+        refused.push('waterRateValue');
+    }
+    if (input.waterRateUnitId !== undefined
+        && (input.waterRateUnitId ?? null) !== previous.waterRateUnitId) {
+        refused.push('waterRateUnitId');
+    }
+    if (input.parcels !== undefined) {
+        const was = new Map(previous.lines.map((l) => [l.parcelId, l.treatedAreaHa]));
+        const now = new Map(input.parcels.map((p) => [p.parcelId, p.treatedAreaHa]));
+        // The SET first, and separately from the areas: adding or dropping a
+        // parcel is the case the `TreatmentGroup` row was designed for — a
+        // correction that spans a changing number of rows — and it needs the
+        // per-block write and its replay path, not a column update. Naming it
+        // apart from `treatedAreaHa` lets a client tell "not yet" from "not
+        // like that".
+        const sameSet =
+            was.size === now.size && [...was.keys()].every((id) => now.has(id));
+        if (!sameSet) {
+            refused.push('parcels');
+        } else if ([...now].some(([id, area]) => (was.get(id) ?? null) !== (area ?? null))) {
+            refused.push('treatedAreaHa');
+        }
+    }
+    return refused;
+}
+
+/**
+ * Correct a recorded treatment, atomically across its blocks (#2172).
+ *
+ * ## The gate, in the same order as the prefill
+ *
+ * `assertCanWrite`, then SINGLE AUTHORSHIP, then `assertCanEditTreatment` on
+ * that one creator — see `getDiaryTreatmentDefinition`, whose docblock explains
+ * why establishing authorship before the permission check is what makes the
+ * permission check mean anything. Both routes run it through
+ * `loadTreatmentForEdit`, so the prefill cannot show a definition this route
+ * would then refuse to write.
+ *
+ * ## Why `If-Match` is on the GROUP and not the lines
+ *
+ * `OperationParcel.version` is per row. A correction writes every line of the
+ * treatment, and the set of lines is itself correctable in a later change, so
+ * there is no stable tuple of row versions for a client to send back. The
+ * `TreatmentGroup` row exists to be that single thing (#2279), and the bump is
+ * a compare-and-swap in the same transaction as the writes:
+ *
+ *     updateMany({ where: { ..., version: expected }, data: { version: +1 } })
+ *
+ * `count !== 1` is the stale case. Reading the version and then writing it would
+ * be the race this is meant to close, which is why it is one statement.
+ *
+ * ## A correction that changes nothing writes nothing
+ *
+ * Not an optimisation. The editor saves the whole definition, so a save with no
+ * edits is the common case — and it must not burn a version (invalidating every
+ * other client's `If-Match`) or file a `TreatmentCorrection` row claiming the
+ * record was corrected. The trail is a legal-ish artefact: a row in it asserts
+ * that a farmer changed a recorded treatment.
+ *
+ * ## No stock moves, and that is a ruling not an omission
+ *
+ * A diary treatment never deducted stock (owner ruling 2026-10-13, carried by
+ * `recordedInDiary` suppressing the CONSUMPTION in `recordInputApplication`), so
+ * a correction has no inventory consequence to reverse. That is the property
+ * that makes a correction a column update at all; were there a ledger entry per
+ * line, this would have to be a reversal and a re-application.
+ */
+export async function correctDiaryTreatment(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+    input: CorrectDiaryTreatmentInput,
+    expectedVersion?: number,
+): Promise<TreatmentDefinition> {
+    assertCanWrite(ctx);
+
+    const handle = treatmentGroupId.trim();
+    if (!handle) {
+        throw codedNotFound(
+            'TREATMENT_NOT_FOUND',
+            'No treatment was recorded under that handle.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
+    // Parsed BEFORE the transaction opens: `parseTreatmentDay` throws
+    // `TREATMENT_DATE_INVALID` on a day that does not exist, and a 400 for a
+    // malformed request should not have taken a row lock to discover.
+    const day = input.occurredOn !== undefined ? parseTreatmentDay(input.occurredOn) : null;
+
+    if (input.title !== undefined && input.title.trim() === '') {
+        throw codedBadRequest(
+            'TREATMENT_TITLE_REQUIRED',
+            'A treatment needs a title. Clear the other fields instead, or withdraw it.',
+            { field: 'title' },
+        );
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        // The group row must exist before the compare-and-swap has anything to
+        // swap. `recordDiaryTreatment` upserts it the same way; a treatment
+        // recorded before #2279 got one from the migration's backfill, but a
+        // row that went missing would otherwise make the CAS report a stale
+        // version for a version nobody ever served. `update: {}` so this does
+        // not itself count as a change.
+        await db.treatmentGroup.upsert({
+            where: { tenantId_id: { tenantId: ctx.tenantId, id: handle } },
+            create: { id: handle, tenantId: ctx.tenantId },
+            update: {},
+        });
+
+        const { definition: previous, taskIds, lineIds } = await loadTreatmentForEdit(
+            db,
+            ctx,
+            handle,
+        );
+
+        // ── The precondition, against the version just read ──
+        //
+        // This check is what `If-Match` MEANS, and the compare-and-swap below is
+        // not a substitute for it: that one guards `previous.version`, which was
+        // read inside this transaction moments earlier, so it compares a value
+        // against itself and matches every time. The first draft had only the
+        // swap and accepted a stale `If-Match` silently — caught by the test
+        // that sends a superseded version, which is the only way it could have
+        // been caught, because every other assertion in the suite passes a
+        // version it had just read.
+        //
+        // The swap still earns its place as the concurrency backstop: under READ
+        // COMMITTED another correction can commit between this read and this
+        // write, and `where: { version }` is what refuses that one.
+        if (expectedVersion !== undefined && expectedVersion !== previous.version) {
+            throw staleData(
+                'This treatment was corrected by someone else while you were editing it. '
+                    + 'Reopen it to see the current values.',
+                { reference: 'treatmentGroupId' },
+            );
+        }
+
+        const refused = unsupportedChanges(previous, input);
+        if (refused.length > 0) {
+            throw codedBadRequest(
+                'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
+                'This correction changes a field that cannot be corrected yet. The dose, the '
+                    + 'product and the treated parcels are still changed by withdrawing the '
+                    + 'treatment and recording it again.',
+                { reference: refused.join(',') },
+            );
+        }
+
+        const changed = CORRECTABLE_FIELDS.filter((f) => {
+            if (input[f] === undefined) return false;
+            if (f === 'occurredOn') return input.occurredOn !== previous.occurredOn;
+            return blankToNull(input[f]) !== blankToNull(previous[f]);
+        });
+
+        if (changed.length === 0) return previous;
+
+        // ── The lines ──
+        const lineData: Record<string, unknown> = {};
+        if (changed.includes('targetNote')) lineData.targetNote = blankToNull(input.targetNote);
+        if (changed.includes('phenophase')) lineData.phenophase = blankToNull(input.phenophase);
+        if (changed.includes('quarantinePeriodDays')) {
+            lineData.quarantinePeriodDays = input.quarantinePeriodDays ?? null;
+        }
+        if (Object.keys(lineData).length > 0) {
+            await db.operationParcel.updateMany({
+                where: { tenantId: ctx.tenantId, id: { in: lineIds } },
+                data: lineData,
+            });
+        }
+
+        // The farm day, onto the lines that WERE completed.
+        //
+        // `completedAt: { not: null }` matters: a treatment can be stranded
+        // half-written, and stamping a PENDING line with a date would mark work
+        // as done that nobody did. Correcting the day of a treatment must not
+        // complete it.
+        if (day) {
+            await db.operationParcel.updateMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    id: { in: lineIds },
+                    completedAt: { not: null },
+                },
+                data: { completedAt: day.day },
+            });
+            // The journal entries carry their own `occurredAt`, and the journal
+            // list sorts and filters on it. Leaving it would put the corrected
+            // treatment back on the old day in the list while the register
+            // printed the new one — the two surfaces disagreeing about when a
+            // regulated event happened. Addressed by `treatmentGroupId`, the
+            // same key the withdrawal uses to reach every entry of a treatment.
+            await db.logEntry.updateMany({
+                where: { tenantId: ctx.tenantId, treatmentGroupId: handle },
+                data: { occurredAt: day.day },
+            });
+        }
+
+        // ── The tasks, one per block ──
+        const taskData: Record<string, unknown> = {};
+        if (changed.includes('title')) taskData.title = input.title;
+        if (changed.includes('applicationTechnique')) {
+            taskData.applicationTechnique = blankToNull(input.applicationTechnique);
+        }
+        if (Object.keys(taskData).length > 0) {
+            await db.task.updateMany({
+                where: { tenantId: ctx.tenantId, id: { in: taskIds }, deletedAt: null },
+                data: taskData,
+            });
+        }
+
+        // ── The trail, then the version, in that order ──
+        //
+        // The trail row carries the WHOLE previous definition and the names of
+        // what changed (owner decision 2026-10-24). Whole, because a diff
+        // reconstructed from field names needs the reader to already have the
+        // state it was a diff against, and the point of the record is that the
+        // state is gone.
+        await db.treatmentCorrection.create({
+            data: {
+                tenantId: ctx.tenantId,
+                groupId: handle,
+                previous: previous as unknown as Prisma.InputJsonValue,
+                changedFields: [...changed],
+                correctedByUserId: ctx.userId ?? null,
+            },
+        });
+
+        const bumped = await db.treatmentGroup.updateMany({
+            where: { tenantId: ctx.tenantId, id: handle, version: previous.version },
+            data: { version: { increment: 1 } },
+        });
+        if (bumped.count !== 1) {
+            throw staleData(
+                'This treatment was corrected by someone else while you were editing it. '
+                    + 'Reopen it to see the current values.',
+                { reference: 'treatmentGroupId' },
+            );
+        }
+
+        await logEvent(db, ctx, {
+            action: 'ENTITY_UPDATED',
+            entityType: 'Task',
+            entityId: handle,
+            details: `Treatment ${handle} corrected (${changed.join(', ')})`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Treatment',
+                operation: 'updated',
+                // `changedFields` is a declared field of
+                // `EntityLifecycleSchema`, so the names land in the canonical
+                // shape rather than inside a prose `details` string a reader
+                // would have to parse (#2109).
+                changedFields: [...changed],
+                // `before` is deliberately NOT sent, though the schema admits
+                // it. The whole previous definition is already stored on the
+                // `TreatmentCorrection` row, and two copies of one record are
+                // two things that can disagree about what the values were.
+                summary: `${changed.length} field(s) corrected across ${taskIds.length} block(s)`,
+            },
+        });
+
+        return { ...previous, version: previous.version + 1, ...correctedView(previous, input, changed, day) };
     });
+}
+
+/**
+ * The corrected definition, assembled from what was written rather than re-read.
+ *
+ * Re-reading would be a second round trip for a state this function just
+ * established, and the write is the authority on it. Only the corrected fields
+ * move; everything else is carried from `previous`, which is exactly the
+ * guarantee the refusals above enforce.
+ */
+function correctedView(
+    previous: TreatmentDefinition,
+    input: CorrectDiaryTreatmentInput,
+    changed: readonly CorrectableField[],
+    day: { day: Date; key: string } | null,
+): Partial<TreatmentDefinition> {
+    const out: Partial<TreatmentDefinition> = {};
+    if (changed.includes('title')) out.title = input.title ?? previous.title;
+    if (changed.includes('applicationTechnique')) {
+        out.applicationTechnique = blankToNull(input.applicationTechnique) ?? null;
+    }
+    if (changed.includes('targetNote')) out.targetNote = blankToNull(input.targetNote) ?? null;
+    if (changed.includes('phenophase')) out.phenophase = blankToNull(input.phenophase) ?? null;
+    if (changed.includes('quarantinePeriodDays')) {
+        out.quarantinePeriodDays = input.quarantinePeriodDays ?? null;
+    }
+    // The key, not the instant: `previous.occurredOn` is a calendar day and
+    // deriving one back out of a UTC instant is the mistake `parseTreatmentDay`
+    // exists to prevent.
+    if (changed.includes('occurredOn') && day) out.occurredOn = day.key;
+    return out;
 }

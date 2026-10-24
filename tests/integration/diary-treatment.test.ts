@@ -30,6 +30,7 @@ import {
     recordDiaryTreatment,
     getDiaryTreatment,
     getDiaryTreatmentDefinition,
+    correctDiaryTreatment,
 } from '@/app-layer/usecases/diary-treatment';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -942,6 +943,359 @@ describeFn('getDiaryTreatmentDefinition (DB-backed, #2172)', () => {
     it('404s an unknown handle rather than leaking that it is unknown differently', async () => {
         await expect(
             getDiaryTreatmentDefinition(ctx(), `${TAG}-nope`),
+        ).rejects.toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
+    });
+});
+
+describeFn('correctDiaryTreatment (DB-backed, #2172)', () => {
+    const KEY = `corr-${TAG}`;
+
+    /** Record a treatment and hand back its handle, one per test. */
+    const recorded = async (suffix: string, over: Record<string, unknown> = {}) => {
+        const key = `${KEY}-${suffix}`;
+        const rec = await recordDiaryTreatment(ctx(), { ...baseInput(), ...over }, key);
+        return rec.treatmentGroupId;
+    };
+
+    it('corrects the six fields across every block, and bumps the version once', async () => {
+        const handle = await recorded('all');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(before.version).toBe(0);
+
+        const out = await correctDiaryTreatment(
+            ctx(),
+            handle,
+            {
+                title: 'Коригирана обработка',
+                applicationTechnique: 'knapsack',
+                targetNote: 'Brown rust',
+                quarantinePeriodDays: 21,
+                phenophase: 'BBCH 39',
+                occurredOn: '2026-03-06',
+            },
+            before.version,
+        );
+
+        expect(out.version).toBe(1);
+        expect(out).toMatchObject({
+            title: 'Коригирана обработка',
+            applicationTechnique: 'knapsack',
+            targetNote: 'Brown rust',
+            quarantinePeriodDays: 21,
+            phenophase: 'BBCH 39',
+            occurredOn: '2026-03-06',
+        });
+
+        // Re-read rather than trust the returned view: the function assembles
+        // its response from what it wrote, so a response-only correctness bug
+        // would be invisible to an assertion on the return value alone.
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after).toMatchObject({
+            version: 1,
+            title: 'Коригирана обработка',
+            applicationTechnique: 'knapsack',
+            targetNote: 'Brown rust',
+            quarantinePeriodDays: 21,
+            phenophase: 'BBCH 39',
+            occurredOn: '2026-03-06',
+        });
+
+        // ACROSS BLOCKS: the fixture spans two, and the title lives on `Task`,
+        // one row per block. Correcting only the first would leave the second
+        // block's rows describing the old treatment — and the register prints
+        // per block.
+        const tasks = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: handle, deletedAt: null },
+            select: { title: true, applicationTechnique: true },
+        });
+        expect(tasks.length).toBeGreaterThan(1);
+        expect(new Set(tasks.map((t) => t.title))).toEqual(new Set(['Коригирана обработка']));
+        expect(new Set(tasks.map((t) => t.applicationTechnique))).toEqual(new Set(['knapsack']));
+
+        // And every LINE, not just the first — `targetNote` is per line.
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: handle } },
+            select: { targetNote: true, phenophase: true, quarantinePeriodDays: true },
+        });
+        expect(lines.length).toBe(3);
+        expect(lines.every((l) => l.targetNote === 'Brown rust')).toBe(true);
+        expect(lines.every((l) => l.phenophase === 'BBCH 39')).toBe(true);
+        expect(lines.every((l) => l.quarantinePeriodDays === 21)).toBe(true);
+    });
+
+    it('files ONE trail row carrying the whole previous definition and the changed names', async () => {
+        const handle = await recorded('trail');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        await correctDiaryTreatment(
+            ctx(),
+            handle,
+            { targetNote: 'Powdery mildew', phenophase: 'BBCH 31' },
+            before.version,
+        );
+
+        const trail = await globalPrisma.treatmentCorrection.findMany({
+            where: { tenantId, groupId: handle },
+        });
+        expect(trail.length).toBe(1);
+        expect([...trail[0].changedFields].sort()).toEqual(['phenophase', 'targetNote']);
+        expect(trail[0].correctedByUserId).toBe(userId);
+
+        // WHOLE previous, not a diff — owner decision 2026-10-24. A diff needs
+        // the reader to already hold the state it was a diff against, and the
+        // point of the record is that the state is gone.
+        const prev = trail[0].previous as Record<string, unknown>;
+        expect(prev).toMatchObject({
+            treatmentGroupId: handle,
+            version: before.version,
+            targetNote: before.targetNote,
+            doseValue: before.doseValue,
+            productItemId: before.productItemId,
+            occurredOn: before.occurredOn,
+        });
+        // Including the parcels, which is the part a field-name diff loses.
+        expect(Array.isArray(prev.lines)).toBe(true);
+        expect((prev.lines as unknown[]).length).toBe(3);
+    });
+
+    it('a correction that changes nothing writes NOTHING', async () => {
+        const handle = await recorded('noop');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        // The editor's own save with no edits: the WHOLE definition back,
+        // including the fields this route refuses to change.
+        const out = await correctDiaryTreatment(
+            ctx(),
+            handle,
+            {
+                title: before.title ?? undefined,
+                applicationTechnique: before.applicationTechnique,
+                targetNote: before.targetNote,
+                quarantinePeriodDays: before.quarantinePeriodDays,
+                phenophase: before.phenophase,
+                occurredOn: before.occurredOn ?? undefined,
+                productItemId: before.productItemId,
+                doseValue: before.doseValue,
+                doseUnitId: before.doseUnitId,
+                waterRateValue: before.waterRateValue,
+                waterRateUnitId: before.waterRateUnitId,
+                parcels: before.lines.map((l) => ({
+                    parcelId: l.parcelId,
+                    treatedAreaHa: l.treatedAreaHa,
+                })),
+            },
+            before.version,
+        );
+
+        // No version burn — every other client's `If-Match` stays valid.
+        expect(out.version).toBe(before.version);
+        const row = await globalPrisma.treatmentGroup.findUnique({
+            where: { tenantId_id: { tenantId, id: handle } },
+        });
+        expect(row!.version).toBe(before.version);
+        // And no row asserting that a farmer altered a regulated record.
+        expect(
+            await globalPrisma.treatmentCorrection.count({ where: { tenantId, groupId: handle } }),
+        ).toBe(0);
+    });
+
+    it('refuses a STALE If-Match and leaves the record untouched', async () => {
+        const handle = await recorded('stale');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await correctDiaryTreatment(ctx(), handle, { targetNote: 'First' }, before.version);
+
+        // The version the first editor is still holding.
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { targetNote: 'Second' }, before.version),
+        ).rejects.toMatchObject({ code: 'STALE_DATA' });
+
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after.targetNote).toBe('First');
+        expect(after.version).toBe(before.version + 1);
+        // The refused attempt filed no trail row — the throw happens after the
+        // create in source order, so this is what proves the transaction rolled
+        // it back rather than the ordering hiding it.
+        expect(
+            await globalPrisma.treatmentCorrection.count({ where: { tenantId, groupId: handle } }),
+        ).toBe(1);
+    });
+
+    it('an ABSENT If-Match skips the precondition', async () => {
+        const handle = await recorded('nomatch');
+        const out = await correctDiaryTreatment(ctx(), handle, { targetNote: 'Unguarded' });
+        expect(out.version).toBe(1);
+        expect(out.targetNote).toBe('Unguarded');
+    });
+
+    it('refuses a CHANGED dose, product or water rate by name', async () => {
+        const handle = await recorded('dose');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { doseValue: before.doseValue + 1 }, before.version),
+        ).rejects.toMatchObject({
+            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
+            params: { reference: 'doseValue' },
+        });
+
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { waterRateValue: 200 }, before.version),
+        ).rejects.toMatchObject({
+            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
+            params: { reference: 'waterRateValue' },
+        });
+
+        // Nothing was written by either refusal.
+        const after = await getDiaryTreatmentDefinition(ctx(), handle);
+        expect(after.version).toBe(before.version);
+        expect(after.doseValue).toBe(before.doseValue);
+    });
+
+    it('ACCEPTS an unchanged dose sent alongside a real correction (#1352)', async () => {
+        // The control for the test above, and the reason the refusal compares
+        // VALUES rather than noticing a key. #1352: an unconditional `eik`
+        // refusal 400'd every farm-profile save from the owner's phone, because
+        // the editor PUTs every field on every save. This editor does too.
+        const handle = await recorded('unchanged-dose');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        const out = await correctDiaryTreatment(
+            ctx(),
+            handle,
+            {
+                doseValue: before.doseValue,
+                doseUnitId: before.doseUnitId,
+                productItemId: before.productItemId,
+                targetNote: 'Corrected with the dose echoed back',
+            },
+            before.version,
+        );
+        expect(out.version).toBe(1);
+        expect(out.targetNote).toBe('Corrected with the dose echoed back');
+    });
+
+    it('tells a changed parcel SET apart from a changed treated AREA', async () => {
+        const handle = await recorded('parcels');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        // Dropping a parcel — the case the TreatmentGroup row was designed for.
+        await expect(
+            correctDiaryTreatment(
+                ctx(),
+                handle,
+                {
+                    parcels: before.lines
+                        .slice(1)
+                        .map((l) => ({ parcelId: l.parcelId, treatedAreaHa: l.treatedAreaHa })),
+                },
+                before.version,
+            ),
+        ).rejects.toMatchObject({
+            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
+            params: { reference: 'parcels' },
+        });
+
+        // Same set, one area changed — a different refusal, so a client can
+        // tell "not yet" from "not like that".
+        await expect(
+            correctDiaryTreatment(
+                ctx(),
+                handle,
+                {
+                    parcels: before.lines.map((l, i) => ({
+                        parcelId: l.parcelId,
+                        treatedAreaHa: i === 0 ? 1.5 : l.treatedAreaHa,
+                    })),
+                },
+                before.version,
+            ),
+        ).rejects.toMatchObject({
+            code: 'TREATMENT_CORRECTION_FIELD_UNSUPPORTED',
+            params: { reference: 'treatedAreaHa' },
+        });
+    });
+
+    it('refuses a blank title rather than writing NULL into a NOT NULL column', async () => {
+        const handle = await recorded('blank-title');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await expect(
+            correctDiaryTreatment(ctx(), handle, { title: '   ' }, before.version),
+        ).rejects.toMatchObject({ code: 'TREATMENT_TITLE_REQUIRED' });
+    });
+
+    it('moves the journal entries onto the corrected day', async () => {
+        const handle = await recorded('day');
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+
+        const was = await globalPrisma.logEntry.findMany({
+            where: { tenantId, treatmentGroupId: handle },
+            select: { occurredAt: true },
+        });
+        expect(was.length).toBeGreaterThan(0);
+
+        await correctDiaryTreatment(ctx(), handle, { occurredOn: '2026-03-09' }, before.version);
+
+        // The journal list sorts and filters on `occurredAt`. Leaving it would
+        // put the corrected treatment back on the old day in the list while the
+        // register printed the new one — the two surfaces disagreeing about
+        // when a regulated event happened.
+        const now = await globalPrisma.logEntry.findMany({
+            where: { tenantId, treatmentGroupId: handle },
+            select: { occurredAt: true },
+        });
+        expect(now.length).toBe(was.length);
+        expect(
+            now.every((e) => e.occurredAt.toISOString().slice(0, 10) === '2026-03-09'),
+        ).toBe(true);
+
+        // And the lines, which is what the ДНЕВНИК prints.
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: handle } },
+            select: { completedAt: true },
+        });
+        expect(
+            lines.every((l) => l.completedAt?.toISOString().slice(0, 10) === '2026-03-09'),
+        ).toBe(true);
+    });
+
+    it('correcting the day does NOT complete a line nobody completed', async () => {
+        // A treatment can be stranded half-written. Stamping a PENDING line
+        // with a corrected date would mark work as done that nobody did — and
+        // the register would print a treatment of a parcel that was never
+        // treated.
+        const handle = await recorded('pending-day');
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: handle } },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+        });
+        await globalPrisma.operationParcel.update({
+            where: { id: lines[0].id },
+            data: { status: 'PENDING', completedAt: null },
+        });
+
+        const before = await getDiaryTreatmentDefinition(ctx(), handle);
+        await correctDiaryTreatment(ctx(), handle, { occurredOn: '2026-03-11' }, before.version);
+
+        const reset = await globalPrisma.operationParcel.findUnique({
+            where: { id: lines[0].id },
+            select: { completedAt: true },
+        });
+        expect(reset!.completedAt).toBeNull();
+
+        // The completed siblings DID move.
+        const others = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: handle }, id: { not: lines[0].id } },
+            select: { completedAt: true },
+        });
+        expect(
+            others.every((l) => l.completedAt?.toISOString().slice(0, 10) === '2026-03-11'),
+        ).toBe(true);
+    });
+
+    it('404s an unknown handle without saying whether it exists elsewhere', async () => {
+        await expect(
+            correctDiaryTreatment(ctx(), `${KEY}-nope`, { targetNote: 'x' }),
         ).rejects.toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
     });
 });

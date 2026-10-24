@@ -1093,6 +1093,71 @@ export const RecordDiaryTreatmentSchema = z
 
 export type RecordDiaryTreatmentBody = z.infer<typeof RecordDiaryTreatmentSchema>;
 
+/**
+ * A correction to an already-recorded treatment (#2172).
+ *
+ * ## `.strip()`, deliberately, and every field declared
+ *
+ * The phone's editor PUTs the WHOLE definition on every save — including the
+ * fields it only displays (`productName`, `pppRegistrationNo`, `version`,
+ * `kind`, the per-line `parcelName`). `.strict()` would therefore 400 every
+ * correction, which is #1352 exactly: an unconditional refusal of a field the
+ * editor always sends broke every farm-profile save from the owner's phone.
+ *
+ * The corollary is that `.strip()` makes an UNDECLARED field vanish silently,
+ * so every field a correction could plausibly change is declared here even when
+ * the usecase refuses it — the dose, the product, the water rate and the parcel
+ * list included. Declared, they reach `correctDiaryTreatment` and come back as
+ * a named `TREATMENT_CORRECTION_FIELD_UNSUPPORTED`; stripped, they would be
+ * dropped and answered 200, and the operator would reopen the form to find the
+ * dose they corrected still showing the old value.
+ *
+ * Bounds mirror `RecordDiaryTreatmentSchema` field for field, so a value the
+ * record path accepted cannot be rejected by the path that corrects it.
+ */
+export const CorrectDiaryTreatmentSchema = z
+    .object({
+        title: z.string().min(1).max(255).optional(),
+        applicationTechnique: z.string().max(120).optional().nullable(),
+        targetNote: z.string().max(500).optional().nullable(),
+        quarantinePeriodDays: z.number().int().min(0).max(365).optional().nullable(),
+        phenophase: z.string().max(64).optional().nullable(),
+        occurredOn: z
+            .string()
+            .optional()
+            .openapi({
+                description:
+                    'The corrected calendar day, `YYYY-MM-DD`. Validated by the usecase, which '
+                    + 'refuses a day that does not exist with `TREATMENT_DATE_INVALID` rather '
+                    + 'than letting `new Date(string)` resolve it against the server zone.',
+            }),
+        productItemId: z.string().min(1).optional(),
+        doseValue: z.number().optional(),
+        doseUnitId: z.string().min(1).optional(),
+        waterRateValue: z.number().optional().nullable(),
+        waterRateUnitId: z.string().min(1).optional().nullable(),
+        parcels: z
+            .array(
+                z.object({
+                    parcelId: z.string().min(1),
+                    treatedAreaHa: z.number().positive().nullable(),
+                }),
+            )
+            .max(500)
+            .optional(),
+    })
+    .strip()
+    .openapi('CorrectDiaryTreatment', {
+        description:
+            'A correction to a recorded treatment. Only the title, the application technique, '
+            + 'the target note, the quarantine period, the phenophase and the farm day are '
+            + 'corrected today; a CHANGED dose, product, water rate or parcel list is refused '
+            + 'by name with `TREATMENT_CORRECTION_FIELD_UNSUPPORTED`, while an UNCHANGED one is '
+            + 'accepted, so a client may safely send the whole definition back.',
+    });
+
+export type CorrectDiaryTreatmentBody = z.infer<typeof CorrectDiaryTreatmentSchema>;
+
 export const CreateLogEntrySchema = z.object({
     type: z.enum(LOG_ENTRY_TYPE_VALUES),
     status: z.enum(['PLANNED', 'DONE']).optional(),
