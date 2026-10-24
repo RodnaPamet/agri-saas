@@ -181,17 +181,79 @@ else
     fi
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# RUNNING STATE, not just the file — #2189
+#
+# The sha256 checks above answer "does the VM hold the text we wrote". They
+# cannot answer "is the VM RUNNING what that text declares", and the two come
+# apart the moment a setting is read at CREATE time. On 2026-10-23 both files
+# were byte-identical while `watchtower` had been running since 2026-07-04
+# without the `--stop-timeout 30s` its own declaration names.
+#
+# Projected by PYTHON on the VM rather than a `docker inspect --format`
+# template, for two measured reasons:
+#   - a Go template ABORTS the whole command on one missing key, and
+#     `watchtower` has no `StopTimeout`, so a template returned nothing for all
+#     three containers and the comparison refused for the wrong reason;
+#   - `Config.Env` holds the real secrets, so only Name, Cmd and StopTimeout
+#     are allowed to cross. `compare-running-state.py` additionally refuses to
+#     render any declaration that interpolates a variable.
+#
+# `|` cannot be used as a separator here: it is eaten by one of the shell
+# layers between this script and the remote command. Hence JSON.
+# ─────────────────────────────────────────────────────────────────────────────
+printf '\n'
+RUNNING_JSON="$(mktemp)"
+trap 'rm -f "$RUNNING_JSON"' EXIT
+if ! gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command \
+    'sudo docker inspect agrent-watchtower agrent-app agrent-worker | python3 -c "
+import sys, json
+print(json.dumps([{
+    \"Name\": d.get(\"Name\", \"\"),
+    \"Config\": {\"Cmd\": d.get(\"Config\", {}).get(\"Cmd\"),
+                \"StopTimeout\": d.get(\"Config\", {}).get(\"StopTimeout\")},
+} for d in json.load(sys.stdin)]))
+"' > "$RUNNING_JSON" 2>&1; then
+    err "could not inspect the running containers on ${VM_NAME}."
+    exit 2
+fi
+# gcloud writes the remote output to stderr when stdout is not a tty, so both
+# streams are captured above and the JSON array is extracted here.
+RUNNING_ONLY="$(grep -o '\[{.*}\]' "$RUNNING_JSON" || true)"
+if [ -z "$RUNNING_ONLY" ]; then
+    err "docker inspect returned no JSON — refusing to report agreement."
+    exit 1
+fi
+printf '%s' "$RUNNING_ONLY" > "$RUNNING_JSON"
+# This block sits in the files-AGREE branch deliberately: a file mismatch
+# already fails above, and the case this issue exists for is precisely "both
+# copies byte-identical and the process wrong". So a running-state mismatch is
+# the whole verdict here.
+RUNNING_DRIFT=0
+if ! python3 "${SCRIPT_DIR}/compare-running-state.py" "$LOCAL_COMPOSE" "$RUNNING_JSON"; then
+    RUNNING_DRIFT=1
+fi
+
 if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
-    if [ "$CADDY_DRIFT" -ne 0 ]; then
-        err "compose file is in sync but the Caddy site set is NOT."
-        exit 1
-    fi
-    if [ "$DF_DRIFT" -ne 0 ]; then
-        err "compose file is in sync but the db build context is NOT."
+    # EVERY failing axis is reported, not the first.
+    #
+    # These used to `exit 1` one at a time, which made each later check dead
+    # code whenever an earlier one failed — and that is how the running-state
+    # check added for #2189 was unreachable the first time it ran: the Caddy
+    # site set was already drifting, so the block below never executed. A check
+    # that never ran is absent, not green, and reporting one axis while
+    # silently skipping two reads as "one problem".
+    FAILED=""
+    [ "$CADDY_DRIFT" -ne 0 ] && FAILED="${FAILED} the Caddy site set;"
+    [ "$DF_DRIFT" -ne 0 ] && FAILED="${FAILED} the db build context;"
+    [ "$RUNNING_DRIFT" -ne 0 ] && FAILED="${FAILED} a container's running state;"
+    if [ -n "$FAILED" ]; then
+        err "compose file is in sync but NOT:${FAILED%;}"
         exit 1
     fi
     ok "in sync — ${COMPOSE_BASENAME} matches ${VM_NAME}:${REMOTE_COMPOSE} (${LOCAL_SHA:0:12})"
-    exit 0
+    ok "in sync — every compared container is running what it declares"
+exit 0
 fi
 
 err "DRIFT DETECTED"
