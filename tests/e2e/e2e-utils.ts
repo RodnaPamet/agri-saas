@@ -962,7 +962,8 @@ export async function expectRouteTransition(
                     : `  rows BEFORE gesture: ${opts.rowsBefore}   <- compare with \`rows\` below;` +
                       ` a DROP means the set changed under the gesture\n`) +
                 (await describeNavDelta(page, opts.navBefore)) +
-                (await describeListState(page)),
+                (await describeListState(page)) +
+                (await describeColumnState(page)),
         );
     }
     // The paint wait, and the half that actually fails now (#1076).
@@ -1024,7 +1025,11 @@ export async function expectRouteTransition(
                 (rolledBack
                     ? `  --- the URL ROLLED BACK to a non-matching route, so the list state below is THIS page's ---\n` +
                       (await describeListState(page))
-                    : '  (url still matches the destination — list diagnostics omitted as they would describe another page)\n'),
+                    : '  (url still matches the destination — list diagnostics omitted as they would describe another page)\n') +
+                // Unconditional, unlike the list diagnostics above. Those
+                // describe a page the failure may not be on; this describes the
+                // TABLE the gesture was made on, which is the list either way.
+                (await describeColumnState(page)),
         );
     } finally {
         page.off('requestfailed', onRequestFailed);
@@ -1175,6 +1180,83 @@ export async function instrumentRowGestures(page: Page): Promise<void> {
             );
         }
     });
+}
+
+/**
+ * The table's COLUMN state, and the stored value that decides it (#1076/#1700).
+ *
+ * ## Why a column probe belongs in a navigation dump
+ *
+ * Both specs activate a row with `firstRow.locator('td').last().dblclick()` — a
+ * POSITIONAL selector. What that resolves to is not stable:
+ *
+ *   - `table.tsx` APPENDS a trailing `__row-chevron` column whenever the
+ *     consumer wires `onRowClick`, so `td:last` is a 32px `aria-hidden`
+ *     decoration rather than a data cell, and
+ *   - the visible column set comes from `useColumnsDropdown`, which holds it in
+ *     `useLocalStorage` under `inflect:col-vis:<surface>`. That hook renders
+ *     `initialValue` first and reads storage in an effect — its own comment says
+ *     so — then calls `setStoredValue` UNCONDITIONALLY. So the column set can
+ *     change after mount, and `waitForHydration(…, 'tbody tr')` returns on rows
+ *     existing and knows nothing about a column re-render still to come.
+ *
+ * With an EMPTY store the effect sets the same reference back and React bails,
+ * so there is no re-render and none of this matters. **Whether anything puts a
+ * non-default value in that key is the open question**, and it is the one thing
+ * on the "vary between JOBS" axis nobody has looked at — the ledger has
+ * established that attempts within a job are byte-identical, so the variable is
+ * job-scoped, and this is a job-scoped variable.
+ *
+ * Printed rather than asserted. If it comes back absent with a column count
+ * matching the defaults, this line of enquiry is dead and the dump says so
+ * permanently — which is worth more than another hypothesis.
+ */
+async function describeColumnState(page: Page): Promise<string> {
+    try {
+        const state = await page.evaluate(() => {
+            const out: Record<string, unknown> = {};
+            try {
+                const keys = Object.keys(window.localStorage).filter((k) =>
+                    k.startsWith('inflect:col-vis:'),
+                );
+                out.storedKeys = keys.length === 0 ? 'NONE' : keys.join(', ');
+                out.storedValues = keys
+                    .map((k) => `${k}=${window.localStorage.getItem(k)}`)
+                    .join(' | ');
+            } catch (e) {
+                out.storedKeys = `unreadable: ${String(e)}`;
+            }
+            // The TESTED table, not the first one on the page. Both specs
+            // address theirs by a `*-table` testid, and a page can carry more
+            // than one table — a probe that grades the wrong element is worse
+            // than no probe, because its answer looks like an answer.
+            const table =
+                document.querySelector('[data-testid$="-table"]')
+                ?? document.querySelector('table');
+            const headers = table ? [...table.querySelectorAll('thead th')] : [];
+            const firstRow = table?.querySelector('tbody tr') ?? null;
+            const cells = firstRow ? [...firstRow.querySelectorAll('td')] : [];
+            const last = cells[cells.length - 1] ?? null;
+            out.headerCount = headers.length;
+            out.cellCount = cells.length;
+            out.lastCellText = last ? (last.textContent ?? '').trim().slice(0, 40) : 'NO ROW';
+            out.lastCellHasAriaHidden = last ? !!last.querySelector('[aria-hidden="true"]') : false;
+            out.lastCellWidth = last ? Math.round(last.getBoundingClientRect().width) : -1;
+            return out;
+        });
+        return (
+            `  col-vis stored     : ${state.storedKeys}\n` +
+            (state.storedValues ? `  col-vis values     : ${state.storedValues}\n` : '') +
+            `  columns (th/td)    : ${state.headerCount}/${state.cellCount}` +
+            `   <- a MISMATCH means the column set moved under the gesture\n` +
+            `  td:last at failure : width ${state.lastCellWidth}px, ` +
+            `aria-hidden child ${state.lastCellHasAriaHidden ? 'YES' : 'no'}, ` +
+            `text ${JSON.stringify(state.lastCellText)}` +
+            `   <- aria-hidden YES + empty text is the __row-chevron decoration\n`
+        );
+    } catch (e) {
+        return `  col-vis stored     : probe failed (${String(e)})\n`;
+    }
 }
 
 async function describeListState(page: Page): Promise<string> {
