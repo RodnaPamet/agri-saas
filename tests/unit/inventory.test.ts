@@ -18,6 +18,10 @@ const mockDb = {
     // INPUT_APPLICATION journal entry; default to "none" so the happy
     // paths proceed (a dedicated test overrides this for the retry case).
     logEntry: { findFirst: jest.fn().mockResolvedValue(null) },
+    // The line's own TREATED area (#2284). `null` is the whole parcel, which
+    // is what every case below assumes — the operator path through Задачи
+    // never sets one. The partial-area case overrides it.
+    operationParcel: { findFirst: jest.fn().mockResolvedValue({ treatedAreaHa: null }) },
 } as any;
 
 jest.mock('@/lib/db-context', () => ({
@@ -285,6 +289,32 @@ describe('recordInputApplication', () => {
         expect(res.consumed).toBe(2); // flat dose, no area multiply
         expect(appendStockTransaction).toHaveBeenCalledWith(
             mockDb, editorCtx, expect.objectContaining({ quantityDelta: -2 }),
+        );
+    });
+
+    it('a PARTIAL treated area is deducted over the treated area, not the parcel (#2284)', async () => {
+        // The sibling of the `dose × area` case above, which deducts 20 for the
+        // same dose over the whole 10 ha. Here the line says 4 ha were treated,
+        // so 8 is the honest draw-down — and it is also what the journal entry
+        // records, which is the half of #2284 an inspector reads.
+        //
+        // This case is also what keeps the `operationParcel.findFirst` stub
+        // from being inert: every other test in this file leaves it `null`, so
+        // without this one the mock would assert nothing about the new read.
+        (ModuleSettingsRepository.get as jest.Mock).mockResolvedValue(null);
+        primeParcelProductUnits();
+        (mockDb.operationParcel.findFirst as jest.Mock).mockResolvedValue({ treatedAreaHa: 4 });
+        (JournalRepository.createLogEntry as jest.Mock).mockResolvedValue({ id: 'log-1' });
+        (InventoryRepository.getFefoLot as jest.Mock).mockResolvedValue({ id: 'lot-7', unitId: 'u-l' });
+
+        // No `as any` on `line`, unlike its siblings above: the literal already
+        // satisfies `InputApplicationLine`, and the cast would spend the last
+        // unit of the lint ceiling's suppressed-findings headroom (1584 of
+        // 1584) on nothing.
+        const res = await recordInputApplication(mockDb, editorCtx, line);
+        expect(res.consumed).toBe(8);
+        expect(appendStockTransaction).toHaveBeenCalledWith(
+            mockDb, editorCtx, expect.objectContaining({ quantityDelta: -8 }),
         );
     });
 });
