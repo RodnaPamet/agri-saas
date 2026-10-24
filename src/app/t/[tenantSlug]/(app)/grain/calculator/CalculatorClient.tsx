@@ -80,7 +80,10 @@
  * exactly that risk for no gain.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useLocalStorage } from '@/components/ui/hooks/use-local-storage';
+import { Combobox } from '@/components/ui/combobox';
+import { cn } from '@/lib/cn';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/layout/PageHeader';
 import Link from 'next/link';
@@ -137,6 +140,7 @@ import { foldMarginScales } from '@/lib/grain/margin-scale';
 import type {
     CalculatorData,
     CalculatorExclusions,
+    CalculatorRow,
 } from '@/lib/grain/calculator-payload';
 
 export type {
@@ -188,6 +192,17 @@ export interface CalculatorClientProps {
  * A link that appears to target a record and lands on an unfiltered list
  * is worse than one that plainly says "Open Rent", so these say that.
  */
+/**
+ * The «Всички» option's value (#2249).
+ *
+ * A sentinel rather than `null`, because this is also the persisted value and
+ * a stored `null` is indistinguishable from "nothing stored yet" — which must
+ * fall back to «Всички» anyway, so the two would be the same by accident
+ * rather than by decision. Double-underscored so it can never collide with a
+ * commodity slug.
+ */
+const ALL_CROPS = '__all__';
+
 const EXCLUSION_CLASSES: ReadonlyArray<{
     key: keyof CalculatorExclusions;
     labelKey: string;
@@ -287,8 +302,38 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     );
 
     const rows = data.rows;
-    const [selected, setSelected] = useState<string>(rows[0]?.commodity ?? '');
-    const row = rows.find((r) => r.commodity === selected) ?? rows[0] ?? null;
+
+    /**
+     * «Всички» or one crop (#2249).
+     *
+     * Remembered per TENANT, and `localStorage` supplies the per-user half —
+     * it is already scoped to the browser profile, which is the closest web
+     * equivalent of the phone keeping this per farm on the device.
+     *
+     * `useLocalStorage` renders `initialValue` first and hydrates in an
+     * effect, deliberately: a storage read during render makes the server and
+     * client disagree. So the first paint is «Всички» even for a farmer who
+     * chose a crop, which is the right way round — the whole-farm view is
+     * never wrong, only less specific.
+     */
+    const [storedView, setStoredView] = useLocalStorage<string>(
+        `agri.grain.calculator.view.${tenantSlug}`,
+        ALL_CROPS,
+    );
+    // A remembered crop the farm no longer grows falls back to «Всички»
+    // rather than showing an empty page or silently picking a neighbour.
+    const view =
+        storedView !== ALL_CROPS && rows.some((r) => r.commodity === storedView)
+            ? storedView
+            : ALL_CROPS;
+
+    // One crop, or every crop. `row` below is the FIRST of these and exists
+    // only for the empty-state check and the page header.
+    const detailRows = useMemo(
+        () => (view === ALL_CROPS ? rows : rows.filter((r) => r.commodity === view)),
+        [rows, view],
+    );
+    const row = detailRows[0] ?? rows[0] ?? null;
 
 
     // ── Exclusions: a COUNT, always shown, never a silent zero ──
@@ -373,7 +418,12 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
     // restate the commodity sum below it exactly, and an affordance that
     // says nothing should not occupy space on a simple farm.
     const farm = data.farm;
-    const showFarmTotal = rows.length > 1 && farm.totals.length > 0;
+    // Either farm figure is enough to earn the card. `perArea` can have
+    // entries when `totals` has none — a crop with a cost rate but no market
+    // price contributes land and cost and no net worth — and the per-decare
+    // answer is the one the owner asked to put on top (#2249).
+    const showFarmTotal =
+        rows.length > 1 && (farm.totals.length > 0 || farm.perArea.byCurrency.length > 0);
     // Every refused commodity, from both places one can hide: inside a
     // currency bucket (a mixed-cost-currency refusal keeps its price
     // currency) and outside every bucket (no market price, so no currency
@@ -413,6 +463,50 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                     return b.netWorth - a.netWorth;
                 }),
         [rows, commodityLabel],
+    );
+
+    /**
+     * Non-null only on a single-crop farm, and passed to every detail card.
+     *
+     * A monoculture gets no comparison strip — one bar measures only itself —
+     * but "does this crop clear its cost?" is still the question, and for one
+     * crop it is the ONLY one. So the break-even row moves inside the detail
+     * card in that case; this is the flag that says so.
+     */
+    const soleCommodityLabel = comparisonItems.length === 1 ? comparisonItems[0].label : null;
+
+    /**
+     * A per-decare rate, in the currency the server denominated it in.
+     *
+     * `null` currency is an INSTRUCTION rather than an absence — the server's
+     * documented convention is "use your tenant symbol" — so that case goes
+     * through the tenant formatter and every other prints the ISO CODE. The
+     * tenant symbol on a figure the server labelled EUR would be a lie the
+     * row-level renderer already refuses to tell.
+     */
+    const perDcaText = useCallback(
+        (value: number | null, currency: string | null): string | null => {
+            if (value == null) return null;
+            return currency == null
+                ? tc('marginPerDcaValue', { value: money(value) })
+                : tc('marginPerDcaSigned', { value: formatDecimal(value, 2), currency });
+        },
+        [tc, money],
+    );
+
+    /**
+     * «Всички» first, then each crop — the order the owner asked for.
+     *
+     * Rendered only when there is more than one crop: on a monoculture
+     * «Всички» would just repeat the single crop, and a control whose two
+     * options show the same page is worse than no control.
+     */
+    const cropOptions = useMemo(
+        () => [
+            { value: ALL_CROPS, label: tc('allCrops') },
+            ...comparisonItems.map((c) => ({ value: c.commodity, label: c.label })),
+        ],
+        [comparisonItems, tc],
     );
 
     // Grouped by currency, because margin is MONEY — unlike cover, which is
@@ -475,93 +569,34 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
         );
     }
 
-    // The SERVER's denominators, not recomputed from the hectare figures.
-    // After #1512 the cost rate divides by a DIFFERENT area from the value
-    // figures, and `perArea` names each figure's own — so a client that
-    // recomputes either can drift from the number the server actually divided
-    // by, and multiplying back up then fails to reconcile. Showing the
-    // yield-covered area beside a cost rate computed from the occupied one is
-    // the specific contradiction a farmer reads in a single glance, and on this
-    // farm `areaDca` is 0 while the cost rate is real.
-    const areaDca = row.perArea.areaDca;
-    const costAreaDca = row.perArea.costAreaDca;
-    const expectedTonnes = row.standingCropExpectedKg / 1000;
-
-    // `cashCostCurrencies` mixes real ISO codes with UNKNOWN_RENT_CURRENCY,
-    // the sentinel the usecase pushes when money rent is present (ParcelLease
-    // has no currency column). Split them: codes are listed, the sentinel is
-    // said in words. Printing the array verbatim showed farmers "Costs in
-    // UNKNOWN".
-    const { costCurrencyCodes, rentCurrencyUnknown } = row;
-
-    // Both panels charge the SAME farm cost — see the module docblock.
-    // The subtraction is gated on the usecase having CERTIFIED that the
-    // currencies are combinable (`netWorth != null`); when it refused,
-    // this page refuses too rather than inventing an exchange rate.
-    // The uncertainty vocabulary, resolved once for this row and used the
-    // same way wherever it appears — headline, cost line, table cell.
-    const netState = row.netUncertainty;
-    // Currency CODE, not the tenant symbol — the same reason the farm card
-    // and the per-crop strip use it: this figure can be in a currency the
-    // tenant is not configured with, and `useExactMoneyFormatter` would put
-    // the tenant's sign on it regardless.
-    const marginPerDcaText = tc('marginPerDcaValue', {
-        value: `${formatDecimal(row.perArea.marginPerDca ?? 0, 2)}${row.priceCurrency ? ` ${row.priceCurrency}` : ''}`,
-    });
-    // The cost rate's own currency, which is NOT `priceCurrency`: a cost and a
-    // market price need not share one, and `perArea.costCurrency` exists
-    // because #1606 shipped the rate as a bare number. A code means "this
-    // literal currency" and gets the code printed, exactly as the margin does
-    // and for the same reason — `useExactMoneyFormatter` would stamp the
-    // tenant's sign on a figure that may not be in the tenant's currency. Null
-    // means no cost row recorded a currency, which by the server's documented
-    // convention IS the tenant's display currency, so the tenant formatter is
-    // the right one there and the only place it is correct.
-    const costPerDcaText =
-        row.perArea.attributableCostPerDca == null
-            ? null
-            : tc('costPerDcaValue', {
-                  value:
-                      row.perArea.costCurrency == null
-                          ? money(row.perArea.attributableCostPerDca)
-                          : `${formatDecimal(row.perArea.attributableCostPerDca, 2)} ${row.perArea.costCurrency}`,
-              });
-    const refusalText = explainRefusal(
-        row.netWorthUnavailableCode,
-        // The params carry a canonical SLUG, not a display name — passed raw
-        // this sentence reads "Няма налична пазарна цена за wheat."
-        localiseRefusalParams(row.netWorthUnavailableParams, tCommodity),
-        row.netWorthUnavailableReason,
-        (key, values) => tc(key, values),
-    );
-
-    // No per-asset net is derived here any more. Both used to subtract the
-    // WHOLE farm cost from ONE asset — the arithmetic the removed panels
-    // displayed — and neither was a quantity anyone could act on.
-
-    // The money is folded into the LABEL, and `showCount` is turned off at
-    // the mount below. Two reasons, both load-bearing:
-    //
-    //   1. <StatusBreakdown>'s count slot prints `item.value` verbatim — no
-    //      symbol, no thousands separator. On a page whose entire thesis is
-    //      that a money figure must say what it is, "4000" sitting directly
-    //      above "Total farm cost €5,500" is the exact defect the rest of
-    //      this file works to avoid.
-    //   2. The label must stay a STRING. The primitive only names its
-    //      `role="progressbar"` when `typeof item.label === 'string'`, so
-    //      passing a ReactNode to get formatted money would silently leave
-    //      three progress bars with no accessible name.
-    const costItems: StatusBreakdownItem[] = row.costBreakdown.map((slice) => ({
-        id: slice.id,
-        label: `${tc(slice.labelKey)} · ${money(slice.value)}`,
-        value: slice.value,
-        variant: slice.variant,
-    }));
 
     return (
         <div className="animate-fadeIn space-y-section">
             {header}
             <GrainSectionNav tenantSlug={tenantSlug} active="calculator" />
+
+            {/* ── Which crop, or all of them ──
+
+                A dropdown rather than the native `<select>` this would once
+                have been: `tests/guards/epic55-native-select-ratchet.test.ts`
+                counts those and fails CI if the number rises, and `Combobox`
+                is the shared primitive that replaced them.
+
+                ABOVE the farm block, because it governs the whole page — the
+                comparison strip below selects a focus within it. */}
+            {rows.length > 1 && (
+                <div className="max-w-xs">
+                    <Combobox
+                        options={cropOptions}
+                        selected={cropOptions.find((o) => o.value === view) ?? cropOptions[0]}
+                        setSelected={(opt) => {
+                            if (opt) setStoredView(opt.value);
+                        }}
+                        placeholder={tc('cropFilterLabel')}
+                        matchTriggerWidth
+                    />
+                </div>
+            )}
 
             {/* ── The farm answer, when there is more than one crop ──
 
@@ -604,6 +639,75 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                             />
                         ))}
                     </div>
+                    {/* ── Per DECARE, folded server-side (#2249) ──
+
+                        The phone computed these itself in `FarmFigures` while
+                        this page showed only the net worth, so the two could
+                        drift; `farm.perArea` is the single answer both now
+                        read.
+
+                        Each rate prints beside ITS OWN denominator and never
+                        beside `farm.perArea.areaDca`. That number is the
+                        farm's LAND — every crop's occupied area, including
+                        ones whose rates were all refused — and putting it
+                        under a rate it did not divide by is exactly the
+                        contradiction #1512 was filed about, one level up. */}
+                    {farm.perArea.byCurrency.map((pa) => (
+                        <dl
+                            key={pa.currency ?? '__display__'}
+                            className="grid grid-cols-2 gap-x-section gap-y-tight text-sm sm:grid-cols-4"
+                        >
+                            <div>
+                                <dt className="text-xs text-content-subtle">{tc('areaLabel')}</dt>
+                                <dd className="tabular-nums">
+                                    {formatDecimal(pa.areaDca, 2)} {tc('areaUnit')}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt className="text-xs text-content-subtle">
+                                    {tc('colStandingValue')}
+                                </dt>
+                                <dd className="tabular-nums">
+                                    {perDcaText(pa.standingValuePerDca, pa.currency) ?? '—'}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt className="text-xs text-content-subtle">
+                                    {tc('costPerDcaLabel')}
+                                </dt>
+                                <dd className="tabular-nums">
+                                    {perDcaText(pa.attributableCostPerDca, pa.currency) ?? '—'}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt className="text-xs text-content-subtle">
+                                    {tc('marginPerDcaLabel')}
+                                </dt>
+                                <dd
+                                    className={cn(
+                                        'tabular-nums',
+                                        pa.uncertainty !== UNCERTAINTY.EXACT &&
+                                            'text-content-attention',
+                                    )}
+                                >
+                                    {perDcaText(pa.marginPerDca, pa.currency) ?? '—'}
+                                </dd>
+                            </div>
+                            {/* NEVER silently short, same rule as the total
+                                above. One sentence when every figure leaves
+                                out the same crops, which is why the server
+                                sorts the three lists. */}
+                            {pa.without.marginPerDca.length > 0 && (
+                                <p className="col-span-full text-xs text-content-attention">
+                                    {tc('farmPerAreaWithout', {
+                                        names: pa.without.marginPerDca
+                                            .map((c) => commodityLabel(c))
+                                            .join(', '),
+                                    })}
+                                </p>
+                            )}
+                        </dl>
+                    ))}
                     {farm.totals.length > 1 && (
                         <p className="text-xs text-content-subtle">{tc('farmCurrencyNote')}</p>
                     )}
@@ -629,12 +733,13 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
             {comparisonItems.length > 1 && (
                 <CommodityStrip
                     items={comparisonItems}
-                    // `row.commodity`, not `selected` — `selected` seeds
-                    // from rows[0] and the row lookup falls back to rows[0]
-                    // too, so on first paint the strip must mark the crop
-                    // actually expanded below rather than an empty string.
-                    selected={row.commodity}
-                    onSelect={setSelected}
+                    // In «Всички» nothing is marked: every crop is shown
+                    // below, so highlighting one would claim a focus the page
+                    // does not have. Clicking a bar still FOCUSES that crop,
+                    // which is the same gesture it always was — it now moves
+                    // the dropdown instead of a hidden card.
+                    selected={view === ALL_CROPS ? null : view}
+                    onSelect={setStoredView}
                 />
             )}
 
@@ -648,344 +753,25 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 avoid, so both are shown and the disagreement is stated. */}
             <MarginPerDcaCard scales={marginScales} labelFor={commodityLabel} />
 
-            {/* ── The answer: net worth, or the stated refusal ── */}
-            <Card as="section" density="compact" className="space-y-default border-border-subtle">
-                {/* This figure IS the page — one question, one answer — so it
-                    goes through the Epic-metric platform rather than a raw
-                    `text-2xl font-semibold`, which the Polish PR-2 ratchet
-                    (tests/guards/metric-typography.test.ts) bans and which had
-                    to remember `tabular-nums` by hand.
+            {/* ── The answer: every crop, or the one chosen ──
 
-                    KPIStat at size="md" (~30px), NOT the 72px hero primitive.
-                    That larger one is the DASHBOARD MASTHEAD register and
-                    tests/guards/heromemtric-canonical-home.test.ts keeps it
-                    there on purpose — its docblock warns that spreading the
-                    72px dilutes the masthead signal, and a report summary card
-                    is exactly the casual spread it describes.
-
-                    Two traps in that ratchet, both hit while writing this
-                    file. It matches the JSX tag TEXT, so it does not care
-                    which module the symbol came from (the repo has two
-                    components by that name — ui/HeroMetric.tsx and the one in
-                    ui/metric.tsx), and it reads comments as source, so even
-                    NAMING the tag here to disclaim it fails the build. Say
-                    "the 72px hero primitive" in prose; do not spell the tag.
-
-                    A refused net worth prints the em-dash — the null marker
-                    every formatter here already uses — in `attention` tone,
-                    and names the refusal in the description slot. Setting the
-                    long refusal sentence AS the value would render it at
-                    display size, and a refusal shouted large is not more
-                    honest than one stated at 14px. */}
-                {/* The sum, read down a column. Grouped so the terms and
-                    the result they produce are one thing to a screen
-                    reader — and so a test can assert that exactly one net
-                    figure is claimed here, separately from the appendix
-                    table's "Net worth" column header below. */}
-                <div
-                    role="group"
-                    aria-label={tc('waterfallAria')}
-                    className="space-y-default"
-                >
-                    <dl className="space-y-tight text-sm">
-                        <SumLine
-                            sign="+"
-                            label={tc('panelStandingTitle')}
-                            badge={tc('panelStandingSubtitle')}
-                            details={[
-                                `${formatDecimal(areaDca, 1)} ${tc('areaUnit')}`,
-                                `${formatDecimal(expectedTonnes, 2)} ${tc('tonnesUnit')}`,
-                            ]}
-                            amount={row.standingCropValue}
-                        />
-                        <SumLine
-                            sign="+"
-                            label={tc('panelOnHandTitle')}
-                            badge={tc('panelOnHandSubtitle')}
-                            details={[`${formatDecimal(row.grainOnHandTonnes, 3)} ${tc('tonnesUnit')}`]}
-                            amount={row.grainOnHandValue}
-                        />
-                        {row.showProduceRent && (
-                            // A TERM, not a footnote. netAssetPosition already
-                            // subtracts it, so grain owed to a landlord is
-                            // inside the headline whether or not it is drawn —
-                            // and it was not. Omitted entirely at zero: a line
-                            // reading "− €0" states a term this farm does not
-                            // have.
-                            <SumLine
-                                sign="−"
-                                label={tc('produceRentLabel')}
-                                details={[`${formatDecimal(row.rentCostProduceKg, 0)} ${tc('kgUnit')}`]}
-                                amount={row.rentCostProduceValue}
-                                unavailableText={
-                                    row.rentCostProduceValue == null
-                                        ? tc('produceRentUnpriced')
-                                        : undefined
-                                }
-                            />
-                        )}
-                        <SumLine
-                            sign="−"
-                            label={tc('costTotalLabel')}
-                            amount={row.cashCostTotal}
-                            // AT_LEAST, not AT_MOST — an unpriced
-                            // consumption makes this a FLOOR. The same
-                            // cause bounds the net the other way; see
-                            // lib/grain/uncertainty.
-                            bound={
-                                row.costUncertainty === UNCERTAINTY.AT_LEAST
-                                    ? 'atLeast'
-                                    : undefined
-                            }
-                        />
-                    </dl>
-
-                    {/* The cost's composition sits under the cost line it
-                        decomposes — one cost on the page means one place
-                        for everything that qualifies it. */}
-                    <div className="space-y-tight">
-                        <p className="text-xs uppercase tracking-wide text-content-subtle">
-                            {tc('costBreakdownLabel')}
-                        </p>
-                        <StatusBreakdown
-                            size="sm"
-                            ariaLabel={tc('costBreakdownAria')}
-                            items={costItems}
-                            // OFF, and deliberately: the count slot renders the
-                            // raw number with no currency. The amount is in the
-                            // label instead — see the costItems comment.
-                            showCount={false}
-                            showPercent
-                        />
-                        {row.payrollAllocated && (
-                            // An allocation is not a measurement. Said twice —
-                            // badge for the skim, sentence for the reader.
-                            <div className="space-y-tight">
-                                <Badge variant="warning" size="sm">
-                                    {tc('payrollAllocatedBadge')}
-                                </Badge>
-                                <p className="text-xs text-content-muted">
-                                    {tc('payrollAllocatedNote')}
-                                </p>
-                            </div>
-                        )}
-                        <UnvaluedNote
-                            noUnitCost={row.unvaluedNoUnitCost}
-                            unitMismatch={row.unvaluedUnitMismatch}
-                        />
-                    </div>
-
-                    <div className="border-t border-border-subtle pt-2">
-                        {/* THE HEADLINE CARRIES ITS OWN QUALIFIER.
-                            When cost is a floor, net worth is a MAXIMUM,
-                            and the page used to print it as a definite
-                            figure with the caveat two surfaces above,
-                            under a panel's cost line. A qualifier that
-                            lives on a different surface from the number
-                            it qualifies is not a qualifier — so it is in
-                            the VALUE. */}
-                        {/* PER DECARE — the unit a Bulgarian farmer plans
-                            in, and the one the land market quotes rent in.
-
-                            Beside the result, not inside the sum: this is
-                            not a TERM of the arithmetic above, it is a
-                            different question asked of a SUBSET of the same
-                            figures. Only terms sharing the standing crop's
-                            own area are in it — grain in store has no area,
-                            and farm-wide overhead is not this planting's.
-                            Dividing net worth by an area would mix those
-                            scopes, and a guard now forbids it.
-
-                            The qualifier rides the value, and a refusal
-                            names WHICH denominator was missing rather than
-                            printing a dash. */}
-                        {/* The COST rate, above the margin and before it
-                            (#1512). A farmer asks "what is this costing me per
-                            decare" before "what will I make", and the cost side
-                            is the half that is knowable without a market price
-                            — which is exactly why #1606 decoupled it.
-
-                            Its denominator is printed BENEATH it rather than
-                            left implied, because it is a different area from
-                            the one in the standing-crop line above and a reader
-                            given one area and two rates has no way to tell
-                            which belongs to which. Two areas was the owner's
-                            decision; showing each figure's own is what makes it
-                            legible rather than merely correct. */}
-                        <div className="flex flex-wrap items-baseline justify-between gap-tight pb-1 text-sm">
-                            <span className="text-content-muted">{tc('costPerDcaLabel')}</span>
-                            {costPerDcaText == null ? (
-                                <span className="text-xs text-content-attention">
-                                    {row.perArea.costRefusalCode === 'COST_CURRENCY_MIXED'
-                                        ? tc('costPerDcaMixedCurrency')
-                                        : row.perArea.costRefusalCode ===
-                                            'COST_CURRENCY_UNRECORDED'
-                                          ? tc('costPerDcaCurrencyUnrecorded')
-                                          : tc('costPerDcaNoArea')}
-                                </span>
-                            ) : (
-                                <span className="font-medium tabular-nums text-content-emphasis">
-                                    {costPerDcaText}
-                                </span>
-                            )}
-                        </div>
-                        {costPerDcaText != null && (
-                            <p className="pb-2 text-xs text-content-subtle">
-                                {tc('costPerDcaArea', {
-                                    value: formatDecimal(costAreaDca, 1),
-                                })}
-                            </p>
-                        )}
-                        <p className="pb-2 text-xs text-content-subtle">{tc('costPerDcaHint')}</p>
-                        <div className="flex flex-wrap items-baseline justify-between gap-tight pb-2 text-sm">
-                            <span className="text-content-muted">
-                                {tc('marginPerDcaLabel')}
-                            </span>
-                            {row.perArea.marginPerDca == null ? (
-                                <span className="text-xs text-content-attention">
-                                    {row.perArea.refusalCode === 'NO_STANDING_CROP_AREA'
-                                        ? tc('perAreaNoArea')
-                                        : tc('perAreaNoValue')}
-                                </span>
-                            ) : (
-                                <span
-                                    className={
-                                        row.perArea.uncertainty === UNCERTAINTY.EXACT
-                                            ? 'font-medium tabular-nums text-content-emphasis'
-                                            : 'font-medium tabular-nums text-content-attention'
-                                    }
-                                >
-                                    {row.perArea.uncertainty === UNCERTAINTY.AT_MOST
-                                        ? tc('uncertaintyAtMost', { value: marginPerDcaText })
-                                        : marginPerDcaText}
-                                </span>
-                            )}
-                        </div>
-                        {row.perArea.uncertainty === UNCERTAINTY.PARTIAL && (
-                            <p className="pb-2 text-xs text-content-attention">
-                                {tc('perAreaPartial')}
-                            </p>
-                        )}
-                        <p className="pb-2 text-xs text-content-subtle">
-                            {tc('marginPerDcaHint')}
-                        </p>
-                        <KPIStat
-                            size="md"
-                            value={
-                                row.netWorth == null
-                                    ? '—'
-                                    : netState === UNCERTAINTY.AT_MOST
-                                      ? tc('uncertaintyAtMost', { value: money(row.netWorth) })
-                                      : money(row.netWorth)
-                            }
-                            label={tc('netWorthLabel')}
-                            tone={
-                                row.netWorth == null || netState === UNCERTAINTY.AT_MOST
-                                    ? 'attention'
-                                    : 'default'
-                            }
-                            description={
-                                row.netWorth == null
-                                    ? tc('netWorthUnavailableTitle')
-                                    : netState === UNCERTAINTY.AT_MOST
-                                      ? tc('uncertaintyAtMostWhy')
-                                      : undefined
-                            }
-                        />
-                        {/* A single-crop farm has nothing to compare, so the
-                            strip above is suppressed — but "does this clear
-                            its cost?" is still the question, and for a
-                            monoculture it is the ONLY one. The comparison is
-                            what one crop makes meaningless; the cover is not.
-                            Same component, no extra card. */}
-                        {comparisonItems.length === 1 && (
-                            <BreakEvenRow
-                                commodityLabel={comparisonItems[0].label}
-                                figures={row.breakEven}
-                            />
-                        )}
-                    </div>
+                «Всички» renders the farm block above and then each crop's
+                section in turn; a chosen crop renders only its own. The
+                heading is the crop's name in the brand gold, which is the
+                phone's `Palette.accent` and the owner's explicit request —
+                and it is load-bearing here rather than decorative: stacked
+                sections with no name are unreadable, which is why the
+                single-card version never needed one. */}
+            {detailRows.map((r) => (
+                <div key={r.commodity} className="space-y-default">
+                    {detailRows.length > 1 && (
+                        <Heading level={2} className="text-brand-default">
+                            {tc('farmCommodityTitle', { commodity: commodityLabel(r.commodity) })}
+                        </Heading>
+                    )}
+                    <CommodityDetailCard row={r} soleCommodityLabel={soleCommodityLabel} />
                 </div>
-                {/* A refusal that a farmer can act on says where. The
-                    fixable one is a missing market price — /trends is where
-                    prices live. The others are NOT fixable from here and get
-                    no action: a mixed cost currency needs an FX rate this
-                    product deliberately does not have, and an unrecorded rent
-                    currency needs a column ParcelLease does not carry.
-                    Offering a destination that cannot resolve the cause would
-                    be worse than the plain explanation. */}
-                {row.netWorthUnavailableCode === 'NO_MARKET_PRICE' && (
-                    <p className="text-xs">
-                        <TextLink tone="link" href={tenantHref('/trends')}>
-                            {tc('exclFixTrends')}
-                        </TextLink>
-                    </p>
-                )}
-                {refusalText != null && (
-                    // A refusal is stated, never blanked. Translated from
-                    // the usecase's CODE when this client knows it, and
-                    // from its English sentence when it does not — see
-                    // explainRefusal, whose whole job is that an
-                    // unrecognised code still explains itself.
-                    <p className="text-xs text-content-muted">{refusalText}</p>
-                )}
-                <div className="flex flex-wrap gap-default text-xs text-content-subtle">
-                    <span className="tabular-nums">
-                        {tc('priceLabel')}:{' '}
-                        {row.pricePerTonne == null
-                            ? tc('priceNone')
-                            : `${money(row.pricePerTonne)} ${tc('pricePerTonne')}`}
-                    </span>
-                    {row.priceObservedAt != null && (
-                        // Sits beside the price it qualifies, not beside the
-                        // report stamp in the header. The distance between
-                        // the two dates IS the staleness signal: a valuation
-                        // generated this morning off a quote observed three
-                        // weeks ago is arithmetically correct and
-                        // operationally worthless, and only showing both
-                        // lets a reader see that for themselves.
-                        <span className="tabular-nums">
-                            {/* formatDate, NOT formatDateTime. The value is
-                                date-only — trends.ts builds it as
-                                `date.toISOString().slice(0, 10)` — so rendering
-                                it with a time appends a midnight that was never
-                                observed. A fabricated hour is a poor thing to
-                                put on the very line whose job is to let a
-                                reader judge how stale the price is. */}
-                            {tc('priceObserved', { at: formatDate(row.priceObservedAt) })}
-                        </span>
-                    )}
-                    {/* "Price in {currency}" takes a CODE. Substituting a
-                        clause into that slot produced "Price in not recorded"
-                        in English and, in Bulgarian, "Цена в не е записана" —
-                        a preposition followed by a finite verb. The absent
-                        case gets its own standalone sentence instead; a
-                        placeholder is not a general-purpose blank. */}
-                    <span>
-                        {row.priceCurrency != null
-                            ? tc('currencyPriceIn', { currency: row.priceCurrency })
-                            : tc('currencyPriceUnrecorded')}
-                    </span>
-                    <span>
-                        {costCurrencyCodes.length > 0
-                            ? tc('currencyCostsIn', {
-                                  currencies: costCurrencyCodes.join(', '),
-                              })
-                            : tc('currencyCostsUnrecorded')}
-                    </span>
-                    {rentCurrencyUnknown && (
-                        // UNKNOWN_RENT_CURRENCY is an internal sentinel, not
-                        // an ISO code — the usecase's own docblock says it "is
-                        // never treated as one". Joining cashCostCurrencies
-                        // verbatim printed it as if it were, so it is filtered
-                        // out above and stated in its own words here.
-                        <span>{tc('currencyRentUnrecorded')}</span>
-                    )}
-                    {row.priceSource != null && (
-                        <span>{tc('priceSource', { source: row.priceSource })}</span>
-                    )}
-                </div>
-            </Card>
+            ))}
 
 
             {/* ── Cash out — a DIFFERENT question, kept visibly apart ──
@@ -1107,5 +893,464 @@ export function CalculatorClient({ tenantSlug, data }: CalculatorClientProps) {
                 the surface that was already there. Nine surfaces became
                 eight. Its guard exemptions went with it. */}
         </div>
+    );
+}
+
+/**
+ * ONE crop's full answer — the net-worth sum, the per-decare rates and the
+ * currency basis (#2249).
+ *
+ * Extracted from `CalculatorClient` so it can be rendered N TIMES. «Всички»
+ * shows the farm block and then every crop's section, which is the parity the
+ * owner asked for after seeing the phone; before this it was one card driven
+ * by a toggle, so a three-crop farm still had to click through three answers.
+ *
+ * Re-acquires its own hooks rather than taking ten props. `row` and the sole-
+ * crop label are the only real inputs — measured before extracting: the 340
+ * lines of JSX referenced `farm` three times and all three were in COMMENTS.
+ *
+ * `soleCommodityLabel` is non-null only on a SINGLE-crop farm, and it drives
+ * the break-even row that the comparison strip would otherwise have covered.
+ * It was `comparisonItems.length === 1` inline; passing the label rather than
+ * the array keeps the whole comparison model out of this component.
+ */
+function CommodityDetailCard({
+    row,
+    soleCommodityLabel,
+}: {
+    row: CalculatorRow;
+    soleCommodityLabel: string | null;
+}) {
+    const { formatDate, formatDateTime } = useDateFormat();
+    const t = useTranslations('grainEnums');
+    const tc = useTranslations('grain.calculator');
+    const tCommodity = useTranslations('trends.commodities');
+    const tenantHref = useTenantHref();
+    const money = useExactMoneyFormatter();
+    const commodityLabel = useCallback(
+        (slug: string) => (tCommodity.has(slug) ? tCommodity(slug) : slug),
+        [tCommodity],
+    );
+
+    // The SERVER's denominators, not recomputed from the hectare figures.
+    // After #1512 the cost rate divides by a DIFFERENT area from the value
+    // figures, and `perArea` names each figure's own — so a client that
+    // recomputes either can drift from the number the server actually divided
+    // by, and multiplying back up then fails to reconcile. Showing the
+    // yield-covered area beside a cost rate computed from the occupied one is
+    // the specific contradiction a farmer reads in a single glance, and on this
+    // farm `areaDca` is 0 while the cost rate is real.
+    const areaDca = row.perArea.areaDca;
+    const costAreaDca = row.perArea.costAreaDca;
+    const expectedTonnes = row.standingCropExpectedKg / 1000;
+
+    // `cashCostCurrencies` mixes real ISO codes with UNKNOWN_RENT_CURRENCY,
+    // the sentinel the usecase pushes when money rent is present (ParcelLease
+    // has no currency column). Split them: codes are listed, the sentinel is
+    // said in words. Printing the array verbatim showed farmers "Costs in
+    // UNKNOWN".
+    const { costCurrencyCodes, rentCurrencyUnknown } = row;
+
+    // Both panels charge the SAME farm cost — see the module docblock.
+    // The subtraction is gated on the usecase having CERTIFIED that the
+    // currencies are combinable (`netWorth != null`); when it refused,
+    // this page refuses too rather than inventing an exchange rate.
+    // The uncertainty vocabulary, resolved once for this row and used the
+    // same way wherever it appears — headline, cost line, table cell.
+    const netState = row.netUncertainty;
+    // Currency CODE, not the tenant symbol — the same reason the farm card
+    // and the per-crop strip use it: this figure can be in a currency the
+    // tenant is not configured with, and `useExactMoneyFormatter` would put
+    // the tenant's sign on it regardless.
+    const marginPerDcaText = tc('marginPerDcaValue', {
+        value: `${formatDecimal(row.perArea.marginPerDca ?? 0, 2)}${row.priceCurrency ? ` ${row.priceCurrency}` : ''}`,
+    });
+    // The cost rate's own currency, which is NOT `priceCurrency`: a cost and a
+    // market price need not share one, and `perArea.costCurrency` exists
+    // because #1606 shipped the rate as a bare number. A code means "this
+    // literal currency" and gets the code printed, exactly as the margin does
+    // and for the same reason — `useExactMoneyFormatter` would stamp the
+    // tenant's sign on a figure that may not be in the tenant's currency. Null
+    // means no cost row recorded a currency, which by the server's documented
+    // convention IS the tenant's display currency, so the tenant formatter is
+    // the right one there and the only place it is correct.
+    const costPerDcaText =
+        row.perArea.attributableCostPerDca == null
+            ? null
+            : tc('costPerDcaValue', {
+                  value:
+                      row.perArea.costCurrency == null
+                          ? money(row.perArea.attributableCostPerDca)
+                          : `${formatDecimal(row.perArea.attributableCostPerDca, 2)} ${row.perArea.costCurrency}`,
+              });
+    const refusalText = explainRefusal(
+        row.netWorthUnavailableCode,
+        // The params carry a canonical SLUG, not a display name — passed raw
+        // this sentence reads "Няма налична пазарна цена за wheat."
+        localiseRefusalParams(row.netWorthUnavailableParams, tCommodity),
+        row.netWorthUnavailableReason,
+        (key, values) => tc(key, values),
+    );
+
+    // No per-asset net is derived here any more. Both used to subtract the
+    // WHOLE farm cost from ONE asset — the arithmetic the removed panels
+    // displayed — and neither was a quantity anyone could act on.
+
+    // The money is folded into the LABEL, and `showCount` is turned off at
+    // the mount below. Two reasons, both load-bearing:
+    //
+    //   1. <StatusBreakdown>'s count slot prints `item.value` verbatim — no
+    //      symbol, no thousands separator. On a page whose entire thesis is
+    //      that a money figure must say what it is, "4000" sitting directly
+    //      above "Total farm cost €5,500" is the exact defect the rest of
+    //      this file works to avoid.
+    //   2. The label must stay a STRING. The primitive only names its
+    //      `role="progressbar"` when `typeof item.label === 'string'`, so
+    //      passing a ReactNode to get formatted money would silently leave
+    //      three progress bars with no accessible name.
+    const costItems: StatusBreakdownItem[] = row.costBreakdown.map((slice) => ({
+        id: slice.id,
+        label: `${tc(slice.labelKey)} · ${money(slice.value)}`,
+        value: slice.value,
+        variant: slice.variant,
+    }));
+
+    return (
+        <>
+        <Card as="section" density="compact" className="space-y-default border-border-subtle">
+            {/* This figure IS the page — one question, one answer — so it
+                goes through the Epic-metric platform rather than a raw
+                `text-2xl font-semibold`, which the Polish PR-2 ratchet
+                (tests/guards/metric-typography.test.ts) bans and which had
+                to remember `tabular-nums` by hand.
+
+                KPIStat at size="md" (~30px), NOT the 72px hero primitive.
+                That larger one is the DASHBOARD MASTHEAD register and
+                tests/guards/heromemtric-canonical-home.test.ts keeps it
+                there on purpose — its docblock warns that spreading the
+                72px dilutes the masthead signal, and a report summary card
+                is exactly the casual spread it describes.
+
+                Two traps in that ratchet, both hit while writing this
+                file. It matches the JSX tag TEXT, so it does not care
+                which module the symbol came from (the repo has two
+                components by that name — ui/HeroMetric.tsx and the one in
+                ui/metric.tsx), and it reads comments as source, so even
+                NAMING the tag here to disclaim it fails the build. Say
+                "the 72px hero primitive" in prose; do not spell the tag.
+
+                A refused net worth prints the em-dash — the null marker
+                every formatter here already uses — in `attention` tone,
+                and names the refusal in the description slot. Setting the
+                long refusal sentence AS the value would render it at
+                display size, and a refusal shouted large is not more
+                honest than one stated at 14px. */}
+            {/* The sum, read down a column. Grouped so the terms and
+                the result they produce are one thing to a screen
+                reader — and so a test can assert that exactly one net
+                figure is claimed here, separately from the appendix
+                table's "Net worth" column header below. */}
+            <div
+                role="group"
+                aria-label={tc('waterfallAria')}
+                className="space-y-default"
+            >
+                <dl className="space-y-tight text-sm">
+                    <SumLine
+                        sign="+"
+                        label={tc('panelStandingTitle')}
+                        badge={tc('panelStandingSubtitle')}
+                        details={[
+                            `${formatDecimal(areaDca, 1)} ${tc('areaUnit')}`,
+                            `${formatDecimal(expectedTonnes, 2)} ${tc('tonnesUnit')}`,
+                        ]}
+                        amount={row.standingCropValue}
+                    />
+                    <SumLine
+                        sign="+"
+                        label={tc('panelOnHandTitle')}
+                        badge={tc('panelOnHandSubtitle')}
+                        details={[`${formatDecimal(row.grainOnHandTonnes, 3)} ${tc('tonnesUnit')}`]}
+                        amount={row.grainOnHandValue}
+                    />
+                    {row.showProduceRent && (
+                        // A TERM, not a footnote. netAssetPosition already
+                        // subtracts it, so grain owed to a landlord is
+                        // inside the headline whether or not it is drawn —
+                        // and it was not. Omitted entirely at zero: a line
+                        // reading "− €0" states a term this farm does not
+                        // have.
+                        <SumLine
+                            sign="−"
+                            label={tc('produceRentLabel')}
+                            details={[`${formatDecimal(row.rentCostProduceKg, 0)} ${tc('kgUnit')}`]}
+                            amount={row.rentCostProduceValue}
+                            unavailableText={
+                                row.rentCostProduceValue == null
+                                    ? tc('produceRentUnpriced')
+                                    : undefined
+                            }
+                        />
+                    )}
+                    <SumLine
+                        sign="−"
+                        label={tc('costTotalLabel')}
+                        amount={row.cashCostTotal}
+                        // AT_LEAST, not AT_MOST — an unpriced
+                        // consumption makes this a FLOOR. The same
+                        // cause bounds the net the other way; see
+                        // lib/grain/uncertainty.
+                        bound={
+                            row.costUncertainty === UNCERTAINTY.AT_LEAST
+                                ? 'atLeast'
+                                : undefined
+                        }
+                    />
+                </dl>
+
+                {/* The cost's composition sits under the cost line it
+                    decomposes — one cost on the page means one place
+                    for everything that qualifies it. */}
+                <div className="space-y-tight">
+                    <p className="text-xs uppercase tracking-wide text-content-subtle">
+                        {tc('costBreakdownLabel')}
+                    </p>
+                    <StatusBreakdown
+                        size="sm"
+                        ariaLabel={tc('costBreakdownAria')}
+                        items={costItems}
+                        // OFF, and deliberately: the count slot renders the
+                        // raw number with no currency. The amount is in the
+                        // label instead — see the costItems comment.
+                        showCount={false}
+                        showPercent
+                    />
+                    {row.payrollAllocated && (
+                        // An allocation is not a measurement. Said twice —
+                        // badge for the skim, sentence for the reader.
+                        <div className="space-y-tight">
+                            <Badge variant="warning" size="sm">
+                                {tc('payrollAllocatedBadge')}
+                            </Badge>
+                            <p className="text-xs text-content-muted">
+                                {tc('payrollAllocatedNote')}
+                            </p>
+                        </div>
+                    )}
+                    <UnvaluedNote
+                        noUnitCost={row.unvaluedNoUnitCost}
+                        unitMismatch={row.unvaluedUnitMismatch}
+                    />
+                </div>
+
+                <div className="border-t border-border-subtle pt-2">
+                    {/* THE HEADLINE CARRIES ITS OWN QUALIFIER.
+                        When cost is a floor, net worth is a MAXIMUM,
+                        and the page used to print it as a definite
+                        figure with the caveat two surfaces above,
+                        under a panel's cost line. A qualifier that
+                        lives on a different surface from the number
+                        it qualifies is not a qualifier — so it is in
+                        the VALUE. */}
+                    {/* PER DECARE — the unit a Bulgarian farmer plans
+                        in, and the one the land market quotes rent in.
+
+                        Beside the result, not inside the sum: this is
+                        not a TERM of the arithmetic above, it is a
+                        different question asked of a SUBSET of the same
+                        figures. Only terms sharing the standing crop's
+                        own area are in it — grain in store has no area,
+                        and farm-wide overhead is not this planting's.
+                        Dividing net worth by an area would mix those
+                        scopes, and a guard now forbids it.
+
+                        The qualifier rides the value, and a refusal
+                        names WHICH denominator was missing rather than
+                        printing a dash. */}
+                    {/* The COST rate, above the margin and before it
+                        (#1512). A farmer asks "what is this costing me per
+                        decare" before "what will I make", and the cost side
+                        is the half that is knowable without a market price
+                        — which is exactly why #1606 decoupled it.
+
+                        Its denominator is printed BENEATH it rather than
+                        left implied, because it is a different area from
+                        the one in the standing-crop line above and a reader
+                        given one area and two rates has no way to tell
+                        which belongs to which. Two areas was the owner's
+                        decision; showing each figure's own is what makes it
+                        legible rather than merely correct. */}
+                    <div className="flex flex-wrap items-baseline justify-between gap-tight pb-1 text-sm">
+                        <span className="text-content-muted">{tc('costPerDcaLabel')}</span>
+                        {costPerDcaText == null ? (
+                            <span className="text-xs text-content-attention">
+                                {row.perArea.costRefusalCode === 'COST_CURRENCY_MIXED'
+                                    ? tc('costPerDcaMixedCurrency')
+                                    : row.perArea.costRefusalCode ===
+                                        'COST_CURRENCY_UNRECORDED'
+                                      ? tc('costPerDcaCurrencyUnrecorded')
+                                      : tc('costPerDcaNoArea')}
+                            </span>
+                        ) : (
+                            <span className="font-medium tabular-nums text-content-emphasis">
+                                {costPerDcaText}
+                            </span>
+                        )}
+                    </div>
+                    {costPerDcaText != null && (
+                        <p className="pb-2 text-xs text-content-subtle">
+                            {tc('costPerDcaArea', {
+                                value: formatDecimal(costAreaDca, 1),
+                            })}
+                        </p>
+                    )}
+                    <p className="pb-2 text-xs text-content-subtle">{tc('costPerDcaHint')}</p>
+                    <div className="flex flex-wrap items-baseline justify-between gap-tight pb-2 text-sm">
+                        <span className="text-content-muted">
+                            {tc('marginPerDcaLabel')}
+                        </span>
+                        {row.perArea.marginPerDca == null ? (
+                            <span className="text-xs text-content-attention">
+                                {row.perArea.refusalCode === 'NO_STANDING_CROP_AREA'
+                                    ? tc('perAreaNoArea')
+                                    : tc('perAreaNoValue')}
+                            </span>
+                        ) : (
+                            <span
+                                className={
+                                    row.perArea.uncertainty === UNCERTAINTY.EXACT
+                                        ? 'font-medium tabular-nums text-content-emphasis'
+                                        : 'font-medium tabular-nums text-content-attention'
+                                }
+                            >
+                                {row.perArea.uncertainty === UNCERTAINTY.AT_MOST
+                                    ? tc('uncertaintyAtMost', { value: marginPerDcaText })
+                                    : marginPerDcaText}
+                            </span>
+                        )}
+                    </div>
+                    {row.perArea.uncertainty === UNCERTAINTY.PARTIAL && (
+                        <p className="pb-2 text-xs text-content-attention">
+                            {tc('perAreaPartial')}
+                        </p>
+                    )}
+                    <p className="pb-2 text-xs text-content-subtle">
+                        {tc('marginPerDcaHint')}
+                    </p>
+                    <KPIStat
+                        size="md"
+                        value={
+                            row.netWorth == null
+                                ? '—'
+                                : netState === UNCERTAINTY.AT_MOST
+                                  ? tc('uncertaintyAtMost', { value: money(row.netWorth) })
+                                  : money(row.netWorth)
+                        }
+                        label={tc('netWorthLabel')}
+                        tone={
+                            row.netWorth == null || netState === UNCERTAINTY.AT_MOST
+                                ? 'attention'
+                                : 'default'
+                        }
+                        description={
+                            row.netWorth == null
+                                ? tc('netWorthUnavailableTitle')
+                                : netState === UNCERTAINTY.AT_MOST
+                                  ? tc('uncertaintyAtMostWhy')
+                                  : undefined
+                        }
+                    />
+                    {/* A single-crop farm has nothing to compare, so the
+                        strip above is suppressed — but "does this clear
+                        its cost?" is still the question, and for a
+                        monoculture it is the ONLY one. The comparison is
+                        what one crop makes meaningless; the cover is not.
+                        Same component, no extra card. */}
+                    {soleCommodityLabel != null && (
+                        <BreakEvenRow commodityLabel={soleCommodityLabel} figures={row.breakEven} />
+                    )}
+                </div>
+            </div>
+            {/* A refusal that a farmer can act on says where. The
+                fixable one is a missing market price — /trends is where
+                prices live. The others are NOT fixable from here and get
+                no action: a mixed cost currency needs an FX rate this
+                product deliberately does not have, and an unrecorded rent
+                currency needs a column ParcelLease does not carry.
+                Offering a destination that cannot resolve the cause would
+                be worse than the plain explanation. */}
+            {row.netWorthUnavailableCode === 'NO_MARKET_PRICE' && (
+                <p className="text-xs">
+                    <TextLink tone="link" href={tenantHref('/trends')}>
+                        {tc('exclFixTrends')}
+                    </TextLink>
+                </p>
+            )}
+            {refusalText != null && (
+                // A refusal is stated, never blanked. Translated from
+                // the usecase's CODE when this client knows it, and
+                // from its English sentence when it does not — see
+                // explainRefusal, whose whole job is that an
+                // unrecognised code still explains itself.
+                <p className="text-xs text-content-muted">{refusalText}</p>
+            )}
+            <div className="flex flex-wrap gap-default text-xs text-content-subtle">
+                <span className="tabular-nums">
+                    {tc('priceLabel')}:{' '}
+                    {row.pricePerTonne == null
+                        ? tc('priceNone')
+                        : `${money(row.pricePerTonne)} ${tc('pricePerTonne')}`}
+                </span>
+                {row.priceObservedAt != null && (
+                    // Sits beside the price it qualifies, not beside the
+                    // report stamp in the header. The distance between
+                    // the two dates IS the staleness signal: a valuation
+                    // generated this morning off a quote observed three
+                    // weeks ago is arithmetically correct and
+                    // operationally worthless, and only showing both
+                    // lets a reader see that for themselves.
+                    <span className="tabular-nums">
+                        {/* formatDate, NOT formatDateTime. The value is
+                            date-only — trends.ts builds it as
+                            `date.toISOString().slice(0, 10)` — so rendering
+                            it with a time appends a midnight that was never
+                            observed. A fabricated hour is a poor thing to
+                            put on the very line whose job is to let a
+                            reader judge how stale the price is. */}
+                        {tc('priceObserved', { at: formatDate(row.priceObservedAt) })}
+                    </span>
+                )}
+                {/* "Price in {currency}" takes a CODE. Substituting a
+                    clause into that slot produced "Price in not recorded"
+                    in English and, in Bulgarian, "Цена в не е записана" —
+                    a preposition followed by a finite verb. The absent
+                    case gets its own standalone sentence instead; a
+                    placeholder is not a general-purpose blank. */}
+                <span>
+                    {row.priceCurrency != null
+                        ? tc('currencyPriceIn', { currency: row.priceCurrency })
+                        : tc('currencyPriceUnrecorded')}
+                </span>
+                <span>
+                    {costCurrencyCodes.length > 0
+                        ? tc('currencyCostsIn', {
+                              currencies: costCurrencyCodes.join(', '),
+                          })
+                        : tc('currencyCostsUnrecorded')}
+                </span>
+                {rentCurrencyUnknown && (
+                    // UNKNOWN_RENT_CURRENCY is an internal sentinel, not
+                    // an ISO code — the usecase's own docblock says it "is
+                    // never treated as one". Joining cashCostCurrencies
+                    // verbatim printed it as if it were, so it is filtered
+                    // out above and stated in its own words here.
+                    <span>{tc('currencyRentUnrecorded')}</span>
+                )}
+                {row.priceSource != null && (
+                    <span>{tc('priceSource', { source: row.priceSource })}</span>
+                )}
+            </div>
+        </Card>
+        </>
     );
 }
