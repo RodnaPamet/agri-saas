@@ -350,6 +350,40 @@ bijection for the one migration it names.
 > `ghcr.io/inflect-compliance/inflect-compliance` path, which nothing
 > runs; the live agrent stack uses `docker-compose.vm.yml`.
 
+> **A THIRD product shares THIS host, and 14 of the 22 containers are its.**
+> `agrent` is an `e2-highmem-2` — **2 vCPU, 16 GiB** — running three stacks:
+> agrent (8 containers), **playerz** production (12) and playerz-staging (2).
+> Measured 2026-10-24 (#2223). `playerz` is a **venue booking web and iOS
+> app** (owner, 2026-10-24): a separate product, live, and **not this
+> repo's to touch** — the same rule as the `inflect-compliance` block above,
+> except that here the co-tenancy is on the same two vCPUs rather than a
+> separate machine. Nothing is wrong today (4 of 15 GiB used, disk 54%); the
+> point is that reasoning about this host's capacity from agrent's own
+> container list undercounts by roughly two thirds.
+>
+> Three places that reasoning actually bites:
+>
+> · **The host has TWO pgbouncers and two Postgres instances.**
+> `PG_POOL_MAX`'s derivation — `floor((25 − 1) / 2) = 12` from
+> `DEFAULT_POOL_SIZE: "25"` — is about **agrent's own** pgbouncer and the two
+> agrent containers behind it, so it stays correct. But it reads as "the host
+> has 25 connections", and the host does not.
+>
+> · **`playerz-db`'s volume is inside agrent's disk snapshot by co-location.**
+> `docs/backup-restore.md` describes snapshots per stack
+> (`agrent-pgdata`, `inflect_pgdata`). A second product's data riding on
+> `agrent-daily-snapshot` is either fine or a surprise depending on whose RPO
+> it is; this repo does not own that answer.
+>
+> · **Its domains are in the live Caddyfile and ours is a PARTIAL copy.**
+> Six addresses across four blocks — see `deploy/caddy-foreign-sites.txt`,
+> which `deploy/check-drift.sh` enforces in both directions. An `scp
+> deploy/Caddyfile` up takes a venue-booking product offline, and would read
+> as a routine sync in the diff.
+>
+> The container split is NOT a thing to re-derive from a doc: read
+> `sudo docker ps` on the host. This paragraph is a timestamp.
+
 ## Architecture
 
 ### Framework baseline
