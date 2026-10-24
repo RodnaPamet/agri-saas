@@ -47,7 +47,7 @@ jest.mock('@/app-layer/repositories/JournalRepository', () => ({
         createLogEntry: jest.fn(),
         updateLogEntry: jest.fn(),
         listDeleted: jest.fn(),
-        softDelete: jest.fn(),
+        hardDelete: jest.fn(),
         restore: jest.fn(),
         purge: jest.fn(),
         attachFile: jest.fn(),
@@ -78,9 +78,6 @@ import {
     createLogEntry,
     updateLogEntry,
     deleteLogEntry,
-    listDeletedLogEntries,
-    restoreLogEntry,
-    purgeLogEntry,
     attachLogEntryFile,
     detachLogEntryFile,
 } from '@/app-layer/usecases/journal';
@@ -290,73 +287,20 @@ describe('updateLogEntry', () => {
 // ─── delete / restore / purge ───────────────────────────────────────
 
 describe('deleteLogEntry', () => {
-    it('soft-deletes and audits', async () => {
+    it('DELETES and audits', async () => {
+        // Reversed 2026-10-24 with «Кошче». The arms are the same call; what
+        // changed is which repository method it reaches and what the audit row
+        // says. `SOFT_DELETE` would now be a lie in the audit trail, which is
+        // the only surviving record of the entry.
         (JournalRepository.getById as jest.Mock).mockResolvedValue({ id: 'log-1', title: 'a' });
-        (JournalRepository.softDelete as jest.Mock).mockResolvedValue({ id: 'log-1' });
+        (JournalRepository.hardDelete as jest.Mock).mockResolvedValue(true);
         const out = await deleteLogEntry(editorCtx, 'log-1');
         expect(out).toEqual({ success: true });
-        expect(JournalRepository.softDelete).toHaveBeenCalledWith(mockDb, editorCtx, 'log-1');
+        expect(JournalRepository.hardDelete).toHaveBeenCalledWith(mockDb, editorCtx, 'log-1');
         expect(logEvent).toHaveBeenCalledWith(
             mockDb, editorCtx,
-            expect.objectContaining({ action: 'SOFT_DELETE', entityType: 'LogEntry' }),
+            expect.objectContaining({ action: 'ENTITY_DELETED', entityType: 'LogEntry' }),
         );
-    });
-});
-
-describe('listDeletedLogEntries', () => {
-    it('lists soft-deleted entries for an ADMIN (the Trash view)', async () => {
-        (JournalRepository.listDeleted as jest.Mock).mockResolvedValue([
-            { id: 'log-1', title: 'Old entry', deletedAt: new Date('2026-06-01') },
-        ]);
-        const out = await listDeletedLogEntries(adminCtx);
-        expect(out).toHaveLength(1);
-        expect(JournalRepository.listDeleted).toHaveBeenCalledWith(mockDb, adminCtx);
-    });
-
-    // Restore and purge are the only actions reachable from the Trash, and
-    // both are ADMIN — so listing it is too.
-    it('forbids a non-admin', async () => {
-        await expect(listDeletedLogEntries(editorCtx)).rejects.toThrow(/permission/i);
-    });
-});
-
-describe('restoreLogEntry', () => {
-    it('restores a soft-deleted entry (ADMIN) and audits', async () => {
-        (JournalRepository.getByIdWithDeleted as jest.Mock).mockResolvedValue({ id: 'log-1', deletedAt: new Date('2026-06-01') });
-        (JournalRepository.restore as jest.Mock).mockResolvedValue({ id: 'log-1', deletedAt: null });
-        const out = await restoreLogEntry(adminCtx, 'log-1');
-        expect(out).toMatchObject({ id: 'log-1', deletedAt: null });
-        expect(logEvent).toHaveBeenCalledWith(
-            mockDb, adminCtx,
-            expect.objectContaining({ action: 'ENTITY_RESTORED', entityType: 'LogEntry' }),
-        );
-    });
-
-    it('forbids a non-admin', async () => {
-        await expect(restoreLogEntry(editorCtx, 'log-1')).rejects.toThrow(/permission/i);
-    });
-
-    it('throws when the entry is not deleted', async () => {
-        (JournalRepository.getByIdWithDeleted as jest.Mock).mockResolvedValue({ id: 'log-1', deletedAt: null });
-        await expect(restoreLogEntry(adminCtx, 'log-1')).rejects.toThrow(/not deleted/i);
-    });
-});
-
-describe('purgeLogEntry', () => {
-    it('hard-deletes a soft-deleted entry (ADMIN) and audits', async () => {
-        (JournalRepository.getByIdWithDeleted as jest.Mock).mockResolvedValue({ id: 'log-1', deletedAt: new Date('2026-06-01') });
-        (JournalRepository.purge as jest.Mock).mockResolvedValue(true);
-        const out = await purgeLogEntry(adminCtx, 'log-1');
-        expect(out).toEqual({ success: true, purged: true });
-        expect(logEvent).toHaveBeenCalledWith(
-            mockDb, adminCtx,
-            expect.objectContaining({ action: 'ENTITY_PURGED', entityType: 'LogEntry' }),
-        );
-    });
-
-    it('refuses to purge a live (non-deleted) entry', async () => {
-        (JournalRepository.getByIdWithDeleted as jest.Mock).mockResolvedValue({ id: 'log-1', deletedAt: null });
-        await expect(purgeLogEntry(adminCtx, 'log-1')).rejects.toThrow(/must be soft-deleted/i);
     });
 });
 

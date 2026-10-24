@@ -163,15 +163,6 @@ export async function listLogEntries(ctx: RequestContext, filters?: LogEntryFilt
     return runInTenantContext(ctx, (db) => JournalRepository.list(db, ctx, filters));
 }
 
-/**
- * The Trash view — soft-deleted entries awaiting restore or purge. ADMIN-gated
- * to match `restoreLogEntry` / `purgeLogEntry`, the only two things you can do
- * from here.
- */
-export async function listDeletedLogEntries(ctx: RequestContext) {
-    assertCanAdmin(ctx);
-    return runInTenantContext(ctx, (db) => JournalRepository.listDeleted(db, ctx));
-}
 
 export async function listLogEntriesPaginated(ctx: RequestContext, params: LogEntryListParams) {
     assertCanRead(ctx);
@@ -532,90 +523,22 @@ export async function deleteLogEntry(ctx: RequestContext, id: string) {
         const existing = await JournalRepository.getById(db, ctx, id);
         if (!existing) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
 
-        await JournalRepository.softDelete(db, ctx, id);
+        await JournalRepository.hardDelete(db, ctx, id);
 
         await logEvent(db, ctx, {
-            action: 'SOFT_DELETE',
+            action: 'ENTITY_DELETED',
             entityType: 'LogEntry',
             entityId: id,
-            details: 'Journal entry soft-deleted',
+            details: 'Journal entry deleted',
             detailsJson: {
                 category: 'entity_lifecycle',
                 entityName: 'LogEntry',
                 operation: 'deleted',
-                summary: 'Journal entry soft-deleted',
+                summary: 'Journal entry deleted — rows erased, «Кошче» removed 2026-10-24',
             },
         });
 
         return { success: true };
-    });
-}
-
-// ─── Restore / Purge ────────────────────────────────────────────────
-//
-// LogEntry is not registered with the shared soft-delete middleware
-// (`SOFT_DELETE_MODELS`), so restore/purge are implemented here against
-// the explicit deletedAt column rather than via
-// `soft-delete-operations.ts` (whose model union + restore-validator
-// registry would need a schema-coupled entry). ADMIN-only, same posture
-// as the shared helpers.
-
-export async function restoreLogEntry(ctx: RequestContext, id: string) {
-    assertCanAdmin(ctx);
-
-    return runInTenantContext(ctx, async (db) => {
-        const record = await JournalRepository.getByIdWithDeleted(db, ctx, id);
-        if (!record) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
-        if (!record.deletedAt) throw codedNotFound('JOURNAL_ENTRY_NOT_DELETED', 'Journal entry is not deleted');
-
-        const restored = await JournalRepository.restore(db, ctx, id);
-
-        // Reinstate the derived evidence the soft-delete withdrew. Restoring
-        // the record while leaving its evidence withdrawn would put the entry
-        // back with its proof still hidden — the opposite failure, equally
-        // invisible.
-        await logEvent(db, ctx, {
-            action: 'ENTITY_RESTORED',
-            entityType: 'LogEntry',
-            entityId: id,
-            details: 'Journal entry restored from soft-delete',
-            detailsJson: {
-                category: 'entity_lifecycle',
-                entityName: 'LogEntry',
-                operation: 'restored',
-                before: { deletedAt: record.deletedAt.toISOString() },
-                summary: 'Journal entry restored from soft-delete',
-            },
-        });
-
-        return restored;
-    });
-}
-
-export async function purgeLogEntry(ctx: RequestContext, id: string) {
-    assertCanAdmin(ctx);
-
-    return runInTenantContext(ctx, async (db) => {
-        const record = await JournalRepository.getByIdWithDeleted(db, ctx, id);
-        if (!record) throw codedNotFound('JOURNAL_ENTRY_NOT_FOUND', 'Journal entry not found');
-        if (!record.deletedAt) throw codedNotFound('JOURNAL_ENTRY_NOT_SOFT_DELETED', 'Journal entry must be soft-deleted before purging');
-
-        await JournalRepository.purge(db, ctx, id);
-
-        await logEvent(db, ctx, {
-            action: 'ENTITY_PURGED',
-            entityType: 'LogEntry',
-            entityId: id,
-            details: 'Journal entry permanently purged',
-            detailsJson: {
-                category: 'data_lifecycle',
-                operation: 'purged',
-                model: 'LogEntry',
-                reason: 'Manual purge via admin action',
-            },
-        });
-
-        return { success: true, purged: true };
     });
 }
 

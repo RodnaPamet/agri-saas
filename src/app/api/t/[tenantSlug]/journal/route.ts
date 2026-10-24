@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
-import { listLogEntries, listLogEntriesPaginated, listDeletedLogEntries, createLogEntry } from '@/app-layer/usecases/journal';
+import { listLogEntries, listLogEntriesPaginated, createLogEntry } from '@/app-layer/usecases/journal';
 import { withValidatedBody } from '@/lib/validation/route';
 import { CreateLogEntrySchema } from '@/lib/schemas';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -21,8 +21,6 @@ const JournalQuerySchema = z.object({
     q: z.string().optional().transform(normalizeQ),
     occurredFrom: z.string().optional(),
     occurredTo: z.string().optional(),
-    // Trash view — soft-deleted entries only (ADMIN).
-    deleted: z.enum(['true', 'false']).optional(),
     // dnevnik filters (#10)
     crop: csvIdField(),
     locationId: z.string().optional(),
@@ -36,10 +34,6 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
     await assertModuleEnabled(ctx, 'JOURNAL');
     const sp = Object.fromEntries(req.nextUrl.searchParams.entries());
     const query = JournalQuerySchema.parse(sp);
-
-    if (query.deleted === 'true') {
-        return jsonResponse({ entries: await listDeletedLogEntries(ctx) });
-    }
 
     const filters = {
         type: query.type,

@@ -122,19 +122,6 @@ describe('JournalRepository — soft-delete visibility', () => {
         expect(where).not.toHaveProperty('deletedAt');
     });
 
-    it('lists only deleted entries in the trash view, newest first and bounded', async () => {
-        // Break: `deletedAt: null` here would show LIVE entries in the
-        // trash can and offer to purge them.
-        await JournalRepository.listDeleted(asTx(db), ctx);
-
-        const arg = argOf(db.logEntry.findMany);
-        expect(arg.where).toEqual({
-            tenantId: 'tenant-1',
-            deletedAt: { not: null },
-        });
-        expect(arg.orderBy).toEqual({ deletedAt: 'desc' });
-        expect(arg.take).toBe(200);
-    });
 });
 
 describe('JournalRepository — soft-delete lifecycle', () => {
@@ -146,34 +133,19 @@ describe('JournalRepository — soft-delete lifecycle', () => {
     // database-level backstop. These tests pin the repository's actual
     // contract; the guard itself belongs to the usecase's tests.
 
-    it('stamps who deleted the entry and when', async () => {
-        // Break: losing deletedByUserId removes the only record of who
-        // removed an agronomic entry — a compliance-relevant trail.
-        const before = Date.now();
-        await JournalRepository.softDelete(asTx(db), ctx, 'e-1');
-
-        const arg = argOf(db.logEntry.update);
-        expect(arg.where).toEqual({ id: 'e-1' });
-        expect(arg.data.deletedByUserId).toBe('user-1');
-        expect(arg.data.deletedAt).toBeInstanceOf(Date);
-        expect((arg.data.deletedAt as Date).getTime()).toBeGreaterThanOrEqual(before);
-    });
-
-    it('clears both delete markers on restore', async () => {
-        // Break: clearing deletedAt but leaving deletedByUserId set
-        // leaves a live entry looking deleted-by-someone.
-        await JournalRepository.restore(asTx(db), ctx, 'e-1');
-
-        expect(argOf(db.logEntry.update).data).toEqual({
-            deletedAt: null,
-            deletedByUserId: null,
-        });
-    });
-
-    it('hard-deletes on purge', async () => {
-        // Break: purge silently soft-deleting again would make the
-        // trash can impossible to empty.
-        const result = await JournalRepository.purge(asTx(db), ctx, 'e-1');
+    it('really deletes — the only delete there is now', async () => {
+        // This was named "hard-deletes on purge", one of three methods:
+        // `softDelete` stamped the flag, `restore` cleared it, `purge` made it
+        // permanent. «Кошче» went on 2026-10-24 and the other two with it.
+        //
+        // Break: a silent conversion back to a flag would leave entries a
+        // farmer deleted still printing in the ДНЕВНИК, with nothing in the
+        // product able to show or clear them.
+        //
+        // `LogEntry` is NOT in `SOFT_DELETE_MODELS`, which is why this really
+        // is a delete — the same call on `Task` is rewritten into an update by
+        // the extension and cascades nothing (#2242).
+        const result = await JournalRepository.hardDelete(asTx(db), ctx, 'e-1');
 
         expect(db.logEntry.delete).toHaveBeenCalledWith({ where: { id: 'e-1' } });
         expect(result).toBe(true);

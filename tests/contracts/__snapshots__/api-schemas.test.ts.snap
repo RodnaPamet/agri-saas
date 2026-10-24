@@ -14344,22 +14344,6 @@ exports[`API contract — per-schema snapshots schema: RentRoll 1`] = `
 }"
 `;
 
-exports[`API contract — per-schema snapshots schema: RestoredLogEntry 1`] = `
-"{
-  "type": "object",
-  "properties": {
-    "id": {
-      "type": "string"
-    }
-  },
-  "required": [
-    "id"
-  ],
-  "additionalProperties": {},
-  "description": "The entry as it is once restored."
-}"
-`;
-
 exports[`API contract — per-schema snapshots schema: RiskLevel 1`] = `
 "{
   "type": "string",
