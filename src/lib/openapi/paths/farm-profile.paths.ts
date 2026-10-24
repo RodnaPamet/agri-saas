@@ -234,7 +234,15 @@ export function registerFarmProfilePaths(registry: OpenAPIRegistry): void {
                     'whole object is still correct — and so is omitting the field. `null` is a ' +
                     'DIFFERENT value and is refused: clearing a verified identity is the same ' +
                     'change in the other direction. The remedy is support, not another request; ' +
-                    'do not offer a retry.',
+                    'do not offer a retry.\n\n' +
+                    '`error.code` is `FARM_PROFILE_EGN_NOT_COLLECTED` when the body carries an ' +
+                    '`egn` holding a VALUE. The product does not store a Bulgarian national ' +
+                    'identity number: there is no such column and the response carries no such ' +
+                    'field. The property is still accepted here so that sending one is REFUSED ' +
+                    'rather than silently discarded — a client told it succeeded would believe ' +
+                    'it had stored an ЕГН. `null`, a blank string and omitting the field are all ' +
+                    'accepted no-ops, so a read-modify-write that round-trips the whole object ' +
+                    'keeps working. Do not retry; drop the field.',
             }),
             409: {
                 description:
