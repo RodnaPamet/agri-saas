@@ -74,13 +74,16 @@ describe('the allowlist covers FarmBrand exactly', () => {
         // allowlist would become the only thing standing between it and a
         // public page, and this says so before that happens.
         const projection = scalarFieldsOf('PublicFarmProfile');
-        for (const pii of ['egn', 'eik', 'address', 'municipality', 'settlement']) {
+        for (const pii of ['eik', 'urn', 'address', 'municipality', 'settlement']) {
             expect(projection).not.toContain(pii);
         }
         // …and they are on the private model, so the absence above is a
         // decision about where they live rather than them not existing.
         const privateModel = scalarFieldsOf('FarmProfile');
-        for (const pii of ['egn', 'eik', 'address', 'municipality', 'settlement']) {
+        // `egn` was in both lists until #2258 dropped the column. Replaced by
+        // `urn` rather than just deleted: an entry naming a field that exists
+        // nowhere passes the first loop for free and cannot fail the second.
+        for (const pii of ['eik', 'urn', 'address', 'municipality', 'settlement']) {
             expect(privateModel).toContain(pii);
         }
     });
