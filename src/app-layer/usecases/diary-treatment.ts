@@ -587,10 +587,20 @@ export async function recordDiaryTreatment(
     // path finishes the job. Creating it afterwards would leave the one state
     // nothing can describe: recorded blocks with no group.
     //
-    // `upsert`, because the replay path re-enters this function with the same
-    // handle and a second `create` would fail on the primary key. The update
-    // branch is deliberately EMPTY: a replay is the same write arriving twice,
-    // not a change, so it must not bump `version`.
+    // `upsert`, because a retry re-enters this function with the same handle
+    // and a second `create` would fail on the primary key.
+    //
+    // WHICH retry reaches here is worth being exact about, because the first
+    // version of this comment was not. A COMPLETE replay returns above (`if
+    // (prior.complete)`) and never arrives — so the update branch is
+    // unreachable for it. A PARTIAL retry falls through and does arrive, and
+    // that is the case the empty update branch is for: a request that finishes
+    // the remaining blocks has not changed the definition, so it must not bump
+    // `version` and invalidate an `If-Match` a client is holding.
+    //
+    // A mutation caught the overclaim: making the update branch increment
+    // `version` left the test green, because the test exercised the complete
+    // replay, which short-circuits.
     await runInTenantContext(ctx, (db) =>
         db.treatmentGroup.upsert({
             where: { tenantId_id: { tenantId: ctx.tenantId, id: treatmentGroupId } },

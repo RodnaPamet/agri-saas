@@ -807,16 +807,38 @@ describeFn('getDiaryTreatmentDefinition (DB-backed, #2172)', () => {
         expect(def.version).toBe(0);
     });
 
-    it('a replay does NOT bump the version — it is the same write arriving twice', async () => {
-        const key = `${KEY}-replay`;
-        const one = await recordDiaryTreatment(ctx(), baseInput(), key);
-        const two = await recordDiaryTreatment(ctx(), baseInput(), key);
-        expect(two.replayed).toBe(true);
+    it('a PARTIAL retry finishes the job without bumping the version', async () => {
+        // The retry that actually reaches the group upsert. A COMPLETE replay
+        // returns early (`if (prior.complete)`) and never gets there, so
+        // asserting the version on one proves nothing — the first draft of this
+        // test did exactly that and a mutation making the update branch
+        // `increment: 1` left it green.
+        //
+        // A partial retry falls through the whole body, so its update branch
+        // runs. Finishing the remaining lines has not changed the definition,
+        // so it must not invalidate an `If-Match` a client is holding.
+        const key = `${KEY}-partial`;
+        const input = { ...baseInput(), parcelIds: [parcelA1, parcelA2] };
+        await recordDiaryTreatment(ctx(), input, key);
+
+        const lines = await globalPrisma.operationParcel.findMany({
+            where: { tenantId, task: { treatmentGroupId: key } },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+        });
+        await globalPrisma.operationParcel.update({
+            where: { id: lines[0].id },
+            data: { status: 'PENDING', completedAt: null },
+        });
+
+        const retry = await recordDiaryTreatment(ctx(), input, key);
+        // NOT a replay: this request finished the job, which is what makes it
+        // reach the upsert.
+        expect(retry.replayed).toBe(false);
 
         const row = await globalPrisma.treatmentGroup.findUnique({
-            where: { tenantId_id: { tenantId, id: one.treatmentGroupId } },
+            where: { tenantId_id: { tenantId, id: key } },
         });
-        // The upsert's update branch is empty for exactly this reason.
         expect(row!.version).toBe(0);
     });
 
