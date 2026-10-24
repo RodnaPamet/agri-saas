@@ -42,6 +42,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 
 import { foldFarmTotals } from '@/lib/grain/farm-total';
+import { foldFarmPerArea } from '@/lib/grain/farm-per-area';
 import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
 import { computePerArea } from '@/lib/grain/per-area';
 import { computeBreakEven } from '@/lib/grain/break-even';
@@ -310,6 +311,9 @@ function data(over: Partial<CalculatorData> = {}): CalculatorData {
         rows,
         farm: {
             totals: foldFarmTotals(rows),
+            // The REAL fold, not a stub: these tests render the farm block, so
+            // a hand-written zero would exercise the empty branch only.
+            perArea: foldFarmPerArea(rows),
             refusedWithoutCurrency: rows
                 .filter((r) => r.netWorth == null && r.priceCurrency == null)
                 .map((r) => r.commodity)

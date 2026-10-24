@@ -14,6 +14,7 @@ import type {
     NetWorthRefusalCode,
 } from '@/lib/grain/uncertainty';
 import { foldFarmTotals, type FarmNetWorthTotal } from '@/lib/grain/farm-total';
+import { foldFarmPerArea, type FarmPerAreaFigures } from '@/lib/grain/farm-per-area';
 import { computePerArea, type PerAreaFigures } from '@/lib/grain/per-area';
 import { computeBreakEven, type BreakEvenFigures } from '@/lib/grain/break-even';
 import {
@@ -490,6 +491,16 @@ export interface GrainCashOutLine {
 export interface GrainFarmNetWorth {
     /** Biggest net first, so the farm's main currency leads. */
     totals: FarmNetWorthTotal[];
+    /**
+     * The farm's per-DECARE rates, folded the same way and for the same
+     * reason (#2249).
+     *
+     * Separate from `totals` rather than a field on it because the two fold
+     * differently: a total is money in one currency, while the rates have two
+     * denominators and the cost side keys on `perArea.costCurrency`, which is
+     * a different field from `priceCurrency`. See `lib/grain/farm-per-area`.
+     */
+    perArea: FarmPerAreaFigures;
     /**
      * Refused commodities with no price currency either — the "no market
      * price" case, which belongs to no currency bucket. Reported here so
@@ -2219,6 +2230,11 @@ export async function getGrainNetWorth(
         // client-side reduce over money is exactly that.
         farm: {
             totals: foldFarmTotals(rows),
+            // The per-decare rates, folded for the same reason the money is
+            // (#2249): the phone was computing them itself in `FarmFigures`
+            // while the web showed only `totals`, and two clients dividing the
+            // same sums by their own choice of denominator drift.
+            perArea: foldFarmPerArea(rows),
             refusedWithoutCurrency: rows
                 .filter((r) => r.netWorth == null && r.priceCurrency == null)
                 .map((r) => r.commodity)
