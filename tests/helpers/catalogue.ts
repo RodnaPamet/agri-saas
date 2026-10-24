@@ -132,6 +132,33 @@ export function readCatalogue(locale: string): Catalogue {
  * check passing over an empty population, which is the exact failure #1813
  * warns about.
  */
+/**
+ * The namespaces present in ONE bundle file, or `null` when that bundle has no
+ * file for this locale.
+ *
+ * Added for #2264, which needed to ask a question `readCatalogue` cannot
+ * answer: it MERGES the bundles, so a namespace's membership disappears into
+ * the merge, and "can the auth surface resolve `notFound`" is exactly a
+ * membership question.
+ *
+ * `null` rather than `{}` for a missing file, because that is a real and
+ * expected state: `bundleFiles()` emits nothing for an empty category, so
+ * `shared.json` did not exist before #2264 and will not exist again if the
+ * category is emptied. A caller must be able to tell "no such bundle" from "a
+ * bundle with no namespaces", which `{}` would collapse.
+ *
+ * Here rather than in the caller because `one-catalogue-reader.test.ts` keeps
+ * this module the only one that knows where the catalogue lives — the property
+ * that let `messages/` be split into bundles at all, and the one a new direct
+ * reader breaks silently until the day the files move again. My first draft of
+ * #2264's guard built the path itself and that guard caught it.
+ */
+export function readBundle(locale: string, bundle: string): Catalogue | null {
+    const file = path.join(MESSAGES_DIR, locale, `${bundle}.json`);
+    if (!fs.existsSync(file)) return null;
+    return JSON.parse(fs.readFileSync(file, 'utf-8')) as Catalogue;
+}
+
 export function locales(): string[] {
     return fs
         .readdirSync(MESSAGES_DIR, { withFileTypes: true })

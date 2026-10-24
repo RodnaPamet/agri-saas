@@ -32,7 +32,7 @@ import * as path from 'path';
 import { bundlesFor, type Surface } from '@/lib/i18n/bundles';
 import { REPO_ROOT } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
-import { locales } from '../helpers/catalogue';
+import { locales, readBundle } from '../helpers/catalogue';
 
 /** Pages outside every route group — they render on whatever surface faults. */
 const ROOT_PAGES = ['src/app/not-found.tsx', 'src/app/error.tsx'];
@@ -50,13 +50,25 @@ function namespacesIn(src: string): string[] {
     return [...out];
 }
 
-/** The namespaces a surface can actually resolve, from the bundle FILES. */
+/**
+ * The namespaces a surface can actually resolve, from the bundle FILES.
+ *
+ * Through `readBundle` rather than reading `messages/` directly:
+ * `one-catalogue-reader.test.ts` keeps `tests/helpers/catalogue.ts` the only
+ * module that knows where the catalogue lives, which is the property that let
+ * it be split into bundles in the first place. My first draft built the path
+ * here and that guard caught it — while this PR was splitting the bundles
+ * again, which is exactly the day it was written for.
+ *
+ * `null` means the bundle has no file for this locale, which is expected:
+ * `bundleFiles()` emits nothing for an empty category.
+ */
 function loadable(locale: string, surface: Surface): Set<string> {
     const out = new Set<string>();
     for (const bundle of bundlesFor(surface)) {
-        const file = path.join(REPO_ROOT, 'messages', locale, `${bundle}.json`);
-        if (!fs.existsSync(file)) continue; // an empty category emits no file
-        for (const ns of Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')))) out.add(ns);
+        const cat = readBundle(locale, bundle);
+        if (cat === null) continue;
+        for (const ns of Object.keys(cat)) out.add(ns);
     }
     return out;
 }
