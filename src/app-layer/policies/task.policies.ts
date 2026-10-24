@@ -174,10 +174,23 @@ export function canDeleteTreatment(
  *     route that drops БАБХ records, which is the thing the issue was written
  *     to prevent". The new ruling permits exactly that.
  *
- * What makes the wider door defensible is that the other two protections stay
- * and one is added: the delete is SOFT, it is AUDITED, and it is now
- * RESTORABLE from «Кошче» by the same people. Nothing is destroyed; a
- * withdrawal is reversible by anyone who could have made it.
+ * What made the wider door defensible, AS WRITTEN on 2026-10-22, was that the
+ * other two protections stayed and one was added: the delete is SOFT, it is
+ * AUDITED, and it is RESTORABLE from «Кошче» by the same people.
+ *
+ * **The third of those is no longer true (#2280).** #2254 removed «Кошче» on
+ * the owner's ruling of 2026-10-24 that deleted means deleted, and
+ * `deleteDiaryTreatment` now physically deletes the `OperationParcel` lines and
+ * the `LogEntry` rows — neither model is in `SOFT_DELETE_MODELS`, so those are
+ * real DELETEs — while soft-deleting only the tasks. No restore path exists
+ * anywhere in `src`. So "nothing is destroyed" is false in the most literal
+ * way: the register lines the ДНЕВНИК prints are gone, and they are what the
+ * register was made of.
+ *
+ * The rule is UNCHANGED here, deliberately — #2254 is the later and more
+ * specific ruling and it was made explicitly. But the justification above is
+ * now two protections rather than three, and #2280 carries that back to the
+ * owner rather than leaving the code claiming something untrue.
  *
  * Same shape as `assertCanEditTask`, and deliberately a separate function: the
  * two answer different questions about different entities, and collapsing them
@@ -191,6 +204,48 @@ export function assertCanDeleteTreatment(
     throw codedForbidden(
         'TREATMENT_DELETE_NOT_PERMITTED',
         'Only the person who recorded this treatment, or a farm administrator, can remove it.',
+    );
+}
+
+export function canEditTreatment(
+    ctx: RequestContext,
+    treatment: { createdByUserId: string | null },
+): boolean {
+    if (ctx.permissions.canAdmin) return true;
+    return treatment.createdByUserId != null && treatment.createdByUserId === ctx.userId;
+}
+
+/**
+ * Only a treatment's CREATOR or a farm admin may correct it (#2172).
+ *
+ * The same rule as `assertCanDeleteTreatment`, and that is the point rather
+ * than duplication: a correction must not be easier to make than a withdrawal.
+ * Relayed from the owner as "creator and farm admins, same as the task rule",
+ * which is also what #2169 settled for `assertCanEditTask`.
+ *
+ * A SEPARATE function from the delete's, for the reason that one gives for
+ * being separate from `assertCanEditTask`: they answer different questions
+ * about different verbs, and collapsing them would make a later divergence
+ * silent. #2280 is live on exactly such a divergence — the delete's
+ * justification has lost one of its three protections — so the two are more
+ * likely to diverge than to converge.
+ *
+ * ## The caller must establish SINGLE AUTHORSHIP first
+ *
+ * This takes one `createdByUserId`, so it cannot see a group written by more
+ * than one person. `deleteDiaryTreatment` asserts that separately and refuses a
+ * mixed set with a 409 that binds admins too — a treatment nobody solely
+ * authored has no creator for this rule to admit. A correction has to do the
+ * same before calling this, and the definition read is where that check lives.
+ */
+export function assertCanEditTreatment(
+    ctx: RequestContext,
+    treatment: { createdByUserId: string },
+) {
+    if (canEditTreatment(ctx, treatment)) return;
+    throw codedForbidden(
+        'TREATMENT_EDIT_NOT_PERMITTED',
+        'Only the person who recorded this treatment, or a farm administrator, can correct it.',
     );
 }
 

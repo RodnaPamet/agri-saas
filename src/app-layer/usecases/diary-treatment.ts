@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { dayKeyInTz, FARM_TIME_ZONE, farmToday } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
 import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
-import { assertCanDeleteTreatment, canDeleteTreatment } from '../policies/task.policies';
+import {
+    assertCanDeleteTreatment,
+    assertCanEditTreatment,
+    canDeleteTreatment,
+} from '../policies/task.policies';
 import { codedBadRequest, codedClientError, codedConflict, codedNotFound } from '@/lib/errors/types';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
@@ -1006,3 +1010,223 @@ export async function deleteDiaryTreatment(
  * Ordered by when it was withdrawn, newest first: the thing somebody wants back
  * is almost always the thing they just removed.
  */
+
+// ─────────────────────────────────────────────────────────────────────
+// The DEFINITION read — what a correction form prefills from (#2172)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * One parcel line of a treatment, as the correction form needs it.
+ *
+ * `treatedAreaHa` stays NULLABLE and null keeps meaning THE WHOLE PARCEL — the
+ * register prints `treatedAreaHa ?? parcel.areaHa`, so substituting the parcel
+ * area here would turn an absence into a claim, and a correction that
+ * round-tripped the prefill would then persist a number nobody typed.
+ */
+export interface TreatmentDefinitionLine {
+    parcelId: string;
+    parcelName: string;
+    /** The block the parcel sits in — the treatment's fan-out key. */
+    locationId: string | null;
+    /** NULL means the whole parcel. See the interface note. */
+    treatedAreaHa: number | null;
+}
+
+/**
+ * A recorded treatment's COMPLETE definition, plus the version to send back.
+ *
+ * Field-for-field re-submittable as `RecordDiaryTreatmentInput`, which is the
+ * requirement rather than a convenience: a correction replaces the definition,
+ * so anything the prefill cannot express is a field a correction would silently
+ * drop.
+ */
+export interface TreatmentDefinition {
+    treatmentGroupId: string;
+    /**
+     * The group's version, to be returned as `If-Match` on the correction.
+     *
+     * From `TreatmentGroup` (#2172), not from the lines: `OperationParcel.version`
+     * is per row and a correction may ADD or DROP a parcel, so there is no
+     * stable set of row versions to compare against.
+     *
+     * `0` for a treatment recorded before the group row existed — the backfill
+     * starts every row at 0 rather than claiming a version it never served.
+     */
+    version: number;
+    kind: 'SPRAY' | 'FERTILIZE';
+    /** `null` when no line has been completed yet, so there is no farm day to show. */
+    occurredOn: string | null;
+    title: string | null;
+    applicationTechnique: string | null;
+    targetNote: string | null;
+    productItemId: string;
+    productName: string;
+    /** From the PRODUCT, not the line — it is a property of the registration. */
+    pppRegistrationNo: string | null;
+    doseValue: number;
+    doseUnitId: string;
+    waterRateValue: number | null;
+    waterRateUnitId: string | null;
+    /**
+     * Point-in-time observations, carried through unchanged.
+     *
+     * Each has written no-backfill reasoning on its column: nothing records what
+     * the quarantine period WAS when a line was completed, and a plausible
+     * phenophase guess would make a regulated document authoritative about
+     * something nobody observed. The prefill shows what was captured, including
+     * nothing.
+     */
+    quarantinePeriodDays: number | null;
+    phenophase: string | null;
+    lines: TreatmentDefinitionLine[];
+}
+
+/**
+ * The full definition of a recorded treatment, for a correction to prefill.
+ *
+ * ## Why not `getDiaryTreatment`
+ *
+ * That one is a SUMMARY for the detail view: it reads the lines with `take: 1`
+ * and selects `completedAt` and `phenophase` only. It cannot prefill a
+ * correction form — every parcel, its treated area, the product, the dose and
+ * the units are all absent from it — and widening it would put the whole
+ * definition on the payload of every journal detail read.
+ *
+ * ## The gate, in this order, and the order matters
+ *
+ *   1. `assertCanWrite` — the same floor the withdrawal uses. A prefill is only
+ *      wanted by someone who intends to write, and the definition is the whole
+ *      record, so it is not a read for every reader.
+ *   2. SINGLE AUTHORSHIP, refused with `TREATMENT_MIXED_AUTHORSHIP` — the same
+ *      409 the withdrawal raises, and for the same reason: a handle reused
+ *      across people has no single creator for the permission rule to admit,
+ *      and that binds admins too.
+ *   3. `assertCanEditTreatment` on that single creator.
+ *
+ * Establishing authorship BEFORE the permission check is what makes step 3
+ * meaningful; doing it after would let an admin read a definition the
+ * correction route would then refuse to write.
+ */
+export async function getDiaryTreatmentDefinition(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+): Promise<TreatmentDefinition> {
+    assertCanWrite(ctx);
+
+    const handle = treatmentGroupId.trim();
+    if (!handle) {
+        throw codedNotFound(
+            'TREATMENT_NOT_FOUND',
+            'No treatment was recorded under that handle.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        const tasks = await db.task.findMany({
+            where: { tenantId: ctx.tenantId, treatmentGroupId: handle, deletedAt: null },
+            select: {
+                id: true,
+                createdByUserId: true,
+                operationType: true,
+                title: true,
+                applicationTechnique: true,
+            },
+            orderBy: { createdAt: 'asc' },
+        });
+        if (tasks.length === 0) {
+            throw codedNotFound(
+                'TREATMENT_NOT_FOUND',
+                'No treatment was recorded under that handle.',
+                { reference: 'treatmentGroupId' },
+            );
+        }
+
+        const creators = new Set(tasks.map((t) => t.createdByUserId));
+        if (creators.size !== 1) {
+            throw codedConflict(
+                'TREATMENT_MIXED_AUTHORSHIP',
+                'This treatment has tasks recorded by more than one person, so it cannot be '
+                    + 'corrected as a whole. Ask an administrator.',
+                { reference: 'treatmentGroupId' },
+            );
+        }
+        assertCanEditTreatment(ctx, { createdByUserId: tasks[0].createdByUserId });
+
+        const lines = await db.operationParcel.findMany({
+            where: { tenantId: ctx.tenantId, taskId: { in: tasks.map((t) => t.id) } },
+            select: {
+                parcelId: true,
+                productItemId: true,
+                doseValue: true,
+                doseUnitId: true,
+                waterRateValue: true,
+                waterRateUnitId: true,
+                targetNote: true,
+                quarantinePeriodDays: true,
+                phenophase: true,
+                treatedAreaHa: true,
+                completedAt: true,
+                parcel: { select: { name: true, locationId: true } },
+                product: { select: { name: true, pppRegistrationNo: true } },
+            },
+            orderBy: [{ parcelId: 'asc' }],
+        });
+        if (lines.length === 0) {
+            // A treatment with tasks and no lines is the stranded shape
+            // `recordDiaryTreatment` documents: a partial write that failed
+            // before any line landed. There is no definition to correct, and
+            // saying so is better than returning a shell the form would fill
+            // with defaults and then save as if it were the record.
+            throw codedNotFound(
+                'TREATMENT_NOT_FOUND',
+                'That treatment has no recorded parcel lines, so there is nothing to correct.',
+                { reference: 'treatmentGroupId' },
+            );
+        }
+
+        // The group row, for the version a correction sends back. `findUnique`
+        // on the composite key — the handle is unique PER TENANT, not globally.
+        const group = await db.treatmentGroup.findUnique({
+            where: { tenantId_id: { tenantId: ctx.tenantId, id: handle } },
+            select: { version: true },
+        });
+
+        // One treatment is one product at one dose across its blocks — that is
+        // what `recordDiaryTreatment` writes from a single input. Read from the
+        // first line rather than asserted uniform: a mixed set would mean the
+        // lines had been edited individually through the parcel-mark path, and
+        // #2172's correction route is the thing that will settle what that
+        // means. Until then the prefill shows the treatment as it was RECORDED.
+        const first = lines[0];
+        const stamped = lines.find((l) => l.completedAt != null);
+
+        return {
+            treatmentGroupId: handle,
+            version: group?.version ?? 0,
+            kind: tasks[0].operationType === 'FERTILIZE' ? 'FERTILIZE' : 'SPRAY',
+            occurredOn: stamped?.completedAt
+                ? stamped.completedAt.toISOString().slice(0, 10)
+                : null,
+            title: tasks[0].title ?? null,
+            applicationTechnique: tasks[0].applicationTechnique ?? null,
+            targetNote: first.targetNote ?? null,
+            productItemId: first.productItemId,
+            productName: first.product.name,
+            pppRegistrationNo: first.product.pppRegistrationNo ?? null,
+            doseValue: Number(first.doseValue),
+            doseUnitId: first.doseUnitId,
+            waterRateValue: first.waterRateValue == null ? null : Number(first.waterRateValue),
+            waterRateUnitId: first.waterRateUnitId ?? null,
+            quarantinePeriodDays: first.quarantinePeriodDays ?? null,
+            phenophase: first.phenophase ?? null,
+            lines: lines.map((l) => ({
+                parcelId: l.parcelId,
+                parcelName: l.parcel.name,
+                locationId: l.parcel.locationId ?? null,
+                // NULL stays NULL — see `TreatmentDefinitionLine`.
+                treatedAreaHa: l.treatedAreaHa == null ? null : Number(l.treatedAreaHa),
+            })),
+        };
+    });
+}
