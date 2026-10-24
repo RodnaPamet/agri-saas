@@ -72,6 +72,25 @@ type HideColumn = 'hideTagline' | 'hideAbout' | 'hideOblast' | 'hideCrops';
  * reason a version is stored next to the timestamp: "they agreed" is
  * unfalsifiable once the wording changes; "they agreed to v2" can be held
  * against the v2 text.
+ *
+ * ── v2's text was NARROWED in place on 2026-10-24, deliberately not bumped ──
+ *
+ * #2257 dropped `FarmProfile.egn`, and v2 listed ЕГН among the fields that are
+ * NOT published. That sentence now names a field the product does not hold, so
+ * it was removed from the text while this constant stayed at `v2`.
+ *
+ * Editing a versioned text in place is normally the thing a version exists to
+ * prevent, so the reason has to be on the record. A bump BLOCKS publishing
+ * until the farm re-consents (`canPublish` on the comparison above), and this
+ * change takes nothing away from the farmer: every promise v2 made is still
+ * true, and more — there is no ЕГН to publish or withhold. Forcing every
+ * published farm through a consent dialog to be told we hold LESS of their
+ * data would be a worse outcome than a label that pins a slightly shorter
+ * list. The evidentiary risk runs the safe way too: a farm recorded as
+ * agreeing to v2 was shown a SUPERSET of what the current text promises.
+ *
+ * Bump it if a future edit changes what becomes PUBLIC. That is the test —
+ * not whether the characters changed.
  */
 const CONSENT_TEXT_VERSION = 'v2';
 

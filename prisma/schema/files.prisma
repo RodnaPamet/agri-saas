@@ -10,14 +10,14 @@
 /// `FileRecord` relation. Moved here from `compliance.prisma` as a pure move.
 
 model FileRecord {
-  id                   String           @id @default(cuid())
-  tenantId             String
-  pathKey              String           @unique
-  originalName         String
-  mimeType             String
-  sizeBytes            Int
-  sha256               String
-  status               FileRecordStatus @default(PENDING)
+  id                String           @id @default(cuid())
+  tenantId          String
+  pathKey           String           @unique
+  originalName      String
+  mimeType          String
+  sizeBytes         Int
+  sha256            String
+  status            FileRecordStatus @default(PENDING)
   /// #2062 — the ORIGINAL this row was derived from, by its `sha256`.
   ///
   /// Set on a thumbnail and null on everything else, which is why it is
@@ -39,30 +39,31 @@ model FileRecord {
   /// Generalised past photographs on purpose — `derivedFrom`, not
   /// `thumbnailOf`. A future PDF preview or a different size wants the same
   /// relationship, and the name should not have to be rewritten for it.
-  derivedFromSha256    String?
+  derivedFromSha256 String?
 
   uploadedByUserId     String
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
   storedAt             DateTime?
   bucket               String?
-  domain               String           @default("general")
-  scanStatus           String           @default("PENDING")
-  storageProvider      String           @default("local")
+  domain               String         @default("general")
+  scanStatus           String         @default("PENDING")
+  storageProvider      String         @default("local")
   scanDetails          String?
   scannedAt            DateTime?
   deletedAt            DateTime?
   deletedByUserId      String?
   retentionUntil       DateTime?
   evidence             Evidence[]
-  tenant               Tenant           @relation(fields: [tenantId], references: [id])
-  uploadedBy           User             @relation("FileUploader", fields: [uploadedByUserId], references: [id])
+  tenant               Tenant         @relation(fields: [tenantId], references: [id])
+  uploadedBy           User           @relation("FileUploader", fields: [uploadedByUserId], references: [id])
   // Epic G-4 — campaigns whose evidence PDF this row carries.
-  accessReviews        AccessReview[]   @relation("AccessReviewEvidence")
+  accessReviews        AccessReview[] @relation("AccessReviewEvidence")
   // Agriculture (Feature 1) — locations whose original spatial file
   // (shapefile/KML/GeoJSON) this row stores.
-  locationSpatialFiles Location[]       @relation("LocationSpatialFile")
-  logEntryFiles        LogEntryFile[]   @relation("LogEntryFileRecord")
+  locationSpatialFiles Location[]     @relation("LocationSpatialFile")
+  logEntryFiles        LogEntryFile[] @relation("LogEntryFileRecord")
+  costEntries          CostEntry[]
 
   @@index([tenantId])
   @@index([tenantId, status])
@@ -78,11 +79,10 @@ model FileRecord {
   /// looks up every original in one query under the tenant's own RLS context,
   /// so the index leads with the tenant the way the others on this table do.
   @@index([tenantId, derivedFromSha256])
-  costEntries          CostEntry[]
 }
 
 model Evidence {
-  id                String                    @id @default(cuid())
+  id                String            @id @default(cuid())
   tenantId          String
   // Source task — set when this evidence was uploaded/linked from a
   // task's Evidence tab. Powers the task Evidence tab AND the
@@ -98,21 +98,21 @@ model Evidence {
   fileName          String?
   fileSize          Int?
   category          String?
-  dateCollected     DateTime                  @default(now())
+  dateCollected     DateTime          @default(now())
   owner             String? // Legacy free-text — kept for backward compat
   ownerUserId       String? // Real user FK — used for due-item routing & notifications
   reviewCycle       ReviewCadence?
   nextReviewDate    DateTime?
-  status            EvidenceStatus            @default(DRAFT)
-  createdAt         DateTime                  @default(now())
-  updatedAt         DateTime                  @updatedAt
+  status            EvidenceStatus    @default(DRAFT)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
   deletedAt         DateTime?
   deletedByUserId   String?
   fileRecordId      String?
   expiredAt         DateTime?
-  isArchived        Boolean                   @default(false)
+  isArchived        Boolean           @default(false)
   retentionDays     Int?
-  retentionPolicy   RetentionPolicy           @default(NONE)
+  retentionPolicy   RetentionPolicy   @default(NONE)
   retentionUntil    DateTime?
   /// B8 follow-up — free-text folder label (e.g. "SOC2/2026" or
   /// "Quarterly access reviews"). Mirrors the `VendorDocument.folder`
@@ -121,11 +121,11 @@ model Evidence {
   folder            String?
   /// Phase-8 — auto-evidence provenance. When a farm journal record
   // their proof here.
-  task              Task?                     @relation(fields: [taskId], references: [id])
-  asset             Asset?                    @relation(fields: [assetId], references: [id])
-  fileRecord        FileRecord?               @relation(fields: [fileRecordId], references: [id])
-  ownerUser         User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
-  tenant            Tenant                    @relation(fields: [tenantId], references: [id])
+  task              Task?             @relation(fields: [taskId], references: [id])
+  asset             Asset?            @relation(fields: [assetId], references: [id])
+  fileRecord        FileRecord?       @relation(fields: [fileRecordId], references: [id])
+  ownerUser         User?             @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
+  tenant            Tenant            @relation(fields: [tenantId], references: [id])
   reviews           EvidenceReview[]
   reminderHistories ReminderHistory[]
 

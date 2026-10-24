@@ -752,7 +752,6 @@
             "save": "Save",
             "fields": {
                 "producerName": "Agricultural producer (name / company)",
-                "egn": "ЕГН (personal ID)",
                 "eik": "ЕИК (company ID)",
                 "urn": "УРН in ИСАК (ДФЗ — State Fund Agriculture)",
                 "address": "Registered / management address",
@@ -766,7 +765,7 @@
                 "grainProduced": "Crops produced"
             },
             "fieldHints": {
-                "urn": "The holding's unique registration number from ДФЗ (ИСАК) — not the same as ЕИК or ЕГН.",
+                "urn": "The holding's unique registration number from ДФЗ (ИСАК) — not the same as ЕИК.",
                 "sizeHa": "As declared. May differ from the sum of the mapped parcels.",
                 "grainProduced": "Comma-separated, e.g. “wheat, sunflower, maize”.",
                 "registrationPlace": "Where the holding is registered. This is usually also the produce warehouse — the warehouse itself is recorded per parcel."
@@ -1501,7 +1500,7 @@
             "addressRequired": "Choose an address before publishing.",
             "consentHeading": "Consent to publish",
             "consentIntro": "Read and confirm before the page becomes public.",
-            "consentBody": "Publishing makes the farm’s page available to anyone on the internet, with no account and no sign-in.\n\nWhat becomes public: the public name, the short description, the “About the farm” text, the oblast and the crops. Your ЕГН, ЕИК, address, municipality and settlement are NOT published — those stay in your private profile.\n\nThe public address you choose — for example app.agrent.bg/f/pobeda — is public too, and it is the link to the page itself. Choose it with care: it gets printed on material and forwarded in messages you cannot edit afterwards.\n\nThe link can be forwarded, and opened by anyone who receives it.\n\nSearch-engine indexing is a separate decision and is off by default. You can turn it on later.\n\nYou can withdraw publication at any time and the page stops answering immediately. Links already shared and material already printed stay as they are — withdrawing does not call them back.",
+            "consentBody": "Publishing makes the farm’s page available to anyone on the internet, with no account and no sign-in.\n\nWhat becomes public: the public name, the short description, the “About the farm” text, the oblast and the crops. Your ЕИК, address, municipality and settlement are NOT published — those stay in your private profile.\n\nThe public address you choose — for example app.agrent.bg/f/pobeda — is public too, and it is the link to the page itself. Choose it with care: it gets printed on material and forwarded in messages you cannot edit afterwards.\n\nThe link can be forwarded, and opened by anyone who receives it.\n\nSearch-engine indexing is a separate decision and is off by default. You can turn it on later.\n\nYou can withdraw publication at any time and the page stops answering immediately. Links already shared and material already printed stay as they are — withdrawing does not call them back.",
             "consentAgree": "I have read this and agree that the page may be published.",
             "consentRecorded": "Consent recorded on {date}.",
             "publishedAt": "Published on {date}.",
@@ -6603,6 +6602,7 @@
         "FARM_NAME_NOT_SLUGGABLE": "That farm name cannot be turned into a web address. Try one with Latin or Cyrillic letters in it.",
         "FARM_NAME_REQUIRED": "A farm name is required.",
         "FARM_NAME_TOO_LONG": "That farm name is too long — at most {max} characters.",
+        "FARM_PROFILE_EGN_NOT_COLLECTED": "ЕГН is no longer collected or stored. The ДНЕВНИК prints ЕИК and УРН instead.",
         "FARM_PROFILE_EIK_NOT_EDITABLE": "The EIK of a verified farm cannot be changed.",
         "FARM_SLUG_UNAVAILABLE": "A web address could not be allocated for that farm. Try a slightly different name.",
         "FERTILIZER_DOSE_REQUIRED": "A fertiliser dose and unit are required.",

@@ -223,39 +223,39 @@ model KnowledgeAcknowledgement {
 //    • knowledge.prisma KnowledgeArticle: chunks
 // ═══════════════════════════════════════════════════════════════════
 model KnowledgeChunk {
-  id         String                   @id @default(cuid())
+  id           String                      @id @default(cuid())
   /// NULL = GLOBAL licensed catalog; non-null = tenant-private. See header.
-  tenantId   String?
+  tenantId     String?
   /// Optional FK → the source KnowledgeArticle (KB chunks). Null for
   /// tenant-data (journal/crop-plan/label) and external/global chunks.
-  articleId  String?
+  articleId    String?
   /// Human-readable provenance + licence label, e.g. "KCC (GODL)".
-  source     String
-  sourceType KnowledgeChunkSourceType
+  source       String
+  sourceType   KnowledgeChunkSourceType
   /// The originating record id (LogEntry id, external doc id, …).
-  sourceRef  String?
-  text       String                   @db.Text
-  chunkIndex Int                      @default(0)
+  sourceRef    String?
+  text         String                      @db.Text
+  chunkIndex   Int                         @default(0)
   /// BCP-47-ish language tag (e.g. "bg", "en") mirrored from the owning
   /// KnowledgeArticle at chunk-creation time — KB chunks always carry it;
   /// external/journal/crop-plan chunks may be null (language unknown).
   /// Lets retrieval prefer the caller's language WITHOUT a join back to
   /// KnowledgeArticle (see ai/rag/retrieve.ts).
-  language   String?
+  language     String?
   /// Mirrored from KnowledgeArticle at chunk-creation time — see the
   /// "Agronomy structure" note on KnowledgeArticle above for why these
   /// are arrays/a range rather than a join table. Empty array = applies
   /// to every crop/region; both null = not stage-specific.
-  cropTags     String[] @default([])
-  regions      String[] @default([])
+  cropTags     String[]                    @default([])
+  regions      String[]                    @default([])
   bbchStageMin Int?
   bbchStageMax Int?
   /// pgvector `vector(768)` (nomic-embed-text dims). Prisma can't model
   /// it — real column + ivfflat index live in the migration; writes/reads
   /// go through src/lib/db/embeddings.ts raw SQL.
-  embedding  Unsupported("vector(768)")?
-  createdAt  DateTime                 @default(now())
-  updatedAt  DateTime                 @updatedAt
+  embedding    Unsupported("vector(768)")?
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
 
   tenant  Tenant?           @relation(fields: [tenantId], references: [id])
   article KnowledgeArticle? @relation(fields: [articleId], references: [id], onDelete: Cascade)

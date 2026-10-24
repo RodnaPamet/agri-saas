@@ -97,30 +97,30 @@ model InventoryLot {
 /// the per-tenant hash chain (previousHash → entryHash) computed by the
 /// single ledger writer inside an advisory-locked transaction.
 model StockTransaction {
-  id            String               @id @default(cuid())
-  tenantId      String
-  lotId         String
-  type          StockTransactionType
+  id             String               @id @default(cuid())
+  tenantId       String
+  lotId          String
+  type           StockTransactionType
   /// Signed delta in `unitId` units: positive for RECEIPT/HARVEST_IN,
   /// negative for CONSUMPTION/SALE_OUT/DISPOSAL, either for ADJUSTMENT.
-  quantityDelta Decimal              @db.Decimal(16, 4)
-  unitId        String
-  occurredAt    DateTime
+  quantityDelta  Decimal              @db.Decimal(16, 4)
+  unitId         String
+  occurredAt     DateTime
   /// Journal linkage — set for CONSUMPTION/HARVEST_IN so the
   /// traceability walk pivots here (field → lot).
-  logEntryId    String?
+  logEntryId     String?
   /// Required (usecase-enforced) for ADJUSTMENT — the audited escape
   /// hatch for count corrections.
-  reason        String?
+  reason         String?
   /// Cost snapshot for this movement (valuation at transaction time).
-  costAmount    Decimal?             @db.Decimal(14, 2)
-  costCurrency  String?
-  actorUserId   String?
-  createdAt     DateTime             @default(now())
+  costAmount     Decimal?             @db.Decimal(14, 2)
+  costCurrency   String?
+  actorUserId    String?
+  createdAt      DateTime             @default(now())
   /// Per-tenant hash chain — same canonical SHA-256 discipline as
   /// AuditLog. previousHash is null for the tenant's first entry.
-  previousHash  String?
-  entryHash     String
+  previousHash   String?
+  entryHash      String
   /// Optional caller-supplied dedup key (e.g. `spray:<operationParcelId>`)
   /// so a retried emit can't double-post the same movement. Enforced by a
   /// PARTIAL unique index `(tenantId, idempotencyKey) WHERE idempotencyKey

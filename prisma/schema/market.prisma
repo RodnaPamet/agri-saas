@@ -26,7 +26,7 @@
 /// prices (BG→BGN, RO→RON), so we NEVER normalise; the chart splits by
 /// unit/currency instead.
 model MarketPriceSeries {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   /// Data origin: 'ec-agrifood' | 'alpha-vantage' | 'listings'.
   source    String
   /// Commodity slug: 'wheat' | 'maize' | 'barley' | 'sunflower'.
@@ -56,8 +56,8 @@ model MarketPriceSeries {
   /// Only ever set on `source: 'platform'` rows. A feed's series is never
   /// cleared — there is nobody to clear it and nothing it would mean.
   clearedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   points MarketPricePoint[]
 
@@ -119,22 +119,22 @@ model MarketPricePoint {
 /// the daily `market-news-pull` job never duplicates a headline; the job also
 /// prunes rows whose `publishedAt` is older than 60 days.
 model MarketNewsItem {
-  id String @id @default(cuid())
+  id          String   @id @default(cuid())
   /// Origin feed slug, e.g. 'agri-bg' | 'dfz' | 'ec-agrifood'.
-  source String
+  source      String
   /// Bucket the News tab filters by: 'market' | 'policy' | 'general'. Assigned
   /// by the feed's default category, promoted by a deterministic BG+EN keyword
   /// match (see src/lib/news/categorize.ts).
-  category String
+  category    String
   /// Headline text (plain, sanitised — never raw HTML).
-  title String
+  title       String
   /// Short excerpt from the feed description (plain, sanitised). Nullable —
   /// some feeds ship title-only items.
-  summary String?
+  summary     String?
   /// Canonical article URL — the tap-through target.
-  url String
+  url         String
   /// Optional lead image (RSS enclosure / media:content).
-  imageUrl String?
+  imageUrl    String?
   /// Publish time from the feed (pubDate / atom:updated). Drives feed order.
   publishedAt DateTime
   /// Inclusive topic + crop tags, several per article (#231).
@@ -152,13 +152,13 @@ model MarketNewsItem {
   /// rather than a parallel keyword list — so one vocabulary serves news
   /// tagging and Борса search, and a new crop is added in one place. See
   /// `src/lib/news/categorize.ts`.
-  tags String[] @default([])
+  tags        String[] @default([])
   /// Idempotent-upsert + dedupe key: sha256(guid || link).
-  guidHash String
+  guidHash    String
   /// Last time the pull saw this item (refreshed on every upsert).
-  fetchedAt DateTime @default(now())
+  fetchedAt   DateTime @default(now())
   /// First time the pull ingested this item.
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   /// Idempotent-upsert / dedupe key.
   @@unique([guidHash])

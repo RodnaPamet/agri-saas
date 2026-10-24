@@ -12,9 +12,13 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
  * БАБХ farm-record — the one-per-tenant FarmProfile identity block printed on
  * the "ДНЕВНИК за проведените растителнозащитни мероприятия и торене"
  * (Прил. 1 към заповед РД 11-3194/31.12.2021). Every field is optional (the
- * paper form tolerates blanks). egn/eik/urn are encrypted at rest via the Epic B
+ * paper form tolerates blanks). eik/urn are encrypted at rest via the Epic B
  * manifest — this usecase reads/writes plaintext; the Prisma extension does
  * the crypto transparently.
+ *
+ * There is no `egn`. The column was dropped in #2257 on the owner's ruling of
+ * 2026-10-24 — see the Prisma model header. The KEY is still accepted on the
+ * wire and refused when it carries a value; `egn` below says why.
  *
  * ── two fields are NOT strings, and that is deliberate ──
  *
@@ -35,6 +39,15 @@ import { isUniqueViolation } from '@/lib/errors/prisma';
 
 export interface FarmProfileFields {
     producerName?: string | null;
+    /**
+     * ACCEPTED, never stored — there is no column behind it (#2257).
+     *
+     * Kept on the input type so a body carrying `egn` can be REFUSED rather
+     * than stripped. `UpdateFarmProfileSchema` ends in `.strip()`, so deleting
+     * the property would make zod drop the key silently and a client that
+     * believes it saved a national identity number would be told it succeeded.
+     * Telling it no is the whole reason this field still exists in the type.
+     */
     egn?: string | null;
     eik?: string | null;
     /** УРН — the holding's registration number. Encrypted at rest. */
@@ -64,7 +77,6 @@ export interface FarmProfileFields {
  */
 const PROFILE_FIELDS = [
     'producerName',
-    'egn',
     'eik',
     'urn',
     'address',
@@ -93,10 +105,11 @@ const PROFILE_FIELDS = [
  * регистър. `tests/guards/farm-profile-eik-has-one-write-path.test.ts` keeps
  * it that way.
  *
- * `egn` STAYS editable: it is the farmer's own personal identity number on
- * their own profile, it has no claim mechanism and needs none, and a
- * self-declared ЕГН asserts nothing about a third party the way a company
- * number does.
+ * `egn` used to be here, with a note that it STAYED editable because it was
+ * the farmer's own number on their own profile. That reasoning was sound about
+ * consent and wrong about retention: holding a national identity number at all
+ * is the exposure, whoever it belongs to. Owner ruling 2026-10-24 removed the
+ * column (#2257), so there is nothing to make editable or not.
  */
 const EDITABLE_PROFILE_FIELDS = PROFILE_FIELDS.filter(
     (f) => f !== 'eik',
@@ -418,6 +431,29 @@ export async function upsertFarmProfile(
                         'The EIK of a verified farm cannot be changed.',
                     );
                 }
+            }
+
+            // ── `egn` is refused only when it carries a VALUE (#2257) ──
+            //
+            // There is no column any more. The key is still accepted by the
+            // schema, and that is deliberate: `UpdateFarmProfileSchema` ends
+            // in `.strip()`, so deleting the property would make zod drop an
+            // `egn` the caller sent without a word, and a client that believes
+            // it stored a national identity number would be told it succeeded.
+            //
+            // CONDITIONAL for the same reason `eik` above is, and it is the
+            // same client: the iOS editor PUTs every field on every save, so
+            // it mentions `egn` whether or not anyone typed one. An
+            // unconditional refusal would 400 every farm-profile save from the
+            // owner's phone — which is exactly the regression #1352 records
+            // having caused. So a null or blank `egn` is a silent no-op (that
+            // is what a GET returns now, and echoing it back is not an attempt
+            // to write), and only a real value is refused.
+            if (said('egn') && norm(input.egn) !== null) {
+                throw codedBadRequest(
+                    'FARM_PROFILE_EGN_NOT_COLLECTED',
+                    'ЕГН is no longer collected or stored.',
+                );
             }
 
             if (!mentionedAnything) {

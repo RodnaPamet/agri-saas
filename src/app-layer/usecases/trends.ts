@@ -47,7 +47,7 @@ const SOURCE_ALPHA_VANTAGE = 'alpha-vantage';
  *
  * ── Why BG is a constant and not a lookup ──
  *
- * There is no country field to read. `FarmProfile` carries `egn`, `eik`,
+ * There is no country field to read. `FarmProfile` carries `eik`, `urn`,
  * `registrationEkatte`, `odbhCity` and `agricultureDirectorateCity` — every
  * one a Bulgarian registry concept — so the schema is structurally
  * single-country and a per-tenant country column would be inventing a

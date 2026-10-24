@@ -23,11 +23,21 @@
  * garbage or rejected with a useless "invalid ЕИК"; with one we can say
  * precisely what is wrong and decline to keep the value.
  *
- * **This is NOT a ban on ЕГН in the product.** `FarmProfile.egn` legitimately
- * stores one, encrypted under the Epic B manifest, because the БАБХ ДНЕВНИК
- * (Прил. 1 към заповед РД 11-3194/31.12.2021) has a field for it and a sole
- * trader's form is invalid without it. The refusal is scoped to the identifier
- * being asked for, not to the number existing.
+ * **This is NOT a ban on RECOGNISING an ЕГН** — the refusal is scoped to the
+ * identifier being asked for, not to the number existing. But the product no
+ * longer stores one anywhere.
+ *
+ * Until #2257 this paragraph said `FarmProfile.egn` legitimately stored one
+ * because the БАБХ ДНЕВНИК (Прил. 1 към заповед РД 11-3194/31.12.2021) has a
+ * field for it "and a sole trader's form is invalid without it". That second
+ * clause is left on the record rather than quietly deleted, because the owner
+ * ruled against it on 2026-10-24 with the claim in view: the product does not
+ * hold a national identity number, and a farmer who needs the box filled on a
+ * filed copy writes it on the paper. The cover now prints ЕИК and УРН.
+ *
+ * So this detector's job GREW. It is the only thing standing between an ЕГН
+ * and the database, where before it was one of two gates and the other one was
+ * a legitimate column.
  *
  * Consequently `looksLikeEgn` must never log or echo its input, and callers
  * must not put the value in an error message, a URL or a metric label. A

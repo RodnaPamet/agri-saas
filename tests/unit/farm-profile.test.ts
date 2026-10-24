@@ -62,15 +62,18 @@ describe('farm-profile usecase', () => {
         mockDb.farmProfile = { findUnique: jest.fn().mockResolvedValue(null) };
         const p = await getFarmProfile(makeCtx());
         expect(p.producerName).toBeNull();
-        expect(p.egn).toBeNull();
+        expect(p.urn).toBeNull();
         expect(p.odbhCity).toBeNull();
+        // No `egn` key at all — the column was dropped (#2257), and a shape
+        // that still carried a null one would let a client keep a field
+        // bound to it and never notice.
+        expect(Object.hasOwn(p, 'egn')).toBe(false);
     });
 
     test('getFarmProfile maps a stored row', async () => {
         mockDb.farmProfile = {
             findUnique: jest.fn().mockResolvedValue({
                 producerName: 'ЕТ Иван Петров',
-                egn: '7501011234',
                 eik: null,
                 municipality: 'Пловдив',
             }),
@@ -87,7 +90,6 @@ describe('farm-profile usecase', () => {
 
         await upsertFarmProfile(makeCtx(), {
             producerName: '  Иван  ',
-            egn: '7501011234',
             municipality: '   ',
             odbhCity: '<b>Пловдив</b>',
         });
@@ -98,7 +100,49 @@ describe('farm-profile usecase', () => {
         expect(arg.create.producerName).toBe('Иван'); // trimmed
         expect(arg.update.municipality).toBeNull(); // blank → null
         expect(arg.update.odbhCity).toBe('Пловдив'); // sanitised (tags stripped)
-        expect(arg.update.egn).toBe('7501011234');
+    });
+
+    // ── `egn` is accepted on the wire and refused, never stored (#2257) ──
+    //
+    // The column is gone. The KEY is still in `UpdateFarmProfileSchema`
+    // because that object ends in `.strip()`, so deleting the property would
+    // make zod discard a client's `egn` silently — a client that believes it
+    // saved a national identity number would be told it succeeded.
+    //
+    // Both halves are asserted because only the pair is the behaviour: a
+    // refusal that also fired on null would 400 every save from the iOS
+    // editor, which PUTs every field whether or not anyone typed in it.
+
+    test('upsertFarmProfile REFUSES an egn that carries a value, and writes nothing', async () => {
+        const upsert = jest.fn();
+        mockDb.farmProfile = { upsert };
+
+        await expect(
+            upsertFarmProfile(makeCtx(), { producerName: 'Иван', egn: '7501011234' }),
+        ).rejects.toMatchObject({ code: 'FARM_PROFILE_EGN_NOT_COLLECTED' });
+
+        // The whole write is abandoned, not just the one field — a partial
+        // save would be worse than a refusal.
+        expect(upsert).not.toHaveBeenCalled();
+    });
+
+    test('upsertFarmProfile TOLERATES a null egn, because an old client echoes one', async () => {
+        const upsert = jest
+            .fn()
+            .mockResolvedValue({ id: 'fp-1', producerName: 'Иван', odbhCity: null });
+        mockDb.farmProfile = { upsert };
+
+        // What agrent-ios <=13.1 sends after the migration: the key, holding
+        // the null it just read back. Refusing this would break every save.
+        await expect(
+            upsertFarmProfile(makeCtx(), { producerName: 'Иван', egn: null }),
+        ).resolves.toBeDefined();
+
+        expect(upsert).toHaveBeenCalled();
+        const arg = upsert.mock.calls[0][0];
+        // Accepted, and still never written anywhere.
+        expect(Object.hasOwn(arg.update, 'egn')).toBe(false);
+        expect(Object.hasOwn(arg.create, 'egn')).toBe(false);
     });
 
     // ── The holding's own identity: УРН, size, grains, location ──

@@ -152,18 +152,21 @@ describe('farm-profile merge semantics (#1176)', () => {
         expect(update.urn).toBe('123');
         // Named explicitly, because "not in the keys" and "present as null"
         // are the two states this change exists to separate.
-        expect(Object.hasOwn(update, 'egn')).toBe(false);
+        expect(Object.hasOwn(update, 'address')).toBe(false);
         expect(Object.hasOwn(update, 'producerName')).toBe(false);
         expect(Object.hasOwn(update, 'sizeHa')).toBe(false);
         expect(Object.hasOwn(update, 'grainProduced')).toBe(false);
     });
 
     it('an explicit null DOES clear', async () => {
-        await upsertFarmProfile(makeCtx(), { urn: '123', egn: null });
+        // Was written with `egn`, which #2257 removed. `address` is the same
+        // kind of field for this purpose — an ordinary editable string — and
+        // unlike `egn` it is still writable, so the assertion can still fail.
+        await upsertFarmProfile(makeCtx(), { urn: '123', address: null });
 
         const update = lastUpdate();
-        expect(Object.hasOwn(update, 'egn')).toBe(true);
-        expect(update.egn).toBeNull();
+        expect(Object.hasOwn(update, 'address')).toBe(true);
+        expect(update.address).toBeNull();
     });
 
     it('a blank string still clears, as it always did', async () => {
@@ -222,11 +225,11 @@ describe('farm-profile merge semantics (#1176)', () => {
         const create = lastCreate();
         expect(create.tenantId).toBe('tenant-A');
         expect(create.urn).toBe('123');
-        expect(create.egn).toBeNull();
+        expect(create.address).toBeNull();
         expect(create.producerName).toBeNull();
         expect(create.sizeHa).toBeNull();
         expect(create.grainProduced).toEqual([]);
-        // Twelve editable fields plus tenantId, so Prisma never sees a
+        // Eleven editable fields plus tenantId, so Prisma never sees a
         // partial create.
         //
         // 14 → 13 (#1352): `eik` left the create object with the rest of the
@@ -235,7 +238,11 @@ describe('farm-profile merge semantics (#1176)', () => {
         // where "no prior row" means there is nothing to compare against. The
         // column takes its own default (null) and is set later by staff
         // verification (P3.9).
-        expect(Object.keys(create).length).toBe(13);
+        //
+        // 13 → 12 (#2257): `egn` left because the COLUMN left. Different
+        // reason from `eik` — that one is still a column and still readable,
+        // this one does not exist.
+        expect(Object.keys(create).length).toBe(12);
         expect(create).not.toHaveProperty('eik');
     });
 

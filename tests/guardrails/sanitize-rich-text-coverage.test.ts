@@ -177,7 +177,7 @@ const RICH_TEXT_COVERAGE: Readonly<
     // different questions, and every renderer that shows a supplier name
     // deserves the same protection as one that shows a description.
     CostEntry: { usecases: ['src/app-layer/usecases/cost-entry.ts'], sanitizer: 'sanitizePlainText' },
-    // БАБХ farm-record — FarmProfile.egn/eik are encrypted at rest (Epic B
+    // БАБХ farm-record — FarmProfile.eik/urn are encrypted at rest (Epic B
     // manifest) AND sanitised at the upsertFarmProfile write seam before the
     // middleware persists them, so every renderer that decrypts them (the
     // ДНЕВНИК PDF) sees safe content.
@@ -336,16 +336,6 @@ const REAL_SANITISERS: readonly Sanitizer[] = [
 const SEAM_COVERED: Readonly<
     Record<string, { seam: string; fieldList: string; reason: string }>
 > = {
-    'FarmProfile.egn': {
-        seam: 'norm',
-        fieldList: 'PROFILE_FIELDS',
-        reason:
-            'upsertFarmProfile builds its write object by reducing the ' +
-            'PROFILE_FIELDS constant through `norm`, which sanitises. The ' +
-            'field name never appears beside a sanitiser call because the ' +
-            'seam covers every field generically — which is stronger than ' +
-            'per-field, not weaker.',
-    },
     // `FarmProfile.eik` is NOT seam-covered any more, deliberately. It left
     // the `norm`/PROFILE_FIELDS reduce when it stopped being tenant-editable
     // (#1352), and its new write path in `farm-identity-review.ts` names the
@@ -361,9 +351,15 @@ const SEAM_COVERED: Readonly<
         seam: 'norm',
         fieldList: 'PROFILE_FIELDS',
         reason:
-            'Same PROFILE_FIELDS reduce seam as FarmProfile.egn. УРН is the ' +
-            'holding’s registration number — encrypted beside egn/eik because ' +
-            'it identifies a named producer to the state.',
+            'upsertFarmProfile builds its write object by reducing the ' +
+            'PROFILE_FIELDS constant through `norm`, which sanitises. The ' +
+            'field name never appears beside a sanitiser call because the ' +
+            'seam covers every field generically — which is stronger than ' +
+            'per-field, not weaker. УРН is the holding’s registration ' +
+            'number — encrypted beside eik because it identifies a named ' +
+            'producer to the state. This entry used to describe the seam by ' +
+            'reference to FarmProfile.egn, which #2257 removed; the seam is ' +
+            'unchanged, it just has one fewer field passing through it.',
     },
 };
 

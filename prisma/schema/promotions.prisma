@@ -89,7 +89,7 @@ model Promotion {
 /// storing the row + a confirmation notification is the whole flow (no
 /// provider portal / payment yet).
 model PromotionLead {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   promotionId      String
   /// Inquiring tenant — plain FK to Tenant.id (NOT a tenantId RLS column).
   inquirerTenantId String
@@ -112,7 +112,7 @@ model PromotionLead {
   /// `Notification.message` came back as `v1:…`.) A model-unique name makes the
   /// collision impossible. `@map("message")` keeps the physical column, so this
   /// is a Prisma-level rename with no data migration.
-  requestMessage   String   @map("message")
+  requestMessage   String    @map("message")
   /// Optional parcel/context the request is about (free-form id, no FK).
   contextParcelId  String?
   /// When the farmer ticked the consent box. NOT NULL by design: a lead
@@ -125,8 +125,8 @@ model PromotionLead {
   /// retention note in the implementation doc for the window and the sweep.
   deletedAt        DateTime?
   /// Curated status: "PENDING" | "CONTACTED" | "CLOSED".
-  status           String   @default("PENDING")
-  createdAt        DateTime @default(now())
+  status           String    @default("PENDING")
+  createdAt        DateTime  @default(now())
 
   promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
 

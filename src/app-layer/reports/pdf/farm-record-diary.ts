@@ -44,8 +44,8 @@ export interface DiaryLabels {
     producer: string;
     producerHint: string;
     address: string;
-    egn: string;
     eik: string;
+    urn: string;
     agriDirectorate: string;
     registrationPlace: string;
     ekatte: string;
@@ -101,8 +101,8 @@ export const BG_LABELS: DiaryLabels = {
     producer: 'Земеделски производител',
     producerHint: '/ име презиме фамилия / фирма /',
     address: 'Адрес',
-    egn: 'ЕГН',
     eik: 'ЕИК',
+    urn: 'УРН',
     agriDirectorate: 'Областна дирекция „Земеделие“ гр.',
     registrationPlace: 'Място на регистриране',
     ekatte: 'ЕКАТТЕ на регистрация',
@@ -211,8 +211,8 @@ export const BG_LABELS: DiaryLabels = {
 
 export interface FarmProfileData {
     producerName: string | null;
-    egn: string | null;
     eik: string | null;
+    urn: string | null;
     address: string | null;
     municipality: string | null;
     settlement: string | null;
@@ -839,13 +839,25 @@ export function renderFarmRecordDiary(
     y += 8;
     y = drawLabeledLine(doc, m.left, y, contentW, L.address, p.address);
 
-    // Boxed ЕГН (10) + ЕИК (13)
-    doc.font(UNICODE_FONT).fontSize(10).fillColor(INK).text(`${L.egn}:`, m.left, y, { lineBreak: false });
-    drawBoxedCells(doc, m.left + 40, y - 3, 10, p.egn);
-    y += 24;
-    doc.text(`${L.eik}:`, m.left, y, { lineBreak: false });
+    // Boxed ЕИК (13), then УРН on a ruled line.
+    //
+    // The prescribed form (Прил. 1 към заповед РД 11-3194/31.12.2021) puts a
+    // boxed ЕГН (10 cells) above the ЕИК here, and this cover printed one
+    // until #2257. It is GONE on the owner's ruling of 2026-10-24: the product
+    // holds no national identity number, so there is no value to print and a
+    // row of ten empty boxes on a regulator-facing document would invite
+    // somebody to fill it in by hand.
+    //
+    // УРН takes its place rather than leaving a gap, and that is not
+    // decoration: a producer who is a natural person may have no ЕИК at all,
+    // so without УРН their cover would identify them by name alone. УРН prints
+    // as a ruled line, not boxed cells — the form prescribes no cell count for
+    // it, and inventing one would assert a fixed length the register does not
+    // guarantee.
+    doc.font(UNICODE_FONT).fontSize(10).fillColor(INK).text(`${L.eik}:`, m.left, y, { lineBreak: false });
     drawBoxedCells(doc, m.left + 40, y - 3, 13, p.eik);
     y += 28;
+    y = drawLabeledLine(doc, m.left, y, contentW, L.urn, p.urn);
 
     y = drawLabeledLine(doc, m.left, y, contentW, L.agriDirectorate, p.agricultureDirectorateCity);
     y = drawLabeledLine(doc, m.left, y, contentW, L.registrationPlace, p.registrationPlace);
@@ -1045,8 +1057,8 @@ interface CertSnapshot {
 
 const EMPTY_PROFILE: FarmProfileData = {
     producerName: null,
-    egn: null,
     eik: null,
+    urn: null,
     address: null,
     municipality: null,
     settlement: null,
@@ -1092,7 +1104,7 @@ export async function gatherFarmRecord(
     // Report read-gate (same privilege model as year-on-farm). Read the
     // FarmProfile directly (NOT via getFarmProfile, which requires
     // admin-settings permission) — the Epic B extension still decrypts
-    // egn/eik transparently on this read.
+    // eik/urn transparently on this read.
     assertCanRead(ctx);
     // A treatment-scoped document's period is the treatment's own DAY, which
     // is only known once its lines are read — so these are assigned below for
@@ -1122,8 +1134,8 @@ export async function gatherFarmRecord(
         const profile: FarmProfileData = profileRow
             ? {
                   producerName: profileRow.producerName ?? null,
-                  egn: profileRow.egn ?? null,
                   eik: profileRow.eik ?? null,
+                  urn: profileRow.urn ?? null,
                   address: profileRow.address ?? null,
                   municipality: profileRow.municipality ?? null,
                   settlement: profileRow.settlement ?? null,

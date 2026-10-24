@@ -265,6 +265,40 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
             '— recorded here because this file carries the owner\'s approval and not an ' +
             'agent\'s own judgement.',
     },
+    {
+        kind: 'property-removed',
+        schema: 'FarmProfile',
+        property: 'egn',
+        contractVersion: 3,
+        pr: 2257,
+        date: '2026-10-24',
+        why:
+            'The column is gone, so the response has nothing to put there. Owner ruling ' +
+            '2026-10-24: the product does not hold a Bulgarian national identity number. ' +
+            'The migration overwrites every value with NULL and then drops the column, and ' +
+            'the ДНЕВНИК cover prints ЕИК + УРН where the boxed ЕГН was.\n\n' +
+            'The client population is KNOWN rather than assumed, which is the whole reason ' +
+            'this is acknowledgeable. agrent-ios confirmed on 2026-10-24 that its current ' +
+            'build (#414, TestFlight since 0.1.0) declares no `egn` property at all, so a ' +
+            'missing key decodes fine; and that builds ≤13.1 declared `let egn: String?` ' +
+            'with the synthesised decoder, where a missing key decodes to nil rather than ' +
+            'failing. So no shipped build breaks on the absence — which is a stronger ' +
+            'statement than "the field is optional", because an optional field can still be ' +
+            'required by a hand-written decoder.\n\n' +
+            'The REQUEST schema deliberately keeps `egn`, so this is a one-sided removal ' +
+            'and `UpdateFarmProfileRequest` produces no finding. That is not an oversight: ' +
+            '`UpdateFarmProfileSchema` ends in `.strip()`, so deleting the property would ' +
+            'make zod discard an `egn` a client sent without a word, and a client that ' +
+            'believes it stored a national identity number would be told it succeeded. It ' +
+            'is refused with a coded 400 instead — conditionally, only for a non-null ' +
+            'value, because the iOS editor PUTs every field on every save and #1352 records ' +
+            'that an unconditional refusal on `eik` 400d every farm-profile save from the ' +
+            'owner\'s phone.\n\n' +
+            'Owner authorised the removal directly on 2026-10-24, asked as "all of it" — ' +
+            'erase the values, drop the column, change what the cover prints, update the ' +
+            'consent text — and recorded here because this file carries the owner\'s ' +
+            'approval and not an agent\'s own judgement.',
+    },
 ];
 
 /** True when `entry` covers `finding`. */

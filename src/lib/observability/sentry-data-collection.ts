@@ -22,10 +22,17 @@
  * no-op: it inverts the posture from "collect nothing personal" to "collect
  * user info, cookies, both header directions, **request and response
  * bodies**, query params and database query data". On a product whose
- * `FarmProfile.egn` (a Bulgarian national identity number) and
- * `ParcelLease.lessorName` are in `ENCRYPTED_FIELDS` *because* they are
- * personal data, an incoming request body is the last thing that should reach
- * a third party. The #1280 commit comments predicted this restructure; this is
+ * `FarmProfile.eik` and `ParcelLease.lessorName` are in `ENCRYPTED_FIELDS`
+ * *because* they are personal data, an incoming request body is the last thing
+ * that should reach a third party.
+ *
+ * This used to cite `FarmProfile.egn`, a Bulgarian national identity number.
+ * That column was dropped in #2257, which makes the case here STRONGER rather
+ * than weaker: the field is still accepted on the wire so a client sending one
+ * can be refused instead of silently stripped, so an ЕГН can still arrive in a
+ * request BODY — it just never reaches the database. A refused value lives for
+ * the length of one request, and body collection is what would persist it to a
+ * third party. The #1280 commit comments predicted this restructure; this is
  * the translation.
  *
  * ## Why one shared constant rather than a copy in each init
@@ -87,7 +94,11 @@ export const SENTRY_DATA_COLLECTION: SentryDataCollection = {
     cookies: false,
     /** Both directions: request headers carry the caller's IP and bearer. */
     httpHeaders: { request: false, response: false },
-    /** No body in either direction — this is where EGN and lessor names live. */
+    /**
+     * No body in either direction — this is where lessor names live, and where
+     * a REFUSED ЕГН still arrives (#2257: no column, but the key is accepted
+     * so it can be 400'd rather than silently dropped).
+     */
     httpBodies: [],
     /** A query string can carry an id; the repo bans PII there, belt and braces. */
     urlQueryParams: false,

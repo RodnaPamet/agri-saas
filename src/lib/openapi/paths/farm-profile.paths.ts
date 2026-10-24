@@ -25,9 +25,13 @@
  * `sizeHa` is a NUMBER, not the decimal string a Prisma `Decimal` normally
  * serialises to — see the usecase note on why an area differs from money here.
  * `grainProduced` is an ARRAY and is `[]` rather than null when unset. And
- * `egn` / `eik` / `urn` are encrypted at rest and returned as plaintext, so a
- * client must treat them as sensitive on screen and in logs even though they
- * arrive looking ordinary.
+ * `eik` / `urn` are encrypted at rest and returned as plaintext, so a client
+ * must treat them as sensitive on screen and in logs even though they arrive
+ * looking ordinary.
+ *
+ * The RESPONSE carries no `egn` (#2257 dropped the column). The REQUEST still
+ * accepts the key so that a client sending one is refused with a coded 400
+ * rather than having it silently stripped — see the schema's own note.
  */
 import { z } from '@/lib/openapi/zod';
 import { UpdateFarmProfileSchema } from '@/app-layer/schemas/farm-profile.schemas';
@@ -42,14 +46,16 @@ const TenantParams = z.object({
 const FarmProfileSchema = z
     .object({
         producerName: z.string().nullable(),
-        /** ЕГН — a personal ID. Encrypted at rest, plaintext here. */
-        egn: z.string().nullable(),
         /** ЕИК — the company. Encrypted at rest, plaintext here. */
         eik: z.string().nullable(),
         /**
          * УРН — the HOLDING's registration number on the земеделски-стопанин
-         * register. Distinct from `eik` (company) and `egn` (person), and the
+         * register. Distinct from `eik`, which is the COMPANY; this is the
          * number a subsidy or inspection reference cites. Encrypted at rest.
+         *
+         * Printed on the ДНЕВНИК cover since #2257, where it replaced the
+         * boxed ЕГН: a producer who is a natural person may have no ЕИК, so
+         * this can be the only identifier the document carries.
          */
         urn: z.string().nullable(),
         /** The producer's registered / management address. */
@@ -116,7 +122,7 @@ const FarmProfileSchema = z
     })
     .openapi('FarmProfile', {
         description:
-            'The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. egn/eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. sizeHa is a number and grainProduced is an array that is [] rather than null.',
+            'The one-per-tenant farm identity block printed on the БАБХ ДНЕВНИК. Every field is nullable because the paper form tolerates blanks — an all-null body is the normal answer for a tenant that has not filled it in, not an error. eik/urn are encrypted at rest and returned as plaintext: treat them as sensitive on screen and in logs. There is no egn: the product does not hold a national identity number. sizeHa is a number and grainProduced is an array that is [] rather than null.',
     });
 
 const FarmProfileStaleDataError = ApiErrorResponseSchema.openapi(
@@ -228,7 +234,15 @@ export function registerFarmProfilePaths(registry: OpenAPIRegistry): void {
                     'whole object is still correct — and so is omitting the field. `null` is a ' +
                     'DIFFERENT value and is refused: clearing a verified identity is the same ' +
                     'change in the other direction. The remedy is support, not another request; ' +
-                    'do not offer a retry.',
+                    'do not offer a retry.\n\n' +
+                    '`error.code` is `FARM_PROFILE_EGN_NOT_COLLECTED` when the body carries an ' +
+                    '`egn` holding a VALUE. The product does not store a Bulgarian national ' +
+                    'identity number: there is no such column and the response carries no such ' +
+                    'field. The property is still accepted here so that sending one is REFUSED ' +
+                    'rather than silently discarded — a client told it succeeded would believe ' +
+                    'it had stored an ЕГН. `null`, a blank string and omitting the field are all ' +
+                    'accepted no-ops, so a read-modify-write that round-trips the whole object ' +
+                    'keeps working. Do not retry; drop the field.',
             }),
             409: {
                 description:

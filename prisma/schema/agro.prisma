@@ -33,27 +33,27 @@
 /// per planting + the spray-window / disease-risk evaluators. One row per
 /// (location, date) — the job upserts.
 model WeatherObservation {
-  id           String   @id @default(cuid())
-  tenantId     String
-  locationId   String
+  id               String   @id @default(cuid())
+  tenantId         String
+  locationId       String
   /// Calendar day (UTC) the observation is for.
-  obsDate      DateTime @db.Date
+  obsDate          DateTime @db.Date
   /// Provenance — "open-meteo" today.
-  source       String   @default("open-meteo")
-  tempMaxC     Decimal? @db.Decimal(6, 2)
-  tempMinC     Decimal? @db.Decimal(6, 2)
-  tempMeanC    Decimal? @db.Decimal(6, 2)
-  precipMm     Decimal? @db.Decimal(8, 2)
-  windMaxKmh   Decimal? @db.Decimal(7, 2)
-  humidityMean Decimal? @db.Decimal(5, 2)
+  source           String   @default("open-meteo")
+  tempMaxC         Decimal? @db.Decimal(6, 2)
+  tempMinC         Decimal? @db.Decimal(6, 2)
+  tempMeanC        Decimal? @db.Decimal(6, 2)
+  precipMm         Decimal? @db.Decimal(8, 2)
+  windMaxKmh       Decimal? @db.Decimal(7, 2)
+  humidityMean     Decimal? @db.Decimal(5, 2)
   /// Location-local hourly rows for this day: [{ hour, windKmh, precipMm, tempC }].
   /// Powers the real "best spray window today" (see computeSprayWindows).
   hourlyJson       Json?
   /// Location UTC offset (seconds, Open-Meteo utc_offset_seconds) — recovers the
   /// location-local "now" so the hourly window drops hours already passed.
   utcOffsetSeconds Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
   location Location @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Cascade)
@@ -120,17 +120,17 @@ model DataStreamReading {
 /// Risk register; that register was removed with the compliance uproot,
 /// and an agronomic signal was never really a governance risk row.
 model AgroSignal {
-  id           String          @id @default(cuid())
-  tenantId     String
-  locationId   String
-  plantingId   String?
-  kind         AgroSignalKind
+  id          String         @id @default(cuid())
+  tenantId    String
+  locationId  String
+  plantingId  String?
+  kind        AgroSignalKind
   /// Free severity label per kind (e.g. UNSUITABLE / HIGH).
-  level        String?
-  signalDate   DateTime        @db.Date
-  notified     Boolean         @default(false)
-  detailsJson  Json?
-  createdAt    DateTime        @default(now())
+  level       String?
+  signalDate  DateTime       @db.Date
+  notified    Boolean        @default(false)
+  detailsJson Json?
+  createdAt   DateTime       @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id])
   location Location  @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Cascade)
