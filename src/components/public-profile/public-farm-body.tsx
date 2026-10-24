@@ -86,7 +86,7 @@ export function PublicFarmBody({
                    with no intrinsic dimensions declared is the classic way to
                    blow a CLS budget — the heading and everything under it jump
                    down the moment the logo decodes.
-                
+
                    We cannot declare width/height: the projection stores a
                    content hash and nothing else, so the server does not know
                    the pixels. Reserving a box is what works without them. */
@@ -100,7 +100,7 @@ export function PublicFarmBody({
                         image the upload pipeline has already fitted to 1600px
                         and whose response is `immutable`. It would also put
                         optimizer traffic through a rate-limited public route.
-                
+
                         `object-contain`, not `cover`: a wide logo must not be
                         cropped to a square. Same reasoning as the stored
                         bytes, which are fitted `inside` rather than cropped. */}
@@ -108,12 +108,38 @@ export function PublicFarmBody({
                         src={profile.logoUrl}
                         alt={labels.logoAlt}
                         className="absolute inset-0 h-full w-full object-contain"
-                        /* EAGER and high priority: it is above the fold and is
-                           the likeliest LCP element now that the page has an
-                           image at all. Lazy-loading the LCP element is a
-                           known way to lose a second. */
+                        /* EAGER, because it is above the fold.
+
+                           NOT `fetchPriority="high"` any more, and the reason
+                           is measured — #2251. This used to carry it on the
+                           reasoning that the logo "is the likeliest LCP
+                           element now that the page has an image at all".
+                           It is not, and it cannot be: this box is
+                           `h-24 w-24`, so 96x96 = 9,216 px^2, while a gallery
+                           thumbnail paints 175x131 = 22,925 px^2 — two and a
+                           half times larger. Across 20 Lighthouse runs in four
+                           independent jobs the LCP element was a gallery
+                           thumbnail 20 times and this logo zero times.
+
+                           `fetchPriority="high"` is a RANKING, so spending it
+                           here spent it against the element that actually sets
+                           the number. It now sits on the first thumbnail. This
+                           image is also the smallest of the seven the page
+                           requests (9,946 B against ~14,500 B), so it needs
+                           the help least.
+
+                           It DOES keep the hint when there is no gallery,
+                           which is a conservatism rather than a measurement:
+                           the Lighthouse fixture always has photographs, so
+                           nothing here measures the photoless farm. Rather
+                           than change that case silently, the hint follows the
+                           only image on the page. A text block may well be the
+                           LCP element there instead — a 105-character
+                           paragraph paints larger than 96x96 — in which case
+                           the hint is merely spent on 9,946 B and costs
+                           nothing worth measuring. */
                         loading="eager"
-                        fetchPriority="high"
+                        fetchPriority={profile.photoUrls.length === 0 ? 'high' : undefined}
                         decoding="async"
                     />
                 </div>
@@ -182,10 +208,29 @@ export function PublicFarmBody({
                 their size — the size was already fixed by thumbnails, which
                 took LCP from 15438 ms to 4056 ms.
 
-                Below the about paragraph the grid is off-screen on a phone, so
-                the LCP element becomes the text again and the photographs load
-                after it. First views pay for them once; repeat views pay
-                nothing, because the responses are immutable. */}
+                CORRECTED 2026-10-24 — #2251. This block used to end "below
+                the about paragraph the grid is off-screen on a phone, so the
+                LCP element becomes the text again". It does not. Measured
+                across 20 Lighthouse runs in four independent jobs, the LCP
+                element is one of these thumbnails every time:
+
+                    section.mt-6 > ul.grid > li.relative > img.absolute
+                    boundingRect 175 x 131, loading="lazy"
+
+                On a 390x844 mobile viewport the first row is still inside the
+                measured viewport, and Lighthouse does not scroll, so moving
+                the section down reduced the cost without removing the grid
+                from the LCP candidates. The "2200 ms budget" above is also
+                stale: the bound for this page is 3,800 ms.
+
+                What survives from the paragraph above, and is the useful part,
+                is the diagnosis: six concurrent media requests, each a route
+                handler plus two database queries under a 4x CPU throttle. The
+                number of requests on the critical path is the lever, and the
+                first thumbnail now carries the priority hint so one of them
+                wins deterministically instead of six racing. First views pay
+                for them once; repeat views pay nothing, because the responses
+                are immutable. */}
             {profile.photoUrls.length > 0 ? (
                 <section className="mt-6" data-testid="public-farm-photos">
                     {/* No heading. The gallery is not a titled section the way
@@ -204,12 +249,29 @@ export function PublicFarmBody({
                                     src={url}
                                     alt={labels.photoAlt(i + 1)}
                                     className="absolute inset-0 h-full w-full object-contain"
-                                    /* LAZY, unlike the logo. These are below
-                                       the fold on a phone, and a lazy image is
-                                       not a candidate for LCP — which is what
-                                       keeps six photographs from competing
-                                       with the heading for the 2200 ms gate. */
-                                    loading="lazy"
+                                    /* The FIRST one is eager and highest
+                                       priority; the rest stay lazy — #2251.
+
+                                       One of these is the LCP element, not the
+                                       logo, and the six of them used to be
+                                       indistinguishable to the browser: all
+                                       `lazy`, all issued inside the same
+                                       millisecond, all at `High`. They then
+                                       finish staggered, and LCP lands on
+                                       whichever of the largest-painting ones
+                                       finishes first. Measured at roughly
+                                       395 ms per finishing place, which is why
+                                       the page could move ~800 ms with no
+                                       change to a byte it serves.
+
+                                       Promoting the first breaks the tie on
+                                       purpose: it starts ahead of the other
+                                       five instead of racing them. The rest
+                                       keep `lazy` so a visitor who never
+                                       scrolls still does not pay for all six
+                                       at once. */
+                                    loading={i === 0 ? 'eager' : 'lazy'}
+                                    fetchPriority={i === 0 ? 'high' : undefined}
                                     decoding="async"
                                 />
                             </li>
