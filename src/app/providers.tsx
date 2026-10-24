@@ -93,10 +93,28 @@ export function ResponsiveToaster() {
 export function Providers({
     children,
     userId,
+    isAuthSurface = false,
 }: {
     children: React.ReactNode;
     /** Signed-in user id from the root layout — namespaces the SWR cache. */
     userId?: string | null;
+    /**
+     * True on the sign-in surface, from the header the middleware sets (#2264).
+     *
+     * Suppresses the two global overlays below. They are not merely useless
+     * before sign-in — their COPY is not loaded there: `bundlesFor('auth')`
+     * returns `['auth', 'shared']`, `shared` is empty by design, so the request
+     * carries exactly the `login` namespace. Rendering them anyway threw
+     * `MISSING_MESSAGE: commandPalette` and `: shortcutHelp` thousands of times
+     * per E2E run and, with no `getMessageFallback` configured, printed key
+     * paths on the product's front door.
+     *
+     * Fixed HERE rather than by widening the auth bundle: a palette with
+     * nothing to command is a defect to remove, not copy to ship, and #2099's
+     * whole point was that `/login` stopped serialising all 5787 keys into the
+     * HTML a stranger downloads before authenticating.
+     */
+    isAuthSurface?: boolean;
 }) {
     // No <SessionProvider>. The tenant layout resolves the session
     // server-side via `auth()`, nothing calls `useSession`, and
@@ -140,7 +158,8 @@ export function Providers({
                          * desktop and reduced-motion users are untouched.
                          */}
                         <ViewTransitions>{children}</ViewTransitions>
-                        <CommandPalette />
+                        {/* Not before sign-in — see `isAuthSurface`. */}
+                        {!isAuthSurface && <CommandPalette />}
                         {/*
                          * Epic 57 — `?` pops a live listing of every
                          * registered shortcut. Mounted once at the shell so
@@ -148,7 +167,7 @@ export function Providers({
                          * shortcuts registered deeper in the tree appear
                          * automatically.
                          */}
-                        <ShortcutHelpOverlay />
+                        {!isAuthSurface && <ShortcutHelpOverlay />}
                         {/*
                          * Global toast host. CopyButton / CopyText and the
                          * optimistic-update hook emit into this Toaster;
