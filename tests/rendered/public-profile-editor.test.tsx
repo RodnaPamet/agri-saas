@@ -463,9 +463,16 @@ describe('the public-profile editor', () => {
             // direction nobody checks: the owner sees their photographs
             // missing and concludes publishing is broken.
             const logoUrl = `/api/public/media/${'a'.repeat(64)}`;
+            // THREE, not two, so the eager/lazy SPLIT is observable here.
+            // `EAGER_PHOTO_COUNT` is 2, so a two-photo farm puts every
+            // thumbnail in the first row and the loading assertion below
+            // would pass over a degenerate case — blind to the preview
+            // showing a different contract from the page for the DEFERRED
+            // photographs, which is the half with a mechanism riding on it.
             const photoUrls = [
                 `/api/public/media/${'b'.repeat(64)}`,
                 `/api/public/media/${'c'.repeat(64)}`,
+                `/api/public/media/${'d'.repeat(64)}`,
             ];
             mockFetch([{ ok: true, body: { ...DRAFT, logoUrl, photoUrls } }]);
             render(<PublicProfileClient baseUrl={BASE} />);
@@ -517,10 +524,28 @@ describe('the public-profile editor', () => {
             // So the contract is: logo eager, gallery lazy, and NOTHING
             // claiming a hint. The last is the assertion with teeth — it fails
             // if the hint returns, which sends the reader to the measurement.
+            // CORRECTED AGAIN for #1814, and it is a third measurement rather
+            // than a rethink. Everything above is about `fetchPriority` and
+            // still holds; "gallery lazy" was riding on it and never had a
+            // measurement of its own. `loading` decides WHEN a request is
+            // dispatched, `fetchPriority` the ORDER of ones already in flight —
+            // and the dispatch wait was priced on main `906d11a83` at Load
+            // Delay 1705 ms of a 3326 ms LCP, `lcp-lazy-loaded` scoring 0 in
+            // all five runs.
+            //
+            // Contract: logo eager; the FIRST ROW eager because it is visible;
+            // the DEFERRED photographs lazy because a collapsed `<details>`
+            // gives them no box and an image with no box is never fetched; and
+            // NOTHING claiming a hint. The split is what keeps this preview
+            // honest about which page it is previewing.
             expect(logo.querySelector('img')).toHaveAttribute('loading', 'eager');
-            for (const img of imgs) {
-                expect(img).toHaveAttribute('loading', 'lazy');
-            }
+            const EAGER_ROW = 2;
+            expect(imgs.map((i) => i.getAttribute('loading'))).toEqual(
+                photoUrls.map((_, i) => (i < EAGER_ROW ? 'eager' : 'lazy')),
+            );
+            // Both arms non-empty, so neither can go vacuous if the fixture or
+            // the constant moves.
+            expect(photoUrls.length).toBeGreaterThan(EAGER_ROW);
             const claimants = [logo.querySelector('img'), ...imgs].filter(
                 (i) => i?.getAttribute('fetchpriority') ?? i?.getAttribute('fetchPriority'),
             );
