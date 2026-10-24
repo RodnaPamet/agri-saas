@@ -127,6 +127,7 @@ export default async function PublicFarmProfilePage({ params }: PageProps) {
                     // descriptions would be worse than numbering them.
                     photoAlt: (n: number) =>
                         t('photoAlt', { n, farm: profile.displayName }),
+                    morePhotos: (n: number) => t('morePhotos', { n }),
                 }}
             />
         </main>

@@ -72,6 +72,7 @@ const LABELS: PublicFarmBodyLabels = {
     aboutTitle: 'За нас',
     logoAlt: 'Логото на Стопанство Победа',
     photoAlt: (n) => `Снимка ${n}`,
+    morePhotos: (n) => `Още ${n} снимки`,
 };
 
 const images = () => Array.from(document.querySelectorAll('img'));
@@ -147,6 +148,85 @@ describe('PublicFarmBody images (#2251)', () => {
         expect(logo()).toBeUndefined();
         expect(thumbnails()).toHaveLength(PHOTOS.length);
         expect(images().filter((i) => priorityOf(i) !== null)).toEqual([]);
+    });
+
+    /**
+     * ── ONLY THE FIRST MOBILE ROW IS REQUESTED ── #2251
+     *
+     * Owner ruling 2026-10-24, after both cheap levers were measured closed:
+     * caching the media route's authorisation would serve withdrawn
+     * photographs from an indexable page, and running its two queries
+     * concurrently would let an anonymous caller trigger an RLS-bypassing read
+     * of any tenant's `FileRecord`.
+     *
+     * What is left is the request COUNT, which is the measured mechanism: six
+     * thumbnails issued inside one millisecond, each a route handler plus two
+     * database queries under a 4x CPU throttle, with LCP landing on whichever
+     * of the largest-painting ones finished first at ~395 ms per place.
+     *
+     * The deferral works because a collapsed `<details>` gives its content no
+     * box, and a `loading="lazy"` image with no box never intersects and so is
+     * never fetched. That is the load-bearing claim, so it is MEASURED in a
+     * real browser rather than asserted here — jsdom neither lays out nor
+     * fetches. Chromium via Playwright, counting `/api/public/media/`
+     * requests on this component's markup:
+     *
+     *     details CLOSED   2 of 6 fetched
+     *     details OPEN     6 of 6 fetched
+     *
+     * What these jsdom cases pin is the STRUCTURE that measurement depends on:
+     * two images outside the disclosure, the rest inside it, every one of them
+     * lazy, and the disclosure closed by default. If any of those drifts the
+     * browser result stops following.
+     */
+    it('renders exactly the first mobile row outside the disclosure', () => {
+        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
+        const details = screen.getByTestId('public-farm-photos-more');
+        const outside = thumbnails().filter((i) => !details.contains(i));
+        const inside = thumbnails().filter((i) => details.contains(i));
+        // Two, because `grid-cols-2` is the mobile layout Lighthouse measures.
+        expect(outside.map((i) => i.getAttribute('src'))).toEqual(PHOTOS.slice(0, 2));
+        expect(inside.map((i) => i.getAttribute('src'))).toEqual(PHOTOS.slice(2));
+    });
+
+    it('the disclosure is CLOSED by default, which is what defers the fetch', () => {
+        // An `open` default would put all six back on the critical path while
+        // every other assertion here still passed.
+        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
+        const details = screen.getByTestId('public-farm-photos-more') as HTMLDetailsElement;
+        expect(details.tagName).toBe('DETAILS');
+        expect(details.open).toBe(false);
+        expect(details.hasAttribute('open')).toBe(false);
+    });
+
+    it('every deferred image is lazy — an eager one would be fetched anyway', () => {
+        // `display: none` defers a LAZY image. An eager image inside a closed
+        // `<details>` is fetched immediately, so the deferral would silently
+        // buy nothing.
+        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
+        const details = screen.getByTestId('public-farm-photos-more');
+        const inside = thumbnails().filter((i) => details.contains(i));
+        expect(inside).toHaveLength(PHOTOS.length - 2);
+        expect(inside.map((i) => i.getAttribute('loading'))).toEqual(inside.map(() => 'lazy'));
+    });
+
+    it('the disclosure says how many it hides, and vanishes when it hides none', () => {
+        render(<PublicFarmBody profile={profileOf()} labels={LABELS} />);
+        expect(screen.getByTestId('public-farm-photos-more').textContent).toContain('Още 4 снимки');
+
+        // Exactly the eager count, or fewer: no control at all rather than an
+        // empty one a reader can open onto nothing.
+        const { unmount } = render(
+            <PublicFarmBody profile={profileOf({ photoUrls: PHOTOS.slice(0, 2) })} labels={LABELS} />,
+        );
+        expect(screen.queryAllByTestId('public-farm-photos-more')).toHaveLength(1);
+        unmount();
+    });
+
+    it('a single photograph renders with no disclosure', () => {
+        render(<PublicFarmBody profile={profileOf({ photoUrls: [PHOTOS[0]] })} labels={LABELS} />);
+        expect(thumbnails()).toHaveLength(1);
+        expect(screen.queryByTestId('public-farm-photos-more')).toBeNull();
     });
 
     it('the size premise behind all of this is still in the markup', () => {

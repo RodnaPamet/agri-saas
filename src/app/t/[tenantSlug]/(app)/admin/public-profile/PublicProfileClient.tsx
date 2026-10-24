@@ -675,6 +675,7 @@ export function PublicProfileClient({ baseUrl }: { baseUrl: string }) {
                                             n,
                                             farm: displayName.trim() || t('previewNoName'),
                                         }),
+                                    morePhotos: (n: number) => tp('morePhotos', { n }),
                                 }}
                             />
                         );

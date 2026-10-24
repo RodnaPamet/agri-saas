@@ -63,7 +63,23 @@ export interface PublicFarmBodyLabels {
      * their own `t()` — the component never formats anything itself.
      */
     readonly photoAlt: (oneBased: number) => string;
+    /**
+     * The disclosure's label, given how many photographs it hides — e.g.
+     * «Още 4 снимки». A FUNCTION for the same reason `photoAlt` is: the
+     * caller owns the interpolation and the count comes from the profile.
+     */
+    readonly morePhotos: (hidden: number) => string;
 }
+
+/**
+ * How many thumbnails render before the disclosure — #2251.
+ *
+ * TWO is `grid-cols-2`’s first row, which is what a 390px viewport shows and
+ * what Lighthouse measures. Raising it puts requests back on the critical
+ * path at roughly 395 ms per extra finishing place; lowering it to one leaves
+ * a visibly half-empty row.
+ */
+const EAGER_PHOTO_COUNT = 2;
 
 export function PublicFarmBody({
     profile,
@@ -223,10 +239,21 @@ export function PublicFarmBody({
                 What survives from the paragraph above, and is the useful part,
                 is the diagnosis: six concurrent media requests, each a route
                 handler plus two database queries under a 4x CPU throttle. The
-                number of requests on the critical path is the lever, and the
-                first thumbnail now carries the priority hint so one of them
-                wins deterministically instead of six racing. First views pay
-                for them once; repeat views pay nothing, because the responses
+                number of requests on the critical path is the lever.
+
+                A priority hint on the first thumbnail was tried for that and
+                REMOVED again in #2258 — Chromium already assigns all seven
+                media requests `High`, so the attribute restated a value the
+                browser had inferred and the LCP median did not move across
+                four jobs. Do not re-add it; `public-farm-body.test.tsx` fails
+                if you do.
+
+                What is left, and what the owner chose on 2026-10-24, is to cut
+                the REQUESTS. Only the first mobile row renders up front; the
+                rest sit behind a native disclosure, where a `display:none`
+                ancestor means a `loading="lazy"` image never intersects and so
+                is never fetched. First views pay for two images instead of
+                six; repeat views pay nothing either way, because the responses
                 are immutable. */}
             {profile.photoUrls.length > 0 ? (
                 <section className="mt-6" data-testid="public-farm-photos">
@@ -235,8 +262,35 @@ export function PublicFarmBody({
                         a row of pictures with no captions says nothing a
                         screen-reader user cannot get from the alt text. The
                         `<ul>` carries the structure instead. */}
+                    {/* ── ONLY THE FIRST MOBILE ROW IS RENDERED UP FRONT ── #2251
+
+                        Owner ruling 2026-10-24. The measured mechanism is
+                        request COUNT, not bytes and not priority: all six
+                        thumbnails were requested inside the same millisecond,
+                        each costing a route handler plus two database queries
+                        under a 4x CPU throttle, and LCP landed on whichever of
+                        the largest-painting ones finished first — about 395 ms
+                        per finishing place.
+
+                        TWO, because `grid-cols-2` is the mobile layout and
+                        Lighthouse measures a 390px viewport: two is exactly
+                        the first row there, so this is the smallest set that
+                        does not leave a visible gap.
+
+                        The rest sit inside a native `<details>`. A collapsed
+                        `<details>` gives its content no box, a
+                        `loading="lazy"` image with no box never intersects,
+                        and an image that never intersects is never FETCHED —
+                        which is the whole point and is measured rather than
+                        assumed (see `public-farm-body.test.tsx`).
+
+                        `<details>` and not a button, deliberately: this is a
+                        SERVER component, and the public page is the one
+                        surface where adding a client component to get an
+                        onClick would put JavaScript on a stranger’s page to
+                        save a request. The native element needs none. */}
                     <ul className="grid grid-cols-2 gap-tight sm:grid-cols-3">
-                        {profile.photoUrls.map((url, i) => (
+                        {profile.photoUrls.slice(0, EAGER_PHOTO_COUNT).map((url, i) => (
                             <li
                                 key={url}
                                 /* 4:3, fixed, for the CLS reason above. */
@@ -294,6 +348,74 @@ export function PublicFarmBody({
                             </li>
                         ))}
                     </ul>
+                    {profile.photoUrls.length > EAGER_PHOTO_COUNT ? (
+                        <details className="mt-tight" data-testid="public-farm-photos-more">
+                            {/* The count is in the label so the control says
+                                what it reveals rather than "more". */}
+                            <summary className="cursor-pointer text-sm text-content-muted">
+                                {labels.morePhotos(profile.photoUrls.length - EAGER_PHOTO_COUNT)}
+                            </summary>
+                            <ul className="mt-tight grid grid-cols-2 gap-tight sm:grid-cols-3">
+                                {profile.photoUrls.slice(EAGER_PHOTO_COUNT).map((url, i) => (
+                            <li
+                                key={url}
+                                /* 4:3, fixed, for the CLS reason above. */
+                                className="relative aspect-[4/3] overflow-hidden rounded-lg bg-bg-subtle"
+                            >
+                                <img
+                                    src={url}
+                                    alt={labels.photoAlt(i + 1 + EAGER_PHOTO_COUNT)}
+                                    className="absolute inset-0 h-full w-full object-contain"
+                                    /* LAZY, and deliberately WITHOUT a
+                                       `fetchPriority` hint — #2251, and this
+                                       is a measured negative result rather
+                                       than an omission.
+
+                                       One of these IS the LCP element, not the
+                                       logo: 175x131 against the logo's 96x96,
+                                       in 20 of 20 Lighthouse runs across four
+                                       jobs. All six are requested inside the
+                                       same millisecond, finish staggered, and
+                                       LCP lands on whichever of the
+                                       largest-painting ones finishes first —
+                                       about 395 ms per finishing place.
+
+                                       So promoting the first one looked like
+                                       the fix, and it is NOT. Two things were
+                                       measured after trying it:
+
+                                         - Chrome ALREADY assigns every one of
+                                           these `High`. Pulled from the
+                                           network records: 7 media requests,
+                                           priority High x7, before any hint
+                                           existed. `fetchPriority="high"`
+                                           therefore set the value the browser
+                                           had already inferred.
+                                         - The LCP median did not move. Two
+                                           jobs with the hint gave 3414 ms and
+                                           3421 ms against 3365 ms and 3331 ms
+                                           without it, and the ~4,180 ms upper
+                                           mode still appeared (4194 ms).
+
+                                       The 395 ms per place is not network
+                                       queueing — it is six route handlers,
+                                       each doing two database queries, under
+                                       Lighthouse's 4x CPU throttle. A priority
+                                       hint reorders fetches; it cannot make a
+                                       route handler cheaper or let six run in
+                                       parallel. Do not re-add it expecting a
+                                       different answer. The levers that remain
+                                       are the NUMBER of media requests on the
+                                       critical path and the cost of the route
+                                       — options 2 and 3 on #2251. */
+                                    loading="lazy"
+                                    decoding="async"
+                                />
+                            </li>
+                                ))}
+                            </ul>
+                        </details>
+                    ) : null}
                 </section>
             ) : null}
 

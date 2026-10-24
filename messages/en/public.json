@@ -3,6 +3,7 @@
         "aboutTitle": "About the farm",
         "cropsTitle": "Crops",
         "logoAlt": "{farm} logo",
+        "morePhotos": "{n} more photographs",
         "oblast": "{oblast} oblast",
         "photoAlt": "Photograph {n} from {farm}"
     }
