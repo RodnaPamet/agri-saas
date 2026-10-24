@@ -15643,6 +15643,7 @@
         "properties": {
           "correctedAt": {
             "type": "string",
+            "format": "date-time",
             "example": "2026-10-24T18:40:00.000Z"
           },
           "correctedBy": {

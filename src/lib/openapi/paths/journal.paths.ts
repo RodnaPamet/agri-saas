@@ -366,7 +366,7 @@ const TreatmentDefinition = z
 
 const TreatmentCorrectionEntry = z
     .object({
-        correctedAt: z.string().openapi({ example: '2026-10-24T18:40:00.000Z' }),
+        correctedAt: z.string().datetime().openapi({ example: '2026-10-24T18:40:00.000Z' }),
         correctedBy: z.string().nullable().openapi({
             description:
                 'A DISPLAY NAME, not a user id \u2014 this is what «\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043e\u0442 \u2026» prints. Resolved per read rather than '

@@ -509,6 +509,9 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'listPlantings + getCropPlanProgress filter by tenantId + deletedAt (+ optional cropPlanId / status), order by successionNumber ASC — covered by @@index([tenantId, cropPlanId]) / @@index([tenantId, status]); generatePlantings re-reads PLANNED rows by [tenantId, cropPlanId, status]; bounded take:500.',
     LogPlanting:
         'getCropPlanProgress reads actuals by tenantId + plantingId IN [...] in one batched query — covered by @@index([tenantId, plantingId]); bounded take:500.',
+    // ─── Journal — the correction trail of one treatment (#2172) ───
+    TreatmentCorrection:
+        'getDiaryTreatmentCorrections findMany filters by (tenantId, groupId) — covered by @@index([tenantId, groupId]) — and orders by correctedAt desc, take:50. The leading columns fully select the result set: `groupId` is required, so a read is always scoped to ONE treatment and the sort runs over that treatment\'s handful of corrections rather than the tenant\'s. A (tenantId, groupId, correctedAt) composite would serve the sort too but buys nothing measurable against a set the filter has already bounded, and the model carries @@index([tenantId, correctedAt]) for a tenant-wide "what was corrected lately" read if one is ever wanted. Writes are single-row creates from correctDiaryTreatment; nothing updates or deletes a filed correction.',
 };
 
 // ─────────────────────────────────────────────────────────────────────
