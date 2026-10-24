@@ -128,18 +128,15 @@ export function PublicFarmBody({
                            requests (9,946 B against ~14,500 B), so it needs
                            the help least.
 
-                           It DOES keep the hint when there is no gallery,
-                           which is a conservatism rather than a measurement:
-                           the Lighthouse fixture always has photographs, so
-                           nothing here measures the photoless farm. Rather
-                           than change that case silently, the hint follows the
-                           only image on the page. A text block may well be the
-                           LCP element there instead — a 105-character
-                           paragraph paints larger than 96x96 — in which case
-                           the hint is merely spent on 9,946 B and costs
-                           nothing worth measuring. */
+                           The hint is gone entirely rather than moved,
+                           because it was measured to do nothing at all on
+                           this page: Chrome already assigns every media
+                           request here `High` (7 of 7, before any hint
+                           existed), so the attribute restated a value the
+                           browser had inferred. See the gallery below for the
+                           numbers. What is left is `eager`, which is simply
+                           true of an above-the-fold image. */
                         loading="eager"
-                        fetchPriority={profile.photoUrls.length === 0 ? 'high' : undefined}
                         decoding="async"
                     />
                 </div>
@@ -249,29 +246,49 @@ export function PublicFarmBody({
                                     src={url}
                                     alt={labels.photoAlt(i + 1)}
                                     className="absolute inset-0 h-full w-full object-contain"
-                                    /* The FIRST one is eager and highest
-                                       priority; the rest stay lazy — #2251.
+                                    /* LAZY, and deliberately WITHOUT a
+                                       `fetchPriority` hint — #2251, and this
+                                       is a measured negative result rather
+                                       than an omission.
 
-                                       One of these is the LCP element, not the
-                                       logo, and the six of them used to be
-                                       indistinguishable to the browser: all
-                                       `lazy`, all issued inside the same
-                                       millisecond, all at `High`. They then
-                                       finish staggered, and LCP lands on
-                                       whichever of the largest-painting ones
-                                       finishes first. Measured at roughly
-                                       395 ms per finishing place, which is why
-                                       the page could move ~800 ms with no
-                                       change to a byte it serves.
+                                       One of these IS the LCP element, not the
+                                       logo: 175x131 against the logo's 96x96,
+                                       in 20 of 20 Lighthouse runs across four
+                                       jobs. All six are requested inside the
+                                       same millisecond, finish staggered, and
+                                       LCP lands on whichever of the
+                                       largest-painting ones finishes first —
+                                       about 395 ms per finishing place.
 
-                                       Promoting the first breaks the tie on
-                                       purpose: it starts ahead of the other
-                                       five instead of racing them. The rest
-                                       keep `lazy` so a visitor who never
-                                       scrolls still does not pay for all six
-                                       at once. */
-                                    loading={i === 0 ? 'eager' : 'lazy'}
-                                    fetchPriority={i === 0 ? 'high' : undefined}
+                                       So promoting the first one looked like
+                                       the fix, and it is NOT. Two things were
+                                       measured after trying it:
+
+                                         - Chrome ALREADY assigns every one of
+                                           these `High`. Pulled from the
+                                           network records: 7 media requests,
+                                           priority High x7, before any hint
+                                           existed. `fetchPriority="high"`
+                                           therefore set the value the browser
+                                           had already inferred.
+                                         - The LCP median did not move. Two
+                                           jobs with the hint gave 3414 ms and
+                                           3421 ms against 3365 ms and 3331 ms
+                                           without it, and the ~4,180 ms upper
+                                           mode still appeared (4194 ms).
+
+                                       The 395 ms per place is not network
+                                       queueing — it is six route handlers,
+                                       each doing two database queries, under
+                                       Lighthouse's 4x CPU throttle. A priority
+                                       hint reorders fetches; it cannot make a
+                                       route handler cheaper or let six run in
+                                       parallel. Do not re-add it expecting a
+                                       different answer. The levers that remain
+                                       are the NUMBER of media requests on the
+                                       critical path and the cost of the route
+                                       — options 2 and 3 on #2251. */
+                                    loading="lazy"
                                     decoding="async"
                                 />
                             </li>

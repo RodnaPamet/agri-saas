@@ -497,35 +497,34 @@ describe('the public-profile editor', () => {
             // contract the real page ships or it is previewing a different
             // page.
             //
-            // REWRITTEN for #2251. This used to assert the whole gallery was
-            // lazy, with the reasoning that otherwise "six photographs compete
-            // with the heading for that budget". They were all lazy and they
-            // competed anyway — `loading="lazy"` delays the REQUEST, it does
-            // not take an in-viewport image out of the LCP candidates, and the
-            // measured LCP element was a gallery thumbnail in 20 of 20 runs
-            // across four jobs. Six identical lazy requests at `High`, issued
-            // in the same millisecond, finish staggered, and LCP lands on
-            // whichever of the largest-painting ones finishes first: ~395 ms
-            // per place. The bound named here was stale too — it is 3,800 ms,
-            // not 2,200 ms.
+            // CORRECTED for #2251. The reasoning here used to be that the
+            // gallery must be lazy or "six photographs compete with the
+            // heading for that budget". They were all lazy and they competed
+            // anyway: `loading="lazy"` delays the REQUEST, it does not take an
+            // in-viewport image out of the LCP candidates, and the measured
+            // LCP element was a gallery thumbnail in 20 of 20 runs across four
+            // jobs. The bound named there was stale as well — 3,800 ms, not
+            // 2,200 ms.
             //
-            // The contract now is a deliberate tie-break: ONE thumbnail starts
-            // ahead, the rest stay lazy so a visitor who never scrolls does
-            // not pay for all six, and only one element claims the ranking.
+            // A priority hint on the first thumbnail was then tried, merged
+            // and measured, and it does NOTHING: Chrome already assigns all
+            // seven media requests `High`, and the LCP median did not move
+            // (3414/3421 ms with it, 3365/3331 ms without). The ~395 ms per
+            // finishing place is six route handlers at two queries each under
+            // a 4x CPU throttle — server cost, which no fetch priority
+            // reaches.
+            //
+            // So the contract is: logo eager, gallery lazy, and NOTHING
+            // claiming a hint. The last is the assertion with teeth — it fails
+            // if the hint returns, which sends the reader to the measurement.
             expect(logo.querySelector('img')).toHaveAttribute('loading', 'eager');
-            expect(imgs[0]).toHaveAttribute('loading', 'eager');
-            expect(imgs[0]).toHaveAttribute('fetchpriority', 'high');
-            for (const img of imgs.slice(1)) {
+            for (const img of imgs) {
                 expect(img).toHaveAttribute('loading', 'lazy');
-                expect(img).not.toHaveAttribute('fetchpriority');
             }
-            // Exactly one claimant, which is what makes it a tie-break. The
-            // logo yields: it is 96x96 against a thumbnail's 175x131 and
-            // cannot be the LCP element while a thumbnail is in view.
             const claimants = [logo.querySelector('img'), ...imgs].filter(
-                (i) => i?.getAttribute('fetchpriority') === 'high',
+                (i) => i?.getAttribute('fetchpriority') ?? i?.getAttribute('fetchPriority'),
             );
-            expect(claimants).toEqual([imgs[0]]);
+            expect(claimants).toEqual([]);
         });
 
         it('renders NO image boxes when the farm has none', async () => {
