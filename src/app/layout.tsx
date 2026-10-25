@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import dynamic from 'next/dynamic';
 import { auth } from '@/auth';
 import { ClientDataRetentionSweep } from '@/components/offline/ClientDataRetentionSweep';
 import { cookies, headers } from 'next/headers';
@@ -11,7 +12,33 @@ import {
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { preloadFaces } from '@/lib/fonts/preload';
-import { Providers } from './providers';
+/**
+ * DYNAMIC, so the public farm page does not download it — #2306.
+ *
+ * `Providers` renders only in the non-public branch below, but a STATIC
+ * import puts its whole subtree in every route's client payload regardless of
+ * which branch renders. Measured on the public-farm Lighthouse leg:
+ *
+ *     bootup-time    624 ms total
+ *       608 ms (97%)   41151-*.js   190.5 KB transfer
+ *
+ * That chunk is zod, reached by `providers.tsx:6  import '@/lib/zod-jitless'`,
+ * and the public page's own tree imports zod NOWHERE — not
+ * `src/components/public-profile/*`, not `src/app/f/**`. It also carries the
+ * 128.9 KB of provider-only UI libraries `check-public-chunk-payload` tracks.
+ *
+ * NO `ssr: false`. That flag is rejected in a server component, and it would
+ * be wrong anyway: `Providers` wraps `{children}` for the entire application,
+ * so disabling its SSR would stop every authenticated page rendering on the
+ * server. What is wanted is code SPLITTING, which `dynamic` gives on its own.
+ *
+ * `zod-jitless` loading later is safe for a measured reason rather than an
+ * assumed one: it sets a `globalThis` flag that must run before any schema is
+ * PARSED, and there are no module-scope `.parse()` or `.safeParse()` calls in
+ * the client tree — so nothing can parse before `Providers` mounts. On the
+ * public page nothing parses at all.
+ */
+const Providers = dynamic(() => import('./providers').then((m) => m.Providers));
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import {
     PUBLIC_SURFACE_HEADER,
