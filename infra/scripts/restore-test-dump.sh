@@ -131,7 +131,27 @@ echo "── restoring: GLOBALS FIRST, then the database ──"
 #     fail with a file-not-found for a file that plainly exists. CI's docker is
 #     not snap, so this would have passed CI forever while breaking exactly the
 #     by-hand invocation `docs/backup-restore.md` advertises.
-docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 -f - < "$WORK/globals.sql"
+# `pg_dumpall --roles-only` dumps EVERY role in the source cluster, including
+# `postgres` — which every target cluster already has, because initdb made it.
+# So `ERROR: role "postgres" already exists` is expected on any restore into a
+# live cluster, and `ON_ERROR_STOP=1` turns that expected line into a failed
+# drill. Measured: the first real run of this script died there, exit 3.
+#
+# Blanket-tolerating errors is the wrong fix and is how I missed this in the
+# first place — the hand rehearsal piped psql through `grep -v "already
+# exists"` and read the result as clean. So errors are CLASSIFIED: anything
+# that is not a benign already-exists is fatal, and the roles the dump
+# actually needs are asserted by their EFFECT in the battery below
+# (`app_user` present AND holding grants), which is the real gate.
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -f - \
+    < "$WORK/globals.sql" 2>"$WORK/globals.err" || true   # shell-check-ok: classified below
+UNEXPECTED="$(grep -E '^(psql:.*)?ERROR:' "$WORK/globals.err" 2>/dev/null \
+    | grep -vE 'already exists' || true)"
+if [ -n "$UNEXPECTED" ]; then
+    echo "$UNEXPECTED" | head -5
+    die "the globals did not restore cleanly — see the ERROR line(s) above. Only 'already exists' is tolerated here, because the target cluster has its own postgres role."
+fi
+say "✓ globals applied (already-exists on pre-initialised roles is expected)"
 docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 -c 'CREATE DATABASE restored'
 
 # `--exit-on-error` is load-bearing. By DEFAULT pg_restore continues past
