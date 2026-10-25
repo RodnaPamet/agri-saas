@@ -2999,14 +2999,6 @@ exports[`API contract — per-schema snapshots schema: CalculatorRow 1`] = `
 }"
 `;
 
-exports[`API contract — per-schema snapshots schema: CampaignDiaryRequest 1`] = `
-"{
-  "type": "object",
-  "properties": {},
-  "additionalProperties": {}
-}"
-`;
-
 exports[`API contract — per-schema snapshots schema: CatalogItemDetail 1`] = `
 "{
   "type": "object",

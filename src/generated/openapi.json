@@ -2858,11 +2858,6 @@
         ],
         "description": "One commodity’s net-worth answer. Figures are accompanied by an uncertainty state rather than presented bare: netUncertainty and costUncertainty say whether a number is exact, a floor, a ceiling, apportioned, partial or refused. A refused net worth carries a CODE to translate and English to fall back to."
       },
-      "CampaignDiaryRequest": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": {}
-      },
       "CatalogItemDetail": {
         "type": "object",
         "properties": {
@@ -52494,15 +52489,6 @@
             "in": "query"
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CampaignDiaryRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "The PDF.",

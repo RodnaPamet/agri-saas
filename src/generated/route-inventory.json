@@ -1957,7 +1957,7 @@
     {
       "path": "/api/t/{tenantSlug}/reports/campaign-diary",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/reports/field-briefing",

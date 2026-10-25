@@ -269,7 +269,13 @@ export function registerCadastreAndReportPaths(registry: OpenAPIRegistry): void 
                 .string()
                 .openapi({ example: '2024-2025', description: 'The campaign, `YYYY-YYYY`.' }),
         }),
-        body: z.object({}).passthrough().openapi('CampaignDiaryRequest'),
+        // NO `body`. This route reads `?campaign=` and never parses one, and
+        // `openapi-schema-documents-something` is right to refuse the empty
+        // `z.object({}).passthrough()` I first copied from the sibling route:
+        // a documented operation with a property-less schema looks COMPLETE to
+        // a client, which is worse than being visibly undocumented. An absent
+        // body says "there is no body"; an empty one says "send any JSON and
+        // we have not told you which".
         success: {
             status: 200,
             description: 'The PDF.',
