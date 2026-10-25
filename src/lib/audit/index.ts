@@ -2,7 +2,7 @@
  * Audit Trail — Barrel Export
  *
  * Re-exports all audit trail modules for clean imports:
- *   import { buildAuditEntry, AuditDetailsSchema, computeEntryHash } from '@/lib/audit';
+ *   import { AuditDetailsSchema, computeEntryHash } from '@/lib/audit';
  */
 
 // Types & enums
@@ -42,8 +42,25 @@ export {
 } from './canonical-hash';
 export type { HashInput } from './canonical-hash';
 
-// Event builder
-export { buildAuditEntry } from './event-builder';
+// Event builder — DELETED, and the absence is the point (#2109).
+//
+// `buildAuditEntry` validated `detailsJson` against the canonical
+// `AuditDetailsSchema` and threw on a mismatch. It had ZERO call sites in
+// `src` for its whole life: the real write path is `logEvent`, which parses
+// with the permissive `.passthrough()` schema instead. So the strict contract
+// was documented, typed, schema'd — and applied to not one real write, which
+// is precisely how the two drifted to 15.9% conformance before anyone looked.
+//
+// A validator nobody calls is not neutral: it reads as coverage. It is gone
+// rather than wired in, because wiring it would throw inside a write path that
+// is best-effort for most entity types — the throw gets swallowed and the audit
+// row is silently LOST, which is strictly worse than a non-canonical row.
+//
+// What covers this now, on the live path: `shadowParseAuditDetails` in
+// `src/app-layer/events/audit.ts` parses every payload against the canonical
+// schema and logs `audit.details_not_canonical` without ever throwing, and
+// `tests/guards/audit-structured-events.test.ts` holds the call sites at
+// 206 of 206. Do not re-add an uncalled validator; extend the shadow parse.
 
 // Hash-chained writer
 export { appendAuditEntry, verifyAuditChain } from './audit-writer';
