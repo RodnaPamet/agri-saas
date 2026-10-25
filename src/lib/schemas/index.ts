@@ -1160,16 +1160,24 @@ export type RecordDiaryTreatmentBody = z.infer<typeof RecordDiaryTreatmentSchema
  */
 export const RecordFarmActivitySchema = z
     .object({
-        kind: z.enum(['PRUNE', 'CULTIVATE', 'SEED', 'HARVEST']).openapi({
+        kind: z.enum(['PRUNE', 'CULTIVATE', 'HARVEST']).openapi({
             description:
-                'The activity. `SEED` **is** сеитба — it already existed on `FieldOperationType`, '
-                + 'so sowing needs no new value and this list is four kinds rather than the three '
-                + '#2316 added.\n\n'
-                + '`SPRAY` and `FERTILIZE` are deliberately absent: they apply a product and belong '
-                + 'on `POST /journal/treatments`, which takes the dose, the ЗЗР registration and the '
-                + 'quarantine period this route has nowhere to put. `OTHER` is absent too — existing '
-                + 'rows under it carry a product, so admitting it here would make one value mean '
-                + 'both things.',
+                'The activity. Exactly the kinds that apply NOTHING, which is what this route exists '
+                + 'for.\n\n'
+                + 'Three absences, each deliberate:\n\n'
+                + '`SPRAY` and `FERTILIZE` apply a product and belong on `POST /journal/treatments`, '
+                + 'which takes the dose, the ЗЗР registration and the quarantine period this route '
+                + 'has nowhere to put.\n\n'
+                + '**`SEED` too** — сеитба applies a seed product at a rate, and always has here: '
+                + '`CreateFieldOperationSchema` admits `SEED` alongside `SPRAY` and `FERTILIZE`, and '
+                + '`ItemCategory.SEED` exists for the varieties. So a sowing goes through the field '
+                + 'operation path, where the form\u2019s «Продукт» column gets the sown variety — a '
+                + 'cell this route would have left permanently empty. Owner decision 2026-10-25, '
+                + 'after agrent-ios spotted that an earlier draft listed `SEED` here while '
+                + '`BARE_ACTIVITY_KINDS` did not, which would have refused every sowing with '
+                + '`OPERATION_INPUT_AMBIGUOUS`.\n\n'
+                + '`OTHER` is absent because existing rows under it carry a product, so admitting it '
+                + 'would make one value mean both things.',
         }),
         occurredOn: z
             .string()
