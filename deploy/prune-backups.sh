@@ -50,6 +50,26 @@
 set -euo pipefail
 
 KEEP=3
+# Days after which a PROTECTED backup becomes a review item — #2301.
+#
+# Protection has no expiry, and that is the gap. The rule refuses to delete any
+# `.env` backup holding a key NAME the live file lacks, which is right for
+# irreplaceable material: `DATA_ENCRYPTION_KEY_PREVIOUS` existing nowhere else
+# means that file is the only thing between `v1:` ciphertext and permanent
+# unreadability.
+#
+# But it cannot tell that from a superseded public URL. Measured 2026-10-24:
+# `.env.bak.20260714095927` — a FULL production credential set, then three and a
+# half months old — was pinned for ever by `CADASTRE_WMS_URL`, a free INSPIRE
+# endpoint documented in `deploy/env.prod.example` and since replaced by the
+# vector path (`CADASTRE_PARCELS_URL`, which IS set live). Nothing was lost by
+# keeping it and nothing would be lost by deleting it; what is wrong is that
+# nobody was ever asked.
+#
+# So this REPORTS and never deletes. The protection stays absolute — narrowing
+# it by a heuristic is how you lose the one name nobody can replace — and the
+# only thing that changes is that "for ever" becomes "until somebody looks".
+PROTECT_REVIEW_DAYS="${PROTECT_REVIEW_DAYS:-30}"
 DIR=/opt/agrent
 APPLY=0
 
@@ -93,6 +113,7 @@ FAMILIES=".env docker-compose.vm.yml Dockerfile"
 total_delete=0
 total_keep=0
 total_protected=0
+total_stale_protected=0
 
 for base in $FAMILIES ${EXTRA_FAMILIES:-}; do
     # Newest first. `-t` sorts by mtime, which is what "the last three" means to
@@ -129,6 +150,14 @@ for base in $FAMILIES ${EXTRA_FAMILIES:-}; do
         fi
 
         if [ -n "$reason" ]; then
+            # Age is REPORTED, never acted on. A protected file is still kept;
+            # the only question raised is whether anybody still wants it kept.
+            # `-mtime +N` rather than arithmetic on `stat`, so this needs no
+            # date parsing and no timezone.
+            if [ -n "$(find "$f" -maxdepth 0 -mtime "+${PROTECT_REVIEW_DAYS}" 2>/dev/null)" ]; then
+                reason="$reason — UNREVIEWED for >${PROTECT_REVIEW_DAYS}d"
+                total_stale_protected=$((total_stale_protected + 1))
+            fi
             echo "   keep  $(basename "$f")  [$reason]"
             total_protected=$((total_protected + 1))
         elif [ "$i" -le "$KEEP" ]; then
@@ -148,6 +177,18 @@ done
 
 echo
 echo "[prune-backups] keep $total_keep · protected $total_protected · delete $total_delete"
+if [ "$total_stale_protected" -gt 0 ]; then
+    # Loud, and deliberately NOT an error: a review item must not look like a
+    # failure, or the script stops being run.
+    echo
+    echo "[prune-backups] ${total_stale_protected} protected backup(s) unreviewed for >${PROTECT_REVIEW_DAYS}d."
+    echo "[prune-backups] Each is a FULL credential set kept alive by one key name."
+    echo "[prune-backups] For each: is that name still irreplaceable?"
+    echo "[prune-backups]   yes -> leave it; the next run asks again."
+    echo "[prune-backups]   no  -> copy the one value you need, then delete by hand."
+    echo "[prune-backups] This script will not delete it for you: the protection is"
+    echo "[prune-backups] what caught DATA_ENCRYPTION_KEY_PREVIOUS (#2082)."
+fi
 if [ "$APPLY" = "1" ]; then
     echo "[prune-backups] APPLIED — $total_delete file(s) removed from $DIR"
 else
