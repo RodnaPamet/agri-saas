@@ -21,7 +21,6 @@ import {
     codedClientError,
     codedConflict,
     codedNotFound,
-    internal,
     staleData,
 } from '@/lib/errors/types';
 import { appliesAProduct } from '@/lib/operations/line-kind';
@@ -1304,15 +1303,26 @@ async function loadTreatmentForEdit(
     // correction route is the thing that will settle what that means. Until
     // then the prefill shows the treatment as it was RECORDED.
     const first = lines[0];
-    // A treatment group IS a product application, so a line inside one with
-    // no product or dose is a data defect — not a bare activity (#2316).
-    // Thrown rather than rendered: the alternative is a correction form
-    // prefilled with an empty product, which a farmer could then submit and
-    // overwrite a real regulated record with blanks.
+    // This route corrects a TREATMENT, which is a product application. A line
+    // with no product or dose is a BARE ACTIVITY (#2316) — pruning, cultivation,
+    // harvest — and those are legitimate rows, not corruption.
+    //
+    // The refusal stands either way, because this route genuinely cannot correct
+    // one: there is no dose, product or quarantine period to edit, and the
+    // correction trail records changes to exactly those fields. Rendering it
+    // would prefill a correction form with an empty product that a farmer could
+    // submit, overwriting a real regulated record with blanks.
+    //
+    // What changed is the DIAGNOSIS. The first version of this called such a
+    // line "a data defect", which was true when corruption was the only way to
+    // get one and became wrong the moment bare activities could be recorded —
+    // an error telling an operator their real data is broken.
     if (!appliesAProduct(first) || first.product == null) {
-        throw internal(
-            `Treatment group ${handle} has a line with no product or dose. A treatment `
-                + `records a product application; a bare activity belongs to a plain field operation.`,
+        throw codedBadRequest(
+            'NOT_A_TREATMENT',
+            'This record is a field activity rather than a treatment, so it has no '
+                + 'product or dose to correct. Edit it through the field operation it belongs to.',
+            { reference: 'treatmentGroupId' },
         );
     }
     const stamped = lines.find((l) => l.completedAt != null);
