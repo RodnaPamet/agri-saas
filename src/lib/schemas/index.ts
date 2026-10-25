@@ -852,7 +852,7 @@ export const CreateFieldOperationSchema = z.object({
         .optional()
         .openapi({
             description:
-                'What a `productName` that matches NOTHING should be created as. Defaults to `PESTICIDE`, which is what a typed spray name usually means.\n\n**Send `FERTILIZER` for a liquid fertiliser applied through a sprayer.** That is a legitimate spray (`FERTILIZER_EXPECTED` is deliberately one-sided), but without this field such a product would be created as a PESTICIDE — and a PESTICIDE cannot be created without a ПРЗ registration number it does not have, so the farmer would be asked to invent one and the item would sit in the wrong category for every later record.\n\nIgnored when the name matches an existing product, and ignored entirely on the `fertilizerName` path, which always creates a `FERTILIZER`.',
+                'What a `productName` that matches NOTHING should be created as. Defaults to `PESTICIDE`, which is what a typed spray name usually means.\n\n**Send `FERTILIZER` for a liquid fertiliser applied through a sprayer.** That is a legitimate spray (`FERTILIZER_EXPECTED` is deliberately one-sided), but without this field such a product would be created as a PESTICIDE — and a PESTICIDE cannot be created without a ПРЗ registration number it does not have, so the farmer would be asked to invent one and the item would sit in the wrong category for every later record.\n\nIgnored when the name matches an existing product, and ignored entirely on the `fertilizerName` path, which always creates a `FERTILIZER`.\n\n**Also ignored on a sowing** (`operationType: SEED`), which always creates a `SEED` item. A sowing cannot opt into another category: the register exclusion for сеитба would otherwise let a plant protection product out of the farm record by being recorded as a seed.',
         }),
     newProductRegistration: z
         .object({ ...REGULATORY })
@@ -1055,9 +1055,20 @@ export function refineParcelAreaList(
 
 export const RecordDiaryTreatmentSchema = z
     .object({
-        kind: z.enum(['SPRAY', 'FERTILIZE']).openapi({
+        kind: z.enum(['SPRAY', 'FERTILIZE', 'SEED']).openapi({
             description:
-                'Spraying fills the ДНЕВНИК\u2019s химични обработки table; fertilising fills торове. Each carries its own columns, which is why this is a kind rather than a free label.',
+                'Spraying fills the ДНЕВНИК\u2019s химични обработки table; fertilising fills торове. '
+                + 'Each carries its own columns, which is why this is a kind rather than a free label.'
+                + '\n\n**`SEED` fills NEITHER** (#2316). Сеитба applies a seed product at a rate, so it '
+                + 'belongs on this route rather than `/journal/activities` — the form\u2019s «Продукт» '
+                + 'column gets the sown variety. But the БАБХ register covers «РАСТИТЕЛНОЗАЩИТНИ '
+                + 'МЕРОПРИЯТИЯ И ТОРЕНЕ» and a sowing is neither, so a SEED row prints in «ДНЕВНИК НА '
+                + 'СТОПАНСТВОТО» and is excluded from both БАБХ tables. The per-treatment farm-record '
+                + 'refuses for a SEED handle with `NOT_IN_BABH_REGISTER`.'
+                + '\n\n**A SEED record requires a `SEED`-category item** (`SEED_EXPECTED` otherwise). '
+                + 'That restriction exists because the exclusion above would otherwise be an escape '
+                + 'hatch: a real plant-protection treatment recorded as a sowing would never reach '
+                + 'the register. `SPRAY` stays permissive about category because its row still prints.',
         }),
         occurredOn: z
             .string()
