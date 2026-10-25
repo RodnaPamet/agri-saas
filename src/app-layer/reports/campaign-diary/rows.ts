@@ -59,8 +59,17 @@ export interface DiaryLineInput {
     parcelName: string;
     /** `Parcel.cropType`, or null. */
     cropName: string | null;
-    /** `Parcel.areaHa` — the fallback when the line treated the whole parcel. */
-    parcelAreaHa: number;
+    /**
+     * `Parcel.areaHa` — the fallback when the line treated the whole parcel.
+     *
+     * NULLABLE, because the column is. If this and `treatedAreaHa` are both
+     * absent the area is UNKNOWN, which is not zero: printing
+     * «Пръскане – 0,00 ха» in a document a farmer signs asserts that no land
+     * was treated. Measured 2026-10-25: 0 of 7 parcels have a null area, so
+     * the case has not occurred — but the schema permits it and an unobserved
+     * state is not an impossible one.
+     */
+    parcelAreaHa: number | null;
     /** NULL means the whole parcel, NOT zero. */
     treatedAreaHa: number | null;
     /** Trade name, when the line applies a product. */
@@ -80,7 +89,7 @@ export interface CampaignDiaryRow {
     parcelIds: string;
     /** Column 3 — «Култура / Порода / Вид». */
     crops: string;
-    /** Column 4 — «Площ / Брой», in ха. */
+    /** Column 4 — «Площ / Брой», in ха. EMPTY when any line's area is unknown. */
     area: string;
     /** Column 5 — «Мероприятие», one string: `<name> – <area> ха`. */
     activity: string;
@@ -138,9 +147,14 @@ function uniq(values: ReadonlyArray<string | null>): string[] {
 
 /**
  * The area a line covers: what it treated, or the whole parcel when it did not
- * say. See the module docblock — `?? 0` would under-report every pre-#2072 row.
+ * say. See the module docblock — `?? 0` would under-report every pre-#2072 row,
+ * and 8 of 19 production lines rely on this fallback.
+ *
+ * `null` when neither is recorded. Deliberately not `0`: the caller must
+ * decide what an unknown area prints, and zero is a claim rather than an
+ * absence.
  */
-export function lineAreaHa(line: DiaryLineInput): number {
+export function lineAreaHa(line: DiaryLineInput): number | null {
     return line.treatedAreaHa ?? line.parcelAreaHa;
 }
 
@@ -156,7 +170,7 @@ export function lineAreaHa(line: DiaryLineInput): number {
 export function buildCampaignRows(
     lines: ReadonlyArray<DiaryLineInput>,
     labels: Readonly<Record<string, string>>,
-): { rows: CampaignDiaryRow[]; skippedIncomplete: number } {
+): { rows: CampaignDiaryRow[]; skippedIncomplete: number; rowsWithUnknownArea: number } {
     const complete = lines.filter((l) => l.completedAt !== null);
     const skippedIncomplete = lines.length - complete.length;
 
@@ -180,11 +194,17 @@ export function buildCampaignRows(
         // Summed over DISTINCT parcels. One parcel can carry several lines in
         // one activity — a tank mix is several products on the same parcel —
         // and summing per line would count its area once per product.
-        const byParcel = new Map<string, number>();
+        const byParcel = new Map<string, number | null>();
         for (const l of bucket) {
             if (!byParcel.has(l.parcelId)) byParcel.set(l.parcelId, lineAreaHa(l));
         }
-        const areaHa = [...byParcel.values()].reduce((a, b) => a + b, 0);
+        // ANY unknown parcel area makes the total unknown, not smaller. Summing
+        // the known ones would print a figure that understates the work, and in
+        // a register an understated area is a misstatement rather than a gap.
+        const areas = [...byParcel.values()];
+        const areaHa = areas.some((a) => a === null)
+            ? null
+            : (areas as number[]).reduce((a, b) => a + b, 0);
 
         const kind = bucket.find((l) => l.operationType)?.operationType ?? null;
         const label = (kind && labels[kind]) || labels.OTHER || '';
@@ -203,11 +223,15 @@ export function buildCampaignRows(
             date: formatDateCell(from, to),
             parcelIds: uniq(bucket.map((l) => l.parcelName)).join(', '),
             crops: uniq(bucket.map((l) => l.cropName)).join(', '),
-            area: formatHa(areaHa),
+            area: areaHa === null ? '' : formatHa(areaHa),
             // The composed cell. `<label> – <area> ха` with an EN DASH, as the
             // template shows, and the area repeated here deliberately: the form
             // carries it in both «Площ» and «Мероприятие».
-            activity: label ? `${label} – ${formatHa(areaHa)} ха` : '',
+            //
+            // With an unknown area the label stands alone rather than carrying
+            // a fabricated «– 0,00 ха». The activity DID happen; its extent was
+            // not recorded, and those are different facts.
+            activity: label ? (areaHa === null ? label : `${label} – ${formatHa(areaHa)} ха`) : '',
             productName: uniq(bucket.map((l) => l.productName)).join(', '),
             doseLabel: doses.join(', '),
             produceKind: uniq(bucket.map((l) => l.produceKind)).join(', '),
@@ -220,5 +244,8 @@ export function buildCampaignRows(
     }
 
     rows.sort((a, b) => a.sortKey - b.sortKey || a.parcelIds.localeCompare(b.parcelIds, 'bg'));
-    return { rows, skippedIncomplete };
+    // Counted, like `skippedIncomplete`, so the caller can SAY so. A blank
+    // «Площ» with nothing explaining it reads as a rendering bug.
+    const rowsWithUnknownArea = rows.filter((r) => r.area === '').length;
+    return { rows, skippedIncomplete, rowsWithUnknownArea };
 }
