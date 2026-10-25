@@ -14,10 +14,6 @@
             "why": "Top-level prose for humans. No guard reads them; CLAUDE.md is the exception and has its own rule because guards quote it."
         },
         {
-            "when": "^docs/",
-            "why": "Implementation notes and runbooks. Two guards DO read specific files here (vm-runbook-commands, privacy-notice-*), and those are reached by the content rules on what the diff treats differently rather than by path — a path rule would pull the full guard roots in for every note."
-        },
-        {
             "when": "^\\.(gitignore|gitattributes|editorconfig|nvmrc|npmrc)$",
             "why": "Tooling config with no test surface. `generated-artifacts-have-no-merge-driver` asserts .gitattributes has no merge driver, and that guard is reached by the content rule on the driver syntax itself."
         },
@@ -68,6 +64,14 @@
                 "tests/integration"
             ],
             "why": "Schema-folder coverage, destructive-migration inverses and RLS guards are all derived from the schema rather than from the migration you wrote."
+        },
+        {
+            "when": "^docs/",
+            "run": [
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "docs/ is NOT test-free, which is what I assumed when I first declared it so. Derived: 64 distinct docs files are read by tests, and the sweeps make it worse than a list suggests — no-legacy-brand scans docs for the previous brand name, so ANY file here can fail a guard, and vm-runbook-commands asserts every repo path docs/runbooks/production-vm.md names still exists. Even docs/implementation-notes/ is read by five guards. Found by editing the runbook and watching verify:changed report `none with a test surface` for a file its own guardrail reads."
         },
         {
             "when": "^infra/",
