@@ -47,16 +47,35 @@
 import { test, expect } from '@playwright/test';
 import { safeGoto } from './e2e-utils';
 
-/** Families the app declares, and a probe string inside each one's script. */
+/**
+ * Families the app declares, a probe inside each one's script, and whether a
+ * face is expected to COVER it.
+ *
+ * `faces: 'absent'` is not a gap left unasserted — it is the positive statement
+ * that the product ships no such cut, and it is the only end-to-end proof of
+ * #1969 available: the unit guard reads the stylesheet and the files on disk,
+ * whereas this asserts what the BROWSER resolves, which is the thing a farmer's
+ * phone actually does.
+ */
 const PROBES = [
     // Space-free, single-script. See the bystander note above.
-    { family: 'Inter', script: 'latin', text: 'Handgloves' },
-    { family: 'Inter', script: 'cyrillic', text: 'Обработка' },
-    { family: 'Onest', script: 'latin', text: 'Handgloves' },
-    { family: 'Onest', script: 'cyrillic', text: 'Обработка' },
+    { family: 'Inter', script: 'latin', text: 'Handgloves', faces: 'present' },
+    { family: 'Inter', script: 'cyrillic', text: 'Обработка', faces: 'present' },
+    /**
+     * Onest is CYRILLIC-ONLY since #1969. A Bulgarian heading was fetching the
+     * 33,760 B latin cut to render its space — `U+0020` lives in that cut's
+     * `U+0000-00FF`, which is the same bystander the docblock above describes,
+     * here as a product defect rather than a test-design one. Latin in a heading
+     * now falls back to Inter, which every `bg` page already preloads.
+     *
+     * Expected ABSENT, so a re-vendor that silently restores the cut reddens
+     * here as well as in `tests/guards/onest-ships-cyrillic-only.test.ts`.
+     */
+    { family: 'Onest', script: 'latin', text: 'Handgloves', faces: 'absent' },
+    { family: 'Onest', script: 'cyrillic', text: 'Обработка', faces: 'present' },
     // Bricolage is digits-only by product convention (no Cyrillic face exists
     // upstream), so it is probed on digits alone.
-    { family: 'Bricolage Grotesque', script: 'latin', text: '1234567890' },
+    { family: 'Bricolage Grotesque', script: 'latin', text: '1234567890', faces: 'present' },
 ] as const;
 
 test.describe('self-hosted web fonts', () => {
@@ -132,15 +151,35 @@ test.describe('self-hosted web fonts', () => {
             error: string | null;
         }[];
 
+        // Every probe must be accounted for. Iterating `results` alone would
+        // pass vacuously if the page returned an empty array, and iterating
+        // PROBES alone would miss a result for a pair nobody declared.
+        expect(results.map((r) => `${r.family}/${r.script}`).sort()).toEqual(
+            PROBES.map((p) => `${p.family}/${p.script}`).sort(),
+        );
+
         for (const r of results) {
+            const probe = PROBES.find((p) => p.family === r.family && p.script === r.script);
+            expect(probe, `no probe declared for ${r.family}/${r.script}`).toBeDefined();
             expect(
                 r.error,
                 `${r.family}/${r.script}: document.fonts.load rejected — a face 404'd`,
             ).toBeNull();
-            expect(
-                r.matched,
-                `${r.family}/${r.script}: no @font-face covers this script (unicode-range gap or missing file)`,
-            ).toBeGreaterThan(0);
+            if (probe!.faces === 'absent') {
+                // `load()` RESOLVES with zero matches for an uncovered script —
+                // it does not reject; a rejection means a 404, which the check
+                // above already caught. Measured in the docblock's fact 2.
+                expect(
+                    r.matched,
+                    `${r.family}/${r.script}: a face covers this script, but the product `
+                        + `deliberately ships none (#1969). A re-vendor has restored it.`,
+                ).toBe(0);
+            } else {
+                expect(
+                    r.matched,
+                    `${r.family}/${r.script}: no @font-face covers this script (unicode-range gap or missing file)`,
+                ).toBeGreaterThan(0);
+            }
         }
 
         // ── 1b. Every font the page actually requested came from us, and OK ─
