@@ -231,6 +231,60 @@ export function registerCadastreAndReportPaths(registry: OpenAPIRegistry): void 
 
     op(registry, {
         method: 'post',
+        path: '/api/t/{tenantSlug}/reports/campaign-diary',
+        operationId: 'generateCampaignDiaryPdf',
+        summary: 'Generate the whole-farm campaign ДНЕВНИК PDF',
+        description:
+            'The owner’s «ДНЕВНИК НА СТОПАНСТВОТО» (#2316) — the WHOLE FARM, every recorded '
+            + 'activity, one landscape table of nine columns under seven headers. It REPLACES '
+            + 'the БАБХ period download; the БАБХ register itself stays per treatment and is '
+            + '`/reports/season-diary` and the per-location routes.\n\n'
+            + '**A row is an ACTIVITY, not a line.** «Пръскане – 17,05 ха» is one row for one '
+            + 'spraying across several parcels — the sum of the parcels actually treated, in '
+            + 'ХЕКТАРИ. The per-block register prints one row per parcel line instead.\n\n'
+            + '**The campaign is DERIVED from the parameter, not a stored row.** '
+            + '`campaign=2024-2025` means 1 Oct 2024 → 30 Sep 2025, bounded in the farm’s own '
+            + 'timezone with an EXCLUSIVE upper bound. `Season` can express that window, but '
+            + 'production has exactly one Season, it is the sample dataset, and its window is '
+            + '1 Mar – 31 Oct — so a picker backed by Season rows would offer one sample '
+            + 'season with the wrong dates and an empty list on a tenant with none.\n\n'
+            + '**Rows are not capped.** The per-block register caps field SHEETS but '
+            + 'deliberately not lines, because a vanished spray is an unrecorded chemical '
+            + 'application; a campaign row is the same kind of record. A farm with years of '
+            + 'history can therefore request a large document.',
+        tags: ['Reports'],
+        extraResponses: codedErrorResponses({
+            400:
+                '- a malformed `campaign` — it must be `YYYY-YYYY` with CONSECUTIVE years. '
+                + '`2025-2024` and `2024-2026` are both parseable and neither is a campaign.',
+            404:
+                '- `REGISTER_EMPTY_FOR_PERIOD` — the campaign recorded nothing, or recorded '
+                + 'only incomplete work. Not a fault; say so rather than showing an error, and '
+                + 'note that a 200 with an empty table would be indistinguishable from a '
+                + 'genuinely quiet period.',
+        }),
+        params: TenantParams,
+        query: z.object({
+            campaign: z
+                .string()
+                .openapi({ example: '2024-2025', description: 'The campaign, `YYYY-YYYY`.' }),
+        }),
+        // NO `body`. This route reads `?campaign=` and never parses one, and
+        // `openapi-schema-documents-something` is right to refuse the empty
+        // `z.object({}).passthrough()` I first copied from the sibling route:
+        // a documented operation with a property-less schema looks COMPLETE to
+        // a client, which is worse than being visibly undocumented. An absent
+        // body says "there is no body"; an empty one says "send any JSON and
+        // we have not told you which".
+        success: {
+            status: 200,
+            description: 'The PDF.',
+            content: { 'application/pdf': z.string().openapi({ format: 'binary' }) },
+        },
+    });
+
+    op(registry, {
+        method: 'post',
         path: '/api/t/{tenantSlug}/reports/year-on-farm',
         operationId: 'generateYearOnFarmPdf',
         summary: 'Generate the year-on-the-farm PDF',
