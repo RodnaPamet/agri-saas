@@ -139,6 +139,202 @@ function callArgs(src: string, start: number): string {
 }
 
 /**
+ * The HELPER calls, scanned through their argument list the way the classes
+ * above are — because `EMISSIONS` can only read a code that is a LITERAL sitting
+ * immediately where the pattern expects it (#2370).
+ *
+ * Measured on the tree: 457 `coded*()` call sites, of which 5 pass something
+ * other than a literal. Two are ternaries — `chosen.isFertilizer ?
+ * 'FERTILIZER_NOT_FOUND' : 'PRODUCT_NOT_FOUND'` — whose four codes the narrow
+ * pattern saw NONE of. Three pass a function call, where there is no literal to
+ * read at all.
+ *
+ * The cost of that was not hypothetical: `TASK_STATUS_UNCHANGED`,
+ * `ILLEGAL_TRANSITION` and `UNKNOWN_TASK_STATUS` are thrown through
+ * `transitionErrorCode(transitionErr)` on the task status route, had bg and en
+ * copy, and were named nowhere in the spec for as long as the route existed.
+ * The guard reported full coverage over a population that excluded them — not a
+ * failure it could see, because a code it cannot read is simply absent from the
+ * denominator rather than reported as skipped.
+ *
+ * This runs ALONGSIDE `EMISSIONS` rather than replacing it. The narrow patterns
+ * are precise and have their own tests below; the union is the same set for
+ * every literal call, and this adds the expression cases. Deleting the narrow
+ * ones would leave those tests exercising a path production no longer uses.
+ */
+const HELPER_CALL = /coded(BadRequest|NotFound|Forbidden|Conflict|UnsupportedMediaType|ClientError)\(/g;
+
+/**
+ * Where the code sits, per helper. `codedClientError` takes the status first.
+ */
+const CODE_ARG_INDEX: Record<string, number> = {
+    BadRequest: 0,
+    NotFound: 0,
+    Forbidden: 0,
+    Conflict: 0,
+    UnsupportedMediaType: 0,
+    ClientError: 1,
+};
+
+/**
+ * The nth top-level argument of an argument list, respecting nesting.
+ *
+ * A plain `split(',')` cannot do this: `codedBadRequest(f(a, b), 'msg')` has its
+ * first comma INSIDE a call, and an object or array argument has more. Strings
+ * are skipped as units so a comma inside a message cannot split it either.
+ */
+function nthArg(args: string, n: number): string {
+    const parts: string[] = [];
+    let depth = 0;
+    let quote: string | null = null;
+    let start = 0;
+    for (let i = 0; i < args.length; i++) {
+        const c = args[i];
+        if (quote) {
+            if (c === '\\') i++;
+            else if (c === quote) quote = null;
+            continue;
+        }
+        if (c === "'" || c === '"' || c === '`') quote = c;
+        else if (c === '(' || c === '[' || c === '{') depth++;
+        else if (c === ')' || c === ']' || c === '}') depth--;
+        else if (c === ',' && depth === 0) {
+            parts.push(args.slice(start, i));
+            start = i + 1;
+        }
+    }
+    parts.push(args.slice(start));
+    return parts[n] ?? '';
+}
+
+/**
+ * The calls whose code is computed, and what each can emit.
+ *
+ * A DECLARATION rather than an exemption, and the difference is the point. An
+ * exemption would say "this call is allowed to hide its code" and the codes
+ * would stay out of the denominator — which is the state that let three live
+ * codes go unnamed in the spec. Declaring them puts them INTO the emitted set,
+ * so the documentation test below holds them to the same standard as a literal.
+ *
+ * Keyed by the function the code comes from, never by a line number: a comment
+ * added above a call moves its line while the call is unchanged, which is the
+ * same reason `known-flakes.json` matches on title rather than position.
+ *
+ * `codes` is checked against that function's own body in both directions, so a
+ * new `return` it does not list fails, and a code it lists that the function no
+ * longer returns fails too.
+ */
+const COMPUTED_CODE_SOURCES: readonly {
+    /** Substring of the call-site expression, which is how a site is matched. */
+    readonly through: string;
+    /** The function whose body defines the code set, when there is one. */
+    readonly via?: string;
+    readonly codes?: readonly string[];
+    /** Set instead when the call RE-THROWS a typed error whose codes are already collected. */
+    readonly reThrowOf?: string;
+    readonly why: string;
+}[] = [
+    {
+        through: 'transitionErrorCode',
+        via: 'transitionErrorCode',
+        codes: ['TASK_STATUS_UNCHANGED', 'ILLEGAL_TRANSITION', 'UNKNOWN_TASK_STATUS'],
+        why:
+            'The work-item state machine returns a typed error and this maps it to a code. '
+            + 'All three were undocumented until #2370 — the reason this mechanism exists.',
+    },
+    {
+        through: 'contractTransitionErrorCode',
+        via: 'contractTransitionErrorCode',
+        codes: [
+            'CONTRACT_STORED_STATUS_UNKNOWN',
+            'CONTRACT_TARGET_STATUS_UNKNOWN',
+            'CONTRACT_ILLEGAL_STATUS_TRANSITION',
+        ],
+        why: 'The contract state machine, same shape as the task one above.',
+    },
+    {
+        through: 'verdict.code',
+        via: 'checkHandleShape',
+        codes: [
+            'FARM_HANDLE_RESERVED',
+            'FARM_HANDLE_TOO_LONG',
+            'FARM_HANDLE_TOO_SHORT',
+            'FARM_HANDLE_UNUSABLE',
+        ],
+        why:
+            'Returns a verdict whose `code` the caller throws. These four were already '
+            + 'documented — found by the same sweep, and declared so they stay that way.',
+    },
+    {
+        through: 'err.code',
+        reThrowOf: 'SpatialLimitError',
+        why:
+            'A RE-THROW, not a code source: the instance was constructed with a literal code '
+            + 'somewhere, and `classCodes` collects it there. Declaring a code set here would '
+            + 'duplicate every construction site and go stale as they change. The test asserts '
+            + 'the site really is guarded by `instanceof SpatialLimitError`, so a plain '
+            + '`err.code` on some other error cannot borrow this entry.',
+    },
+];
+
+/**
+ * The body of a named function, from its opening brace to the matching close.
+ *
+ * Needed because "the codes this function can return" is a question about the
+ * FUNCTION, not the file: `work-item-status.ts` also defines
+ * `transitionErrorParams`, and a file-wide scan would read its status names as
+ * codes and demand the spec document them.
+ */
+function functionBody(src: string, name: string): string | null {
+    const sig = new RegExp(`function\\s+${name}\\s*\\(`).exec(src);
+    if (!sig) return null;
+    const open = src.indexOf('{', sig.index + sig[0].length);
+    if (open < 0) return null;
+    let depth = 0;
+    for (let i = open; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') {
+            depth--;
+            if (depth === 0) return src.slice(open, i + 1);
+        }
+    }
+    return null;
+}
+
+export interface UnreadableCodeSource {
+    /** `file:line`, so the message can be acted on without a search. */
+    at: string;
+    /** The expression as written, trimmed — enough to recognise the call. */
+    expression: string;
+}
+
+/**
+ * Codes from the helper calls, plus the calls whose code could not be read.
+ *
+ * EVERY UPPER_SNAKE literal in the code argument is collected, not the first:
+ * a ternary names two codes and taking one would under-report by exactly the
+ * branch a reviewer is least likely to check.
+ */
+function helperCodes(src: string, rel: string): { codes: string[]; unreadable: UnreadableCodeSource[] } {
+    const codes: string[] = [];
+    const unreadable: UnreadableCodeSource[] = [];
+    for (const m of src.matchAll(HELPER_CALL)) {
+        const args = callArgs(src, m.index! + m[0].length);
+        const arg = nthArg(args, CODE_ARG_INDEX[m[1]] ?? 0);
+        const literals = [...arg.matchAll(/['"]([A-Z][A-Z0-9_]{2,})['"]/g)].map((x) => x[1]);
+        if (literals.length > 0) {
+            codes.push(...literals);
+            continue;
+        }
+        unreadable.push({
+            at: `${rel}:${src.slice(0, m.index!).split('\n').length}`,
+            expression: `coded${m[1]}(${arg.trim().slice(0, 60)}, …)`,
+        });
+    }
+    return { codes, unreadable };
+}
+
+/**
  * Codes passed to one of the error classes.
  *
  * The first single- or double-quoted UPPER_SNAKE literal in the argument
@@ -443,8 +639,26 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'GOOGLE_SCOPES_MISSING',
 ];
 
+/**
+ * ONE walk of the tree, memoised, because two tests need two different things
+ * from it — the codes, and the calls whose code could not be read. Walking
+ * twice would read ~2,100 files twice to answer questions one pass already
+ * answers.
+ */
+let SCAN: { codes: Map<string, string>; unreadable: UnreadableCodeSource[] } | null = null;
+
+function scanTree(): { codes: Map<string, string>; unreadable: UnreadableCodeSource[] } {
+    if (SCAN) return SCAN;
+    SCAN = scanTreeOnce();
+    return SCAN;
+}
+
 /** Every code reachable through a `coded*()` helper, from source. */
 function emittedCodes(): Map<string, string> {
+    return scanTree().codes;
+}
+
+function scanTreeOnce(): { codes: Map<string, string>; unreadable: UnreadableCodeSource[] } {
     const files = collectSourceFiles({
         roots: ['src'],
         extensions: ['.ts', '.tsx'],
@@ -454,6 +668,7 @@ function emittedCodes(): Map<string, string> {
         floor: 1500,
     });
     const found = new Map<string, string>();
+    const unreadable: UnreadableCodeSource[] = [];
     for (const full of files) {
         const code = blankNonCode(readFileSync(full, 'utf8'));
         for (const pattern of EMISSIONS) {
@@ -464,8 +679,26 @@ function emittedCodes(): Map<string, string> {
         for (const c of classCodes(code)) {
             if (!found.has(c)) found.set(c, full.replace(`${REPO}/`, ''));
         }
+        // The expression-aware pass. Its literal codes are a SUPERSET of what
+        // the narrow patterns found for the same calls, so the union changes
+        // nothing for a literal call and adds the ternary branches.
+        const rel = full.replace(`${REPO}/`, '');
+        const helper = helperCodes(code, rel);
+        for (const c of helper.codes) {
+            if (!found.has(c)) found.set(c, rel);
+        }
+        unreadable.push(...helper.unreadable);
     }
-    return found;
+    // The declared ones, so a computed code is held to the same standard as a
+    // literal rather than excused. The origin is the declaration itself — if
+    // this code is undocumented, the message should point here, not at a file
+    // where the literal does not appear.
+    for (const d of COMPUTED_CODE_SOURCES) {
+        for (const c of d.codes ?? []) {
+            if (!found.has(c)) found.set(c, `COMPUTED_CODE_SOURCES (via ${d.via})`);
+        }
+    }
+    return { codes: found, unreadable };
 }
 
 /**
@@ -635,5 +868,108 @@ describe('an error code the server sends is named in the spec (#1391)', () => {
         // are real.
         const redundant = UNDOCUMENTED_BASELINE.filter((c) => documented(c)).sort();
         expect(redundant).toEqual([]);
+    });
+
+    it('collects BOTH branches of a ternary code, not just the first', () => {
+        // The widening itself. `EMISSIONS` requires the literal to sit
+        // immediately after the paren, so it collected NEITHER branch; a
+        // first-literal-wins reader would collect one and under-report by
+        // exactly the branch a reviewer is least likely to check.
+        const snippet =
+            "throw codedBadRequest(isFert ? 'TERNARY_FIRST' : 'TERNARY_SECOND', 'msg');";
+        const { codes, unreadable } = helperCodes(snippet, 'fixture.ts');
+        expect(codes.sort()).toEqual(['TERNARY_FIRST', 'TERNARY_SECOND']);
+        // And a ternary of literals is NOT an unreadable site — it is read.
+        expect(unreadable).toEqual([]);
+        // The control: the narrow pattern sees nothing here, which is why the
+        // widening was needed rather than merely tidier.
+        expect([...snippet.matchAll(EMISSIONS[0])].map((m) => m[1])).toEqual([]);
+    });
+
+    it('reads the code argument past a comma inside a nested call', () => {
+        // `nthArg` exists for this. A `split(',')` would cut
+        // `pick(a, b)` in half and read the code position as `b)`, losing the
+        // code — and silently, since a missing code is an absent one.
+        const snippet = "throw codedClientError(statusOf(a, b), 'NESTED_COMMA', 'msg');";
+        expect(helperCodes(snippet, 'fixture.ts').codes).toEqual(['NESTED_COMMA']);
+    });
+
+    it('the two LIVE ternary call sites are collected from the real tree', () => {
+        // Fixtures prove the reader; this proves it is pointed at the tree.
+        // Both codes were invisible before the widening, and both happen to be
+        // documented — so nothing would have failed to reveal it.
+        const codes = scanTree().codes;
+        for (const c of ['FERTILIZER_NOT_FOUND', 'PRODUCT_NOT_FOUND']) {
+            expect([c, codes.has(c)]).toEqual([c, true]);
+        }
+    });
+
+    it('every computed code source is DECLARED, not silently hidden', () => {
+        // The denominator this guard reports over. A call whose code it cannot
+        // read is not reported as skipped — it is simply absent, so coverage
+        // reads as complete over a population missing exactly the call sites
+        // someone had to think hardest about.
+        const { unreadable } = scanTree();
+        const undeclared = unreadable.filter(
+            (u) => !COMPUTED_CODE_SOURCES.some((d) => u.expression.includes(d.through)),
+        );
+        console.log(
+            `[computed-codes] ${unreadable.length} call(s) pass a computed code; `
+                + `${COMPUTED_CODE_SOURCES.length} declaration(s) cover them`,
+        );
+        expect(
+            undeclared.map((u) => `${u.at}  ${u.expression}`).sort(),
+            // A ternary of literals is NOT in this list — those are read
+            // directly, both branches. This is only for a code with no literal
+            // to read: a function call, a property, a lookup.
+        ).toEqual([]);
+    });
+
+    it.each(
+        COMPUTED_CODE_SOURCES.filter((d) => d.via && d.codes).map((d) => [d.via!, d] as const),
+    )(
+        '%s declares exactly the codes its body returns',
+        (via, decl) => {
+            // Both directions, which is what stops the declaration rotting. A
+            // new `return` the declaration omits fails here, and so does a code
+            // it lists that the function no longer returns — the same two
+            // ratchets the UNDOCUMENTED_BASELINE carries.
+            const files = collectSourceFiles({
+                roots: ['src'],
+                extensions: ['.ts', '.tsx'],
+                exclude: (rel) => rel.startsWith('src/generated/'),
+                floor: 1500,
+            });
+            let body: string | null = null;
+            for (const full of files) {
+                body = functionBody(blankNonCode(readFileSync(full, 'utf8')), via);
+                if (body) break;
+            }
+            // A declaration whose function has been renamed or deleted is
+            // stale, and stale is how a registry stops describing the code.
+            expect(body).not.toBeNull();
+            const actual = [...new Set([...body!.matchAll(/['"]([A-Z][A-Z0-9_]{2,})['"]/g)].map((m) => m[1]))];
+            expect(actual.sort()).toEqual([...decl.codes!].sort());
+        },
+    );
+
+    it('a re-throw declaration only covers a site that really re-throws it', () => {
+        // `through: 'err.code'` is a loose match by necessity — the expression
+        // is three characters of property access. Without this, ANY
+        // `coded*(err.code, …)` would silently borrow the SpatialLimitError
+        // entry, including one re-throwing an error whose codes nothing
+        // collects. So the site has to prove the guard is there.
+        const { unreadable } = scanTree();
+        const borrowed: string[] = [];
+        for (const u of unreadable) {
+            const decl = COMPUTED_CODE_SOURCES.find(
+                (d) => d.reThrowOf && u.expression.includes(d.through),
+            );
+            if (!decl) continue;
+            const file = u.at.slice(0, u.at.lastIndexOf(':'));
+            const src = readFileSync(`${REPO}/${file}`, 'utf8');
+            if (!src.includes(`instanceof ${decl.reThrowOf}`)) borrowed.push(u.at);
+        }
+        expect(borrowed.sort()).toEqual([]);
     });
 });
