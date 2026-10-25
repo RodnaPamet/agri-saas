@@ -89,7 +89,13 @@ describeFn('recordFarmActivity (#2316)', () => {
         // Two blocks, three parcels. One task per BLOCK is the whole reason the
         // grouping exists: the ДНЕВНИК resolves a block through the task's
         // location link.
-        expect({ tasks: r.tasks, lines: r.lines }).toEqual({ tasks: 2, lines: 3 });
+        expect({ tasks: r.tasks, lines: r.lines, parcelCount: r.parcelCount }).toEqual({
+            tasks: 2,
+            lines: 3,
+            // Equal to `lines` on a FIRST write, which is exactly why the two
+            // are easy to confuse — they only diverge on a replay.
+            parcelCount: 3,
+        });
         expect(r.treatmentGroupId).toBe(`${TAG}-prune`);
 
         const lines = await globalPrisma.operationParcel.findMany({
@@ -121,6 +127,12 @@ describeFn('recordFarmActivity (#2316)', () => {
         expect(again.treatmentGroupId).toBe(`${TAG}-prune`);
         // Already DONE, so nothing remained PENDING to mark.
         expect(again.lines).toBe(0);
+        // But the lines EXIST, and `parcelCount` says so. These two differing
+        // on a replay is the whole reason both are returned: agrent-ios read
+        // `lines` as interchangeable with the treatments route's replay-STABLE
+        // `parcelCount`, and a short-save check on it would have told a farmer
+        // nothing saved when everything already had.
+        expect(again.parcelCount).toBe(3);
         const total = await globalPrisma.operationParcel.count({
             where: { tenantId, task: { treatmentGroupId: `${TAG}-prune` } },
         });
