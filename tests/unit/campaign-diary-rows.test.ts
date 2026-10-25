@@ -31,7 +31,6 @@ const line = (over: Partial<DiaryLineInput> = {}): DiaryLineInput => ({
     doseValue: 0.15,
     doseUnitSymbol: 'л/дка',
     produceKg: null,
-    produceKind: null,
     ...over,
 });
 
@@ -195,12 +194,19 @@ describe('buildCampaignRows — one row is an ACTIVITY, not a line (#2316)', () 
     it('sums «Продукция» across the activity when it IS recorded', () => {
         const { rows } = buildCampaignRows(
             [
-                line({ operationType: 'HARVEST', parcelId: 'p1', produceKg: 4200, produceKind: 'Пшеница' }),
-                line({ operationType: 'HARVEST', parcelId: 'p2', produceKg: 3800, produceKind: 'Пшеница' }),
+                line({ operationType: 'HARVEST', parcelId: 'p1', produceKg: 4200, cropName: 'Пшеница' }),
+                line({ operationType: 'HARVEST', parcelId: 'p2', produceKg: 3800, cropName: 'Пшеница' }),
             ],
             ACTIVITY_LABELS_BG,
         );
-        expect(rows[0].produceKg).toBe('8000,00');
+        // Whole kilograms. This read «8000,00» until the kg column stopped
+        // borrowing `formatHa`, whose two decimals are the AREA convention.
+        expect(rows[0].produceKg).toBe('8000');
+        // Derived from the CROP. The previous version of this test fed a
+        // `produceKind: 'Пшеница'` straight into the fixture and asserted it
+        // came back — green, while production supplied «Общо за мероприятието»
+        // there and printed it in this column. A fixture that invents the
+        // field cannot fail on its content.
         expect(rows[0].produceKind).toBe('Пшеница');
     });
 

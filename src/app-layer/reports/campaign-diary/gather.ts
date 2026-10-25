@@ -127,23 +127,23 @@ export async function gatherCampaignDiary(
             },
             select: {
                 operationParcelId: true,
-                title: true,
                 quantities: {
                     where: { measure: 'WEIGHT' },
-                    select: { value: true, label: true },
+                    // The VALUE only. `label` is «Общо за мероприятието» — a
+                    // note that the figure is the activity's total, not this
+                    // parcel's yield — and reading it as the produce kind
+                    // printed that note in the «Продукция / Вид» column.
+                    select: { value: true },
                 },
             },
         });
 
         // Summed per line, because LogQuantity is one-to-many by schema.
         const kgByLine = new Map<string, number>();
-        const kindByLine = new Map<string, string>();
         for (const e of produce) {
             if (!e.operationParcelId) continue;
             const total = e.quantities.reduce((s, q) => s + (dec(q.value) ?? 0), 0);
             kgByLine.set(e.operationParcelId, (kgByLine.get(e.operationParcelId) ?? 0) + total);
-            const kind = e.quantities.find((q) => q.label)?.label ?? e.title;
-            if (kind) kindByLine.set(e.operationParcelId, kind);
         }
 
         const profile = await db.farmProfile.findFirst({
@@ -175,7 +175,6 @@ export async function gatherCampaignDiary(
             doseValue: dec(l.doseValue),
             doseUnitSymbol: l.doseUnit?.symbol ?? null,
             produceKg: kgByLine.get(l.id) ?? null,
-            produceKind: kindByLine.get(l.id) ?? null,
         }));
 
         const { rows, skippedIncomplete, rowsWithUnknownArea } = buildCampaignRows(
