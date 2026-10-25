@@ -23,10 +23,27 @@ import {
 import { buildCampaignRows, type DiaryLineInput } from '@/app-layer/reports/campaign-diary/rows';
 import { ACTIVITY_LABELS_BG } from '@/lib/operations/activity-labels';
 
-const SRC = fs.readFileSync(
+import { blankNonCode } from '../helpers/blank-non-code';
+
+const RAW = fs.readFileSync(
     path.resolve(__dirname, '../../src/app-layer/reports/pdf/campaign-diary.ts'),
     'utf8',
 );
+
+/**
+ * Comments blanked, positions preserved (#1774, #1387).
+ *
+ * Every assertion below asks a question about CODE — a label in `GROUPS`, a
+ * fallback expression, a loop bound. This file's docblocks discuss all of
+ * them at length, so a raw scan would be satisfied by the prose explaining a
+ * mechanism rather than the mechanism.
+ *
+ * `a-source-scanning-guard-blanks-its-comments` caught this on arrival, which
+ * is what its debt register is for: it failed because the guard was new and
+ * unblanked, not because it was listed. Registering it would have been the
+ * wrong fix — the register is a debt list, and this had no debt to record.
+ */
+const SRC = blankNonCode(RAW);
 
 const line = (over: Partial<DiaryLineInput> = {}): DiaryLineInput => ({
     treatmentGroupId: 'g1',
@@ -108,7 +125,9 @@ describe('the four-line holder block', () => {
     });
 
     it('SELF-TEST: dropping the em-dash fallback is detected', () => {
-        const mutated = SRC.replace(/\(s && s\.trim\(\) \? s\.trim\(\) : '—'\)/, '(s as string)');
+        const mutated = blankNonCode(
+            RAW.replace(/\(s && s\.trim\(\) \? s\.trim\(\) : '—'\)/, '(s as string)'),
+        );
         expect(mutated).not.toMatch(/\(s && s\.trim\(\) \? s\.trim\(\) : '—'\)/);
     });
 });
@@ -120,18 +139,16 @@ describe('rows are deliberately NOT capped', () => {
         // unrecorded chemical application". A campaign row is the same kind of
         // record. The decision is stated in the docblock and must not be
         // quietly reversed by a slice.
-        const code = SRC.split('\n')
-            .filter((l) => !/^\s*(\*|\/\*|\/\/)/.test(l))
-            .join('\n');
-        expect(code).not.toMatch(/MAX_ROWS|\.slice\(0,\s*\d+\)|rows\.slice/);
+        // `SRC` is already blanked, so no hand-rolled stripper here — that is
+        // the thing `comment-stripper-order` exists to distrust.
+        expect(SRC).not.toMatch(/MAX_ROWS|\.slice\(0,\s*\d+\)|rows\.slice/);
     });
 
     it('SELF-TEST: adding a row cap is detected', () => {
-        const mutated = SRC.replace('for (const row of data.rows) {', 'for (const row of data.rows.slice(0, 50)) {');
-        const code = mutated.split('\n')
-            .filter((l) => !/^\s*(\*|\/\*|\/\/)/.test(l))
-            .join('\n');
-        expect(code).toMatch(/rows\.slice/);
+        const mutated = blankNonCode(
+            RAW.replace('for (const row of data.rows) {', 'for (const row of data.rows.slice(0, 50)) {'),
+        );
+        expect(mutated).toMatch(/rows\.slice/);
     });
 });
 

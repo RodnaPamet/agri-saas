@@ -1955,6 +1955,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/reports/campaign-diary",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/t/{tenantSlug}/reports/field-briefing",
       "status": "live",
       "documented": true
