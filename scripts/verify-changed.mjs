@@ -168,6 +168,11 @@ export function changedTestFiles(files) {
  * not among the directories `^tests/` selects.
  */
 export function dedupeAgainstDirectories(paths) {
+    // `.tsx` as well as `.ts`. UNTESTED and knowingly so: the classification is
+    // only observable when a path lives BENEATH the one in question, and
+    // nothing ever lives beneath a test file — a test for it passes with the
+    // check reverted. Fixed anyway, because a rule that is wrong for a reason
+    // nobody has hit is still wrong. See the note in the suite.
     const dirs = paths.filter((p) => !p.endsWith('.ts') && !p.endsWith('.tsx'));
     return paths.filter((p) => !dirs.some((d) => p !== d && p.startsWith(`${d}/`)));
 }

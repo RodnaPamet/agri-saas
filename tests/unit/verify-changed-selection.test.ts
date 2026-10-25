@@ -126,14 +126,20 @@ describe('the pair: a changed test reaches the population only where it adds som
 });
 
 describe('dedupeAgainstDirectories', () => {
-    it('treats .tsx as a file, not a directory', () => {
-        // The original checked only `.ts`, so a `.tsx` path was classified as a
-        // DIRECTORY and would have swallowed any path beneath it. Nothing lives
-        // beneath a .tsx file, so it never bit — but it is wrong, and a rule
-        // that is wrong for a reason nobody has hit yet is still wrong.
-        expect(dedupeAgainstDirectories(['tests/rendered', 'tests/rendered/a.test.tsx']))
-            .toEqual(['tests/rendered']);
-    });
+    /**
+     * There is deliberately NO test for `.tsx` being classified as a file
+     * rather than a directory, though the code was changed to do that.
+     *
+     * I wrote one, and it could not fail: with `.tsx` misclassified as a
+     * directory the output is identical, because the only way the
+     * classification is observable is a path living BENEATH a `.tsx` file, and
+     * nothing ever does. The mutation that reverts the fix passes the test.
+     *
+     * So the assertion claimed coverage it did not have, which is worse than
+     * no assertion. The fix stays — a rule that is wrong for a reason nobody
+     * has hit is still wrong — and it is recorded here as correct by
+     * construction rather than by test.
+     */
 
     it('does not drop a path that merely SHARES A PREFIX with a directory', () => {
         // `tests/unit-helpers` starts with `tests/unit` as a string but is not
