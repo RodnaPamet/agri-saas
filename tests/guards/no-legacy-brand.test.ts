@@ -46,6 +46,20 @@ const SURVIVORS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
     { pattern: /X-Inflect-|LEGACY_OUTBOUND_WEBHOOK_HEADERS|legacyOutboundHeaders/, reason: 'legacy outbound-webhook headers — dual-emitted for SIEM back-compat (AUDIT_STREAM_LEGACY_HEADERS)' },
     { pattern: /__INFLECT_FORM_TELEMETRY__/, reason: 'dev-only form-telemetry debug global' },
     { pattern: /inflect-(?:data|mfa|startup-sentinel|dev-encryption)/, reason: 'encryption/MFA key-derivation salts + HKDF info — renaming breaks decryption of all existing ciphertext' },
+        // The SIBLING PRODUCT's backup mechanism, tracked here because the
+        // backup tooling lives in this repo (deploy/backup/README.md, #2319).
+        // These are not this repo's retired brand: `inflect-compliance` is a
+        // live, separately-deployed product on the other VM, and every token
+        // below names something that exists on that machine or in its bucket —
+        // a systemd unit, a service-account id, an object prefix, a container.
+        // Renaming any of them breaks a running backup or orphans the objects
+        // already written under the old prefix.
+        //
+        // Deliberately NOT a bare `inflect` or `inflect\/`: the first would
+        // disarm this ratchet entirely and the second would admit any brand
+        // URL path. Each alternative is anchored to a neighbouring token that
+        // only the backup mechanism uses.
+        { pattern: /inflect-db-backup|INFLECT_BACKUP_|inflect-postgres-|BUCKET\/inflect\/|inflect\.(?:dump|globals)/, reason: "inflect-compliance's nightly pg_dump mechanism — unit/timer names, its service-account id, its GCS object prefix and the container it dumps from. A live sibling product, not this repo's retired brand; renaming breaks the running backup or orphans existing objects" },
     { pattern: /inflect-compliance|inflect-jobs/i, reason: 'OTel resource names / GHCR org / HIBP User-Agent — observability + operator-side identity, migration-noted' },
     { pattern: /inflect_compliance/, reason: "the OTHER product's production DB name (the inflect-compliance VM, a different repo) — not ours to rename. Ours was renamed to agrent_production 2026-08-24; see docs/implementation-notes." },
     { pattern: /:-inflect\b/, reason: 'operator-side Postgres role/db default in the vendored VM compose — the file must byte-match the live VM (PR2 drift check); migration-noted' },

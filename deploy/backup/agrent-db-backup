@@ -52,9 +52,32 @@
 #
 # So: `agrent-db-backup@hazel-design-419410.iam.gserviceaccount.com`, holding
 # objectCreator + objectViewer on this ONE bucket and NOTHING at project level
-# (verified at creation). Neither role can delete or overwrite, so a
-# compromised box can add junk but cannot destroy the history; the bucket's
-# 30-day lifecycle rule is the only thing that deletes.
+# (verified 2026-10-25: 0 project-level bindings, objectCreator + objectViewer
+# on this bucket and none at all on the sibling product's). Neither role can
+# delete or overwrite, so NOTHING THIS SCRIPT RUNS AS can destroy the history;
+# the bucket's 30-day lifecycle rule is the only thing that deletes.
+#
+# ═══ THE DELETE PROTECTION RESTS ON THE SCOPE, NOT ON THIS SEPARATION ═══
+#
+# What stood here was wider: that a compromised box cannot destroy the history.
+# It does not follow, because the box does not act as this identity. Measured
+# 2026-10-25:
+#
+#   VM runs as   880736019978-compute@developer.gserviceaccount.com
+#   which holds  roles/editor, project-wide
+#   bucket grants  legacyObjectOwner + legacyBucketOwner -> projectEditor
+#   VM scope is  devstorage.read_only
+#
+# So the identity the machine actually carries is a project editor on a bucket
+# that grants project editors the legacy owner roles, and what demonstrably
+# caps it today is the OAuth SCOPE — the same scope that forced a dedicated key
+# above, since a scope caps a metadata token whatever IAM says.
+#
+# That makes the protection a VM ATTRIBUTE. An operator who widens the storage
+# scope for an unrelated reason removes it, with nothing in this file and
+# nothing in the bucket's IAM changing to say so. #2361 tracks replacing it
+# with a retention policy, which is the control that does not depend on who is
+# asking.
 #
 # objectViewer is present only for step 4's round trip. It grants read access
 # to backups of a database this host already serves, so it adds no exposure

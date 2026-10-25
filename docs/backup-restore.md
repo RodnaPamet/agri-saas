@@ -1,6 +1,6 @@
 # Backup & restore — the production VMs
 
-**Owner:** whoever is on call. **Last reviewed:** 2026-10-25 — `agrent`'s backup mechanism was replaced on that date; `inflect-compliance` remains unbacked.
+**Owner:** whoever is on call. **Last reviewed:** 2026-10-25 — both stacks' backup mechanisms were replaced on that date, and both are drilled.
 
 This is the operator runbook for the production database's backup and
 its restore drill. It supersedes the AWS RDS story that
@@ -66,7 +66,24 @@ service account carries the `devstorage.read_only` **scope**, and a scope caps
 the token regardless of IAM, so no bucket binding would let it write. Changing
 scopes requires the VM **stopped**, which is downtime for both products on this
 host. The dedicated account holds neither role that can delete or overwrite, so
-a compromised box can add junk but **cannot destroy the history**.
+**nothing the backup script runs as** can destroy the history.
+
+That is narrower than what stood here, which said a compromised box cannot
+destroy the history. It does not follow: the box does not act as that account
+for anything else it does. Measured 2026-10-25 —
+
+| | |
+| --- | --- |
+| VM's own identity | `880736019978-compute@developer.gserviceaccount.com` |
+| its project role | `roles/editor` |
+| both buckets grant | `legacyObjectOwner` + `legacyBucketOwner` → `projectEditor` |
+| what caps it today | the VM's OAuth scope, `devstorage.read_only` |
+
+So the delete protection is a **VM attribute**, not a result of the role
+separation: widen that scope for an unrelated reason and it is gone, with
+nothing in the script and nothing in the bucket's IAM changing to say so.
+#2361 tracks replacing it with a retention policy — the control that does not
+depend on who is asking.
 
 **It is application-consistent**, unlike the disk snapshot it replaces — see the
 warning at line 69 of the old section below, which this mechanism resolves
@@ -95,14 +112,41 @@ that the downloaded copy still parses to the same TOC entry count.
                       size=2321429B toc_entries=1833 (local 1833) db=agrent_production
 ```
 
-> ### `inflect-compliance` is STILL unbacked
->
-> Everything above is `agrent` only. The sibling VM's schedule was deleted in
-> the same sweep and **nothing has replaced it** — `gcloud compute snapshots
-> list` returns zero rows for that disk too. It is a different product in a
-> different repo; this is recorded here because the backup tooling lives here
-> and the drill below targets both. Not this repo's to fix, and not safe to
-> leave unsaid.
+### `inflect-compliance` has the same mechanism, since 2026-10-25
+
+This section used to be a warning that the sibling stack had **no backup at
+all** — its snapshot schedule went in the same 2026-10-12 sweep and nothing
+replaced it. That is no longer true, and the warning is kept in outline only
+because the 13-day gap is the reason the daily `Backup exists` probe exists.
+
+| | |
+| --- | --- |
+| Bucket | `gs://inflect-db-backups-hazel` — `eu` multi-region, UBLA on, `publicAccessPrevention: enforced`, 30-day lifecycle |
+| Objects | `inflect/YYYY/MM/DD/inflect-<stamp>.dump` + `.globals.sql` sibling |
+| Schedule | `inflect-db-backup.timer`, 02:15 UTC nightly |
+| Identity | `inflect-db-backup@…` — `objectCreator` + `objectViewer` on this ONE bucket, **nothing at project level** |
+| Key | `/etc/inflect-db-backup/sa-key.json`, root:root 0600 |
+| Mechanism in repo | `deploy/backup/inflect-db-backup{,.service,.timer}` |
+
+The scope caveat above applies here identically: that VM runs as the same
+project-editor default account and is capped by the same
+`devstorage.read_only` scope.
+
+**Its globals half matters more than agrent's.** `pg_dump` omits roles while
+emitting every GRANT that needs them, and this database has far more of them:
+
+```
+agrent   142 GRANTs
+inflect  1010 GRANTs
+```
+
+so a dump restored without its `.globals.sql` fails over a thousand times.
+Both roles it needs — `app_user` and `postgres` — are the same two agrent's
+needs, which is why one battery serves both.
+
+It remains a **different product in a different repository**. The mechanism is
+recorded here because the backup tooling lives here and the drill below targets
+both — not because the code is shared.
 
 ### Why two objects: `pg_dump` does not dump roles
 
@@ -296,15 +340,32 @@ So the drill needs no GCE resources at all, which retires the
 `ZONE_RESOURCE_POOL_EXHAUSTED` for a `pd-balanced` disk and the drill could not
 report on the backups at all. A drill that cannot get hardware cannot answer.
 
-### Only `agrent` is drilled
+### Both stacks are drilled
 
-`inflect-compliance` has no backup to restore — see the box above. It is
-removed from the drill rather than left to fail monthly in red for something
-this repository cannot fix, and
-`tests/guards/restore-drill-targets-what-exists.test.ts` asserts that every
-stack here is either drilled **or** declared unbacked, never neither. The day
-that stack grows a backup, that guard is what notices this file never gained a
-target.
+One matrix, one script, one image; only the bucket and the object prefix differ
+per leg:
+
+| leg | bucket variable | prefix |
+| --- | --- | --- |
+| `agrent` | `BACKUP_BUCKET` | `agrent/` |
+| `inflect-compliance` | `INFLECT_BACKUP_BUCKET` | `inflect/` |
+
+`fail-fast: false` is load-bearing and `oi-3-backup-restore` asserts it: with
+it unset, one product's restore failing cancels the other's leg mid-run, and a
+cancelled leg reports *nothing* about that stack. A drill that turns one
+failure into no information about either is worse than one that fails twice.
+
+`inflect-compliance` was removed from this drill on 2026-10-25 because it had
+no backup to restore, and added back the same day once it did —
+`tests/guards/restore-drill-targets-what-exists.test.ts` is what forced the
+second edit. It asserts every stack in the table at the top is either drilled
+**or** declared unbacked here, never neither and never both, so recording the
+new mechanism above without adding the matrix leg fails the guard. That is the
+notification it exists to give, and it worked: this section is the result.
+
+The CI identity `github-restore-test@` was granted `objectViewer` on the
+inflect bucket for this, and holds nothing else there — it can read backups to
+verify them and cannot write or delete.
 
 ## Drill history
 
