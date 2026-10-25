@@ -1,6 +1,6 @@
 # Backup & restore — the production VMs
 
-**Owner:** whoever is on call. **Last reviewed:** 2026-08-01.
+**Owner:** whoever is on call. **Last reviewed:** 2026-10-25 — and the headline finding of that review is in the box below: **there is no backup right now.**
 
 This is the operator runbook for the production database's backup and
 its restore drill. It supersedes the AWS RDS story that
@@ -37,6 +37,49 @@ Neither has a managed database or a replica. For each, **everything is
 on one disk in one zone.**
 
 ## The backups
+
+> ### ⚠ THERE IS CURRENTLY NO BACKUP OF EITHER PRODUCTION DATABASE.
+>
+> **Measured 2026-10-25.** Not a warning about a risk — a statement about the
+> present. The snapshot mechanism this section used to describe was
+> **deliberately retired on 2026-10-12**, and nothing replaced it (confirmed
+> with the project owner, 2026-10-25). Tracked on
+> [#2329](https://github.com/RodnaPamet/agri-saas/issues/2329).
+>
+> ```
+> $ gcloud compute snapshots list          → 0 rows
+> $ gcloud compute resource-policies list  → 0 rows
+> $ gcloud compute disks list --format="value(name,resourcePolicies)"
+>   agrent               (empty)
+>   inflect-compliance   (empty)
+> ```
+>
+> The audit trail, all by the project owner's own account, is a correctly
+> ordered teardown rather than an accident — a policy delete fails while it is
+> still attached, so detach-then-delete is a sequence you can only perform on
+> purpose:
+>
+> ```
+> 07:57:44–47  v1.compute.disks.removeResourcePolicies   detach from both disks
+> 07:57:50–52  v1.compute.resourcePolicies.delete        delete both schedules
+> 07:58:19+    v1.compute.snapshots.delete  × 60         delete the artefacts
+> ```
+>
+> **Everything below about snapshots is therefore HISTORY, not procedure.** It
+> is kept rather than deleted for two reasons: the restore procedure further
+> down is written against it and would otherwise be unreadable, and it is the
+> obvious thing to stand back up. Read it as a specification to re-implement,
+> not as a description of what exists.
+>
+> **Why nobody noticed for 13 days.** `restore-test.yml` asserts exactly the
+> right thing — that the schedule is attached and the newest snapshot is under
+> 26h old — and it was never red. It was **absent**: it last ran 2026-10-03,
+> the teardown was the 12th, and its next run was 2026-11-01. The check was
+> correct and not due. A daily `Backup exists` probe now asks the cheap half of
+> the question so that this interval is a day; the monthly drill keeps the
+> expensive half.
+
+### What the mechanism was (retired 2026-10-12)
 
 A GCE **snapshot schedule** attached to each disk:
 
