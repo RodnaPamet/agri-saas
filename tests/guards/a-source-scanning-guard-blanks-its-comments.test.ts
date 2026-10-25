@@ -81,12 +81,6 @@ const AWAITING_CONVERSION: readonly string[] = [
  */
 const SUBJECT_IS_NOT_BLANKABLE: ReadonlyArray<{ file: string; why: string }> = [
     {
-        file: 'tests/guards/postgis-image-single-source.test.ts',
-        /** reads `.github/workflows/*.yml`. `blankNonCode` is a TS/JS scanner; YAML
-     * comments are `#` and a `//` inside a URL is not a comment at all. */
-        why: 'reads `',
-    },
-    {
         file: 'tests/guards/sw-revision-stamp.test.ts',
         /** its subject is the BYTES of `public/sw.js` — it compares a content hash
      * against the stamped revision. Blanking changes the bytes, so the hash

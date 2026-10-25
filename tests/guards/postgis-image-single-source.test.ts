@@ -1,6 +1,22 @@
 /**
  * `.github/postgis-image` is the single source of truth, and this enforces it.
  *
+ * ## This guard must NEVER route its reads through `blankNonCode`
+ *
+ * It reads `.github/workflows/*.yml` and a `Dockerfile`. `blankNonCode` is a
+ * TS/JS scanner: YAML and Dockerfile comments are `#`, which it does not
+ * recognise, and a `//` inside a URL is not a comment at all — blanking from
+ * there to end of line would delete real content and the pin counts below
+ * would silently fall short.
+ *
+ * This note used to live as an entry in `a-source-scanning-guard-blanks-its-
+ * comments`'s never-blankable list. That register is asserted to name EXACTLY
+ * the guards its detector flags, and once this file moved from `readFileSync`
+ * plus a regex to the declarative table below, the detector stopped flagging
+ * it — so the entry became a reason recorded for a risk the register could no
+ * longer see, which reads as coverage. The constraint is real, so it belongs
+ * at the point of use instead.
+ *
  * ## Why this file exists
  *
  * Because `.github/postgis-image` said it already did. Until 2026-09-17 its
