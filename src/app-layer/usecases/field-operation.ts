@@ -22,6 +22,7 @@ import { trace } from '@opentelemetry/api';
 import { emitAutomationEvent } from '../automation';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { appliesAProduct } from '@/lib/operations/line-kind';
 
 
 type OperationType = 'SPRAY' | 'FERTILIZE' | 'SEED' | 'OTHER';
@@ -1003,7 +1004,12 @@ async function markOperationParcelImpl(
         // does NOT auto-reverse (the ledger is append-only — post an
         // ADJUSTMENT); re-completing re-emits a fresh application.
         let application: InputApplicationResult | null = null;
-        if (status === 'DONE' && fromStatus !== 'DONE') {
+        // A bare activity line (#2316) applies no product, so there is no
+        // stock movement to record. Guarded here rather than inside
+        // `recordInputApplication`: that function's contract IS a product
+        // application, and handing it a null product would make the absence
+        // its problem to interpret.
+        if (status === 'DONE' && fromStatus !== 'DONE' && appliesAProduct(line)) {
             application = await recordInputApplication(db, ctx, {
                 id: line.id,
                 parcelId: line.parcelId,

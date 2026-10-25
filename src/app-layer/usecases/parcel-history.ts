@@ -314,7 +314,10 @@ export async function getParcelHistory(
                 productCategory: line.product?.category ?? null,
                 // Decimal -> string at the usecase seam. The wire carries the
                 // exact value; a float would round a dose.
-                doseValue: line.doseValue.toString(),
+                // `?? ''` like the product and unit fields above: a bare
+                // activity line (#2316) has no dose, and the history row
+                // renders it as absent rather than as a zero dose.
+                doseValue: line.doseValue?.toString() ?? '',
                 doseUnit: line.doseUnit?.symbol ?? '',
                 targetNote: line.targetNote,
             })),

@@ -18,6 +18,7 @@ import {
     type SprayHour,
     type SprayWindow,
 } from '@/lib/agro/rules';
+import { appliesAProduct } from '@/lib/operations/line-kind';
 
 /**
  * The most recent field operation on a location's parcels, regrouped into a
@@ -127,6 +128,10 @@ export async function getLocationSmartDefaults(ctx: RequestContext, locationId: 
         // byParcel — first-seen-per-parcel == most recent (rows are createdAt desc).
         const byParcel: Record<string, SmartParcelDefault> = {};
         for (const l of lines) {
+            // A bare activity — pruning, cultivation (#2316) — has no product
+            // to suggest. Skipped rather than defaulted: an empty suggestion
+            // would prefill the wizard with a product nobody chose.
+            if (!appliesAProduct(l)) continue;
             if (!(l.parcelId in byParcel)) {
                 byParcel[l.parcelId] = {
                     productItemId: l.productItemId,
@@ -160,14 +165,19 @@ async function loadRepeatLast(db: Db, tenantId: string, taskId: string | null): 
         select: { parcelId: true, productItemId: true, doseValue: true, doseUnitId: true, createdAt: true },
         take: 100,
     });
-    if (jobLines.length === 0) return null;
+    // Bare activity lines (#2316) carry no product or dose and cannot seed a
+    // spray wizard, so they are dropped BEFORE the head is taken. Taken first
+    // and filtered after, a single pruning row as the latest line would
+    // collapse the whole suggestion to null with product lines right behind it.
+    const productLines = jobLines.filter(appliesAProduct);
+    if (productLines.length === 0) return null;
 
     // The wizard collects ONE product+dose across the job's parcels, so take
-    // the product/dose from the latest line (jobLines[0]); if lines somehow
-    // differ, the latest wins by design.
-    const head = jobLines[0];
+    // the product/dose from the latest such line; if lines somehow differ, the
+    // latest wins by design.
+    const head = productLines[0];
     return {
-        parcelIds: jobLines.map((l) => l.parcelId),
+        parcelIds: productLines.map((l) => l.parcelId),
         productItemId: head.productItemId,
         doseValue: toNumber(head.doseValue),
         doseUnitId: head.doseUnitId,
