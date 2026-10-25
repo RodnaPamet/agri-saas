@@ -11,7 +11,8 @@ import { resolveReaderLocale } from '@/app-layer/usecases/reader-locale';
  * GET /api/t/[tenantSlug]/trends/prices?commodity=&range=
  *
  * Returns the GLOBAL market-price series for one commodity, grouped by
- * (source, region) so the chart can split lines by unit/currency. Tenant-authed
+ * (source, region, stage) so the chart can split lines by unit/currency.
+ * `stage` is part of the series identity — see `TrendSeries.stage`. Tenant-authed
  * (getTenantCtx) — read-tier rate limiting applies at the edge. The response is
  * Redis-cached (6h) inside the usecase.
  */
