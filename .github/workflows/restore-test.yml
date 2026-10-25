@@ -1,70 +1,54 @@
-# ───────────────────────────────────────────────────────────────
-#  Restore Test — monthly restore drill against the REAL backup
+# Restore drill — can the production backup actually be restored? (#2332)
 #
-#  Proves the production backups are restorable, not merely present.
-#  Runs infra/scripts/restore-test-gcp.sh once per target, restoring
-#  the newest GCE snapshot of that target's boot disk onto a throwaway
-#  VM, booting a real Postgres over the recovered data directory,
-#  running a validation battery (migrations / RLS policies / app_user /
-#  recent audit rows), and deleting everything from a trap.
+# REPLACES a drill against a GCE snapshot schedule. That mechanism was
+# deliberately deleted on 2026-10-12 (#2329), so the old workflow's first two
+# assertions — schedule attached, newest snapshot under 26h — now fail on a
+# mechanism that no longer exists. It would have gone red on 2026-11-01 for a
+# stale reason, and a monthly job that is red for the wrong reason is worse
+# than no job: it teaches everyone to ignore the one check whose entire value
+# is being believed.
 #
-#  ## Two targets
+# ═══ WHAT CHANGED, AND WHAT THAT BUYS ═══
 #
-#  The project runs two independent stacks in one GCP project:
+# The old drill created a disk from the snapshot, booted a throwaway VM,
+# mounted the disk and let Postgres perform WAL recovery over the recovered
+# data directory — the crash-consistent snapshot's correctness argument. A
+# `pg_dump` has no WAL to recover and no disk to boot; it is already
+# application-consistent, which is why it was chosen.
 #
-#    agrent              THIS repo's deployment (ghcr.io/…/agri-saas)
-#    inflect-compliance  a DIFFERENT product, from a different repo
+# So those steps are gone, and with them a failure family this drill's own
+# history records: 2026-09-01 reported `exit 75 — NOT TESTED` because BOTH
+# targets hit `ZONE_RESOURCE_POOL_EXHAUSTED` for a pd-balanced disk. A drill
+# that cannot get hardware cannot report on backups. This one needs none —
+# a container in the runner is the whole environment — so the EX_TEMPFAIL
+# path that existed for that case is deliberately NOT carried over. It is
+# unreachable now, and a branch for an impossible state is a lie in waiting.
 #
-#  Both are drilled here because the tooling and the backup mechanism
-#  live here — not because the code is shared. Both had zero backups
-#  until 2026-08-01.
+# ═══ WHY THERE IS ONLY ONE TARGET NOW ═══
 #
-#  ## Why this replaced the AWS version
+# The old matrix drilled `agrent` AND `inflect-compliance`, "because the
+# tooling lives here — not because the code is shared".
 #
-#  Until 2026-08-01 this workflow drilled AWS RDS point-in-time
-#  recovery. The product does not run on RDS — production is a single
-#  GCE VM (project hazel-design-419410, instance `agrent`) with
-#  Postgres in a local Docker volume. The workflow died at
-#  "Configure AWS credentials (OIDC)" in 12 seconds on every run,
-#  because the AWS account it assumed does not exist, and so the
-#  restore script it existed to run was never executed once.
+# `inflect-compliance` HAS NO BACKUP. Its snapshot schedule went in the same
+# 2026-10-12 sweep and nothing replaced it: zero snapshots, no bucket, no
+# timer (measured 2026-10-25, #2329). There is nothing to restore, so a leg
+# for it could only ever report its own impossibility — monthly, in red, for
+# something this repository cannot fix.
 #
-#  Worse, the failure was uninformative: it read as "restore is
-#  broken" when it meant "this drills infrastructure we do not have".
-#  What it actually masked was that production had NO automated
-#  backups at all — no cron, no systemd timer, no snapshot schedule,
-#  zero snapshots. Neither stack had any. That is fixed (resource
-#  policies `agrent-daily-snapshot` at 02:00 UTC and
-#  `inflect-daily-snapshot` at 02:30 UTC, both 14-day retention), and
-#  this workflow is what keeps it honest.
-#
-#  ## Required configuration
-#
-#  Repo Settings → Environments → production:
-#    Secrets:
-#      GCP_WORKLOAD_IDENTITY_PROVIDER — full provider resource name,
-#        projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
-#      GCP_SERVICE_ACCOUNT            — service account email the
-#        workflow impersonates. Needs compute.instances.*,
-#        compute.disks.*, compute.snapshots.get/list on the project.
-#  Repo Variables (optional):
-#    GCP_PROJECT (default hazel-design-419410)
-#    GCP_ZONE    (default europe-west1-b)
-#  Per-target settings are in the job matrix below, not in variables —
-#  a single SOURCE_DISK variable cannot describe two targets.
-#
-#  Until those secrets exist the drill CANNOT run from CI, and this
-#  workflow says so explicitly rather than failing somewhere opaque.
-#  The script is not CI-only — the per-target invocation is printed in
-#  that failure summary, and documented in docs/backup-restore.md.
-# ───────────────────────────────────────────────────────────────
+# It is therefore removed from the matrix rather than left to fail, and the
+# absence is RECORDED instead of dropped: `docs/backup-restore.md` states it
+# in the section that used to describe the shared mechanism, and
+# `tests/guards/restore-drill-targets-what-exists.test.ts` asserts the two
+# statements agree — so the day that stack grows a backup, the guard is what
+# notices this file never gained a target.
 name: Restore Test
 
 on:
   schedule:
-    # 04:00 UTC on the 1st of every month — two hours after the daily
-    # snapshot window (02:00 UTC), so the newest snapshot is settled
-    # and comfortably inside the 26h freshness bound.
+    # 04:00 UTC on the 1st. The nightly dump lands at 01:15 UTC, so by now it
+    # is settled. Freshness itself is NOT this drill's gate — the daily
+    # `Backup exists` probe owns that question (#2329), because the monthly
+    # cadence is what let a total absence of backups go unreported for 13 days.
     - cron: "0 4 1 * *"
   workflow_dispatch:
     inputs:
@@ -78,92 +62,52 @@ permissions:
   id-token: write # OIDC → Workload Identity Federation
 
 concurrency:
-  # One drill at a time — concurrent runs would burn quota and clutter
-  # the disk/instance list.
   group: restore-test
   cancel-in-progress: false
 
 jobs:
   restore-test:
-    name: "Restore Test (${{ matrix.target }})"
+    name: "Restore Test (agrent)"
     runs-on: ubuntu-latest
-    # Snapshot → disk → VM boot → image build → WAL recovery. Normal
-    # runtime is ~10 min; this is a runaway backstop, not a budget.
-    timeout-minutes: 45
+    # Image build + container start + a 54 MB restore. Normal runtime is a
+    # few minutes; this is a runaway backstop, not a budget.
+    timeout-minutes: 30
     environment: production # gates the GCP identity secrets
-
-    strategy:
-      # Both targets must report. fail-fast would cancel the second
-      # drill the moment the first failed, which is precisely when you
-      # most want to know whether the other backup is also broken.
-      fail-fast: false
-      # Serialised: the drill names its temporary disk and VM from a
-      # to-the-second timestamp, so two legs starting in the same
-      # second would collide. It also halves the peak quota draw.
-      max-parallel: 1
-      matrix:
-        include:
-          # This repo's own deployment (ghcr.io/…/agri-saas).
-          - target: agrent
-            disk: agrent
-            schedule: agrent-daily-snapshot
-            pgdata_volume: agrent-pgdata
-            stack_dir: /opt/agrent
-            # empty ⇒ build postgis+pgvector, which this cluster needs
-            pg_image: ""
-          # A DIFFERENT product, from a different repo, sharing this
-          # GCP project and this backup mechanism. It is drilled here
-          # because the tooling lives here — not because the code is
-          # shared. If that repo grows its own drill, drop this entry.
-          - target: inflect-compliance
-            disk: inflect-compliance
-            schedule: inflect-daily-snapshot
-            pgdata_volume: inflect_pgdata
-            stack_dir: /opt/inflect
-            pg_image: postgres:16-alpine
 
     steps:
       - uses: actions/checkout@v7
 
-      # Fail with a NAMED diagnosis rather than dying inside the auth
-      # action. The previous workflow's whole problem was that its
-      # failure did not say what was wrong.
+      # A named diagnosis rather than dying inside the auth action, and it
+      # exits NON-ZERO: unconfigured is "nobody checked", which must never be
+      # mistaken for "the backup restores". Checks the OIDC endpoint too,
+      # because the secrets being present says nothing about whether a token
+      # can be minted from them — that gap cost the Backup exists probe its
+      # first CI run (#2334).
       - name: Preflight — is the drill configured for CI?
         env:
           WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           WIF_SA: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          BUCKET: ${{ vars.BACKUP_BUCKET }}
         run: |
           missing=""
           [ -n "$WIF_PROVIDER" ] || missing="$missing GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -n "$WIF_SA" ]       || missing="$missing GCP_SERVICE_ACCOUNT"
+          [ -n "$BUCKET" ]       || missing="$missing BACKUP_BUCKET(repo-variable)"
+          [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] \
+            || missing="$missing id-token:write(permissions-block,-not-a-secret)"
           if [ -n "$missing" ]; then
-            echo "::error title=Restore drill not configured::Missing production environment secret(s):$missing"
+            echo "::error title=Restore drill not configured::Missing:$missing"
             {
-              echo "## ⚠ Restore drill did not run"
+              echo "## ⚠ The restore drill did not run"
               echo ""
-              echo "Missing production environment secret(s):**$missing**"
+              echo "Missing: **$missing**"
               echo ""
-              echo "CI has no credentials for the production GCP project, so the"
-              echo "monthly restore drill could not execute. **This is not a"
-              echo "statement that the backup is good — it is a statement that"
-              echo "nobody checked.**"
-              echo ""
-              echo "Either configure Workload Identity Federation (see the header"
-              echo "of \`.github/workflows/restore-test.yml\`), or run the drill"
-              echo "manually from an authenticated shell:"
-              echo ""
-              echo '```'
-              echo "GCP_PROJECT=${{ vars.GCP_PROJECT || 'hazel-design-419410' }} \\"
-              echo "GCP_ZONE=${{ vars.GCP_ZONE || 'europe-west1-b' }} \\"
-              echo "SOURCE_DISK=${{ matrix.disk }} SNAPSHOT_SCHEDULE=${{ matrix.schedule }} \\"
-              echo "PGDATA_VOLUME=${{ matrix.pgdata_volume }} STACK_DIR=${{ matrix.stack_dir }} \\"
-              echo "PG_IMAGE=${{ matrix.pg_image }} \\"
-              echo "  ./infra/scripts/restore-test-gcp.sh"
-              echo '```'
+              echo "**This is not a statement that the backup restores — it is a"
+              echo "statement that nobody checked.**"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "✓ GCP identity secrets present"
+          echo "configured"
 
       - name: Authenticate to GCP (Workload Identity Federation)
         uses: google-github-actions/auth@v3
@@ -174,79 +118,52 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Run the restore drill
+      # The SAME Dockerfile the production `db` service builds from — its own
+      # header names "CI's restore drill" as one of its three consumers. The
+      # dump carries postgis, vector and pg_trgm extension objects, so a stock
+      # postgres image would fail the restore on CREATE EXTENSION and the
+      # failure would look like a corrupt backup.
+      - name: Build the Postgres image production runs
+        run: docker build -t restore-drill-pg:local deploy/postgres
+
+      - name: Restore the newest dump and validate it
         id: drill
         env:
-          GCP_PROJECT: ${{ vars.GCP_PROJECT || 'hazel-design-419410' }}
-          GCP_ZONE: ${{ vars.GCP_ZONE || 'europe-west1-b' }}
-          SOURCE_DISK: ${{ matrix.disk }}
-          SNAPSHOT_SCHEDULE: ${{ matrix.schedule }}
-          PGDATA_VOLUME: ${{ matrix.pgdata_volume }}
-          STACK_DIR: ${{ matrix.stack_dir }}
-          PG_IMAGE: ${{ matrix.pg_image }}
-        # The exit code is CAPTURED and re-raised rather than left implicit,
-        # because 75 (EX_TEMPFAIL) has to reach the summary below: it means
-        # every zone in the region was out of capacity, so the drill never got
-        # to test the backup. That is a different fact from "the backup did
-        # not restore", and reporting the first as the second is a false alarm
-        # that costs someone a night.
-        #
-        # `exit $code` is load-bearing. Dropping it turns EVERY drill failure
-        # green while `job.status` still reads success — the worst possible
-        # regression in this file, and the reason
-        # tests/guards/oi-3-backup-restore.test.ts asserts on these lines.
-        run: |
-          set +e
-          ./infra/scripts/restore-test-gcp.sh
-          code=$?
-          set -e
-          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
-          exit $code
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+          BACKUP_PREFIX: agrent/
+          PG_IMAGE: restore-drill-pg:local
+        run: ./infra/scripts/restore-test-dump.sh
 
       - name: Workflow summary
         if: always()
         run: |
           {
-            echo "## Restore Test"
-            echo ""
-            echo "- **Triggered by:** ${{ github.event_name }}"
-            echo "- **Reason:** ${{ github.event.inputs.reason || 'scheduled' }}"
-            echo "- **Target:** ${{ matrix.target }} — disk \`${{ matrix.disk }}\`, schedule \`${{ matrix.schedule }}\`"
-            echo "- **Region:** ${{ vars.GCP_ZONE || 'europe-west1-b' }} and its sibling zones — the drill provisions in the first with room, so the zone it used is in the step log above, not here"
-            echo "- **Result:** ${{ job.status }}"
-            echo "- **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            echo ""
-            if [ "${{ steps.drill.outputs.exit_code }}" = "75" ]; then
-              echo "### ⚠ NOT TESTED — no capacity, not a bad backup"
+            if [ "${{ steps.drill.outcome }}" = "success" ]; then
+              echo "## ✅ Restore drill passed"
               echo ""
-              echo "Every zone in the region was out of capacity, so the drill could not"
-              echo "provision a disk and VM and never reached the restore. **This is not"
-              echo "evidence that the backup is broken** — the schedule-attached and"
-              echo "snapshot-freshness checks both PASSED before it stopped."
+              echo "The newest dump in \`${{ vars.BACKUP_BUCKET }}\` was restored into a"
+              echo "clean Postgres built from \`deploy/postgres/Dockerfile\`, and the"
+              echo "validation battery passed: migrations applied, \`tenant_isolation\`"
+              echo "policies present, \`app_user\` present and holding table grants."
               echo ""
-              echo "What it does mean: the restore path is UNVERIFIED for this cycle."
-              echo "Re-run the workflow manually; capacity is usually transient."
+              echo "This says the backup RESTORES. Whether a recent one EXISTS is the"
+              echo "daily \`Backup exists\` probe's question, not this drill's — see #2329."
+            else
+              echo "## ❌ Restore drill failed"
               echo ""
-              echo "The cleanup trap deletes the throwaway VM and disk on every exit"
-              echo "path, including this one. If it was killed hard, check for leaks:"
+              echo "The step log carries a named diagnosis. The two causes worth"
+              echo "telling apart:"
               echo ""
-              echo '```'
-              echo "gcloud compute instances list --filter='name~restore-test-'"
-              echo "gcloud compute disks list --filter='name~restore-test-'"
-              echo '```'
-            elif [ "${{ job.status }}" != "success" ]; then
-              echo "### ⚠ Action required"
-              echo ""
-              echo "The production backup did not restore cleanly. Investigate before"
-              echo "the next maintenance window — this is the only signal that stands"
-              echo "between a snapshot schedule and an unrecoverable database."
-              echo ""
-              echo "The drill's cleanup trap deletes the throwaway VM and disk on every"
-              echo "exit path. If it was killed hard, check for leaked resources:"
-              echo ""
-              echo '```'
-              echo "gcloud compute instances list --filter='name~restore-test-'"
-              echo "gcloud compute disks list --filter='name~restore-test-'"
-              echo '```'
+              echo "- **no dump, or no \`.globals.sql\` sibling** — that is a BACKUP"
+              echo "  failure, not a drill failure. \`pg_dump\` omits roles while"
+              echo "  emitting every GRANT that needs them, so a dump without its"
+              echo "  globals cannot restore (#2337)."
+              echo "- **the battery failed** — the dump restored but the result is not"
+              echo "  a working database. Policies or grants missing means RLS would be"
+              echo "  inert, which is a breach wearing a green tick."
             fi
+            echo ""
+            echo "\`inflect-compliance\` is NOT drilled: it has no backup mechanism at"
+            echo "all since 2026-10-12 and there is nothing to restore. See"
+            echo "\`docs/backup-restore.md\`."
           } >> "$GITHUB_STEP_SUMMARY"
