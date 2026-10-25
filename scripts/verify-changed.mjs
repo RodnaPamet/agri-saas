@@ -250,11 +250,6 @@ if (lintNeeded) {
     );
 }
 
-if (explainOnly) {
-    console.log('\n[verify:changed] --explain: nothing run.');
-    process.exit(0);
-}
-
 /**
  * A diff with files but NO derived population is a REFUSAL, not a pass — #2018.
  *
@@ -276,18 +271,48 @@ if (explainOnly) {
  * population quietly stops deriving one: nobody adds the missing rule, because
  * nothing ever told them it was missing.
  */
+/**
+ * Files that derive nothing BY DESIGN — see `noTestsNeeded` in the rules.
+ *
+ * The refusal below would otherwise block a README edit, and "no rule covers
+ * this" and "no test could cover this" are different answers with only one of
+ * them a problem. A path must be one or the other explicitly: that is what
+ * makes the refusal safe to make loud.
+ */
+const noTestsNeeded = (RULES.noTestsNeeded ?? []).map((r) => ({
+    re: new RegExp(r.when),
+    why: r.why,
+}));
+const unclassified = files.filter((f) => !noTestsNeeded.some(({ re }) => re.test(f)));
+
+if (population.length === 0 && unclassified.length === 0) {
+    console.log(
+        `[verify:changed] ${files.length} file(s) changed, none with a test surface:`,
+    );
+    for (const f of files.slice(0, 10)) console.log(`  ${f}`);
+    console.log('\nDeclared in `noTestsNeeded` with a reason, so this is a pass — but it');
+    console.log('is a pass that ran NOTHING, which is not the same as a green suite.');
+    process.exit(0);
+}
+
 if (population.length === 0) {
     console.error('\n[verify:changed] NO rule covers this diff, so NOTHING was derived.');
     console.error('This is a refusal, not a pass — an empty population would run the');
     console.error('ENTIRE suite (a bare `jest` takes no path filter), which is neither');
     console.error('what the printed count says nor what you asked for.\n');
-    console.error('Files matched by no rule:');
-    for (const f of files.slice(0, 20)) console.error(`  ${f}`);
-    if (files.length > 20) console.error(`  …and ${files.length - 20} more`);
+    console.error('Files matched by no rule and not declared test-free:');
+    for (const f of unclassified.slice(0, 20)) console.error(`  ${f}`);
+    if (unclassified.length > 20) console.error(`  …and ${unclassified.length - 20} more`);
     console.error('\nAdd a rule to scripts/verify-changed.rules.json with its `why`,');
     console.error('or run the suites you believe are relevant by hand and say which.');
     process.exit(1);
 }
+
+if (explainOnly) {
+    console.log('\n[verify:changed] --explain: nothing run.');
+    process.exit(0);
+}
+
 
 for (const p of population) {
     if (!existsSync(path.join(REPO_ROOT, p))) {
