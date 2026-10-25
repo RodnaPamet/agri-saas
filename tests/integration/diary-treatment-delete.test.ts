@@ -586,21 +586,31 @@ describeFn('the folded row says how much of a treatment is unfinished (#2299)', 
         expect(row!.parcelCount).toBe(0);
     });
 
-    it('an ABANDONED treatment reports no outstanding work', async () => {
-        // Its task shell is soft-deleted, so there is nothing a farmer can
-        // finish. Counting its lines would show work outstanding on a
-        // treatment nobody can act on.
-        const handle = `progress-abandoned-${randomUUID()}`;
-        await recordPartial(handle);
-        const before = await rowFor(handle);
-        expect(before!.pendingCount).toBe(1);
+    it('a soft-deleted task\'s lines are NOT counted as outstanding', async () => {
+        // The `deletedAt IS NULL` guard, exercised directly.
+        //
+        // The obvious route does not reach it: `deleteDiaryTreatment` erases
+        // the journal entries AND soft-deletes the tasks together, so the row
+        // leaves the list entirely and an assertion after it never runs. My
+        // first version of this test did exactly that — `if (after) expect(…)`
+        // — and a mutation removing the guard left it green, because the
+        // window was empty.
+        //
+        // So the state is built directly: the task is soft-deleted while its
+        // entries survive, which is what makes the guard observable at all.
+        const handle = `progress-softdel-${randomUUID()}`;
+        const { taskIds } = await recordPartial(handle);
+        expect(await rowFor(handle).then((r) => r!.pendingCount)).toBe(1);
 
-        await deleteDiaryTreatment(ctx(), handle);
+        await globalPrisma.task.updateMany({
+            where: { tenantId, id: { in: taskIds } },
+            data: { deletedAt: new Date(), deletedByUserId: userId },
+        });
 
         const after = await rowFor(handle);
-        // The withdrawal erases the entries, so the row leaves the list
-        // entirely — which is itself the answer. If it is still listed, it
-        // must not claim outstanding work.
-        if (after) expect(after.pendingCount).toBe(0);
+        expect(after).toBeTruthy();
+        // Nothing a farmer can finish, so nothing outstanding is claimed.
+        expect(after!.pendingCount).toBe(0);
+        expect(after!.lineCount).toBe(0);
     });
 });
