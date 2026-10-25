@@ -65,9 +65,7 @@ interface WorkflowDoc {
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
-const stat = (rel: string) => fs.statSync(path.join(ROOT, rel));
 
-const SCRIPT = 'infra/scripts/restore-test-gcp.sh';
 const WORKFLOW = '.github/workflows/restore-test.yml';
 
 describe('OI-3 — the retired AWS drill stays retired', () => {
@@ -76,6 +74,23 @@ describe('OI-3 — the retired AWS drill stays retired', () => {
         ['infra/scripts/pg-dump-to-s3.sh', 'AWS S3 dump fallback — no S3 bucket exists'],
     ])('%s is gone (%s)', (rel) => {
         expect(exists(rel)).toBe(false);
+    });
+
+    it('[oi-3-exists] the absence above is measured, not assumed', () => {
+        // `exists` was reported as a DEAD selector by `scripts/selector-teeth`
+        // and it was right: every assertion on it expects `false`, so gutting
+        // it to `return false` satisfies all of them. The suite then cannot
+        // tell "the retired drill is gone" from "the check is broken", and it
+        // would report the reassuring answer either way.
+        //
+        // One positive control on the same population fixes that — a path the
+        // repo definitely has, so a gutted predicate fails here.
+        expect(exists(WORKFLOW)).toBe(true);
+        expect(exists('package.json')).toBe(true);
+        // And the negative side is reachable for a path nothing could create,
+        // so this control cannot pass by `exists` being gutted to `true`
+        // either.
+        expect(exists('infra/scripts/this-path-does-not-exist.sh')).toBe(false);
     });
 
     it('the workflow no longer references AWS', () => {
