@@ -511,3 +511,96 @@ describeFn('mayDelete and mayCorrect on the folded journal row (DB-backed, #2172
         expect(typeof row.mayCorrect).toBe('boolean');
     });
 });
+
+describeFn('the folded row says how much of a treatment is unfinished (#2299)', () => {
+    /**
+     * A partially-written treatment used to be invisible: the row carried no
+     * completeness signal at all, so `deleteDiaryTreatment`'s careful handling
+     * of the incomplete case — and the replay path that can FINISH one — were
+     * reachable only by someone who already knew the handle.
+     *
+     * The subtle part is that `parcelCount` was already lying about it.
+     * `_treatmentAggregates` is keyed on `LogEntry`, and a PENDING line has no
+     * entry, so a partial treatment reported FEWER parcels with nothing saying
+     * why. `pendingCount` and `lineCount` come from a query keyed on `Task`,
+     * which is where the lines actually hang.
+     */
+    const rowFor = async (handle: string) => {
+        const page = (await listLogEntriesPaginated(ctx(), { limit: 50 })) as {
+            items: Array<{
+                treatment?: {
+                    treatmentGroupId: string;
+                    parcelCount: number;
+                    pendingCount?: number;
+                    lineCount?: number;
+                } | null;
+            }>;
+        };
+        return page.items.map((i) => i.treatment).find((t) => t?.treatmentGroupId === handle);
+    };
+
+    it('a COMPLETE treatment reports nothing outstanding', async () => {
+        const handle = `progress-done-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        const row = await rowFor(handle);
+        expect(row).toBeTruthy();
+        expect(row!.pendingCount).toBe(0);
+        expect(row!.lineCount).toBe(2);
+        // Every line finished, so the entry-keyed count agrees with the
+        // task-keyed one. That agreement is what breaks below.
+        expect(row!.parcelCount).toBe(row!.lineCount);
+    });
+
+    it('a PARTIAL treatment reports the remainder, and exposes the old lie', async () => {
+        const handle = `progress-partial-${randomUUID()}`;
+        await recordPartial(handle);
+        const row = await rowFor(handle);
+        expect(row).toBeTruthy();
+        expect(row!.pendingCount).toBe(1);
+        expect(row!.lineCount).toBe(2);
+        // The number that was already wrong: `parcelCount` counts only lines
+        // with a journal entry, so it under-reports a partial treatment. Now
+        // the row says so instead of leaving a reader to wonder.
+        expect(row!.parcelCount).toBe(1);
+        expect(row!.parcelCount).toBeLessThan(row!.lineCount);
+    });
+
+    it('an ordinary manual entry is NOT an unfinished treatment — the control', async () => {
+        // The reason a client badges on `pendingCount > 0` rather than on
+        // `parcelCount !== lineCount`: a free-hand entry has no lines at all,
+        // so all three are 0 and the two counts agree vacuously.
+        const entry = await globalPrisma.logEntry.create({
+            data: {
+                tenantId,
+                type: 'OBSERVATION',
+                title: `Free-hand ${randomUUID().slice(0, 6)}`,
+                occurredAt: new Date('2026-03-04T08:00:00Z'),
+                createdByUserId: userId,
+            },
+            select: { treatmentGroupId: true },
+        });
+        const row = await rowFor(entry.treatmentGroupId);
+        expect(row).toBeTruthy();
+        expect(row!.pendingCount).toBe(0);
+        expect(row!.lineCount).toBe(0);
+        expect(row!.parcelCount).toBe(0);
+    });
+
+    it('an ABANDONED treatment reports no outstanding work', async () => {
+        // Its task shell is soft-deleted, so there is nothing a farmer can
+        // finish. Counting its lines would show work outstanding on a
+        // treatment nobody can act on.
+        const handle = `progress-abandoned-${randomUUID()}`;
+        await recordPartial(handle);
+        const before = await rowFor(handle);
+        expect(before!.pendingCount).toBe(1);
+
+        await deleteDiaryTreatment(ctx(), handle);
+
+        const after = await rowFor(handle);
+        // The withdrawal erases the entries, so the row leaves the list
+        // entirely — which is itself the answer. If it is still listed, it
+        // must not claim outstanding work.
+        if (after) expect(after.pendingCount).toBe(0);
+    });
+});
