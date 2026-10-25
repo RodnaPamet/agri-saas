@@ -87,6 +87,15 @@ interface ChosenInput {
     doseValue: number;
     doseUnitId: string;
     isFertilizer: boolean;
+    /**
+     * The operation's kind, carried here so the category guard can ask about it.
+     *
+     * `isFertilizer` above cannot express it: it is a boolean, and there are now
+     * three input-applying kinds. Keeping both rather than deriving one from the
+     * other, because `isFertilizer` also selects which dose FIELDS were read,
+     * which is a different question from which kind was declared.
+     */
+    kind: OperationType;
 }
 
 /**
@@ -143,6 +152,9 @@ function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput | nul
             doseValue: input.doseValue,
             doseUnitId: input.doseUnitId,
             isFertilizer: false,
+            // SPRAY unless the caller named a kind. SEED arrives here — a seed
+            // is a product item with a rate, not a fertiliser.
+            kind: input.operationType ?? 'SPRAY',
         };
     }
     if (input.fertilizerDoseValue == null || !input.fertilizerDoseUnitId) throw codedBadRequest('FERTILIZER_DOSE_REQUIRED', 'A fertilizer dose and unit are required.');
@@ -152,6 +164,7 @@ function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput | nul
         doseValue: input.fertilizerDoseValue,
         doseUnitId: input.fertilizerDoseUnitId,
         isFertilizer: true,
+        kind: 'FERTILIZE',
     };
 }
 
@@ -178,14 +191,53 @@ function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput | nul
  * enforced here: the picker narrows what is easy to choose, this function
  * refuses only what is incoherent.
  */
-function assertCategoryMatchesKind(category: string, isFertilizer: boolean): void {
-    if (!isFertilizer) return;
-    if (category === 'FERTILIZER') return;
-    throw codedBadRequest(
-        'FERTILIZER_EXPECTED',
-        'That item is not a fertiliser. Use the product field for it, or choose a fertiliser.',
-        { category },
-    );
+/**
+ * Does the item's category fit the operation's kind?
+ *
+ * Three rules, and they are deliberately NOT symmetric:
+ *
+ *   - `FERTILIZE` requires a `FERTILIZER` item. Previously nothing checked
+ *     this, so a pesticide passed there was filed as a fertilisation.
+ *   - `SEED` requires a `SEED` item — see below, this one is load-bearing.
+ *   - `SPRAY` accepts ANY category, deliberately: a liquid fertiliser applied
+ *     through a sprayer is a legitimate spraying. (The `productItemId`
+ *     description contradicts this and is wrong — #2362.)
+ *
+ * ## Why SEED must be restrictive, when SPRAY is not
+ *
+ * #2316 excludes `SEED` lines from both БАБХ tables, because the form covers
+ * «РАСТИТЕЛНОЗАЩИТНИ МЕРОПРИЯТИЯ И ТОРЕНЕ» and a sowing is neither.
+ *
+ * That exclusion is an ESCAPE HATCH if the kind is unconstrained: record a real
+ * plant-protection treatment as `kind: SEED` with a pesticide item, and it
+ * never appears in the regulated register. Requiring a `SEED`-category item
+ * closes it — the kind that leaves the register is the one kind whose item must
+ * match it.
+ *
+ * So the asymmetry is not inconsistency. `SPRAY` is permissive because every
+ * category genuinely can be sprayed and the row still prints. `SEED` is
+ * restrictive because its row does NOT print, and a door out of a regulated
+ * document needs a lock the others do not.
+ */
+function assertCategoryMatchesKind(category: string, kind: OperationType): void {
+    if (kind === 'FERTILIZE') {
+        if (category === 'FERTILIZER') return;
+        throw codedBadRequest(
+            'FERTILIZER_EXPECTED',
+            'That item is not a fertiliser. Use the product field for it, or choose a fertiliser.',
+            { category },
+        );
+    }
+    if (kind === 'SEED') {
+        if (category === 'SEED') return;
+        throw codedBadRequest(
+            'SEED_EXPECTED',
+            'That item is not a seed. A sowing records a seed variety — record a product '
+                + 'application as a spraying or a fertilisation instead.',
+            { category },
+        );
+    }
+    return;
 }
 
 /**
@@ -287,7 +339,7 @@ async function resolveInputItemId(
         // call is creating an operation, not editing a product, and letting an
         // operation payload silently rewrite a stored ПРЗ № would make the
         // farm record editable from a surface nobody reviews it on.
-        assertCategoryMatchesKind(found.category, chosen.isFertilizer);
+        assertCategoryMatchesKind(found.category, chosen.kind);
         return found.id;
     }
 
@@ -317,20 +369,57 @@ async function resolveInputItemId(
     // P2002 → named-409 translation. A second implementation here is how the
     // regulatory rule ends up enforced on one path and not the other, which is
     // the mistake its own docblock describes being avoided once already.
+    // The KIND decides the category wherever the kind constrains it, and
+    // `newProductCategory` only chooses among the categories the kind allows.
+    //
+    //   FERTILIZE  →  FERTILIZER, always
+    //   SEED       →  SEED, always
+    //   SPRAY      →  PESTICIDE by default, FERTILIZER if asked
+    //
+    // The product path defaults to PESTICIDE — what a typed spray name usually
+    // means — but accepts FERTILIZER, because a liquid fertiliser through a
+    // sprayer is a legitimate spray and creating it as a PESTICIDE would demand
+    // a ПРЗ number it has none of. Defaulting rather than requiring keeps every
+    // existing caller working. An EXISTING item on this path may be any
+    // non-FERTILIZER category, per the picker's own filter.
+    //
+    // ## SEED was missing here, and it broke сеитба two ways (#2316)
+    //
+    // `newProductCategory` is `'PESTICIDE' | 'FERTILIZER'`, so SEED was not
+    // expressible, and a typed seed name fell to the PESTICIDE default. Then:
+    //
+    //   - `assertPesticideIsFilable` demanded a ПРЗ № and a quarantine period
+    //     for a bag of wheat seed, which is the only thing a farmer sowing by
+    //     name would ever see. «Сеитба» by name could not complete at all.
+    //   - a caller that DID send `newProductRegistration` got past that and
+    //     recorded a sowing against a PESTICIDE item — and because #2316
+    //     excludes SEED from the БАБХ register, that plant protection product
+    //     left the regulated document. The escape hatch `SEED_EXPECTED` closes
+    //     on the found-by-id path was standing open on the create path.
+    //
+    // Raised by the agrent-ios session asking whether a new seed NAME creates a
+    // SEED item. It did not.
+    const category = chosen.isFertilizer
+        ? 'FERTILIZER'
+        : chosen.kind === 'SEED'
+          ? 'SEED'
+          : (newCategory ?? 'PESTICIDE');
+    // A POSTCONDITION, and currently unreachable — say so rather than let it
+    // read as the fix. What closes the hole is the derivation above: `category`
+    // is computed FROM `chosen.kind`, so it cannot contradict it, and deleting
+    // this line changes no observable behaviour (mutation-proved: dropping it
+    // leaves all 11 cases green, while reverting the derivation fails three).
+    //
+    // It stays because it makes the invariant a property of the FUNCTION rather
+    // than of one expression: both exits now pass through the same check, so a
+    // later branch — a new kind, or a category made configurable again — gets a
+    // 400 instead of writing a mismatched category into a regulated record.
+    // That is defence in depth, not a demonstrated safeguard.
+    assertCategoryMatchesKind(category, chosen.kind);
+
     const created = await createItem(ctx, {
         name,
-        // The product path creates a PESTICIDE — the only category a typed
-        // spray name can sensibly mean, and the one that makes the owner's
-        // ruling coherent: a new PPP needs its two regulatory fields, which is
-        // why `newProductRegistration` exists. An EXISTING item on this path
-        // may be any non-FERTILIZER category, per the picker's own filter.
-        // The fertiliser path always creates a FERTILIZER. The product path
-        // defaults to PESTICIDE — what a typed spray name usually means — but
-        // accepts FERTILIZER, because a liquid fertiliser through a sprayer is
-        // a legitimate spray and creating it as a PESTICIDE would demand a ПРЗ
-        // number it has none of. Defaulting rather than requiring keeps every
-        // existing caller working.
-        category: chosen.isFertilizer ? 'FERTILIZER' : (newCategory ?? 'PESTICIDE'),
+        category,
         defaultUnitId: baseUnit.id,
         pppRegistrationNo: registration?.pppRegistrationNo ?? null,
         quarantinePeriodDays: registration?.quarantinePeriodDays ?? null,
@@ -513,7 +602,7 @@ export async function createFieldOperation(
         // own comment asserted that "the kind is implicit in the Item's
         // category". A name resolved above has already been checked; doing it
         // here as well covers both and keeps one rule rather than two.
-        assertCategoryMatchesKind(item.category, chosen.isFertilizer);
+        assertCategoryMatchesKind(item.category, chosen.kind);
 
         const unit = await db.unit.findUnique({ where: { id: chosen.doseUnitId }, select: { id: true } });
         if (!unit) throw codedBadRequest('DOSE_UNIT_NOT_FOUND', 'Dose unit not found.');

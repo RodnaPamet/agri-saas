@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { generateFarmRecordDiaryPdfScoped } from '@/app-layer/reports/pdf/farm-record-diary';
+import { treatmentKindOf } from '@/app-layer/usecases/diary-treatment';
 import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { codedNotFound } from '@/lib/errors/types';
@@ -56,7 +57,28 @@ export const GET = withApiErrorHandling(
         // blank document is indistinguishable from a real one whose treatment
         // happened to record nothing, and a farmer cannot tell which they are
         // holding.
+        //
+        // #2316 — but a SOWING is a third case, and reporting it as either of
+        // the other two would be a false statement about real data. The record
+        // EXISTS and prints in «ДНЕВНИК НА СТОПАНСТВОТО»; it is only the БАБХ
+        // register that excludes it, because that form covers
+        // «РАСТИТЕЛНОЗАЩИТНИ МЕРОПРИЯТИЯ И ТОРЕНЕ» and a sowing is neither.
+        //
+        // `TREATMENT_NOT_FOUND` would say the handle names nothing, which is
+        // untrue and would send someone looking for a write that did not fail.
+        // `NOT_A_TREATMENT` (#2344) would say it is a field activity, which is
+        // also untrue — сеитба goes through the treatments route precisely
+        // because it applies a product. Hence a third code.
         if (!pdfDoc) {
+            const kind = await treatmentKindOf(ctx, params.treatmentGroupId);
+            if (kind === 'SEED') {
+                throw codedNotFound(
+                    'NOT_IN_BABH_REGISTER',
+                    'A sowing is not part of the БАБХ register, which covers plant protection '
+                        + 'and fertilising. It appears in the whole-farm journal instead.',
+                    { reference: 'treatmentGroupId' },
+                );
+            }
             throw codedNotFound(
                 'TREATMENT_NOT_FOUND',
                 'No treatment was recorded under that handle.',

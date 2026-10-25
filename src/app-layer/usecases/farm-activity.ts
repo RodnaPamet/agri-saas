@@ -182,8 +182,29 @@ export async function recordFarmActivity(
  * creates a second place a quantity can live, which the `LogQuantity` ruling
  * had just consolidated.
  *
- * The cost, stated because the label is the only thing preventing it: a line
- * read in isolation could be misread as that parcel's yield.
+ * ## What the label is actually for — corrected 2026-10-25
+ *
+ * An earlier version of this docblock said the label was "the only thing
+ * preventing" a line being misread as that parcel's yield. Both halves of that
+ * turned out to be wrong, and the correction is worth keeping:
+ *
+ *   - **Nothing reads it.** `campaign-diary/gather.ts` was the only reader of
+ *     `LogQuantity.label` in the codebase.
+ *   - **That reader MISREAD it.** It took the first labelled quantity as the
+ *     produce KIND — `quantities.find(q => q.label)?.label` — so «Общо за
+ *     мероприятието» printed in a column headed «Вид» on a register a farmer
+ *     signs. Found by backend-2 and fixed in #2364 by deriving «Вид» from the
+ *     crop instead.
+ *
+ * So the label protected nothing and misled the one thing that looked at it. It
+ * stays, because a note on the row is right for anyone reading a line directly
+ * and for a future per-line view — but it is a NOTE, not a safeguard, and the
+ * thing that actually prevents the misreading is that the campaign diary groups
+ * by `Task.treatmentGroupId` so a line is never shown alone.
+ *
+ * The lesson for the next person tempted to put prose in a data column: a
+ * field whose only consumer interprets it differently from its author is worse
+ * than an empty one.
  */
 async function recordHarvestTotal(
     ctx: RequestContext,
