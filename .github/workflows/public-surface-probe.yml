@@ -1,0 +1,97 @@
+# Are the surfaces that are supposed to be publicly reachable actually
+# reachable? — #2009, option 3.
+#
+# Its instance 3: `social.public-profile` gated twelve call sites and the
+# FeatureFlag row did not exist, so every public surface answered notFound()
+# for everybody, for months, and nothing noticed. CI proved the code worked;
+# it cannot prove the deployment reaches it. There is also no deploy step to
+# hang a check on — watchtower polls `:latest` every 60 seconds — so anything
+# durable has to be scheduled.
+#
+# The classifier is unit-tested in `tests/unit/public-surface-probe.test.ts`.
+# What cannot be tested there is whether production is serving, which is the
+# whole point of running it here.
+name: Public surface probe
+
+on:
+    schedule:
+        # Every six hours at :23. Not hourly: a dark feature is a condition
+        # that persists until someone fixes it, not an event to catch quickly,
+        # and four checks a day is enough to notice within a working day.
+        # :23 rather than :00 for the same reason the realtime probe uses :17 —
+        # the top of the hour is when every scheduled workflow contends.
+        - cron: '23 */6 * * *'
+    workflow_dispatch:
+
+concurrency:
+    group: public-surface-probe
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    # To open and comment on the issue a failure raises.
+    issues: write
+
+jobs:
+    probe:
+        name: Gated public surfaces are reachable
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+
+            # No `npm ci`. The probe is `fetch` and nothing else, so an install
+            # failure cannot be mistaken for a surface failure — the same
+            # reasoning the realtime probe records for its own dependencies.
+            - name: Probe
+              id: probe
+              env:
+                  PROBE_BASE_URL: ${{ vars.PROBE_BASE_URL || 'https://app.agrent.bg' }}
+              run: |
+                  set -uo pipefail
+                  out="$(npx -y tsx scripts/public-surface-probe.ts 2>&1 || true)"
+                  echo "$out"
+                  line="$(printf '%s\n' "$out" | grep -o 'PROBE_RESULT=.*' | tail -1 || true)"
+                  if [ -z "$line" ]; then
+                      # The probe did not reach its own verdict. Reported as
+                      # BROKEN rather than passing, because a probe that fails
+                      # to speak is indistinguishable from one nobody ran.
+                      line="PROBE_RESULT=BROKEN the probe produced no verdict line"
+                  fi
+                  state="$(printf '%s' "$line" | sed 's/^PROBE_RESULT=//' | cut -d' ' -f1)"
+                  detail="$(printf '%s' "$line" | sed 's/^PROBE_RESULT=[A-Z]* //')"
+                  echo "verdict=$state" >> "$GITHUB_OUTPUT"
+                  echo "detail=$detail" >> "$GITHUB_OUTPUT"
+                  [ "$state" = "OK" ] || exit 1
+
+            - name: Raise it
+              if: failure()
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  VERDICT: ${{ steps.probe.outputs.verdict }}
+                  DETAIL: ${{ steps.probe.outputs.detail }}
+                  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              run: |
+                  set -euo pipefail
+                  title="Public surface probe: ${VERDICT:-BROKEN}"
+                  # One issue per verdict kind, reopened and commented rather
+                  # than a new issue every six hours — a probe that files
+                  # duplicates gets muted, and a muted probe is worse than none.
+                  existing="$(gh issue list --state all --search "\"$title\" in:title" \
+                      --json number,state --jq '.[0] | "\(.number) \(.state)"' || true)"
+                  body="$(printf '%s\n\n%s\n\n%s' \
+                      "\`${VERDICT:-BROKEN}\` — ${DETAIL:-no detail}" \
+                      "DARK means a gated surface 404s while the ungated control is fine, which is what a missing FeatureFlag row looks like (#2009 instance 3). OUTAGE means the control itself is down, so this says nothing about any flag." \
+                      "Run: ${RUN_URL}")"
+                  if [ -n "$existing" ]; then
+                      num="${existing%% *}"
+                      gh issue reopen "$num" 2>/dev/null || true
+                      gh issue comment "$num" --body "$body"
+                  else
+                      gh issue create --title "$title" --body "$body" --label "" || \
+                          gh issue create --title "$title" --body "$body"
+                  fi
