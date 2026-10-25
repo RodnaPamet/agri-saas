@@ -103,6 +103,73 @@ else
     DF_DRIFT=1
 fi
 
+# ── The backup mechanism: script + unit + timer ──────────────────────────────
+#
+# TABLE-DRIVEN, unlike the two pairs above. Those are hand-written blocks and
+# the Dockerfile one exists because hashing only the compose file let the VM sit
+# three months behind the repo with this check green. The lesson generalises —
+# the answer to "what else is load-bearing and unhashed" keeps being "one more
+# file" — so the next addition here should be a ROW, not another eighteen lines.
+#
+# These three were untracked entirely until #2329: they existed only at
+# /usr/local/sbin and /etc/systemd/system on one machine, which is the #2319
+# shape exactly. The backups they write live offsite and survive the VM; the
+# thing that writes them did not.
+#
+# Absolute remote paths, so these are NOT under REMOTE_DIR like the pairs above.
+BACKUP_PAIRS="
+backup/agrent-db-backup|/usr/local/sbin/agrent-db-backup|the nightly pg_dump itself
+backup/agrent-db-backup.service|/etc/systemd/system/agrent-db-backup.service|what the timer runs
+backup/agrent-db-backup.timer|/etc/systemd/system/agrent-db-backup.timer|when it runs
+"
+BACKUP_DRIFT=0
+BACKUP_CHECKED=0
+while IFS='|' read -r rel remote why; do
+    [ -n "$rel" ] || continue
+    local_f="${SCRIPT_DIR}/${rel}"
+    if [ ! -f "$local_f" ]; then
+        err "missing ${local_f} — the backup mechanism is not where this script expects it."
+        BACKUP_DRIFT=1
+        continue
+    fi
+    l_sha="$(sha256sum "$local_f" | awk '{print $1}')"
+    # `< /dev/null` is load-bearing. ssh reads STDIN, and stdin here is the
+    # pair table being fed to `while read` — so without it the first iteration's
+    # ssh swallows the remaining rows and the loop silently compares ONE file of
+    # three. Measured: the run reported `agrent-db-backup` in sync and never
+    # mentioned the unit or the timer.
+    r_sha="$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" \
+        --command "sudo sha256sum '${remote}'" < /dev/null 2>/dev/null | awk '{print $1}')" || r_sha=""
+    BACKUP_CHECKED=$((BACKUP_CHECKED + 1))
+    if [ -z "$r_sha" ]; then
+        err "could not read ${remote} on ${VM_NAME} — absent, or unreadable (${why})."
+        err "  If absent, the nightly backup is NOT RUNNING. See deploy/backup/README.md."
+        BACKUP_DRIFT=1
+    elif [ "$l_sha" != "$r_sha" ]; then
+        err "DRIFT — deploy/${rel} differs (local ${l_sha:0:12}, remote ${r_sha:0:12}) — ${why}."
+        err "  Reinstall from the repo per deploy/backup/README.md, then re-run the"
+        err "  backup by hand to confirm it still works: sudo /usr/local/sbin/agrent-db-backup"
+        BACKUP_DRIFT=1
+    else
+        ok "in sync — deploy/${rel} matches (${l_sha:0:12})"
+    fi
+done <<EOF
+${BACKUP_PAIRS}
+EOF
+
+# The count must EQUAL the table, not merely exceed zero. `-eq 0` was the first
+# form here and it is too weak by exactly the bug it failed to catch: stdin
+# theft made the loop compare 1 row of 3, which "greater than zero" accepts.
+# Comparing a subset and reporting no drift is the defect this whole script
+# exists to prevent, one level up.
+BACKUP_EXPECTED="$(printf '%s\n' "$BACKUP_PAIRS" | grep -c '|')"
+if [ "$BACKUP_CHECKED" -ne "$BACKUP_EXPECTED" ]; then
+    err "compared ${BACKUP_CHECKED} of ${BACKUP_EXPECTED} backup file(s) — a partial comparison says nothing about the rest."
+    BACKUP_DRIFT=1
+else
+    ok "compared ${BACKUP_CHECKED} of ${BACKUP_EXPECTED} backup file(s)"
+fi
+
 # ── The Caddyfile's SITE SET, not its bytes ──────────────────────────────
 #
 # Comparing sha256 here would be wrong twice over: it would report drift
@@ -260,6 +327,7 @@ if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
     [ "$CADDY_DRIFT" -ne 0 ] && FAILED="${FAILED} the Caddy site set;"
     [ "$DF_DRIFT" -ne 0 ] && FAILED="${FAILED} the db build context;"
     [ "$RUNNING_DRIFT" -ne 0 ] && FAILED="${FAILED} a container's running state;"
+    [ "$BACKUP_DRIFT" -ne 0 ] && FAILED="${FAILED} the database backup mechanism;"
     if [ -n "$FAILED" ]; then
         err "compose file is in sync but NOT:${FAILED%;}"
         exit 1

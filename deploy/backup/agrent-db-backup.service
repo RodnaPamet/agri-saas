@@ -1,0 +1,22 @@
+[Unit]
+Description=agrent: pg_dump agrent-db to gs://agrent-db-backups-hazel
+Documentation=https://github.com/RodnaPamet/agri-saas/issues/2329
+# The dump reads from a container, so Docker must be up. `Wants` rather than
+# `Requires`: if Docker is down the script's own preflight reports a named
+# failure, which is more useful in the journal than systemd refusing to start.
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/agrent-db-backup
+# A dump that has not finished in 40 minutes is wedged, not slow: the whole
+# database is 54 MB and a normal run takes seconds. Without this a stuck run
+# would still be "active" at the next trigger and the timer would skip it,
+# which is how a backup stops happening with the unit still enabled.
+TimeoutStartSec=2400
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

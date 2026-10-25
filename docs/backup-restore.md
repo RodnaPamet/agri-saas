@@ -46,13 +46,13 @@ the daily probe exists.
 | Property | value |
 |---|---|
 | Unit | `agrent-db-backup.timer` → `agrent-db-backup.service` |
-| Script | `/usr/local/sbin/agrent-db-backup` (root-only, 0755) |
+| Script | `/usr/local/sbin/agrent-db-backup` (root-only, 0755) — tracked at **`deploy/backup/`**, drift-checked by `deploy/check-drift.sh` |
 | Cadence | daily **01:15 UTC**, `Persistent=true`, up to 300 s jitter |
-| Destination | `gs://agrent-db-backups-hazel/agrent/YYYY/MM/DD/agrent-<UTC>.dump` |
+| Destination | `gs://agrent-db-backups-hazel/agrent/YYYY/MM/DD/agrent-<UTC>.dump` **and** `…<UTC>.globals.sql` — see [why two](#why-two-objects-pg_dump-does-not-dump-roles) |
 | Format | `pg_dump -Fc` (custom — `pg_restore` takes it directly) |
 | Retention | **30 days**, by bucket lifecycle rule. Nothing else deletes. |
 | Location | `eu` multi-region — survives the loss of `europe-west1-b` |
-| Size | ~2.3 MB per night (54 MB database) |
+| Size | ~2.3 MB + ~900 B per night (54 MB database) |
 | Identity | `agrent-db-backup@…` — `objectCreator` + `objectViewer` on this ONE bucket, **nothing at project level** |
 | Key | `/etc/agrent-db-backup/sa-key.json`, root:root 0600 |
 
@@ -103,6 +103,71 @@ that the downloaded copy still parses to the same TOC entry count.
 > different repo; this is recorded here because the backup tooling lives here
 > and the drill below targets both. Not this repo's to fix, and not safe to
 > leave unsaid.
+
+### Why two objects: `pg_dump` does not dump roles
+
+Roles are **cluster**-level, so `pg_dump` omits them while happily emitting
+every GRANT that depends on them. Measured on this database:
+
+```
+142  GRANT ... TO app_user
+  0  CREATE ROLE / ALTER ROLE
+251  mentions of app_user in the restorable SQL
+```
+
+Restored into a clean cluster, all 142 fail with `42704 role "app_user" does
+not exist` — the same error class as #2319, arriving far from its cause and
+reading like a permissions bug. **The data would land and the application's own
+role would not exist.** The first version of this backup had exactly that
+defect: it uploaded cleanly, matched its own size, round-tripped
+byte-identically and parsed its own TOC, and was not restorable. Every one of
+those checks was about the object; none was about whether it restores.
+
+`pg_dumpall --roles-only` captures the missing half, as a sibling object with
+the same timestamp. `--roles-only` rather than `--globals-only` because
+tablespaces are unused here and would reference host paths absent on any
+restore target.
+
+The check is **derived**: the script extracts every role named by the dump's
+own GRANTs and requires the globals to CREATE each one, so a role added to the
+schema later cannot be silently missed. A hard-coded `app_user` would pass
+forever and miss the next one.
+
+### Restoring — and the rehearsal that proves it works
+
+Restore the globals FIRST. Nothing else creates the roles the GRANTs need.
+
+```bash
+# 1. newest dump and its globals (the key; the VM's own token cannot read this)
+export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/etc/agrent-db-backup/sa-key.json
+NEW=$(sudo -E gcloud storage ls 'gs://agrent-db-backups-hazel/agrent/**.dump' | sort | tail -1)
+sudo -E gcloud storage cp "$NEW" /tmp/d.dump
+sudo -E gcloud storage cp "${NEW%.dump}.globals.sql" /tmp/g.sql
+
+# 2. roles, then schema+data, into a throwaway on the SAME image production runs
+sudo docker run -d --name restore-check -e POSTGRES_PASSWORD=x agrent-db:local
+sudo docker cp /tmp/g.sql restore-check:/tmp/ && sudo docker cp /tmp/d.dump restore-check:/tmp/
+sudo docker exec restore-check psql -U postgres -d postgres -f /tmp/g.sql
+sudo docker exec restore-check psql -U postgres -c 'CREATE DATABASE restored'
+sudo docker exec restore-check pg_restore -U postgres -d restored --no-owner /tmp/d.dump
+```
+
+Performed 2026-10-25. `pg_restore` reported **zero** errors, and the battery
+against the restored database:
+
+| check | result |
+|---|---|
+| `app_user` role exists | 1 |
+| `tenant_isolation` policies | **93** |
+| GRANTs to `app_user` | **554** |
+| `Tenant` rows | 4 |
+| `User` rows | 8 |
+| migrations applied | 326 |
+| `AuditLog` rows < 14 days | 283 |
+
+RLS intact, role intact, grants intact, recent data present. That is a
+disaster-recovery rehearsal rather than an assertion about an object, and it is
+the first one this project has passed since 2026-10-02.
 
 ### The 13-day gap (2026-10-12 to 2026-10-25)
 
