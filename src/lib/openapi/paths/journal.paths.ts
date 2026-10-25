@@ -723,7 +723,21 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                         description: 'The handle \u2014 the request\u2019s `Idempotency-Key` when it sent one.',
                     }),
                     tasks: z.number().int().openapi({ description: 'Field operations written \u2014 one per block.' }),
-                    lines: z.number().int().openapi({ description: 'Register lines completed.' }),
+                    lines: z.number().int().openapi({
+                        description:
+                            'Register lines completed BY THIS CALL \u2014 so a replay returns `0`, '
+                            + 'because nothing remained pending to mark.\n\n'
+                            + '**Do not use this as a “did it save” check.** Use `parcelCount`, '
+                            + 'which is replay-stable. Reading this one that way shows a farmer '
+                            + 'that nothing saved when everything already had.',
+                    }),
+                    parcelCount: z.number().int().openapi({
+                        description:
+                            'Total register lines under this handle, whether this call wrote them '
+                            + 'or a previous one did. Replay-stable, and the same meaning the '
+                            + '`parcelCount` on `POST /journal/treatments` carries \u2014 which is why '
+                            + 'it has that name.',
+                    }),
                     occurredOn: z.string().openapi({ description: 'The recorded day, `YYYY-MM-DD`.' }),
                     harvestQuantityId: z.string().nullable().openapi({
                         description:

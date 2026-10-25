@@ -13876,7 +13876,11 @@
           },
           "lines": {
             "type": "integer",
-            "description": "Register lines completed."
+            "description": "Register lines completed BY THIS CALL — so a replay returns `0`, because nothing remained pending to mark.\n\n**Do not use this as a “did it save” check.** Use `parcelCount`, which is replay-stable. Reading this one that way shows a farmer that nothing saved when everything already had."
+          },
+          "parcelCount": {
+            "type": "integer",
+            "description": "Total register lines under this handle, whether this call wrote them or a previous one did. Replay-stable, and the same meaning the `parcelCount` on `POST /journal/treatments` carries — which is why it has that name."
           },
           "occurredOn": {
             "type": "string",
@@ -13894,6 +13898,7 @@
           "treatmentGroupId",
           "tasks",
           "lines",
+          "parcelCount",
           "occurredOn",
           "harvestQuantityId"
         ]

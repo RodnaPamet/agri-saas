@@ -48,7 +48,22 @@ export interface RecordFarmActivityResult {
     /** The handle — the request's `Idempotency-Key` when it sent one. */
     treatmentGroupId: string;
     tasks: number;
+    /**
+     * Lines completed BY THIS CALL — so a replay returns 0, because nothing
+     * remained `PENDING` to mark.
+     *
+     * Do NOT use this as a "did it save" check. agrent-ios read it as
+     * interchangeable with the treatments route's `parcelCount`, which is
+     * replay-STABLE, and a replay would then have shown a farmer that nothing
+     * saved when everything already had. Use `parcelCount` for that.
+     */
     lines: number;
+    /**
+     * Total register lines under this handle, whether this call wrote them or a
+     * previous one did. Replay-stable, and the same meaning the treatments
+     * route's field of this name carries — which is why it has that name.
+     */
+    parcelCount: number;
     occurredOn: string;
     /** The `LogQuantity` id when a harvest total was recorded, else null. */
     harvestQuantityId: string | null;
@@ -130,6 +145,13 @@ export async function recordFarmActivity(
         });
     }
 
+    // Counted AFTER the marks and independently of them: `lines` above is what
+    // this call did, and a client needs what EXISTS. On a replay the first is 0
+    // and this is the full set.
+    const parcelCount = await runInTenantContext(ctx, (db) =>
+        db.operationParcel.count({ where: { tenantId: ctx.tenantId, taskId: { in: taskIds } } }),
+    );
+
     const harvestQuantityId =
         input.kind === 'HARVEST' && input.harvestKg != null
             ? await recordHarvestTotal(ctx, taskIds, input.harvestKg)
@@ -139,6 +161,7 @@ export async function recordFarmActivity(
         treatmentGroupId: handle,
         tasks: taskIds.length,
         lines: lines.length,
+        parcelCount,
         occurredOn: dayKey,
         harvestQuantityId,
     };
