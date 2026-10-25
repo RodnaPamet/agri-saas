@@ -46,6 +46,11 @@
 # unable to ANSWER: a renamed workflow, an API error, an empty history.
 set -euo pipefail
 
+# The workflow name lives HERE and nowhere else: the query and the error
+# message both read it, so they cannot name different things. A mutation that
+# changed only the query produced an error naming the workflow it had NOT
+# looked for, which is the shape that sends a reader to the wrong place.
+WF_NAME="Dependabot Updates"
 TITLE="Dependabot Updates has failed with no success since"
 WINDOW=20
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
@@ -61,13 +66,13 @@ die() {
 # file, and would silently match nothing on a fork — a probe that cannot fail
 # loudly when it is pointed at the wrong thing.
 WF_ID="$(gh api "repos/${REPO}/actions/workflows" --paginate \
-    --jq '.workflows[] | select(.name == "Dependabot Updates") | .id' 2>/dev/null | head -1)"
+    --jq --arg wf "$WF_NAME" '.workflows[] | select(.name == $wf) | .id' 2>/dev/null | head -1)"
 
 if [ -z "$WF_ID" ]; then
     # Not "healthy". GitHub registers this workflow as soon as a
     # `dependabot.yml` exists, so its absence means the config is gone or the
     # name changed — either way this probe is now blind and must say so.
-    die "no workflow named 'Dependabot Updates' in ${REPO}. Dependabot config removed, or GitHub renamed it — this probe is blind until that is reconciled."
+    die "no workflow named '${WF_NAME}' in ${REPO}. Dependabot config removed, or GitHub renamed it — this probe is blind until that is reconciled."
 fi
 
 RUNS="$(gh api "repos/${REPO}/actions/workflows/${WF_ID}/runs?per_page=${WINDOW}" \
@@ -80,7 +85,7 @@ if [ "$TOTAL" = "0" ]; then
     # An empty window is not a pass. Only COMPLETED runs are counted — a
     # queued or in-progress run carries `conclusion: null`, and reading that as
     # anything is the mistake that makes a pending check look green.
-    die "no COMPLETED Dependabot Updates runs in the last ${WINDOW}. Nothing to judge, so this is unanswered rather than healthy."
+    die "no COMPLETED ${WF_NAME} runs in the last ${WINDOW}. Nothing to judge, so this is unanswered rather than healthy."
 fi
 
 LAST_OK="$(printf '%s' "$RUNS" | jq -r '[.[] | select(.conclusion == "success")][0].created_at // ""')"
