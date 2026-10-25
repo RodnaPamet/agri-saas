@@ -34,7 +34,8 @@ import * as path from 'node:path';
 
 import * as yaml from 'js-yaml';
 
-const WF_DIR = path.resolve(__dirname, '../../.github/workflows');
+import { collectTrackedFiles } from '../helpers/collect-files';
+
 const AUTH_ACTION = /google-github-actions\/auth@v[0-9]/;
 
 interface Wf {
@@ -44,11 +45,26 @@ interface Wf {
     src: string;
 }
 
+/**
+ * `collectTrackedFiles` rather than a hand-rolled `readdirSync`, for the reason
+ * `file-collection-is-not-silently-empty` enforces: a hand-rolled collector can
+ * be gutted to `return []` with every assertion built on it still green — 81%
+ * of the guards an automated sweep could audit were dead that way. The shared
+ * helper refuses an empty result.
+ *
+ * `git ls-files` is also the better question here: an untracked scratch
+ * workflow in somebody's checkout is not something this rule should grade.
+ */
 function wifWorkflows(): Wf[] {
-    return fs
-        .readdirSync(WF_DIR)
-        .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-        .map((f) => ({ f, src: fs.readFileSync(path.join(WF_DIR, f), 'utf8') }))
+    return collectTrackedFiles({
+        roots: ['.github/workflows'],
+        extensions: ['.yml', '.yaml'],
+    })
+        // Already ABSOLUTE — the helper returns `path.join(REPO_ROOT, rel)`.
+        // Joining REPO_ROOT again produced a doubled path and the suite failed
+        // to RUN, which prints `Tests: 0 total` rather than a failing
+        // assertion: a guard that cannot load is not a guard that passes.
+        .map((abs) => ({ f: path.basename(abs), src: fs.readFileSync(abs, 'utf8') }))
         .filter(({ src }) => AUTH_ACTION.test(src))
         .map(({ f, src }) => {
             const doc = yaml.load(src) as {
