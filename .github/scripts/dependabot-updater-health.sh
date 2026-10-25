@@ -65,8 +65,13 @@ die() {
 # Not by id. The id (295247577 here) is per-repository, unverifiable from this
 # file, and would silently match nothing on a fork — a probe that cannot fail
 # loudly when it is pointed at the wrong thing.
-WF_ID="$(gh api "repos/${REPO}/actions/workflows" --paginate \
-    --jq --arg wf "$WF_NAME" '.workflows[] | select(.name == $wf) | .id' 2>/dev/null | head -1)"
+WF_ERR="$(mktemp)"
+trap 'rm -f "$WF_ERR"' EXIT
+if ! WF_LIST="$(gh api "repos/${REPO}/actions/workflows" --paginate \
+    --jq ".workflows[] | select(.name == \"${WF_NAME}\") | .id" 2>"$WF_ERR")"; then
+    die "could not list workflows in ${REPO}: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
+fi
+WF_ID="$(printf '%s' "$WF_LIST" | head -1)"
 
 if [ -z "$WF_ID" ]; then
     # Not "healthy". GitHub registers this workflow as soon as a
@@ -75,10 +80,11 @@ if [ -z "$WF_ID" ]; then
     die "no workflow named '${WF_NAME}' in ${REPO}. Dependabot config removed, or GitHub renamed it — this probe is blind until that is reconciled."
 fi
 
-RUNS="$(gh api "repos/${REPO}/actions/workflows/${WF_ID}/runs?per_page=${WINDOW}" \
+if ! RUNS="$(gh api "repos/${REPO}/actions/workflows/${WF_ID}/runs?per_page=${WINDOW}" \
     --jq '[.workflow_runs[] | select(.status == "completed")
-           | {created_at, conclusion}]' 2>/dev/null)" \
-    || die "could not read the run history for workflow ${WF_ID}."
+           | {created_at, conclusion}]' 2>"$WF_ERR")"; then
+    die "could not read the run history for workflow ${WF_ID}: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
+fi
 
 TOTAL="$(printf '%s' "$RUNS" | jq 'length')"
 if [ "$TOTAL" = "0" ]; then
@@ -105,9 +111,10 @@ if [ -n "$LAST_BAD" ]; then
     fi
 fi
 
-EXISTING="$(gh issue list --repo "$REPO" --state open --limit 50 \
-    --search "\"$TITLE\" in:title" --json number --jq '.[0].number // ""' 2>/dev/null)" \
-    || die "could not search existing issues; refusing to file a possible duplicate."
+if ! EXISTING="$(gh issue list --repo "$REPO" --state open --limit 50 \
+    --search "\"$TITLE\" in:title" --json number --jq '.[0].number // ""' 2>"$WF_ERR")"; then
+    die "could not search existing issues, so refusing to file a possible duplicate: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
+fi
 
 if [ "$DOWN" = "0" ]; then
     echo "[dependabot-health] updater is healthy (a success is newer than any failure)"
