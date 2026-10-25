@@ -141,7 +141,31 @@ const Treatment = z
         kind: z.string().nullable().openapi({ description: '`SPRAY` or `FERTILIZE`.' }),
         productName: z.string().nullable(),
         parcelCount: z.number().int().openapi({
-            description: '0 on an ordinary manual entry. The discriminator for "is this a treatment".',
+            description:
+                '0 on an ordinary manual entry. The discriminator for \u201cis this a treatment\u201d.\n\n'
+                + '**It counts COMPLETED lines, not all of them.** The figure comes from a query '
+                + 'keyed on the journal entries, and a PENDING line has none \u2014 the entry is written '
+                + 'on completion. So on a partially-written treatment this is smaller than '
+                + '`lineCount`, and the difference is `pendingCount`.',
+        }),
+        pendingCount: z.number().int().openapi({
+            description:
+                'Lines of this treatment still PENDING (#2299). `0` on a finished treatment and '
+                + 'on an ordinary manual entry, which has no lines at all.\n\n'
+                + '**Badge on `pendingCount > 0`**, not on `parcelCount !== lineCount` \u2014 a '
+                + 'free-hand entry has 0 for both and must not read as unfinished.\n\n'
+                + 'A partially-written treatment is resumable: re-send `POST '
+                + '\u2026/journal/treatments` with the SAME `Idempotency-Key` and the replay path '
+                + 'finishes the remaining lines rather than duplicating the finished ones. '
+                + '`GET \u2026/treatments/{id}/definition` returns everything that request needs. '
+                + 'Withdrawing and re-recording also works and is what the farmer had before, but '
+                + 'it destroys the lines that did land.',
+        }),
+        lineCount: z.number().int().openapi({
+            description:
+                'Every line of this treatment, finished or not. `parcelCount + pendingCount` on a '
+                + 'consistent row; carried separately rather than derived so a client never has to '
+                + 'infer one of the three from the other two.',
         }),
         totalAreaHa: z.number().openapi({
             description: 'HECTARES, as stored. The web renders decares; the conversion belongs where the number is shown.',

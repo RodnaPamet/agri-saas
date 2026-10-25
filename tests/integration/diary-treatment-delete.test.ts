@@ -511,3 +511,109 @@ describeFn('mayDelete and mayCorrect on the folded journal row (DB-backed, #2172
         expect(typeof row.mayCorrect).toBe('boolean');
     });
 });
+
+describeFn('the folded row says how much of a treatment is unfinished (#2299)', () => {
+    /**
+     * A partially-written treatment used to be invisible: the row carried no
+     * completeness signal at all, so `deleteDiaryTreatment`'s careful handling
+     * of the incomplete case — and the replay path that can FINISH one — were
+     * reachable only by someone who already knew the handle.
+     *
+     * The subtle part is that `parcelCount` was already lying about it.
+     * `_treatmentAggregates` is keyed on `LogEntry`, and a PENDING line has no
+     * entry, so a partial treatment reported FEWER parcels with nothing saying
+     * why. `pendingCount` and `lineCount` come from a query keyed on `Task`,
+     * which is where the lines actually hang.
+     */
+    const rowFor = async (handle: string) => {
+        const page = (await listLogEntriesPaginated(ctx(), { limit: 50 })) as {
+            items: Array<{
+                treatment?: {
+                    treatmentGroupId: string;
+                    parcelCount: number;
+                    // Non-optional, matching the contract: both are declared
+                    // required on the row, so a test that tolerated `undefined`
+                    // would pass against a server that stopped sending them.
+                    pendingCount: number;
+                    lineCount: number;
+                } | null;
+            }>;
+        };
+        return page.items.map((i) => i.treatment).find((t) => t?.treatmentGroupId === handle);
+    };
+
+    it('a COMPLETE treatment reports nothing outstanding', async () => {
+        const handle = `progress-done-${randomUUID()}`;
+        await recordDiaryTreatment(ctx(), input(), handle);
+        const row = await rowFor(handle);
+        expect(row).toBeTruthy();
+        expect(row!.pendingCount).toBe(0);
+        expect(row!.lineCount).toBe(2);
+        // Every line finished, so the entry-keyed count agrees with the
+        // task-keyed one. That agreement is what breaks below.
+        expect(row!.parcelCount).toBe(row!.lineCount);
+    });
+
+    it('a PARTIAL treatment reports the remainder, and exposes the old lie', async () => {
+        const handle = `progress-partial-${randomUUID()}`;
+        await recordPartial(handle);
+        const row = await rowFor(handle);
+        expect(row).toBeTruthy();
+        expect(row!.pendingCount).toBe(1);
+        expect(row!.lineCount).toBe(2);
+        // The number that was already wrong: `parcelCount` counts only lines
+        // with a journal entry, so it under-reports a partial treatment. Now
+        // the row says so instead of leaving a reader to wonder.
+        expect(row!.parcelCount).toBe(1);
+        expect(row!.parcelCount).toBeLessThan(row!.lineCount);
+    });
+
+    it('an ordinary manual entry is NOT an unfinished treatment — the control', async () => {
+        // The reason a client badges on `pendingCount > 0` rather than on
+        // `parcelCount !== lineCount`: a free-hand entry has no lines at all,
+        // so all three are 0 and the two counts agree vacuously.
+        const entry = await globalPrisma.logEntry.create({
+            data: {
+                tenantId,
+                type: 'OBSERVATION',
+                title: `Free-hand ${randomUUID().slice(0, 6)}`,
+                occurredAt: new Date('2026-03-04T08:00:00Z'),
+                createdByUserId: userId,
+            },
+            select: { treatmentGroupId: true },
+        });
+        const row = await rowFor(entry.treatmentGroupId);
+        expect(row).toBeTruthy();
+        expect(row!.pendingCount).toBe(0);
+        expect(row!.lineCount).toBe(0);
+        expect(row!.parcelCount).toBe(0);
+    });
+
+    it('a soft-deleted task\'s lines are NOT counted as outstanding', async () => {
+        // The `deletedAt IS NULL` guard, exercised directly.
+        //
+        // The obvious route does not reach it: `deleteDiaryTreatment` erases
+        // the journal entries AND soft-deletes the tasks together, so the row
+        // leaves the list entirely and an assertion after it never runs. My
+        // first version of this test did exactly that — `if (after) expect(…)`
+        // — and a mutation removing the guard left it green, because the
+        // window was empty.
+        //
+        // So the state is built directly: the task is soft-deleted while its
+        // entries survive, which is what makes the guard observable at all.
+        const handle = `progress-softdel-${randomUUID()}`;
+        const { taskIds } = await recordPartial(handle);
+        expect(await rowFor(handle).then((r) => r!.pendingCount)).toBe(1);
+
+        await globalPrisma.task.updateMany({
+            where: { tenantId, id: { in: taskIds } },
+            data: { deletedAt: new Date(), deletedByUserId: userId },
+        });
+
+        const after = await rowFor(handle);
+        expect(after).toBeTruthy();
+        // Nothing a farmer can finish, so nothing outstanding is claimed.
+        expect(after!.pendingCount).toBe(0);
+        expect(after!.lineCount).toBe(0);
+    });
+});

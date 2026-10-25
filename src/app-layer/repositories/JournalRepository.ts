@@ -281,6 +281,7 @@ function buildTreatmentSummary(
         } | null;
     },
     agg: { parcelCount: number; totalAreaHa: number; blockNames: string[] } | undefined,
+    progress: { pendingCount: number; lineCount: number } | undefined,
     permits: { mayDelete: boolean; mayCorrect: boolean },
 ): Record<string, unknown> {
     const line = entry.operationParcel;
@@ -319,6 +320,16 @@ function buildTreatmentSummary(
         kind: line?.task?.operationType ?? null,
         productName: line?.product?.name ?? null,
         parcelCount: agg?.parcelCount ?? 0,
+        // How much of this treatment is still unfinished, and how many lines it
+        // has in total (#2299). `parcelCount` above counts only lines with a
+        // journal entry — i.e. COMPLETED ones — so on a partial treatment it is
+        // smaller than `lineCount`, and the difference is `pendingCount`.
+        //
+        // 0 on an ordinary manual entry, which has no lines at all. A client
+        // should badge on `pendingCount > 0` rather than on a mismatch, so a
+        // free-hand entry is not mistaken for an unfinished treatment.
+        pendingCount: progress?.pendingCount ?? 0,
+        lineCount: progress?.lineCount ?? 0,
         totalAreaHa: agg?.totalAreaHa ?? 0,
         blockNames: agg?.blockNames ?? [],
         doseValue: line?.doseValue != null ? Number(line.doseValue) : null,
@@ -504,6 +515,7 @@ export class JournalRepository {
         const handles = page.map((e) => e.treatmentGroupId);
         const aggregates = await JournalRepository._treatmentAggregates(db, ctx, handles);
         const authorship = await JournalRepository._treatmentAuthorship(db, ctx, handles);
+        const progress = await JournalRepository._treatmentProgress(db, ctx, handles);
 
         return {
             items: page.map((e) => ({
@@ -511,6 +523,7 @@ export class JournalRepository {
                 treatment: buildTreatmentSummary(
                     e,
                     aggregates.get(e.treatmentGroupId),
+                    progress.get(e.treatmentGroupId),
                     // The 403 arm AND the 409 arm, because the control has to
                     // be absent for both. A treatment with no tasks under its
                     // handle — a free-hand entry folding to itself — has no
@@ -683,6 +696,61 @@ export class JournalRepository {
                 totalAreaHa: Math.round((r.totalAreaHa ?? 0) * 1e4) / 1e4,
                 blockNames: [...(r.blockNames ?? [])].sort(),
             });
+        }
+        return out;
+    }
+
+
+    /**
+     * How much of each treatment on ONE page is still unfinished (#2299).
+     *
+     * ## Why this cannot ride `_treatmentAggregates`
+     *
+     * That query is keyed on `LogEntry`, and a PENDING line has no journal
+     * entry — `recordInputApplication` writes one on COMPLETION. So a pending
+     * line is invisible to it, and its `parcelCount` is really a count of
+     * completed lines. A partially-written treatment therefore reports fewer
+     * parcels than it has, with nothing saying so: the invisibility #2299 is
+     * about, visible in the numbers rather than merely absent from them.
+     *
+     * This one is keyed on `Task`, which is where the treatment's lines
+     * actually hang, so it sees both states.
+     *
+     * Raw SQL for the same reason its sibling is: Prisma's `groupBy` cannot
+     * group by a RELATION field, and the handle lives on `Task` while the
+     * status lives on `OperationParcel`. The predicate is `tenantId` plus
+     * `treatmentGroupId IN (…)` over `@@index([tenantId, treatmentGroupId])`
+     * and the shape is one row per handle, so it is bounded by the PAGE like
+     * its sibling and never by the lines behind it.
+     *
+     * `deletedAt IS NULL` matches what the list shows: an abandoned treatment's
+     * task shell is soft-deleted, and counting its lines would report work
+     * outstanding on a treatment nobody can act on.
+     */
+    private static async _treatmentProgress(
+        db: PrismaTx,
+        ctx: RequestContext,
+        handles: string[],
+    ): Promise<Map<string, { pendingCount: number; lineCount: number }>> {
+        const out = new Map<string, { pendingCount: number; lineCount: number }>();
+        if (handles.length === 0) return out;
+
+        const rows = await db.$queryRaw<
+            Array<{ handle: string; pendingCount: number; lineCount: number }>
+        >(Prisma.sql`
+            SELECT t."treatmentGroupId"                                   AS "handle",
+                   COUNT(*) FILTER (WHERE op."status" = 'PENDING')::int   AS "pendingCount",
+                   COUNT(op."id")::int                                    AS "lineCount"
+              FROM "Task" t
+              JOIN "OperationParcel" op ON op."taskId" = t."id"
+             WHERE t."tenantId" = ${ctx.tenantId}
+               AND t."deletedAt" IS NULL
+               AND t."treatmentGroupId" IN (${Prisma.join(handles)})
+             GROUP BY t."treatmentGroupId"
+        `);
+
+        for (const r of rows) {
+            out.set(r.handle, { pendingCount: r.pendingCount, lineCount: r.lineCount });
         }
         return out;
     }

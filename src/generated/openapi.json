@@ -15557,7 +15557,15 @@
           },
           "parcelCount": {
             "type": "integer",
-            "description": "0 on an ordinary manual entry. The discriminator for \"is this a treatment\"."
+            "description": "0 on an ordinary manual entry. The discriminator for “is this a treatment”.\n\n**It counts COMPLETED lines, not all of them.** The figure comes from a query keyed on the journal entries, and a PENDING line has none — the entry is written on completion. So on a partially-written treatment this is smaller than `lineCount`, and the difference is `pendingCount`."
+          },
+          "pendingCount": {
+            "type": "integer",
+            "description": "Lines of this treatment still PENDING (#2299). `0` on a finished treatment and on an ordinary manual entry, which has no lines at all.\n\n**Badge on `pendingCount > 0`**, not on `parcelCount !== lineCount` — a free-hand entry has 0 for both and must not read as unfinished.\n\nA partially-written treatment is resumable: re-send `POST …/journal/treatments` with the SAME `Idempotency-Key` and the replay path finishes the remaining lines rather than duplicating the finished ones. `GET …/treatments/{id}/definition` returns everything that request needs. Withdrawing and re-recording also works and is what the farmer had before, but it destroys the lines that did land."
+          },
+          "lineCount": {
+            "type": "integer",
+            "description": "Every line of this treatment, finished or not. `parcelCount + pendingCount` on a consistent row; carried separately rather than derived so a client never has to infer one of the three from the other two."
           },
           "totalAreaHa": {
             "type": "number",
@@ -15628,6 +15636,8 @@
           "kind",
           "productName",
           "parcelCount",
+          "pendingCount",
+          "lineCount",
           "totalAreaHa",
           "blockNames",
           "doseValue",
