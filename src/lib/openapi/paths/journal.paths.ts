@@ -14,6 +14,7 @@ import {
     CreateLogEntrySchema,
     UpdateLogEntrySchema,
     RecordDiaryTreatmentSchema,
+    RecordFarmActivitySchema,
     CorrectDiaryTreatmentSchema,
 } from '@/lib/schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
@@ -682,6 +683,76 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             status: 201,
             description: 'The handle, the counts, and whether this was a replay.',
             schema: RecordedTreatment,
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/journal/activities',
+        operationId: 'recordFarmActivity',
+        summary: 'Record a non-chemical activity already carried out',
+        description:
+            'Pruning, cultivation or harvest \u2014 the activities «ДНЕВНИК НА СТОПАНСТВОТО» prints '
+            + 'that apply no product (#2316). Recorded as DONE in one call, like a treatment: '
+            + 'handing work to an operator stays in Задачи.\n\n'
+            + '`Idempotency-Key` is the ACTIVITY HANDLE, exactly as it is the treatment handle on '
+            + 'the route above. It is returned, so a client that lost the 201 can address what it '
+            + 'wrote; the per-block keys are DERIVED from it, so a replay resolves on the handle '
+            + 'rather than on any one of them.\n\n'
+            + '**`SEED` is deliberately not accepted here.** Сеитба applies a seed product at a '
+            + 'rate and belongs on `POST /journal/treatments`, where the form\u2019s «Продукт» column '
+            + 'gets the sown variety \u2014 a cell this route would leave permanently empty (owner, '
+            + '2026-10-25). `SPRAY` and `FERTILIZE` likewise: they carry a dose, a ЗЗР registration '
+            + 'and a quarantine period this route has nowhere to put.\n\n'
+            + '**No stock movement.** The completion marks are made with `recordedInDiary`, which '
+            + 'suppresses the deduction \u2014 the same #1740 ruling that keeps a diary-recorded '
+            + 'treatment from moving stock. A bare activity has no product to deduct in any case.\n\n'
+            + '**Not correctable yet.** The treatment correction route refuses a bare handle with '
+            + '`NOT_A_TREATMENT`, and the journal row\u2019s `mayCorrect` is false for these. A '
+            + 'correction route for them is approved and not yet built; «Изтрий» already withdraws '
+            + 'one through `DELETE /journal/treatments/{treatmentGroupId}`.',
+        tags: ['Journal'],
+        params: TenantParams,
+        body: RecordFarmActivitySchema,
+        success: {
+            status: 201,
+            description: 'The handle, the counts, and the harvest quantity when one was recorded.',
+            schema: z
+                .object({
+                    treatmentGroupId: z.string().openapi({
+                        description: 'The handle \u2014 the request\u2019s `Idempotency-Key` when it sent one.',
+                    }),
+                    tasks: z.number().int().openapi({ description: 'Field operations written \u2014 one per block.' }),
+                    lines: z.number().int().openapi({ description: 'Register lines completed.' }),
+                    occurredOn: z.string().openapi({ description: 'The recorded day, `YYYY-MM-DD`.' }),
+                    harvestQuantityId: z.string().nullable().openapi({
+                        description:
+                            'The `LogQuantity` holding the harvest total, or `null` for any other '
+                            + 'kind and for a harvest sent without `harvestKg`.',
+                    }),
+                })
+                .openapi('RecordedFarmActivity'),
+        },
+        extraResponses: {
+            ...codedErrorResponses({
+                400:
+                    'Shared with the treatments route, and keeping its prefix because the codes '
+                    + 'describe the DATE, the PARCEL LIST and the AREA rather than a treatment: '
+                    + '`TREATMENT_DATE_INVALID` (not a calendar day, or one that does not exist), '
+                    + '`TREATMENT_DATE_IN_FUTURE`, `TREATMENT_NO_PARCELS`, '
+                    + '`TREATMENT_AREA_EXCEEDS_PARCEL` (compared at the register\u2019s own дка '
+                    + 'resolution, so typing back the displayed figure is accepted), and '
+                    + '`REFERENCE_NOT_IN_TENANT` with `params.reference: parcels` \u2014 a 400 and not '
+                    + 'a 404, so the refusal does not confirm the parcel exists in some other '
+                    + 'tenant.\n\n'
+                    + 'Specific to this route: `ACTIVITY_APPLIES_NO_INPUT` if a product or '
+                    + 'fertiliser reaches the usecase for one of these kinds \u2014 refused rather '
+                    + 'than dropped, because silently ignoring it would file a spraying as a '
+                    + 'pruning in a regulated record. `HARVEST_NOT_RECORDED` if a harvest total was '
+                    + 'sent but the completion wrote no journal entry to hang it on, which means '
+                    + 'the activity itself did not complete; the caller is told rather than '
+                    + 'receiving a success that recorded no quantity.',
+            }),
         },
     });
 

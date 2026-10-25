@@ -24,7 +24,9 @@ import { enqueue } from '@/app-layer/jobs/queue';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { FieldOperationType } from '@prisma/client';
 import { appliesAProduct } from '@/lib/operations/line-kind';
-import { isBareActivityKind } from '@/lib/operations/activity-labels';
+import { composeFarmActivityTitle } from '@/lib/journal/auto-title';
+import { createLogEntryWithAudit } from './journal-write';
+import { ACTIVITY_LABELS_BG, isBareActivityKind } from '@/lib/operations/activity-labels';
 
 
 // Derived from the Prisma enum rather than restated. #2316 added three
@@ -856,8 +858,14 @@ async function markOperationParcelImpl(
                         status: true,
                         key: true,
                         applicationTechnique: true,
+                        // #2354 — a bare activity's journal entry takes its
+                        // TYPE and its title from the activity kind.
+                        operationType: true,
                     },
                 },
+                // #2354 — the parcel's name goes into that entry's title
+                // params, so the row reads as something rather than as an id.
+                parcel: { select: { name: true } },
                 // For the archetype refusal below. Selected here rather than
                 // fetched separately so the check cannot be skipped by a
                 // caller that forgets it.
@@ -1071,6 +1079,13 @@ async function markOperationParcelImpl(
         // `recordInputApplication`: that function's contract IS a product
         // application, and handing it a null product would make the absence
         // its problem to interpret.
+        //
+        // #2354: the `appliesAProduct` guard below was right about STOCK and
+        // wrong about the JOURNAL. `recordInputApplication` is also the only
+        // writer of the completed line's `LogEntry`, and the journal list reads
+        // `LogEntry` — so skipping it skipped both, and a bare activity was
+        // recorded into a register nobody could see. The else-branch writes the
+        // entry that was missing.
         if (status === 'DONE' && fromStatus !== 'DONE' && appliesAProduct(line)) {
             application = await recordInputApplication(db, ctx, {
                 id: line.id,
@@ -1124,6 +1139,49 @@ async function markOperationParcelImpl(
                     },
                 });
             }
+        } else if (status === 'DONE' && fromStatus !== 'DONE' && !appliesAProduct(line)) {
+            // ── #2354: a bare activity's journal entry ──────────────────────
+            //
+            // Written HERE because the branch above is the only other writer of
+            // a completed line's entry, and the journal list reads `LogEntry`.
+            // Without this a pruning existed as a Task and three DONE lines
+            // that the farmer could not see anywhere.
+            //
+            // The TYPE is the activity's own, not `INPUT_APPLICATION`: nothing
+            // was applied. `LogEntryType` already carries both values needed,
+            // so this costs no migration.
+            const entryType = line.task.operationType === 'HARVEST' ? 'HARVEST' : 'ACTIVITY';
+            const parcelName = line.parcel?.name ?? '';
+            const composed = await composeFarmActivityTitle({
+                activity:
+                    ACTIVITY_LABELS_BG[
+                        (line.task.operationType ?? 'OTHER') as keyof typeof ACTIVITY_LABELS_BG
+                    ],
+                parcel: parcelName,
+            });
+            await createLogEntryWithAudit(
+                db,
+                ctx,
+                {
+                    type: entryType,
+                    recordedInDiary: opts?.recordedInDiary ?? false,
+                    // Spread rather than an explicit undefined, matching the
+                    // product path: these columns have their own defaults and a
+                    // written undefined is a write of nothing.
+                    ...(opts?.treatmentGroupId ? { treatmentGroupId: opts.treatmentGroupId } : {}),
+                    ...(opts?.occurredAt ? { occurredAt: opts.occurredAt } : {}),
+                    title: composed.title,
+                    titleKey: composed.titleKey,
+                    titleParams: composed.titleParams,
+                    operationParcelId: line.id,
+                    // No quantities here. A harvest's «Продукция» is ONE total
+                    // for the whole activity (owner, 2026-10-25) and this runs
+                    // per LINE, so writing it here would produce one per parcel
+                    // — the apportioning that ruling rejected. The activity
+                    // usecase attaches it to a single entry afterwards.
+                },
+                'field_operation',
+            );
         }
 
         // Auto-resolve the job when no PENDING lines remain.

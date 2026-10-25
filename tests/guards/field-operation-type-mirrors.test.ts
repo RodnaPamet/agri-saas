@@ -39,6 +39,7 @@
 import { FieldOperationType } from '@prisma/client';
 
 import { ACTIVITY_LABELS_BG, BARE_ACTIVITY_KINDS } from '@/lib/operations/activity-labels';
+import { RecordFarmActivitySchema } from '@/lib/schemas';
 import { FIELD_OPERATION_TYPES } from '@/app/t/[tenantSlug]/(app)/journal/filter-defs';
 import { EVENT_LABELS } from '@/lib/automation/event-labels';
 import { AUTOMATION_EVENTS } from '@/app-layer/automation/events';
@@ -145,5 +146,47 @@ describe('FieldOperationType mirrors (#2316)', () => {
         for (const [k, why] of Object.entries(INPUT_LESS)) {
             expect({ k, explained: why.length > 40 }).toEqual({ k, explained: true });
         }
+    });
+});
+
+describe('the activity route accepts exactly the kinds that apply nothing', () => {
+    it('RecordFarmActivitySchema and BARE_ACTIVITY_KINDS are the same set', () => {
+        // The divergence this exists to stop, caught by agrent-ios before it
+        // shipped: an earlier draft listed `SEED` in the route's `kind` enum
+        // while `BARE_ACTIVITY_KINDS` did not. A sowing would then have passed
+        // validation, reached `resolveChosenInput` as a NON-bare kind with no
+        // product, and been refused `OPERATION_INPUT_AMBIGUOUS` — every sowing,
+        // with a message about a missing product the caller was never allowed
+        // to send.
+        //
+        // Two lists, one meaning. Asserted by PARSING rather than by reading the
+        // enum, so the thing checked is what the route actually admits.
+        const accepted = ALL.filter(
+            (k) =>
+                RecordFarmActivitySchema.safeParse({
+                    kind: k,
+                    occurredOn: '2026-10-01',
+                    parcelIds: ['p1'],
+                }).success,
+        ).sort();
+        expect(accepted).toEqual([...BARE_ACTIVITY_KINDS].sort());
+        // Non-empty, or the comparison above passes on two empty lists.
+        expect(accepted.length).toBeGreaterThan(0);
+    });
+
+    it('SEED is NOT on the activity route — сеитба applies a seed product', () => {
+        // Owner decision 2026-10-25. `CreateFieldOperationSchema` has always
+        // admitted SEED alongside SPRAY and FERTILIZE, and `ItemCategory.SEED`
+        // exists for the varieties, so a sowing records a product at a rate and
+        // the form's «Продукт» column gets the variety. Admitting it here would
+        // have left that cell permanently empty.
+        expect(
+            RecordFarmActivitySchema.safeParse({
+                kind: 'SEED',
+                occurredOn: '2026-10-01',
+                parcelIds: ['p1'],
+            }).success,
+        ).toBe(false);
+        expect(BARE_ACTIVITY_KINDS).not.toContain('SEED');
     });
 });

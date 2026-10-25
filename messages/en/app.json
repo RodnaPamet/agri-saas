@@ -3420,7 +3420,8 @@
             "purgeTypePrompt": "Type {name} to confirm"
         },
         "autoTitle": {
-            "inputApplication": "{product} — {parcel}"
+            "inputApplication": "{product} — {parcel}",
+            "farmActivity": "{activity} — {parcel}"
         },
         "swipe": {
             "delete": "Delete",
@@ -6702,6 +6703,7 @@
         "NO_CHANGES_SPECIFIED": "No changes were specified.",
         "OPERATION_INPUT_AMBIGUOUS": "Choose exactly one input — a product OR a fertilizer.",
         "ACTIVITY_APPLIES_NO_INPUT": "This activity applies no product or fertiliser. Record it as a spraying or a fertilisation if one was applied.",
+        "HARVEST_NOT_RECORDED": "The activity produced no journal entry, so its quantity could not be recorded. Check that it completed.",
         "NOT_A_TREATMENT": "This record is a field activity rather than a treatment, so it has no product or dose to correct. Edit it through the field operation it belongs to.",
         "OPERATION_NOT_ASSIGNED_TO_YOU": "You can only update field operations assigned to you.",
         "OPERATION_PARCEL_NOT_FOUND": "Operation parcel not found",
