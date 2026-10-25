@@ -25,9 +25,10 @@
  *   - the role check is DERIVED from the dump's own GRANTs, not a hard-coded
  *     name, so a role added to the schema later cannot be silently missed.
  */
-import { execFileSync } from 'child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import { collectTrackedFiles } from '../helpers/collect-files';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const DIR = 'deploy/backup';
@@ -59,10 +60,25 @@ const code = (src: string) =>
 const DRIFT_CODE = code(DRIFT);
 const SCRIPT_CODE = code(SCRIPT);
 
+/**
+ * `collectTrackedFiles` rather than a direct `git ls-files`, per
+ * `file-collection-is-not-silently-empty`: a hand-rolled collector can be
+ * gutted to `return []` with every assertion built on it still green.
+ *
+ * `floor` is the real expectation rather than the default 1 — the module's own
+ * comment asks for it ("raise it when a guard knows its population is
+ * larger"), and here the population is known exactly: the three installed
+ * pieces plus the README.
+ *
+ * The helper returns ABSOLUTE paths, so they are mapped back to
+ * repo-relative. Forgetting that in the sibling WIF guard doubled the path and
+ * made the suite fail to LOAD, which reports `Tests: 0 total` — not a failing
+ * assertion, and indistinguishable from an empty population.
+ */
 function tracked(): string[] {
-    return execFileSync('git', ['ls-files', '-z', '--', DIR], { cwd: REPO_ROOT, encoding: 'utf8' })
-        .split('\0')
-        .filter(Boolean);
+    return collectTrackedFiles({ roots: [DIR], floor: PIECES.length }).map((abs) =>
+        path.relative(REPO_ROOT, abs),
+    );
 }
 
 describe('the production backup mechanism is tracked and drift-checked (#2329)', () => {
