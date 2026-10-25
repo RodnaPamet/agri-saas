@@ -140,7 +140,6 @@ describe('Onest ships cyrillic only (#1969)', () => {
         const interLatin = lock.faces.find((f) => f.family === 'Inter' && f.subset === 'latin');
         expect(interLatin).toBeDefined();
 
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { preloadFaces } = require('../../src/lib/fonts/preload');
         const hrefs = preloadFaces('bg').map((f: { href: string }) => f.href);
         expect(hrefs).toContain(`/fonts/${interLatin!.file}`);
