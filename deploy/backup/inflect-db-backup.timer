@@ -1,0 +1,20 @@
+[Unit]
+Description=inflect-compliance: nightly database backup
+Documentation=https://github.com/RodnaPamet/agri-saas/issues/2329
+
+[Timer]
+# 02:15 UTC. This is a DIFFERENT VM from agrent and playerz, so there is no
+# CPU contention to stagger away from — the hour is chosen so that three
+# nightly dumps across two hosts are distinguishable when reading journals
+# side by side, and so this one still lands well before the 04:40 UTC
+# `Backup exists` probe should it ever be pointed here.
+OnCalendar=*-*-* 02:15:00 UTC
+# A missed window (the VM was down, a reboot straddled 01:15) runs on the next
+# boot instead of being skipped silently — the exact shape of failure this
+# whole issue is about.
+Persistent=true
+RandomizedDelaySec=300
+Unit=inflect-db-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -24,23 +24,37 @@
 # path that existed for that case is deliberately NOT carried over. It is
 # unreachable now, and a branch for an impossible state is a lie in waiting.
 #
-# ═══ WHY THERE IS ONLY ONE TARGET NOW ═══
+# ═══ BOTH STACKS ARE DRILLED AGAIN, AND WHY THE LEG CAME BACK ═══
 #
-# The old matrix drilled `agrent` AND `inflect-compliance`, "because the
-# tooling lives here — not because the code is shared".
+# This file argued at length that there could be only one target, because
+# `inflect-compliance` had no backup: its snapshot schedule went in the same
+# 2026-10-12 sweep and nothing replaced it. That was true when written and
+# stopped being true on 2026-10-25, when the same `pg_dump` mechanism was
+# stood up for it — `gs://inflect-db-backups-hazel`, nightly at 02:15 UTC.
 #
-# `inflect-compliance` HAS NO BACKUP. Its snapshot schedule went in the same
-# 2026-10-12 sweep and nothing replaced it: zero snapshots, no bucket, no
-# timer (measured 2026-10-25, #2329). There is nothing to restore, so a leg
-# for it could only ever report its own impossibility — monthly, in red, for
-# something this repository cannot fix.
+# `tests/guards/restore-drill-targets-what-exists.test.ts` is what forced this
+# edit rather than letting the file sit stale: it asserts every stack in the
+# runbook's table is either drilled here or declared unbacked there, never
+# neither and never both. Recording the backup in the runbook without adding
+# this leg fails that guard, which is exactly the notification it was built to
+# give.
 #
-# It is therefore removed from the matrix rather than left to fail, and the
-# absence is RECORDED instead of dropped: `docs/backup-restore.md` states it
-# in the section that used to describe the shared mechanism, and
-# `tests/guards/restore-drill-targets-what-exists.test.ts` asserts the two
-# statements agree — so the day that stack grows a backup, the guard is what
-# notices this file never gained a target.
+# The battery was measured portable before the leg was added, not assumed:
+#
+#   roles the globals need   app_user, postgres   (identical to agrent's)
+#   extensions the dump needs pg_trgm              (contrib; the image has it)
+#   tables the battery reads Tenant, User, _prisma_migrations, AuditLog
+#   tenant_isolation policies 220
+#
+# So the SAME script and the SAME image serve both legs; only the bucket and
+# the object prefix differ. That is also the limit of what is shared — the two
+# products have separate repositories and separate databases, and this drill
+# covers inflect because the backup TOOLING lives here, not because the code
+# does.
+#
+# `fail-fast: false` is not decoration. With it unset, one product's restore
+# failing would cancel the other's leg mid-run and report nothing about it —
+# turning a single-stack failure into no information about either.
 name: Restore Test
 
 on:
@@ -67,8 +81,21 @@ concurrency:
 
 jobs:
   restore-test:
-    name: "Restore Test (agrent)"
+    name: "Restore Test (${{ matrix.target }})"
     runs-on: ubuntu-latest
+    strategy:
+      # Never `true`, and never omitted — see the header. A cancelled sibling
+      # leg reports nothing, and "no information" is the one answer a backup
+      # drill must never give quietly.
+      fail-fast: false
+      matrix:
+        include:
+          - target: agrent
+            bucket_var: BACKUP_BUCKET
+            prefix: agrent/
+          - target: inflect-compliance
+            bucket_var: INFLECT_BACKUP_BUCKET
+            prefix: inflect/
     # Image build + container start + a 54 MB restore. Normal runtime is a
     # few minutes; this is a runaway backstop, not a budget.
     timeout-minutes: 30
@@ -87,12 +114,17 @@ jobs:
         env:
           WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           WIF_SA: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-          BUCKET: ${{ vars.BACKUP_BUCKET }}
+          # Indirect through the matrix so each leg reads its OWN bucket
+          # variable. An unset one arrives EMPTY rather than failing the
+          # expression, which is why the check below names which it was.
+          BUCKET: ${{ vars[matrix.bucket_var] }}
+          BUCKET_VAR: ${{ matrix.bucket_var }}
+          TARGET: ${{ matrix.target }}
         run: |
           missing=""
           [ -n "$WIF_PROVIDER" ] || missing="$missing GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -n "$WIF_SA" ]       || missing="$missing GCP_SERVICE_ACCOUNT"
-          [ -n "$BUCKET" ]       || missing="$missing BACKUP_BUCKET(repo-variable)"
+          [ -n "$BUCKET" ]       || missing="$missing ${BUCKET_VAR}(repo-variable,-for-${TARGET})"
           [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] \
             || missing="$missing id-token:write(permissions-block,-not-a-secret)"
           if [ -n "$missing" ]; then
@@ -129,9 +161,13 @@ jobs:
       - name: Restore the newest dump and validate it
         id: drill
         env:
-          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
-          BACKUP_PREFIX: agrent/
+          BACKUP_BUCKET: ${{ vars[matrix.bucket_var] }}
+          BACKUP_PREFIX: ${{ matrix.prefix }}
           PG_IMAGE: restore-drill-pg:local
+          # Distinct per leg. The legs run on separate runners so a shared name
+          # could not actually collide, but a log naming the stack it restored
+          # is worth more than one naming a generic container.
+          RESTORE_CONTAINER: restore-drill-${{ matrix.target }}
         run: ./infra/scripts/restore-test-dump.sh
 
       - name: Workflow summary
@@ -139,9 +175,9 @@ jobs:
         run: |
           {
             if [ "${{ steps.drill.outcome }}" = "success" ]; then
-              echo "## ✅ Restore drill passed"
+              echo "## ✅ Restore drill passed — ${{ matrix.target }}"
               echo ""
-              echo "The newest dump in \`${{ vars.BACKUP_BUCKET }}\` was restored into a"
+              echo "The newest dump in \`${{ vars[matrix.bucket_var] }}/${{ matrix.prefix }}\` was restored into a"
               echo "clean Postgres built from \`deploy/postgres/Dockerfile\`, and the"
               echo "validation battery passed: migrations applied, \`tenant_isolation\`"
               echo "policies present, \`app_user\` present and holding table grants."
@@ -149,7 +185,7 @@ jobs:
               echo "This says the backup RESTORES. Whether a recent one EXISTS is the"
               echo "daily \`Backup exists\` probe's question, not this drill's — see #2329."
             else
-              echo "## ❌ Restore drill failed"
+              echo "## ❌ Restore drill failed — ${{ matrix.target }}"
               echo ""
               echo "The step log carries a named diagnosis. The two causes worth"
               echo "telling apart:"
@@ -163,7 +199,8 @@ jobs:
               echo "  inert, which is a breach wearing a green tick."
             fi
             echo ""
-            echo "\`inflect-compliance\` is NOT drilled: it has no backup mechanism at"
-            echo "all since 2026-10-12 and there is nothing to restore. See"
-            echo "\`docs/backup-restore.md\`."
+            echo "This leg covers **${{ matrix.target }}** only. The other stack is a"
+            echo "separate leg of the same matrix with \`fail-fast: false\`, so read both"
+            echo "before concluding anything about the other product — a green here is"
+            echo "silent about it."
           } >> "$GITHUB_STEP_SUMMARY"

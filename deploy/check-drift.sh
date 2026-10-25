@@ -117,14 +117,24 @@ fi
 # thing that writes them did not.
 #
 # Absolute remote paths, so these are NOT under REMOTE_DIR like the pairs above.
+#
+# A HOST column, because the second product's mechanism lives on the other VM.
+# Without it this loop would have compared inflect-compliance's three files
+# against agrent's filesystem, found nothing, and reported that backup missing —
+# an alarm about the wrong machine, which is worse than no row at all. The host
+# is the FOURTH field so the existing rows keep their shape and an omitted
+# host defaults to $VM_NAME.
 BACKUP_PAIRS="
-backup/agrent-db-backup|/usr/local/sbin/agrent-db-backup|the nightly pg_dump itself
-backup/agrent-db-backup.service|/etc/systemd/system/agrent-db-backup.service|what the timer runs
-backup/agrent-db-backup.timer|/etc/systemd/system/agrent-db-backup.timer|when it runs
+backup/agrent-db-backup|/usr/local/sbin/agrent-db-backup|the nightly pg_dump itself|agrent
+backup/agrent-db-backup.service|/etc/systemd/system/agrent-db-backup.service|what the timer runs|agrent
+backup/agrent-db-backup.timer|/etc/systemd/system/agrent-db-backup.timer|when it runs|agrent
+backup/inflect-db-backup|/usr/local/sbin/inflect-db-backup|the nightly pg_dump itself|inflect-compliance
+backup/inflect-db-backup.service|/etc/systemd/system/inflect-db-backup.service|what the timer runs|inflect-compliance
+backup/inflect-db-backup.timer|/etc/systemd/system/inflect-db-backup.timer|when it runs|inflect-compliance
 "
 BACKUP_DRIFT=0
 BACKUP_CHECKED=0
-while IFS='|' read -r rel remote why; do
+while IFS='|' read -r rel remote why host; do
     [ -n "$rel" ] || continue
     local_f="${SCRIPT_DIR}/${rel}"
     if [ ! -f "$local_f" ]; then
@@ -138,17 +148,24 @@ while IFS='|' read -r rel remote why; do
     # ssh swallows the remaining rows and the loop silently compares ONE file of
     # three. Measured: the run reported `agrent-db-backup` in sync and never
     # mentioned the unit or the timer.
-    r_sha="$(gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" \
+    # An empty host means the row predates the column; default rather than ssh
+    # to the empty string, which gcloud would reject with a confusing error
+    # about an instance named "".
+    row_host="${host:-$VM_NAME}"
+    r_sha="$(gcloud compute ssh "$row_host" --zone "$VM_ZONE" \
         --command "sudo sha256sum '${remote}'" < /dev/null 2>/dev/null | awk '{print $1}')" || r_sha=""
     BACKUP_CHECKED=$((BACKUP_CHECKED + 1))
     if [ -z "$r_sha" ]; then
-        err "could not read ${remote} on ${VM_NAME} — absent, or unreadable (${why})."
+        err "could not read ${remote} on ${row_host} — absent, or unreadable (${why})."
         err "  If absent, the nightly backup is NOT RUNNING. See deploy/backup/README.md."
         BACKUP_DRIFT=1
     elif [ "$l_sha" != "$r_sha" ]; then
         err "DRIFT — deploy/${rel} differs (local ${l_sha:0:12}, remote ${r_sha:0:12}) — ${why}."
         err "  Reinstall from the repo per deploy/backup/README.md, then re-run the"
-        err "  backup by hand to confirm it still works: sudo /usr/local/sbin/agrent-db-backup"
+        # The SCRIPT, derived from the row — not `$remote`, which for the two
+        # unit rows is a .service/.timer file. Telling an operator to run a
+        # timer file as a command is advice that cannot work.
+        err "  backup by hand to confirm it still works: sudo /usr/local/sbin/$(basename "${rel}" | sed -E 's/\.(service|timer)$//')"
         BACKUP_DRIFT=1
     else
         ok "in sync — deploy/${rel} matches (${l_sha:0:12})"
