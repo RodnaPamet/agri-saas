@@ -255,6 +255,40 @@ if (explainOnly) {
     process.exit(0);
 }
 
+/**
+ * A diff with files but NO derived population is a REFUSAL, not a pass — #2018.
+ *
+ * `['jest', ...population]` with an empty population is a bare `jest`, which
+ * runs the ENTIRE suite: every root, integration and rendered included. Found
+ * by using it. On 2026-10-25 a change to three `.github/` files derived zero
+ * paths, printed `population: 0 jest path(s)`, and then swept the whole tree
+ * for seven minutes before I noticed — and `tests/guards/ci-failure-watchlist`
+ * is a guard that asserts directly against `.github/workflows`, so the right
+ * answer was never "nothing" either.
+ *
+ * Both readings of that output are wrong in opposite directions: a reader sees
+ * `0` and concludes nothing ran, while the machine runs everything. So this
+ * refuses, names the files no rule covers, and exits non-zero — the same rule
+ * the rest of this script applies to empty selections, applied to itself.
+ *
+ * Exiting non-zero rather than sweeping is deliberate. A full sweep as a
+ * fail-safe sounds generous and is how a tool that promises a DERIVED
+ * population quietly stops deriving one: nobody adds the missing rule, because
+ * nothing ever told them it was missing.
+ */
+if (population.length === 0) {
+    console.error('\n[verify:changed] NO rule covers this diff, so NOTHING was derived.');
+    console.error('This is a refusal, not a pass — an empty population would run the');
+    console.error('ENTIRE suite (a bare `jest` takes no path filter), which is neither');
+    console.error('what the printed count says nor what you asked for.\n');
+    console.error('Files matched by no rule:');
+    for (const f of files.slice(0, 20)) console.error(`  ${f}`);
+    if (files.length > 20) console.error(`  …and ${files.length - 20} more`);
+    console.error('\nAdd a rule to scripts/verify-changed.rules.json with its `why`,');
+    console.error('or run the suites you believe are relevant by hand and say which.');
+    process.exit(1);
+}
+
 for (const p of population) {
     if (!existsSync(path.join(REPO_ROOT, p))) {
         console.error(`\n[verify:changed] selected path does not exist: ${p}`);

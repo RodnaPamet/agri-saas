@@ -44,6 +44,14 @@
             "why": "Schema-folder coverage, destructive-migration inverses and RLS guards are all derived from the schema rather than from the migration you wrote."
         },
         {
+            "when": "^\\.github/(workflows|scripts)/",
+            "run": [
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "Several guards assert against .github itself rather than against src: ci-failure-watchlist DERIVES the notifier's watch list from the workflow files, ci-aggregate-upstream-failure lifts each aggregate's run: block out of ci.yml and executes it, shell-heredoc-no-live-backticks pins the restore drill's quoted delimiter, and restore-drill-remote-script compares the payload byte-for-byte. Added because a 2026-10-25 change to three .github files derived ZERO paths and so ran the entire suite: the watchlist guard had to be run by hand to discover it was demanding the new workflow."
+        },
+        {
             "when": "^(deploy|docker-compose|Dockerfile)",
             "run": [
                 "tests/guards",
