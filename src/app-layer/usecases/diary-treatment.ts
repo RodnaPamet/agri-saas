@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { haToDca } from '@/lib/agro/rate-calc';
+import { exceedsParcel } from '@/lib/operations/printed-area';
+import { parseRecordedDay } from '@/lib/operations/recorded-day';
 import { computeAppliedQuantity } from '@/lib/units/applied-quantity';
 import {
     composeInputApplicationTitle,
@@ -137,68 +139,7 @@ export interface RecordDiaryTreatmentResult {
     replayed: boolean;
 }
 
-/**
- * Does a submitted treated area exceed its parcel, AS THE REGISTER CAN EXPRESS IT?
- *
- * The bound used to be exact (`treatedAreaHa > areaHa`) while every surface
- * shows the area ROUNDED, so typing the displayed figure back was refused for a
- * rounding the farmer never made (#2308). A parcel of 3.2478 ha displays as
- * 32,48 дка — `haToDca` then `trimNumber`, which rounds to two places — and
- * 32,48 дка parses back to 3.248 ha, which is greater than 3.2478.
- *
- * So the comparison happens at the register's own resolution: дка to two
- * decimals, i.e. 0.001 ha. Both sides are rounded there, and only a difference
- * the register could actually print is a refusal. 32,48 vs 32,48 passes;
- * 41 дка against a 40 дка parcel still fails, as does 999 against 4.
- *
- * Not a loosening of the rule, a correction of its units: a treated area larger
- * than its parcel is still refused, and "larger" now means larger in the units
- * the document is written in.
- */
-function exceedsParcel(treatedAreaHa: number, parcelAreaHa: number): boolean {
-    const asPrintedDca = (ha: number) => Math.round(haToDca(ha) * 100) / 100;
-    return asPrintedDca(treatedAreaHa) > asPrintedDca(parcelAreaHa);
-}
 
-/**
- * Midnight UTC on the given calendar day.
- *
- * Parsed strictly rather than handed to `new Date(string)`: that accepts
- * plenty of things that are not a day (`'2026-3'`, `'tomorrow'` in some
- * runtimes) and silently resolves others against the server's zone, which
- * would move a treatment across a date boundary depending on where the server
- * runs.
- */
-function parseTreatmentDay(value: string): { day: Date; key: string } {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-    if (!m) {
-        throw codedBadRequest(
-            'TREATMENT_DATE_INVALID',
-            'The treatment date must be a calendar day in the form YYYY-MM-DD.',
-            { field: 'occurredOn' },
-        );
-    }
-    const [, y, mo, d] = m;
-    const day = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
-    // Round-trip check: `Date.UTC(2026, 1, 31)` silently becomes 2 March, so
-    // a nonsense day would otherwise be accepted and recorded as a real one.
-    if (
-        day.getUTCFullYear() !== Number(y) ||
-        day.getUTCMonth() !== Number(mo) - 1 ||
-        day.getUTCDate() !== Number(d)
-    ) {
-        throw codedBadRequest(
-            'TREATMENT_DATE_INVALID',
-            'That calendar day does not exist.',
-            { field: 'occurredOn' },
-        );
-    }
-    // The key is the day as the register writes it, rebuilt from the matched
-    // groups rather than re-derived from `day` — `day` is a UTC instant and
-    // reading a calendar day back out of it is the mistake this function
-    // exists to prevent one level down.
-    return { day, key: `${y}-${mo}-${d}` };
-}
 
 /**
  * How much of a treatment is actually RECORDED, counted the only way that
@@ -378,7 +319,7 @@ export async function recordDiaryTreatment(
 ): Promise<RecordDiaryTreatmentResult> {
     assertCanWrite(ctx);
 
-    const { day, key: dayKey } = parseTreatmentDay(input.occurredOn);
+    const { day, key: dayKey } = parseRecordedDay(input.occurredOn);
     // Compared against today AS THE FARM SEES IT, not as the server's UTC
     // clock sees it.
     //
@@ -1598,7 +1539,7 @@ export async function correctDiaryTreatment(
     // Parsed BEFORE the transaction opens: `parseTreatmentDay` throws
     // `TREATMENT_DATE_INVALID` on a day that does not exist, and a 400 for a
     // malformed request should not have taken a row lock to discover.
-    const day = input.occurredOn !== undefined ? parseTreatmentDay(input.occurredOn) : null;
+    const day = input.occurredOn !== undefined ? parseRecordedDay(input.occurredOn) : null;
 
     if (input.title !== undefined && input.title.trim() === '') {
         throw codedBadRequest(
@@ -2131,7 +2072,7 @@ export async function correctDiaryTreatment(
             // a calendar day back out of a UTC instant is the mistake
             // `parseTreatmentDay` exists to prevent.
             const effOccurredAt =
-                day?.day ?? (previous.occurredOn ? parseTreatmentDay(previous.occurredOn).day : undefined);
+                day?.day ?? (previous.occurredOn ? parseRecordedDay(previous.occurredOn).day : undefined);
 
             for (const parcelId of setChange.added) {
                 const block = blockOfAdded.get(parcelId);
