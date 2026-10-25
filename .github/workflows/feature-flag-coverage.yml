@@ -1,0 +1,125 @@
+name: Feature flag coverage
+
+# Does every FeatureFlag key the code gates on have a row in production? (#2358)
+#
+# ## Why a watcher, when the check already exists
+#
+# `/api/readyz` has computed this since #2291 — `capabilities.featureFlags`
+# compares `REFERENCED_FLAG_KEYS` against the rows present. It is carefully
+# built: it reports `unknown` rather than `incomplete` when the table cannot be
+# read, and it sits OUTSIDE `checks`/`failed` so it can never 503, because #2009
+# says plainly that "a container that refuses to boot because a flag row is
+# missing turns a dark feature into an outage".
+#
+# Every one of those decisions is right, and together they mean the answer is
+# computed, serialised, and read by nobody. An uptime check sees 200 whatever
+# `state` says — precisely because the capability is deliberately outside the
+# failing set. So a missing row is detected and silently reported, which is
+# #2009's own defect one level up: the check exists and nothing is listening.
+#
+# ## Why this matters more than the public-surface probe
+#
+# 15 files gate on `assertFeatureEnabled`, and 9 of them require a credential.
+# `public-surface-probe.ts` cannot reach those at all. This capability is the
+# only mechanism that sees them, which is the second reason the report wants a
+# reader.
+#
+# A red run here becomes a GitHub issue automatically: this workflow is in
+# `ci-failure-issue.yml`'s watched list.
+
+on:
+    schedule:
+        # Daily, offset from both the 02:00 UTC backup window and the 07:00
+        # basemap probe, so three unrelated failures do not arrive together.
+        - cron: "0 9 * * *"
+    workflow_dispatch:
+        inputs:
+            reason:
+                description: "Why this run was dispatched"
+                required: false
+
+permissions:
+    contents: read
+
+jobs:
+    probe:
+        name: Feature flag coverage (production)
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Read capabilities.featureFlags from /api/readyz
+              env:
+                  ORIGIN: ${{ vars.HEALTH_ORIGIN || 'https://35-187-80-26.sslip.io' }}
+              run: |
+                  set -euo pipefail
+
+                  echo "▸ probing ${ORIGIN}/api/readyz"
+                  # `|| true` then an empty-body check, so a 503 still prints
+                  # what it said: "the app is unhealthy" and "the app says a flag
+                  # row is missing" need different responses from an operator.
+                  body="$(curl -sS --max-time 20 --retry 3 --retry-delay 5 \
+                      "${ORIGIN}/api/readyz" || true)"
+
+                  if [ -z "$body" ]; then
+                      echo "::error::No response from ${ORIGIN}/api/readyz."
+                      echo "This is an AVAILABILITY failure, not a flag failure."
+                      exit 1
+                  fi
+
+                  state="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.state // "absent"')"
+                  missing="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.missingRows // [] | join(", ")')"
+                  referenced="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.referenced // "?"')"
+                  orphans="$(printf '%s' "$body" | jq -r '.capabilities.featureFlags.orphanRows // "?"')"
+
+                  # The DENOMINATOR beside the verdict, always. "complete" over
+                  # zero referenced keys is vacuously true, and a reader needs to
+                  # see which it is.
+                  echo "▸ state=${state}  referenced=${referenced}  orphanRows=${orphans}"
+
+                  case "$state" in
+                    complete)
+                        if [ "$referenced" = "0" ]; then
+                            echo "::error::state=complete over ZERO referenced keys."
+                            echo "That is vacuous: the extractor found no"
+                            echo "assertFeatureEnabled call sites, so it is no"
+                            echo "longer measuring what it claims to."
+                            exit 1
+                        fi
+                        echo "✔ All ${referenced} gated flag key(s) have a row."
+                        ;;
+                    incomplete)
+                        echo "::error::${missing:-unknown} has no FeatureFlag row."
+                        echo "Those surfaces are DARK: a missing row is OFF, and"
+                        echo "assertFeatureEnabled answers 404 rather than 403 for"
+                        echo "anti-enumeration — so they are indistinguishable from"
+                        echo "routes that do not exist. Insert the row(s) in the"
+                        echo "flag console; do NOT 'fix' this by removing the key"
+                        echo "from the code that gates on it."
+                        exit 1
+                        ;;
+                    unknown)
+                        # NOT a pass — the probe could not answer its question,
+                        # and reporting unknown as fine is the defect this exists
+                        # to catch. But the CAUSE is named precisely, because the
+                        # capability reports `unknown` only when the table could
+                        # not be read: sending an operator to the flag console
+                        # during a database outage is the mistake its own docblock
+                        # was written to avoid.
+                        echo "::error::capabilities.featureFlags is UNKNOWN — the"
+                        echo "FeatureFlag table could not be read."
+                        echo "This is a DATABASE failure, not a flag failure."
+                        echo "Flag coverage is unverified until it clears."
+                        exit 1
+                        ;;
+                    absent)
+                        echo "::error::/api/readyz returned no capabilities.featureFlags."
+                        echo "Either the deploy predates #2291 or the field was"
+                        echo "removed. Treated as a failure rather than a pass: a"
+                        echo "probe whose subject has vanished is not covering it."
+                        exit 1
+                        ;;
+                    *)
+                        echo "::error::Unrecognised state value: ${state}"
+                        exit 1
+                        ;;
+                  esac
