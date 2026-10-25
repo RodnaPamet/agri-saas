@@ -9,6 +9,7 @@
  * 409 is a conflict to resolve rather than a success (#921/#922).
  */
 import { z } from '@/lib/openapi/zod';
+import { TREATMENT_KINDS } from '@/lib/operations/treatment-kind';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
     CreateLogEntrySchema,
@@ -148,8 +149,19 @@ const Treatment = z
                 + 'cultivation, harvest \u2014 has parcel lines just as a treatment does, so a client '
                 + 'reading `parcelCount > 0` as \u201cthis is a treatment\u201d offers correction and the '
                 + 'per-treatment PDF on a row with no product or dose to correct, and the correction '
-                + 'then refuses with `NOT_A_TREATMENT`. Gate those controls on `kind` being `SPRAY` '
-                + 'or `FERTILIZE`.\n\n'
+                + 'then refuses with `NOT_A_TREATMENT`.\n\n'
+                + '**The two controls no longer gate on the same kinds.** They did while `SPRAY` '
+                + 'and `FERTILIZE` were the only treatments; #2316 added сеитба, which is '
+                + 'correctable but not in the register:\n\n'
+                + '| control | kinds |\n'
+                + '| --- | --- |\n'
+                + '| «Коригирай» — correct the treatment | `SPRAY`, `FERTILIZE`, `SEED` |\n'
+                + '| «Изтегли PDF» — per-treatment БАБХ extract | `SPRAY`, `FERTILIZE` |\n\n'
+                + 'Reusing one rule for the other fails in both directions: a farmer is denied a '
+                + 'correction they may make on their own sowing, or is offered a register extract '
+                + 'the server answers `NOT_IN_BABH_REGISTER` to. Read `mayCorrect` as well for the '
+                + 'first — the kind says the record HAS something to correct, `mayCorrect` says '
+                + 'this caller may.\n\n'
                 + '`null` is a row whose task predates the column, which the register reads by '
                 + 'deriving from the title \u2014 treat it as a treatment, because that is all the '
                 + 'field operations of that era were.',
@@ -375,7 +387,18 @@ const TreatmentDefinition = z
                 + 'versions to compare against. `0` for a treatment recorded before the group row '
                 + 'existed \u2014 the backfill starts at 0 rather than claiming a version it never served.',
         }),
-        kind: z.enum(['SPRAY', 'FERTILIZE']),
+        kind: z.enum(TREATMENT_KINDS).openapi({
+            description:
+                'Which treatment this definition describes. Built from `TREATMENT_KINDS`, the same '
+                + 'constant the server maps a stored `operationType` through, so the published '
+                + 'members and the ones a response can actually carry cannot drift apart.\n\n'
+                + '`SEED` was missing here until #2316 — and so was the producer, which collapsed a '
+                + 'sowing to `SPRAY`, making the two agree with each other and with nothing else. A '
+                + 'client that gated «Изтегли PDF» on this field was offered the per-treatment PDF '
+                + 'for a сеитба and answered `NOT_IN_BABH_REGISTER`.\n\n'
+                + '`SPRAY` for a task predating the `operationType` column, which is how the '
+                + 'register already reads those rows.',
+        }),
         occurredOn: z.string().nullable().openapi({
             description: 'The farm day, from the first completed line. Null when no line is marked yet.',
         }),

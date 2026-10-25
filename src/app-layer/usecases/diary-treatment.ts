@@ -24,6 +24,7 @@ import {
     staleData,
 } from '@/lib/errors/types';
 import { appliesAProduct } from '@/lib/operations/line-kind';
+import { treatmentKindOfOperation, type TreatmentKind } from '@/lib/operations/treatment-kind';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { withDeleted } from '@/lib/soft-delete';
@@ -92,7 +93,7 @@ import type { CreateFieldOperationInput } from './field-operation';
  */
 export interface RecordDiaryTreatmentInput {
     /** Spraying fills химични обработки; fertilising fills торове. */
-    kind: 'SPRAY' | 'FERTILIZE' | 'SEED';
+    kind: TreatmentKind;
     /**
      * The calendar DAY the treatment happened, `yyyy-mm-dd`.
      *
@@ -1114,7 +1115,7 @@ export interface TreatmentDefinition {
      * starts every row at 0 rather than claiming a version it never served.
      */
     version: number;
-    kind: 'SPRAY' | 'FERTILIZE' | 'SEED';
+    kind: TreatmentKind;
     /** `null` when no line has been completed yet, so there is no farm day to show. */
     occurredOn: string | null;
     title: string | null;
@@ -1361,7 +1362,14 @@ async function loadTreatmentForEdit(
         definition: {
             treatmentGroupId: handle,
             version: group?.version ?? 0,
-            kind: tasks[0].operationType === 'FERTILIZE' ? 'FERTILIZE' : 'SPRAY',
+            // SEED had to survive this read and did not. This was
+            // `operationType === 'FERTILIZE' ? 'FERTILIZE' : 'SPRAY'` — the
+            // SAME collapse the WRITE had at line 630, in the mirror position,
+            // and widening `TreatmentDefinition.kind` to admit SEED gave it no
+            // producer. A sowing read back as a spraying, so a client gating
+            // «Изтегли PDF» on `kind` (which the contract tells it to do) would
+            // offer the per-treatment PDF on a сеитба and get a 404.
+            kind: treatmentKindOfOperation(tasks[0].operationType),
             occurredOn: stamped?.completedAt
                 ? stamped.completedAt.toISOString().slice(0, 10)
                 : null,

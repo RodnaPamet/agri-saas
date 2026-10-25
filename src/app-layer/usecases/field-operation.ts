@@ -369,20 +369,57 @@ async function resolveInputItemId(
     // P2002 → named-409 translation. A second implementation here is how the
     // regulatory rule ends up enforced on one path and not the other, which is
     // the mistake its own docblock describes being avoided once already.
+    // The KIND decides the category wherever the kind constrains it, and
+    // `newProductCategory` only chooses among the categories the kind allows.
+    //
+    //   FERTILIZE  →  FERTILIZER, always
+    //   SEED       →  SEED, always
+    //   SPRAY      →  PESTICIDE by default, FERTILIZER if asked
+    //
+    // The product path defaults to PESTICIDE — what a typed spray name usually
+    // means — but accepts FERTILIZER, because a liquid fertiliser through a
+    // sprayer is a legitimate spray and creating it as a PESTICIDE would demand
+    // a ПРЗ number it has none of. Defaulting rather than requiring keeps every
+    // existing caller working. An EXISTING item on this path may be any
+    // non-FERTILIZER category, per the picker's own filter.
+    //
+    // ## SEED was missing here, and it broke сеитба two ways (#2316)
+    //
+    // `newProductCategory` is `'PESTICIDE' | 'FERTILIZER'`, so SEED was not
+    // expressible, and a typed seed name fell to the PESTICIDE default. Then:
+    //
+    //   - `assertPesticideIsFilable` demanded a ПРЗ № and a quarantine period
+    //     for a bag of wheat seed, which is the only thing a farmer sowing by
+    //     name would ever see. «Сеитба» by name could not complete at all.
+    //   - a caller that DID send `newProductRegistration` got past that and
+    //     recorded a sowing against a PESTICIDE item — and because #2316
+    //     excludes SEED from the БАБХ register, that plant protection product
+    //     left the regulated document. The escape hatch `SEED_EXPECTED` closes
+    //     on the found-by-id path was standing open on the create path.
+    //
+    // Raised by the agrent-ios session asking whether a new seed NAME creates a
+    // SEED item. It did not.
+    const category = chosen.isFertilizer
+        ? 'FERTILIZER'
+        : chosen.kind === 'SEED'
+          ? 'SEED'
+          : (newCategory ?? 'PESTICIDE');
+    // A POSTCONDITION, and currently unreachable — say so rather than let it
+    // read as the fix. What closes the hole is the derivation above: `category`
+    // is computed FROM `chosen.kind`, so it cannot contradict it, and deleting
+    // this line changes no observable behaviour (mutation-proved: dropping it
+    // leaves all 11 cases green, while reverting the derivation fails three).
+    //
+    // It stays because it makes the invariant a property of the FUNCTION rather
+    // than of one expression: both exits now pass through the same check, so a
+    // later branch — a new kind, or a category made configurable again — gets a
+    // 400 instead of writing a mismatched category into a regulated record.
+    // That is defence in depth, not a demonstrated safeguard.
+    assertCategoryMatchesKind(category, chosen.kind);
+
     const created = await createItem(ctx, {
         name,
-        // The product path creates a PESTICIDE — the only category a typed
-        // spray name can sensibly mean, and the one that makes the owner's
-        // ruling coherent: a new PPP needs its two regulatory fields, which is
-        // why `newProductRegistration` exists. An EXISTING item on this path
-        // may be any non-FERTILIZER category, per the picker's own filter.
-        // The fertiliser path always creates a FERTILIZER. The product path
-        // defaults to PESTICIDE — what a typed spray name usually means — but
-        // accepts FERTILIZER, because a liquid fertiliser through a sprayer is
-        // a legitimate spray and creating it as a PESTICIDE would demand a ПРЗ
-        // number it has none of. Defaulting rather than requiring keeps every
-        // existing caller working.
-        category: chosen.isFertilizer ? 'FERTILIZER' : (newCategory ?? 'PESTICIDE'),
+        category,
         defaultUnitId: baseUnit.id,
         pppRegistrationNo: registration?.pppRegistrationNo ?? null,
         quarantinePeriodDays: registration?.quarantinePeriodDays ?? null,

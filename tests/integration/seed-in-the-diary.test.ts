@@ -22,7 +22,12 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { recordDiaryTreatment, treatmentKindOf } from '@/app-layer/usecases/diary-treatment';
+import {
+    recordDiaryTreatment,
+    treatmentKindOf,
+    getDiaryTreatmentDefinition,
+} from '@/app-layer/usecases/diary-treatment';
+import { createFieldOperation } from '@/app-layer/usecases/field-operation';
 import {
     gatherFarmRecord,
     generateFarmRecordDiaryPdfScoped,
@@ -66,6 +71,16 @@ beforeAll(async () => {
     pesticideItemId = (await globalPrisma.item.create({
         data: { tenantId, name: `Карате ${TAG}`, category: 'PESTICIDE', defaultUnitId: unitId },
     })).id;
+    // The BY-NAME path derives a STOCK unit from the dose unit — `kg-per-ha`
+    // gives `kg` — and refuses with `DOSE_UNIT_HAS_NO_BASE` if that row is
+    // absent. `Unit.key` is globally unique and `kg` is ONE shared catalogue
+    // row, so this upserts and `afterAll` deliberately does NOT delete it:
+    // removing a shared unit would break every other suite that resolves one.
+    await globalPrisma.unit.upsert({
+        where: { key: 'kg' },
+        update: {},
+        create: { key: 'kg', name: 'Kilogram', symbol: 'kg', measure: 'WEIGHT' },
+    });
 });
 
 afterAll(async () => {
@@ -206,5 +221,161 @@ describeFn('сеитба in the diary, out of the БАБХ register (#2316)', ()
             treatmentGroupId: `${TAG}-spray-seed`,
         });
         expect(data?.sprayLines?.length ?? 0).toBeGreaterThan(0);
+    });
+
+    it('a typed seed NAME creates a SEED item, not a PESTICIDE', async () => {
+        // «Нов запис» on the phone sends NAMES and finds-or-creates, so this is
+        // the path a farmer actually sows through. It was broken two ways.
+        //
+        // `newProductCategory` is `'PESTICIDE' | 'FERTILIZER'` — SEED is not
+        // expressible — so a typed seed name fell to the PESTICIDE default, and
+        // `assertPesticideIsFilable` then demanded a ПРЗ № and a quarantine
+        // period for a bag of wheat seed. That is all a farmer sowing by name
+        // could ever see: сеитба could not be recorded at all.
+        const name = `Пшеница Енола ${TAG}`;
+        await recordDiaryTreatment(
+            ctx(),
+            {
+                kind: 'SEED',
+                occurredOn: yesterday(),
+                parcelIds: [parcelId],
+                productName: name,
+                doseValue: 190,
+                doseUnitId: unitId,
+            },
+            `${TAG}-byname`,
+        );
+
+        const item = await globalPrisma.item.findFirstOrThrow({
+            where: { tenantId, name },
+            select: { category: true, pppRegistrationNo: true, defaultUnit: { select: { key: true } } },
+        });
+        expect(item.category).toBe('SEED');
+        // And no regulatory fields were invented to get past the pesticide rule.
+        expect(item.pppRegistrationNo).toBeNull();
+        // The STOCK unit, derived from the rate unit — not the rate itself.
+        expect(item.defaultUnit?.key).toBe('kg');
+    });
+
+    it('sows the same name TWICE — the create and the found path agree', async () => {
+        // The second sowing takes the FOUND branch, which has always asserted
+        // the category against the kind. So the two branches have to agree, and
+        // before this change they could not: the create made a PESTICIDE and the
+        // found path refused it with `SEED_EXPECTED`. A farmer sowing the same
+        // variety on a second parcel would have been refused on the second
+        // record — the "refused at the worst moment" shape free text exists to
+        // avoid.
+        const name = `Слънчоглед Рими ${TAG}`;
+        const sow = (key: string) =>
+            recordDiaryTreatment(
+                ctx(),
+                {
+                    kind: 'SEED',
+                    occurredOn: yesterday(),
+                    parcelIds: [parcelId],
+                    productName: name,
+                    doseValue: 6,
+                    doseUnitId: unitId,
+                },
+                key,
+            );
+        await sow(`${TAG}-twice-a`);
+        await expect(sow(`${TAG}-twice-b`)).resolves.toBeTruthy();
+
+        // ONE item, not two — the second call resolved the existing name.
+        const items = await globalPrisma.item.findMany({ where: { tenantId, name }, select: { id: true } });
+        expect(items).toHaveLength(1);
+    });
+
+    it('an explicit PESTICIDE category loses to the kind on a sowing', async () => {
+        // `newProductCategory` is `'PESTICIDE' | 'FERTILIZER'`, so a client can
+        // ask for the wrong one on a сеитба. The kind wins, and the field now
+        // documents itself as ignored here — the same way it is already ignored
+        // on the `fertilizerName` path, which always creates a FERTILIZER.
+        const name = `Раундъп ${TAG}`;
+        await recordDiaryTreatment(
+            ctx(),
+            {
+                kind: 'SEED',
+                occurredOn: yesterday(),
+                parcelIds: [parcelId],
+                productName: name,
+                doseValue: 3,
+                doseUnitId: unitId,
+                newProductCategory: 'PESTICIDE',
+            },
+            `${TAG}-smuggle`,
+        );
+        const item = await globalPrisma.item.findFirstOrThrow({
+            where: { tenantId, name },
+            select: { category: true },
+        });
+        expect(item.category).toBe('SEED');
+    });
+
+    it('the FIELD-OPERATION route cannot smuggle a PESTICIDE in as a sowing', async () => {
+        // THE escape hatch, and it is on this route rather than the diary one.
+        // `RecordDiaryTreatmentInput` has no `newProductRegistration`, so a
+        // diary sowing could never supply the two regulatory fields and a
+        // PESTICIDE create died at `assertPesticideIsFilable`.
+        // `CreateFieldOperationInput` DOES take them, and its `operationType`
+        // enum includes SEED — so before this change:
+        //
+        //   operationType: SEED + productName + the two ПРЗ fields
+        //     → an Item created as PESTICIDE
+        //     → a task whose operationType is SEED
+        //     → excluded from the БАБХ register by #2316
+        //
+        // A real plant protection product, out of the regulated document, with
+        // the exclusion working exactly as designed. `SEED_EXPECTED` closed this
+        // only on the found-by-id path; the create path had no check at all.
+        const name = `Децис ${TAG}`;
+        await createFieldOperation(
+            ctx(),
+            locationId,
+            {
+                assigneeUserId: userId,
+                parcelIds: [parcelId],
+                operationType: 'SEED',
+                productName: name,
+                doseValue: 2,
+                doseUnitId: unitId,
+                newProductRegistration: {
+                    pppRegistrationNo: '0123-ПРЗ',
+                    quarantinePeriodDays: 30,
+                    activeIngredient: 'deltamethrin',
+                },
+            },
+            `${TAG}-fo-smuggle`,
+        );
+        const item = await globalPrisma.item.findFirstOrThrow({
+            where: { tenantId, name },
+            select: { category: true, pppRegistrationNo: true },
+        });
+        expect(item.category).toBe('SEED');
+        // The ПРЗ number it sent is still stored — this does not sanitise the
+        // payload, it refuses to let the payload choose the CATEGORY. A seed
+        // carrying a stray registration number is odd but harmless; a pesticide
+        // outside the register is not.
+        expect(item.pppRegistrationNo).toBe('0123-ПРЗ');
+    });
+
+    it('the definition reads back as SEED, not SPRAY', async () => {
+        // The MIRROR of the write bug, and the one a client sees. The definition
+        // read built its kind with `operationType === 'FERTILIZE' ? … : 'SPRAY'`,
+        // so a sowing came back as a spraying even after the write was fixed.
+        //
+        // This is not cosmetic: the contract tells a client to gate «Изтегли
+        // PDF» on `kind`, so a сеитба reading as SPRAY shows the button and the
+        // server then answers `NOT_IN_BABH_REGISTER`. Widening the TYPE to admit
+        // SEED did nothing, because a narrow producer still satisfies a wide
+        // type — nothing failed while they disagreed.
+        // `loadTreatmentForEdit` is the ONLY producer of a definition, and it
+        // has three consumers: this read, and the correction's own BEFORE and
+        // AFTER snapshots. So the collapse also wrote `SPRAY` into the
+        // correction trail of a sowing — a regulated record's audit history
+        // naming the wrong kind of operation.
+        const d = await getDiaryTreatmentDefinition(ctx(), `${TAG}-sow`);
+        expect(d.kind).toBe('SEED');
     });
 });
