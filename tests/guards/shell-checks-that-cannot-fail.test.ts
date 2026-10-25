@@ -222,7 +222,13 @@ describe('shell checks that cannot fail', () => {
     it('...and it fires when a REAL script is corrupted, not just a fixture', () => {
         // Controls that only ever see hand-made input prove nothing about the
         // path that executes. Corrupt the real file and require a hit.
-        const real = fs.readFileSync(path.join(ROOT, 'infra/scripts/restore-test-gcp.sh'), 'utf-8');
+        // `infra/scripts/restore-test-gcp.sh` was the subject until #2340
+        // deleted it with the retired snapshot drill. Its replacement carries
+        // the same shape — a `TENANTS="$(...)"` capture inside a validation
+        // battery — which is what makes it a usable corruption target: the
+        // mutation below turns an assignment into the `cmd && echo` idiom this
+        // guard exists to refuse.
+        const real = fs.readFileSync(path.join(ROOT, 'infra/scripts/restore-test-dump.sh'), 'utf-8');
         const corrupted = real.replace(
             /^TENANTS=.*$/m,
             'psql \'SELECT count(*) FROM "Tenant"\' >/dev/null && echo "  ✓ Tenant table reachable"',

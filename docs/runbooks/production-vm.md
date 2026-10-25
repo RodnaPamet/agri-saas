@@ -451,38 +451,60 @@ engineer needs to hold in their head:
 
 - One disk, one zone, no replica, no managed database. Everything —
   Postgres, uploads, Redis AOF, `.env` — is on the `agrent` boot disk.
-- Backup is a **GCE snapshot schedule** on that disk:
-  `agrent-daily-snapshot`, daily 02:00 UTC, 14-day retention, `eu`
-  multi-region storage, `keep-auto-snapshots` (deleting the disk does
-  not delete the backups).
+- Backup is a **nightly `pg_dump` to GCS**: `agrent-db-backup.timer`,
+  01:15 UTC, into `gs://agrent-db-backups-hazel` with a 30-day lifecycle
+  and an `eu` multi-region bucket. It survives the loss of the zone and
+  of the disk.
+- **There are no disk snapshots and no snapshot schedule.** All 33
+  snapshots and both resource policies were deleted on 2026-10-12, and
+  for 13 days nothing replaced them — the gap that the daily
+  `Backup exists` probe now exists to make impossible (#2329). Do not
+  go looking for `agrent-daily-snapshot`; it is gone, and so is the
+  disk-from-snapshot recovery path this runbook used to describe.
 - **RPO is up to 24 hours — target and achieved.** `docs/slos.md`
   SLO 6 states 24 hours as the objective; the 1-hour target it used to
   carry was retired on 2026-09-10 (#842) because nothing was funded to
   meet it. Tightening it needs continuous WAL archiving or a managed
   Postgres, neither of which is deployed. Know the real number before
   an incident, not during one.
-- Snapshots are **crash-consistent**, not application-consistent —
-  Postgres replays WAL on start. That is a supported recovery mode and
-  the drill exercises it on purpose.
+- The dump is **application-consistent**, which the snapshots it
+  replaced were not. There is no WAL replay on recovery and no
+  crash-consistent window to reason about — that was the main reason
+  for the change.
 
 ```bash
-# Is the schedule still attached? A detached resource policy stops all
-# backups with no error anywhere.
-gcloud compute disks describe agrent --zone europe-west1-b \
-  --format='value(resourcePolicies)'
+# Is the timer still live? A disabled or failed timer stops all backups
+# with no error anywhere — which is exactly what happened for 13 days.
+sudo systemctl status agrent-db-backup.timer --no-pager
+sudo systemctl list-timers agrent-db-backup.timer --no-pager
 
-# What snapshots exist?
-gcloud compute snapshots list --filter='sourceDisk~/agrent$' \
-  --sort-by=~creationTimestamp \
-  --format='table(name,status,creationTimestamp,storageBytes)'
+# What backups exist, newest last? Each dump has a .globals.sql sibling
+# and a dump WITHOUT one cannot be restored — see docs/backup-restore.md.
+gcloud storage ls -l 'gs://agrent-db-backups-hazel/agrent/**' | tail -20
+
+# Why did last night's run fail?
+sudo journalctl -u agrent-db-backup.service -n 50 --no-pager
 ```
 
 The restore path is drilled monthly by
-`infra/scripts/restore-test-gcp.sh` via
-`.github/workflows/restore-test.yml` — it boots a real Postgres over the
-recovered data directory rather than checking that a snapshot exists.
-**Exit 75 means NOT TESTED** (every zone out of capacity), not "restore
-failed"; re-run it rather than opening an incident.
+`infra/scripts/restore-test-dump.sh` via
+`.github/workflows/restore-test.yml` — it restores the newest dump into a
+clean Postgres built from `deploy/postgres/Dockerfile` and runs a validation
+battery, rather than checking that a backup exists. Both products are legs of
+one matrix with `fail-fast: false`, so read both before concluding anything
+about either.
+
+**There is no longer an "exit 75 / NOT TESTED" case.** The old drill needed a
+disk and a VM and could fail with `ZONE_RESOURCE_POOL_EXHAUSTED` having said
+nothing about the backup; this one needs only a container in the runner. A red
+run now means a real answer — either the dump is missing its `.globals.sql`
+sibling, which is a BACKUP failure, or the battery failed, which means the
+dump restored into something that is not a working database. The step log
+names which.
+
+Freshness is NOT this drill's question — the daily `Backup exists` probe owns
+it, because a monthly cadence is what let a total absence go unreported for
+13 days.
 
 ---
 

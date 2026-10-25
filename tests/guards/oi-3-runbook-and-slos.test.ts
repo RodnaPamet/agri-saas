@@ -322,10 +322,20 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
         expect(scenarios).toMatch(
             /deploy\/rollback\/\*?\.?down\.sql|deploy\/rollback\/<migration>\.down\.sql/,
         );
-        expect(scenarios).toMatch(/agrent-daily-snapshot/);
+        // Was `agrent-daily-snapshot` until #2340. That lever no longer
+        // exists: the snapshot schedules were deleted on 2026-10-12 (#2329)
+        // and the worst-case recovery is now a restore from the dump bucket.
+        // Repointed rather than dropped — the property is "this table names
+        // levers the deployment HAS", and a table naming a mechanism nobody
+        // can execute is the failure mode, not the absence of a match.
+        expect(scenarios).toMatch(/agrent-db-backups-hazel/);
+        // Globals before database, because that ordering is the difference
+        // between a restore and 142 failed GRANTs (#2337) — and an operator
+        // reading this table at 3am is exactly who needs told.
+        expect(scenarios).toMatch(/globals/i);
         // ...and the runbook that carries the procedures.
         expect(scenarios).toMatch(/docs\/runbooks\/production-vm\.md/);
-        // The snapshot row must price itself at the real RPO.
+        // The worst-case row must price itself at the real RPO.
         expect(scenarios).toMatch(/24\s*h/i);
     });
 
@@ -683,7 +693,18 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         // it replaced named infrastructure this product never ran (see
         // tests/guards/oi-3-backup-restore.test.ts and
         // docs/backup-restore.md).
-        expect(alignment).toMatch(/restore-test-gcp\.sh/);
+        // Pinned to `restore-test-dump.sh` since 2026-10-25. This
+        // assertion previously named `restore-test-gcp.sh`, which drilled a
+        // GCE snapshot schedule deleted on 2026-10-12 — so the guard was
+        // holding an operator-facing table to a deleted script, and failed
+        // the moment that table was corrected. The name is asserted rather
+        // than left loose because the table's job is to say which shipped
+        // thing a runbook step drives; "some drill exists" is not that.
+        expect(alignment).toMatch(/restore-test-dump\.sh/);
+        // And the retired one must not be presented as live. Written so a
+        // struck-through mention — the form this table uses for retired
+        // rows — still passes.
+        expect(alignment).not.toMatch(/(?<!~)restore-test-gcp\.sh(?!~)/);
         expect(alignment).toMatch(/manage_master_user_password/);
         expect(alignment).toMatch(/external-uptime\.yml/);
     });

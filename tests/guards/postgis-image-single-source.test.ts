@@ -1,6 +1,22 @@
 /**
  * `.github/postgis-image` is the single source of truth, and this enforces it.
  *
+ * ## This guard must NEVER route its reads through `blankNonCode`
+ *
+ * It reads `.github/workflows/*.yml` and a `Dockerfile`. `blankNonCode` is a
+ * TS/JS scanner: YAML and Dockerfile comments are `#`, which it does not
+ * recognise, and a `//` inside a URL is not a comment at all — blanking from
+ * there to end of line would delete real content and the pin counts below
+ * would silently fall short.
+ *
+ * This note used to live as an entry in `a-source-scanning-guard-blanks-its-
+ * comments`'s never-blankable list. That register is asserted to name EXACTLY
+ * the guards its detector flags, and once this file moved from `readFileSync`
+ * plus a regex to the declarative table below, the detector stopped flagging
+ * it — so the entry became a reason recorded for a risk the register could no
+ * longer see, which reads as coverage. The constraint is real, so it belongs
+ * at the point of use instead.
+ *
  * ## Why this file exists
  *
  * Because `.github/postgis-image` said it already did. Until 2026-09-17 its
@@ -66,7 +82,6 @@ const CONSUMERS: Consumer[] = [
     { file: '.github/workflows/lighthouse.yml', shape: 'exact', times: 1 },
     { file: '.github/workflows/load-test.yml', shape: 'exact', times: 1 },
     { file: 'deploy/postgres/Dockerfile', shape: 'exact', times: 1 },
-    { file: 'infra/scripts/restore-test-gcp.sh', shape: 'exact', times: 1 },
     { file: 'docs/dev-setup-macos.md', shape: 'docTable', times: 1 },
     { file: 'docker-compose.yml', shape: 'embedTag', times: 1 },
     { file: 'docker-compose.test.yml', shape: 'embedTag', times: 1 },
@@ -413,101 +428,26 @@ describe('.github/postgis-image is the single source of truth', () => {
         });
     });
 
-    describe('the two Dockerfiles that build the image stay in step', () => {
-        /**
-         * The Dockerfile the restore drill builds on a bare VM, sliced OUT of
-         * the shell script.
-         *
-         * Slicing matters. The previous version of this check matched
-         * `/postgresql-16-[a-z0-9-]+/g` over the WHOLE `.sh`, which had two
-         * holes, both of which let a broken drill pass:
-         *
-         *   1. it could only see packages whose name starts `postgresql-16-`,
-         *      so adding `ca-certificates` to one side and not the other was
-         *      invisible;
-         *   2. a package named in a `#` COMMENT counted as installed, so
-         *      deleting `postgresql-16-pgvector` from the heredoc while
-         *      mentioning it in prose still matched.
-         *
-         * `docker.io` is installed at `restore-test-gcp.sh:320`, far outside
-         * the heredoc, and is asserted ABSENT below — that is the control
-         * proving this reads the heredoc rather than the file.
-         */
-        function restoreDrillDockerfile(): string {
-            const src = read('infra/scripts/restore-test-gcp.sh');
-            const open = src.indexOf("<<'DOCKERFILE'");
-            const close = src.indexOf('\nDOCKERFILE', open);
-            if (open === -1 || close === -1) {
-                throw new Error(
-                    'could not find the DOCKERFILE heredoc in infra/scripts/restore-test-gcp.sh — ' +
-                        'a renamed delimiter would slice nothing and compare two empty sets',
-                );
-            }
-            return src.slice(src.indexOf('\n', open) + 1, close);
-        }
+    /**
+     * `describe('the two Dockerfiles that build the image stay in step')` stood
+     * here and is DELETED with its subject (#2340).
+     *
+     * The retired snapshot drill built its OWN Postgres image inside a
+     * Dockerfile heredoc on the throwaway VM — hence "the two Dockerfiles" —
+     * and this section compared that copy's apt packages against
+     * `deploy/postgres/Dockerfile`'s, because two copies of the same recipe
+     * drift.
+     *
+     * The replacement runs `docker build deploy/postgres` directly, so there
+     * is ONE Dockerfile and the property this section enforced is now
+     * structural: the drill cannot build a different image from production
+     * because it builds production's. A guard is the right answer to a
+     * duplicate; removing the duplicate is a better one.
+     *
+     * The `CONSUMERS` entry for the deleted script went with it. `LITERAL_COUNT`
+     * is derived from that list rather than pinned separately, so the count
+     * followed automatically — which is why removing a consumer here does not
+     * need a second edit, and why it could not silently lower a floor.
+     */
 
-        /**
-         * The package SET an `apt-get install` installs.
-         *
-         * Comments are stripped first, then `\`-continuations are joined, so a
-         * five-line RUN reads as one command. Token scanning stops at `&&`
-         * because `&& rm -rf /var/lib/apt/lists/*` is not an installed package.
-         *
-         * A whole-file hash would be the wrong shape: the two files differ
-         * legitimately — the Dockerfile carries a 28-line comment header the
-         * heredoc does not, and it has a blank line the heredoc lacks.
-         *
-         * That first difference used to be STRUCTURAL rather than editorial:
-         * while the outer heredoc was unquoted it consumed the nested one's
-         * `\`-continuations, collapsing the whole RUN onto one physical line, so
-         * a `#` inside it would have commented out the remainder. #1225 quoted
-         * the outer delimiter, so the nested heredoc now reaches the VM byte
-         * for byte and a comment in it would be safe. Nothing here changes: the
-         * two files are still compared on the package SET, not on bytes.
-         */
-        function aptPackages(dockerfile: string): string[] {
-            const stripped = dockerfile.replace(/^\s*#.*$/gm, '');
-            const joined = stripped.replace(/\\\s*\n/g, ' ');
-            const found = new Set<string>();
-            for (const line of joined.split('\n')) {
-                const m = line.match(/apt-get\s+install\s+(.*)$/);
-                if (!m) continue;
-                for (const token of m[1].trim().split(/\s+/)) {
-                    if (token === '&&' || token === ';' || token === '|') break;
-                    if (!token || token.startsWith('-')) continue;
-                    found.add(token);
-                }
-            }
-            return [...found].sort();
-        }
-
-        it('the parser reads real packages from BOTH files — control on the comparison below', () => {
-            // Two empty sets are equal, so the equality assertion below is
-            // worthless without this.
-            const dockerfile = aptPackages(read('deploy/postgres/Dockerfile'));
-            const heredoc = aptPackages(restoreDrillDockerfile());
-            expect(dockerfile.length).toBeGreaterThan(0);
-            expect(heredoc.length).toBeGreaterThan(0);
-        });
-
-        it('the slice is the HEREDOC, not the whole script', () => {
-            // restore-test-gcp.sh:320 installs docker.io to prepare the VM.
-            // If that ever appears here, the extractor has widened to the file
-            // and the comparison is measuring the wrong thing.
-            expect(aptPackages(restoreDrillDockerfile())).not.toContain('docker.io');
-            expect(aptPackages(read('infra/scripts/restore-test-gcp.sh'))).toContain('docker.io');
-        });
-
-        it('the restore-drill heredoc installs the same packages as deploy/postgres/Dockerfile', () => {
-            // The heredoc is a COPY of that Dockerfile, because the drill is
-            // scp'd to a bare VM with no repo checkout. With PostGIS now
-            // INSTALLED rather than baked into the base, the package list is as
-            // load-bearing as the tag: a drill that builds without postgis
-            // cannot restore a database whose extensions need it, and that
-            // reads as a failed RESTORE rather than a broken build.
-            const dockerfile = aptPackages(read('deploy/postgres/Dockerfile'));
-            const heredoc = aptPackages(restoreDrillDockerfile());
-            expect({ dockerfile, heredoc }).toEqual({ dockerfile, heredoc: dockerfile });
-        });
-    });
 });
