@@ -17,6 +17,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createFieldOperation } from '@/app-layer/usecases/field-operation';
+import { deleteDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
 import { appliesAProduct } from '@/lib/operations/line-kind';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -170,6 +171,47 @@ describeFn('a bare activity is a line like any other (#2316)', () => {
                 `${TAG}-empty`,
             ),
         ).rejects.toThrow(/OPERATION_INPUT_AMBIGUOUS|exactly one input/i);
+    });
+
+    it('the treatment withdrawal removes a bare activity too', async () => {
+        // agrent-ios asked which route withdraws one. The answer is "the same
+        // one", and this proves it rather than inferring it from the shape:
+        // `deleteDiaryTreatment` takes only a handle, and its preconditions are
+        // canWrite, a single creator and `assertCanDeleteTreatment` — none of
+        // which reads a product or a dose.
+        //
+        // Proving it matters more than reading it, because the affordance bug
+        // agrent-ios caught came from exactly that kind of inference.
+        const handle = `${TAG}-withdraw`;
+        const created = await createFieldOperation(
+            ctx(),
+            locationId,
+            { assigneeUserId: userId, parcelIds, operationType: 'PRUNE' },
+            handle,
+            { treatmentGroupId: handle },
+        );
+        const before = await globalPrisma.operationParcel.count({
+            where: { tenantId, taskId: created.taskId },
+        });
+        expect(before).toBe(2);
+
+        const result = await deleteDiaryTreatment(ctx(), handle);
+        expect(result.lines).toBe(2);
+        // No register entries: these lines are PENDING, and the ДНЕВНИК entry
+        // is written by the completion mark rather than by creation. Asserted
+        // as zero rather than left unstated, so a future change that starts
+        // writing entries at creation shows up here.
+        expect(result.entries).toBe(0);
+
+        // A HARD delete for the lines, which is why there is no `deletedAt`
+        // filter here: `OperationParcel` carries no such column (Prisma refuses
+        // the filter outright — that is how this assertion was wrong first
+        // time). The soft-delete middleware the usecase documents applies to
+        // `Task`, whose row survives; the register lines do not.
+        const after = await globalPrisma.operationParcel.count({
+            where: { tenantId, taskId: created.taskId },
+        });
+        expect(after).toBe(0);
     });
 
     it('the partial unique index stops a second bare line on the same parcel', async () => {
