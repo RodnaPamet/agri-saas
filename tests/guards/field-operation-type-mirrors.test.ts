@@ -45,10 +45,10 @@ import { AUTOMATION_EVENTS } from '@/app-layer/automation/events';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { readCatalogue } from '../helpers/catalogue';
+
 const ALL = Object.keys(FieldOperationType) as FieldOperationType[];
 const ROOT = path.resolve(__dirname, '../..');
-const catalogue = (loc: string) =>
-    JSON.parse(readFileSync(path.join(ROOT, `messages/${loc}/app.json`), 'utf8'));
 
 /**
  * Values `CreateFieldOperationSchema` must NOT accept, each with why.
@@ -75,7 +75,15 @@ describe('FieldOperationType mirrors (#2316)', () => {
     });
 
     it.each(['bg', 'en'])('every value has a %s label', (loc) => {
-        const labels = catalogue(loc).journalEnums.operationType as Record<string, string>;
+        // Through `readCatalogue`, never a path of our own:
+        // `one-catalogue-reader.test.ts` holds `tests/helpers/catalogue.ts` as
+        // the ONE module allowed to know where the catalogue lives, so that
+        // `messages/` can be re-split without touching any caller. A direct
+        // read passes locally and reddens that guard in CI, which is how this
+        // file first failed.
+        const labels = (readCatalogue(loc) as unknown as {
+            journalEnums: { operationType: Record<string, string> };
+        }).journalEnums.operationType;
         expect(Object.keys(labels).sort()).toEqual([...ALL].sort());
         // A key present but empty renders as nothing, which the key-count
         // comparison above cannot see.
