@@ -16361,7 +16361,7 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
         "string",
         "null"
       ],
-      "description": "\`SPRAY\` or \`FERTILIZE\`."
+      "description": "The row’s \`FieldOperationType\`: \`SPRAY\`, \`FERTILIZE\`, \`SEED\`, \`PRUNE\`, \`CULTIVATE\`, \`HARVEST\` or \`OTHER\`. Widened by #2316 — it read “\`SPRAY\` or \`FERTILIZE\`” while the field could already carry the others.\\n\\n**Switch on this, not on \`parcelCount\`.** A bare activity — pruning, cultivation, harvest — has parcel lines just as a treatment does, so a client reading \`parcelCount > 0\` as “this is a treatment” offers correction and the per-treatment PDF on a row with no product or dose to correct, and the correction then refuses with \`NOT_A_TREATMENT\`. Gate those controls on \`kind\` being \`SPRAY\` or \`FERTILIZE\`.\\n\\n\`null\` is a row whose task predates the column, which the register reads by deriving from the title — treat it as a treatment, because that is all the field operations of that era were."
     },
     "productName": {
       "type": [
