@@ -1074,8 +1074,25 @@ export async function deleteDiaryTreatment(
 export interface TreatmentDefinitionLine {
     parcelId: string;
     parcelName: string;
-    /** The block the parcel sits in — the treatment's fan-out key. */
-    locationId: string | null;
+    /**
+     * The block the parcel sits in — the treatment's fan-out key.
+     *
+     * NOT nullable, and it never was in the data. `Parcel.locationId` is
+     * `String` with a required relation to `Location`, and
+     * `recordDiaryTreatment` keys its per-block grouping on it with no null
+     * check and no fallback bucket — which only works because the column is
+     * non-null: a parcel without a block could not be grouped, so it could not
+     * be recorded as a treatment at all. There is no orphan path either, the
+     * relation being `onDelete: Cascade`, and a soft-deleted parcel keeps its
+     * `locationId`.
+     *
+     * It was declared `string | null` defensively. The agrent-ios session asked
+     * whether a real treatment could carry a null here, because it was about to
+     * write a branch for the case — which is what a nullable-but-never-null
+     * field costs: dead defensive code in every client, for a shape the schema
+     * forbids.
+     */
+    locationId: string;
     /** NULL means the whole parcel. See the interface note. */
     treatedAreaHa: number | null;
 }
@@ -1347,7 +1364,7 @@ async function loadTreatmentForEdit(
             lines: lines.map((l) => ({
                 parcelId: l.parcelId,
                 parcelName: l.parcel.name,
-                locationId: l.parcel.locationId ?? null,
+                locationId: l.parcel.locationId,
                 // NULL stays NULL — see `TreatmentDefinitionLine`.
                 treatedAreaHa: l.treatedAreaHa == null ? null : Number(l.treatedAreaHa),
             })),
@@ -1660,11 +1677,7 @@ export async function correctDiaryTreatment(
                 // line's `locationId` precisely because the register resolves a
                 // block that way. No query, and no second notion of "which
                 // blocks" to keep in step with the prefill's.
-                const blocks = new Set(
-                    previous.lines
-                        .map((l) => l.locationId)
-                        .filter((id): id is string => id != null),
-                );
+                const blocks = new Set(previous.lines.map((l) => l.locationId));
                 const foreign = addedParcels.filter(
                     (pa) => pa.locationId == null || !blocks.has(pa.locationId),
                 );

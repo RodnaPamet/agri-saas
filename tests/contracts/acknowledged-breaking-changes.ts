@@ -299,6 +299,29 @@ export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[
             'consent text — and recorded here because this file carries the owner\'s ' +
             'approval and not an agent\'s own judgement.',
     },
+    {
+        kind: 'type-changed',
+        schema: 'TreatmentDefinitionLine',
+        property: 'locationId',
+        contractVersion: 3,
+        pr: 2305,
+        date: '2026-10-25',
+        why:
+            'The same shape as the #1467 entry above: this narrows a DECLARATION to what the '
+            + 'implementation already did, so no response any client can receive changes. '
+            + '`Parcel.locationId` is NOT NULL with a required relation to `Location`, and '
+            + '`recordDiaryTreatment` keys its per-block grouping on it with no null check and no '
+            + 'fallback bucket \u2014 which only works because the column is non-null: a parcel without '
+            + 'a block could not be grouped, so it could not be recorded as a treatment at all. '
+            + 'There is no orphan path either (the relation is `onDelete: Cascade`, and a '
+            + 'soft-deleted parcel keeps its `locationId`), so no stored row can produce the null '
+            + 'the spec admitted. A consumer sees strictly FEWER shapes than before, and nothing '
+            + 'round-trips the field \u2014 the correction PUT carries '
+            + '`parcels: [{parcelId, treatedAreaHa}]` and no `locationId`. '
+            + 'Prompted by the agrent-ios session asking whether a real treatment could carry a '
+            + 'null here, because it was about to write a branch for the case. That is the cost '
+            + 'of a nullable-but-never-null field, and the type is where the answer belongs.',
+    },
 ];
 
 /** True when `entry` covers `finding`. */

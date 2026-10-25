@@ -304,8 +304,16 @@ const TreatmentDefinitionLine = z
     .object({
         parcelId: z.string(),
         parcelName: z.string(),
-        locationId: z.string().nullable().openapi({
-            description: 'The block the parcel sits in \u2014 the treatment\u2019s fan-out key.',
+        locationId: z.string().openapi({
+            description:
+                'The block the parcel sits in \u2014 the treatment\u2019s fan-out key, and what a client '
+                + 'filters a parcel picker by when offering parcels to ADD.\n\n'
+                + '**Not nullable, and it never was in the data.** `Parcel.locationId` is NOT NULL '
+                + 'with a required relation to its block, and the record path keys its per-block '
+                + 'grouping on it with no null check \u2014 which only works because of that: a parcel '
+                + 'without a block could not be grouped, so it could not be recorded as a treatment '
+                + 'at all. It was declared nullable defensively, and that cost a client a branch it '
+                + 'was about to write for a shape the schema forbids.',
         }),
         treatedAreaHa: z.number().nullable().openapi({
             description:
