@@ -102,8 +102,8 @@ jobs:
               echo ""
               echo "Missing: **$missing**"
               echo ""
-              echo "**This is not a statement that the backup restores — it is a"
-              echo "statement that nobody checked.**"
+              echo "**This is not a statement that the backup restores —"
+              echo "it is a statement that nobody checked.**"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi

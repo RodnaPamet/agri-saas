@@ -251,25 +251,44 @@ describe('OI-3 — restore-test.yml wiring', () => {
     });
 
     it('actually invokes the drill script', () => {
-        expect(read(WORKFLOW)).toMatch(/infra\/scripts\/restore-test-gcp\.sh/);
+        expect(read(WORKFLOW)).toMatch(/infra\/scripts\/restore-test-dump\.sh/);
     });
 
-    it('drills EVERY stack in the project, not just this repo\'s own', () => {
-        // Both stacks sat with zero backups until 2026-08-01, and only
-        // one of them is built from this repo. Dropping a target here
-        // leaves a live database whose backup nobody ever restores.
-        const targets = wf.jobs['restore-test'].strategy.matrix.include.map(
-            (m: { target: string }) => m.target,
-        );
-        expect(targets).toEqual(expect.arrayContaining(['agrent', 'inflect-compliance']));
-    });
-
-    it('does not fail-fast — one broken backup must not hide the other', () => {
-        expect(wf.jobs['restore-test'].strategy['fail-fast']).toBe(false);
-    });
-
-    it('serialises the matrix (the drill names resources from a per-second timestamp)', () => {
-        expect(wf.jobs['restore-test'].strategy['max-parallel']).toBe(1);
+    /**
+     * "Drills EVERY stack in the project" lived here and asserted the matrix
+     * contained both `agrent` and `inflect-compliance`. Its property — a live
+     * database whose backup nobody restores must not be droppable from this
+     * file — still matters and has MOVED, not lapsed: see
+     * `tests/guards/restore-drill-targets-what-exists.test.ts`, which asserts
+     * the stronger version (every stack with a backup is drilled, and any
+     * stack NOT drilled is documented as unbacked).
+     *
+     * It could not stay as written. `inflect-compliance` has no backup at all
+     * since 2026-10-12 — zero snapshots, no bucket, no timer — so a matrix
+     * entry for it could only report its own impossibility, monthly, in red,
+     * for something this repository cannot fix.
+     *
+     * `fail-fast: false` and `max-parallel: 1` went with the matrix:
+     *
+     *   - fail-fast's property ("one broken backup must not hide the other")
+     *     returns the moment there is a second target, so the new guard
+     *     asserts it CONDITIONALLY rather than dropping it.
+     *   - max-parallel's stated reason was that "the drill names its temporary
+     *     disk and VM from a to-the-second timestamp, so two legs starting in
+     *     the same second would collide". The dump-based drill creates no disk
+     *     and no VM, so the collision it prevented cannot occur. Removed with
+     *     the reason recorded rather than carried forward as a rule whose
+     *     justification had quietly gone false.
+     */
+    it('leaves no matrix behind without the protections a matrix needs', () => {
+        // A future reader re-adding a second target must not get the old
+        // fail-fast default by omission.
+        const strategy = wf.jobs['restore-test'].strategy;
+        if (strategy?.matrix) {
+            expect(strategy['fail-fast']).toBe(false);
+        } else {
+            expect(strategy).toBeUndefined();
+        }
     });
 
     it('preflights its configuration and NAMES what is missing', () => {
@@ -286,43 +305,90 @@ describe('OI-3 — restore-test.yml wiring', () => {
         expect(src).toMatch(/exit 1/);
     });
 
-    it('re-raises the drill exit code instead of swallowing it', () => {
-        // THE worst regression available in this file. The drill step runs
-        // under `set +e` so it can capture 75 (EX_TEMPFAIL = "no capacity, so
-        // the backup was never tested") and tell the summary apart from a
-        // genuine restore failure. Delete the final `exit $code` and every
-        // drill failure — including a real one — goes GREEN while
-        // `job.status` still reads success. Nothing else here would notice:
-        // the executing test never reads this YAML.
-        const wf = yaml.load(read(WORKFLOW)) as WorkflowDoc;
+    it('a drill failure cannot go green', () => {
+        /**
+         * This replaces "re-raises the drill exit code instead of swallowing
+         * it", which was the worst regression available in the old file: the
+         * drill ran under `set +e` to capture 75 (EX_TEMPFAIL — "no capacity,
+         * so the backup was never tested"), and deleting the final
+         * `exit $code` sent every drill failure green while `job.status` still
+         * read success.
+         *
+         * That machinery is GONE because 75 is unreachable: it existed for
+         * `ZONE_RESOURCE_POOL_EXHAUSTED` when creating a pd-balanced disk, and
+         * the dump-based drill creates no disk. A branch for an impossible
+         * state is a lie in waiting.
+         *
+         * The PROPERTY it protected is the one asserted here, and it is now
+         * stronger rather than weaker: with no `set +e` the step fails
+         * natively, so the only ways to swallow a failure are the two checked
+         * below. The summary reads `outcome` instead of a captured code.
+         */
         const steps = Object.values(wf.jobs).flatMap((j) => j.steps ?? []);
         const drill = steps.find((st) => st?.id === 'drill');
-
-        // `id: drill` is what lets the summary read the exit code.
         expect(drill).toBeDefined();
-        // `expect` does not narrow for the compiler, and the previous `any`
-        // hid that. Throwing here fails with a readable reason rather than a
-        // `Cannot read properties of undefined` further down.
         if (!drill?.run) throw new Error('the `id: drill` step has no `run` block');
-        expect(drill.run).toMatch(/exit_code=\$\{code\}"?\s*>>\s*"\$GITHUB_OUTPUT"/);
-        // The run block must END by re-raising the captured code.
-        expect(drill.run.trim().split('\n').pop()!.trim()).toBe('exit $code');
+
+        // `continue-on-error` would mark the step failed and the JOB green.
+        expect({ continueOnError: drill['continue-on-error'] ?? false })
+            .toEqual({ continueOnError: false });
+        // `set +e` disarms errexit; `|| true` swallows the script's status.
+        expect({ disarmsErrexit: /set \+e|\|\|\s*true/.test(drill.run) })
+            .toEqual({ disarmsErrexit: false });
+        // And the summary must not be the thing deciding success.
+        const summary = steps.find((st) => /summary/i.test(st?.name ?? ''));
+        expect({ summaryDecidesNothing: !/exit \$?\{?code/.test(summary?.run ?? '') })
+            .toEqual({ summaryDecidesNothing: true });
     });
 
-    it('reports a capacity abort as NOT TESTED rather than as a bad backup', () => {
-        // The 2026-09-01 failure: both targets got
-        // ZONE_RESOURCE_POOL_EXHAUSTED and the summary announced "The
-        // production backup did not restore cleanly" — a false alarm about
-        // the one control that stands between a snapshot schedule and an
-        // unrecoverable database. The 75 arm must exist AND must still carry
-        // the leaked-resource sweep, since a capacity abort can happen after
-        // a disk holding production data has been created.
+    it('tells "could not run" apart from "restored and it was broken"', () => {
+        /**
+         * This replaces "reports a capacity abort as NOT TESTED rather than as
+         * a bad backup". That assertion pinned the `75` arm and its
+         * leaked-resource sweep, both of which are now unreachable:
+         *
+         *   - 75 (EX_TEMPFAIL) existed for `ZONE_RESOURCE_POOL_EXHAUSTED` when
+         *     creating a pd-balanced disk. The dump-based drill creates no
+         *     disk, so there is no capacity to exhaust.
+         *   - the sweep listed `restore-test-*` disks and instances, because a
+         *     capacity abort could leave a disk holding production data. The
+         *     drill now creates a container and a temp directory, both removed
+         *     by its EXIT trap, and neither holds anything after the process.
+         *
+         * The PROPERTY is what the 2026-09-01 failure was really about: the
+         * summary announced "the production backup did not restore cleanly"
+         * when in truth nobody had tried. A false alarm about the one control
+         * standing between a backup and an unrecoverable database is as
+         * damaging as a missed one, so the distinction is asserted here in the
+         * form the new drill can express.
+         */
         const src = read(WORKFLOW);
-        expect(src).toMatch(/steps\.drill\.outputs\.exit_code.*==?\s*"75"|"75"/);
-        expect(src).toMatch(/NOT TESTED/);
-        const armIdx = src.indexOf('NOT TESTED');
-        const arm = src.slice(armIdx, src.indexOf('elif', armIdx));
-        expect(arm).toMatch(/compute disks list --filter='name~restore-test-'/);
-        expect(arm).toMatch(/compute instances list --filter='name~restore-test-'/);
+
+        // 1. Unconfigured says "nobody checked", and FAILS rather than skips —
+        //    a skipped restore drill is indistinguishable from a passing one.
+        expect(src).toMatch(/it is a statement that nobody checked/);
+        expect(src).toMatch(/exit 1/);
+
+        // 2. The summary separates a BACKUP failure from a RESTORE failure.
+        //    "no dump, or no globals sibling" is not the drill's fault and must
+        //    not be reported as one; a failed battery is a real restore defect.
+        const failureArm = src.slice(src.indexOf('Restore drill failed'));
+        expect(failureArm).toMatch(/BACKUP\n?\s*#?\s*failure, not a drill failure|BACKUP/);
+        expect(failureArm).toMatch(/the battery failed/);
+
+        // 3. And the dead branch is really gone, not merely unused — a branch
+        //    for an impossible state is a lie in waiting.
+        //
+        //    Checked against COMMENT-STRIPPED yaml. The workflow header
+        //    explains at length why the EX_TEMPFAIL arm was not carried over,
+        //    so a raw search finds the word in the very prose that documents
+        //    its removal and reports the arm as still present. Third instance
+        //    of that mistake in this change alone.
+        const code = src
+            .split('\n')
+            .filter((l) => !/^\s*#/.test(l))
+            .join('\n');
+        expect({ carriesDeadCapacityArm: /NOT TESTED|EX_TEMPFAIL|exit_code.*75/.test(code) })
+            .toEqual({ carriesDeadCapacityArm: false });
     });
 });
