@@ -1,6 +1,6 @@
 # Backup & restore — the production VMs
 
-**Owner:** whoever is on call. **Last reviewed:** 2026-10-25 — and the headline finding of that review is in the box below: **there is no backup right now.**
+**Owner:** whoever is on call. **Last reviewed:** 2026-10-25 — `agrent`'s backup mechanism was replaced on that date; `inflect-compliance` remains unbacked.
 
 This is the operator runbook for the production database's backup and
 its restore drill. It supersedes the AWS RDS story that
@@ -38,46 +38,103 @@ on one disk in one zone.**
 
 ## The backups
 
-> ### ⚠ THERE IS CURRENTLY NO BACKUP OF EITHER PRODUCTION DATABASE.
+**`agrent` is backed up by a nightly `pg_dump` to GCS.** Stood up 2026-10-25
+to replace a snapshot schedule retired on 2026-10-12 — see
+[the gap](#the-13-day-gap-2026-10-12-to-2026-10-25) below, which is the reason
+the daily probe exists.
+
+| Property | value |
+|---|---|
+| Unit | `agrent-db-backup.timer` → `agrent-db-backup.service` |
+| Script | `/usr/local/sbin/agrent-db-backup` (root-only, 0755) |
+| Cadence | daily **01:15 UTC**, `Persistent=true`, up to 300 s jitter |
+| Destination | `gs://agrent-db-backups-hazel/agrent/YYYY/MM/DD/agrent-<UTC>.dump` |
+| Format | `pg_dump -Fc` (custom — `pg_restore` takes it directly) |
+| Retention | **30 days**, by bucket lifecycle rule. Nothing else deletes. |
+| Location | `eu` multi-region — survives the loss of `europe-west1-b` |
+| Size | ~2.3 MB per night (54 MB database) |
+| Identity | `agrent-db-backup@…` — `objectCreator` + `objectViewer` on this ONE bucket, **nothing at project level** |
+| Key | `/etc/agrent-db-backup/sa-key.json`, root:root 0600 |
+
+**Why 01:15 UTC.** An hour after the co-tenant's 00:15 dump, so two `pg_dump`s
+never contend for this host's two vCPUs, and well before the 04:40 UTC
+`Backup exists` probe — which must read a finished object rather than race the
+writer creating it.
+
+**Why a service-account key and not the metadata server.** This VM's default
+service account carries the `devstorage.read_only` **scope**, and a scope caps
+the token regardless of IAM, so no bucket binding would let it write. Changing
+scopes requires the VM **stopped**, which is downtime for both products on this
+host. The dedicated account holds neither role that can delete or overwrite, so
+a compromised box can add junk but **cannot destroy the history**.
+
+**It is application-consistent**, unlike the disk snapshot it replaces — see the
+warning at line 69 of the old section below, which this mechanism resolves
+rather than inherits.
+
+```bash
+# Is it armed, and when does it next run?
+systemctl list-timers agrent-db-backup.timer
+
+# Did the last run succeed, and what did it say?
+systemctl show agrent-db-backup.service -p Result -p ExecMainStatus
+journalctl -u agrent-db-backup.service -n 20
+
+# What exists? (needs the key; the VM's own token cannot read this bucket)
+sudo CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=/etc/agrent-db-backup/sa-key.json \
+  gcloud storage ls -l 'gs://agrent-db-backups-hazel/**'
+```
+
+**Verified end to end on 2026-10-25.** A run is not "uploaded and hoped": it
+checks the dump is non-empty, that `pg_restore --list` parses it, that the
+uploaded object's size matches, that a re-download is **byte-identical**, and
+that the downloaded copy still parses to the same TOC entry count.
+
+```
+[agrent-db-backup] OK gs://agrent-db-backups-hazel/agrent/2026/10/25/agrent-20261025T092310Z.dump
+                      size=2321429B toc_entries=1833 (local 1833) db=agrent_production
+```
+
+> ### `inflect-compliance` is STILL unbacked
 >
-> **Measured 2026-10-25.** Not a warning about a risk — a statement about the
-> present. The snapshot mechanism this section used to describe was
-> **deliberately retired on 2026-10-12**, and nothing replaced it (confirmed
-> with the project owner, 2026-10-25). Tracked on
-> [#2329](https://github.com/RodnaPamet/agri-saas/issues/2329).
->
-> ```
-> $ gcloud compute snapshots list          → 0 rows
-> $ gcloud compute resource-policies list  → 0 rows
-> $ gcloud compute disks list --format="value(name,resourcePolicies)"
->   agrent               (empty)
->   inflect-compliance   (empty)
-> ```
->
-> The audit trail, all by the project owner's own account, is a correctly
-> ordered teardown rather than an accident — a policy delete fails while it is
-> still attached, so detach-then-delete is a sequence you can only perform on
-> purpose:
->
-> ```
-> 07:57:44–47  v1.compute.disks.removeResourcePolicies   detach from both disks
-> 07:57:50–52  v1.compute.resourcePolicies.delete        delete both schedules
-> 07:58:19+    v1.compute.snapshots.delete  × 60         delete the artefacts
-> ```
->
-> **Everything below about snapshots is therefore HISTORY, not procedure.** It
-> is kept rather than deleted for two reasons: the restore procedure further
-> down is written against it and would otherwise be unreadable, and it is the
-> obvious thing to stand back up. Read it as a specification to re-implement,
-> not as a description of what exists.
->
-> **Why nobody noticed for 13 days.** `restore-test.yml` asserts exactly the
-> right thing — that the schedule is attached and the newest snapshot is under
-> 26h old — and it was never red. It was **absent**: it last ran 2026-10-03,
-> the teardown was the 12th, and its next run was 2026-11-01. The check was
-> correct and not due. A daily `Backup exists` probe now asks the cheap half of
-> the question so that this interval is a day; the monthly drill keeps the
-> expensive half.
+> Everything above is `agrent` only. The sibling VM's schedule was deleted in
+> the same sweep and **nothing has replaced it** — `gcloud compute snapshots
+> list` returns zero rows for that disk too. It is a different product in a
+> different repo; this is recorded here because the backup tooling lives here
+> and the drill below targets both. Not this repo's to fix, and not safe to
+> leave unsaid.
+
+### The 13-day gap (2026-10-12 to 2026-10-25)
+
+Worth keeping, because the failure was not in the backups — it was in the
+monitoring, and the same shape can recur against the mechanism above.
+
+The snapshot schedules were **deliberately** torn down on 2026-10-12. The audit
+order proves intent rather than accident, since a policy delete fails while it
+is still attached:
+
+```
+07:57:44–47  v1.compute.disks.removeResourcePolicies   detach from both disks
+07:57:50–52  v1.compute.resourcePolicies.delete        delete both schedules
+07:58:19+    v1.compute.snapshots.delete  × 60         delete the artefacts
+```
+
+Nothing replaced them, and nothing said so for 13 days. `restore-test.yml`
+asserts exactly the right thing — schedule attached, newest snapshot under 26h
+— and it was **never red**. It was *absent*: it last ran 2026-10-03, and its
+next run was 2026-11-01.
+
+```
+2026-10-03  drill ran, passed
+2026-10-12  teardown
+2026-10-25  13 days, nothing reported — found by hand, chasing a different question
+2026-11-01  the first run that would have failed
+```
+
+A correct check on a monthly cadence cannot see something that disappears
+inside the month. That is why the daily **`Backup exists`** probe now asks the
+cheap half of the question — "is there a recent backup" — and leaves the
+expensive half — "does restoring it work" — to the drill. See #2329.
 
 ### What the mechanism was (retired 2026-10-12)
 
