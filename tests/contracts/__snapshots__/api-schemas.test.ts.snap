@@ -17,7 +17,7 @@ exports[`API contract — per-schema snapshots schema: AbandonedTreatment 1`] = 
     },
     "lines": {
       "type": "integer",
-      "description": "Unfinished lines moved to SKIPPED."
+      "description": "Register lines REMOVED — hard-deleted, not moved to \`SKIPPED\`. The count is of rows that no longer exist."
     }
   },
   "required": [

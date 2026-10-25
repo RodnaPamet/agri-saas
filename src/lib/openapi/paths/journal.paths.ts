@@ -776,9 +776,41 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                     treatmentGroupId: z.string(),
                     tasks: z.number().int().openapi({ description: 'Tasks soft-deleted — one per block.' }),
                     entries: z.number().int().openapi({ description: 'ДНЕВНИК entries withdrawn.' }),
-                    lines: z.number().int().openapi({ description: 'Unfinished lines moved to SKIPPED.' }),
+                    // This said "Unfinished lines moved to SKIPPED", which was
+                    // true before the 2026-10-24 "what's deleted is deleted"
+                    // ruling and false after it. `OperationParcel` carries no
+                    // `deletedAt` column at all, so there is no soft state for
+                    // a line to be in — Prisma refuses the filter outright,
+                    // which is how the staleness surfaced. The operation's own
+                    // description has said "physically deleted" throughout, so
+                    // this one field contradicted the text above it.
+                    //
+                    // The history stays HERE rather than in the description: a
+                    // client reading the generated docs needs to know what the
+                    // number counts, not which ruling changed it.
+                    lines: z.number().int().openapi({
+                        description:
+                            'Register lines REMOVED \u2014 hard-deleted, not moved to `SKIPPED`. '
+                            + 'The count is of rows that no longer exist.',
+                    }),
                 })
                 .openapi('AbandonedTreatment'),
+        },
+        extraResponses: {
+            ...codedErrorResponses({
+                403:
+                    '`TREATMENT_DELETE_NOT_PERMITTED` when the caller is neither the person who '
+                    + 'recorded the treatment nor a farm administrator \u2014 the same rule as the '
+                    + 'correction.',
+                409:
+                    '`TREATMENT_MIXED_AUTHORSHIP` when the handle carries tasks written by more than '
+                    + 'one person, which binds administrators too: "who may withdraw this" has no '
+                    + 'single answer once a handle has been reused across people.\n\n'
+                    + 'Declared because a client reads `responses` rather than prose (#1391): both '
+                    + 'codes were named in this operation\u2019s text while the operation declared '
+                    + 'neither status, so a generated client could not tell this 409 from a '
+                    + '`STALE_DATA` one and treated every conflict as a stale edit.',
+            }),
         },
     });
 

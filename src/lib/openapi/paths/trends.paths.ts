@@ -288,7 +288,7 @@ export function registerTrendsPaths(registry: OpenAPIRegistry): void {
         operationId: 'getTrendPrices',
         summary: 'Тенденции — market price series for one commodity',
         description:
-            'The GLOBAL market-price series for one commodity, grouped by (source, region) so a chart can split lines that differ in unit or currency. The payload is tenant-AGNOSTIC — the tenant in the path authenticates the caller, it does not scope the data. ' +
+            'The GLOBAL market-price series for one commodity, grouped by (source, region, stage) so a chart can split lines that differ in unit or currency. **`stage` is part of the identity, not a variation**: the nine Bulgarian wheat delivery points disagree by tens of euros, so merging on (source, region) alone averages unrelated markets \u2014 see `TrendSeries.stage`. The payload is tenant-AGNOSTIC — the tenant in the path authenticates the caller, it does not scope the data. ' +
             '\n\nLabels are localised to the READER’s own language column, not to a request cookie: a native client sends no `NEXT_LOCALE`, so a cookie-derived locale would hand the phone the unauthenticated `en` default. ' +
             '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**. The ETag is derived from the payload, which differs by language, so it varies by locale correctly — hashing the query alone would have served a cached 304 in the wrong language. Cached 6h server-side.',
         tags: ['Trends'],
