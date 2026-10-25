@@ -148,6 +148,13 @@ on:
       # accepted over the alternative, which is a scheduled probe that can stop
       # running with nothing saying so — the #805 failure exactly.
       - "Realtime probe"
+      # Watched for the same reason `Realtime probe` is, and with the
+      # same accepted cost: a red run files a SECOND issue on top of the
+      # clearly-titled one the probe files itself. The pairing is kept
+      # because the central notifier is what reports a probe that stops
+      # RUNNING, which the probe cannot report about itself. Cheaper here
+      # than for the realtime one — this is 4x a day, not hourly.
+      - "Public surface probe"
     types: [completed]
 
 permissions:
