@@ -174,23 +174,47 @@ export function canDeleteTreatment(
  *     route that drops БАБХ records, which is the thing the issue was written
  *     to prevent". The new ruling permits exactly that.
  *
- * What made the wider door defensible, AS WRITTEN on 2026-10-22, was that the
- * other two protections stayed and one was added: the delete is SOFT, it is
- * AUDITED, and it is RESTORABLE from «Кошче» by the same people.
+ * ## What makes the wider door defensible — TWO protections, not three
  *
- * **The third of those is no longer true (#2280).** #2254 removed «Кошче» on
- * the owner's ruling of 2026-10-24 that deleted means deleted, and
- * `deleteDiaryTreatment` now physically deletes the `OperationParcel` lines and
- * the `LogEntry` rows — neither model is in `SOFT_DELETE_MODELS`, so those are
- * real DELETEs — while soft-deleting only the tasks. No restore path exists
- * anywhere in `src`. So "nothing is destroyed" is false in the most literal
- * way: the register lines the ДНЕВНИК prints are gone, and they are what the
- * register was made of.
+ * As written on 2026-10-22 the justification rested on three: the delete is
+ * SOFT, it is AUDITED, and it is RESTORABLE from «Кошче» by the same people —
+ * "nothing is destroyed; a withdrawal is reversible by anyone who could have
+ * made it".
  *
- * The rule is UNCHANGED here, deliberately — #2254 is the later and more
- * specific ruling and it was made explicitly. But the justification above is
- * now two protections rather than three, and #2280 carries that back to the
- * owner rather than leaving the code claiming something untrue.
+ * **The third is gone.** #2254 removed «Кошче» on the owner's ruling of
+ * 2026-10-24 that deleted means deleted, and `deleteDiaryTreatment` now
+ * physically deletes the `OperationParcel` lines and the `LogEntry` rows —
+ * neither model is in `SOFT_DELETE_MODELS`, so those are real DELETEs — while
+ * soft-deleting only the tasks. No restore path exists anywhere in `src`. So
+ * "nothing is destroyed" was false in the most literal way: the register lines
+ * the ДНЕВНИК prints are gone, and they are what the register was made of.
+ *
+ * **Owner ruling 2026-10-25 (#2280): the rule STAYS creator-or-admin**, with
+ * the justification resting on the two that remain. It was put to the owner
+ * with the alternative of narrowing back to ADMIN-only and they chose to keep
+ * the wider door knowing the restore is gone. So this paragraph is the current
+ * justification and not a pending question:
+ *
+ *   • **AUDITED.** `deleteDiaryTreatment` writes one `ENTITY_DELETED` event
+ *     naming the handle and what it removed. The act is attributable even
+ *     though its subject is not recoverable, which is what an audit is for.
+ *   • **The task shell survives**, soft-deleted, so the treatment's existence
+ *     and its authorship remain readable after the lines are gone.
+ *
+ * ## And the remedy a creator needs is no longer destructive
+ *
+ * Worth recording because it changes the shape of the risk rather than the
+ * rule. The 2026-10-22 widening existed so the person who recorded a wrong
+ * treatment could put it right; withdrawing and re-recording was then the only
+ * way to do that. Since #2172 shipped it is not — a creator can CORRECT a
+ * treatment in place, down to its dose, its product and its parcel set, with
+ * the previous values kept on a `TreatmentCorrection` trail.
+ *
+ * So the wide door is now the SECOND remedy rather than the only one, and the
+ * case where a creator still needs it is a treatment that should not exist at
+ * all rather than one that is wrong. That is a narrower case than the one the
+ * widening was argued for, and it is the reason keeping the rule costs less
+ * than it did on 2026-10-22.
  *
  * Same shape as `assertCanEditTask`, and deliberately a separate function: the
  * two answer different questions about different entities, and collapsing them
