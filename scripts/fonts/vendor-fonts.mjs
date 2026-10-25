@@ -78,6 +78,71 @@ const FAMILIES = [
     { family: 'Inter', weights: [300, 400, 500, 600, 700, 800] },
 ];
 
+/**
+ * ── SUBSETS WE DELIBERATELY DO NOT SHIP ── #1969
+ *
+ * Google's css2 response cuts each family into subsets and gives each its own
+ * `unicode-range`. The browser then fetches a file per subset the text touches.
+ * That is the right default for a multilingual site and the wrong one here: this
+ * product's UI is Bulgarian, so for `Onest` — the HEADING family — it meant every
+ * heading fetched the LATIN cut to render a Cyrillic string.
+ *
+ * Measured on `/f/lighthouse`, whose visible text is entirely Cyrillic:
+ *
+ *     onest-cyrillic.woff2   15,860 B   needed
+ *     onest-latin.woff2      33,760 B   fetched for the SPACE in the H1
+ *
+ * `U+0020` lives inside the latin cut's `U+0000-00FF`, and the Cyrillic cut
+ * claims no space, no digits and no basic punctuation. So the file was fetched by
+ * every multi-word heading in the product, whatever the words were.
+ *
+ * ## Why dropping the whole cut, and not just `U+0020` from its range
+ *
+ * Narrowing the range to exclude the space would make a PURE Cyrillic heading
+ * skip the file, and is visually free — a space has no ink. But a farm called
+ * `Победа 2024`, `Победа-Добрич` or `Победа OOD` is straight back to fetching
+ * 33 KB, because digits, hyphen and latin letters all sit in `U+0000-00FF` and
+ * all have real shapes. That change would reliably improve the Lighthouse
+ * fixture, whose seeded name happens to be two Cyrillic words, and only
+ * sometimes improve a real farm page. Dropping the cut outright is unconditional.
+ *
+ * ## Why nothing is lost on the wire
+ *
+ * `--font-heading` is `'Onest', 'Inter', system-ui` and CSS font fallback is
+ * PER GLYPH, so a latin character in a heading resolves to Inter. For `bg`,
+ * `preloadFaces` already preloads `inter-latin.woff2` (48,256 B) — see
+ * `src/lib/fonts/preload.ts` — so those glyphs come from a file already on the
+ * wire, not a new request. `src/app/layout.tsx` states the same intent in prose:
+ * "Onest and Bricolage fall back to Inter, which is preloaded."
+ *
+ * The visible cost, accepted by the owner 2026-10-25: latin letters and digits
+ * inside a heading render in Inter rather than Onest. Measured over
+ * `messages/bg/*.json` with ICU `{placeholders}` removed, 8.2% of rendered
+ * strings (488 of 5,972) contain a latin letter, and digits occur 432 times.
+ *
+ * ## Why this lives HERE
+ *
+ * `fonts.css` and `fonts.lock.json` are both GENERATED. Deleting the faces from
+ * either by hand would be silently restored by the next
+ * `vendor-fonts.mjs --write-lock`, and the verify arm would meanwhile read the
+ * absent faces as a lock that had fallen behind Google. Filtering at the parse
+ * boundary makes the omission survive re-vendoring and show up in one place.
+ *
+ * Keyed by family: this is a statement about what the PRODUCT renders in that
+ * family, not about the font. Nothing here is a claim that the glyphs are
+ * unavailable — only that this UI never asks Onest for them.
+ */
+export const NOT_SHIPPED = {
+    // Cyrillic + cyrillic-ext are kept; everything else in Onest is reachable
+    // only through Inter, which every `bg` page already preloads.
+    Onest: ['latin', 'latin-ext', 'math', 'symbols', 'vietnamese'],
+};
+
+/** A face survives unless its family names its subset in `NOT_SHIPPED`. */
+export function isShipped(face) {
+    return !(NOT_SHIPPED[face.family] ?? []).includes(face.subset);
+}
+
 const CHROME_UA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -528,7 +593,19 @@ async function main() {
     }
 
     const css = await fetchText(css2Url());
-    const faces = parseCss2(css).filter((f) => f.url);
+    // `isShipped` BEFORE anything derives a filename, a group or a diff, so the
+    // omission reaches the lock, the stylesheet and the verify arm identically.
+    const parsed = parseCss2(css).filter((f) => f.url);
+    const faces = parsed.filter(isShipped);
+    const dropped = parsed.length - faces.length;
+    if (dropped > 0) {
+        console.log(
+            `[fonts] ${dropped} face(s) not shipped by deliberate omission (#1969): `
+                + Object.entries(NOT_SHIPPED)
+                      .map(([fam, subs]) => `${fam} ${subs.join('/')}`)
+                      .join('; '),
+        );
+    }
     if (faces.length === 0) throw new Error('parsed zero @font-face blocks — did the css2 format change?');
 
     // Name each face's file from its (family, subset) GROUP rather than from
