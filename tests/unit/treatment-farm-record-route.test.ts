@@ -24,6 +24,16 @@ jest.mock('@/app-layer/reports/pdf/collect-buffer', () => ({
     collectPdfBuffer: (...a: unknown[]) => mockCollect(...a),
 }));
 
+// The route reads the treatment's KIND to decide which refusal an empty
+// document deserves (#2316). Mocked because this file asserts the mapping, not
+// the lookup — `tests/integration/seed-in-the-diary.test.ts` proves the real
+// query. Leaving it unmocked is what reddened CI: the handler reached real
+// Prisma from a unit test and answered 500 where the suite expected 404.
+const mockTreatmentKindOf = jest.fn();
+jest.mock('@/app-layer/usecases/diary-treatment', () => ({
+    treatmentKindOf: (...a: unknown[]) => mockTreatmentKindOf(...a),
+}));
+
 import { NextRequest } from 'next/server';
 import { GET } from '@/app/api/t/[tenantSlug]/journal/treatments/[treatmentGroupId]/farm-record/route';
 
@@ -38,6 +48,9 @@ beforeEach(() => {
     jest.clearAllMocks();
     mockGetTenantCtx.mockResolvedValue({ tenantId: 't1', userId: 'u1', role: 'OWNER' });
     mockCollect.mockResolvedValue(Buffer.from('%PDF-1.7 fake'));
+    // The default is the emptiest world: the handle names nothing. Each test
+    // that cares about a kind sets its own.
+    mockTreatmentKindOf.mockResolvedValue(null);
 });
 
 describe('GET …/journal/treatments/{handle}/farm-record', () => {
@@ -72,6 +85,48 @@ describe('GET …/journal/treatments/{handle}/farm-record', () => {
         });
         // And no bytes were collected — a 404 must not have rendered.
         expect(mockCollect).not.toHaveBeenCalled();
+    });
+
+    it('refuses a SOWING with its own code, not TREATMENT_NOT_FOUND', async () => {
+        // A sowing's record EXISTS and prints in «ДНЕВНИК НА СТОПАНСТВОТО»; it
+        // is only the БАБХ register that excludes it. Answering
+        // TREATMENT_NOT_FOUND would say the handle names nothing and send a
+        // client looking for a write that did not fail.
+        mockGenerate.mockResolvedValue(null);
+        mockTreatmentKindOf.mockResolvedValue('SEED');
+
+        const res = await get();
+        expect(res.status).toBe(404);
+        await expect(res.json()).resolves.toMatchObject({
+            error: { code: 'NOT_IN_BABH_REGISTER' },
+        });
+        expect(mockCollect).not.toHaveBeenCalled();
+    });
+
+    it('a treatment that recorded nothing is NOT_FOUND, not excluded', async () => {
+        // The control for the case above. A SPRAY with no completed line
+        // produces no document either, and if the exclusion branch widened to
+        // cover it the farmer would be told their spraying is out of the
+        // register — a false statement about a regulated record.
+        mockGenerate.mockResolvedValue(null);
+        mockTreatmentKindOf.mockResolvedValue('SPRAY');
+
+        const res = await get();
+        expect(res.status).toBe(404);
+        await expect(res.json()).resolves.toMatchObject({
+            error: { code: 'TREATMENT_NOT_FOUND' },
+        });
+    });
+
+    it('does not look the kind up when there IS a document', async () => {
+        // The lookup is a second query, and it belongs on the error path only.
+        // Pinned because moving it above the `!pdfDoc` branch would cost every
+        // successful export an extra round trip with nothing failing.
+        mockGenerate.mockResolvedValue({ marker: 'doc' });
+
+        const res = await get();
+        expect(res.status).toBe(200);
+        expect(mockTreatmentKindOf).not.toHaveBeenCalled();
     });
 
     it('scopes the document to the handle from the path', async () => {
