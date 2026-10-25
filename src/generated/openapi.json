@@ -13796,6 +13796,74 @@
         ],
         "description": "A treatment a farmer already carried out. Recorded as DONE — handing work to an operator stays in Задачи."
       },
+      "RecordFarmActivity": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PRUNE",
+              "CULTIVATE",
+              "SEED",
+              "HARVEST"
+            ],
+            "description": "The activity. `SEED` **is** сеитба — it already existed on `FieldOperationType`, so sowing needs no new value and this list is four kinds rather than the three #2316 added.\n\n`SPRAY` and `FERTILIZE` are deliberately absent: they apply a product and belong on `POST /journal/treatments`, which takes the dose, the ЗЗР registration and the quarantine period this route has nowhere to put. `OTHER` is absent too — existing rows under it carry a product, so admitting it here would make one value mean both things."
+          },
+          "occurredOn": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "The calendar DAY the activity happened — ONE day, not a range (owner, 2026-10-25). The template’s «01-05.02.2025» is not carried; an activity spanning several days is dated as one.\n\nRefusals are shared with the treatments route and keep its prefix: a future day is `TREATMENT_DATE_IN_FUTURE`, and a day that does not exist such as 2026-02-31 is `TREATMENT_DATE_INVALID` rather than rolled forward. The prefix is historical — the codes describe the DATE, and renaming them would make a client handle two codes for one condition."
+          },
+          "parcelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "description": "The parcels worked, as one flat list that may span blocks. The server groups them and writes one field operation per block, for the reason the treatments route documents: the ДНЕВНИК resolves a block through the task’s location link, so one task spanning blocks would print a parcel under a block it was never on."
+          },
+          "parcels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "parcelId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "treatedAreaHa": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "parcelId",
+                "treatedAreaHa"
+              ]
+            },
+            "description": "Per-parcel worked area in HECTARES, for parcels only partly covered. A REFINEMENT of `parcelIds`, not a replacement, and bounded server-side at the parcel’s own area with `TREATMENT_AREA_EXCEEDS_PARCEL` at the register’s own дка resolution.\n\n**Send a whole parcel as its exact area, not as an omission** — the same rule as treatments (#2308): a stored NULL means “the whole parcel” and therefore FOLLOWS the parcel’s current area, which is right for a parcel whose area is unknown and wrong for a historical record of one that is known. Omit a parcel here only when it has no recorded area."
+          },
+          "harvestKg": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "ONE total for the whole harvest, in kilograms — what the form prints as «Продукция» (owner, 2026-10-25).\n\n**Not per parcel, and not apportioned.** Splitting a measured total across parcels by area would write figures nobody measured into a document a farmer signs. Stored as a single `LogQuantity` on one line’s journal entry, labelled as the activity’s total.\n\n`HARVEST` only. Sent with any other kind it is refused as a validation error rather than ignored, because a quantity silently dropped is a farmer believing they recorded a yield they did not.",
+            "example": 12400
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Defaults to the activity name and the block, as the treatments route does."
+          }
+        },
+        "required": [
+          "kind",
+          "occurredOn",
+          "parcelIds"
+        ],
+        "description": "A non-chemical activity a farmer already carried out — pruning, cultivation, sowing or harvest. Recorded as DONE, like a treatment: handing work to an operator stays in Задачи."
+      },
       "RecordedTreatment": {
         "type": "object",
         "properties": {

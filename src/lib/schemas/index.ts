@@ -1008,6 +1008,51 @@ const HarvestLotPayloadSchema = z.object({
  * sits in is not something a client should have to know to describe what it
  * sprayed.
  */
+/**
+ * The structural `parcels[]` rules, shared by the treatment and the activity
+ * write (#2316).
+ *
+ * Extracted rather than copied: both writes refine the same list in the same
+ * way, and two copies of "an area must name a parcel you listed" is how two
+ * documents start disagreeing about which parcel a number belongs to.
+ *
+ * Structural ONLY. The area bound against the parcel's own `areaHa` lives in
+ * the usecase, because it needs the parcel row; these two need nothing but the
+ * request, so refusing here keeps them out of the coded-refusal vocabulary and
+ * names the offending INDEX rather than just the request.
+ */
+export function refineParcelAreaList(
+    val: { parcelIds: string[]; parcels?: { parcelId: string }[] },
+    ctx: z.RefinementCtx,
+): void {
+    if (!val.parcels) return;
+    const allowed = new Set(val.parcelIds);
+    const seen = new Set<string>();
+    val.parcels.forEach((p, i) => {
+        if (!allowed.has(p.parcelId)) {
+            // Silently dropping it would lose an area the user typed, and print
+            // the whole parcel instead — a bigger number than they recorded, on
+            // a document they submit.
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['parcels', i, 'parcelId'],
+                message: 'Every parcels[].parcelId must also appear in parcelIds',
+            });
+        }
+        if (seen.has(p.parcelId)) {
+            // Two areas for one parcel has no defined meaning, and whichever
+            // won would be an arbitrary choice over a number that reaches the
+            // register.
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['parcels', i, 'parcelId'],
+                message: 'A parcel may carry only one treated area',
+            });
+        }
+        seen.add(p.parcelId);
+    });
+}
+
 export const RecordDiaryTreatmentSchema = z
     .object({
         kind: z.enum(['SPRAY', 'FERTILIZE']).openapi({
@@ -1087,44 +1132,121 @@ export const RecordDiaryTreatmentSchema = z
         }),
         title: z.string().min(1).max(255).optional(),
     })
-    .superRefine((val, ctx) => {
-        // Structural only. The AREA bound lives in the usecase, because it
-        // needs the parcel row; these two checks need nothing but the request,
-        // so refusing here keeps them out of the coded-refusal vocabulary and
-        // names the offending INDEX rather than just the request.
-        if (!val.parcels) return;
-        const allowed = new Set(val.parcelIds);
-        const seen = new Set<string>();
-        val.parcels.forEach((p, i) => {
-            if (!allowed.has(p.parcelId)) {
-                // Silently dropping it would lose an area the user typed, and
-                // print the whole parcel instead — a bigger number than they
-                // recorded, on a document they submit.
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    path: ['parcels', i, 'parcelId'],
-                    message: 'Every parcels[].parcelId must also appear in parcelIds',
-                });
-            }
-            if (seen.has(p.parcelId)) {
-                // Two areas for one parcel has no defined meaning, and
-                // whichever won would be an arbitrary choice over a number
-                // that reaches the register.
-                ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
-                    path: ['parcels', i, 'parcelId'],
-                    message: 'A parcel may carry only one treated area',
-                });
-            }
-            seen.add(p.parcelId);
-        });
-    })
+    .superRefine(refineParcelAreaList)
     .openapi('RecordDiaryTreatment', {
         description:
             'A treatment a farmer already carried out. Recorded as DONE — handing work to an operator stays in Задачи.',
     });
 
 export type RecordDiaryTreatmentBody = z.infer<typeof RecordDiaryTreatmentSchema>;
+
+/**
+ * «Нов запис» for a NON-chemical activity — #2316 / agrent-ios #439.
+ *
+ * The treatments schema minus its product half, which is the whole difference:
+ * pruning, cultivation, sowing and harvest apply nothing. Owner-confirmed
+ * 2026-10-25, directly rather than through the relay that proposed it.
+ *
+ * ## It is a sibling, not a widening of RecordDiaryTreatmentSchema
+ *
+ * That schema has seven product fields and a mirror —
+ * `CorrectDiaryTreatmentSchema` tracks it field for field by design — and both
+ * feed a regulated document with a correction trail and a CAS version. Making
+ * seven fields conditionally valid across two mirrored schemas is a lot of new
+ * ways to admit a half-filled chemical record, which is exactly what #2316's
+ * CHECK exists to prevent. The shared MACHINERY is what gets reused:
+ * `refineParcelAreaList` here, and `parseRecordedDay` plus `exceedsParcel` in
+ * the usecase.
+ */
+export const RecordFarmActivitySchema = z
+    .object({
+        kind: z.enum(['PRUNE', 'CULTIVATE', 'SEED', 'HARVEST']).openapi({
+            description:
+                'The activity. `SEED` **is** сеитба — it already existed on `FieldOperationType`, '
+                + 'so sowing needs no new value and this list is four kinds rather than the three '
+                + '#2316 added.\n\n'
+                + '`SPRAY` and `FERTILIZE` are deliberately absent: they apply a product and belong '
+                + 'on `POST /journal/treatments`, which takes the dose, the ЗЗР registration and the '
+                + 'quarantine period this route has nowhere to put. `OTHER` is absent too — existing '
+                + 'rows under it carry a product, so admitting it here would make one value mean '
+                + 'both things.',
+        }),
+        occurredOn: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a calendar day, YYYY-MM-DD')
+            .openapi({
+                description:
+                    'The calendar DAY the activity happened — ONE day, not a range (owner, '
+                    + '2026-10-25). The template\u2019s «01-05.02.2025» is not carried; an activity '
+                    + 'spanning several days is dated as one.\n\n'
+                    + 'Refusals are shared with the treatments route and keep its prefix: a future '
+                    + 'day is `TREATMENT_DATE_IN_FUTURE`, and a day that does not exist such as '
+                    + '2026-02-31 is `TREATMENT_DATE_INVALID` rather than rolled forward. The prefix '
+                    + 'is historical \u2014 the codes describe the DATE, and renaming them would make '
+                    + 'a client handle two codes for one condition.',
+            }),
+        parcelIds: z.array(z.string().min(1)).min(1).openapi({
+            description:
+                'The parcels worked, as one flat list that may span blocks. The server groups them '
+                + 'and writes one field operation per block, for the reason the treatments route '
+                + 'documents: the ДНЕВНИК resolves a block through the task\u2019s location link, so '
+                + 'one task spanning blocks would print a parcel under a block it was never on.',
+        }),
+        parcels: z
+            .array(
+                z.object({
+                    parcelId: z.string().min(1),
+                    treatedAreaHa: z.number().positive(),
+                }),
+            )
+            .optional()
+            .openapi({
+                description:
+                    'Per-parcel worked area in HECTARES, for parcels only partly covered. A '
+                    + 'REFINEMENT of `parcelIds`, not a replacement, and bounded server-side at the '
+                    + 'parcel\u2019s own area with `TREATMENT_AREA_EXCEEDS_PARCEL` at the register\u2019s '
+                    + 'own дка resolution.\n\n'
+                    + '**Send a whole parcel as its exact area, not as an omission** \u2014 the same '
+                    + 'rule as treatments (#2308): a stored NULL means \u201cthe whole parcel\u201d and '
+                    + 'therefore FOLLOWS the parcel\u2019s current area, which is right for a parcel '
+                    + 'whose area is unknown and wrong for a historical record of one that is known. '
+                    + 'Omit a parcel here only when it has no recorded area.',
+            }),
+        harvestKg: z.number().positive().optional().openapi({
+            description:
+                'ONE total for the whole harvest, in kilograms \u2014 what the form prints as '
+                + '«Продукция» (owner, 2026-10-25).\n\n'
+                + '**Not per parcel, and not apportioned.** Splitting a measured total across '
+                + 'parcels by area would write figures nobody measured into a document a farmer '
+                + 'signs. Stored as a single `LogQuantity` on one line\u2019s journal entry, labelled '
+                + 'as the activity\u2019s total.\n\n'
+                + '`HARVEST` only. Sent with any other kind it is refused as a validation error '
+                + 'rather than ignored, because a quantity silently dropped is a farmer believing '
+                + 'they recorded a yield they did not.',
+            example: 12400,
+        }),
+        title: z.string().min(1).max(255).optional().openapi({
+            description: 'Defaults to the activity name and the block, as the treatments route does.',
+        }),
+    })
+    .superRefine((val, ctx) => {
+        refineParcelAreaList(val, ctx);
+        if (val.harvestKg !== undefined && val.kind !== 'HARVEST') {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['harvestKg'],
+                message: 'harvestKg belongs to a HARVEST activity only',
+            });
+        }
+    })
+    .openapi('RecordFarmActivity', {
+        description:
+            'A non-chemical activity a farmer already carried out \u2014 pruning, cultivation, sowing '
+            + 'or harvest. Recorded as DONE, like a treatment: handing work to an operator stays in '
+            + 'Задачи.',
+    });
+
+export type RecordFarmActivityBody = z.infer<typeof RecordFarmActivitySchema>;
 
 /**
  * A correction to an already-recorded treatment (#2172).
