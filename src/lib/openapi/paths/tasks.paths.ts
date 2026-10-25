@@ -254,6 +254,27 @@ export function registerTaskPaths(registry: OpenAPIRegistry): void {
         params: TaskParams,
         body: SetTaskStatusSchema,
         success: { status: 200, description: 'The updated task.', schema: TaskDTOSchema },
+        // These three had bg and en copy and no spec entry, for as long as the
+        // route has existed. They were invisible to
+        // `error-codes-are-documented` because the throw passes
+        // `transitionErrorCode(transitionErr)` — a function call, not a literal
+        // — and the extractor reads only literals (#2370). A client reading the
+        // contract had no way to learn they exist, so an unmapped code degrades
+        // to a generic message on exactly the write an operator makes most.
+        extraResponses: codedErrorResponses({
+            400:
+                'The state machine refused the move, or a replayed write no longer applies.\n\n'
+                + '- `TASK_STATUS_UNCHANGED` — the task is ALREADY in that status. The commonest '
+                + 'cause is the offline outbox replaying a write that already landed, which is why '
+                + 'this is the arm to treat as success rather than surface as a conflict. '
+                + '`params.status` names the status it is already in.\n'
+                + '- `ILLEGAL_TRANSITION` — a move the state machine does not allow: a CLOSED → '
+                + 'OPEN re-open, CANCELED → IN_PROGRESS, or OPEN → CLOSED skipping RESOLVED. '
+                + '`params.from` and `params.to` name both ends, so a client can say which move '
+                + 'was refused without guessing.\n'
+                + '- `UNKNOWN_TASK_STATUS` — one end of the move is not a status this server '
+                + 'knows: a stored value it cannot parse, or a target a newer client sent.',
+        }),
     });
 
     op(registry, {
