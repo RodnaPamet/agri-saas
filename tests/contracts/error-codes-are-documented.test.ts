@@ -164,6 +164,24 @@ function classCodes(src: string): string[] {
  * stops being emitted, so this list cannot outlive what it excuses.
  */
 const UNDOCUMENTED_BASELINE: readonly string[] = [
+    // #2019's Drive upload codes. `uploadToDrive` exists; NO ROUTE CALLS IT
+    // YET, so there is no operation to name them on — the route is the next
+    // increment, and it waits on a decision about who may export (the token
+    // resolver is `assertCanAdmin`, while the journal is EDITOR-writable).
+    //
+    // Baselined rather than documented on an unrelated operation, which is
+    // what `COMPANY_NAME_TAKEN` above does for the same reason: naming a code
+    // on a route that cannot raise it is worse than a visible line here.
+    //
+    // Neither direction can rot silently. 'the baseline has no stale entries'
+    // strikes them the moment `drive.ts` stops emitting them; 'a baselined code
+    // that HAS been documented is removed from the baseline' strikes them the
+    // moment the export route names them in the spec. So the PR that adds the
+    // route cannot leave these three behind — it goes red until it deletes them.
+    'GOOGLE_DRIVE_NOT_GRANTED',
+    'GOOGLE_DRIVE_REFUSED',
+    'GOOGLE_GRANT_REVOKED',
+
     // All three upload codes LEFT this list in #1861, which documented
     // `POST /api/account/avatar` — the route that raises them.
     //
