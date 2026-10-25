@@ -1,0 +1,19 @@
+[Unit]
+Description=agrent: nightly database backup
+Documentation=https://github.com/RodnaPamet/agri-saas/issues/2329
+
+[Timer]
+# 01:15 UTC. An hour after the co-tenant's 00:15 dump so two pg_dumps never
+# contend for this host's two vCPUs, and well before the 04:40 UTC
+# `Backup exists` probe, which must read a fresh object rather than race the
+# writer that creates it.
+OnCalendar=*-*-* 01:15:00 UTC
+# A missed window (the VM was down, a reboot straddled 01:15) runs on the next
+# boot instead of being skipped silently — the exact shape of failure this
+# whole issue is about.
+Persistent=true
+RandomizedDelaySec=300
+Unit=agrent-db-backup.service
+
+[Install]
+WantedBy=timers.target
