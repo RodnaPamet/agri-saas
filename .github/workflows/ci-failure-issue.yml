@@ -110,6 +110,16 @@ on:
       # unreported with nothing saying so. A stale POINTER never reaches
       # this channel: the script files its own issue and exits 0.
       - "Flake ledger pointers"
+      # Daily cron (#2230). Watched for the flake-ledger reason, and the
+      # division of labour is the point: the probe files its OWN issue when it
+      # RUNS and finds the Dependabot updater stalled, so a stalled updater
+      # produces one issue, not two. What the probe cannot report is failing to
+      # run at all — or breaking, which it signals by exiting non-zero — and
+      # that is this notifier's case exactly.
+      #
+      # It exists because `Dependabot Updates` itself CANNOT be watched here;
+      # see the removal note below.
+      - "Dependabot updater health"
       # `Dependabot Updates` was listed here and has been REMOVED: the
       # notifier cannot watch it, for a reason no amount of permissions can
       # fix. A `workflow_run` triggered by a run whose actor is
