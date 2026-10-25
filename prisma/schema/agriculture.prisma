@@ -896,6 +896,18 @@ model FarmProfile {
   /// ЕИК — encrypted at rest (Epic B manifest).
   eik                        String?
   address                    String?
+  /// Област — the broadest administrative unit, and the fourth line of
+  /// «ДНЕВНИК НА СТОПАНСТВОТО»'s header (#2316, owner decision 2026-10-25).
+  ///
+  /// Deliberately NOT read from the public-profile models, which do carry an
+  /// oblast. A regulated document's header must not depend on whether a farm
+  /// published a public profile — and none has: 0 `PublicFarmProfile` rows,
+  /// 0 published `FarmBrand`, 0 indexable, measured 2026-10-25. Sourcing it
+  /// there would render the field blank on every header while looking wired.
+  ///
+  /// `String?` like its siblings: the paper form tolerates a blank, and a
+  /// farm that has not filled its profile must still be able to print.
+  oblast                     String?
   /// Община.
   municipality               String?
   /// Населено място.

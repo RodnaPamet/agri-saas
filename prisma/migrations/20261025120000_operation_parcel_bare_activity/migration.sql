@@ -74,3 +74,37 @@ ALTER TABLE "OperationParcel"
 CREATE UNIQUE INDEX "OperationParcel_taskId_parcelId_bare_activity_key"
     ON "OperationParcel" ("taskId", "parcelId")
     WHERE "productItemId" IS NULL;
+
+
+-- ── «ДНЕВНИК НА СТОПАНСТВОТО»'s header needs област ──────────────────────────
+--
+-- The template's header is four lines: holder, село, община, област.
+-- `FarmProfile` carried the first three (`producerName`, `settlement`,
+-- `municipality`) and nothing for the fourth.
+--
+-- An `oblast` does exist on the public-profile models, and reading it from
+-- there is the shortcut to avoid: it would make a regulated document's header
+-- depend on whether a farm published a public profile, and none has — 0
+-- `PublicFarmProfile` rows, 0 published `FarmBrand`, 0 indexable, measured
+-- 2026-10-25. Every header would have rendered blank while looking wired up.
+--
+-- Nullable like every sibling address field: the paper form tolerates a blank,
+-- and a farm that has not filled its profile must still be able to print.
+
+ALTER TABLE "FarmProfile" ADD COLUMN "oblast" TEXT;
+
+
+-- ── the three activity kinds the form prints and the enum lacked ────────────
+--
+-- The form names six activities: sprayings, fertilising, pruning, cultivation,
+-- sowing, harvest. Three already had a value — SPRAY, FERTILIZE, and SEED,
+-- which IS сеитба — so this adds three, not six, and no parallel vocabulary.
+--
+-- `ADD VALUE` inside a transaction is allowed from Postgres 12 (this runs on
+-- 16) provided the new value is not USED in the same transaction. Nothing
+-- below uses them, so the migration commits cleanly; a later migration that
+-- wanted to write one of these would need its own.
+
+ALTER TYPE "FieldOperationType" ADD VALUE 'PRUNE';
+ALTER TYPE "FieldOperationType" ADD VALUE 'CULTIVATE';
+ALTER TYPE "FieldOperationType" ADD VALUE 'HARVEST';

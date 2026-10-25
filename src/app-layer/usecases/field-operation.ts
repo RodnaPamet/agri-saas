@@ -22,10 +22,14 @@ import { trace } from '@opentelemetry/api';
 import { emitAutomationEvent } from '../automation';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import type { FieldOperationType } from '@prisma/client';
 import { appliesAProduct } from '@/lib/operations/line-kind';
 
 
-type OperationType = 'SPRAY' | 'FERTILIZE' | 'SEED' | 'OTHER';
+// Derived from the Prisma enum rather than restated. #2316 added three
+// values; a hand-written union would have kept compiling while silently
+// excluding them from every annotation that uses it.
+type OperationType = FieldOperationType;
 type ParcelStatus = 'PENDING' | 'DONE' | 'SKIPPED';
 
 const TERMINAL_STATUSES: readonly string[] = TERMINAL_WORK_ITEM_STATUSES;

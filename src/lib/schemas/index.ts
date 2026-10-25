@@ -758,6 +758,21 @@ export const UpdateLocationSchema = z.object({
 
 export const CreateFieldOperationSchema = z.object({
     title: z.string().min(1).max(255).optional(),
+    /**
+     * Deliberately NARROWER than `FieldOperationType`, which #2316 widened
+     * with `PRUNE`, `CULTIVATE` and `HARVEST`.
+     *
+     * This schema creates a field operation that APPLIES AN INPUT — the
+     * `superRefine` below requires exactly one of product/fertiliser, never
+     * neither. A bare activity has neither by definition, so accepting the
+     * value here would admit a payload the same schema then refuses, and the
+     * caller would read a confusing 400 about a missing product on a pruning
+     * job.
+     *
+     * Bare activities are recorded through the diary write path instead,
+     * which already takes per-parcel areas and a date — the shape the phone
+     * asked for — rather than assigning a job to an operator.
+     */
     operationType: z.enum(['SPRAY', 'FERTILIZE', 'SEED', 'OTHER']).optional(),
     assigneeUserId: z.string().min(1, 'An operator must be assigned'),
     parcelIds: z.array(z.string().min(1)).min(1, 'Select at least one parcel'),

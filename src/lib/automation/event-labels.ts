@@ -126,6 +126,11 @@ export const EVENT_LABELS: Record<AutomationEventName, EventLabel> = {
                     { value: 'SPRAY', label: 'Spray' },
                     { value: 'FERTILIZE', label: 'Fertilise' },
                     { value: 'SEED', label: 'Seed' },
+                    // #2316 — without these an automation rule could not filter
+                    // on an activity kind that exists in the data.
+                    { value: 'PRUNE', label: 'Prune' },
+                    { value: 'CULTIVATE', label: 'Cultivate' },
+                    { value: 'HARVEST', label: 'Harvest' },
                     { value: 'OTHER', label: 'Other' },
                 ],
             },
