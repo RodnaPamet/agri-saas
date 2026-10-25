@@ -47,6 +47,24 @@ const WORKFLOW = read('.github/workflows/restore-test.yml');
 const DRILL = read('infra/scripts/restore-test-dump.sh');
 
 /**
+ * Comment lines removed. Every assertion about a script's BEHAVIOUR below
+ * reads this, never the raw text — because the script documents each of those
+ * behaviours at length, and three mutations survived the first version of this
+ * guard by leaving the prose that explains the thing they had deleted.
+ *
+ * `--exit-on-error` is the clearest case: the flag appears in the code once
+ * and in a paragraph about why it is load-bearing once, so removing it from
+ * the code left the guard green.
+ */
+const code = (src: string) =>
+    src
+        .split('\n')
+        .filter((l) => !/^\s*#/.test(l))
+        .join('\n');
+
+const DRILL_CODE = code(DRILL);
+
+/**
  * The production stacks, read out of the runbook's own "What production
  * actually is" table. Its header row names them as columns:
  *
@@ -118,20 +136,45 @@ describe('the restore drill targets what exists (#2332)', () => {
         // covered. #2337: `pg_dump` omits roles while emitting every GRANT
         // that needs them, so a dump alone restores into 142 failures. A drill
         // that accepted a lone dump would pass on an unrestorable backup.
-        expect(DRILL).toMatch(/globals/i);
+        // Not "globals is mentioned somewhere" — that passed with the whole
+        // precondition deleted, because the variable and the `docker cp` lines
+        // survive. What must exist is a FATAL refusal between resolving the
+        // sibling's path and downloading the dump.
+        const lines = DRILL_CODE.split('\n');
+        const resolvedAt = lines.findIndex((l) => /GLOBALS=/.test(l));
+        const downloadAt = lines.findIndex((l) => /storage cp .*"\$DUMP"/.test(l));
+        expect({ resolvedAt: resolvedAt >= 0, downloadAt: downloadAt >= 0 })
+            .toEqual({ resolvedAt: true, downloadAt: true });
+        const window = lines.slice(resolvedAt, downloadAt);
+        expect({
+            refusesMissingGlobals:
+                window.some((l) => /\$GLOBALS/.test(l)) && window.some((l) => /\bdie\b/.test(l)),
+        }).toEqual({ refusesMissingGlobals: true });
+        // The diagnosis names the error class, so the operator is not left to
+        // discover 42704 from a restore log. Prose is the right place for it,
+        // hence the raw read here.
         expect(DRILL).toMatch(/42704|does not exist/);
         // And it must assert, not warn: pg_restore CONTINUES past errors and
-        // exits 0 by default.
-        expect(DRILL).toMatch(/--exit-on-error/);
+        // exits 0 by DEFAULT, reporting them as warnings on stderr. Read from
+        // the code: the flag is also discussed in a comment, and a mutation
+        // that deleted the real one survived against the raw text.
+        expect(DRILL_CODE).toMatch(/--exit-on-error/);
     });
 
     it('the drill restores the globals BEFORE the database', () => {
         // Order is not a preference. Reversed, every GRANT fails.
-        const globalsAt = DRILL.indexOf('/tmp/globals.sql');
-        const restoreAt = DRILL.indexOf('pg_restore -U postgres -d restored');
-        expect(globalsAt).toBeGreaterThan(-1);
-        expect(restoreAt).toBeGreaterThan(-1);
-        expect(globalsAt).toBeLessThan(restoreAt);
+        // Positions of the INVOCATIONS, not of the first mention. `docker cp`
+        // copies globals.sql into the container before either restore runs, so
+        // `indexOf('/tmp/globals.sql')` finds the copy and stays put however
+        // the psql calls are reordered — a mutation that moved the restore
+        // after the dump survived exactly that way.
+        const lines = DRILL_CODE.split('\n');
+        const globalsAt = lines.findIndex((l) => /psql\b.*-f\s+\/tmp\/globals\.sql/.test(l));
+        const restoreAt = lines.findIndex((l) => /pg_restore\b.*-d restored/.test(l));
+        expect({ globalsFound: globalsAt >= 0, restoreFound: restoreAt >= 0 })
+            .toEqual({ globalsFound: true, restoreFound: true });
+        expect({ globalsBeforeRestore: globalsAt < restoreAt })
+            .toEqual({ globalsBeforeRestore: true });
     });
 
     it('freshness is NOT this drill\'s gate, and says so', () => {
@@ -141,8 +184,15 @@ describe('the restore drill targets what exists (#2332)', () => {
         // days. The drill must not duplicate the alarm — two jobs filing about
         // one outage is how both get muted — but it must not IMPLY freshness
         // either, so the age it prints is marked informational.
-        expect(DRILL).toMatch(/informational/);
-        expect({ hardFailsOnAge: /MAX_.*AGE.*\|\| die|exit 1.*too old/i.test(DRILL) })
-            .toEqual({ hardFailsOnAge: false });
+        expect(DRILL_CODE).toMatch(/informational/);
+        // Negative assertions want the widest true form, not a guessed one.
+        // The first version demanded `MAX_` *before* `|| die`, so a mutation
+        // writing `|| die "MAX_AGE too old"` sailed through. What must not
+        // exist is ANY fatal call whose reason is about age — so the check is
+        // over every `die`/`exit 1` line and the vocabulary of staleness.
+        const fatalAboutAge = DRILL_CODE.split('\n').filter(
+            (l) => /\bdie\b|exit 1/.test(l) && /\b(age|old|stale|fresh|MAX_.*AGE)\b/i.test(l),
+        );
+        expect({ fatalAboutAge }).toEqual({ fatalAboutAge: [] });
     });
 });
