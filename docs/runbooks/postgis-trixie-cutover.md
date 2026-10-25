@@ -75,7 +75,12 @@ Every command runs on the VM. `gcloud compute ssh agrent --zone europe-west1-b`.
 
 ### 0. Snapshot first — do not rely on the daily
 
-The schedule runs at 02:00 UTC, so RPO is up to 24 hours. Take a fresh one:
+There is no snapshot SCHEDULE any more — it was deleted on 2026-10-12, and
+the nightly backup is a `pg_dump` to GCS at 01:15 UTC, not a disk image. A
+one-off snapshot is still the right pre-change measure here, because what this
+procedure can damage is the data DIRECTORY (a collation rebuild), and a disk
+image rolls that back in one step where a dump restore replays it. Take one by
+hand:
 
 ```bash
 gcloud compute disks snapshot agrent --zone europe-west1-b \
@@ -154,9 +159,20 @@ Before step 5: `sudo docker compose -f docker-compose.vm.yml stop db`, restore
 `deploy/postgres/Dockerfile` to the previous `FROM`, rebuild, `up -d db`. If
 step 4 had already run, reindex again on the old image.
 
-After step 5: restore the snapshot from step 0. `docs/backup-restore.md` has
-the disk-restore procedure; the drill in `infra/scripts/restore-test-gcp.sh`
-exercises exactly that path.
+After step 5: restore the snapshot from step 0 — the one you took by hand, as
+there is no schedule to fall back on.
+
+**That path is no longer drilled.** `infra/scripts/restore-test-dump.sh`
+exercises the dump restore, not a disk restore, and
+`docs/backup-restore.md` no longer carries a disk-restore procedure because
+the mechanism it described was deleted. So the rollback above is a manual
+operation whose exact steps nothing verifies monthly: read
+`gcloud compute disks create --source-snapshot` and expect to work it out
+under pressure, or accept the dump restore as the rollback and plan to replay
+the collation rebuild.
+
+Worth knowing BEFORE you start step 1, which is why it is stated here rather
+than left to be discovered at step 5.
 
 ## Note for the next base change
 

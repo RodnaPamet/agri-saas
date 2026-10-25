@@ -29,7 +29,26 @@ This repository is **public**. The key is created with
 `gcloud iam service-accounts keys create` and installed file-to-file; its
 contents are never printed. It grants `objectCreator` + `objectViewer` on one
 bucket and nothing at project level, so it can add and read but **cannot delete
-or overwrite** — a compromised VM cannot destroy the backup history.
+or overwrite**.
+
+That is a claim about this key, not about the machine. An earlier version of
+this paragraph said a compromised VM cannot destroy the backup history, and
+that does not follow — the VM does not act as this key for anything else it
+does. Measured 2026-10-25:
+
+| | |
+| --- | --- |
+| VM's own identity | `880736019978-compute@developer.gserviceaccount.com` |
+| its project role | `roles/editor` |
+| bucket bindings | `legacyObjectOwner` + `legacyBucketOwner` → `projectEditor` |
+| what caps it today | the VM's OAuth scope, `devstorage.read_only` |
+
+So the delete protection is a **VM attribute**, not a consequence of the role
+separation above: widening that scope for an unrelated reason removes it with
+nothing here changing. A scope also caps a metadata token regardless of IAM,
+which is the same reason a dedicated key was needed at all. #2361 tracks
+replacing it with a retention policy — a control that does not depend on who
+is asking.
 
 ## Installing or reinstalling
 

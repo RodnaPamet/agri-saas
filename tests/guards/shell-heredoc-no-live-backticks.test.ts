@@ -217,15 +217,19 @@ describe('no live backtick inside an unquoted heredoc', () => {
         expect(heredocs.some((h) => !h.quoted)).toBe(true);
     });
 
-    it('control: the drill script is in the population', () => {
-        // This rule exists for that file; if it stops being scanned the rule
-        // passes for free. It used to assert the REMOTE heredoc was UNQUOTED,
-        // as a proxy for "the rule's subject is still in scope". #1225 quoted
-        // it, so that premise is false — the pin below replaces it rather than
-        // dropping it, and the in-scope question is answered by the OTHER
-        // unquoted heredocs, which the control above counts.
-        const drill = heredocs.filter((h) => h.file === 'infra/scripts/restore-test-gcp.sh');
-        expect(drill.map((h) => h.delimiter).sort()).toEqual(['REMOTE', 'STARTUP']);
+    it('control: a named real script is in the population', () => {
+        // This control exists so the rule cannot pass for free over an empty
+        // population. It named `infra/scripts/restore-test-gcp.sh`, which was
+        // DELETED with the retired snapshot drill (#2340) — and the rule was
+        // originally written for that file, which is why the pin lived here.
+        //
+        // The rule's subject is not gone with it: five scripts still carry an
+        // unquoted heredoc, which is the shape a live backtick is dangerous
+        // in. Repointed at `check-drift.sh`, whose table-driven pair loop
+        // feeds `while read` from an unquoted `<<EOF` — so a backtick
+        // appearing in that table would be evaluated while building it.
+        const named = heredocs.filter((h) => h.file === 'deploy/check-drift.sh');
+        expect(named.map((h) => h.delimiter)).toEqual(['EOF']);
     });
 
     it('control: a heredoc MENTIONED in a comment is not mistaken for the real one', () => {
@@ -298,37 +302,30 @@ describe('no live backtick inside an unquoted heredoc', () => {
 
     // ── The rule ─────────────────────────────────────────────────────
 
-    it('the restore drill builds its remote payload from a QUOTED heredoc', () => {
-        // The companion to the rule below, and the source-text half of #1225.
-        //
-        // The two are not the same check and neither subsumes the other: the
-        // rule below tolerates an unquoted heredoc as long as it carries no
-        // backtick, which is exactly the state the drill was in between #1212
-        // and #1225 — green, with `$(…)` and `${VAR}` in its prose still live.
-        // For THIS file the delimiter itself is the invariant, because the body
-        // is 167 lines of prose-heavy shell that nobody writes with escaping in
-        // mind, and because the payload is never read by a human before it runs
-        // on a VM holding a copy of production data.
-        //
-        // The STARTUP heredoc is in scope for the same reason: it is a GCE
-        // startup script built on the host and executed on the VM, so a live
-        // expansion there is the same hazard with a different blast radius.
-        const drill = heredocs.filter((h) => h.file === 'infra/scripts/restore-test-gcp.sh');
-        const unquoted = drill.filter((h) => !h.quoted);
-        if (unquoted.length > 0) {
-            throw new Error(
-                `infra/scripts/restore-test-gcp.sh has ${unquoted.length} UNQUOTED heredoc(s): ` +
-                    unquoted.map((h) => `<<${h.delimiter} at line ${h.startLine}`).join(', ') +
-                    `\n\nThe drill's heredocs must stay quoted (<<'WORD'). An unquoted one makes ` +
-                    `the body's own prose expand on the machine building the string — a backtick ` +
-                    `in a comment killed the drill for a month (#1179), and a \`$(…)\` or ` +
-                    `\`\${VAR}\` in prose, or a dropped backslash on a \\$, does the same without ` +
-                    `moving the backtick count (#1225).\n\nHost values belong in the \`printf %q\` ` +
-                    `prelude ahead of the body, not inside it.`,
-            );
-        }
-        expect(unquoted).toEqual([]);
-    });
+    /**
+     * `it('the restore drill builds its remote payload from a QUOTED heredoc')`
+     * stood here and is DELETED with its subject (#2340).
+     *
+     * It filtered the heredoc population for
+     * `infra/scripts/restore-test-gcp.sh` and threw when any were unquoted.
+     * With that file gone the filter returns `[]`, `unquoted.length > 0` is
+     * false, and the test PASSED having asserted nothing — the empty-window
+     * shape, in a file whose whole subject is assertions that cannot fire.
+     *
+     * Its property is not lost, in two places:
+     *
+     *   - the general rule in this file still scans EVERY shell script for a
+     *     live backtick inside an unquoted heredoc, and five scripts still
+     *     carry one, so the rule has a real population;
+     *   - the replacement drill has NO remote payload and no heredoc at all,
+     *     which `restore-drill-targets-what-exists` asserts directly rather
+     *     than inferring from a quoting style.
+     *
+     * Deleted rather than repointed: there is no other script shipping a
+     * validation battery to another machine, so a drill-specific pin would
+     * have had to invent a subject.
+     */
+
 
     it('every unquoted heredoc body is free of live backticks', () => {
         const offenders = offendingLines(heredocs);

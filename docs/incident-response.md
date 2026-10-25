@@ -341,12 +341,17 @@ curl https://app.example.com/api/readyz | jq .
 # 6. Once verified, schedule the OLD instance for deletion (after retention)
 ```
 
-The monthly `infra/scripts/restore-test-gcp.sh` exercises the restore
-path end-to-end (without the swap-the-app step): newest GCE snapshot →
-disk → throwaway VM → real Postgres over the recovered data directory →
-validation battery → teardown. If the monthly drill has been failing,
-**assume the backup is not restorable** and treat any recovery attempt
-as unproven.
+The monthly `infra/scripts/restore-test-dump.sh` exercises the restore
+path end-to-end (without the swap-the-app step): newest dump in GCS →
+its `.globals.sql` sibling → a clean Postgres built from
+`deploy/postgres/Dockerfile` → validation battery. If the monthly drill
+has been failing, **assume the backup is not restorable** and treat any
+recovery attempt as unproven.
+
+The snapshot-based drill this replaced is gone, and so is the
+disk-from-snapshot recovery path above it: all 33 snapshots and both
+resource policies were deleted on 2026-10-12. Recovery is now
+restore-the-dump, not attach-a-disk.
 
 > **This is a DAILY snapshot, not point-in-time recovery.** Recovering
 > loses everything written since the last 02:00 UTC snapshot — up to 24
@@ -849,7 +854,7 @@ underlying machinery shipped across OI-1 / OI-2 / OI-3:
 | Runbook section uses... | ...which is shipped by |
 |---|---|
 | ~~`helm rollback`, `kubectl rollout restart`~~ → image pin + `deploy/apply.sh` | Epic OI-2 shipped a Helm chart and a `deploy.yml` that **never ran once**; both deleted (#808, #848). The real path is `deploy/apply.sh` + `deploy/docker-compose.vm.yml` + Watchtower, documented in `docs/runbooks/production-vm.md` |
-| disk-from-snapshot restore | GCE snapshot schedule `agrent-daily-snapshot` + `infra/scripts/restore-test-gcp.sh` (validates the path monthly) |
+| disk-from-snapshot restore | ~~GCE snapshot schedule `agrent-daily-snapshot`~~ — deleted 2026-10-12. Replaced by a nightly `pg_dump` to `gs://agrent-db-backups-hazel`, validated monthly by `infra/scripts/restore-test-dump.sh` |
 | Secrets Manager rotation (KEK, AUTH, DB) | Epic OI-1 (secrets module, `manage_master_user_password=true` for RDS) |
 | Database / Redis / BullMQ dashboards | Epic OI-3 part 2 (`infra/dashboards/`) |
 | Alert annotations link to dashboards | Epic OI-3 part 3 (`infra/alerts/rules.yml`) |

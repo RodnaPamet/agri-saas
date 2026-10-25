@@ -380,10 +380,12 @@ rather than merely checking the snapshot exists.
 
 ### Measurement / Verification
 
-- **`infra/scripts/restore-test-gcp.sh`** runs **monthly** (and on
+- **`infra/scripts/restore-test-dump.sh`** runs **monthly** (and on
   demand) via `.github/workflows/restore-test.yml`. It restores the
-  newest snapshot to a throwaway VM, boots the production Postgres
-  image over the recovered data directory, and asserts: migrations
+  newest `*.dump` from `gs://agrent-db-backups-hazel` — requiring its
+  `*.globals.sql` sibling, because `pg_dump` omits the roles its GRANTs
+  need — into a Postgres built from `deploy/postgres/Dockerfile`, and
+  asserts: migrations
   applied, `Tenant`/`User` readable, `tenant_isolation` RLS policies
   present, `app_user` role present, recent `AuditLog` rows.
 - It also asserts the snapshot **schedule is still attached to the
@@ -411,7 +413,13 @@ now detected within about two minutes, because `readyz` reports its
 dependencies. An email channel is attached and proved to deliver, so the alarm now rings
 somewhere — but there is no rota, so whether anyone hears it at 03:00 is still
 a matter of luck rather than of design. A snapshot schedule that silently detaches is still
-caught only monthly, by `restore-test-gcp.sh`.
+caught DAILY since 2026-10-25, by the `Backup exists` workflow — which
+exists because the opposite was true and cost 13 days: the snapshot
+schedules were deleted on 2026-10-12, the monthly drill had last run on
+the 3rd, and nothing said anything until it was found by hand (#2329).
+A correct check on a monthly cadence cannot see something that vanishes
+inside the month. The monthly drill now answers only "does restoring
+work".
 
 ---
 
@@ -442,15 +450,15 @@ Procedures for every row: `docs/runbooks/production-vm.md`.
 | Bad deploy, no migration or an additive one | Pin `app` + `worker` to the previous `sha-<short>` image and re-apply with `deploy/apply.sh`. Watchtower runs `--cleanup`, so the pull is from GHCR, not from a local copy | 10-20 minutes |
 | Bad deploy carrying a **destructive** migration | Apply `deploy/rollback/<migration>.down.sql` against the direct connection, THEN pin the image back. An image-only rollback fails outright here | 20-45 minutes **if the inverse script exists** |
 | Bad structural compose change | Restore the `<file>.bak.<timestamp>` that `deploy/apply.sh` wrote and printed, `up -d` | < 5 minutes |
-| Database corrupt / VM will not boot | New disk from the newest `agrent-daily-snapshot`, attach as boot disk, start | 60-120 minutes **and up to 24 h of data loss** (SLO 6) |
-| Zone outage (`europe-west1-b`) | Snapshots are stored `eu` multi-region: create disk + instance in another zone, re-point DNS. There is no warm standby and no replica | 2-4 hours |
-| `DATA_ENCRYPTION_KEY` loss | The key is in `/opt/agrent/.env` on the same disk as the ciphertext, so a whole-disk restore recovers both. A pgdata-only copy without the key is unrecoverable | with the disk: as above. Without it: **unrecoverable** |
+| Database corrupt / VM will not boot | **No snapshot exists since 2026-10-12.** Restore the newest `*.dump` + its `*.globals.sql` from `gs://agrent-db-backups-hazel` into a fresh stack — globals FIRST, or every GRANT fails. **`DATA_ENCRYPTION_KEY` is not in that backup (#2357)**, so encrypted columns stay unreadable until it is recovered separately | 60-120 minutes **and up to 24 h of data loss** (SLO 6) |
+| Zone outage (`europe-west1-b`) | The BUCKET is `eu` multi-region (snapshots no longer exist): stand up a stack in another zone, restore the newest dump, re-point DNS. There is no warm standby and no replica | 2-4 hours |
+| `DATA_ENCRYPTION_KEY` loss | **No longer recoverable from the backup — see #2357.** That sentence was true under disk snapshots, which carried the key on the same disk; the nightly `pg_dump` is database-only, so the dump holds ciphertext and nothing holds the key. A pgdata-only copy without the key is unrecoverable | with the disk: as above. Without it: **unrecoverable** |
 
 ### Measurement / Verification
 
 - **Detection is instrumented as of 2026-09-17 (#854); ROUTING is not.** A GCP Cloud Monitoring uptime check (`agrent-readyz-oKY0R5q09QU`) probes `https://app.agrent.bg/api/readyz` every 60s from six regions — apac-singapore, eur-belgium, sa-brazil-sao_paulo, usa-iowa, usa-oregon, usa-virginia — requiring a 2xx whose body contains `"status":"ready"`, so a DEPENDENCY outage fails the check and not just a dead process. Alert policy `agrent production is not ready (#854)` fires when more than one region fails for 60s. An email notification channel is attached and was proved to deliver. So detection latency is bounded at roughly 2 minutes and an alert now reaches an inbox — but **there is no rota and no pager**: one address, one person, email. The time from the alert landing to a human acting on it is still unbounded, so keep reading the 4-hour figure as *time-to-restore once someone notices*, and do not write an acknowledge time anywhere. That is why `docs/incident-response.md` § "Severity definitions" now carries no acknowledge budget at all (#981), in place of the 15-minute PagerDuty figure it used to state. `infra/alerts/external-uptime.yml` records what is deployed and why `readyz` rather than `livez`; `infra/dashboards/` remains files nothing runs (#856).
 - **Decision tree + runbook**: `docs/runbooks/production-vm.md` § 2 for the rollback levers; `docs/incident-response.md` for the per-symptom playbooks (read its banner first — several still describe undeployed infrastructure).
-- **Restore mechanism validation**: the monthly `restore-test-gcp.sh` exercises the snapshot-restore path end-to-end — disk from snapshot, VM, real Postgres, validation battery, teardown.
+- **Restore mechanism validation**: the monthly `restore-test-gcp.sh` exercised the snapshot-restore path end-to-end — disk from snapshot, VM, real Postgres, validation battery, teardown.
 - The 4-hour SLA covers **triage + recovery only**. Detection adds a bounded ~2 minutes in front of it. The wait between the alert landing and a human reading it is unbounded and is NOT inside the 4 hours — `docs/incident-response.md` § "Severity definitions" states that plainly rather than budgeting it (#981).
 
 ### Risk
@@ -469,8 +477,8 @@ The RTO assumes operator availability at the time of the incident. **Detection i
 | API Error Rate | < 1% | 30 days | `api_request_count` |
 | Health Check Availability | ≥ 99.95% | 7 days | Synthetic probe of `/api/livez` |
 | Repository Latency (P95) | < 100ms | 7 days | `repo_method_duration` (OI-3 part 2) |
-| RPO (Recovery Point) | ≤ **24 hours** *(a 1-hour target was retired 2026-09-10, #842 — see SLO 6)* | continuous | Daily GCE disk snapshot (`agrent-daily-snapshot`, 14-day retention) + monthly `restore-test-gcp.sh` |
-| RTO (Recovery Time) | ≤ 4 hours *(time-to-restore, clocked from when a human starts; acknowledgement carries no budget — see SLO 7)* | per incident | Image pin + `deploy/apply.sh` / `deploy/rollback/*.down.sql` / disk-from-snapshot — `docs/runbooks/production-vm.md` |
+| RPO (Recovery Point) | ≤ **24 hours** *(a 1-hour target was retired 2026-09-10, #842 — see SLO 6)* | continuous | Nightly `pg_dump` to `gs://agrent-db-backups-hazel` (01:15 UTC, 30-day lifecycle) + daily `Backup exists` probe + monthly `restore-test-dump.sh`. The GCE snapshot schedule this row used to name was deleted 2026-10-12 |
+| RTO (Recovery Time) | ≤ 4 hours *(time-to-restore, clocked from when a human starts; acknowledgement carries no budget — see SLO 7)* | per incident | Image pin + `deploy/apply.sh` / `deploy/rollback/*.down.sql` / restore-the-dump — `docs/runbooks/production-vm.md`. Not disk-from-snapshot: there are no snapshots |
 
 ---
 

@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+#
+# Nightly pg_dump of the inflect-compliance production database to GCS.
+#
+# ═══ WHY THIS EXISTS, AND WHY IT IS IN THE agri-saas REPO ═══
+#
+# inflect-compliance had NO database backup of any kind from 2026-10-12 until
+# 2026-10-25. Its GCE snapshot schedule was deleted in the same sweep that
+# removed agrent's (#2329) and nothing replaced it: zero snapshots, no bucket,
+# no timer. The only systemd unit matching /backup/ on that host is Debian's
+# own `dpkg-db-backup`, which has nothing to do with Postgres — measured,
+# because "there is a backup timer" was the first thing it looked like.
+#
+# It is a DIFFERENT product from a different repository. The script lives here
+# for the same reason `docs/backup-restore.md` has always described both
+# stacks and the restore drill covered both: the backup tooling lives in this
+# repo, and a script that exists only on one VM cannot be reproduced from any
+# repository at all. That is the #2319 defect, and it is how agrent's own
+# mechanism was found untracked hours after being built.
+#
+# Nothing here touches that product's code.
+#
+# WHAT IT DOES
+#   1. `pg_dump -Fc` from inside `inflect-postgres-1`, to a root-only file
+#   2. `pg_dumpall --roles-only` beside it — see WHY TWO OBJECTS below
+#   3. verifies the dump is READABLE (`pg_restore --list` parses it) and that
+#      the globals define every role the dump's GRANTs name
+#   4. uploads both to gs://$BUCKET/inflect/YYYY/MM/DD/inflect-<UTC>.*
+#   5. verifies each uploaded object: same size, byte-identical on download,
+#      and the dump still parseable after the round trip
+#
+# ═══ WHY TWO OBJECTS: pg_dump DOES NOT DUMP ROLES ═══
+#
+# Roles are CLUSTER-level, so `pg_dump` omits them while emitting every GRANT
+# that depends on them. Measured on this database 2026-10-25:
+#
+#   213 MB, 260 tables, 118,393 live rows
+#   roles: app_user, postgres
+#   1,010 GRANTs to app_user      (agrent, for comparison: 142)
+#
+# Restoring the dump alone into a clean cluster would fail one thousand and
+# ten GRANTs with `42704 role "app_user" does not exist`. The globals half is
+# more load-bearing here than on agrent, not less.
+#
+# ═══ WHY A SERVICE ACCOUNT KEY AND NOT THE METADATA SERVER ═══
+#
+# A VM's default service account carries the `devstorage.read_only` SCOPE, and
+# a scope caps the metadata-server token regardless of IAM — so no bucket
+# binding would let it write, and changing scopes requires the VM STOPPED.
+#
+# So: `inflect-db-backup@hazel-design-419410.iam.gserviceaccount.com`, holding
+# objectCreator + objectViewer on this ONE bucket and NOTHING at project level
+# (verified 2026-10-25: 0 project-level bindings, objectCreator + objectViewer
+# on this bucket and none at all on the sibling product's). Neither role can
+# delete or overwrite, so NOTHING THIS SCRIPT RUNS AS can destroy the history;
+# the bucket's 30-day lifecycle rule is the only thing that deletes.
+#
+# ═══ THE DELETE PROTECTION RESTS ON THE SCOPE, NOT ON THIS SEPARATION ═══
+#
+# What stood here was wider: that a compromised box cannot destroy the history.
+# It does not follow, because the box does not act as this identity. Measured
+# 2026-10-25:
+#
+#   VM runs as   880736019978-compute@developer.gserviceaccount.com
+#   which holds  roles/editor, project-wide
+#   bucket grants  legacyObjectOwner + legacyBucketOwner -> projectEditor
+#   VM scope is  devstorage.read_only
+#
+# So the identity the machine actually carries is a project editor on a bucket
+# that grants project editors the legacy owner roles, and what demonstrably
+# caps it today is the OAuth SCOPE — the same scope that forced a dedicated key
+# above, since a scope caps a metadata token whatever IAM says.
+#
+# That makes the protection a VM ATTRIBUTE. An operator who widens the storage
+# scope for an unrelated reason removes it, with nothing in this file and
+# nothing in the bucket's IAM changing to say so. #2361 tracks replacing it
+# with a retention policy, which is the control that does not depend on who is
+# asking.
+#
+# ═══ WHAT IT DOES NOT BACK UP ═══
+#
+# The encryption key. `/opt/inflect/.env.prod` holds this stack's secrets and
+# this script does not touch it, exactly as agrent's does not touch
+# `/opt/agrent/.env` — so the dump is ciphertext for any encrypted column and
+# the key is not in it. Tracked as #2357 for agrent; the same gap applies here
+# and is stated rather than left for a 3am discovery.
+#
+# ═══ NO `set -x`, EVER ═══
+#
+# It would echo gcloud's environment — including the key path — into the
+# journal. The database credentials are never on a command line either: they
+# are read with `printenv` INSIDE the container.
+#
+# ═══ ITS TEMP FILES ARE CAPPED ═══
+#
+# A run refuses to start below $MIN_FREE_MB, caps what it can write with
+# `ulimit -f`, and removes its work directory on any exit.
+set -euo pipefail
+
+BUCKET="${INFLECT_BACKUP_BUCKET:-inflect-db-backups-hazel}"
+CONTAINER="${INFLECT_BACKUP_CONTAINER:-inflect-postgres-1}"
+KEY_FILE="${INFLECT_BACKUP_KEY_FILE:-/etc/inflect-db-backup/sa-key.json}"
+WORK_ROOT="${INFLECT_BACKUP_WORK_ROOT:-/var/tmp/inflect-db-backup}"
+MIN_FREE_MB="${INFLECT_BACKUP_MIN_FREE_MB:-2048}"
+MAX_DUMP_MB="${INFLECT_BACKUP_MAX_DUMP_MB:-2048}"
+DUMP_TIMEOUT="${INFLECT_BACKUP_TIMEOUT:-1800}"
+
+step="startup"
+log() { echo "[inflect-db-backup] $*"; }
+trap 'rc=$?; [ "$rc" -eq 0 ] || log "FAILED at step: ${step} (exit ${rc})"; [ -n "${work:-}" ] && rm -rf "$work"; exit "$rc"' EXIT
+
+# A private gcloud config dir: gcloud writes logs and caches, and root's own
+# ~/.config/gcloud is not ours to scribble in.
+export CLOUDSDK_CONFIG="$WORK_ROOT/gcloud"
+export CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE="$KEY_FILE"
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
+
+step="preflight"
+[ -r "$KEY_FILE" ] || { log "FAILED: key file $KEY_FILE missing or unreadable"; exit 1; }
+command -v gcloud >/dev/null || { log "FAILED: gcloud is not on PATH"; exit 1; }
+docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -qx true \
+    || { log "FAILED: container $CONTAINER is not running"; exit 1; }
+
+mkdir -p "$WORK_ROOT"
+chmod 0700 "$WORK_ROOT"
+# Leftovers from a killed run, before measuring free space — otherwise an old
+# dump can be what pushes this run under the floor.
+find "$WORK_ROOT" -maxdepth 1 -name 'run-*' -type d -mmin +120 -exec rm -rf {} + 2>/dev/null || true
+
+step="check free space"
+free_mb="$(df -Pm "$WORK_ROOT" | awk 'NR==2{print $4}')"
+[ "$free_mb" -ge "$MIN_FREE_MB" ] \
+    || { log "FAILED: only ${free_mb}MB free at $WORK_ROOT, need ${MIN_FREE_MB}MB — refusing to be what fills the disk Postgres checkpoints to"; exit 1; }
+
+work="$(mktemp -d "$WORK_ROOT/run-XXXXXX")"
+chmod 0700 "$work"
+local_dump="$work/inflect.dump"
+local_globals="$work/inflect.globals.sql"
+
+# Caps every file this shell writes, the round-trip copy included.
+ulimit -f "$(( MAX_DUMP_MB * 1024 ))"
+
+step="read db identity from inside the container"
+# Inside the container, so neither the name nor the user reaches this host's
+# process list or this script's arguments.
+db="$(docker exec "$CONTAINER" printenv POSTGRES_DB)"
+user="$(docker exec "$CONTAINER" printenv POSTGRES_USER)"
+[ -n "$db" ] && [ -n "$user" ] || { log "FAILED: could not read POSTGRES_DB/POSTGRES_USER from $CONTAINER"; exit 1; }
+
+now_utc="$(date -u +%Y%m%dT%H%M%SZ)"
+object="gs://$BUCKET/inflect/$(date -u +%Y/%m/%d)/inflect-$now_utc.dump"
+globals_object="gs://$BUCKET/inflect/$(date -u +%Y/%m/%d)/inflect-$now_utc.globals.sql"
+
+step="pg_dump"
+# --no-password: trust auth inside the container. A prompt would hang the
+# timer forever rather than fail it.
+timeout "$DUMP_TIMEOUT" docker exec "$CONTAINER" \
+    pg_dump -Fc --no-password -U "$user" -d "$db" >"$local_dump"
+
+step="check local dump"
+size="$(stat -c %s "$local_dump")"
+[ "$size" -gt 0 ] || { log "FAILED: pg_dump wrote 0 bytes"; exit 1; }
+# A size check alone passes on a truncated dump. `pg_restore --list` parses the
+# archive's table of contents, so it fails on one that is not restorable.
+toc_local="$(docker exec -i "$CONTAINER" pg_restore --list <"$local_dump" | grep -vc '^;')"
+[ "$toc_local" -gt 0 ] || { log "FAILED: dump has no restorable entries"; exit 1; }
+
+step="pg_dumpall --roles-only"
+# --roles-only rather than --globals-only: tablespaces are not used here and
+# would reference host paths that do not exist on a restore target.
+timeout "$DUMP_TIMEOUT" docker exec "$CONTAINER" \
+    pg_dumpall --roles-only --no-password -U "$user" >"$local_globals"
+
+step="check globals"
+gsize="$(stat -c %s "$local_globals")"
+[ "$gsize" -gt 0 ] || { log "FAILED: pg_dumpall wrote 0 bytes"; exit 1; }
+# The load-bearing assertion, not a size check: every role the dump's GRANTs
+# name must be CREATEd here. Derived from the dump itself rather than from a
+# hard-coded list, so a new role added to the schema cannot be silently
+# missed.
+granted_roles="$(docker exec -i "$CONTAINER" pg_restore -f - <"$local_dump" \
+    | grep -oE '^GRANT .* TO [a-zA-Z_"]+' | awk '{print $NF}' | tr -d '"' \
+    | sort -u | grep -vxE 'PUBLIC|postgres' || true)"
+for r in $granted_roles; do
+    grep -qE "^(CREATE|ALTER) ROLE \"?${r}\"?" "$local_globals" \
+        || { log "FAILED: the dump GRANTs to role '$r' but the globals do not create it — a restore would fail with 42704"; exit 1; }
+done
+nroles="$(printf '%s\n' $granted_roles | grep -c . || true)"
+
+step="upload to $object"
+gcloud storage cp --quiet "$local_dump" "$object"
+gcloud storage cp --quiet "$local_globals" "$globals_object"
+
+step="verify uploaded object"
+remote_size="$(gcloud storage objects describe "$object" --format='value(size)')"
+[ "$remote_size" = "$size" ] || { log "FAILED: $object is $remote_size bytes, local dump is $size"; exit 1; }
+gcloud storage cp --quiet "$object" "$work/roundtrip.dump"
+cmp -s "$local_dump" "$work/roundtrip.dump" || { log "FAILED: downloaded $object differs from the local dump"; exit 1; }
+toc_remote="$(docker exec -i "$CONTAINER" pg_restore --list <"$work/roundtrip.dump" | grep -vc '^;')"
+[ "$toc_remote" = "$toc_local" ] || { log "FAILED: round trip has $toc_remote entries, local dump has $toc_local"; exit 1; }
+
+step="verify uploaded globals"
+gremote="$(gcloud storage objects describe "$globals_object" --format='value(size)')"
+[ "$gremote" = "$gsize" ] || { log "FAILED: $globals_object is $gremote bytes, local globals is $gsize"; exit 1; }
+gcloud storage cp --quiet "$globals_object" "$work/roundtrip.globals.sql"
+cmp -s "$local_globals" "$work/roundtrip.globals.sql" || { log "FAILED: downloaded $globals_object differs from the local globals"; exit 1; }
+
+step="done"
+log "OK $object size=${size}B toc_entries=$toc_remote (local $toc_local) db=$db"
+log "OK $globals_object size=${gsize}B roles_required_by_grants=${nroles}"

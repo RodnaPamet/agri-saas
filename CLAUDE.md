@@ -272,7 +272,7 @@ is up to 24 hours**, which is now also what `docs/slos.md` SLO 6
 *targets* — the 1-hour target it carried until 2026-09-10 was retired
 (#842) rather than met, and SLO 6 keeps that history. Snapshots are
 crash-consistent (Postgres replays WAL on restore).
-Restores are drilled monthly by `infra/scripts/restore-test-gcp.sh`
+Restores are drilled monthly by `infra/scripts/restore-test-dump.sh`
 via `.github/workflows/restore-test.yml`, which runs it once per
 target from a job matrix — it boots a real Postgres over the restored
 data directory rather than just checking a snapshot exists.
