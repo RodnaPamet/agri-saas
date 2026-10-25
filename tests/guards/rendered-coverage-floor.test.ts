@@ -385,7 +385,7 @@ const RENDERED_TEST_FLOOR = 268;
 // test can show this — jsdom has no paint.
 //
 // Raised because this PR ADDS a spec. Nothing here lowers a floor to go green.
-const E2E_SPEC_FLOOR = 64;
+const E2E_SPEC_FLOOR = 65;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */
