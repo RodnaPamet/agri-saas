@@ -70,6 +70,54 @@ describe('buildCampaignRows — one row is an ACTIVITY, not a line (#2316)', () 
         expect(rows[0].area).not.toBe('0,00');
     });
 
+    it('an UNKNOWN area prints empty, never 0,00', () => {
+        // Both `treatedAreaHa` and `Parcel.areaHa` absent. `Parcel.areaHa` is
+        // nullable in the schema; measured 2026-10-25, 0 of 7 parcels have a
+        // null area, so this has not occurred — but an unobserved state is not
+        // an impossible one, and «Пръскане – 0,00 ха» in a signed document
+        // asserts that no land was treated.
+        expect(lineAreaHa(line({ treatedAreaHa: null, parcelAreaHa: null }))).toBeNull();
+        const { rows, rowsWithUnknownArea } = buildCampaignRows(
+            [line({ treatedAreaHa: null, parcelAreaHa: null })],
+            ACTIVITY_LABELS_BG,
+        );
+        expect(rows[0].area).toBe('');
+        expect(rows[0].area).not.toBe('0,00');
+        // The label stands alone: the activity DID happen, its extent was not
+        // recorded, and those are different facts.
+        expect(rows[0].activity).toBe('Пръскане');
+        expect(rows[0].activity).not.toMatch(/0,00/);
+        // Counted, so the caller can say so — a blank «Площ» with nothing
+        // explaining it reads as a rendering bug.
+        expect(rowsWithUnknownArea).toBe(1);
+    });
+
+    it('ONE unknown line makes the whole row unknown, not merely smaller', () => {
+        // Summing the known parcels would print a figure that understates the
+        // work. In a register an understated area is a misstatement rather
+        // than a gap, so the cell goes blank instead.
+        const { rows } = buildCampaignRows(
+            [
+                line({ parcelId: 'p1', treatedAreaHa: 7.05 }),
+                line({ parcelId: 'p2', treatedAreaHa: null, parcelAreaHa: null }),
+            ],
+            ACTIVITY_LABELS_BG,
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0].area).toBe('');
+        expect(rows[0].area).not.toBe('7,05');
+    });
+
+    it('counts zero unknown rows when every area is recorded', () => {
+        // The counter must not be a constant: a figure that never moves says
+        // nothing when it matters.
+        const { rowsWithUnknownArea } = buildCampaignRows(
+            [line({ treatedAreaHa: 5 }), line({ treatmentGroupId: 'g2', treatedAreaHa: 6 })],
+            ACTIVITY_LABELS_BG,
+        );
+        expect(rowsWithUnknownArea).toBe(0);
+    });
+
     it('a tank mix does not count a parcel\'s area once per product', () => {
         // Several products on ONE parcel is one treated area. Summing per line
         // would report 20 ха of work on a 10 ха field.
