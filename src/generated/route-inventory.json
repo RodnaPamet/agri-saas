@@ -1556,6 +1556,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/journal/activities",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/journal/treatments",
       "status": "live",
       "documented": true
