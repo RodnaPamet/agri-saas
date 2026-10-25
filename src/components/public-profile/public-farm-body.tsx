@@ -300,10 +300,40 @@ export function PublicFarmBody({
                                     src={url}
                                     alt={labels.photoAlt(i + 1)}
                                     className="absolute inset-0 h-full w-full object-contain"
-                                    /* LAZY, and deliberately WITHOUT a
-                                       `fetchPriority` hint — #2251, and this
-                                       is a measured negative result rather
-                                       than an omission.
+                                    /* EAGER since #1814, and deliberately
+                                       WITHOUT a `fetchPriority` hint — two
+                                       separate measured results, on two
+                                       different axes, and conflating them is
+                                       how this row stayed lazy for a week.
+
+                                       EAGER, because these two are VISIBLE.
+                                       `loading` decides WHEN the request is
+                                       dispatched; `fetchPriority` decides the
+                                       ORDER of requests already in flight. A
+                                       lazy image inside the measured viewport
+                                       still loads — it only starts later —
+                                       and Lighthouse's own phase breakdown
+                                       priced that wait on main `906d11a83`:
+
+                                         TTFB          21 ms
+                                         Load Delay  1705 ms   <- the lazy wait
+                                         Load Time   1590 ms
+                                         Render Delay   9 ms
+                                         ---------------------
+                                         LCP         3326 ms
+
+                                       `lcp-lazy-loaded` scored 0 in all five
+                                       runs, which is Lighthouse saying this in
+                                       one word. The deferred photographs below
+                                       MUST stay lazy — that is what stops them
+                                       being fetched at all — but these two are
+                                       in the first mobile row, which is inside
+                                       a 390x844 viewport that Lighthouse never
+                                       scrolls, so lazy here bought a delay and
+                                       nothing else.
+
+                                       The rest of this note is the OTHER axis,
+                                       and still holds:
 
                                        One of these IS the LCP element, not the
                                        logo: 175x131 against the logo's 96x96,
@@ -341,8 +371,13 @@ export function PublicFarmBody({
                                        different answer. The levers that remain
                                        are the NUMBER of media requests on the
                                        critical path and the cost of the route
-                                       — options 2 and 3 on #2251. */
-                                    loading="lazy"
+                                       — options 2 and 3 on #2251.
+
+                                       So: no hint, and not lazy. Those are not
+                                       in tension — the first is about ordering
+                                       requests the browser has already made,
+                                       the second about making it start. */
+                                    loading="eager"
                                     decoding="async"
                                 />
                             </li>
@@ -366,10 +401,40 @@ export function PublicFarmBody({
                                     src={url}
                                     alt={labels.photoAlt(i + 1 + EAGER_PHOTO_COUNT)}
                                     className="absolute inset-0 h-full w-full object-contain"
-                                    /* LAZY, and deliberately WITHOUT a
-                                       `fetchPriority` hint — #2251, and this
-                                       is a measured negative result rather
-                                       than an omission.
+                                    /* EAGER since #1814, and deliberately
+                                       WITHOUT a `fetchPriority` hint — two
+                                       separate measured results, on two
+                                       different axes, and conflating them is
+                                       how this row stayed lazy for a week.
+
+                                       EAGER, because these two are VISIBLE.
+                                       `loading` decides WHEN the request is
+                                       dispatched; `fetchPriority` decides the
+                                       ORDER of requests already in flight. A
+                                       lazy image inside the measured viewport
+                                       still loads — it only starts later —
+                                       and Lighthouse's own phase breakdown
+                                       priced that wait on main `906d11a83`:
+
+                                         TTFB          21 ms
+                                         Load Delay  1705 ms   <- the lazy wait
+                                         Load Time   1590 ms
+                                         Render Delay   9 ms
+                                         ---------------------
+                                         LCP         3326 ms
+
+                                       `lcp-lazy-loaded` scored 0 in all five
+                                       runs, which is Lighthouse saying this in
+                                       one word. The deferred photographs below
+                                       MUST stay lazy — that is what stops them
+                                       being fetched at all — but these two are
+                                       in the first mobile row, which is inside
+                                       a 390x844 viewport that Lighthouse never
+                                       scrolls, so lazy here bought a delay and
+                                       nothing else.
+
+                                       The rest of this note is the OTHER axis,
+                                       and still holds:
 
                                        One of these IS the LCP element, not the
                                        logo: 175x131 against the logo's 96x96,
@@ -407,7 +472,24 @@ export function PublicFarmBody({
                                        different answer. The levers that remain
                                        are the NUMBER of media requests on the
                                        critical path and the cost of the route
-                                       — options 2 and 3 on #2251. */
+                                       — options 2 and 3 on #2251.
+
+                                       LAZY HERE, and that is the whole
+                                       mechanism rather than a default: a
+                                       collapsed `<details>` gives this image
+                                       no box, an image with no box never
+                                       intersects, and one that never
+                                       intersects is never FETCHED. Making it
+                                       eager would fetch all of them up front
+                                       and undo #2281 entirely.
+
+                                       Note this is the OPPOSITE of the first
+                                       row above, which is eager because it IS
+                                       visible — same attribute, opposite
+                                       reason, and the two blocks are worded
+                                       differently on purpose. One edit changed
+                                       both while I was writing #1814, because
+                                       they had read identically. */
                                     loading="lazy"
                                     decoding="async"
                                 />
