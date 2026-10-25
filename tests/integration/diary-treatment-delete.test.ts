@@ -531,8 +531,11 @@ describeFn('the folded row says how much of a treatment is unfinished (#2299)', 
                 treatment?: {
                     treatmentGroupId: string;
                     parcelCount: number;
-                    pendingCount?: number;
-                    lineCount?: number;
+                    // Non-optional, matching the contract: both are declared
+                    // required on the row, so a test that tolerated `undefined`
+                    // would pass against a server that stopped sending them.
+                    pendingCount: number;
+                    lineCount: number;
                 } | null;
             }>;
         };
