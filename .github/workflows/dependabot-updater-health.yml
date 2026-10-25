@@ -1,0 +1,61 @@
+# ───────────────────────────────────────────────────────────────
+# Is the Dependabot updater running? — #2230
+#
+# `ci-failure-issue.yml` watches every workflow that can fail silently, and the
+# Dependabot updater is squarely that class: when it stops, security bumps stop
+# arriving and nothing says so. It WAS listed there and had to be removed,
+# because a `workflow_run` triggered by a `dependabot[bot]`-actored run is given
+# a READ-ONLY token regardless of the declared `permissions:` — the issue call
+# answers 404 and the notifier itself goes red. That comment carries the
+# measurement; this workflow is the shape it prescribes instead.
+#
+# A `schedule` trigger runs under a normal token, so this reads the run HISTORY
+# rather than reacting to the run. Same question, from a side that can answer.
+#
+# The script files and CLOSES its own issue and exits 0, so a Dependabot outage
+# produces one issue rather than two. This workflow going red therefore means
+# the PROBE is broken — a renamed workflow, an API error, an empty history —
+# which is exactly what `ci-failure-issue.yml` should report, and it does:
+# this file lives in `.github/workflows` with a `schedule` trigger, so the
+# notifier's derived watch list picks it up with no entry to remember.
+# ───────────────────────────────────────────────────────────────
+name: Dependabot updater health
+
+on:
+    schedule:
+        # Daily at 07:00 UTC. Dependabot's own schedule runs earlier in the
+        # morning, so by 07:00 the day's attempts have completed — and this is
+        # an hour after the flake-ledger probe and an hour before nothing else,
+        # so no two scheduled jobs compete for the same attention.
+        #
+        # Daily rather than weekly: the gap this closes is "four failures in one
+        # day went unreported", and a weekly probe would have taken until the
+        # following Monday to say so.
+        - cron: "0 7 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    issues: write
+
+concurrency:
+    # A manual dispatch landing on top of the daily run must not file twice:
+    # both would lose the "does an issue already exist?" race.
+    group: dependabot-updater-health
+    cancel-in-progress: false
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out the probe
+              uses: actions/checkout@v7
+              with:
+                  sparse-checkout: |
+                      .github/scripts
+                  sparse-checkout-cone-mode: false
+
+            - name: Report a stalled Dependabot updater
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: ./.github/scripts/dependabot-updater-health.sh
