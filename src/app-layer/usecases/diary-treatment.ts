@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { haToDca } from '@/lib/agro/rate-calc';
 import { computeAppliedQuantity } from '@/lib/units/applied-quantity';
 import {
     composeInputApplicationTitle,
@@ -132,6 +133,29 @@ export interface RecordDiaryTreatmentResult {
     taskIds: string[];
     /** True when this request reconstructed an earlier one rather than writing. */
     replayed: boolean;
+}
+
+/**
+ * Does a submitted treated area exceed its parcel, AS THE REGISTER CAN EXPRESS IT?
+ *
+ * The bound used to be exact (`treatedAreaHa > areaHa`) while every surface
+ * shows the area ROUNDED, so typing the displayed figure back was refused for a
+ * rounding the farmer never made (#2308). A parcel of 3.2478 ha displays as
+ * 32,48 дка — `haToDca` then `trimNumber`, which rounds to two places — and
+ * 32,48 дка parses back to 3.248 ha, which is greater than 3.2478.
+ *
+ * So the comparison happens at the register's own resolution: дка to two
+ * decimals, i.e. 0.001 ha. Both sides are rounded there, and only a difference
+ * the register could actually print is a refusal. 32,48 vs 32,48 passes;
+ * 41 дка against a 40 дка parcel still fails, as does 999 against 4.
+ *
+ * Not a loosening of the rule, a correction of its units: a treated area larger
+ * than its parcel is still refused, and "larger" now means larger in the units
+ * the document is written in.
+ */
+function exceedsParcel(treatedAreaHa: number, parcelAreaHa: number): boolean {
+    const asPrintedDca = (ha: number) => Math.round(haToDca(ha) * 100) / 100;
+    return asPrintedDca(treatedAreaHa) > asPrintedDca(parcelAreaHa);
 }
 
 /**
@@ -522,7 +546,7 @@ export async function recordDiaryTreatment(
         const areaOf = new Map(parcels.map((p) => [p.id, p.areaHa]));
         for (const entry of input.parcels) {
             const area = areaOf.get(entry.parcelId);
-            if (area != null && entry.treatedAreaHa > Number(area)) {
+            if (area != null && exceedsParcel(entry.treatedAreaHa, Number(area))) {
                 throw codedBadRequest(
                     'TREATMENT_AREA_EXCEEDS_PARCEL',
                     'The treated area cannot exceed the parcel\u2019s own area',
@@ -1808,7 +1832,7 @@ export async function correctDiaryTreatment(
                 const next = areas.get(line.parcelId) ?? null;
                 if (next == null) continue;
                 const parcelArea = line.parcel.areaHa == null ? null : Number(line.parcel.areaHa);
-                if (parcelArea != null && next > parcelArea) {
+                if (parcelArea != null && exceedsParcel(next, parcelArea)) {
                     throw codedBadRequest(
                         'TREATMENT_AREA_EXCEEDS_PARCEL',
                         'The treated area cannot exceed the area of the parcel.',

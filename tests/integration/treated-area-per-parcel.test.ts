@@ -45,7 +45,8 @@ let tenantId = '';
 let parcelA = '';   // 10 ha
 let parcelB = '';   // 4 ha
 let parcelNoArea = '';
-let parcelOtherBlock = ''; // areaHa NULL
+let parcelOtherBlock = '';
+let parcelOdd = ''; // areaHa NULL
 let itemId = '';
 
 const ctx = () => makeRequestContext('OWNER', { userId, tenantId, tenantSlug: `${TAG}-t` });
@@ -71,6 +72,10 @@ beforeAll(async () => {
         })).id;
     parcelA = await mk(`A ${TAG}`, 10);
     parcelB = await mk(`B ${TAG}`, 4);
+    // An area that does NOT round cleanly to дка: 3.2478 ha prints as 32,48
+    // дка, so typing the displayed figure back yields 3.248 ha — greater than
+    // the parcel, and the case #2308 is about.
+    parcelOdd = await mk(`O ${TAG}`, 3.2478);
     // A parcel in a SECOND block. Everything above sits in one block, so
     // without this nothing here exercises the fan-out: a treatment writes one
     // `Task` per block and applies the areas in a loop over each task's lines.
@@ -136,18 +141,53 @@ describeFn('treated area per parcel', () => {
         expect(byParcel.get(parcelB)).toBeNull();
     });
 
-    it('REFUSES an area larger than the parcel, rather than clamping it', async () => {
+    it('REFUSES an area the register can express as larger', async () => {
+        // 4.01 ha on a 4 ha parcel: 40,1 дка against 40 дка, a difference the
+        // document can print. Refused rather than clamped — clamping would
+        // silently record a smaller treatment than the farmer entered.
+        //
+        // This case used 4.0001 ha until #2308. That is 0,001 дка over, which
+        // the register cannot express at all: `haToDca` then `trimNumber`
+        // rounds to two places, so both sides print 40 дка. The bound now
+        // compares at that resolution, so 4.0001 is ACCEPTED and the case below
+        // is what the refusal needs to be made of.
         await expect(
             recordDiaryTreatment(ctx(), {
                 ...base([parcelB]),
-                parcels: [{ parcelId: parcelB, treatedAreaHa: 4.0001 }],
+                parcels: [{ parcelId: parcelB, treatedAreaHa: 4.01 }],
             }),
         ).rejects.toMatchObject({ code: 'TREATMENT_AREA_EXCEEDS_PARCEL' });
+    });
 
-        // And nothing was written — a refusal that half-commits is worse than
-        // either outcome.
-        const tasks = await prisma.task.count({ where: { tenantId, treatmentGroupId: { not: null } } });
-        expect(tasks).toBeGreaterThanOrEqual(0);
+    it('ACCEPTS the displayed figure typed back, to 0,01 дка (#2308)', async () => {
+        // The case the exact bound refused for a rounding the farmer did not
+        // make. `parcelOdd` is 3.2478 ha, which the review screen and the
+        // register both show as 32,48 дка. A farmer who means "all of it" types
+        // that figure; it parses to 3.248 ha, which IS greater than 3.2478.
+        //
+        // Both sides round to 32,48 дка, so this is not larger in the units the
+        // document is written in, and it is accepted. The value is stored as
+        // SENT — owner ruling 2026-10-25: a whole-parcel treatment keeps the
+        // real number so a later re-measure cannot change an old ДНЕВНИК row.
+        const res = await recordDiaryTreatment(ctx(), {
+            ...base([parcelOdd]),
+            parcels: [{ parcelId: parcelOdd, treatedAreaHa: 3.248 }],
+        });
+        const [line] = await linesOf(res.taskIds);
+        expect(Number(line.treatedAreaHa)).toBe(3.248);
+    });
+
+    it('still refuses what is larger at that resolution, just over the line', async () => {
+        // The discriminator for the case above. 3.2478 ha prints as 32,48 дка;
+        // 3.2530 ha prints as 32,53 дка. One step of the register's own
+        // resolution beyond, and refused — so the tolerance is the display
+        // step and not an open-ended epsilon.
+        await expect(
+            recordDiaryTreatment(ctx(), {
+                ...base([parcelOdd]),
+                parcels: [{ parcelId: parcelOdd, treatedAreaHa: 3.253 }],
+            }),
+        ).rejects.toMatchObject({ code: 'TREATMENT_AREA_EXCEEDS_PARCEL' });
     });
 
     it('allows exactly the parcel area — the bound is inclusive', async () => {
