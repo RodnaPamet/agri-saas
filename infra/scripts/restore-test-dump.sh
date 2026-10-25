@@ -121,17 +121,25 @@ docker exec "$CONTAINER" pg_isready -U postgres >/dev/null 2>&1 || {
 echo "── restoring: GLOBALS FIRST, then the database ──"
 # Order is not a preference. The globals create the roles the dump's GRANTs
 # name; reversed, every GRANT fails.
-docker cp "$WORK/globals.sql" "$CONTAINER":/tmp/globals.sql
-docker cp "$WORK/db.dump" "$CONTAINER":/tmp/db.dump
-docker exec "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 -f /tmp/globals.sql
-docker exec "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 -c 'CREATE DATABASE restored'
+# Piped through STDIN rather than `docker cp`. Two reasons, and the second is
+# why it is not merely a style choice:
+#
+#   - fewer moving parts: no copy step to fail between download and restore;
+#   - `docker cp` cannot read the source on a snap-packaged Docker, which has
+#     a PRIVATE /tmp. `$WORK` is a `mktemp -d`, so on any machine with snap
+#     docker — the maintainer's own, measured — every `docker cp` here would
+#     fail with a file-not-found for a file that plainly exists. CI's docker is
+#     not snap, so this would have passed CI forever while breaking exactly the
+#     by-hand invocation `docs/backup-restore.md` advertises.
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 -f - < "$WORK/globals.sql"
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 -c 'CREATE DATABASE restored'
 
 # `--exit-on-error` is load-bearing. By DEFAULT pg_restore continues past
 # errors and exits 0, reporting them only as warnings on stderr — so a restore
 # that failed 142 GRANTs would still "succeed". Counting stderr lines is the
 # weaker version of this check and it is what I used by hand before writing
 # the drill; the flag is what makes the shell's own exit status mean something.
-docker exec "$CONTAINER" pg_restore -U postgres -d restored --no-owner --exit-on-error /tmp/db.dump
+docker exec -i "$CONTAINER" pg_restore -U postgres -d restored --no-owner --exit-on-error < "$WORK/db.dump"
 
 echo "── validation battery ──"
 

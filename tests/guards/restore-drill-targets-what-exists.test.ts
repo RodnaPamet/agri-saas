@@ -169,7 +169,7 @@ describe('the restore drill targets what exists (#2332)', () => {
         // the psql calls are reordered — a mutation that moved the restore
         // after the dump survived exactly that way.
         const lines = DRILL_CODE.split('\n');
-        const globalsAt = lines.findIndex((l) => /psql\b.*-f\s+\/tmp\/globals\.sql/.test(l));
+        const globalsAt = lines.findIndex((l) => /psql\b.*globals\.sql/.test(l));
         const restoreAt = lines.findIndex((l) => /pg_restore\b.*-d restored/.test(l));
         expect({ globalsFound: globalsAt >= 0, restoreFound: restoreAt >= 0 })
             .toEqual({ globalsFound: true, restoreFound: true });
