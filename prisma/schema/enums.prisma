@@ -670,10 +670,27 @@ enum QuantityMeasure {
 }
 
 /// Type of field operation carried by a FIELD_OPERATION Task.
+///
+/// #2316 added the three activity kinds «ДНЕВНИК НА СТОПАНСТВОТО» prints that
+/// had no value here. The form names six activities — sprayings, fertilising,
+/// pruning, cultivation, sowing, harvest — and three of them already had one:
+/// `SPRAY`, `FERTILIZE`, and `SEED`, which IS сеитба. So this is three new
+/// values rather than a parallel activity vocabulary, and the «Мероприятие»
+/// label map in `src/lib/operations/activity-labels.ts` keys on this type.
+///
+/// `SPRAY` and `FERTILIZE` carry product and dose; the three added here carry
+/// none, which is what #2316 relaxed `OperationParcel`'s NOT NULLs for.
 enum FieldOperationType {
   SPRAY
   FERTILIZE
   SEED
+  /// Резитба.
+  PRUNE
+  /// Обработка на почвата — NOT «обработка» alone, which in the БАБХ register
+  /// means a chemical treatment (химични обработки).
+  CULTIVATE
+  /// Прибиране на реколтата. Fills the form's «Продукция» column.
+  HARVEST
   OTHER
 }
 

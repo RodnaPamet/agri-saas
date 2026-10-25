@@ -763,9 +763,9 @@ model OperationParcel {
   tenantId             String
   taskId               String // the FIELD_OPERATION Task (simple FK; Task has no [id,tenantId] barrier)
   parcelId             String
-  productItemId        String
-  doseValue            Decimal               @db.Decimal(14, 4)
-  doseUnitId           String
+  productItemId        String?
+  doseValue            Decimal?              @db.Decimal(14, 4)
+  doseUnitId           String?
   // Water-carrier rate for the spray tank (per-decare), set only on the
   // treatment line. Per-parcel total water = waterRateValue × parcel dca.
   waterRateValue       Decimal?              @db.Decimal(14, 4)
@@ -835,8 +835,8 @@ model OperationParcel {
   tenant        Tenant     @relation(fields: [tenantId], references: [id])
   task          Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
   parcel        Parcel     @relation(fields: [parcelId, tenantId], references: [id, tenantId])
-  product       Item       @relation(fields: [productItemId, tenantId], references: [id, tenantId])
-  doseUnit      Unit       @relation("OperationParcelDoseUnit", fields: [doseUnitId], references: [id])
+  product       Item?      @relation(fields: [productItemId, tenantId], references: [id, tenantId])
+  doseUnit      Unit?      @relation("OperationParcelDoseUnit", fields: [doseUnitId], references: [id])
   waterRateUnit Unit?      @relation("OperationParcelWaterUnit", fields: [waterRateUnitId], references: [id])
   completedBy   User?      @relation("OperationParcelCompleter", fields: [completedByUserId], references: [id])
   logEntries    LogEntry[]
@@ -896,6 +896,18 @@ model FarmProfile {
   /// ЕИК — encrypted at rest (Epic B manifest).
   eik                        String?
   address                    String?
+  /// Област — the broadest administrative unit, and the fourth line of
+  /// «ДНЕВНИК НА СТОПАНСТВОТО»'s header (#2316, owner decision 2026-10-25).
+  ///
+  /// Deliberately NOT read from the public-profile models, which do carry an
+  /// oblast. A regulated document's header must not depend on whether a farm
+  /// published a public profile — and none has: 0 `PublicFarmProfile` rows,
+  /// 0 published `FarmBrand`, 0 indexable, measured 2026-10-25. Sourcing it
+  /// there would render the field blank on every header while looking wired.
+  ///
+  /// `String?` like its siblings: the paper form tolerates a blank, and a
+  /// farm that has not filled its profile must still be able to print.
+  oblast                     String?
   /// Община.
   municipality               String?
   /// Населено място.

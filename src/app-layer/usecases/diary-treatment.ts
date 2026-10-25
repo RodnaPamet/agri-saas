@@ -19,8 +19,10 @@ import {
     codedClientError,
     codedConflict,
     codedNotFound,
+    internal,
     staleData,
 } from '@/lib/errors/types';
+import { appliesAProduct } from '@/lib/operations/line-kind';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { withDeleted } from '@/lib/soft-delete';
@@ -1361,6 +1363,17 @@ async function loadTreatmentForEdit(
     // correction route is the thing that will settle what that means. Until
     // then the prefill shows the treatment as it was RECORDED.
     const first = lines[0];
+    // A treatment group IS a product application, so a line inside one with
+    // no product or dose is a data defect — not a bare activity (#2316).
+    // Thrown rather than rendered: the alternative is a correction form
+    // prefilled with an empty product, which a farmer could then submit and
+    // overwrite a real regulated record with blanks.
+    if (!appliesAProduct(first) || first.product == null) {
+        throw internal(
+            `Treatment group ${handle} has a line with no product or dose. A treatment `
+                + `records a product application; a bare activity belongs to a plain field operation.`,
+        );
+    }
     const stamped = lines.find((l) => l.completedAt != null);
 
     return {

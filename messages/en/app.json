@@ -5566,6 +5566,9 @@
             "SPRAY": "Spraying",
             "FERTILIZE": "Fertilizing",
             "SEED": "Seeding",
+            "PRUNE": "Pruning",
+            "CULTIVATE": "Soil cultivation",
+            "HARVEST": "Harvesting",
             "OTHER": "Other"
         }
     },

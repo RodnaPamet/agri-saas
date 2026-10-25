@@ -131,7 +131,7 @@ export const TaskDTOSchema = z.object({
     }),
     operationType: z.string().nullable().optional().openapi({
         description:
-            'FIELD_OPERATION only: `SPRAY`, `FERTILIZE`, `SEED` or `OTHER`. Persisted so the БАБХ ДНЕВНИК generator can split химични обработки from торове without re-deriving from the title; legacy rows are null and fall back to a derive-from-title reader. Detail only.',
+            'FIELD_OPERATION only: `SPRAY`, `FERTILIZE`, `SEED`, `PRUNE`, `CULTIVATE`, `HARVEST` or `OTHER`. Persisted so the БАБХ ДНЕВНИК generator can split химични обработки from торове without re-deriving from the title; legacy rows are null and fall back to a derive-from-title reader. The last three carry no product or dose (#2316) and are what «ДНЕВНИК НА СТОПАНСТВОТО» prints beyond spraying and fertilising. Detail only.',
     }),
     applicationTechnique: z.string().nullable().optional().openapi({
         description:

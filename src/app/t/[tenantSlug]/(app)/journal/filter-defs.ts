@@ -49,6 +49,13 @@ export const FIELD_OPERATION_TYPES = {
     SPRAY: 'SPRAY',
     FERTILIZE: 'FERTILIZE',
     SEED: 'SEED',
+    // #2316 — the activity kinds «ДНЕВНИК НА СТОПАНСТВОТО» prints. Listed here
+    // as well as in the enum because this is what decides whether the Operation
+    // column localises a value or prints it raw; a row of one of these kinds
+    // would otherwise render as `PRUNE` to a farmer.
+    PRUNE: 'PRUNE',
+    CULTIVATE: 'CULTIVATE',
+    HARVEST: 'HARVEST',
     OTHER: 'OTHER',
 } as const;
 
