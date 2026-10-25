@@ -87,6 +87,12 @@ export const AUTO_TITLE_FALLBACK_LOCALE = 'bg' as const;
 /** Every key this module can emit. One per composed-title shape. */
 export const AUTO_TITLE_KEYS = {
     inputApplication: 'journal.autoTitle.inputApplication',
+    /**
+     * A bare activity — pruning, cultivation, harvest (#2316). It applies no
+     * product, so it cannot share the key above: that one renders
+     * `{product} — {parcel}` and there is no product to put there.
+     */
+    farmActivity: 'journal.autoTitle.farmActivity',
 } as const;
 
 export type AutoTitleKey = (typeof AUTO_TITLE_KEYS)[keyof typeof AUTO_TITLE_KEYS];
@@ -105,10 +111,26 @@ export type AutoTitleParams = {
     parcel: string;
 };
 
-export interface ComposedTitle {
+/**
+ * Params for a bare activity's title. `activity` is the Bulgarian label from
+ * `ACTIVITY_LABELS_BG`, deliberately: the regulated document prints the same
+ * words, so the journal row and the ДНЕВНИК agree rather than diverging by
+ * locale. The parcel beside it is a cadastral name, and a product name in the
+ * sibling type is already Bulgarian, so the mix is the one already there.
+ */
+export type FarmActivityTitleParams = {
+    activity: string;
+    parcel: string;
+};
+
+/**
+ * Parameterised over its params so each composer keeps its own shape. Defaults
+ * to `AutoTitleParams`, so every existing use is unchanged.
+ */
+export interface ComposedTitle<P = AutoTitleParams> {
     title: string;
     titleKey: AutoTitleKey;
-    titleParams: AutoTitleParams;
+    titleParams: P;
 }
 
 /**
@@ -127,6 +149,25 @@ export async function composeInputApplicationTitle(
         { ...params },
     );
     return { title, titleKey: AUTO_TITLE_KEYS.inputApplication, titleParams: params };
+}
+
+/**
+ * Compose the title for a bare activity's entry (#2316).
+ *
+ * Same three-columns-as-one-value contract as the input-application composer
+ * above, for the same reason: a caller must not be able to write a rendering
+ * without its descriptor, or a descriptor whose params disagree with the
+ * string beside it.
+ */
+export async function composeFarmActivityTitle(
+    params: FarmActivityTitleParams,
+): Promise<ComposedTitle<FarmActivityTitleParams>> {
+    const title = await translateFor(
+        AUTO_TITLE_FALLBACK_LOCALE,
+        AUTO_TITLE_KEYS.farmActivity,
+        { ...params },
+    );
+    return { title, titleKey: AUTO_TITLE_KEYS.farmActivity, titleParams: params };
 }
 
 /**

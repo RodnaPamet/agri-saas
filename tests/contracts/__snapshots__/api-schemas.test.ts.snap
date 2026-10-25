@@ -14571,6 +14571,44 @@ exports[`API contract — per-schema snapshots schema: RecordFarmActivity 1`] = 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: RecordedFarmActivity 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string",
+      "description": "The handle — the request’s \`Idempotency-Key\` when it sent one."
+    },
+    "tasks": {
+      "type": "integer",
+      "description": "Field operations written — one per block."
+    },
+    "lines": {
+      "type": "integer",
+      "description": "Register lines completed."
+    },
+    "occurredOn": {
+      "type": "string",
+      "description": "The recorded day, \`YYYY-MM-DD\`."
+    },
+    "harvestQuantityId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The \`LogQuantity\` holding the harvest total, or \`null\` for any other kind and for a harvest sent without \`harvestKg\`."
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "tasks",
+    "lines",
+    "occurredOn",
+    "harvestQuantityId"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RecordedTreatment 1`] = `
 "{
   "type": "object",
