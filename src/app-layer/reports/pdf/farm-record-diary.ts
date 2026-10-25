@@ -1401,6 +1401,25 @@ export async function gatherFarmRecord(
                 ? correctedHandles.has(l.task.treatmentGroupId)
                 : false;
 
+            // #2316 — a sowing enters NEITHER table. The form is «ДНЕВНИК ЗА
+            // ПРОВЕДЕНИТЕ РАСТИТЕЛНОЗАЩИТНИ МЕРОПРИЯТИЯ И ТОРЕНЕ»: plant
+            // protection and fertilising. A sowing is neither, and the 12-column
+            // химични обработки table is fixed by заповед РД 11-3194/31.12.2021
+            // with ЗЗР registration, quarantine period and earliest-harvest
+            // columns a seed has no values for.
+            //
+            // BEFORE the FERTILIZE test rather than after: the else-branch below
+            // is the chemical table, so anything not explicitly handled lands
+            // there. A sowing reaching it would be filed as a plant-protection
+            // treatment in a document an inspector reads.
+            //
+            // The bare activity kinds (PRUNE/CULTIVATE/HARVEST) never reach this
+            // function at all — they have no product, and the gatherer selects
+            // on lines that have one. This guard is for SEED, which does.
+            if (opType === 'SEED') {
+                continue;
+            }
+
             if (opType === 'FERTILIZE') {
                 fertilizeLines.push({
                     completedAt: l.completedAt,

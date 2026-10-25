@@ -92,7 +92,7 @@ import type { CreateFieldOperationInput } from './field-operation';
  */
 export interface RecordDiaryTreatmentInput {
     /** Spraying fills химични обработки; fertilising fills торове. */
-    kind: 'SPRAY' | 'FERTILIZE';
+    kind: 'SPRAY' | 'FERTILIZE' | 'SEED';
     /**
      * The calendar DAY the treatment happened, `yyyy-mm-dd`.
      *
@@ -261,6 +261,31 @@ export interface DiaryTreatmentSummary {
  * Returns `null` rather than throwing, so the route owns the 404 and the
  * per-entry PDF can reuse this without catching.
  */
+/**
+ * The kind recorded under a handle, or null when the handle names nothing.
+ *
+ * Exists for one caller: the per-treatment farm-record route must tell a SOWING
+ * from a handle that recorded nothing, because the БАБХ register excludes the
+ * first and never had the second, and reporting either as the other is a false
+ * statement about real data (#2316).
+ *
+ * Reads the TASK rather than a line: a sowing's lines may all be pending, and
+ * the kind is a property of the operation either way.
+ */
+export async function treatmentKindOf(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+): Promise<string | null> {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const task = await db.task.findFirst({
+            where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
+            select: { operationType: true },
+        });
+        return task?.operationType ?? null;
+    });
+}
+
 export async function getDiaryTreatment(
     ctx: RequestContext,
     treatmentGroupId: string,
@@ -597,7 +622,12 @@ export async function recordDiaryTreatment(
         // fertiliser dose would never have reached the line.
         const perBlock: CreateFieldOperationInput = {
             title: input.title,
-            operationType: isFertilizer ? 'FERTILIZE' : 'SPRAY',
+            // The KIND, directly. This was `isFertilizer ? 'FERTILIZE' : 'SPRAY'`,
+            // which silently collapsed SEED to SPRAY — so a sowing would have
+            // been written as a spraying and printed in ХИМИЧНИ ОБРАБОТКИ
+            // whatever the register's exclusion said, because that exclusion
+            // keys on `operationType` and would never have seen a SEED row.
+            operationType: input.kind,
             // The only honest assignee for work already done is whoever
             // recorded it. The notification is suppressed below.
             assigneeUserId: ctx.userId,
@@ -1084,7 +1114,7 @@ export interface TreatmentDefinition {
      * starts every row at 0 rather than claiming a version it never served.
      */
     version: number;
-    kind: 'SPRAY' | 'FERTILIZE';
+    kind: 'SPRAY' | 'FERTILIZE' | 'SEED';
     /** `null` when no line has been completed yet, so there is no farm day to show. */
     occurredOn: string | null;
     title: string | null;

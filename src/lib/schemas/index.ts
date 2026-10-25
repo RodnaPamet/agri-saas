@@ -1055,9 +1055,20 @@ export function refineParcelAreaList(
 
 export const RecordDiaryTreatmentSchema = z
     .object({
-        kind: z.enum(['SPRAY', 'FERTILIZE']).openapi({
+        kind: z.enum(['SPRAY', 'FERTILIZE', 'SEED']).openapi({
             description:
-                'Spraying fills the ДНЕВНИК\u2019s химични обработки table; fertilising fills торове. Each carries its own columns, which is why this is a kind rather than a free label.',
+                'Spraying fills the ДНЕВНИК\u2019s химични обработки table; fertilising fills торове. '
+                + 'Each carries its own columns, which is why this is a kind rather than a free label.'
+                + '\n\n**`SEED` fills NEITHER** (#2316). Сеитба applies a seed product at a rate, so it '
+                + 'belongs on this route rather than `/journal/activities` — the form\u2019s «Продукт» '
+                + 'column gets the sown variety. But the БАБХ register covers «РАСТИТЕЛНОЗАЩИТНИ '
+                + 'МЕРОПРИЯТИЯ И ТОРЕНЕ» and a sowing is neither, so a SEED row prints in «ДНЕВНИК НА '
+                + 'СТОПАНСТВОТО» and is excluded from both БАБХ tables. The per-treatment farm-record '
+                + 'refuses for a SEED handle with `NOT_IN_BABH_REGISTER`.'
+                + '\n\n**A SEED record requires a `SEED`-category item** (`SEED_EXPECTED` otherwise). '
+                + 'That restriction exists because the exclusion above would otherwise be an escape '
+                + 'hatch: a real plant-protection treatment recorded as a sowing would never reach '
+                + 'the register. `SPRAY` stays permissive about category because its row still prints.',
         }),
         occurredOn: z
             .string()

@@ -1129,6 +1129,20 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             description: 'The treatment\u2019s \u0414\u041d\u0415\u0412\u041d\u0418\u041a pages as PDF bytes.',
             content: { 'application/pdf': TreatmentPdfBody },
         },
+        extraResponses: {
+            ...codedErrorResponses({
+                404:
+                    '`TREATMENT_NOT_FOUND` when the handle names nothing.\n\n'
+                    + '`NOT_IN_BABH_REGISTER` when it names a SOWING (#2316). The record EXISTS and '
+                    + 'prints in «ДНЕВНИК НА СТОПАНСТВОТО»; it is only THIS register that excludes it, '
+                    + 'because the form covers «РАСТИТЕЛНОЗАЩИТНИ МЕРОПРИЯТИЯ И ТОРЕНЕ» and a sowing is '
+                    + 'neither.\n\n'
+                    + 'Two codes rather than one, because reporting a sowing as `TREATMENT_NOT_FOUND` '
+                    + 'would be a false statement about real data and would send a client looking for '
+                    + 'a write that did not fail. `NOT_A_TREATMENT` would be wrong too: сеитба goes '
+                    + 'through the treatments route precisely because it applies a product.',
+            }),
+        },
     });
 
     op(registry, {

@@ -6705,6 +6705,8 @@
         "ACTIVITY_APPLIES_NO_INPUT": "This activity applies no product or fertiliser. Record it as a spraying or a fertilisation if one was applied.",
         "HARVEST_NOT_RECORDED": "The activity produced no journal entry, so its quantity could not be recorded. Check that it completed.",
         "NOT_A_TREATMENT": "This record is a field activity rather than a treatment, so it has no product or dose to correct. Edit it through the field operation it belongs to.",
+        "SEED_EXPECTED": "That item is not a seed. A sowing records a seed variety — record a product application as a spraying or a fertilisation instead.",
+        "NOT_IN_BABH_REGISTER": "A sowing is not part of the БАБХ register, which covers plant protection and fertilising. It appears in the whole-farm journal instead.",
         "OPERATION_NOT_ASSIGNED_TO_YOU": "You can only update field operations assigned to you.",
         "OPERATION_PARCEL_NOT_FOUND": "Operation parcel not found",
         "OPERATOR_SCOPE": "A machine operator cannot use this surface.",
