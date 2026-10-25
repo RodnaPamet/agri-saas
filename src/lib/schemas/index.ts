@@ -1260,12 +1260,84 @@ export const RecordFarmActivitySchema = z
     })
     .openapi('RecordFarmActivity', {
         description:
-            'A non-chemical activity a farmer already carried out \u2014 pruning, cultivation, sowing '
-            + 'or harvest. Recorded as DONE, like a treatment: handing work to an operator stays in '
-            + 'Задачи.',
+            'A non-chemical activity a farmer already carried out \u2014 pruning, cultivation or '
+            + 'harvest. Recorded as DONE, like a treatment: handing work to an operator stays in '
+            + 'Задачи.\n\n'
+            + '**NOT sowing**, though an earlier draft of this sentence said so. Сеитба applies a '
+            + 'seed product at a rate and goes through `POST /journal/treatments` (owner, '
+            + '2026-10-25) \u2014 see `kind`, whose enum has always been the three kinds here.',
     });
 
 export type RecordFarmActivityBody = z.infer<typeof RecordFarmActivitySchema>;
+
+/**
+ * A correction to an already-recorded bare activity (#2373).
+ *
+ * Two fields, and the absences are the design rather than an increment that ran
+ * out of time:
+ *
+ *   - **no `kind`.** Changing резитба into прибиране is a different record, not
+ *     a correction — the same reason `CorrectDiaryTreatment` has no `kind`,
+ *     where it would move which БАБХ table a record prints in.
+ *   - **no `title`.** The journal row's title for a bare activity is
+ *     SERVER-composed from the kind and the parcel (`titleKey` plus params, re-
+ *     rendered per locale). `Task.title` is a different string on a different
+ *     surface, so a corrected title would not appear in «Дневник» — a control
+ *     that looks honoured and changes nothing the farmer is looking at.
+ *   - **no `parcelIds`.** Deferred on #2373: adding or dropping a parcel needs
+ *     new per-block tasks and freshly marked lines.
+ *
+ * Every field optional, and an absent field is not a change — so sending the
+ * same body twice leaves ONE correction on the record, because the second send
+ * finds nothing changed and writes nothing at all.
+ */
+export const CorrectFarmActivitySchema = z
+    .object({
+        occurredOn: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a calendar day, YYYY-MM-DD')
+            .optional()
+            .openapi({
+                description:
+                    'The corrected calendar DAY \u2014 the commonest mistake, and what this route '
+                    + 'mostly exists for: work done yesterday recorded today.\n\n'
+                    + 'Refusals keep the treatments prefix because they are the same parser: a '
+                    + 'future day is `TREATMENT_DATE_IN_FUTURE` and an impossible one such as '
+                    + '2025-02-30 is `TREATMENT_DATE_INVALID`. The prefix is the code\u2019s name, '
+                    + 'not a claim that this is a treatment.\n\n'
+                    + 'Moves BOTH the journal entry\u2019s day and the recorded line\u2019s, which '
+                    + 'the list and the printed record read respectively \u2014 leaving one would '
+                    + 'have two surfaces disagree about when the work happened.',
+                example: '2026-10-24',
+            }),
+        harvestKg: z
+            .number()
+            .positive()
+            .nullable()
+            .optional()
+            .openapi({
+                description:
+                    'The corrected total in kilograms, for a HARVEST. ONE figure for the activity, '
+                    + 'never apportioned across parcels.\n\n'
+                    + '**`null` CLEARS it** \u2014 a weight recorded by mistake has to be removable, '
+                    + 'and an absent field already means "unchanged", so there would otherwise be '
+                    + 'no way to say it.\n\n'
+                    + 'Sent on an activity that is not a HARVEST it is refused with '
+                    + '`HARVEST_TOTAL_NOT_APPLICABLE` rather than ignored: a quantity silently '
+                    + 'dropped is a farmer believing they recorded a yield they did not. The '
+                    + 'refusal is server-side here, where the record schema does it in a '
+                    + '`superRefine`, because this body carries no `kind` to compare against \u2014 '
+                    + 'the stored one decides.',
+                example: 12400,
+            }),
+    })
+    .openapi('CorrectFarmActivity', {
+        description:
+            'A correction to a recorded field activity. Send `If-Match` with the version from the '
+            + 'definition read.',
+    });
+
+export type CorrectFarmActivityBody = z.infer<typeof CorrectFarmActivitySchema>;
 
 /**
  * A correction to an already-recorded treatment (#2172).

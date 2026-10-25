@@ -269,7 +269,12 @@ export function assertCanEditTreatment(
     if (canEditTreatment(ctx, treatment)) return;
     throw codedForbidden(
         'TREATMENT_EDIT_NOT_PERMITTED',
-        'Only the person who recorded this treatment, or a farm administrator, can correct it.',
+        // Kind-NEUTRAL wording. This same rule now guards the bare-activity
+        // correction too (#2373) — reused rather than duplicated, so the code is
+        // shared as well — and «това третиране» was shown to a farmer correcting
+        // a резитба. The CODE keeps its `TREATMENT_` prefix: that is its name,
+        // and renaming it would break every client switching on it.
+        'Only the person who made this record, or a farm administrator, can correct it.',
     );
 }
 

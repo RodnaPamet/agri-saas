@@ -16,6 +16,7 @@ import {
     UpdateLogEntrySchema,
     RecordDiaryTreatmentSchema,
     RecordFarmActivitySchema,
+    CorrectFarmActivitySchema,
     CorrectDiaryTreatmentSchema,
 } from '@/lib/schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
@@ -132,8 +133,18 @@ const Treatment = z
                 'correct — a control missing from the person entitled to it, with nothing failing.\n\n' +
                 'Same two arms as its sibling: creator-or-admin AND single authorship, the second ' +
                 'refusing admins too. False on an ordinary manual entry, which has no treatment ' +
-                'to correct. Advisory, not the control: `PUT …/definition` re-checks and answers ' +
-                '403 `TREATMENT_EDIT_NOT_PERMITTED` or 409 `TREATMENT_MIXED_AUTHORSHIP`.\n\n' +
+                'to correct. Advisory, not the control: the matching `PUT …/definition` re-checks ' +
+                'and answers 403 `TREATMENT_EDIT_NOT_PERMITTED` or a 409.\n\n' +
+                '**True for a BARE ACTIVITY too, and this flag does not tell you which route to ' +
+                'use.** резитба, обработка на почвата and прибиране are correctable as of #2373, ' +
+                'and this flag was always true for them because it is computed from authorship ' +
+                'with no condition on the kind — so before that route existed a farmer was told ' +
+                'they could correct a pruning while the only correction route refused the handle.\n\n' +
+                'Pick the route on `kind`: an activity goes to `PUT ' +
+                '/journal/activities/{treatmentGroupId}/definition`, a treatment to `PUT ' +
+                '/journal/treatments/{treatmentGroupId}/definition`. A bare handle sent to the ' +
+                'treatment route is refused `NOT_A_TREATMENT`, and the reverse `NOT_AN_ACTIVITY`. ' +
+                'So gate the CONTROL on `mayCorrect` and choose the ADDRESS by `kind`.\n\n' +
                 '**Read it as `mayCorrect === false`, never `!mayCorrect`.** An ABSENT field is a ' +
                 'row cached before the field existed, and this list reads through a persistent ' +
                 'cache; treating absence as denial hides the control from the person who recorded ' +
@@ -730,10 +741,15 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             + '**No stock movement.** The completion marks are made with `recordedInDiary`, which '
             + 'suppresses the deduction \u2014 the same #1740 ruling that keeps a diary-recorded '
             + 'treatment from moving stock. A bare activity has no product to deduct in any case.\n\n'
-            + '**Not correctable yet.** The treatment correction route refuses a bare handle with '
-            + '`NOT_A_TREATMENT`, and the journal row\u2019s `mayCorrect` is false for these. A '
-            + 'correction route for them is approved and not yet built; «Изтрий» already withdraws '
-            + 'one through `DELETE /journal/treatments/{treatmentGroupId}`.',
+            + '**Corrected through its OWN route** (#2373): `PUT '
+            + '/journal/activities/{treatmentGroupId}/definition`. The treatment correction still '
+            + 'refuses a bare handle with `NOT_A_TREATMENT`, because an activity has no product or '
+            + 'dose for that route\u2019s form to prefill.\n\n'
+            + 'An earlier version of this paragraph said the journal row\u2019s `mayCorrect` is '
+            + '**false** for these. It never was: the flag is computed from authorship with no '
+            + 'condition on the kind, so a farmer was told they could correct a pruning while the '
+            + 'only correction route refused the handle. It is now true AND correct. «Изтрий» '
+            + 'withdraws one through `DELETE /journal/treatments/{treatmentGroupId}`.',
         tags: ['Journal'],
         params: TenantParams,
         body: RecordFarmActivitySchema,
@@ -792,6 +808,146 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             }),
         },
     });
+
+    const FarmActivityDefinition = z
+        .object({
+            treatmentGroupId: z.string(),
+            version: z.number().int().openapi({
+                description:
+                    'The GROUP\u2019s version, to be sent back as `If-Match` on a correction. `0` for '
+                    + 'an activity recorded before the group row existed \u2014 the backfill starts at '
+                    + '0 rather than claiming a version it never served.',
+            }),
+            kind: z.enum(['PRUNE', 'CULTIVATE', 'HARVEST']).openapi({
+                description:
+                    'The activity. NOT correctable \u2014 turning a резитба into a прибиране is a '
+                    + 'different record, not a correction, which is why the request body has no '
+                    + '`kind` field at all.',
+            }),
+            occurredOn: z.string().nullable().openapi({
+                description:
+                    'The farm day, from the first completed line. `null` when no line is marked yet, '
+                    + 'so there is no day to show.',
+            }),
+            harvestKg: z.number().nullable().openapi({
+                description:
+                    'The one total for the activity, in kilograms. `null` on anything that is not a '
+                    + 'HARVEST, and on a harvest whose total was never recorded or has been '
+                    + 'cleared.\n\n'
+                    + '`null` and `0` are different statements: `0` is a measured harvest of '
+                    + 'nothing.',
+            }),
+            parcelCount: z.number().int().openapi({
+                description: 'Register lines under this handle \u2014 one per parcel.',
+            }),
+            lines: z
+                .array(
+                    z.object({
+                        parcelId: z.string(),
+                        parcelName: z.string().nullable(),
+                        locationId: z.string().nullable(),
+                        treatedAreaHa: z.number().nullable(),
+                    }),
+                )
+                .openapi({
+                    description:
+                        'The recorded parcels, for the form to show. **Read-only in this increment** '
+                        + '\u2014 the request body has no `parcelIds`, because adding or dropping a '
+                        + 'parcel needs new per-block tasks and freshly marked lines (deferred on '
+                        + '#2373).',
+                }),
+        })
+        .openapi('FarmActivityDefinition');
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/activities/{treatmentGroupId}/definition',
+        operationId: 'getFarmActivityDefinition',
+        summary: 'A recorded activity, for a correction to prefill',
+        description:
+            'The bare-activity counterpart of `GET /journal/treatments/{treatmentGroupId}/definition` '
+            + '(#2373) \u2014 same shape, same ETag, different fields. An activity has no product, '
+            + 'dose, pest or quarantine period, and the treatment route refuses a bare handle with '
+            + '`NOT_A_TREATMENT` precisely because prefilling a correction form with an empty product '
+            + 'invites a farmer to overwrite a real record with blanks.\n\n'
+            + '**WRITE-gated**, like its treatment sibling: this answers 403 to someone who may see '
+            + 'the activity in the journal but may not correct it, because the body is the whole '
+            + 'record and its only purpose is to be edited and sent back. A client deciding whether '
+            + 'to OFFER «Коригирай» should read the journal row\u2019s `mayCorrect` instead of '
+            + 'probing this \u2014 and should ALSO gate on `kind`, since the two controls no longer '
+            + 'take the same kinds (see the journal list\u2019s `kind`).\n\n'
+            + 'The version travels both in the body and as a strong `ETag`.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        success: { status: 200, description: 'The activity definition.', schema: FarmActivityDefinition },
+        extraResponses: codedErrorResponses({
+            400:
+                '- `NOT_AN_ACTIVITY` \u2014 the handle names a record that APPLIES a product, so it '
+                + 'is a treatment. Correct it through the treatment route, which carries the product '
+                + 'fields this one does not.',
+            404:
+                '- `ACTIVITY_NOT_FOUND` \u2014 no activity was recorded under that handle.',
+            409:
+                '- `ACTIVITY_MIXED_AUTHORSHIP` \u2014 recorded by more than one person, so it cannot '
+                + 'be corrected as a whole. **Binds administrators too**: an activity nobody solely '
+                + 'authored has no creator for the edit rule to admit.',
+        }),
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/t/{tenantSlug}/journal/activities/{treatmentGroupId}/definition',
+        operationId: 'correctFarmActivity',
+        summary: 'Correct a recorded activity',
+        description:
+            'Owner approved a correction route for резитба, обработка на почвата and прибиране on '
+            + '2026-10-25 (#2373). Before it, the journal row\u2019s `mayCorrect` already said these '
+            + 'were correctable while the only correction route refused the handle.\n\n'
+            + '**Corrects the DAY and, for a harvest, the TOTAL.** Not the kind, not the title, not '
+            + 'the parcel set \u2014 each absent for its own reason, recorded on the request schema '
+            + 'rather than left to be discovered. The title in particular would not reach the '
+            + 'farmer: a bare activity\u2019s journal title is SERVER-composed from the kind and the '
+            + 'parcel, so a corrected `Task.title` would change nothing in «Дневник».\n\n'
+            + 'Every field optional, and an absent field is not a change \u2014 so sending the same '
+            + 'body twice leaves ONE correction on the record, because the second send finds nothing '
+            + 'changed and writes nothing at all. No version bump either, so an `If-Match` another '
+            + 'client holds stays valid.\n\n'
+            + '`If-Match` carries the GROUP version, not a line version: a correction touches every '
+            + 'recorded line, so there is no stable tuple of row versions to send back. '
+            + 'Present-but-unparseable is a 400; ABSENT is allowed through unguarded, matching every '
+            + 'other versioned route here \u2014 the loss that admits is a last-write-wins overwrite '
+            + 'between two simultaneous editors, recoverable from the correction trail, which stores '
+            + 'the whole previous definition.\n\n'
+            + '**Nothing here reaches a regulated document.** Bare activities are excluded from the '
+            + 'БАБХ register, so unlike the treatment correction this cannot alter a form a farmer '
+            + 'signs. No stock moves either, in either direction.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        body: CorrectFarmActivitySchema,
+        success: {
+            status: 200,
+            description: 'The corrected definition, with the bumped version in the body and the ETag.',
+            schema: FarmActivityDefinition,
+        },
+        extraResponses: codedErrorResponses({
+            400:
+                '- `HARVEST_TOTAL_NOT_APPLICABLE` \u2014 `harvestKg` was sent on an activity that is '
+                + 'not a HARVEST. Refused rather than ignored: a quantity silently dropped is a '
+                + 'farmer believing they recorded a yield they did not.\n'
+                + '- `TREATMENT_DATE_INVALID` / `TREATMENT_DATE_IN_FUTURE` \u2014 the same day parser '
+                + 'as the treatments route, so the codes keep its prefix. The prefix is the '
+                + 'code\u2019s NAME, not a claim that this is a treatment.\n'
+                + '- `NOT_AN_ACTIVITY` \u2014 as on the read above.\n'
+                + '- `HARVEST_NOT_RECORDED` \u2014 a total was sent for a harvest whose completion '
+                + 'wrote no journal entry, so there is nowhere to hang it.',
+            404: '- `ACTIVITY_NOT_FOUND` \u2014 no activity under that handle.',
+            409:
+                '- `ACTIVITY_MIXED_AUTHORSHIP` \u2014 as on the read above.\n'
+                + '- a stale `If-Match`: someone else corrected it while this editor was open. '
+                + 'Reopen to see the current values.',
+        }),
+    });
+
 
     op(registry, {
         method: 'get',

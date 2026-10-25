@@ -3766,6 +3766,30 @@ exports[`API contract — per-schema snapshots schema: CorrectDiaryTreatment 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CorrectFarmActivity 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "occurredOn": {
+      "type": "string",
+      "pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$",
+      "description": "The corrected calendar DAY — the commonest mistake, and what this route mostly exists for: work done yesterday recorded today.\\n\\nRefusals keep the treatments prefix because they are the same parser: a future day is \`TREATMENT_DATE_IN_FUTURE\` and an impossible one such as 2025-02-30 is \`TREATMENT_DATE_INVALID\`. The prefix is the code’s name, not a claim that this is a treatment.\\n\\nMoves BOTH the journal entry’s day and the recorded line’s, which the list and the printed record read respectively — leaving one would have two surfaces disagree about when the work happened.",
+      "example": "2026-10-24"
+    },
+    "harvestKg": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0,
+      "description": "The corrected total in kilograms, for a HARVEST. ONE figure for the activity, never apportioned across parcels.\\n\\n**\`null\` CLEARS it** — a weight recorded by mistake has to be removable, and an absent field already means \\"unchanged\\", so there would otherwise be no way to say it.\\n\\nSent on an activity that is not a HARVEST it is refused with \`HARVEST_TOTAL_NOT_APPLICABLE\` rather than ignored: a quantity silently dropped is a farmer believing they recorded a yield they did not. The refusal is server-side here, where the record schema does it in a \`superRefine\`, because this body carries no \`kind\` to compare against — the stored one decides.",
+      "example": 12400
+    }
+  },
+  "description": "A correction to a recorded field activity. Send \`If-Match\` with the version from the definition read."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CostDefaults 1`] = `
 "{
   "type": "object",
@@ -6524,6 +6548,93 @@ exports[`API contract — per-schema snapshots schema: ExportedAccount 1`] = `
     "updatedAt"
   ],
   "description": "The caller’s own \`User\` row, decrypted. \`emailHash\` is deliberately ABSENT: it is a lookup derivation rather than information about the person, and publishing it would hand out the input to a correlation attack against any other system using the same HMAC."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmActivityDefinition 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "description": "The GROUP’s version, to be sent back as \`If-Match\` on a correction. \`0\` for an activity recorded before the group row existed — the backfill starts at 0 rather than claiming a version it never served."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "PRUNE",
+        "CULTIVATE",
+        "HARVEST"
+      ],
+      "description": "The activity. NOT correctable — turning a резитба into a прибиране is a different record, not a correction, which is why the request body has no \`kind\` field at all."
+    },
+    "occurredOn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The farm day, from the first completed line. \`null\` when no line is marked yet, so there is no day to show."
+    },
+    "harvestKg": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "The one total for the activity, in kilograms. \`null\` on anything that is not a HARVEST, and on a harvest whose total was never recorded or has been cleared.\\n\\n\`null\` and \`0\` are different statements: \`0\` is a measured harvest of nothing."
+    },
+    "parcelCount": {
+      "type": "integer",
+      "description": "Register lines under this handle — one per parcel."
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "parcelId": {
+            "type": "string"
+          },
+          "parcelName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "locationId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "treatedAreaHa": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "parcelId",
+          "parcelName",
+          "locationId",
+          "treatedAreaHa"
+        ]
+      },
+      "description": "The recorded parcels, for the form to show. **Read-only in this increment** — the request body has no \`parcelIds\`, because adding or dropping a parcel needs new per-block tasks and freshly marked lines (deferred on #2373)."
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "version",
+    "kind",
+    "occurredOn",
+    "harvestKg",
+    "parcelCount",
+    "lines"
+  ]
 }"
 `;
 
@@ -14568,7 +14679,7 @@ exports[`API contract — per-schema snapshots schema: RecordFarmActivity 1`] = 
     "occurredOn",
     "parcelIds"
   ],
-  "description": "A non-chemical activity a farmer already carried out — pruning, cultivation, sowing or harvest. Recorded as DONE, like a treatment: handing work to an operator stays in Задачи."
+  "description": "A non-chemical activity a farmer already carried out — pruning, cultivation or harvest. Recorded as DONE, like a treatment: handing work to an operator stays in Задачи.\\n\\n**NOT sowing**, though an earlier draft of this sentence said so. Сеитба applies a seed product at a rate and goes through \`POST /journal/treatments\` (owner, 2026-10-25) — see \`kind\`, whose enum has always been the three kinds here."
 }"
 `;
 
@@ -16468,7 +16579,7 @@ exports[`API contract — per-schema snapshots schema: Treatment 1`] = `
     },
     "mayCorrect": {
       "type": "boolean",
-      "description": "Whether THIS caller may CORRECT this treatment (#2172) — the flag to gate «Коригирай» on.\\n\\n**Do not reuse \`mayDelete\` for this.** The two rules agree today, and they are separate fields because #2280 asks the owner whether to narrow deletion now that a withdrawal is irreversible. If it narrows, a client gating the correction on \`mayDelete\` would silently hide «Коригирай» from the creators who may still correct — a control missing from the person entitled to it, with nothing failing.\\n\\nSame two arms as its sibling: creator-or-admin AND single authorship, the second refusing admins too. False on an ordinary manual entry, which has no treatment to correct. Advisory, not the control: \`PUT …/definition\` re-checks and answers 403 \`TREATMENT_EDIT_NOT_PERMITTED\` or 409 \`TREATMENT_MIXED_AUTHORSHIP\`.\\n\\n**Read it as \`mayCorrect === false\`, never \`!mayCorrect\`.** An ABSENT field is a row cached before the field existed, and this list reads through a persistent cache; treating absence as denial hides the control from the person who recorded the treatment. A stale permit costs one refusal, a stale denial costs a farmer their own record."
+      "description": "Whether THIS caller may CORRECT this treatment (#2172) — the flag to gate «Коригирай» on.\\n\\n**Do not reuse \`mayDelete\` for this.** The two rules agree today, and they are separate fields because #2280 asks the owner whether to narrow deletion now that a withdrawal is irreversible. If it narrows, a client gating the correction on \`mayDelete\` would silently hide «Коригирай» from the creators who may still correct — a control missing from the person entitled to it, with nothing failing.\\n\\nSame two arms as its sibling: creator-or-admin AND single authorship, the second refusing admins too. False on an ordinary manual entry, which has no treatment to correct. Advisory, not the control: the matching \`PUT …/definition\` re-checks and answers 403 \`TREATMENT_EDIT_NOT_PERMITTED\` or a 409.\\n\\n**True for a BARE ACTIVITY too, and this flag does not tell you which route to use.** резитба, обработка на почвата and прибиране are correctable as of #2373, and this flag was always true for them because it is computed from authorship with no condition on the kind — so before that route existed a farmer was told they could correct a pruning while the only correction route refused the handle.\\n\\nPick the route on \`kind\`: an activity goes to \`PUT /journal/activities/{treatmentGroupId}/definition\`, a treatment to \`PUT /journal/treatments/{treatmentGroupId}/definition\`. A bare handle sent to the treatment route is refused \`NOT_A_TREATMENT\`, and the reverse \`NOT_AN_ACTIVITY\`. So gate the CONTROL on \`mayCorrect\` and choose the ADDRESS by \`kind\`.\\n\\n**Read it as \`mayCorrect === false\`, never \`!mayCorrect\`.** An ABSENT field is a row cached before the field existed, and this list reads through a persistent cache; treating absence as denial hides the control from the person who recorded the treatment. A stale permit costs one refusal, a stale denial costs a farmer their own record."
     },
     "kind": {
       "type": [
