@@ -1,0 +1,91 @@
+# Does a backup of the production database exist at all? — #2329
+#
+# `restore-test.yml` is the real drill: it asserts freshness AND that a disk
+# made from the snapshot boots a working Postgres. It is correct, and it is
+# monthly. This workflow exists because monthly is longer than it takes for the
+# backups to vanish entirely — which is what happened in October 2026:
+#
+#   2026-10-03  drill ran, passed
+#   2026-10-12  schedules detached and deleted, 60 snapshots deleted
+#   2026-10-25  13 days of no backup, nothing reported
+#   2026-11-01  the first run that would have failed
+#
+# So the cheap half of the question is asked daily here, and the expensive half
+# stays monthly there. Deliberately NOT a second restore drill: duplicating the
+# expensive part is how a daily job becomes a job somebody turns off.
+name: Backup exists
+
+on:
+  schedule:
+    # 04:40 UTC — after any nightly dump window, off the hour so it does not
+    # queue behind the top-of-hour crowd.
+    - cron: '40 4 * * *'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why this is being run by hand
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: backup-exists
+  cancel-in-progress: false
+
+jobs:
+  backup-exists:
+    runs-on: ubuntu-latest
+    # Gates the GCP identity secrets, the same way restore-test.yml does.
+    environment: production
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # A named diagnosis rather than dying inside the auth action, and it
+      # exits NON-ZERO: unconfigured is "nobody checked", which must not be
+      # mistaken for "the backup is fine". That distinction is the whole
+      # subject of #2329.
+      - name: Preflight — is this probe configured?
+        env:
+          WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          WIF_SA: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          missing=""
+          [ -n "$WIF_PROVIDER" ] || missing="$missing GCP_WORKLOAD_IDENTITY_PROVIDER"
+          [ -n "$WIF_SA" ]       || missing="$missing GCP_SERVICE_ACCOUNT"
+          if [ -n "$missing" ]; then
+            echo "::error title=Backup probe not configured::Missing production environment secret(s):$missing"
+            {
+              echo "## ⚠ The backup existence probe did not run"
+              echo ""
+              echo "Missing production environment secret(s): **$missing**"
+              echo ""
+              echo "**This is not a statement that a backup exists — it is a"
+              echo "statement that nobody looked.**"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "GCP identity secrets present"
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Does a recent backup exist?
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TARGET_DISK: ${{ vars.BACKUP_TARGET_DISK || 'agrent' }}
+          # Pins the bucket once a pg_dump mechanism exists. Until then the
+          # script discovers by name, so standing the mechanism up does not
+          # also require a commit here.
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+          MAX_AGE_HOURS: '26'
+        run: ./.github/scripts/backup-exists.sh
