@@ -1014,7 +1014,25 @@ export const RecordDiaryTreatmentSchema = z
             .array(
                 z.object({
                     parcelId: z.string().min(1),
-                    treatedAreaHa: z.number().positive(),
+                    treatedAreaHa: z.number().positive().openapi({
+                        description:
+                            'The area treated on this parcel, in HECTARES.\n\n'
+                            + '**Send a whole parcel as its own exact area, not as an omission.** '
+                            + 'Owner ruling 2026-10-25 (#2308): the register keeps the area as it '
+                            + 'was, so a later re-measure of the parcel cannot change an old '
+                            + '\u0414\u041d\u0415\u0412\u041d\u0418\u041a row. A stored NULL means \u201cthe whole parcel\u201d and therefore '
+                            + 'FOLLOWS the parcel\u2019s current area \u2014 which is right for a parcel whose '
+                            + 'area is unknown and wrong for a historical record of one that is '
+                            + 'known.\n\n'
+                            + 'So omit a parcel from this list only when it has no recorded area. '
+                            + 'This is documented rather than enforced: a NULL is still accepted, '
+                            + 'because refusing it would break installed builds that send one, and '
+                            + 'it still prints correctly today.\n\n'
+                            + 'Compared against the parcel at the register\u2019s own resolution \u2014 '
+                            + '\u0434\u043a\u0430 to two decimals \u2014 so typing the displayed figure back is accepted '
+                            + 'and only a difference the document could print is refused with '
+                            + '`TREATMENT_AREA_EXCEEDS_PARCEL`.',
+                    }),
                 }),
             )
             .optional()
@@ -1140,7 +1158,13 @@ export const CorrectDiaryTreatmentSchema = z
             .array(
                 z.object({
                     parcelId: z.string().min(1),
-                    treatedAreaHa: z.number().positive().nullable(),
+                    treatedAreaHa: z.number().positive().nullable().openapi({
+                        description:
+                            'The corrected area for this parcel, in HECTARES. Same convention as '
+                            + 'the record path: send a whole parcel as its own exact area so the '
+                            + 'row stays a snapshot, and reserve `null` for a parcel with no '
+                            + 'recorded area (#2308). Compared at the register\u2019s own resolution.',
+                    }),
                 }),
             )
             .max(500)
