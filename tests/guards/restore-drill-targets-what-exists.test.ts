@@ -113,20 +113,45 @@ describe('the restore drill targets what exists (#2332)', () => {
         expect(STACKS.length).toBeGreaterThanOrEqual(2);
     });
 
+    /**
+     * Both predicates were DEAD and `scripts/selector-teeth.mjs` said so —
+     * gutted to `return []` they survived every assertion here. Three
+     * separate mistakes, worth naming because each is reusable:
+     *
+     *  1. **The expected side CALLED the selector.**
+     *     `drilled: isDrilled(stack)` appeared on both sides of `toEqual`, so
+     *     it compared the function to itself and could not fail whatever it
+     *     returned. A guard grading its own output grades nothing.
+     *
+     *  2. **`!==` on values that might be objects is reference inequality.**
+     *     With both predicates gutted to `return []`, `[] !== []` is TRUE —
+     *     two distinct arrays — so "in exactly one state" passed with both
+     *     states meaningless.
+     *
+     *  3. **`[]` is truthy**, so `STACKS.filter(isDrilled)` kept every stack
+     *     and "at least one is drilled" passed over nonsense.
+     *
+     * The repair is to demand a strict boolean. That one assertion kills every
+     * gut the tool tries — `[]`, `''`, `0`, `null`, `undefined`, `new Set()`,
+     * `new Map()`, `{}` — because none of them is of type boolean.
+     */
+    const asState = (v: unknown, what: string): boolean => {
+        // Not a cast and not a coercion: a predicate that stopped returning a
+        // boolean has stopped being a predicate, and silently treating its
+        // return as truthy is how both guts survived.
+        expect({ what, type: typeof v }).toEqual({ what, type: 'boolean' });
+        return v as boolean;
+    };
+
     it.each(STACKS.map((s) => [s] as const))(
         '%s is either drilled or declared unbacked, never neither',
         (stack) => {
-            expect({
-                stack,
-                drilled: isDrilled(stack),
-                declaredUnbacked: isDeclaredUnbacked(stack),
-                inExactlyOneState: isDrilled(stack) !== isDeclaredUnbacked(stack),
-            }).toEqual({
-                stack,
-                drilled: isDrilled(stack),
-                declaredUnbacked: isDeclaredUnbacked(stack),
-                inExactlyOneState: true,
-            });
+            const drilled = asState(isDrilled(stack), `isDrilled(${stack})`);
+            const unbacked = asState(isDeclaredUnbacked(stack), `isDeclaredUnbacked(${stack})`);
+            // Literals on the expected side. Both are booleans by now, so
+            // `!==` is a value comparison rather than an identity one.
+            expect({ stack, inExactlyOneState: drilled !== unbacked })
+                .toEqual({ stack, inExactlyOneState: true });
         },
     );
 
@@ -134,7 +159,13 @@ describe('the restore drill targets what exists (#2332)', () => {
         // Without this, declaring every stack unbacked would satisfy the rule
         // above completely. That is the relax-the-caller failure: a guard
         // disarmed by widening what counts as acceptable.
-        expect(STACKS.filter(isDrilled).length).toBeGreaterThanOrEqual(1);
+        //
+        // `=== true`, not truthiness: `[]` is truthy, so a gutted predicate
+        // made `filter` keep every stack and this assertion pass over nothing.
+        const drilled = STACKS.filter((s) => isDrilled(s) === true);
+        expect({ drilledCount: drilled.length, drilled })
+            .toEqual({ drilledCount: drilled.length, drilled: expect.arrayContaining([]) });
+        expect(drilled.length).toBeGreaterThanOrEqual(1);
     });
 
     it('the drill refuses a dump whose globals sibling is missing', () => {

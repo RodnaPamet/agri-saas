@@ -286,7 +286,17 @@ describe('OI-3 — restore-test.yml wiring', () => {
     it('leaves no matrix behind without the protections a matrix needs', () => {
         // A future reader re-adding a second target must not get the old
         // fail-fast default by omission.
-        const strategy = wf.jobs['restore-test'].strategy;
+        //
+        // The job's EXISTENCE is asserted first, positively. Without that, a
+        // gutted reader makes `strategy` undefined and the else-branch below
+        // passes — an assertion satisfied by absence, which is the dead
+        // selector `scripts/selector-teeth.mjs` hunts and the reason a
+        // conditional assertion needs a floor under it.
+        const job = wf.jobs?.['restore-test'];
+        expect({ jobPresent: Boolean(job), hasSteps: (job?.steps?.length ?? 0) > 0 })
+            .toEqual({ jobPresent: true, hasSteps: true });
+
+        const strategy = job.strategy;
         if (strategy?.matrix) {
             expect(strategy['fail-fast']).toBe(false);
         } else {
