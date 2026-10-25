@@ -53,6 +53,9 @@ import { blankNonCode } from '../helpers/blank-non-code';
 interface WorkflowStep {
     id?: string;
     run?: string;
+    name?: string;
+    /** Quoted: a hyphenated YAML key is not a valid identifier. */
+    'continue-on-error'?: boolean;
 }
 
 interface WorkflowDoc {
@@ -324,7 +327,13 @@ describe('OI-3 — restore-test.yml wiring', () => {
          * natively, so the only ways to swallow a failure are the two checked
          * below. The summary reads `outcome` instead of a captured code.
          */
-        const steps = Object.values(wf.jobs).flatMap((j) => j.steps ?? []);
+        // Locally typed, as the assertion this replaces did. The outer `wf`
+        // is `as any`, and `Object.values` of an `any` infers its element as
+        // `unknown` — so `j.steps` is an error under `tsc` while jest, on a
+        // looser config, compiles it happily. Caught by CI's Typecheck job,
+        // not by the suite passing locally.
+        const typed = yaml.load(read(WORKFLOW)) as WorkflowDoc;
+        const steps = Object.values(typed.jobs).flatMap((j) => j.steps ?? []);
         const drill = steps.find((st) => st?.id === 'drill');
         expect(drill).toBeDefined();
         if (!drill?.run) throw new Error('the `id: drill` step has no `run` block');
