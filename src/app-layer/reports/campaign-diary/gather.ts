@@ -54,8 +54,25 @@ import { campaignWindow } from '@/lib/reports/campaign-window';
 import { buildCampaignRows, type DiaryLineInput } from './rows';
 import type { CampaignDiaryData } from '@/app-layer/reports/pdf/campaign-diary';
 
-/** The code the per-block register already answers for a quiet period. */
-export const REGISTER_EMPTY_FOR_PERIOD = 'REGISTER_EMPTY_FOR_PERIOD';
+/**
+ * `REGISTER_EMPTY_FOR_PERIOD` is passed as a LITERAL below, not through a
+ * constant, and that is the convention rather than an oversight.
+ *
+ * `a-new-code-ships-with-its-entry` (#1677) reads refusal codes OUT of their
+ * call sites so it can check each has a Bulgarian entry. A constant makes the
+ * call opaque to it — the guard then demands the site be declared as
+ * unreadable, which buys an exemption instead of a check. It caught this file
+ * on arrival, when it had its own `export const` duplicating the one in
+ * `farm-record-diary.ts`.
+ *
+ * The canonical constant lives there (`farm-record-diary.ts`), for callers
+ * that need to COMPARE against a thrown code; this module only throws, so it
+ * needs no constant of its own and a second definition of the same string
+ * would be a second source of truth for it.
+ *
+ * The code already carries both locales — bg «Няма записи за този период.» —
+ * so this adds no catalogue entry.
+ */
 
 const dec = (v: unknown): number | null =>
     v === null || v === undefined ? null : Number(v as { toString(): string });
@@ -93,7 +110,7 @@ export async function gatherCampaignDiary(
 
         if (lines.length === 0) {
             throw codedNotFound(
-                REGISTER_EMPTY_FOR_PERIOD,
+                'REGISTER_EMPTY_FOR_PERIOD',
                 `Няма записи за кампания ${campaignLabel}.`,
             );
         }
@@ -171,7 +188,7 @@ export async function gatherCampaignDiary(
         // is the state the coded 404 exists to express.
         if (rows.length === 0) {
             throw codedNotFound(
-                REGISTER_EMPTY_FOR_PERIOD,
+                'REGISTER_EMPTY_FOR_PERIOD',
                 `Няма завършени записи за кампания ${campaignLabel}.`,
             );
         }
