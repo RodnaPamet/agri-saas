@@ -77,9 +77,18 @@ export interface DiaryLineInput {
     /** The dose as recorded, in its OWN unit (`г/дка`, `мл/дка`). */
     doseValue: number | null;
     doseUnitSymbol: string | null;
-    /** From `LogQuantity` on the line's completion entry — kg, already. */
+    /**
+     * From `LogQuantity` on the line's completion entry — kg, already.
+     *
+     * There is deliberately NO `produceKind` beside this. The only string on
+     * that quantity is its `label`, which `recordHarvestTotal` sets to
+     * «Общо за мероприятието» — a note saying the figure is the activity's
+     * total and not this parcel's yield. It is not a produce TYPE, and the
+     * «Продукция / Вид» cell derives from the crop instead; see the row
+     * builder. Reading the label into that column printed the note itself
+     * into a document a farmer signs.
+     */
     produceKg: number | null;
-    produceKind: string | null;
 }
 
 export interface CampaignDiaryRow {
@@ -108,6 +117,18 @@ export interface CampaignDiaryRow {
 /** Two decimals, comma separator — the form's own convention. */
 export function formatHa(ha: number): string {
     return ha.toFixed(2).replace('.', ',');
+}
+
+/**
+ * A weight in kilograms, comma separator.
+ *
+ * NOT `formatHa`. That is the AREA convention — two decimals always — and a
+ * harvest is entered in whole kilograms, so it rendered a 1250 kg total as
+ * «1250,00» under a «Количество кг» header: precision nobody measured, from a
+ * helper whose name says hectares.
+ */
+export function formatKg(kg: number): string {
+    return (Number.isInteger(kg) ? String(kg) : kg.toFixed(2)).replace('.', ',');
 }
 
 /** `01.02.2025`, Bulgarian order. */
@@ -218,11 +239,12 @@ export function buildCampaignRows(
         );
         const kgTotal = bucket.reduce((sum, l) => sum + (l.produceKg ?? 0), 0);
         const anyKg = bucket.some((l) => l.produceKg != null);
+        const crops = uniq(bucket.map((l) => l.cropName)).join(', ');
 
         rows.push({
             date: formatDateCell(from, to),
             parcelIds: uniq(bucket.map((l) => l.parcelName)).join(', '),
-            crops: uniq(bucket.map((l) => l.cropName)).join(', '),
+            crops,
             area: areaHa === null ? '' : formatHa(areaHa),
             // The composed cell. `<label> – <area> ха` with an EN DASH, as the
             // template shows, and the area repeated here deliberately: the form
@@ -234,11 +256,17 @@ export function buildCampaignRows(
             activity: label ? (areaHa === null ? label : `${label} – ${formatHa(areaHa)} ха`) : '',
             productName: uniq(bucket.map((l) => l.productName)).join(', '),
             doseLabel: doses.join(', '),
-            produceKind: uniq(bucket.map((l) => l.produceKind)).join(', '),
+            // The crop that came off the parcels — column 3 is what was
+            // GROWN, this is what was TAKEN, and they coincide in this data
+            // model. Gated on the SAME `anyKg` as the quantity beside it, so
+            // the «Продукция» group is filled or empty as a whole: a kind with
+            // no figure implies a harvest whose size nobody recorded, which is
+            // the fabrication the test below exists to prevent.
+            produceKind: anyKg ? crops : '',
             // Empty, not "0", when nothing was recorded. A zero asserts that a
             // harvest produced nothing; an empty cell says nobody wrote it down,
             // and in a register those are different claims.
-            produceKg: anyKg ? formatHa(kgTotal) : '',
+            produceKg: anyKg ? formatKg(kgTotal) : '',
             sortKey: from.getTime(),
         });
     }
