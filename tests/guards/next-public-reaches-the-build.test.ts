@@ -36,16 +36,10 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const root = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
-
-/** Blank out comments, preserving line count so offsets stay meaningful. */
-function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, (m) => '\n'.repeat((m.match(/\n/g) ?? []).length))
-        .replace(/\/\/[^\n]*/g, '');
-}
 
 const KEY_RE = /NEXT_PUBLIC_[A-Z0-9_]+/g;
 
@@ -65,7 +59,12 @@ const NOT_IN_PRODUCTION_BUILDS: Record<string, string> = {
         + 'deliberately separate for the same reason.',
 };
 
-const envSrc = stripComments(read('src/env.ts'));
+// `blankNonCode`, not a local stripper. A hand-rolled one that removes BLOCK
+// comments before LINE comments mis-handles `// … /* …` and is capped by
+// `comment-stripper-order` (#1442/#1497) — which caught exactly that in the
+// first draft of this file. The shared helper is character-for-character and
+// newline-preserving, so line numbers survive.
+const envSrc = blankNonCode(read('src/env.ts'));
 const dockerfile = read('Dockerfile');
 const publish = read('.github/workflows/ghcr-publish.yml');
 
