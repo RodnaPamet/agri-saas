@@ -409,27 +409,87 @@ Three things that table is here to stop being misread:
 
 ## Recovering for real
 
+The procedure that stood here listed snapshots, built a disk from one and
+swapped boot disks. **None of that is possible** — every snapshot and both
+resource policies were deleted on 2026-10-12. Recovery is now restore-the-dump,
+and the first step is not the database.
+
 ```bash
-# 1. Pick the snapshot.
-gcloud compute snapshots list --filter='sourceDisk~/agrent$' \
-  --sort-by=~creationTimestamp
+PROJ=hazel-design-419410
 
-# 2. FIRST: salvage anything still readable from the live volume —
-#    the snapshot is up to 24h stale and is the floor, not the ceiling.
+# 0. THE ENCRYPTION KEY, FIRST. Not because it is needed first, but because
+#    discovering it is missing AFTER a restore is the worst moment to find out:
+#    the rows come back and every encrypted column is unreadable.
+gcloud secrets versions access latest \
+  --secret=agrent-data-encryption-key --project "$PROJ"
+#    (inflect-compliance-data-encryption-key for the other stack.)
+#    This goes into the new host's env file as DATA_ENCRYPTION_KEY. It is NOT
+#    in the dump and cannot be — a pg_dump carries no environment.
+
+# 1. If the box is still reachable, salvage from the LIVE volume first.
+#    The nightly dump is up to 24h stale and is the floor, not the ceiling.
 gcloud compute ssh agrent --zone europe-west1-b --command \
-  "sudo docker exec agrent-db pg_dump -U inflect agrent_production | gzip > /tmp/salvage.sql.gz"
+  "sudo docker exec agrent-db pg_dump -Fc -U inflect agrent_production > /tmp/salvage.dump"
 
-# 3. Build a new disk from the snapshot.
-gcloud compute disks create agrent-restored-$(date -u +%Y%m%d%H%M%S) \
-  --zone europe-west1-b --source-snapshot <SNAPSHOT> --type pd-balanced
+# 2. Otherwise take the newest nightly pair. BOTH objects, same timestamp.
+gcloud storage ls -l 'gs://agrent-db-backups-hazel/agrent/**' | tail -5
+gcloud storage cp gs://agrent-db-backups-hazel/agrent/YYYY/MM/DD/agrent-<TS>.dump        .
+gcloud storage cp gs://agrent-db-backups-hazel/agrent/YYYY/MM/DD/agrent-<TS>.globals.sql .
 
-# 4. Stop the instance, detach the bad disk, attach the restored one
-#    as the boot disk, start. (Or boot a new instance from the disk
-#    and re-point DNS.)
+# 3. GLOBALS FIRST, then the database. The other order fails every GRANT with
+#    `42704 role "app_user" does not exist` — see the section above.
+psql      -U postgres -f agrent-<TS>.globals.sql
+pg_restore -U postgres -d agrent_production --exit-on-error agrent-<TS>.dump
 ```
 
-Then verify the stack: `/api/readyz`, `/manifest.webmanifest`, `/sw.js`
-— the same three checks `deploy/apply.sh` health-verifies.
+Then verify the stack: `/api/readyz`, `/manifest.webmanifest`, `/sw.js` — the
+same three checks `deploy/apply.sh` health-verifies. `readyz` exercises the
+encryption key, so a wrong or missing key fails there rather than silently
+serving unreadable columns.
+
+`infra/scripts/restore-test-dump.sh` performs steps 2–3 unattended every month
+against a clean Postgres, so the half of this procedure that can be rehearsed
+is rehearsed. Step 0 is not covered by that drill — the drill restores schema
+and rows, which need no key.
+
+### The key is stored, and what that does and does not protect
+
+| | |
+| --- | --- |
+| `agrent` | secret `agrent-data-encryption-key` |
+| `inflect-compliance` | secret `inflect-compliance-data-encryption-key` |
+| replication | user-managed, `europe-west1` + `europe-west4` (two EU regions) |
+| source of truth | still the VM's env file — the secret is a DURABLE COPY, not the runtime source |
+
+Each was verified on storage by comparing a SHA-256 of the stored version
+against a SHA-256 of what the running container actually reports for
+`DATA_ENCRYPTION_KEY` — equality, not presence, because a truncated or
+banner-polluted payload stored as the recovery key would look like a backup
+and fail only when it was needed.
+
+**This is a durability control, not an access control.** `roles/editor`
+includes 18 `secretmanager.*` permissions, and both VMs run as
+`880736019978-compute@developer.gserviceaccount.com`, which holds
+`roles/editor` project-wide. So the machines' own identity can read **both
+products'** keys by IAM; what stops it today is that neither VM carries the
+`cloud-platform` OAuth scope — the same class of control that blocks backup
+deletion. Widening that scope for any reason, including to have the VM read
+this secret at boot, grants a compromised box both keys. That is why the app
+still reads its env file and this is only a copy.
+
+### Rotation must update the secret, or the copy goes stale silently
+
+The stored copy is a snapshot of a value that can change. `DATA_ENCRYPTION_KEY`
+rotation is supported (`DATA_ENCRYPTION_KEY_PREVIOUS` plus the sweep job), and
+a rotation that does not add a new secret version leaves a durable copy of a
+key that no longer decrypts anything — the same failure shape as a backup that
+quietly stopped, and just as invisible.
+
+`deploy/check-drift.sh` compares the live key's hash against the stored
+version's hash for both stacks and fails on mismatch. It is **operator-run, not
+scheduled**, so it catches a forgotten rotation at the next drift check rather
+than immediately; adding the version is therefore a step in the rotation
+procedure, not something to rely on a checker to notice.
 
 ---
 

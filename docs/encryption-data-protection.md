@@ -224,7 +224,7 @@ docker compose -f docker-compose.prod.yml exec app \
 
 | Secret | Purpose | Where to store |
 |---|---|---|
-| `DATA_ENCRYPTION_KEY` | App-layer column encryption | Environment variable |
+| `DATA_ENCRYPTION_KEY` | App-layer column encryption | Environment variable — **plus a durable copy in Secret Manager**, see below |
 | `AUTH_SECRET` | NextAuth session signing | Environment variable |
 | `JWT_SECRET` | JWT token signing | Environment variable |
 | `POSTGRES_PASSWORD` | Database authentication | Environment variable |
@@ -235,7 +235,7 @@ docker compose -f docker-compose.prod.yml exec app \
 
 | Key | Rotation procedure |
 |---|---|
-| `DATA_ENCRYPTION_KEY` | 1. Set the new key and keep the old as `DATA_ENCRYPTION_KEY_PREVIOUS`, 2. `POST /api/admin/key-rotation` until `GET` reports `previousKeyRetirable: true`, 3. Remove `_PREVIOUS`. Platform-admin-key gated. |
+| `DATA_ENCRYPTION_KEY` | 1. Set the new key and keep the old as `DATA_ENCRYPTION_KEY_PREVIOUS`, 2. **`gcloud secrets versions add <stack>-data-encryption-key --data-file=-`** — pipe the value, never paste it onto a command line, 3. `POST /api/admin/key-rotation` until `GET` reports `previousKeyRetirable: true`, 4. Remove `_PREVIOUS`. Platform-admin-key gated. **Step 2 is not optional**: skip it and the durable copy holds a key that no longer decrypts anything, which looks exactly like a working backup. `deploy/check-drift.sh` compares the two by hash, but it is operator-run, so it catches the omission late rather than preventing it. |
 | `LOOKUP_HMAC_KEY` | A SEPARATE rotation — it moves lookup hashes, not ciphertext. 1. Set the new key, keep the old as `LOOKUP_HMAC_KEY_PREVIOUS`, 2. `POST /api/admin/lookup-rehash` until `GET` reports it retirable, 3. Remove `_PREVIOUS`. |
 | `AUTH_SECRET` / `JWT_SECRET` | Set new value — existing sessions are invalidated |
 | `POSTGRES_PASSWORD` | Update in both Docker env and `.env.production` |
@@ -247,6 +247,26 @@ docker compose -f docker-compose.prod.yml exec app \
 | Railway | Railway environment variables (encrypted at rest) |
 | Fly.io | `fly secrets set` (encrypted at rest, never in `fly.toml`) |
 | Self-hosted | `.env.production` with `chmod 0600`, ideally backed by HashiCorp Vault or AWS Secrets Manager |
+
+### The durable copy, and why the app still reads its env file
+
+`DATA_ENCRYPTION_KEY` **cannot appear in a database backup** — a `pg_dump`
+carries no environment — so a restored database without it is a pile of
+unreadable columns. Since 2026-10-25 each stack's key is also stored in GCP
+Secret Manager (`agrent-data-encryption-key`,
+`inflect-compliance-data-encryption-key`; user-managed replication across
+`europe-west1` and `europe-west4`), verified on storage by hash equality
+against what the running container reports.
+
+The env file is still the runtime source, deliberately. Having the VM read the
+secret at boot would need the `cloud-platform` OAuth scope, and `roles/editor`
+— which both VMs hold, running as the default compute service account —
+includes 18 `secretmanager.*` permissions. Granting that scope would therefore
+give a compromised box **both products'** keys, and would also lift the
+`devstorage.read_only` cap that is currently what prevents backup deletion.
+So this is a durability control, not an access control.
+
+Full recovery procedure, including retrieving the key first: `docs/backup-restore.md`.
 
 ---
 
