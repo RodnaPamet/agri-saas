@@ -54,7 +54,13 @@ afterEach(() => {
  */
 function fixture(
     pageChunks: Record<string, string[]>,
-    opts: { omitFromBuild?: string[]; extraUrls?: string[]; audit?: unknown } = {},
+    opts: {
+        omitFromBuild?: string[];
+        extraUrls?: string[];
+        audit?: unknown;
+        /** Transfer bytes per chunk FILE name, for the #2306 byte figures. */
+        bytes?: Record<string, number>;
+    } = {},
 ) {
     const build = path.join(tmp, 'build');
     const chunkDir = path.join(build, 'static', 'chunks');
@@ -88,7 +94,11 @@ function fixture(
                       details: {
                           items: [
                               { url: 'http://localhost:3006/f/x', resourceType: 'Document' },
-                              ...urls.map((u) => ({ url: u, resourceType: 'Script' })),
+                              ...urls.map((u) => ({
+                                  url: u,
+                                  resourceType: 'Script',
+                                  transferSize: opts.bytes?.[path.basename(u)],
+                              })),
                           ],
                       },
                   },
@@ -268,5 +278,83 @@ describe('check-public-chunk-payload.mjs', () => {
             m[2],
         ]);
         expect(Object.entries(MARKERS).sort()).toEqual(declared.sort());
+    });
+});
+
+describe('byte figures (#2306)', () => {
+    it('reports the total and the share in chunks carrying a provider-only library', () => {
+        const { lhrDir, build } = fixture(
+            { 'a.js': ['sonner'], 'b.js': [] },
+            { bytes: { 'a.js': 10 * 1024, 'b.js': 30 * 1024 } },
+        );
+        const r = run(lhrDir, build);
+        expect(r.out).toContain('40.0 KB total');
+        expect(r.out).toContain('10.0 KB (25.0%) in chunks carrying a provider-only library');
+    });
+
+    it('counts a SHARED chunk once in the aggregate but shows it under BOTH libraries', () => {
+        // The property the obvious implementation gets wrong. One 20 KB chunk
+        // carrying two libraries is 20 KB of payload, not 40 — so the
+        // aggregate must count it once, while each library's own figure is an
+        // upper bound that legitimately includes the whole chunk.
+        const { lhrDir, build } = fixture(
+            { 'shared.js': ['sonner', 'swr'] },
+            { bytes: { 'shared.js': 20 * 1024 } },
+        );
+        const r = run(lhrDir, build);
+        expect(r.out).toContain('20.0 KB total');
+        // Once, not 40.
+        expect(r.out).toContain('20.0 KB (100.0%) in chunks carrying a provider-only library');
+        expect(r.out).toMatch(/sonner: lives in 1 chunk\(s\) totalling 20\.0 KB/);
+        expect(r.out).toMatch(/swr: lives in 1 chunk\(s\) totalling 20\.0 KB/);
+        // And it says so, rather than letting a reader add them up.
+        expect(r.out).toContain('an upper bound, not its own cost');
+    });
+
+    it('sums a library across the several chunks it appears in', () => {
+        const { lhrDir, build } = fixture(
+            { 'x.js': ['swr'], 'y.js': ['swr'], 'z.js': [] },
+            { bytes: { 'x.js': 4 * 1024, 'y.js': 6 * 1024, 'z.js': 10 * 1024 } },
+        );
+        const r = run(lhrDir, build);
+        expect(r.out).toMatch(/swr: lives in 2 chunk\(s\) totalling 10\.0 KB/);
+    });
+
+    it('says UNKNOWN rather than zero when no item carries a transferSize', () => {
+        // Zero is not a pass. A report set without sizes means the audit shape
+        // changed, and printing "0.0 KB in chunks carrying..." would read as
+        // "there is no app chrome here".
+        const { lhrDir, build } = fixture({ 'a.js': ['sonner'] });
+        const r = run(lhrDir, build);
+        expect(r.out).toContain('script transfer: UNKNOWN');
+        expect(r.out).not.toContain('0.0 KB (');
+    });
+
+    it('takes the MAX across reports, not the first or the mean', () => {
+        // Compression differs run to run, and a payload figure that
+        // under-reports argues for doing nothing.
+        const { lhrDir, build } = fixture(
+            { 'a.js': ['sonner'] },
+            { bytes: { 'a.js': 10 * 1024 } },
+        );
+        const second = {
+            audits: {
+                'network-requests': {
+                    details: {
+                        items: [
+                            {
+                                url: 'http://localhost:3006/_next/static/chunks/a.js',
+                                resourceType: 'Script',
+                                transferSize: 25 * 1024,
+                            },
+                        ],
+                    },
+                },
+            },
+        };
+        fs.writeFileSync(path.join(lhrDir, 'lhr-1700000000001.json'), JSON.stringify(second));
+        const r = run(lhrDir, build);
+        expect(r.out).toContain('25.0 KB total');
+        expect(r.out).not.toContain('10.0 KB total');
     });
 });

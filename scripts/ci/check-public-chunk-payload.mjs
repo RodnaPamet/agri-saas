@@ -31,9 +31,24 @@
  * seeded `PublicFarmProfile` row, so this reads that run's reports instead of
  * standing up a second browser.
  *
+ * ## The build and the reports must be the SAME artefact pair
+ *
+ * The usage below invites running this against a local `.next` and a
+ * downloaded report set. Do not: chunk filenames carry content hashes, so a
+ * local build's names do not match the URLs a CI run requested, and the
+ * unresolved chunks are simply never scanned.
+ *
+ * Measured 2026-10-25 doing exactly that — 14 of 27 URLs resolved, and the
+ * run reported `BASELINE names cmdk but it is no longer on the public page`.
+ * It was: CI's own run of the same reports resolves 27 of 27 and finds cmdk
+ * present. An "it is absent" verdict from a scan that failed to read half its
+ * subject is a confident wrong answer, which is worse than no answer, and the
+ * unresolved count is the only thing that distinguishes them.
+ *
  * Usage:
  *   node scripts/ci/check-public-chunk-payload.mjs [lhrDir] [buildDir]
  *   defaults: .lighthouseci .next
+ *   — and both must come from ONE run.
  */
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -129,6 +144,14 @@ export function lhrFiles(dir) {
  */
 export function scriptUrlsFromLhrs(files) {
     const urls = new Set();
+    /**
+     * Transfer bytes per URL, the MAX across reports — #2306.
+     *
+     * Max rather than mean or first-seen: compression can differ run to run,
+     * and a payload figure that under-reports argues for doing nothing. The
+     * conservative direction here is the larger number.
+     */
+    const transferByUrl = new Map();
     let audited = 0;
     for (const f of files) {
         const lhr = JSON.parse(readFileSync(f, 'utf8'));
@@ -140,13 +163,19 @@ export function scriptUrlsFromLhrs(files) {
         }
         audited += 1;
         for (const it of items) {
-            if (it?.resourceType === 'Script' && typeof it.url === 'string') urls.add(it.url);
+            if (it?.resourceType === 'Script' && typeof it.url === 'string') {
+                urls.add(it.url);
+                const bytes = Number(it.transferSize ?? 0);
+                if (Number.isFinite(bytes) && bytes > (transferByUrl.get(it.url) ?? 0)) {
+                    transferByUrl.set(it.url, bytes);
+                }
+            }
         }
     }
     if (urls.size === 0) {
         throw new Error(`no Script requests across ${audited} report(s) — a real page load has some`);
     }
-    return { urls: [...urls].sort(), audited };
+    return { urls: [...urls].sort(), audited, transferByUrl };
 }
 
 /**
@@ -197,7 +226,26 @@ export function findableMarkers(buildDir) {
 }
 
 /** The whole verdict, as data, so a test can drive it without a process exit. */
-export function classify({ urls, audited, buildDir }) {
+/**
+ * What the byte figures mean, because the obvious reading is wrong — #2306.
+ *
+ * A chunk can carry SEVERAL provider-only libraries, so summing each library's
+ * chunks and adding the totals double-counts. Two different honest figures,
+ * reported separately rather than merged into one misleading number:
+ *
+ *   `bytesInChunksCarrying` — per library, the combined transfer size of the
+ *       chunks it appears in. An UPPER BOUND on what removing it could save,
+ *       and equal to its actual cost only if those chunks carry nothing else.
+ *
+ *   `appChromeBytes` — the combined size of chunks carrying AT LEAST ONE such
+ *       library, counted once. This is the figure that answers "how much of
+ *       the public payload is app chrome", and it does not double-count.
+ *
+ * Reported, NOT gated. A budget over these numbers is a decision about what
+ * the public page may cost, and inventing a threshold here would be me making
+ * that decision by picking today's figure.
+ */
+export function classify({ urls, audited, buildDir, transferByUrl = new Map() }) {
     const resolved = [];
     const unresolved = [];
     for (const u of urls) {
@@ -207,13 +255,27 @@ export function classify({ urls, audited, buildDir }) {
     }
 
     const present = new Map();
+    /** Chunk URL -> the libraries found in it, so a shared chunk is counted once. */
+    const libsByChunk = new Map();
     for (const { url, file } of resolved) {
         const text = readFileSync(file, 'utf8');
         for (const lib of PROVIDER_ONLY) {
             if (text.includes(lib.marker)) {
                 present.set(lib.name, [...(present.get(lib.name) ?? []), path.basename(url)]);
+                libsByChunk.set(url, [...(libsByChunk.get(url) ?? []), lib.name]);
             }
         }
+    }
+
+    const bytesOf = (u) => transferByUrl.get(u) ?? 0;
+    const totalScriptBytes = urls.reduce((s2, u) => s2 + bytesOf(u), 0);
+    // Counted ONCE per chunk, however many libraries it carries.
+    const appChromeBytes = [...libsByChunk.keys()].reduce((s2, u) => s2 + bytesOf(u), 0);
+    const bytesInChunksCarrying = {};
+    for (const [name] of present) {
+        bytesInChunksCarrying[name] = [...libsByChunk.entries()]
+            .filter(([, libs]) => libs.includes(name))
+            .reduce((s2, [u]) => s2 + bytesOf(u), 0);
     }
 
     const { found: findable, scanned } = findableMarkers(buildDir);
@@ -256,15 +318,18 @@ export function classify({ urls, audited, buildDir }) {
         }
     }
 
-    return { audited, urls, resolved, unresolved, present, findable, scanned, problems };
+    return {
+        audited, urls, resolved, unresolved, present, findable, scanned, problems,
+        totalScriptBytes, appChromeBytes, bytesInChunksCarrying,
+    };
 }
 
 function main() {
     const lhrDir = process.argv[2] ?? '.lighthouseci';
     const buildDir = process.argv[3] ?? '.next';
     const files = lhrFiles(lhrDir);
-    const { urls, audited } = scriptUrlsFromLhrs(files);
-    const r = classify({ urls, audited, buildDir });
+    const { urls, audited, transferByUrl } = scriptUrlsFromLhrs(files);
+    const r = classify({ urls, audited, buildDir, transferByUrl });
 
     console.log(
         `[public-payload] ${r.audited} report(s), ${r.urls.length} script URL(s), `
@@ -277,6 +342,40 @@ function main() {
     console.log(
         `[public-payload] on the public page: ${[...r.present.keys()].sort().join(', ') || 'none'}`,
     );
+
+    // The figures #2306 asked for. Printed even when the verdict is OK: the
+    // gate's own question is "no NEW library", which is a ratchet over a NAME
+    // LIST and stays green while the accepted set costs whatever it costs.
+    // Without a number there is no way to tell whether removing them would
+    // move FCP at all.
+    const kb = (b) => `${(b / 1024).toFixed(1)} KB`;
+    if (r.totalScriptBytes > 0) {
+        const pct = ((r.appChromeBytes / r.totalScriptBytes) * 100).toFixed(1);
+        console.log(
+            `[public-payload] script transfer: ${kb(r.totalScriptBytes)} total, `
+                + `${kb(r.appChromeBytes)} (${pct}%) in chunks carrying a provider-only library`,
+        );
+        // Per library, and labelled for what it is. These do NOT sum to the
+        // figure above: a chunk carrying two libraries appears under both, so
+        // each is an UPPER BOUND on what removing that one could save.
+        for (const [name, bytes] of Object.entries(r.bytesInChunksCarrying).sort(
+            (a, b) => b[1] - a[1],
+        )) {
+            const chunks = r.present.get(name)?.length ?? 0;
+            console.log(
+                `[public-payload]   ${name}: lives in ${chunks} chunk(s) totalling `
+                    + `${kb(bytes)} — an upper bound, not its own cost`,
+            );
+        }
+    } else {
+        // Zero is not a pass. A report set with no transfer sizes means the
+        // audit shape changed, and silently printing nothing would make the
+        // figures above look like "there is no app chrome here".
+        console.log(
+            '[public-payload] script transfer: UNKNOWN — no transferSize on any '
+                + 'network-requests item, so the byte figures are unavailable rather than zero',
+        );
+    }
 
     if (r.problems.length) {
         for (const p of r.problems) console.error(`::error::public payload: ${p}`);
