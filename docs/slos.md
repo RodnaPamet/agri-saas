@@ -477,8 +477,8 @@ The RTO assumes operator availability at the time of the incident. **Detection i
 | API Error Rate | < 1% | 30 days | `api_request_count` |
 | Health Check Availability | ≥ 99.95% | 7 days | Synthetic probe of `/api/livez` |
 | Repository Latency (P95) | < 100ms | 7 days | `repo_method_duration` (OI-3 part 2) |
-| RPO (Recovery Point) | ≤ **24 hours** *(a 1-hour target was retired 2026-09-10, #842 — see SLO 6)* | continuous | Daily GCE disk snapshot (`agrent-daily-snapshot`, 14-day retention) + monthly `restore-test-gcp.sh` |
-| RTO (Recovery Time) | ≤ 4 hours *(time-to-restore, clocked from when a human starts; acknowledgement carries no budget — see SLO 7)* | per incident | Image pin + `deploy/apply.sh` / `deploy/rollback/*.down.sql` / disk-from-snapshot — `docs/runbooks/production-vm.md` |
+| RPO (Recovery Point) | ≤ **24 hours** *(a 1-hour target was retired 2026-09-10, #842 — see SLO 6)* | continuous | Nightly `pg_dump` to `gs://agrent-db-backups-hazel` (01:15 UTC, 30-day lifecycle) + daily `Backup exists` probe + monthly `restore-test-dump.sh`. The GCE snapshot schedule this row used to name was deleted 2026-10-12 |
+| RTO (Recovery Time) | ≤ 4 hours *(time-to-restore, clocked from when a human starts; acknowledgement carries no budget — see SLO 7)* | per incident | Image pin + `deploy/apply.sh` / `deploy/rollback/*.down.sql` / restore-the-dump — `docs/runbooks/production-vm.md`. Not disk-from-snapshot: there are no snapshots |
 
 ---
 

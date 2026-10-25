@@ -693,7 +693,18 @@ describe('OI-3 — Incident response runbook (docs/incident-response.md)', () =>
         // it replaced named infrastructure this product never ran (see
         // tests/guards/oi-3-backup-restore.test.ts and
         // docs/backup-restore.md).
-        expect(alignment).toMatch(/restore-test-gcp\.sh/);
+        // Pinned to `restore-test-dump.sh` since 2026-10-25. This
+        // assertion previously named `restore-test-gcp.sh`, which drilled a
+        // GCE snapshot schedule deleted on 2026-10-12 — so the guard was
+        // holding an operator-facing table to a deleted script, and failed
+        // the moment that table was corrected. The name is asserted rather
+        // than left loose because the table's job is to say which shipped
+        // thing a runbook step drives; "some drill exists" is not that.
+        expect(alignment).toMatch(/restore-test-dump\.sh/);
+        // And the retired one must not be presented as live. Written so a
+        // struck-through mention — the form this table uses for retired
+        // rows — still passes.
+        expect(alignment).not.toMatch(/(?<!~)restore-test-gcp\.sh(?!~)/);
         expect(alignment).toMatch(/manage_master_user_password/);
         expect(alignment).toMatch(/external-uptime\.yml/);
     });
