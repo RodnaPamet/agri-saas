@@ -53,7 +53,22 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agrent_production}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
+      # `./deploy/init-roles.sh`, not `./init-roles.sh` — #2319.
+      #
+      # The repo keeps this script in `deploy/`. The old path resolved to the
+      # project root, where a CLONE has no such file, and production satisfied
+      # it with an untracked copy somebody placed at `/opt/agrent/init-roles.sh`
+      # (it still has three copies: root, `deploy/`, `prisma/`).
+      #
+      # A bind mount whose source does not exist makes Docker create a
+      # DIRECTORY there, so initdb mounted an empty directory, ran nothing, and
+      # Postgres came up healthy with no `app_user`. The first RLS migration
+      # then failed on `role "app_user" does not exist` — three steps
+      # downstream of the cause, and looking like a migration bug.
+      #
+      # This path resolves in BOTH layouts: the repo has `deploy/init-roles.sh`
+      # and so does `/opt/agrent`. Verified on the VM before changing it.
+      - ./deploy/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     shm_size: '256m'
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inflect} -d ${POSTGRES_DB:-agrent_production}"]
