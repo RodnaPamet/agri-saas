@@ -134,6 +134,44 @@ const compile = (rules) => rules.map((r) => ({ ...r, when: new RegExp(r.when) })
 export const PATH_RULES = compile(RULES.pathRules);
 export const CONTENT_RULES = compile(RULES.contentRules);
 
+/**
+ * The test files in a changed set — #2330.
+ *
+ * `^tests/` maps only to the META-guard directories, which is right as far as
+ * it goes: a change under `tests/` puts guards that grade the SHAPE of test
+ * code in scope. But it was the ONLY thing that rule did, so **the changed
+ * test itself was never run**.
+ *
+ * Measured on the branch that filed this: five changed files including a brand
+ * new `tests/unit/backup-exists-probe.test.ts`, derived population
+ * `tests/guards` + `tests/guardrails`, and grepping the run output for the new
+ * test's name returned zero. The tool reported on the change without executing
+ * the test written for it.
+ *
+ * CI shards the full suite, so a broken test is caught one push later — which
+ * is exactly what this script exists to make unnecessary. And this is the one
+ * test it can be most certain is relevant: the one in the diff.
+ */
+export function changedTestFiles(files) {
+    return files.filter((f) => /^tests[/].+[.]test[.]tsx?$/.test(f));
+}
+
+/**
+ * Drop a specific test file when its whole directory is already selected —
+ * otherwise jest is handed a redundant path and the printed population
+ * overstates what is distinct.
+ *
+ * Exported beside `changedTestFiles` because the two only make sense together:
+ * adding the changed test is safe precisely BECAUSE this collapses it into a
+ * directory that already covers it. A changed `tests/guards/x.test.ts` costs
+ * nothing; a changed `tests/unit/x.test.ts` is added, because `tests/unit` is
+ * not among the directories `^tests/` selects.
+ */
+export function dedupeAgainstDirectories(paths) {
+    const dirs = paths.filter((p) => !p.endsWith('.ts') && !p.endsWith('.tsx'));
+    return paths.filter((p) => !dirs.some((d) => p !== d && p.startsWith(`${d}/`)));
+}
+
 // Guarded, so a test can import the rules without the script executing. The
 // rules are the thing worth asserting on — a path in them that no longer
 // exists would contribute zero tests and read as a pass.
@@ -226,13 +264,18 @@ for (const rule of CONTENT_RULES) {
     select(rule.run, `${rule.why} (matched ${hits.length} added line(s))`);
 }
 
-// Drop a specific test file when its whole directory is already selected —
-// otherwise jest is handed a redundant path and the printed population
-// overstates what is distinct.
-const dirs = [...selected.keys()].filter((p) => !p.endsWith('.ts'));
-const population = [...selected.keys()].filter(
-    (p) => !dirs.some((d) => p !== d && p.startsWith(`${d}/`)),
-);
+// The test in the diff is the test most certainly relevant to the change.
+const changedTests = changedTestFiles(files);
+if (changedTests.length) {
+    select(
+        changedTests,
+        `the test file itself changed (${changedTests.length}) — \`^tests/\` selects only `
+            + 'the META-guard directories, so without this the test written for the change '
+            + 'is not run by the tool reporting on it (#2330)',
+    );
+}
+
+const population = dedupeAgainstDirectories([...selected.keys()]);
 
 console.log(
     `[verify:changed] base ${base.slice(0, 9)} · ${files.length} changed file(s)`
