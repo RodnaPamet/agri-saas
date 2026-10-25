@@ -29,6 +29,12 @@ on:
 permissions:
   contents: read
   issues: write
+  # Required for Workload Identity Federation. Without it GitHub does not
+  # inject $ACTIONS_ID_TOKEN_REQUEST_URL, and `google-github-actions/auth`
+  # dies with a message about "workflow permissions are incorrect, or this job
+  # is being run from a fork" — which names neither the missing permission nor
+  # this file. Measured on run 40182294948, the probe's first CI run.
+  id-token: write
 
 concurrency:
   group: backup-exists
@@ -55,6 +61,15 @@ jobs:
           missing=""
           [ -n "$WIF_PROVIDER" ] || missing="$missing GCP_WORKLOAD_IDENTITY_PROVIDER"
           [ -n "$WIF_SA" ]       || missing="$missing GCP_SERVICE_ACCOUNT"
+          # Checked HERE because the secrets being present says nothing about
+          # whether a token can be minted from them. On this workflow's first
+          # CI run both secrets were set, this preflight passed, and the auth
+          # action then failed on a missing `id-token: write` with a message
+          # naming neither the permission nor this file. A preflight whose
+          # purpose is a named diagnosis must check the thing that was
+          # actually missing.
+          [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] \
+            || missing="$missing id-token:write(permissions-block,-not-a-secret)"
           if [ -n "$missing" ]; then
             echo "::error title=Backup probe not configured::Missing production environment secret(s):$missing"
             {
