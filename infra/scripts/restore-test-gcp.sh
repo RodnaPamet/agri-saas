@@ -1,4 +1,24 @@
 #!/usr/bin/env bash
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  RETIRED 2026-10-25 — THIS DRILLS A MECHANISM THAT NO LONGER EXISTS.      ║
+# ║                                                                           ║
+# ║  Nothing invokes it. `.github/workflows/restore-test.yml` now runs         ║
+# ║  `infra/scripts/restore-test-dump.sh` (#2332).                            ║
+# ║                                                                           ║
+# ║  The GCE snapshot schedules this script asserts on were deliberately      ║
+# ║  deleted on 2026-10-12 (#2329) and nothing replaced them, so its first    ║
+# ║  two steps — schedule attached, newest snapshot under 26h — fail against  ║
+# ║  an absence. Running it by hand will report a broken backup when the      ║
+# ║  backup is fine and simply lives somewhere else.                          ║
+# ║                                                                           ║
+# ║  It is kept rather than deleted for one measured reason: eight test       ║
+# ║  files read it, and removing it fails 6 suites / 37 tests —               ║
+# ║  postgis-image-single-source names it in its CONSUMERS list,              ║
+# ║  restore-drill-remote-script byte-compares its remote payload, and        ║
+# ║  restore-drill-error-reporting unit-tests its diagnostics. That is a      ║
+# ║  deliberate change, not a tidy-up, and it is tracked separately rather    ║
+# ║  than done under the 2026-11-01 deadline for the drill to work at all.    ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
 # ───────────────────────────────────────────────────────────────
 #  Restore drill — GCE snapshot → throwaway VM → real Postgres
 #

@@ -249,111 +249,62 @@ gcloud compute snapshots list --sort-by=~creationTimestamp \
 
 ## The restore drill
 
-`infra/scripts/restore-test-gcp.sh`. Monthly via
-`.github/workflows/restore-test.yml` — which runs it **once per target
-from a job matrix** — and runnable by hand any time:
+`infra/scripts/restore-test-dump.sh`, monthly via
+`.github/workflows/restore-test.yml` (04:00 UTC on the 1st) and runnable by
+hand any time:
 
 ```bash
-# agrent (the defaults)
-GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
-SOURCE_DISK=agrent \
-  ./infra/scripts/restore-test-gcp.sh
-
-# inflect-compliance
-GCP_PROJECT=hazel-design-419410 GCP_ZONE=europe-west1-b \
-SOURCE_DISK=inflect-compliance SNAPSHOT_SCHEDULE=inflect-daily-snapshot \
-PGDATA_VOLUME=inflect_pgdata STACK_DIR=/opt/inflect \
-PG_IMAGE=postgres:16-alpine \
-  ./infra/scripts/restore-test-gcp.sh
+BACKUP_BUCKET=agrent-db-backups-hazel BACKUP_PREFIX=agrent/ \
+PG_IMAGE=$(docker build -q deploy/postgres) \
+  ./infra/scripts/restore-test-dump.sh
 ```
 
-The drill deliberately does **not** parse credentials out of the
-stack's config — the two stacks spell them differently (env file vs
-compose keys with `${VAR:-default}` interpolation). It asks the
-restored cluster which role and database actually exist. A mis-parsed
-role reports `role does not exist`, which reads like a corrupt backup
-when the backup is fine.
+It fetches the newest `*.dump`, requires its `*.globals.sql` sibling, restores
+**the globals first** into a clean Postgres built from `deploy/postgres/Dockerfile`
+— the same image production runs, because the dump carries `postgis`, `vector`
+and `pg_trgm` extension objects — and then runs the validation battery:
+`SELECT 1`, `Tenant` and `User` readable, migrations applied,
+`tenant_isolation` policies present, `app_user` present **and holding table
+grants**.
 
-It takes ~10 minutes and costs a few cents. What it does:
+### What it asserts, and what it deliberately does not
 
-1. Asserts the snapshot **schedule is still attached** to the disk —
-   a detached resource policy stops all backups with no error anywhere.
-2. Asserts the newest snapshot is **< 26h old** (`MAX_SNAPSHOT_AGE_HOURS`).
-3. Creates a disk from that snapshot **and** boots a throwaway VM with
-   **no service account and no scopes** — it briefly holds a copy of
-   production data, so it gets no GCP identity. Both are provisioned in
-   the first zone of the region that has room: a persistent disk is
-   zonal, a snapshot is not, and a single pinned zone is what made
-   2026-09-01 fail with `ZONE_RESOURCE_POOL_EXHAUSTED` before the drill
-   could test anything. Disk and VM move together because either can be
-   the exhausted half, and a disk holding production data must never be
-   left in a zone the VM could not boot in. If **every** zone in the
-   region is full the drill exits **75**, which means *not tested* —
-   not *broken* (see below).
-4. Mounts the disk and starts a real Postgres over the recovered data
-   directory so WAL recovery actually runs — building agrent's
-   `postgis` + `pgvector` image, or pulling whatever `PG_IMAGE` names,
-   so the restored cluster's extensions resolve.
-5. Runs the validation battery: `SELECT 1`; `Tenant` and `User`
-   readable; `_prisma_migrations` non-empty; recent `AuditLog` rows;
-   `tenant_isolation` policies present in `pg_policies`; `app_user`
-   role present.
-7. Deletes the VM and the disk **from a trap**, on every exit path.
+It answers **"does restoring work"**. It does **not** gate freshness — the
+daily `Backup exists` workflow owns that question (#2329), because a monthly
+cadence is what let a total absence of backups go unreported for 13 days. The
+age the drill prints is information; a months-old dump can answer the
+restorability question perfectly well, and the probe is what says it is old.
 
-If it is killed hard, check for leaks:
+Two flags in it are load-bearing and should not be "tidied":
 
-```bash
-gcloud compute instances list --filter='name~restore-test-'
-gcloud compute disks list --filter='name~restore-test-'
-```
+- **`pg_restore --exit-on-error`.** By default `pg_restore` continues past
+  errors and exits **0**, reporting them as warnings on stderr. Without the
+  flag a restore that failed 142 GRANTs still "succeeds".
+- **globals before database.** The globals create the roles the dump's GRANTs
+  name. Reversed, every GRANT fails.
 
-### Editing the remote half
+### It no longer boots a VM, and that removed a failure family
 
-Steps 4-6 all run **on the VM**, from a string the script builds locally and
-hands to `gcloud compute ssh --command`. That string is built from a **quoted**
-heredoc (`cat <<'REMOTE'`), which expands nothing at all, so everything in the
-body — every `$`, `${…}`, `$(…)` and backtick — is a byte the VM receives rather
-than something the local machine evaluates.
+The previous drill (`infra/scripts/restore-test-gcp.sh`, now **retired** —
+see its header) created a disk from a snapshot, booted a throwaway VM, mounted
+the disk and let Postgres perform WAL recovery, which was the crash-consistent
+snapshot's whole correctness argument. A `pg_dump` has no WAL to recover and no
+disk to boot.
 
-**Do not un-quote that delimiter**, and do not reach for a host value inside the
-body. The five values the VM cannot know are injected ahead of it as a generated
-prelude:
+So the drill needs no GCE resources at all, which retires the
+`exit 75 — NOT TESTED` path: on **2026-09-01** both targets hit
+`ZONE_RESOURCE_POOL_EXHAUSTED` for a `pd-balanced` disk and the drill could not
+report on the backups at all. A drill that cannot get hardware cannot answer.
 
-```
-PGDATA_VOLUME=…   STACK_DIR=…   PG_IMAGE=…   DB_USER_HINT=…   DB_NAME_HINT=…
-```
+### Only `agrent` is drilled
 
-`printf %q` shell-quotes each one, so a value carrying a space or a quote
-arrives as data. Add a sixth by extending that `printf`, never by writing
-`${NEW_THING}` into the body.
-
-The reason is the 2026-10-01 row below: while the delimiter was unquoted, a
-markdown backtick in the body's own COMMENTS was a command substitution
-evaluated on the GitHub runner, and the drill ran its own prose as commands for
-a month without ever opening an SSH connection. #1212 escaped the backticks;
-#1225 quoted the delimiter, which removes the whole class — a `$(…)` or a
-`${VAR}` written in prose, or a dropped backslash shipping `test -d ""`, were
-all still live with the backtick count at zero. Two tests hold it:
-`tests/guards/shell-heredoc-no-live-backticks.test.ts` pins the delimiter, and
-`tests/guards/restore-drill-remote-script.test.ts` runs the drill against a
-stubbed `gcloud` and asserts the captured payload's body is byte-identical to
-the heredoc source.
-
-### Running it from CI
-
-CI needs credentials for the production project. Configure Workload
-Identity Federation and set two secrets on the `production`
-environment — `GCP_WORKLOAD_IDENTITY_PROVIDER` and
-`GCP_SERVICE_ACCOUNT` (see the header of `restore-test.yml`).
-
-**Until those exist the monthly workflow fails on purpose**, with a
-step summary saying the drill did not run. That is deliberate: a
-skipped restore test is indistinguishable from a passing one, and this
-repo has been bitten by exactly that (see `CLAUDE.md` → "Green is not
-the same as executed"). A red that says *nobody checked the backup* is
-correct; a green that means the same thing is not.
-
----
+`inflect-compliance` has no backup to restore — see the box above. It is
+removed from the drill rather than left to fail monthly in red for something
+this repository cannot fix, and
+`tests/guards/restore-drill-targets-what-exists.test.ts` asserts that every
+stack here is either drilled **or** declared unbacked, never neither. The day
+that stack grows a backup, that guard is what notices this file never gained a
+target.
 
 ## Drill history
 
