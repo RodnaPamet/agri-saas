@@ -194,6 +194,46 @@ watchtower`. `app` and `worker` pick a create-time change up on the next
 image deploy, since Watchtower recreates them then; everything else needs
 the command above.
 
+**A changed VOLUME list recreates the container too, and for `db` that is the
+production database.** The list above is about settings read at create time;
+Docker also recreates a container when its *mounts* change. So a one-line
+edit to a `volumes:` entry makes the next `apply.sh` recreate that service.
+
+That is live right now. #2322 changed the db's init-script mount from
+`./init-roles.sh` to `./deploy/init-roles.sh` — the repo never had a file at
+the first path, and production satisfied it with an untracked copy. The repo
+is correct today and the VM has not been applied, so `check-drift.sh` reports
+the compose file as drifted **on purpose**:
+
+```
+[drift] DRIFT DETECTED
+  • the repo changed but wasn't applied → run deploy/apply.sh to push it.
+```
+
+Applying it recreates `agrent-db`. The `pgdata` volume persists and the
+interruption is short, but recreating the production database container is a
+deliberate act, not a side effect of a routine apply — so decide to do it,
+rather than discovering it. Nothing degrades while it waits: the init script
+only runs on a FRESH volume, which is the rebuild path, not the running one.
+
+**Two things a rebuild needs that nothing else tells you.** Both were found by
+actually deploying from a clean clone (#2319), and both fail in ways that name
+the wrong thing:
+
+- **`POSTGRES_USER` must be `postgres`.** Migration
+  `20260323180000_apply_full_rls_setup` references that role by name, so any
+  other value stops the deploy with `42704 ERROR: role "postgres" does not
+  exist` — an error about a role, from a variable that chose it.
+  `deploy/env.prod.example` pins it with the reason.
+- **`app_user` must exist before migrations run.** `deploy/init-roles.sh` is
+  mounted into `/docker-entrypoint-initdb.d/`, so initdb creates it on a fresh
+  volume. If that mount source is missing, Docker silently creates a
+  *directory* there, initdb runs nothing, Postgres comes up **healthy** with no
+  role, and the first RLS migration fails on `role "app_user" does not exist` —
+  three steps downstream of the cause.
+  `tests/guards/compose-paths-resolve-in-a-clone.test.ts` now fails if any
+  relative path in the compose file stops resolving in the repo.
+
 `check-drift.sh` reports this axis now (`deploy/compare-running-state.py`),
 comparing the running `command`, `stop_grace_period` and `logging` against
 what the manifest declares and printing how many settings across how many
