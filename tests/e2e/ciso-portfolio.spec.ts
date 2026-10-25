@@ -48,7 +48,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { type Page } from '@playwright/test';
-import { safeGoto, waitForHydration } from './e2e-utils';
+import { safeGoto, waitForHydration, expectVisibleWithLoadState } from './e2e-utils';
 
 const CISO = { email: 'ciso@acme.com', password: 'password123' };
 const ORG_SLUG = 'acme-org';
@@ -202,8 +202,16 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         await safeGoto(page, `/t/${SEED_TENANT}/assets`);
 
         // Wait for the tenant chrome to come up.
-        await expect(page.locator('aside').first()).toBeVisible({
+        //
+        // Through `expectVisibleWithLoadState` (#2313): the assertion is
+        // identical, and a TIMEOUT now carries the page's load state with it.
+        // This spec's ledger entry has accumulated occurrences since 2026-10-06
+        // whose entire output was "locator not visible", which cannot
+        // distinguish a document that never loaded from one that loaded and
+        // never hydrated from one that rendered without the element.
+        await expectVisibleWithLoadState(page, 'aside', {
             timeout: 30_000,
+            alsoReport: ['[data-testid="assets-table"]', '#new-asset-btn'],
         });
         // No networkidle wait: the assets-table assertion below auto-waits
         // up to 30s and is the positive control for the count-0 check, so a
@@ -212,9 +220,10 @@ test.describe('CISO portfolio journey (Epic O-4)', () => {
         // Sanity-check the page actually rendered its list before
         // concluding the button is absent — otherwise a blank error page
         // would satisfy the count-0 assertion vacuously.
-        await expect(
-            page.locator('[data-testid="assets-table"]'),
-        ).toBeVisible({ timeout: 30_000 });
+        await expectVisibleWithLoadState(page, '[data-testid="assets-table"]', {
+            timeout: 30_000,
+            alsoReport: ['aside', '#new-asset-btn'],
+        });
 
         // The create button is gated by `permissions.canWrite` —
         // AUDITOR never has it. Absence of the button is the read-only
