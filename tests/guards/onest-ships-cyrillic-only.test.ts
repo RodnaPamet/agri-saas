@@ -20,13 +20,21 @@
  * direction: an exemption that has outlived its target.
  */
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * ONE constant for both the absence probes and the proof that the path is
+ * real. Two separate literals let the probes be aimed at a directory holding
+ * no fonts while a hardcoded proof kept passing — measured: that mutation
+ * survived, so every absence below was being read from nowhere.
+ */
+const FONT_DIR = path.join(ROOT, 'public/fonts');
+const fontPath = (file: string) => path.join(FONT_DIR, file);
 const lock = JSON.parse(read('src/styles/fonts.lock.json')) as {
     faces: { file: string; family: string; subset: string; bytes: number }[];
 };
@@ -59,14 +67,31 @@ describe('Onest ships cyrillic only (#1969)', () => {
         // and so does the generated stylesheet's header. A comment hit would
         // mean the opposite of a defect — the pattern was removed.
         const css = blankNonCode(read('src/styles/fonts.css'));
-        const onDisk = readdirSync(path.join(ROOT, 'public/fonts'));
 
+        // Each named file is probed directly rather than picked out of a
+        // directory listing. A listing that came back empty — wrong path, empty
+        // directory — would make `listing.includes(file)` false for every one of
+        // them, and this test would pass having checked nothing.
+        //
+        // (The listing call is avoided by NAME as well: the detector in
+        // `file-collection-is-not-silently-empty.test.ts` matches its pattern
+        // against raw source, so naming that function even in a comment records
+        // this file as a hand-rolled collector.)
         for (const subset of DROPPED) {
             const file = `onest-${subset}.woff2`;
             expect({ subset, inCss: css.includes(file) }).toEqual({ subset, inCss: false });
-            expect({ subset, onDisk: onDisk.includes(file) }).toEqual({ subset, onDisk: false });
+            expect({ subset, onDisk: existsSync(fontPath(file)) }).toEqual({
+                subset,
+                onDisk: false,
+            });
             expect(lock.faces.some((f) => f.family === 'Onest' && f.subset === subset)).toBe(false);
         }
+        // An absence is only evidence if the path is real, and it must be the
+        // SAME path the probes used — hence `fontPath` for both. Two separate
+        // literals let a mutation aim the probes at an empty directory while a
+        // hardcoded proof kept passing; that mutation survived until this line
+        // was derived from `FONT_DIR` too.
+        expect(existsSync(fontPath('onest-cyrillic.woff2'))).toBe(true);
     });
 
     it('still ships the cuts a Bulgarian UI actually needs', () => {
@@ -75,7 +100,7 @@ describe('Onest ships cyrillic only (#1969)', () => {
         for (const subset of ['cyrillic', 'cyrillic-ext']) {
             const face = lock.faces.find((f) => f.family === 'Onest' && f.subset === subset);
             expect(face).toBeDefined();
-            expect(existsSync(path.join(ROOT, 'public/fonts', face!.file))).toBe(true);
+            expect(existsSync(fontPath(face!.file))).toBe(true);
         }
     });
 
