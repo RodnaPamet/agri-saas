@@ -138,7 +138,21 @@ const Treatment = z
                 'the treatment. A stale permit costs one refusal, a stale denial costs a farmer ' +
                 'their own record.',
         }),
-        kind: z.string().nullable().openapi({ description: '`SPRAY` or `FERTILIZE`.' }),
+        kind: z.string().nullable().openapi({
+            description:
+                'The row\u2019s `FieldOperationType`: `SPRAY`, `FERTILIZE`, `SEED`, `PRUNE`, '
+                + '`CULTIVATE`, `HARVEST` or `OTHER`. Widened by #2316 \u2014 it read \u201c`SPRAY` or '
+                + '`FERTILIZE`\u201d while the field could already carry the others.\n\n'
+                + '**Switch on this, not on `parcelCount`.** A bare activity \u2014 pruning, '
+                + 'cultivation, harvest \u2014 has parcel lines just as a treatment does, so a client '
+                + 'reading `parcelCount > 0` as \u201cthis is a treatment\u201d offers correction and the '
+                + 'per-treatment PDF on a row with no product or dose to correct, and the correction '
+                + 'then refuses with `NOT_A_TREATMENT`. Gate those controls on `kind` being `SPRAY` '
+                + 'or `FERTILIZE`.\n\n'
+                + '`null` is a row whose task predates the column, which the register reads by '
+                + 'deriving from the title \u2014 treat it as a treatment, because that is all the '
+                + 'field operations of that era were.',
+        }),
         productName: z.string().nullable(),
         parcelCount: z.number().int().openapi({
             description:
@@ -774,7 +788,12 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         operationId: 'getDiaryTreatmentDefinition',
         summary: 'A recorded treatment\u2019s full definition, for a correction to prefill',
         description:
-            'Every field of the treatment as it was recorded, plus the GROUP version to send back as '
+            '**400 `NOT_A_TREATMENT`** when the handle names a BARE ACTIVITY \u2014 pruning, '
+            + 'cultivation or harvest (#2316). Such a record has no product, dose or quarantine '
+            + 'period, and those are the only fields a correction edits, so there is nothing here '
+            + 'to prefill. Gate the correction control on the row\u2019s `kind` rather than '
+            + 'discovering it from this response.\n\n'
+            + 'Every field of the treatment as it was recorded, plus the GROUP version to send back as '
             + '`If-Match` on the correction (#2172).\n\n'
             + '**A sub-resource rather than fields on `GET ../`.** That one is the summary the journal '
             + 'detail view reads \u2014 it takes ONE line and selects `completedAt` and `phenophase`. '
@@ -820,7 +839,10 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         operationId: 'correctDiaryTreatment',
         summary: 'Correct a recorded treatment',
         description:
-            'Corrects a treatment already in the \u0414\u041d\u0415\u0412\u041d\u0418\u041a, atomically across every block it '
+            '**400 `NOT_A_TREATMENT`** when the handle names a bare activity rather than a '
+            + 'treatment (#2316): there is no product or dose to correct, and the correction trail '
+            + 'records changes to exactly those fields.\n\n'
+            + 'Corrects a treatment already in the \u0414\u041d\u0415\u0412\u041d\u0418\u041a, atomically across every block it '
             + 'touched (#2172). One transaction writes the tasks, the register lines, the journal '
             + 'entries\u2019 day, a `TreatmentCorrection` trail row and the group version bump \u2014 so a '
             + 'correction that fails leaves the treatment exactly as it was.\n\n'

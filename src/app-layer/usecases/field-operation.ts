@@ -24,6 +24,7 @@ import { enqueue } from '@/app-layer/jobs/queue';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { FieldOperationType } from '@prisma/client';
 import { appliesAProduct } from '@/lib/operations/line-kind';
+import { isBareActivityKind } from '@/lib/operations/activity-labels';
 
 
 // Derived from the Prisma enum rather than restated. #2316 added three
@@ -91,10 +92,35 @@ interface ChosenInput {
  * fertilizer (#3). Rejects both-present and neither-present (defence in depth;
  * `CreateFieldOperationSchema` already enforces the XOR at the HTTP boundary),
  * and requires the chosen kind's dose + unit.
+ *
+ * ## `null` means a BARE ACTIVITY, and it is declared rather than inferred
+ *
+ * #2316: pruning, cultivation and harvest apply nothing, so there is no input
+ * to resolve. `null` says so.
+ *
+ * The discriminator is `operationType` being one of `BARE_ACTIVITY_KINDS` —
+ * **never the absence of the product fields**. Inferring it from absence would
+ * turn a client bug (forgot the product) into a silently recorded pruning, and
+ * the refusal that currently catches that bug is the one this function has
+ * always made. A default cannot carry a safety property.
+ *
+ * Both directions are enforced: a bare kind REFUSES an input, so a client
+ * sending `PRUNE` with a product gets told rather than having the product
+ * quietly dropped from a regulated record.
  */
-function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput {
+function resolveChosenInput(input: CreateFieldOperationInput): ChosenInput | null {
     const hasProduct = !!input.productItemId || !!input.productName;
     const hasFertilizer = !!input.fertilizerItemId || !!input.fertilizerName;
+    if (input.operationType != null && isBareActivityKind(input.operationType)) {
+        if (hasProduct || hasFertilizer) {
+            throw codedBadRequest(
+                'ACTIVITY_APPLIES_NO_INPUT',
+                `A ${input.operationType} activity applies no product or fertiliser. `
+                    + 'Send neither, or record it as a spraying or a fertilisation.',
+            );
+        }
+        return null;
+    }
     if (hasProduct === hasFertilizer) {
         throw codedBadRequest('OPERATION_INPUT_AMBIGUOUS', 'Choose exactly one input — a product OR a fertilizer.');
     }
@@ -430,15 +456,21 @@ export async function createFieldOperation(
     // Resolve the id-or-name to an id BEFORE the transaction below — a P2002
     // from creating an Item would poison an interactive transaction, so the
     // create and its race live in their own. See `resolveInputItemId`.
-    const itemId = await resolveInputItemId(
-        ctx,
-        chosen,
-        input.newProductRegistration,
-        input.newProductCategory,
-    );
-    // Water carrier only applies to a product spray (never a fertilizer line).
-    const waterRateValue = chosen.isFertilizer ? null : input.waterRateValue ?? null;
-    const waterRateUnitId = chosen.isFertilizer ? null : input.waterRateUnitId ?? null;
+    // A bare activity (#2316) has no id-or-name to resolve, so the Item create
+    // and its P2002 race are skipped entirely rather than fed a null.
+    const itemId =
+        chosen === null
+            ? null
+            : await resolveInputItemId(
+                  ctx,
+                  chosen,
+                  input.newProductRegistration,
+                  input.newProductCategory,
+              );
+    // Water carrier only applies to a product spray (never a fertilizer line,
+    // and never a bare activity — there is no tank).
+    const waterRateValue = chosen === null || chosen.isFertilizer ? null : input.waterRateValue ?? null;
+    const waterRateUnitId = chosen === null || chosen.isFertilizer ? null : input.waterRateUnitId ?? null;
 
     // 1 — validate location, parcels, the chosen input item, and its unit
     const location = await runInTenantContext(ctx, async (db) => {
@@ -451,6 +483,18 @@ export async function createFieldOperation(
         const valid = await ParcelRepository.validIdsForLocation(db, ctx, locationId, input.parcelIds);
         const missing = input.parcelIds.filter((id) => !valid.has(id));
         if (missing.length) throw codedBadRequest('PARCELS_NOT_IN_LOCATION', 'Some selected parcels do not belong to this location.');
+
+        // Location and parcels are validated for EVERY kind above. What follows
+        // is about the applied input, so a bare activity (#2316) skips it — there
+        // is no item to find, no category to match and no dose unit to look up.
+        if (chosen === null) return loc;
+        if (itemId === null) {
+            // Unreachable: `itemId` is null only when `chosen` is, and that
+            // returned on the line above. A coded throw rather than a `!` so a
+            // future change that breaks the pairing fails loudly instead of
+            // querying `id: null` — which Prisma would read as "any item".
+            throw codedBadRequest('PRODUCT_NOT_FOUND', 'Product not found.');
+        }
 
         const item = await db.item.findFirst({
             where: { id: itemId, tenantId: ctx.tenantId, deletedAt: null },
@@ -486,7 +530,17 @@ export async function createFieldOperation(
     // 2 — create the FIELD_OPERATION Task (reuses createTask's assignment
     //     notification path: email + in-app bell). The op type defaults from
     //     the chosen input kind (fertilizer → FERTILIZE, else SPRAY).
-    const opType: OperationType = input.operationType ?? (chosen.isFertilizer ? 'FERTILIZE' : 'SPRAY');
+    const opType: OperationType =
+        input.operationType
+        ?? (chosen === null
+            // Unreachable: `chosen` is null only when `operationType` names a
+            // bare kind, so the left side of `??` has already won. Written out
+            // rather than asserted away with `!`, which would be a claim the
+            // compiler cannot check and the next reader cannot verify.
+            ? 'OTHER'
+            : chosen.isFertilizer
+              ? 'FERTILIZE'
+              : 'SPRAY');
     const title = input.title?.trim() || `${titleCase(opType)} — ${location.name}`;
     let task: { id: string; key: string | null };
     if (repairTaskId) {
@@ -598,9 +652,13 @@ export async function createFieldOperation(
                 tenantId: ctx.tenantId,
                 taskId: task.id,
                 parcelId,
+                // All three together or none — which is exactly what
+                // `OperationParcel_dose_all_or_nothing` enforces (#2316). A
+                // chemical kind always has an `itemId` here (resolved above) and
+                // a dose from `chosen`; a bare activity has neither.
                 productItemId: itemId,
-                doseValue: chosen.doseValue,
-                doseUnitId: chosen.doseUnitId,
+                doseValue: chosen === null ? null : chosen.doseValue,
+                doseUnitId: chosen === null ? null : chosen.doseUnitId,
                 waterRateValue,
                 waterRateUnitId,
                 targetNote: input.targetNote ?? null,

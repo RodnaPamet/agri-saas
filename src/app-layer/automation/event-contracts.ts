@@ -90,10 +90,21 @@ export interface SprayJobStartedData {
     /** Task key; null for legacy tasks that predate keying. */
     taskKey: string | null;
     locationId: string;
-    /** SPRAY | FERTILIZE | SEED | OTHER */
+    /** SPRAY | FERTILIZE | SEED | PRUNE | CULTIVATE | HARVEST | OTHER */
     operationType: string;
     parcelCount: number;
-    productItemId: string;
+    /**
+     * `null` for a BARE ACTIVITY — pruning, cultivation, harvest (#2316), which
+     * apply no product.
+     *
+     * The event still fires for those kinds, deliberately: `operationType` is
+     * one of this event's filter fields and all seven kinds are offered there,
+     * so a rule filtering on PRUNE has to be able to match something. A rule
+     * reading `productItemId` must handle null — which is why this is nullable
+     * in the type rather than an empty string, a shape that would compare equal
+     * to nothing and silently never fire.
+     */
+    productItemId: string | null;
     assigneeUserId: string;
 }
 export interface OperationParcelMarkedData {
