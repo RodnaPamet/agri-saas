@@ -62,7 +62,13 @@ const code = (src: string) =>
         .filter((l) => !/^\s*#/.test(l))
         .join('\n');
 
-const DRILL_CODE = code(DRILL);
+/**
+ * Comment-stripped AND line-continuations joined. A shell invocation routinely
+ * spans a `\`-continued line, so a per-line search for two tokens of the same
+ * command finds neither together: reformatting the globals restore onto two
+ * lines broke the ordering assertion below while the script was correct.
+ */
+const DRILL_CODE = code(DRILL).replace(/\\\n\s*/g, ' ');
 
 /**
  * The production stacks, read out of the runbook's own "What production
