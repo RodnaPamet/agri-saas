@@ -88,126 +88,32 @@ describe('OI-3 — the retired AWS drill stays retired', () => {
     });
 });
 
-describe('OI-3 — restore-test-gcp.sh shape', () => {
-    it('exists and is executable', () => {
-        expect(exists(SCRIPT)).toBe(true);
-        // owner-execute bit set (octal 0o100)
-        expect((stat(SCRIPT).mode & 0o100) !== 0).toBe(true);
-    });
-
-    it('uses bash strict mode (set -euo pipefail)', () => {
-        expect(read(SCRIPT)).toMatch(/^set\s+-euo\s+pipefail/m);
-    });
-
-    it('registers a cleanup trap on EXIT/INT/TERM (no orphaned VM or disk)', () => {
-        expect(read(SCRIPT)).toMatch(/trap\s+cleanup\s+EXIT\s+INT\s+TERM/);
-    });
-
-    it('cleanup deletes BOTH the throwaway VM and the restored disk', () => {
-        const src = read(SCRIPT);
-        const cleanup = src.slice(src.indexOf('cleanup()'), src.indexOf('trap cleanup'));
-        expect(cleanup).toMatch(/compute instances delete/);
-        expect(cleanup).toMatch(/compute disks delete/);
-    });
-
-    it('uses TIMESTAMPED unique resource names (collision-proof under concurrent runs)', () => {
-        const src = read(SCRIPT);
-        expect(src).toMatch(/TIMESTAMP="?\$\(date.*Y.*m.*d.*H.*M.*S\)"?/);
-        expect(src).toMatch(/RESTORE_DISK_ID=.*\$\{?TIMESTAMP\}?/);
-        expect(src).toMatch(/RESTORE_VM_ID=.*\$\{?TIMESTAMP\}?/);
-    });
-
-    it('asserts the snapshot SCHEDULE is still attached to the source disk', () => {
-        // A detached resource policy stops all backups silently — the
-        // exact failure this drill exists to catch before it matters.
-        const src = read(SCRIPT);
-        expect(src).toMatch(/compute disks describe/);
-        expect(src).toMatch(/resourcePolicies/);
-        expect(src).toMatch(/SNAPSHOT_SCHEDULE/);
-    });
-
-    it('asserts the newest snapshot is FRESH (a stale snapshot is a dead schedule)', () => {
-        const src = read(SCRIPT);
-        expect(src).toMatch(/MAX_SNAPSHOT_AGE_HOURS/);
-        expect(src).toMatch(/SNAPSHOT_AGE_HOURS\s*>\s*MAX_SNAPSHOT_AGE_HOURS/);
-    });
-
-    it('selects the NEWEST ready snapshot (sort-by descending creationTimestamp)', () => {
-        const src = read(SCRIPT);
-        expect(src).toMatch(/status=READY/);
-        expect(src).toMatch(/--sort-by=~creationTimestamp/);
-        expect(src).toMatch(/--limit=1/);
-    });
-
-    it('the throwaway VM carries NO GCP identity (it briefly holds production data)', () => {
-        const src = read(SCRIPT);
-        expect(src).toMatch(/--no-service-account/);
-        expect(src).toMatch(/--no-scopes/);
-    });
-
-    it('boots a REAL Postgres over the restored data dir (WAL recovery is the point)', () => {
-        const src = read(SCRIPT);
-        // Crash-consistent snapshots land mid-transaction; proving the
-        // cluster recovers is the whole correctness argument.
-        expect(src).toMatch(/docker run -d --name restore-pg/);
-        expect(src).toMatch(/agrent-pgdata/);
-        expect(src).toMatch(/pg_isready/);
-    });
-
-    it('is parameterised per target — one drill, two stacks', () => {
-        // The project runs two independent stacks whose only shared
-        // property is the backup mechanism. Hardcoding either one's
-        // volume / stack dir / image would silently make the drill
-        // test the wrong disk, or fail on a disk that is in fact fine.
-        const src = read(SCRIPT);
-        for (const v of ['PGDATA_VOLUME', 'STACK_DIR', 'PG_IMAGE']) {
-            expect(src).toMatch(new RegExp(`${v}="\\$\\{${v}:-`));
-        }
-    });
-
-    it('finds the encryption key by SEARCHING the stack dir, not by naming a file', () => {
-        // agrent keeps it in .env, inflect-compliance in .env.prod.
-        // Pinning a filename made this check fail on a disk where the
-        // key was perfectly recoverable — a false "unrecoverable
-        // backup" verdict, which is the worst kind of wrong here.
-        const src = read(SCRIPT);
-        expect(src).toMatch(/grep -rlq 'DATA_ENCRYPTION_KEY/);
-        expect(src).not.toMatch(/ENV_FILE=\/mnt\/restored\/opt\/agrent\/\.env/);
-    });
-
-    it('asks the RESTORED CLUSTER which role and database exist', () => {
-        // Parsing credentials out of stack config is unreliable across
-        // stacks (env file vs compose keys with ${VAR:-default}), and a
-        // mis-parsed role reports "role does not exist" — which reads
-        // like a corrupt backup when the backup is fine.
-        const src = read(SCRIPT);
-        expect(src).toMatch(/for cand in/);
-        expect(src).toMatch(/FROM pg_database WHERE datname NOT IN/);
-    });
-
-    it('validates schema + migrations + recent rows + RLS via psql', () => {
-        const src = read(SCRIPT);
-        // Schema reachability
-        expect(src).toMatch(/SELECT 1/);
-        // Core tables
-        expect(src).toMatch(/Tenant table reachable/);
-        expect(src).toMatch(/User table reachable/);
-        // Migrations actually applied
-        expect(src).toMatch(/_prisma_migrations/);
-        // Recent activity — catches a valid-but-ancient snapshot
-        expect(src).toMatch(/AuditLog/);
-        // The SQL is nested two quoting levels deep inside the remote
-        // heredoc, so the literal reads INTERVAL '"'"'14 days. Match
-        // loosely across the quote soup rather than pinning it.
-        expect(src).toMatch(/INTERVAL['"\s]{0,8}14 days/);
-        // RLS survived the restore — tenant isolation is the product's
-        // core security property; losing it in a restore is a breach.
-        expect(src).toMatch(/pg_policies/);
-        expect(src).toMatch(/tenant_isolation/);
-        // The role the policies GRANT to must exist or RLS is inert.
-        expect(src).toMatch(/pg_roles.*app_user/);
-    });
-});
+/**
+ * `describe('OI-3 — restore-test-gcp.sh shape')` stood here and is DELETED
+ * with its subject (#2340). It asserted the retired snapshot drill's shape:
+ * strict mode, a cleanup trap on EXIT/INT/TERM, timestamped resource names,
+ * that the snapshot SCHEDULE was still attached, and that the newest snapshot
+ * was fresh.
+ *
+ * Those last two are the reason the block could not simply be repointed at
+ * the replacement: the dump drill asserts neither. The schedules were deleted
+ * on 2026-10-12 and freshness moved to the daily `Backup exists` probe,
+ * because a monthly cadence is what let a total absence of backups go
+ * unreported for 13 days (#2329).
+ *
+ * The properties worth keeping moved rather than went:
+ *
+ *   - no orphaned resources → the dump drill creates none. It makes a
+ *     container and a temp directory, both removed by its EXIT trap, and
+ *     neither holds anything after the process. The timestamped-names rule
+ *     existed so concurrent runs could not collide over a shared disk, and
+ *     there is no shared resource left to collide over.
+ *   - the validation battery, the error-reporting distinction and the
+ *     no-remote-payload rule → `restore-drill-targets-what-exists.test.ts`,
+ *     where the two deleted guards' lessons were ported before deletion.
+ *
+ * What remains below is the WORKFLOW wiring, which still has a subject.
+ */
 
 describe('OI-3 — restore-test.yml wiring', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -322,10 +322,20 @@ describe('OI-3 — SLOs (docs/slos.md)', () => {
         expect(scenarios).toMatch(
             /deploy\/rollback\/\*?\.?down\.sql|deploy\/rollback\/<migration>\.down\.sql/,
         );
-        expect(scenarios).toMatch(/agrent-daily-snapshot/);
+        // Was `agrent-daily-snapshot` until #2340. That lever no longer
+        // exists: the snapshot schedules were deleted on 2026-10-12 (#2329)
+        // and the worst-case recovery is now a restore from the dump bucket.
+        // Repointed rather than dropped — the property is "this table names
+        // levers the deployment HAS", and a table naming a mechanism nobody
+        // can execute is the failure mode, not the absence of a match.
+        expect(scenarios).toMatch(/agrent-db-backups-hazel/);
+        // Globals before database, because that ordering is the difference
+        // between a restore and 142 failed GRANTs (#2337) — and an operator
+        // reading this table at 3am is exactly who needs told.
+        expect(scenarios).toMatch(/globals/i);
         // ...and the runbook that carries the procedures.
         expect(scenarios).toMatch(/docs\/runbooks\/production-vm\.md/);
-        // The snapshot row must price itself at the real RPO.
+        // The worst-case row must price itself at the real RPO.
         expect(scenarios).toMatch(/24\s*h/i);
     });
 

@@ -1,5 +1,14 @@
 # PostGIS base image — options for #832
 
+> **Note added 2026-10-25 (#2340).** This document is a dated analysis and its
+> citations are left as written. `infra/scripts/restore-test-gcp.sh`, referenced
+> below at several line numbers, was RETIRED and deleted — the snapshot mechanism
+> it drilled was removed on 2026-10-12 (#2329) and the replacement,
+> `infra/scripts/restore-test-dump.sh`, builds `deploy/postgres/Dockerfile`
+> directly rather than carrying its own copy in a heredoc. Editing those
+> references out would falsify a record of what was examined at the time.
+
+
 **Status: RESEARCH. No decision is made here and nothing in the repo is
 changed by this file.** Issue #832 remains open for a maintained-Debian base;
 this document exists so that decision can be taken from measurements rather
