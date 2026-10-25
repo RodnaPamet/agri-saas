@@ -54,8 +54,22 @@ import {
     generateKeyPair,
     createLocalJWKSet,
     type JSONWebKeySet,
-    type KeyLike,
 } from 'jose';
+
+/**
+ * The private-key type, DERIVED from the function that produces it rather than
+ * imported by name.
+ *
+ * `jose` exported that type in its 4.x line and removed it in 6.x, which is the
+ * single error blocking #1694 — a security-relevant bump of NextAuth's JWT
+ * dependency, held up for two weeks by one type import in one test file.
+ *
+ * Deriving it fixes that in a way that cannot recur: this resolves to whatever
+ * `generateKeyPair` returns in the INSTALLED version, so it is correct on 4.x
+ * and on 6.x with no conditional, and it cannot drift from the function's real
+ * return type the way a separately-imported name can.
+ */
+type GeneratedPrivateKey = Awaited<ReturnType<typeof generateKeyPair>>['privateKey'];
 
 const APPLE_ISSUER = 'https://appleid.apple.com';
 const BUNDLE_ID = 'bg.agrent.app.test';
@@ -86,8 +100,8 @@ jest.mock('@/env', () => ({
     env: { APPLE_BUNDLE_ID: 'bg.agrent.app.test', APPLE_SERVICES_ID: 'bg.agrent.web.test' },
 }));
 
-let privateKey: KeyLike;
-let strangerKey: KeyLike;
+let privateKey: GeneratedPrivateKey;
+let strangerKey: GeneratedPrivateKey;
 
 /** Mint a token the way Apple would, with each claim overridable. */
 async function mintToken(over: {
@@ -96,7 +110,7 @@ async function mintToken(over: {
     sub?: string;
     nonce?: string;
     expSeconds?: number;
-    key?: KeyLike;
+    key?: GeneratedPrivateKey;
     unsigned?: boolean;
 } = {}): Promise<string> {
     const nowSec = Math.floor(Date.now() / 1000);
