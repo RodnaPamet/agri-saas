@@ -151,19 +151,63 @@ describe('backup-exists probe — the daily half of the backup question (#2329)'
         expect(r.status).toBe(0);
     });
 
-    it('a FRESH BUCKET OBJECT alone reports OK — the mechanisms are independent', () => {
+    /** A complete nightly backup: the dump and its roles sibling, same stamp. */
+    const completeBackup = (ageH: number) =>
+        `2321429  ${hoursAgo(ageH)}  gs://agrent-db-backups/agrent/a-20261025T100132Z.dump\n`
+        + `888  ${hoursAgo(ageH)}  gs://agrent-db-backups/agrent/a-20261025T100132Z.globals.sql\n`
+        + `TOTAL: 2 objects, 2322317 bytes`;
+
+    it('a FRESH BUCKET BACKUP alone reports OK — the mechanisms are independent', () => {
         // The load-bearing case for enumerating mechanisms. A probe hard-coded
         // to snapshots would call this MISSING while a perfectly good
         // application-consistent dump sat in a bucket.
+        const r = run({ snapshot: '', buckets: 'agrent-db-backups', objects: completeBackup(11) });
+        expect(r.verdict).toBe('OK');
+        expect(r.out).toContain('bucket: PRESENT and fresh');
+        expect(r.out).toContain('a-20261025T100132Z.dump');
+        expect(created(r.calls)).toBe(false);
+    });
+
+    it('judges the DUMP, not the newest object — the globals sort last', () => {
+        // #2338. Both objects carry the same timestamp and `.globals.sql`
+        // sorts after `.dump`, so "newest object" selected the 888-byte roles
+        // file and the verdict was reached on the smaller half. The reported
+        // artefact must be the dump.
+        const r = run({ snapshot: '', buckets: 'agrent-db-backups', objects: completeBackup(3) });
+        expect(r.verdict).toBe('OK');
+        expect(r.out).toMatch(/bucket: PRESENT and fresh.*\.dump/);
+        expect(r.out).not.toMatch(/bucket: PRESENT and fresh.*\.globals\.sql/);
+    });
+
+    it('a dump with NO globals sibling is INCOMPLETE — present but unrestorable', () => {
+        // Neither fresh nor absent, and the state the old probe could not
+        // express. `pg_dump` omits roles while emitting every GRANT that needs
+        // them, so this restores into 42704 on each one (#2337).
         const r = run({
             snapshot: '',
             buckets: 'agrent-db-backups',
-            objects: `412890  ${hoursAgo(11)}  gs://agrent-db-backups/agrent/x.dump\nTOTAL: 1 objects, 412890 bytes`,
+            objects: `2321429  ${hoursAgo(2)}  gs://agrent-db-backups/agrent/a-20261025T100132Z.dump\nTOTAL: 1 objects, 2321429 bytes`,
         });
-        expect(r.verdict).toBe('OK');
-        expect(r.out).toContain('bucket: PRESENT and fresh');
-        expect(r.out).toContain('gs://agrent-db-backups/agrent/x.dump');
-        expect(created(r.calls)).toBe(false);
+        expect(r.verdict).toBe('INCOMPLETE');
+        expect(r.out).toContain('NO globals sibling');
+        // It FILES, and names the different fix: the job is running and
+        // dropping half its output, not stopped.
+        expect(created(r.calls)).toBe(true);
+        expect(r.calls.join(' ')).toMatch(/not restorable|unrestorable/i);
+        // Still exit 0 — the issue is the signal, as with MISSING.
+        expect(r.status).toBe(0);
+    });
+
+    it('the globals file ALONE is MISSING, not OK — there is no dump to restore', () => {
+        // The mirror of the bug: a bucket holding only the 888-byte roles file
+        // has no backup in it at all.
+        const r = run({
+            snapshot: '',
+            buckets: 'agrent-db-backups',
+            objects: `888  ${hoursAgo(1)}  gs://agrent-db-backups/agrent/a-20261025T100132Z.globals.sql\nTOTAL: 1 objects, 888 bytes`,
+        });
+        expect(r.verdict).toBe('MISSING');
+        expect(r.out).toContain('bucket: ABSENT');
     });
 
     it("the TOTAL line is not read as an object", () => {
@@ -187,6 +231,19 @@ describe('backup-exists probe — the daily half of the backup question (#2329)'
         // A threshold nobody tested either side of is a number, not a limit.
         expect(run({ snapshot: `s\t${hoursAgo(25)}`, buckets: '' }).verdict).toBe('OK');
         expect(run({ snapshot: `s\t${hoursAgo(27)}`, buckets: '' }).verdict).toBe('MISSING');
+    });
+
+    it('a STALE dump reports staleness even when its globals are missing', () => {
+        // Two faults, two messages. If the sibling check ran first and
+        // short-circuited, an operator would chase an unrestorable backup
+        // while the real problem is that nothing has been written for days.
+        const r = run({
+            snapshot: '',
+            buckets: 'agrent-db-backups',
+            objects: `2321429  ${hoursAgo(13 * 24)}  gs://agrent-db-backups/agrent/a.dump\nTOTAL: 1 objects, 2321429 bytes`,
+        });
+        expect(r.out).toMatch(/bucket: STALE/);
+        expect(r.out).toContain('NO globals sibling');
     });
 
     it('a gcloud failure is UNANSWERABLE and exits NON-ZERO, and files nothing', () => {
