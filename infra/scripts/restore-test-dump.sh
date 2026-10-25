@@ -74,11 +74,23 @@ echo "── locating the newest dump in gs://${BUCKET}/${PREFIX} ──"
 # writes TWO objects with the SAME timestamp, and `.globals.sql` sorts after
 # `.dump` — so "newest object" selects the 888-byte roles file. #2338 is that
 # same mistake in the daily probe.
+# `gcloud storage ls` exits NON-ZERO both when a glob matches nothing and
+# when it genuinely cannot look, and the two deserve different answers:
+# "there is no backup" is a BACKUP failure, while "I could not read the
+# bucket" means nobody checked. Reported identically they are the uniform
+# failure shape that tells an operator nothing — and the no-match arm made
+# the explicit no-dump diagnosis below UNREACHABLE, which is the dead branch
+# this drill criticises the old one for carrying.
+LISTING=""
 if ! LISTING="$(gcloud storage ls "gs://${BUCKET}/${PREFIX}**.dump" 2>"$WORK/err")"; then
-    die "could not list dumps in gs://${BUCKET}/${PREFIX}: $(tr '\n' ' ' < "$WORK/err" | cut -c1-200)"
+    if grep -qE 'matched no object|One or more URLs matched no' "$WORK/err"; then
+        LISTING=""
+    else
+        die "could not list gs://${BUCKET}/${PREFIX} — this drill could not look, which is NOT a statement about the backup: $(tr '\n' ' ' < "$WORK/err" | cut -c1-200)"
+    fi
 fi
-DUMP="$(printf '%s\n' "$LISTING" | grep -E '\.dump$' | sort | tail -1)"
-[ -n "$DUMP" ] || die "no *.dump under gs://${BUCKET}/${PREFIX} — there is nothing to restore, which is a BACKUP failure and not a drill failure. See #2329."
+DUMP="$(printf '%s\n' "$LISTING" | grep -E '\.dump$' | sort | tail -1 || true)"
+[ -n "$DUMP" ] || die "no *.dump under gs://${BUCKET}/${PREFIX} — there is nothing to restore. That is a BACKUP failure, not a drill failure: the nightly job is not writing, or is writing somewhere else. See #2329 and deploy/backup/README.md."
 GLOBALS="${DUMP%.dump}.globals.sql"
 say "dump    : $DUMP"
 say "globals : $GLOBALS"
