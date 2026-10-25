@@ -1,5 +1,31 @@
 {
     "//": "Generated from the rules that lived in scripts/verify-changed.mjs (#2018). This file is the SOURCE now: the script compiles each `when` with new RegExp, and tests/guards/verify-changed-rules-resolve.test.ts asserts every `run` path exists. Data rather than code so the mapping is readable, diffable, and assertable from a CJS test — jest's node project cannot import an .mjs.",
+    "//noTestsNeeded": [
+        "Paths that derive NO tests BY DESIGN, each with the reason. This is the",
+        "third category, and it exists because the empty-population refusal would",
+        "otherwise block a README edit: 'no rule covers this' and 'no test could",
+        "cover this' are different answers and only one of them is a problem.",
+        "Shrink-only in spirit — an entry here is a claim that nothing in the",
+        "sixteen test roots can observe a change to that path."
+    ],
+    "noTestsNeeded": [
+        {
+            "when": "^(README|CONTRIBUTING|SECURITY|CHANGELOG)\\.md$",
+            "why": "Top-level prose for humans. No guard reads them; CLAUDE.md is the exception and has its own rule because guards quote it."
+        },
+        {
+            "when": "^docs/",
+            "why": "Implementation notes and runbooks. Two guards DO read specific files here (vm-runbook-commands, privacy-notice-*), and those are reached by the content rules on what the diff treats differently rather than by path — a path rule would pull the full guard roots in for every note."
+        },
+        {
+            "when": "^\\.(gitignore|gitattributes|editorconfig|nvmrc|npmrc)$",
+            "why": "Tooling config with no test surface. `generated-artifacts-have-no-merge-driver` asserts .gitattributes has no merge driver, and that guard is reached by the content rule on the driver syntax itself."
+        },
+        {
+            "when": "^\\.vscode/|^\\.idea/",
+            "why": "Editor-local settings; nothing in the repo reads them."
+        }
+    ],
     "pathRules": [
         {
             "when": "^tests\\/",
@@ -42,6 +68,30 @@
                 "tests/integration"
             ],
             "why": "Schema-folder coverage, destructive-migration inverses and RLS guards are all derived from the schema rather than from the migration you wrote."
+        },
+        {
+            "when": "^infra/",
+            "run": [
+                "tests/guards"
+            ],
+            "why": "Six guards read infra/: oi-3-alerting and oi-3-runbook-and-slos assert the declared alert policies and SLO targets, infra-directories-are-referenced fails when a directory here is referenced by nothing, and the restore-drill pair (shell-heredoc-no-live-backticks, restore-drill-remote-script) pins the quoted heredoc whose un-quoting left the drill dead for a month."
+        },
+        {
+            "when": "^public/",
+            "run": [
+                "tests/guards",
+                "tests/rendered",
+                "tests/unit"
+            ],
+            "why": "public/ is not static assets only. public/sw.js is the outbox's PARALLEL reimplementation — it cannot import from src/, so its copy is mirrored BY HAND and outbox-completion-mirrors-the-sw exists to enforce that mirror; eight test files across three roots read it (also sw-revision-stamp, sw-offline-route-integrity, web-push, the two registrar suites). public/fonts is pinned by vendored-font-integrity and font-preload-derived-from-lock. Before this rule a change to the service worker derived NOTHING."
+        },
+        {
+            "when": "^\\.github/",
+            "run": [
+                "tests/guards",
+                "tests/guardrails"
+            ],
+            "why": "Covers dependabot.yml too (dependabot-typescript-eslint-group and typescript-eslint-family-is-coherent both read it), not just workflows and scripts. Several guards assert against .github itself rather than against src: ci-failure-watchlist DERIVES the notifier's watch list from the workflow files, ci-aggregate-upstream-failure lifts each aggregate's run: block out of ci.yml and executes it, shell-heredoc-no-live-backticks pins the restore drill's quoted delimiter, and restore-drill-remote-script compares the payload byte-for-byte. Added because a 2026-10-25 change to three .github files derived ZERO paths and so ran the entire suite: the watchlist guard had to be run by hand to discover it was demanding the new workflow."
         },
         {
             "when": "^(deploy|docker-compose|Dockerfile)",

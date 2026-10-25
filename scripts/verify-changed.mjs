@@ -250,10 +250,69 @@ if (lintNeeded) {
     );
 }
 
+/**
+ * A diff with files but NO derived population is a REFUSAL, not a pass — #2018.
+ *
+ * `['jest', ...population]` with an empty population is a bare `jest`, which
+ * runs the ENTIRE suite: every root, integration and rendered included. Found
+ * by using it. On 2026-10-25 a change to three `.github/` files derived zero
+ * paths, printed `population: 0 jest path(s)`, and then swept the whole tree
+ * for seven minutes before I noticed — and `tests/guards/ci-failure-watchlist`
+ * is a guard that asserts directly against `.github/workflows`, so the right
+ * answer was never "nothing" either.
+ *
+ * Both readings of that output are wrong in opposite directions: a reader sees
+ * `0` and concludes nothing ran, while the machine runs everything. So this
+ * refuses, names the files no rule covers, and exits non-zero — the same rule
+ * the rest of this script applies to empty selections, applied to itself.
+ *
+ * Exiting non-zero rather than sweeping is deliberate. A full sweep as a
+ * fail-safe sounds generous and is how a tool that promises a DERIVED
+ * population quietly stops deriving one: nobody adds the missing rule, because
+ * nothing ever told them it was missing.
+ */
+/**
+ * Files that derive nothing BY DESIGN — see `noTestsNeeded` in the rules.
+ *
+ * The refusal below would otherwise block a README edit, and "no rule covers
+ * this" and "no test could cover this" are different answers with only one of
+ * them a problem. A path must be one or the other explicitly: that is what
+ * makes the refusal safe to make loud.
+ */
+const noTestsNeeded = (RULES.noTestsNeeded ?? []).map((r) => ({
+    re: new RegExp(r.when),
+    why: r.why,
+}));
+const unclassified = files.filter((f) => !noTestsNeeded.some(({ re }) => re.test(f)));
+
+if (population.length === 0 && unclassified.length === 0) {
+    console.log(
+        `[verify:changed] ${files.length} file(s) changed, none with a test surface:`,
+    );
+    for (const f of files.slice(0, 10)) console.log(`  ${f}`);
+    console.log('\nDeclared in `noTestsNeeded` with a reason, so this is a pass — but it');
+    console.log('is a pass that ran NOTHING, which is not the same as a green suite.');
+    process.exit(0);
+}
+
+if (population.length === 0) {
+    console.error('\n[verify:changed] NO rule covers this diff, so NOTHING was derived.');
+    console.error('This is a refusal, not a pass — an empty population would run the');
+    console.error('ENTIRE suite (a bare `jest` takes no path filter), which is neither');
+    console.error('what the printed count says nor what you asked for.\n');
+    console.error('Files matched by no rule and not declared test-free:');
+    for (const f of unclassified.slice(0, 20)) console.error(`  ${f}`);
+    if (unclassified.length > 20) console.error(`  …and ${unclassified.length - 20} more`);
+    console.error('\nAdd a rule to scripts/verify-changed.rules.json with its `why`,');
+    console.error('or run the suites you believe are relevant by hand and say which.');
+    process.exit(1);
+}
+
 if (explainOnly) {
     console.log('\n[verify:changed] --explain: nothing run.');
     process.exit(0);
 }
+
 
 for (const p of population) {
     if (!existsSync(path.join(REPO_ROOT, p))) {
