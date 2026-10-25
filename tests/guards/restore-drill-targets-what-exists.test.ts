@@ -214,6 +214,83 @@ describe('the restore drill targets what exists (#2332)', () => {
             .toEqual({ globalsBeforeRestore: true });
     });
 
+    /**
+     * ── PORTED from `tests/unit/restore-drill-error-reporting.test.ts` (#663) ──
+     *
+     * That file guarded the retired snapshot drill and is deleted with it
+     * (#2340). Its lesson is not retired, and it is the sharpest one in this
+     * area, so it moves here rather than going with the file.
+     *
+     * Both of the old drill's first two assertions captured their `gcloud`
+     * call as `X="$(gcloud ... 2>/dev/null || true)"`, which collapses two
+     * different answers into one: a permission error, an IAM propagation
+     * delay, a wrong zone and an API blip all produce an empty string, and an
+     * empty string failed the substring test and printed
+     *
+     *     ✗ ... Production is running WITHOUT automated backups.
+     *
+     * That fired for real on 2026-08-21, on two stacks whose backups were
+     * working perfectly. A false alarm about the one control standing between
+     * a backup and an unrecoverable database costs as much as a missed one.
+     *
+     * The dump drill hit the same shape from the other side: `gcloud storage
+     * ls` exits non-zero both when a glob matches nothing and when it cannot
+     * look, so "there is no backup" was being reported as "could not list" —
+     * and that arm made the explicit no-dump diagnosis UNREACHABLE. Found by
+     * running the negative control rather than reasoning about it.
+     */
+    it('tells "there is no backup" apart from "I could not look"', () => {
+        const noMatch = DRILL_CODE.slice(DRILL_CODE.indexOf('storage ls'));
+        // The no-match arm must CLASSIFY rather than collapse.
+        expect(noMatch).toMatch(/matched no object/);
+        // And the two diagnoses must say different things.
+        expect(DRILL).toMatch(/there is nothing to restore/);
+        expect(DRILL).toMatch(/could not look/);
+    });
+
+    it('never swallows a gcloud failure into an empty string', () => {
+        // The exact #663 shape: `$(... 2>/dev/null || true)` makes an error
+        // indistinguishable from an empty answer. Checked on comment-stripped
+        // code because the ported docblock above quotes the bad pattern.
+        expect({ collapsesErrors: /2>\/dev\/null\s*\|\|\s*true/.test(DRILL_CODE) })
+            .toEqual({ collapsesErrors: false });
+    });
+
+    /**
+     * ── PORTED from `tests/guards/restore-drill-remote-script.test.ts` (#1179, #1225) ──
+     *
+     * Also deleted with the retired script. Its mechanism cannot recur — the
+     * old drill built its whole battery into a string and handed it to
+     * `gcloud compute ssh --command`, and on 2026-10-01 a comment carrying an
+     * ODD number of backticks in an UNQUOTED heredoc turned the rest of the
+     * payload into a command substitution evaluated on the GitHub runner. No
+     * SSH connection was ever opened, so the restore was never attempted and
+     * every assertion in the battery was silently unreachable.
+     *
+     * The dump drill has no remote payload and no heredoc, so that cannot
+     * happen. What survives is the PROPERTY: a battery that did not run must
+     * not read as a pass. Here the first check is the liveness probe — if
+     * `docker exec` were failing entirely, every `q()` would return empty and
+     * `SELECT 1` fails before any count is believed.
+     */
+    it('the battery opens with a liveness probe, so an unexecuted one cannot pass', () => {
+        const battery = DRILL_CODE.slice(DRILL_CODE.indexOf('validation battery'));
+        const firstCheck = battery.indexOf('SELECT 1');
+        const firstCount = battery.indexOf('count(*)');
+        expect({ hasLiveness: firstCheck >= 0, hasCounts: firstCount >= 0 })
+            .toEqual({ hasLiveness: true, hasCounts: true });
+        // Liveness BEFORE any count, so an empty answer cannot be read as a
+        // legitimate zero.
+        expect({ livenessFirst: firstCheck < firstCount }).toEqual({ livenessFirst: true });
+    });
+
+    it('no remote payload to mis-quote', () => {
+        // Stated as an assertion rather than a comment: if somebody reaches
+        // for `ssh --command` again, the #1179 failure mode returns with it.
+        expect({ shipsARemoteBattery: /ssh\s+.*--command|<<\s*'?REMOTE'?/.test(DRILL_CODE) })
+            .toEqual({ shipsARemoteBattery: false });
+    });
+
     it('freshness is NOT this drill\'s gate, and says so', () => {
         // The old drill hard-failed on MAX_SNAPSHOT_AGE_HOURS, and the daily
         // `Backup exists` probe owns that question now (#2329) precisely
