@@ -48,7 +48,8 @@
  */
 import { test, expect } from '@playwright/test';
 import { type Page } from '@playwright/test';
-import { safeGoto, waitForHydration, expectVisibleWithLoadState } from './e2e-utils';
+import { safeGoto, waitForHydration } from './e2e-utils';
+import { expectVisibleWithLoadState } from './load-state';
 
 const CISO = { email: 'ciso@acme.com', password: 'password123' };
 const ORG_SLUG = 'acme-org';

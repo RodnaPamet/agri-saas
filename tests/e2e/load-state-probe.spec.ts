@@ -12,7 +12,7 @@
  * below are about the probe and nothing else.
  */
 import { test, expect } from '@playwright/test';
-import { expectVisibleWithLoadState } from './e2e-utils';
+import { expectVisibleWithLoadState } from './load-state';
 
 const PAGE = `data:text/html,<html><body><h1>Probe fixture</h1>`
     + `<div id="present-but-hidden" style="display:none">x</div>`
