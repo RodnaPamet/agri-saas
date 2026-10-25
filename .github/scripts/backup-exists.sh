@@ -76,6 +76,12 @@ die() {
 }
 
 FRESH_FOUND=0
+# A third state, between fresh and absent: an artefact exists and is recent but
+# the set is incomplete, so it cannot be restored. Reported as a problem rather
+# than as OK, and named differently in the issue because the fix differs — the
+# nightly job is running and dropping half its output, which is not the same
+# failure as a job that has stopped.
+INCOMPLETE=0
 DETAILS=""
 
 note() { DETAILS="${DETAILS}${DETAILS:+; }$1"; }
@@ -151,20 +157,46 @@ if [ -z "$BUCKETS" ]; then
 else
     BEST_ISO=""
     BEST_OBJ=""
+    BEST_HAS_GLOBALS=""
     for b in $BUCKETS; do
         if ! OBJS="$("$GCLOUD" storage ls -l "gs://${b}/**" 2>"$ERR")"; then
             die "could not list objects in gs://${b}: $(tr '\n' ' ' < "$ERR" | cut -c1-200)"
         fi
         # `ls -l` emits `size  ISO-8601  gs://path`, then a TOTAL line that has
         # no date and must not be read as an object.
-        line="$(printf '%s\n' "$OBJS" | awk '$2 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/ {print $2" "$3}' | sort | tail -1)"
+        # The newest `*.dump`, NOT the newest object. Each night writes TWO
+        # objects with the SAME timestamp — the dump and its
+        # `pg_dumpall --roles-only` sibling — and `.globals.sql` sorts after
+        # `.dump`, so "newest object" selects the 888-byte roles file and the
+        # verdict is reached on the smaller half. #2338.
+        line="$(printf '%s\n' "$OBJS" \
+            | awk '$2 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/ && $3 ~ /\.dump$/ {print $2" "$3}' \
+            | sort | tail -1)"
         iso="$(printf '%s' "$line" | awk '{print $1}')"
         if [ -n "$iso" ] && { [ -z "$BEST_ISO" ] || [[ "$iso" > "$BEST_ISO" ]]; }; then
             BEST_ISO="$iso"
             BEST_OBJ="$(printf '%s' "$line" | awk '{print $2}')"
+            # A dump WITHOUT its globals is present and unrestorable: pg_dump
+            # omits roles while emitting every GRANT that needs them, so it
+            # fails 42704 on every one. That is a state the old probe could not
+            # express — it is neither "fresh" nor "absent" — and it is the
+            # exact defect #2337 found in the backup it watches.
+            if printf '%s\n' "$OBJS" | grep -qF "${BEST_OBJ%.dump}.globals.sql"; then
+                BEST_HAS_GLOBALS=yes
+            else
+                BEST_HAS_GLOBALS=no
+            fi
         fi
     done
     judge "bucket" "$BEST_ISO" "${BEST_OBJ:-none}"
+    # Checked AFTER judge, so a stale dump reports staleness rather than being
+    # masked by a missing sibling — two faults, two messages.
+    if [ -n "$BEST_ISO" ] && [ "$BEST_HAS_GLOBALS" = "no" ]; then
+        echo "[backup-exists] bucket: the newest dump has NO globals sibling — present but UNRESTORABLE"
+        note "bucket dump has no globals (unrestorable)"
+        FRESH_FOUND=0
+        INCOMPLETE=1
+    fi
 fi
 
 # ── Verdict ─────────────────────────────────────────────────────────────────
@@ -184,9 +216,24 @@ This says a backup EXISTS and is recent. Whether restoring it works is the month
     exit 0
 fi
 
-echo "BACKUP_RESULT=MISSING ${DETAILS}"
+if [ "$INCOMPLETE" = "1" ]; then
+    echo "BACKUP_RESULT=INCOMPLETE ${DETAILS}"
+else
+    echo "BACKUP_RESULT=MISSING ${DETAILS}"
+fi
 
-BODY="No backup of the production database (\`${TARGET_DISK}\`) newer than **${MAX_AGE_HOURS}h** could be found by any mechanism this probe knows about.
+if [ "$INCOMPLETE" = "1" ]; then
+    BODY="A recent backup of \`${TARGET_DISK}\` exists but is **not restorable**: the newest \`*.dump\` has no \`*.globals.sql\` sibling.
+
+Mechanisms read: ${DETAILS}.
+
+\`pg_dump\` does not dump roles — they are cluster-level — while emitting every GRANT that depends on them. Restored into a clean cluster the dump fails each of those GRANTs with \`42704 role "app_user" does not exist\`, so the data lands and the application's own role does not exist. See #2337, where the backup had exactly this defect, and #2338.
+
+**This is a different failure from a missing backup and wants a different fix.** The nightly job is RUNNING and dropping half its output, so look at \`/usr/local/sbin/agrent-db-backup\` and its journal rather than at whether the timer fired.
+
+This issue closes itself once a complete, recent backup exists."
+else
+    BODY="No backup of the production database (\`${TARGET_DISK}\`) newer than **${MAX_AGE_HOURS}h** could be found by any mechanism this probe knows about.
 
 Mechanisms read: ${DETAILS}.
 
@@ -195,6 +242,7 @@ Mechanisms read: ${DETAILS}.
 **What it does NOT claim.** Nothing about whether a backup, once found, actually restores. That is the drill's job and this probe deliberately does not duplicate it.
 
 This issue closes itself once a recent backup exists."
+fi
 
 if [ -n "$EXISTING" ]; then
     echo "[backup-exists] commenting on existing issue #${EXISTING}"
