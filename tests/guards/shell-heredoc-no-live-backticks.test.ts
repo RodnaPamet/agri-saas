@@ -225,11 +225,22 @@ describe('no live backtick inside an unquoted heredoc', () => {
         //
         // The rule's subject is not gone with it: five scripts still carry an
         // unquoted heredoc, which is the shape a live backtick is dangerous
-        // in. Repointed at `check-drift.sh`, whose table-driven pair loop
-        // feeds `while read` from an unquoted `<<EOF` — so a backtick
-        // appearing in that table would be evaluated while building it.
+        // in. Repointed at `check-drift.sh`, whose table-driven loops feed
+        // `while read` from an unquoted `<<EOF` — so a backtick appearing in
+        // one of those tables would be evaluated while building it.
+        //
+        // TWO of them now: the backup-file pairs and the encryption-key pairs
+        // (#2357). The count is pinned rather than relaxed to `>= 1` because
+        // this control's whole job is to prove the population is not empty,
+        // and a floor of one would be satisfied by losing the second — which
+        // is the coverage-shrinks-silently failure the sibling guard in
+        // `backup-mechanism-is-tracked` was just repaired for.
         const named = heredocs.filter((h) => h.file === 'deploy/check-drift.sh');
-        expect(named.map((h) => h.delimiter)).toEqual(['EOF']);
+        expect(named.map((h) => h.delimiter)).toEqual(['EOF', 'EOF']);
+        // Both must be UNQUOTED, which is what puts them in the rule's scope
+        // at all. A quoted delimiter would make them safe and remove them from
+        // the population this control exists to vouch for.
+        expect(named.map((h) => h.quoted)).toEqual([false, false]);
     });
 
     it('control: a heredoc MENTIONED in a comment is not mistaken for the real one', () => {

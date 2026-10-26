@@ -187,6 +187,80 @@ else
     ok "compared ${BACKUP_CHECKED} of ${BACKUP_EXPECTED} backup file(s)"
 fi
 
+# ── The encryption key's durable copy still matches the live key ─────────────
+#
+# `DATA_ENCRYPTION_KEY` is NOT in the nightly dump and cannot be — a pg_dump
+# carries no environment — so a copy lives in Secret Manager (#2357). That copy
+# is a snapshot of a value that can change: rotation is supported
+# (`DATA_ENCRYPTION_KEY_PREVIOUS` + the sweep job), and a rotation that forgets
+# to add a new secret version leaves a durable copy of a key that no longer
+# decrypts anything. Same failure shape as a backup that quietly stopped, and
+# just as invisible — the restore drill cannot see it either, because restoring
+# schema and rows needs no key.
+#
+# Compared by HASH, never by value: the keys are never printed, and a hash of a
+# 48-byte random key is not a reversible disclosure. Only the first 16 hex
+# characters are shown, which is ample to distinguish two keys.
+#
+# The hash is taken from what the RUNNING CONTAINER reports, not from the env
+# file. That is the value the application actually encrypts with; an env file
+# can disagree with a container that has not been restarted since it was
+# edited, and in that case the container is right about what the ciphertext
+# needs.
+KEY_PAIRS="
+agrent|agrent-app|agrent-data-encryption-key
+inflect-compliance|inflect-app-1|inflect-compliance-data-encryption-key
+"
+KEY_DRIFT=0
+KEY_CHECKED=0
+while IFS='|' read -r k_host k_container k_secret; do
+    [ -n "$k_host" ] || continue
+    KEY_CHECKED=$((KEY_CHECKED + 1))
+
+    # `< /dev/null` for the same reason as the loop above: ssh reads stdin, and
+    # stdin here is the table being fed to `while read`.
+    live_h="$(gcloud compute ssh "$k_host" --zone "$VM_ZONE" \
+        --command "sudo docker exec ${k_container} printenv DATA_ENCRYPTION_KEY \
+                   | tr -d '\r\n' | sha256sum | cut -c1-16" \
+        < /dev/null 2>/dev/null | tr -d '[:space:]')" || live_h=""
+
+    stored_h="$(gcloud secrets versions access latest --secret="${k_secret}" \
+        2>/dev/null | sha256sum | cut -c1-16)" || stored_h=""
+
+    # Each side is classified separately. Collapsing both failures into "they
+    # differ" would report DRIFT when the real answer is "this check could not
+    # look" — the distinction `restore-test-dump.sh` exists to make, and the
+    # one an empty `$( )` destroys.
+    if [ -z "$live_h" ]; then
+        err "could not read DATA_ENCRYPTION_KEY from ${k_container} on ${k_host} — container down, or docker unreadable. This is NOT a statement that the key matches."
+        KEY_DRIFT=1
+    elif [ -z "$stored_h" ]; then
+        err "could not read secret ${k_secret} — absent, or no permission. If absent, the key has NO durable copy and a lost VM means unreadable ciphertext. See docs/backup-restore.md."
+        KEY_DRIFT=1
+    elif [ "$live_h" != "$stored_h" ]; then
+        err "KEY DRIFT — ${k_host} runs a key whose hash is ${live_h}, but ${k_secret} holds ${stored_h}."
+        err "  The durable copy would NOT decrypt this stack's data. If the key was rotated, add the"
+        err "  new version:  gcloud secrets versions add ${k_secret} --data-file=-"
+        err "  (pipe the value in; never paste it onto a command line or into a shell history)"
+        KEY_DRIFT=1
+    else
+        ok "key in sync — ${k_host} matches ${k_secret} (${live_h})"
+    fi
+done <<EOF
+${KEY_PAIRS}
+EOF
+
+# The count must EQUAL the table, for the reason the backup loop states: a
+# partial comparison that reports no drift is the defect this script exists to
+# prevent, one level up.
+KEY_EXPECTED="$(printf '%s\n' "$KEY_PAIRS" | grep -c '|')"
+if [ "$KEY_CHECKED" -ne "$KEY_EXPECTED" ]; then
+    err "compared ${KEY_CHECKED} of ${KEY_EXPECTED} encryption key(s) — a partial comparison says nothing about the rest."
+    KEY_DRIFT=1
+else
+    ok "compared ${KEY_CHECKED} of ${KEY_EXPECTED} encryption key(s)"
+fi
+
 # ── The Caddyfile's SITE SET, not its bytes ──────────────────────────────
 #
 # Comparing sha256 here would be wrong twice over: it would report drift
@@ -345,6 +419,7 @@ if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
     [ "$DF_DRIFT" -ne 0 ] && FAILED="${FAILED} the db build context;"
     [ "$RUNNING_DRIFT" -ne 0 ] && FAILED="${FAILED} a container's running state;"
     [ "$BACKUP_DRIFT" -ne 0 ] && FAILED="${FAILED} the database backup mechanism;"
+    [ "$KEY_DRIFT" -ne 0 ] && FAILED="${FAILED} the encryption key's durable copy;"
     if [ -n "$FAILED" ]; then
         err "compose file is in sync but NOT:${FAILED%;}"
         exit 1
