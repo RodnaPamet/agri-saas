@@ -339,7 +339,7 @@ jobs:
           # finish being no gate at all. A deleted guard has no selectors to
           # audit; the renamed file arrives in the same diff as an addition and
           # IS audited.
-          mapfile -t ALL < <(git diff --name-only --diff-filter=d "${BASE}" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts')
+          mapfile -t ALL < <(git diff --name-only --diff-filter=d "${BASE}" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts' 'tests/contracts/*.test.ts' 'tests/regression/*.test.ts')
           TOTAL=${#ALL[@]}
           if [ "${TOTAL}" -eq 0 ]; then
             echo "no guard or guardrail files changed in this PR; the control above still ran"
