@@ -2,6 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { haToDca } from '@/lib/agro/rate-calc';
 import { exceedsParcel } from '@/lib/operations/printed-area';
 import { parseRecordedDay } from '@/lib/operations/recorded-day';
+import {
+    assertRecordedDay,
+    assertParcelsChosen,
+    resolveOwnedParcels,
+    boundTreatedAreas,
+    groupParcelsByBlock,
+} from './recorded-parcels';
 import { computeAppliedQuantity } from '@/lib/units/applied-quantity';
 import {
     composeInputApplicationTitle,
@@ -350,39 +357,13 @@ export async function recordDiaryTreatment(
 ): Promise<RecordDiaryTreatmentResult> {
     assertCanWrite(ctx);
 
-    const { day, key: dayKey } = parseRecordedDay(input.occurredOn);
-    // Compared against today AS THE FARM SEES IT, not as the server's UTC
-    // clock sees it.
-    //
-    // This comment used to claim the UTC comparison meant "today" is never
-    // refused for a farm whose clock is ahead of the server's, and that was
-    // exactly backwards. `new Date()` with `setUTCHours(23,59,59,999)` is the
-    // end of the SERVER's day: at 00:30 on 14 October in Sofia it is 21:30
-    // UTC on the 13th, so `2026-10-14` parsed as UTC midnight sat PAST the
-    // end of UTC the 13th and a farmer recording what they had just sprayed
-    // got TREATMENT_DATE_IN_FUTURE. Every night from local midnight to 03:00
-    // (02:00 in winter), while the screen beside them — rendered through
-    // `format-date.ts`, in the same zone — showed that day as today. The
-    // guard refused the one day it most needed to allow.
-    //
-    // String comparison on `YYYY-MM-DD`: fixed-width and zero-padded, so
-    // lexicographic order is calendar order, and there is no Date arithmetic
-    // to get wrong at a DST boundary.
-    if (dayKey > farmToday()) {
-        throw codedBadRequest(
-            'TREATMENT_DATE_IN_FUTURE',
-            'A treatment cannot be recorded for a future date.',
-            { field: 'occurredOn' },
-        );
-    }
-
-    if (input.parcelIds.length === 0) {
-        throw codedBadRequest(
-            'TREATMENT_NO_PARCELS',
-            'Select at least one parcel that was treated.',
-            { field: 'parcelIds' },
-        );
-    }
+    // Steps 1 and 2 of the four `recorded-parcels.ts` owns (#2351). Called
+    // individually rather than through `resolveRecordedParcels`, because the
+    // other two sit on the FAR SIDE of the replay lookup below — see that
+    // module's docblock. The long note on why the future-day comparison is a
+    // string against `farmToday()` moved there with the rule.
+    const { day, dayKey } = assertRecordedDay(input.occurredOn);
+    assertParcelsChosen(input.parcelIds);
 
     const treatmentGroupId = idempotencyKey?.trim() || randomUUID();
 
@@ -481,62 +462,17 @@ export async function recordDiaryTreatment(
         }
     }
 
-    // ── Group the flat parcel list by block ─────────────────────────────
+    // Steps 3, 4 and 5 of the four `recorded-parcels.ts` owns (#2351), called
+    // HERE — on the far side of the replay lookup above, which is the whole
+    // reason this path cannot use `resolveRecordedParcels`.
     //
-    // The caller sends one list across the whole farm; which block each
-    // parcel sits in is the server's to know. A parcel the tenant does not
-    // own simply is not returned, so the difference in counts is the refusal.
-    const parcels = await runInTenantContext(ctx, (db) =>
-        db.parcel.findMany({
-            where: { id: { in: input.parcelIds }, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, locationId: true, areaHa: true },
-        }),
-    );
-    if (parcels.length !== input.parcelIds.length) {
-        // One code for the whole cross-tenant class (owner ruling), with the
-        // entity in `params.reference`. 400 and not 404 deliberately: a 404
-        // would confirm the parcel exists in SOME tenant, which is what a
-        // cross-tenant probe is for.
-        throw codedBadRequest(
-            'REFERENCE_NOT_IN_TENANT',
-            'One or more chosen parcels were not found or belong to a different tenant',
-            { reference: 'parcels' },
-        );
-    }
-
-    // ── Treated area, bounded by the parcel itself (#2072 part B) ──────
-    //
-    // Here rather than in the request schema because only this point holds the
-    // parcel row. The structural half — every `parcels[].parcelId` appearing in
-    // `parcelIds`, and no parcel twice — is already refused by the schema.
-    //
-    // A parcel whose own `areaHa` is NULL has nothing to bound against. Such a
-    // line accepts any positive value rather than being refused for a fact
-    // nobody recorded: `Parcel.areaHa` is nullable and a farm can hold parcels
-    // with no measured area, and refusing there would block a legitimate
-    // register entry over missing cadastral data.
-    const treatedByParcel = new Map<string, number>();
-    if (input.parcels?.length) {
-        const areaOf = new Map(parcels.map((p) => [p.id, p.areaHa]));
-        for (const entry of input.parcels) {
-            const area = areaOf.get(entry.parcelId);
-            if (area != null && exceedsParcel(entry.treatedAreaHa, Number(area))) {
-                throw codedBadRequest(
-                    'TREATMENT_AREA_EXCEEDS_PARCEL',
-                    'The treated area cannot exceed the parcel\u2019s own area',
-                    { reference: 'parcels' },
-                );
-            }
-            treatedByParcel.set(entry.parcelId, entry.treatedAreaHa);
-        }
-    }
-
-    const byBlock = new Map<string, string[]>();
-    for (const p of parcels) {
-        const list = byBlock.get(p.locationId);
-        if (list) list.push(p.id);
-        else byBlock.set(p.locationId, [p.id]);
-    }
+    // Order preserved exactly: a complete replay has already returned by this
+    // point, so a resumed write carrying a parcel since archived still gets its
+    // idempotent success rather than `REFERENCE_NOT_IN_TENANT`. Routing through
+    // the composition would have moved this fetch ahead of that return.
+    const parcels = await resolveOwnedParcels(ctx, input.parcelIds);
+    const treatedByParcel = boundTreatedAreas(parcels, input.parcels);
+    const byBlock = groupParcelsByBlock(parcels);
 
     // ── One field operation per block ───────────────────────────────────
     const isFertilizer = input.kind === 'FERTILIZE';

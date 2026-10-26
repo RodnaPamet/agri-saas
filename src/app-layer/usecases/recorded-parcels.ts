@@ -72,12 +72,49 @@ export interface RecordedParcels {
     byBlock: Map<string, string[]>;
 }
 
-export async function resolveRecordedParcels(
-    ctx: RequestContext,
-    input: RecordedParcelsInput,
-): Promise<RecordedParcels> {
-    const { day, key: dayKey } = parseRecordedDay(input.occurredOn);
+/**
+ * ── The four steps, each callable on its own (#2351) ──
+ *
+ * `resolveRecordedParcels` below composes them in order, which is what the
+ * ACTIVITY path wants. The TREATMENT path cannot use the composition, and the
+ * reason is specific rather than stylistic: its four steps are not contiguous.
+ * A resumed write's replay lookup sits between the empty-list refusal and the
+ * parcel fetch, and it can RETURN SUCCESSFULLY —
+ *
+ *     parse day → future refusal → empty-list refusal
+ *       → replay lookup, which returns `replayed: true` for a complete treatment
+ *       → parcel fetch + tenant refusal → area bound → block grouping
+ *
+ * so routing it through one call would move the parcel fetch ahead of the
+ * replay. A client retrying a treatment it had already recorded, with one parcel
+ * since archived or mistyped, would stop getting its idempotent success and
+ * start getting `REFERENCE_NOT_IN_TENANT` — a behaviour change on a resumable
+ * write to a regulated document, not a refactor.
+ *
+ * Owner decision: split to preserve the order exactly. So the treatment path
+ * calls these four at its OWN points and the rule lives in one place, which is
+ * what the duplicate was costing.
+ */
 
+/**
+ * Parse the day and refuse a future one.
+ *
+ * Compared against today AS THE FARM SEES IT, not as the server's UTC clock
+ * sees it — and this history is carried here from `recordDiaryTreatment`, whose
+ * copy it was, because it is the reason the comparison has the shape it does.
+ *
+ * That comment once claimed the UTC comparison meant "today" is never refused
+ * for a farm whose clock runs ahead of the server's, and it was exactly
+ * backwards. `new Date()` with `setUTCHours(23,59,59,999)` is the end of the
+ * SERVER's day: at 00:30 on 14 October in Sofia it is 21:30 UTC on the 13th, so
+ * `2026-10-14` parsed as UTC midnight sat PAST the end of UTC the 13th and a
+ * farmer recording what they had just sprayed got `TREATMENT_DATE_IN_FUTURE`.
+ * Every night from local midnight to 03:00 (02:00 in winter), while the screen
+ * beside them — rendered through `format-date.ts`, in the same zone — showed
+ * that day as today. The guard refused the one day it most needed to allow.
+ */
+export function assertRecordedDay(occurredOn: string): { day: Date; dayKey: string } {
+    const { day, key: dayKey } = parseRecordedDay(occurredOn);
     // String comparison on `YYYY-MM-DD`: fixed-width and zero-padded, so
     // lexicographic order is calendar order, and there is no Date arithmetic to
     // get wrong at a DST boundary.
@@ -88,23 +125,41 @@ export async function resolveRecordedParcels(
             { field: 'occurredOn' },
         );
     }
+    return { day, dayKey };
+}
 
-    if (input.parcelIds.length === 0) {
+/** Refuse a record with no parcels at all. */
+export function assertParcelsChosen(parcelIds: readonly string[]): void {
+    if (parcelIds.length === 0) {
         throw codedBadRequest('TREATMENT_NO_PARCELS', 'Select at least one parcel that was treated.', {
             field: 'parcelIds',
         });
     }
+}
 
-    // Which block a parcel sits in is the server's to know. A parcel the tenant
-    // does not own simply is not returned, so the difference in counts is the
-    // refusal.
+export interface OwnedParcel {
+    id: string;
+    locationId: string;
+    areaHa: unknown;
+}
+
+/**
+ * Fetch the parcels and refuse any the tenant does not own.
+ *
+ * Which block a parcel sits in is the server's to know. A parcel the tenant does
+ * not own simply is not returned, so the difference in counts IS the refusal.
+ */
+export async function resolveOwnedParcels(
+    ctx: RequestContext,
+    parcelIds: readonly string[],
+): Promise<OwnedParcel[]> {
     const parcels = await runInTenantContext(ctx, (db) =>
         db.parcel.findMany({
-            where: { id: { in: input.parcelIds }, tenantId: ctx.tenantId, deletedAt: null },
+            where: { id: { in: [...parcelIds] }, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, locationId: true, areaHa: true },
         }),
     );
-    if (parcels.length !== input.parcelIds.length) {
+    if (parcels.length !== parcelIds.length) {
         // One code for the whole cross-tenant class (owner ruling), with the
         // entity in `params.reference`. 400 and not 404 deliberately: a 404
         // would confirm the parcel exists in SOME tenant, which is what a
@@ -115,41 +170,75 @@ export async function resolveRecordedParcels(
             { reference: 'parcels' },
         );
     }
+    return parcels as OwnedParcel[];
+}
 
-    // Bounded here because only this point holds the parcel row. The structural
-    // half — every `parcels[].parcelId` appearing in `parcelIds`, and no parcel
-    // twice — is already refused by `refineParcelAreaList` in the schema.
-    //
-    // A parcel whose own `areaHa` is NULL has nothing to bound against. Such a
-    // line accepts any positive value rather than being refused for a fact
-    // nobody recorded: `Parcel.areaHa` is nullable, a farm can hold parcels with
-    // no measured area, and refusing would block a legitimate register entry
-    // over missing cadastral data.
+/**
+ * Bound each stated area by the parcel's own.
+ *
+ * Bounded at this point because only this point holds the parcel row. The
+ * structural half — every `parcels[].parcelId` appearing in `parcelIds`, and no
+ * parcel twice — is already refused by `refineParcelAreaList` in the schema.
+ *
+ * A parcel whose own `areaHa` is NULL has nothing to bound against. Such a line
+ * accepts any positive value rather than being refused for a fact nobody
+ * recorded: `Parcel.areaHa` is nullable, a farm can hold parcels with no
+ * measured area, and refusing would block a legitimate register entry over
+ * missing cadastral data.
+ */
+export function boundTreatedAreas(
+    parcels: readonly OwnedParcel[],
+    stated: readonly { parcelId: string; treatedAreaHa: number }[] | undefined,
+): Map<string, number> {
     const treatedByParcel = new Map<string, number>();
-    if (input.parcels?.length) {
-        const areaOf = new Map(parcels.map((p) => [p.id, p.areaHa]));
-        for (const entry of input.parcels) {
-            const area = areaOf.get(entry.parcelId);
-            if (area != null && exceedsParcel(entry.treatedAreaHa, Number(area))) {
-                throw codedBadRequest(
-                    'TREATMENT_AREA_EXCEEDS_PARCEL',
-                    'The treated area cannot exceed the parcel’s own area',
-                    { reference: 'parcels' },
-                );
-            }
-            treatedByParcel.set(entry.parcelId, entry.treatedAreaHa);
+    if (!stated?.length) return treatedByParcel;
+    const areaOf = new Map(parcels.map((p) => [p.id, p.areaHa]));
+    for (const entry of stated) {
+        const area = areaOf.get(entry.parcelId);
+        if (area != null && exceedsParcel(entry.treatedAreaHa, Number(area))) {
+            throw codedBadRequest(
+                'TREATMENT_AREA_EXCEEDS_PARCEL',
+                'The treated area cannot exceed the parcel’s own area',
+                { reference: 'parcels' },
+            );
         }
+        treatedByParcel.set(entry.parcelId, entry.treatedAreaHa);
     }
+    return treatedByParcel;
+}
 
-    // One field operation per block, because the ДНЕВНИК resolves a block
-    // through the task's location link: a single task spanning blocks would
-    // print a parcel under a block it was never on.
+/**
+ * One field operation per block, because the ДНЕВНИК resolves a block through
+ * the task's location link: a single task spanning blocks would print a parcel
+ * under a block it was never on.
+ */
+export function groupParcelsByBlock(parcels: readonly OwnedParcel[]): Map<string, string[]> {
     const byBlock = new Map<string, string[]>();
     for (const p of parcels) {
         const list = byBlock.get(p.locationId);
         if (list) list.push(p.id);
         else byBlock.set(p.locationId, [p.id]);
     }
+    return byBlock;
+}
 
+/**
+ * The four steps in order — what the ACTIVITY path wants, where they ARE
+ * contiguous.
+ *
+ * A composition and not a second implementation: every rule lives in the step
+ * above, so the treatment path calling the steps individually and this calling
+ * them together cannot drift. That drift is what #2351 was about — the module
+ * existed to prevent a duplicate and was one.
+ */
+export async function resolveRecordedParcels(
+    ctx: RequestContext,
+    input: RecordedParcelsInput,
+): Promise<RecordedParcels> {
+    const { day, dayKey } = assertRecordedDay(input.occurredOn);
+    assertParcelsChosen(input.parcelIds);
+    const parcels = await resolveOwnedParcels(ctx, input.parcelIds);
+    const treatedByParcel = boundTreatedAreas(parcels, input.parcels);
+    const byBlock = groupParcelsByBlock(parcels);
     return { day, dayKey, parcels, treatedByParcel, byBlock };
 }
