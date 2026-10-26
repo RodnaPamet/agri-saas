@@ -23,9 +23,35 @@
  *
  * `[[a-probe-with-no-discriminating-power]]` is the shape: a test that returns
  * the same answer in both worlds is zero evidence, however reasonable it looks.
+ *
+ * ## Every read here is blanked first (#1774)
+ *
+ * This guard text-matches source, so it would otherwise count PROSE as the code
+ * it polices, and all three of its reads had a live route to that:
+ *
+ *   - `task.ts:128` is a COMMENT reading "see `withMayDelete`", sitting a few
+ *     lines after a `cachedListRead` call. It is outside that call's argument
+ *     span today and so matched nothing — but the span is whatever the braces
+ *     happen to be, and an example written INSIDE the options object would turn
+ *     correct code red.
+ *   - the rename check asks whether `function withMayDelete` exists. A comment
+ *     saying so satisfies a text match while the function is gone, which is the
+ *     "a scar is not a wound" direction.
+ *   - the premise check looks for the cache key's template literal.
+ *     `list-cache.ts` holds exactly one occurrence and it is code — measured,
+ *     not assumed — but a docblock quoting the key format would be found FIRST
+ *     by `.find()` and the assertion would then be about prose.
+ *
+ * The two controls below are load-bearing for this, because the cap that asked
+ * for the conversion is itself a text match for `blankNonCode`: importing it
+ * and never calling it satisfies that cap completely. `COMMENTED_FIXTURE` fails
+ * unless the blanking actually runs, and `QUOTED_PAREN_FIXTURE` fails unless it
+ * runs with `{ strings: true }`.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const REPO = join(__dirname, '..', '..');
 
@@ -58,8 +84,19 @@ function callArgs(src: string, start: number): string {
  * stops holding a counter-example the guard silently stops being a guard. Gut
  * `callArgs` to return `''` and a path-only version passes with no offenders:
  * the selector has no teeth until a control can express the failure.
+ *
+ * The blanking happens HERE rather than at the three call sites, so the
+ * controls exercise the same pipeline the real files go through. A control that
+ * skips a step the subject performs is testing a different function
+ * (`[[a-crosscheck-in-the-old-method]]`).
+ *
+ * `{ strings: true }` because the subject is a CALL SHAPE, not message text,
+ * and `callArgs` counts parentheses: a `)` inside a string literal ends the
+ * argument span early and hides every offender after it. That is a false
+ * NEGATIVE in a security guard, which is the direction that does damage.
  */
-function offendersIn(src: string, label: string): { offenders: string[]; scanned: number } {
+function offendersIn(raw: string, label: string): { offenders: string[]; scanned: number } {
+    const src = blankNonCode(raw, { strings: true });
     const offenders: string[] = [];
     let scanned = 0;
     for (const m of src.matchAll(/cachedListRead\(/g)) {
@@ -99,6 +136,42 @@ const CLEAN_FIXTURE = `
     return withMayDelete(ctx, rows);
 `;
 
+/**
+ * Correct code whose COMMENT describes the violation.
+ *
+ * This is the one that fails if `blankNonCode` is imported and not called, and
+ * it is the shape #1774 was opened for: a docblock naming the thing a guard
+ * hunts for reads as the thing itself.
+ */
+const COMMENTED_FIXTURE = `
+    const rows = await cachedListRead({
+        ctx,
+        entity: 'task',
+        operation: 'list',
+        // WRONG: loader: () => withMayDelete(ctx, load(ctx)) — the cache key
+        // carries no caller, so this would serve one caller's flag to all.
+        loader: () => load(ctx),
+    });
+    return withMayDelete(ctx, rows);
+`;
+
+/**
+ * A real violation hidden behind a `)` inside a string literal.
+ *
+ * Fails without `{ strings: true }`: `callArgs` reads the quoted paren as the
+ * end of the argument list and never reaches the decorator.
+ */
+const QUOTED_PAREN_FIXTURE = `
+    const rows = await cachedListRead({
+        ctx,
+        entity: 'task',
+        operation: 'list',
+        params: { label: 'treated area (dca)' },
+        loader: () => load(ctx).then((r) => withMayDelete(ctx, r)),
+    });
+    return rows;
+`;
+
 describe('a per-caller flag is computed outside the list cache (#2395)', () => {
     it('CONTROL: the scan flags a decorator inside the cache call', () => {
         // Without this the guard is green forever: gutting `callArgs` makes the
@@ -117,6 +190,25 @@ describe('a per-caller flag is computed outside the list cache (#2395)', () => {
         expect(offenders).toEqual([]);
     });
 
+    it('CONTROL: a comment describing the violation is not the violation', () => {
+        // Proves the blanking RUNS. The cap in
+        // `guards-blank-comments-before-matching` only text-matches for
+        // `blankNonCode`, so an unused import clears the cap and changes
+        // nothing; this case is what makes the conversion real.
+        const { offenders, scanned } = offendersIn(COMMENTED_FIXTURE, 'fixture');
+        expect(scanned).toBe(1);
+        expect(offenders).toEqual([]);
+    });
+
+    it('CONTROL: a quoted parenthesis does not truncate the argument span', () => {
+        // Proves the blanking runs with `{ strings: true }`. Without it the
+        // `)` in `'treated area (dca)'` closes the span early and this real
+        // offender is missed — the silent direction.
+        const { offenders, scanned } = offendersIn(QUOTED_PAREN_FIXTURE, 'fixture');
+        expect(scanned).toBe(1);
+        expect(offenders).toHaveLength(1);
+    });
+
     it.each(FILES)('%s calls no per-caller decorator inside cachedListRead', (rel) => {
         const src = readFileSync(join(REPO, rel), 'utf8');
         const { offenders, scanned } = offendersIn(src, rel);
@@ -130,7 +222,11 @@ describe('a per-caller flag is computed outside the list cache (#2395)', () => {
     it('the decorators it watches for still exist', () => {
         // A guard naming a function that has been renamed watches nothing and
         // says so to nobody. `[[a-needle-loses-the-thread-at-a-rename]]`.
-        const src = FILES.map((f) => readFileSync(join(REPO, f), 'utf8')).join('\n');
+        // Blanked with strings on: a declaration is code, and a comment or a
+        // quoted example naming it must not stand in for the function.
+        const src = FILES.map((f) =>
+            blankNonCode(readFileSync(join(REPO, f), 'utf8'), { strings: true }),
+        ).join('\n');
         for (const dec of PER_CALLER_DECORATORS) {
             expect([dec, new RegExp(`function ${dec}\\b`).test(src)]).toEqual([dec, true]);
         }
@@ -139,11 +235,20 @@ describe('a per-caller flag is computed outside the list cache (#2395)', () => {
     it("cachedListRead's key still carries no caller — the premise", () => {
         // If the key ever gains a user, this guard is unnecessary and should be
         // deleted rather than left to imply a hazard that no longer exists.
-        const src = readFileSync(join(REPO, 'src/lib/cache/list-cache.ts'), 'utf8');
-        const keyLine = src
+        //
+        // Blanked WITHOUT `strings` here, unlike every other read in this file:
+        // the subject IS a template literal, so blanking strings would erase
+        // the line being looked for and `.find()` would return undefined —
+        // which `toBeDefined` catches, but as a confusing failure rather than a
+        // true one. Comments still go, which is the point: a docblock quoting
+        // the key format would otherwise be found first.
+        const src = blankNonCode(readFileSync(join(REPO, 'src/lib/cache/list-cache.ts'), 'utf8'));
+        const keyLines = src
             .split('\n')
-            .find((l) => l.includes('${CACHE_PREFIX}:${opts.entity}:${opts.operation}'));
-        expect(keyLine).toBeDefined();
-        expect(keyLine).not.toMatch(/userId|user\.id|ctx\.userId/);
+            .filter((l) => l.includes('${CACHE_PREFIX}:${opts.entity}:${opts.operation}'));
+        // Exactly one, and it is the assignment. More than one would mean this
+        // assertion is picking a line rather than reading THE key.
+        expect(keyLines).toHaveLength(1);
+        expect(keyLines[0]).not.toMatch(/userId|user\.id|ctx\.userId/);
     });
 });
