@@ -29,6 +29,7 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const TAG = `fac-${randomUUID().slice(0, 8)}`;
 let userId = '', otherUserId = '', tenantId = '', locA = '', parcelA1 = '', parcelA2 = '';
+let locB = '', parcelB1 = '', foreignTenantId = '', foreignParcelId = '';
 let rateUnitId = '', seedItemId = '';
 
 const ctx = () => makeRequestContext('OWNER', { userId, tenantId, tenantSlug: `${TAG}-t` });
@@ -78,6 +79,24 @@ beforeAll(async () => {
     seedItemId = (await globalPrisma.item.create({
         data: { tenantId, name: `Пшеница ${TAG}`, category: 'SEED', defaultUnitId: rateUnitId },
     })).id;
+    // A SECOND block, for the new-block case the owner allowed (2026-10-26).
+    locB = (await globalPrisma.location.create({ data: { tenantId, name: `Block B ${TAG}` } })).id;
+    parcelB1 = (await globalPrisma.parcel.create({
+        data: { tenantId, locationId: locB, name: `B1 ${TAG}`, areaHa: 6 },
+    })).id;
+    // ANOTHER FARM's parcel. A non-existent id would also be refused, by the
+    // count check — but it would not prove the thing worth proving, which is
+    // that a real row belonging to someone else is refused the same way and
+    // without being echoed back.
+    foreignTenantId = (await globalPrisma.tenant.create({
+        data: { name: `Other ${TAG}`, slug: `${TAG}-other` },
+    })).id;
+    const foreignLoc = await globalPrisma.location.create({
+        data: { tenantId: foreignTenantId, name: `Foreign ${TAG}` },
+    });
+    foreignParcelId = (await globalPrisma.parcel.create({
+        data: { tenantId: foreignTenantId, locationId: foreignLoc.id, name: `F1 ${TAG}`, areaHa: 3 },
+    })).id;
 });
 
 afterAll(async () => {
@@ -87,6 +106,10 @@ afterAll(async () => {
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "${t}" WHERE "tenantId" = $1`, tenantId).catch(() => {});
         }
         await globalPrisma.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId).catch(() => {});
+        for (const t of ['OperationParcel', 'TaskLink', 'Task', 'TreatmentGroup', 'Parcel', 'Location']) {
+            await globalPrisma.$executeRawUnsafe(`DELETE FROM "${t}" WHERE "tenantId" = $1`, foreignTenantId).catch(() => {});
+        }
+        await globalPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, foreignTenantId).catch(() => {});
         await globalPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tenantId);
         await globalPrisma.$executeRawUnsafe(`DELETE FROM "Unit" WHERE "id" = $1`, rateUnitId);
         for (const u of [userId, otherUserId]) {
@@ -392,5 +415,217 @@ describeFn('correctFarmActivity (#2373)', () => {
         // is why there are two paths rather than one polymorphic endpoint.
         expect(a.corrections[0].previous).not.toBeNull();
         expect(t.corrections[0].previous).not.toBeNull();
+    });
+
+    it('drops a parcel, and its journal entry with it', async () => {
+        const h = `${TAG}-drop`;
+        await prune(h, [parcelA1, parcelA2]);
+        const after = await correctFarmActivity(ctx(), h, { parcelIds: [parcelA1] });
+        expect(after.parcelCount).toBe(1);
+        expect(after.lines.map((l) => l.parcelId)).toEqual([parcelA1]);
+
+        // The ENTRY must go too. `LogEntry.operationParcel` is optional with no
+        // `onDelete`, so Prisma defaults it to SET NULL — deleting only the line
+        // would leave the entry live, listed and printed with its
+        // `treatmentGroupId` intact.
+        const entries = await globalPrisma.logEntry.findMany({
+            where: { tenantId, treatmentGroupId: h },
+            select: { operationParcelId: true },
+        });
+        expect(entries).toHaveLength(1);
+        expect(entries[0].operationParcelId).not.toBeNull();
+    });
+
+    it('adds a parcel in a block the activity already covers', async () => {
+        const h = `${TAG}-add-same`;
+        await prune(h, [parcelA1]);
+        const after = await correctFarmActivity(ctx(), h, { parcelIds: [parcelA1, parcelA2] });
+        expect(after.parcelCount).toBe(2);
+        // The added line is MARKED, not just created — `markOperationParcel` is
+        // what writes its journal entry, and a line without one is invisible in
+        // «Дневник», which is the defect #2354 was.
+        const entries = await globalPrisma.logEntry.count({
+            where: { tenantId, treatmentGroupId: h },
+        });
+        expect(entries).toBe(2);
+    });
+
+    it('adds a parcel in a NEW block, minting that block\u2019s task', async () => {
+        // Owner decision 2026-10-26. The treatment correction refuses this
+        // because the БАБХ register prints one table per block; activities are
+        // not in that register and the whole-farm diary prints one row summing
+        // their areas, so a new block changes nothing about the document.
+        const h = `${TAG}-add-new`;
+        await prune(h, [parcelA1]);
+        const after = await correctFarmActivity(ctx(), h, { parcelIds: [parcelA1, parcelB1] });
+        expect(after.parcelCount).toBe(2);
+        expect([...after.lines.map((l) => l.parcelId)].sort()).toEqual([parcelA1, parcelB1].sort());
+
+        // ONE task per block is the whole reason the grouping exists: the diary
+        // resolves a row's block through its task's location link.
+        const tasks = await globalPrisma.task.findMany({
+            where: { tenantId, treatmentGroupId: h, deletedAt: null },
+            select: { clientMutationId: true },
+        });
+        expect(tasks).toHaveLength(2);
+        expect(tasks.map((t) => t.clientMutationId).sort()).toEqual(
+            [`${h}:${locA}`, `${h}:${locB}`].sort(),
+        );
+        const entries = await globalPrisma.logEntry.count({
+            where: { tenantId, treatmentGroupId: h },
+        });
+        expect(entries).toBe(2);
+    });
+
+    it('refuses dropping EVERY parcel — that is a withdrawal', async () => {
+        // The withdrawal has its own route, its own audit event and it RELEASES
+        // the idempotency key so the handle stays resumable. A correction does
+        // none of that, and an activity with zero lines would put a row in the
+        // whole-farm diary summing nothing.
+        //
+        // The empty set reaches the usecase only in this test: the request
+        // schema's `.min(1)` refuses it at the boundary. Asserted here anyway,
+        // because the usecase is the thing that must hold — a schema is a
+        // second line, not the rule.
+        const h = `${TAG}-empty`;
+        await prune(h, [parcelA1, parcelA2]);
+        await expect(correctFarmActivity(ctx(), h, { parcelIds: [] })).rejects.toMatchObject({
+            code: 'ACTIVITY_CORRECTION_WOULD_EMPTY',
+        });
+        // And the record is untouched by the refusal.
+        expect((await getFarmActivityDefinition(ctx(), h)).parcelCount).toBe(2);
+    });
+
+    it('refuses ANOTHER farm\u2019s parcel, without echoing the id', async () => {
+        const h = `${TAG}-foreign`;
+        await prune(h, [parcelA1]);
+        try {
+            await correctFarmActivity(ctx(), h, { parcelIds: [parcelA1, foreignParcelId] });
+            throw new Error('expected a refusal');
+        } catch (e) {
+            const err = e as { code?: string; details?: Record<string, unknown> };
+            expect(err.code).toBe('REFERENCE_NOT_IN_TENANT');
+            // The id must NOT come back: a refusal that echoes it confirms the
+            // row exists in someone else's tenant.
+            expect(JSON.stringify(err.details ?? {})).not.toContain(foreignParcelId);
+        }
+    });
+
+    it('the harvest total SURVIVES dropping the parcel that held it', async () => {
+        // THE test of this increment. The total lives on ONE entry — the
+        // lowest-id line's — dropping a parcel deletes that entry, and
+        // `LogQuantity.logEntry` is `onDelete: Cascade`. So without
+        // re-anchoring, dropping the first parcel of a harvest silently
+        // destroys the recorded yield: no error, two relations deep, and the
+        // farmer loses a figure they measured.
+        const h = `${TAG}-kg-drop`;
+        await recordFarmActivity(
+            ctx(),
+            { kind: 'HARVEST', occurredOn: dayAgo(3), parcelIds: [parcelA1, parcelA2], harvestKg: 8000 },
+            h,
+        );
+        const before = await getFarmActivityDefinition(ctx(), h);
+        expect(before.harvestKg).toBe(8000);
+
+        // Drop whichever parcel currently ANCHORS the total, found the way the
+        // server finds it rather than assumed.
+        const anchor = await globalPrisma.logQuantity.findFirstOrThrow({
+            where: { tenantId, measure: 'WEIGHT', logEntry: { treatmentGroupId: h } },
+            select: { logEntry: { select: { operationParcel: { select: { parcelId: true } } } } },
+        });
+        const anchorParcel = anchor.logEntry.operationParcel?.parcelId;
+        expect([parcelA1, parcelA2]).toContain(anchorParcel);
+        const keep = anchorParcel === parcelA1 ? parcelA2 : parcelA1;
+
+        const after = await correctFarmActivity(ctx(), h, { parcelIds: [keep] });
+        expect(after.harvestKg).toBe(8000);
+        // Exactly ONE row, on a surviving entry.
+        const rows = await globalPrisma.logQuantity.findMany({
+            where: { tenantId, measure: 'WEIGHT', logEntry: { treatmentGroupId: h } },
+            select: { value: true },
+        });
+        expect(rows).toHaveLength(1);
+        expect(Number(rows[0].value)).toBe(8000);
+    });
+
+    it('adding a parcel does not DUPLICATE the harvest total', async () => {
+        // The other direction: an added line can take the lowest id and become
+        // the new anchor, leaving the old row in place. Consolidating to exactly
+        // one is what prevents two totals on one activity.
+        const h = `${TAG}-kg-add`;
+        await recordFarmActivity(
+            ctx(),
+            { kind: 'HARVEST', occurredOn: dayAgo(3), parcelIds: [parcelA2], harvestKg: 500 },
+            h,
+        );
+        const after = await correctFarmActivity(ctx(), h, { parcelIds: [parcelA2, parcelA1] });
+        expect(after.harvestKg).toBe(500);
+        const rows = await globalPrisma.logQuantity.count({
+            where: { tenantId, measure: 'WEIGHT', logEntry: { treatmentGroupId: h } },
+        });
+        expect(rows).toBe(1);
+    });
+
+    it('corrects a mistyped area on a parcel that was always in the set', async () => {
+        // Not a membership change. The diary prints `treatedAreaHa ??
+        // parcel.areaHa`, so a wrong figure prints a wrong area on a document.
+        const h = `${TAG}-area`;
+        await recordFarmActivity(
+            ctx(),
+            {
+                kind: 'CULTIVATE',
+                occurredOn: dayAgo(3),
+                parcelIds: [parcelA1],
+                parcels: [{ parcelId: parcelA1, treatedAreaHa: 3 }],
+            },
+            h,
+        );
+        expect((await getFarmActivityDefinition(ctx(), h)).lines[0].treatedAreaHa).toBe(3);
+        const after = await correctFarmActivity(ctx(), h, {
+            parcelIds: [parcelA1],
+            parcels: [{ parcelId: parcelA1, treatedAreaHa: 7.5 }],
+        });
+        expect(after.lines[0].treatedAreaHa).toBe(7.5);
+    });
+
+    it('the SAME parcel set is a no-op — no trail row, no version bump', async () => {
+        const h = `${TAG}-sameset`;
+        await prune(h, [parcelA1, parcelA2]);
+        const before = await getFarmActivityDefinition(ctx(), h);
+        const after = await correctFarmActivity(ctx(), h, {
+            parcelIds: before.lines.map((l) => l.parcelId),
+        });
+        expect(after.version).toBe(before.version);
+        const trail = await globalPrisma.treatmentCorrection.count({ where: { tenantId, groupId: h } });
+        expect(trail).toBe(0);
+    });
+
+    it('re-anchors the total onto a NEWLY MINTED block when the old parcels all go', async () => {
+        // The case that forces the live task set to be re-read. Replace a
+        // harvest's only parcel with one in a block the activity never covered:
+        // the sole surviving line then belongs to a task minted during this
+        // correction, which is NOT in the `taskIds` read before the planning
+        // step. Resolving the anchor against that stale list finds no entry at
+        // all and the correction dies with `HARVEST_NOT_RECORDED` — on a
+        // request that is perfectly legitimate.
+        //
+        // Not `dropped >= lines.length` refused, because `added` is non-empty:
+        // this is a move, not a withdrawal.
+        const h = `${TAG}-kg-newblock`;
+        await recordFarmActivity(
+            ctx(),
+            { kind: 'HARVEST', occurredOn: dayAgo(3), parcelIds: [parcelA1], harvestKg: 2200 },
+            h,
+        );
+        const after = await correctFarmActivity(ctx(), h, { parcelIds: [parcelB1] });
+        expect(after.harvestKg).toBe(2200);
+        expect(after.lines.map((l) => l.parcelId)).toEqual([parcelB1]);
+
+        const rows = await globalPrisma.logQuantity.findMany({
+            where: { tenantId, measure: 'WEIGHT', logEntry: { treatmentGroupId: h } },
+            select: { value: true },
+        });
+        expect(rows).toHaveLength(1);
+        expect(Number(rows[0].value)).toBe(2200);
     });
 });

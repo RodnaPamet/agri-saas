@@ -6712,6 +6712,8 @@
         "NOT_IN_BABH_REGISTER": "A sowing is not part of the БАБХ register, which covers plant protection and fertilising. It appears in the whole-farm journal instead.",
         "ACTIVITY_NOT_FOUND": "No activity was recorded under that handle.",
         "ACTIVITY_MIXED_AUTHORSHIP": "This activity was recorded by more than one person, so it cannot be corrected as a whole. The restriction applies to administrators too.",
+        "ACTIVITY_CORRECTION_WOULD_EMPTY": "A correction cannot remove every parcel. Withdraw the activity instead.",
+        "ACTIVITY_CORRECTION_BLOCK_UNRESOLVED": "That parcel could not be placed in a block of this activity.",
         "NOT_AN_ACTIVITY": "This record applies a product, so it is a treatment rather than a field activity. Correct it through the treatment route.",
         "HARVEST_TOTAL_NOT_APPLICABLE": "Only a harvest records a quantity. Record the yield against the harvest instead of this activity.",
         "OPERATION_NOT_ASSIGNED_TO_YOU": "You can only update field operations assigned to you.",

@@ -1330,6 +1330,62 @@ export const CorrectFarmActivitySchema = z
                     + 'the stored one decides.',
                 example: 12400,
             }),
+        parcelIds: z
+            .array(z.string().min(1))
+            .min(1)
+            .optional()
+            .openapi({
+                description:
+                    'The CORRECTED set of parcels \u2014 the whole set, not a delta. Absent means '
+                    + 'unchanged.\n\n'
+                    + 'Parcels in this list that the activity does not have are ADDED; ones it has '
+                    + 'that are missing from this list are DROPPED. Sending the set the definition '
+                    + 'returned is therefore a no-op, which is what lets an editor submit the whole '
+                    + 'form back.\n\n'
+                    + '**A parcel in a block the activity never covered IS accepted** (owner, '
+                    + '2026-10-26), unlike the treatment correction, which refuses it because the '
+                    + '\u0411\u0410\u0411\u0425 register prints one table per block and a new block would appear as '
+                    + 'its own sheet. Activities are not in that register: the whole-farm '
+                    + '\u00ab\u0414\u041d\u0415\u0412\u041d\u0418\u041a\u00bb prints ONE row per activity summing its parcels\u2019 areas, so a '
+                    + 'new block changes nothing about the document\u2019s shape. The server mints '
+                    + 'that block\u2019s task.\n\n'
+                    + '**Dropping every parcel is refused** with '
+                    + '`ACTIVITY_CORRECTION_WOULD_EMPTY`: that is a withdrawal, which has its own '
+                    + 'route, its own audit event and releases the handle so it stays resumable \u2014 '
+                    + 'none of which a correction does.',
+            }),
+        parcels: z
+            .array(
+                z.object({
+                    parcelId: z.string().min(1),
+                    treatedAreaHa: z.number().positive(),
+                }),
+            )
+            .optional()
+            .openapi({
+                description:
+                    'Per-parcel worked area in HECTARES \u2014 a REFINEMENT of `parcelIds`, not a '
+                    + 'replacement, and every `parcelId` here must also appear there. Applies to '
+                    + 'retained parcels as well as added ones, so a mistyped area is correctable.\n\n'
+                    + '**Send a whole parcel as its exact area, not as an omission**: a stored NULL '
+                    + 'means \u201cthe whole parcel\u201d and the diary prints '
+                    + '`treatedAreaHa ?? parcel.areaHa`, so omitting it to mean \u201call of it\u201d and '
+                    + 'omitting it to mean \u201cunchanged\u201d would be the same request.\n\n'
+                    + 'Requires `parcelIds`; sent without it the areas would have no set to refine.',
+            }),
+    })
+    .superRefine((val, ctx) => {
+        // The shared refinement wants a REQUIRED `parcelIds`; here both are
+        // optional, so it only applies once a set has been sent.
+        if (val.parcelIds) {
+            refineParcelAreaList({ parcelIds: val.parcelIds, parcels: val.parcels }, ctx);
+        } else if (val.parcels) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['parcels'],
+                message: 'parcels refines parcelIds — send parcelIds too, or omit both',
+            });
+        }
     })
     .openapi('CorrectFarmActivity', {
         description:

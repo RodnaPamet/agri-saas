@@ -44,10 +44,16 @@
  * than the treatment one rather than merely smaller.
  */
 
-import type { Prisma } from '@prisma/client';
+import type { FieldOperationType, Prisma } from '@prisma/client';
 
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
-import { codedBadRequest, codedConflict, codedNotFound, staleData } from '@/lib/errors/types';
+import {
+    codedBadRequest,
+    codedConflict,
+    codedNotFound,
+    configurationError,
+    staleData,
+} from '@/lib/errors/types';
 import { parseRecordedDay } from '@/lib/operations/recorded-day';
 import { classifyFromRows, classifyHandle } from './handle-kind';
 import { readCorrectionTrail, type CorrectionTrail } from './correction-trail';
@@ -57,6 +63,8 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { assertCanEditTreatment } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
 import { resolveHarvestTarget } from './farm-activity';
+import { createFieldOperation, markOperationParcel } from './field-operation';
+import { ACTIVITY_LABELS_BG } from '@/lib/operations/activity-labels';
 
 /** One recorded parcel line of an activity, for the prefill. */
 export interface FarmActivityLine {
@@ -89,10 +97,64 @@ export interface CorrectFarmActivityInput {
     occurredOn?: string;
     /** `null` CLEARS the total — a weight recorded by mistake must be removable. */
     harvestKg?: number | null;
+    /** The WHOLE corrected set, not a delta. Absent means unchanged. */
+    parcelIds?: string[];
+    /** Worked areas, refining `parcelIds`. Applies to retained parcels too. */
+    parcels?: { parcelId: string; treatedAreaHa: number }[];
 }
 
-/** The fields a correction may name, in the order the trail lists them. */
+/** The SCALAR fields a correction may name, in the order the trail lists them. */
 const CORRECTABLE_FIELDS = ['occurredOn', 'harvestKg'] as const;
+
+interface ParcelSetChange {
+    added: string[];
+    dropped: string[];
+}
+
+/**
+ * The parcel set as a DELTA against what is recorded, or null when unchanged.
+ *
+ * The request carries the whole set so an editor can submit the form back
+ * unchanged — which must be a no-op, not a drop-and-re-add of every line. So the
+ * delta is computed here rather than asked for.
+ */
+function parcelSetChange(
+    previous: FarmActivityDefinition,
+    input: CorrectFarmActivityInput,
+): ParcelSetChange | null {
+    if (!input.parcelIds) return null;
+    const now = new Set(input.parcelIds);
+    const before = new Set(previous.lines.map((l) => l.parcelId));
+    const added = [...now].filter((id) => !before.has(id));
+    const dropped = [...before].filter((id) => !now.has(id));
+    return added.length === 0 && dropped.length === 0 ? null : { added, dropped };
+}
+
+/**
+ * Which retained parcels get a DIFFERENT area, or null when none do.
+ *
+ * Separate from the set change because a correction may move an area without
+ * touching the membership — a mistyped hectare figure on a parcel that was
+ * always in the set. `null` and a number are different values here: a stored
+ * NULL means "the whole parcel" and the diary prints `treatedAreaHa ??
+ * parcel.areaHa`, so clearing an area is a real change rather than an absence.
+ */
+function changedAreas(
+    previous: FarmActivityDefinition,
+    input: CorrectFarmActivityInput,
+): Map<string, number | null> | null {
+    if (!input.parcelIds) return null;
+    const sent = new Map(input.parcels?.map((p) => [p.parcelId, p.treatedAreaHa]) ?? []);
+    const out = new Map<string, number | null>();
+    for (const id of input.parcelIds) {
+        const next = sent.get(id) ?? null;
+        const line = previous.lines.find((l) => l.parcelId === id);
+        // An ADDED parcel is not an area change — it arrives with its area.
+        if (!line) continue;
+        if (line.treatedAreaHa !== next) out.set(id, next);
+    }
+    return out.size === 0 ? null : out;
+}
 
 /**
  * Load an activity for reading or editing, refusing everything a correction
@@ -312,6 +374,163 @@ export async function getFarmActivityCorrections(
     });
 }
 
+/**
+ * Validate a corrected parcel set and prepare any BLOCK the activity does not
+ * yet cover — before the write transaction opens.
+ *
+ * ## Why the minting cannot be inside that transaction
+ *
+ * A block's task is created through `createFieldOperation`, which has no `tx`
+ * option and commits in TWO transactions of its own: `createTask` opens one so
+ * `clientMutationId` is durable before the links and lines are written. So it
+ * cannot join the correction's interactive transaction, and re-implementing task
+ * creation here would be a second copy of the audit event, the notification
+ * suppression and the key handling — the kind of duplicate that drifts.
+ *
+ * ## Why the cost is bounded
+ *
+ * A task minted here and then abandoned — because the correction failed its
+ * `If-Match` a moment later — is not an orphan to clean up. The key is
+ * `<handle>:<locationId>` under `@@unique([tenantId, clientMutationId])`, so the
+ * NEXT attempt resolves the same key and ADOPTS it rather than minting a second.
+ * An empty `FIELD_OPERATION` task carries no lines, so it prints nothing and the
+ * journal row's counts are unchanged. That is exactly how `recordFarmActivity`
+ * already behaves for a half-written activity, and its docblock makes the same
+ * argument: a partially-written record keeps a handle a replay can address.
+ *
+ * The `If-Match` is checked here too, against the version this read sees — not
+ * as the precondition (the transaction re-checks it, which is what makes it
+ * one), but so an obviously stale editor is refused BEFORE anything is minted.
+ */
+async function planParcelChange(
+    ctx: RequestContext,
+    handle: string,
+    input: CorrectFarmActivityInput,
+    expectedVersion: number | undefined,
+): Promise<{
+    /**
+     * The delta as it stood BEFORE anything was minted.
+     *
+     * Carried out of here rather than re-derived inside the transaction, and
+     * that is not a shortcut — it is a correctness requirement. Minting a block
+     * goes through `createFieldOperation`, which writes that block's LINES as
+     * well as its task. So by the time the transaction loads the record, the
+     * "added" parcel is already present, `parcelSetChange` sees no change at
+     * all, and the correction takes its no-op path — leaving a PENDING line
+     * with no journal entry, invisible in «Дневник». That is the defect #2354
+     * was, reintroduced from a new direction, and a test caught it.
+     */
+    delta: ParcelSetChange | null;
+    areas: Map<string, number | null> | null;
+    blockOfAdded: Map<string, string>;
+    mintedTaskOfBlock: Map<string, string>;
+}> {
+    const { definition: previous } = await runInTenantContext(ctx, (db) =>
+        loadActivityForEdit(db, ctx, handle),
+    );
+
+    if (expectedVersion !== undefined && expectedVersion !== previous.version) {
+        throw staleData(
+            'This activity was corrected by someone else while you were editing it. '
+                + 'Reopen it to see the current values.',
+            { reference: 'treatmentGroupId' },
+        );
+    }
+
+    const setChange = parcelSetChange(previous, input);
+    const areas = changedAreas(previous, input);
+    const blockOfAdded = new Map<string, string>();
+    const mintedTaskOfBlock = new Map<string, string>();
+    if (!setChange) return { delta: null, areas, blockOfAdded, mintedTaskOfBlock };
+
+    // Dropping EVERY parcel is a withdrawal wearing a correction's clothes. The
+    // withdrawal has its own route, its own permission and its own audit event,
+    // and it RELEASES the idempotency key so the handle stays resumable — none
+    // of which a correction does. An activity with zero lines would also put a
+    // row in «ДНЕВНИК НА СТОПАНСТВОТО» summing nothing.
+    if (setChange.dropped.length >= previous.lines.length && setChange.added.length === 0) {
+        throw codedBadRequest(
+            'ACTIVITY_CORRECTION_WOULD_EMPTY',
+            'A correction cannot remove every parcel. Withdraw the activity instead.',
+            { reference: 'parcels' },
+        );
+    }
+
+    if (setChange.added.length === 0) {
+        return { delta: setChange, areas, blockOfAdded, mintedTaskOfBlock };
+    }
+
+    const addedParcels = await runInTenantContext(ctx, (db) =>
+        db.parcel.findMany({
+            where: { id: { in: setChange.added }, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, locationId: true },
+        }),
+    );
+    // A parcel of another farm: 400 and NO echo of the id, the same choice the
+    // record path makes, so a refusal does not confirm the row exists in someone
+    // else's tenant.
+    if (addedParcels.length !== setChange.added.length) {
+        throw codedBadRequest('REFERENCE_NOT_IN_TENANT', 'One of those parcels is not in this farm.', {
+            reference: 'parcels',
+        });
+    }
+
+    const covered = new Set(previous.lines.map((l) => l.locationId).filter((v): v is string => !!v));
+    for (const pa of addedParcels) {
+        if (pa.locationId == null) {
+            // A parcel with no block cannot be placed: the activity's tasks are
+            // per block, and the diary resolves a row's block through the task's
+            // location link. Refused rather than filed against an arbitrary one.
+            throw codedBadRequest(
+                'REFERENCE_NOT_IN_TENANT',
+                'One of those parcels is not in a block.',
+                { reference: 'parcels' },
+            );
+        }
+        blockOfAdded.set(pa.id, pa.locationId);
+    }
+
+    // The NEW blocks. Owner decision 2026-10-26: allowed, unlike the treatment
+    // correction, whose refusal rests on the БАБХ register printing one table
+    // per block. Activities are not in that register, and the whole-farm diary
+    // prints ONE row per activity summing its parcels' areas — so a new block
+    // changes nothing about the document's shape.
+    const newBlocks = [...new Set([...blockOfAdded.values()].filter((b) => !covered.has(b)))];
+    for (const locationId of newBlocks) {
+        const parcelIds = [...blockOfAdded.entries()]
+            .filter(([, b]) => b === locationId)
+            .map(([p]) => p);
+        // `createFieldOperation` requires an assignee, and the only honest one
+        // for work already done is whoever is recording it. `assertCanWrite`
+        // has already established a user session, so a null here would be a
+        // programming error rather than a request a farmer can make — stated
+        // instead of coerced, because `?? undefined` would have failed inside
+        // the create with a message about a different field.
+        if (!ctx.userId) {
+            throw configurationError(
+                'A correction that mints a block needs an acting user, and this context has none.',
+            );
+        }
+        const created = await createFieldOperation(
+            ctx,
+            locationId,
+            {
+                title: ACTIVITY_LABELS_BG[previous.kind as FieldOperationType],
+                operationType: previous.kind as FieldOperationType,
+                assigneeUserId: ctx.userId,
+                parcelIds,
+            },
+            // The SAME derived key the record path uses, which is what makes an
+            // abandoned task adoptable rather than duplicated.
+            `${handle}:${locationId}`,
+            { suppressAssignmentNotification: true, treatmentGroupId: handle },
+        );
+        mintedTaskOfBlock.set(locationId, created.taskId);
+    }
+
+    return { delta: setChange, areas, blockOfAdded, mintedTaskOfBlock };
+}
+
 export async function correctFarmActivity(
     ctx: RequestContext,
     treatmentGroupId: string,
@@ -333,6 +552,18 @@ export async function correctFarmActivity(
     // pins their exact text — the prefix is the code's name, not a claim that
     // this is a treatment.
     const day = input.occurredOn !== undefined ? parseRecordedDay(input.occurredOn) : null;
+
+    // Validated, and any NEW block's task minted, BEFORE the write transaction —
+    // see `planParcelChange` for why it cannot be inside it and why an
+    // abandoned task is adopted rather than orphaned.
+    const plan = input.parcelIds
+        ? await planParcelChange(ctx, handle, input, expectedVersion)
+        : {
+              delta: null,
+              areas: null,
+              blockOfAdded: new Map<string, string>(),
+              mintedTaskOfBlock: new Map<string, string>(),
+          };
 
     return runInTenantContext(ctx, async (db) => {
         // The group row must exist before the compare-and-swap has anything to
@@ -374,11 +605,23 @@ export async function correctFarmActivity(
             );
         }
 
-        const changed = CORRECTABLE_FIELDS.filter((f) => {
+        const changedScalars = CORRECTABLE_FIELDS.filter((f) => {
             if (input[f] === undefined) return false;
             if (f === 'occurredOn') return input.occurredOn !== previous.occurredOn;
             return (input.harvestKg ?? null) !== previous.harvestKg;
         });
+        // From the PLAN, which measured the delta before it minted anything —
+        // see `planParcelChange`'s `delta` for why re-deriving here is wrong
+        // rather than merely redundant. The VERSION is still re-checked against
+        // this transaction's own read below; it is only the membership delta
+        // that has to predate the minting.
+        const setChange = plan.delta;
+        const areas = plan.areas;
+        const changed: string[] = [
+            ...changedScalars,
+            ...(setChange ? ['parcels'] : []),
+            ...(areas ? ['treatedAreaHa'] : []),
+        ];
 
         // A correction that changes nothing writes nothing — no trail row, no
         // version bump. Otherwise re-submitting an unchanged form would invent
@@ -407,24 +650,183 @@ export async function correctFarmActivity(
             });
         }
 
-        let harvestKg = previous.harvestKg;
-        if (changed.includes('harvestKg')) {
-            const next = input.harvestKg ?? null;
-            const { entryId, kgUnitId } = await resolveHarvestTarget(db, ctx, taskIds);
-            // Addressed by the ENTRY, not by a stored id: the total belongs to
-            // whichever line `resolveHarvestTarget` picks, and both the record
-            // and this correction ask it the same question in the same order.
-            const existing = await db.logQuantity.findFirst({
-                where: { tenantId: ctx.tenantId, logEntryId: entryId, measure: 'WEIGHT' },
+        // ── Dropped parcels ──
+        if (setChange && setChange.dropped.length > 0) {
+            const droppedLines = await db.operationParcel.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    taskId: { in: taskIds },
+                    parcelId: { in: setChange.dropped },
+                },
                 select: { id: true },
             });
-            if (next === null) {
-                if (existing) {
-                    await db.logQuantity.delete({ where: { id: existing.id } });
+            const ids = droppedLines.map((l) => l.id);
+            if (ids.length > 0) {
+                // The journal ENTRIES go first and explicitly, because nothing
+                // else reaches them: `LogEntry.operationParcel` is an optional
+                // relation with no `onDelete`, so Prisma's default is SET NULL —
+                // deleting the line would leave its entry live, listed and
+                // printed, with a null link and its `treatmentGroupId` intact.
+                // The treatment withdrawal documents the same trap.
+                await db.logEntry.deleteMany({
+                    where: { tenantId: ctx.tenantId, operationParcelId: { in: ids } },
+                });
+                // PHYSICAL: `OperationParcel` has no `deletedAt` column at all,
+                // so there is no soft-delete to prefer here.
+                await db.operationParcel.deleteMany({
+                    where: { tenantId: ctx.tenantId, id: { in: ids } },
+                });
+            }
+        }
+
+        // ── Added parcels ──
+        if (setChange && setChange.added.length > 0) {
+            // Which task covers which block. ONE read for every line, not one
+            // per line: `previous.lines` knows a parcel's block and this knows
+            // its task, so the join is done in memory. A `findFirst` per line
+            // here was an N+1 that `query-shape-guardrails` caught — correctly;
+            // the query count must not grow with the number of parcels.
+            const rows = await db.operationParcel.findMany({
+                where: { tenantId: ctx.tenantId, taskId: { in: taskIds } },
+                select: { parcelId: true, taskId: true },
+            });
+            const taskOfParcel = new Map(rows.map((r) => [r.parcelId, r.taskId]));
+            const taskOfBlock = new Map<string, string>();
+            for (const l of previous.lines) {
+                if (l.locationId == null) continue;
+                const taskId = taskOfParcel.get(l.parcelId);
+                if (taskId) taskOfBlock.set(l.locationId, taskId);
+            }
+
+            // The farm day the added line is stamped with: the corrected one when
+            // the day moved, otherwise the day the activity already carries.
+            // Parsed rather than re-derived from an instant — reading a calendar
+            // day back out of a UTC instant is the mistake `parseRecordedDay`
+            // exists to prevent.
+            const effOccurredAt =
+                day?.day ?? (previous.occurredOn ? parseRecordedDay(previous.occurredOn).day : undefined);
+            const sentAreas = new Map(input.parcels?.map((p) => [p.parcelId, p.treatedAreaHa]) ?? []);
+
+            // Lines that ALREADY exist for the added parcels — one read for the
+            // whole set. These arise two ways: a minted block whose task
+            // `createFieldOperation` populated, and a re-sent correction. The
+            // task set includes the minted ones, which is why it is rebuilt here
+            // rather than reusing `taskIds`.
+            const allTaskIds = [...new Set([...taskIds, ...plan.mintedTaskOfBlock.values()])];
+            const existingAdded = await db.operationParcel.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    taskId: { in: allTaskIds },
+                    parcelId: { in: setChange.added },
+                },
+                select: { id: true, version: true, status: true, parcelId: true },
+            });
+            const existingOfAdded = new Map(existingAdded.map((l) => [l.parcelId, l]));
+
+            for (const parcelId of setChange.added) {
+                const block = plan.blockOfAdded.get(parcelId);
+                const taskId = block
+                    ? (taskOfBlock.get(block) ?? plan.mintedTaskOfBlock.get(block))
+                    : undefined;
+                // Unreachable: `planParcelChange` either found the block covered
+                // or minted its task. Asserted rather than assumed, because
+                // silently skipping a parcel would answer 200 to a correction
+                // that did not happen.
+                if (!taskId) {
+                    throw codedBadRequest(
+                        'ACTIVITY_CORRECTION_BLOCK_UNRESOLVED',
+                        'That parcel could not be placed in a block of this activity.',
+                        { reference: 'parcels' },
+                    );
                 }
-            } else if (existing) {
-                await db.logQuantity.update({ where: { id: existing.id }, data: { value: next } });
-            } else {
+
+                // A minted block's task already carries ITS parcels as lines —
+                // `createFieldOperation` wrote them — so creating another here
+                // would double them. Only a parcel joining an EXISTING block
+                // needs its line written. Looked up from the single read above
+                // rather than per parcel.
+                const existing = existingOfAdded.get(parcelId);
+                const lineId = existing
+                    ? existing.id
+                    : (
+                          await db.operationParcel.create({
+                              data: { tenantId: ctx.tenantId, taskId, parcelId },
+                              select: { id: true },
+                          })
+                      ).id;
+
+                // MARKED rather than written whole: `markOperationParcel` is what
+                // gives a line its journal entry and its audit event, so an added
+                // parcel that skipped it would exist in the register with no
+                // entry — invisible in «Дневник», which is the defect #2354 was.
+                // It joins THIS transaction via `tx`; a nested `$transaction`
+                // would deadlock on the rows this one holds.
+                if (!existing || existing.status !== 'DONE') {
+                    await markOperationParcel(ctx, taskId, lineId, 'DONE', null, existing?.version ?? 0, {
+                        tx: db,
+                        recordedInDiary: true,
+                        treatmentGroupId: handle,
+                        ...(effOccurredAt ? { occurredAt: effOccurredAt } : {}),
+                        treatedAreaHa: sentAreas.get(parcelId) ?? null,
+                    });
+                }
+            }
+        }
+
+        // ── Areas on parcels that were already there ──
+        if (areas) {
+            for (const [parcelId, treatedAreaHa] of areas) {
+                await db.operationParcel.updateMany({
+                    where: { tenantId: ctx.tenantId, taskId: { in: taskIds }, parcelId },
+                    data: { treatedAreaHa },
+                });
+            }
+        }
+
+        // ── The harvest total, re-anchored ──
+        //
+        // Re-done whenever the total CHANGED **or the parcel set did**, and the
+        // second half is the one that matters.
+        //
+        // The total lives on ONE journal entry — whichever `resolveHarvestTarget`
+        // picks, ordered by `operationParcelId asc`. Dropping a parcel deletes
+        // its entry (it must: see above), and `LogQuantity.logEntry` is
+        // `onDelete: Cascade`. So dropping the lowest-id parcel of a harvest
+        // would have taken the recorded yield with it — silently, through two
+        // relations neither of which is visible at this call site. Adding a
+        // parcel can move the anchor the other way and leave a SECOND row.
+        //
+        // So the total is consolidated rather than patched: every WEIGHT row
+        // under the handle is removed and exactly one is written on the current
+        // canonical entry. Idempotent, and it cannot leave two.
+        let harvestKg = previous.harvestKg;
+        const totalMayHaveMoved = changed.includes('harvestKg') || setChange !== null;
+        if (previous.kind === 'HARVEST' && totalMayHaveMoved) {
+            const next = changed.includes('harvestKg') ? (input.harvestKg ?? null) : previous.harvestKg;
+
+            await db.logQuantity.deleteMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    measure: 'WEIGHT',
+                    logEntry: { treatmentGroupId: handle },
+                },
+            });
+
+            if (next !== null) {
+                // `taskIds` is sufficient, and this is worth stating because it
+                // is not obvious. A minted block's task does NOT need a second
+                // read: `loadActivityForEdit` runs inside this transaction,
+                // which is AFTER `planParcelChange` has minted, so `taskIds`
+                // already contains it.
+                //
+                // An earlier version re-read the task set here and claimed the
+                // opposite in a comment. A mutation swapping the re-read for
+                // `taskIds` SURVIVED — including on a test written specifically
+                // to catch it, where a harvest's only parcel moves to a new
+                // block — which is what showed the query was redundant and the
+                // comment wrong. Removed rather than kept as insurance: a line
+                // defended by a false reason is worse than no line.
+                const { entryId, kgUnitId } = await resolveHarvestTarget(db, ctx, taskIds);
                 await db.logQuantity.create({
                     data: {
                         tenantId: ctx.tenantId,
@@ -481,6 +883,22 @@ export async function correctFarmActivity(
                 summary: `${changed.length} field(s) corrected across ${taskIds.length} block(s)`,
             },
         });
+
+        // A changed parcel SET is RE-READ rather than patched.
+        //
+        // Every scalar is assembled from what was written, which is cheap and
+        // exact. The line LIST is not a scalar — rows were created and
+        // destroyed, and each added one carries values `markOperationParcel`
+        // derived rather than values this function chose. Reconstructing that
+        // here would be a second implementation of the assembly, and the first
+        // thing it would get wrong is what an editor shows back to the farmer.
+        //
+        // The re-read also picks up the version the compare-and-swap just set,
+        // so it is not re-derived either.
+        if (setChange || areas) {
+            const after = await loadActivityForEdit(db, ctx, handle);
+            return after.definition;
+        }
 
         return {
             ...previous,
