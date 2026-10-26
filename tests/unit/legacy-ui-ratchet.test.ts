@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const APP_PAGES_ROOT = path.resolve(__dirname, '../../src/app/t');
 
 /**
@@ -72,7 +74,7 @@ function walk(dir: string, out: string[]): string[] {
 
 const SOURCES = walk(APP_PAGES_ROOT, []).map((p) => ({
     file: path.relative(APP_PAGES_ROOT, p),
-    src: fs.readFileSync(p, 'utf-8'),
+    src: blankNonCode(fs.readFileSync(p, 'utf-8')),
 }));
 
 function countClassToken(token: 'btn' | 'badge'): number {

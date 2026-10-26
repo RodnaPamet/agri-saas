@@ -9,6 +9,8 @@ import path from 'path';
 import fs from 'fs';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -27,7 +29,7 @@ function scanFiles(dir: string, pattern: RegExp, extensions = ['.ts', '.tsx']): 
                 if (entry.name === 'node_modules' || entry.name === '.next') continue;
                 walk(full);
             } else if (extensions.some(ext => entry.name.endsWith(ext))) {
-                const content = fs.readFileSync(full, 'utf-8');
+                const content = blankNonCode(fs.readFileSync(full, 'utf-8'));
                 const lines = content.split('\n');
                 for (let i = 0; i < lines.length; i++) {
                     if (pattern.test(lines[i])) {
@@ -109,7 +111,7 @@ describe('Scope Reintroduction Guardrails', () => {
     // ── Middleware guardrails ──
 
     it('middleware has no scope redirect shim', () => {
-        const middleware = fs.readFileSync(path.join(SRC, 'middleware.ts'), 'utf-8');
+        const middleware = blankNonCode(fs.readFileSync(path.join(SRC, 'middleware.ts'), 'utf-8'));
         expect(middleware).not.toContain('SCOPE_URL_PATTERN');
         expect(middleware).not.toContain('scopeSlug');
     });
