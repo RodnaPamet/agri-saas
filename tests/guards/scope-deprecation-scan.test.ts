@@ -91,6 +91,53 @@ function scanForPattern(files: string[], patternName: string, regex: RegExp): Sc
 describe('Scope Deprecation Scan (report-only)', () => {
     const files = walk(SRC_DIR);
 
+    it('[scope-scan] reaches a real population — the denominator', () => {
+        // Every scan below reports how many references REMAIN, and the happy
+        // path prints "🎉 No scope references found! Migration done." An empty
+        // `files` produces exactly that output having read nothing — a
+        // migration declared complete because the walk broke (#2377).
+        //
+        // Inside an `it`, deliberately. The first version of this assertion
+        // sat in the describe BODY, where it runs at collection time: gutting
+        // the walk then failed the whole suite to load and reported
+        // `Tests: 0 total` instead of a named failure. Effective, but the
+        // worst possible diagnostic — it looks like a broken test file rather
+        // than an empty population, which is the exact confusion this repo
+        // has been bitten by before.
+        //
+        // 2265 .ts/.tsx files exist under src/ today; the floor sits well
+        // below so ordinary deletion cannot trip it, and far above zero so a
+        // broken walk cannot pass.
+        console.log(`[scope-scan] walked ${files.length} file(s) under src/`);
+        expect(files.length).toBeGreaterThan(500);
+    });
+
+    it('[scope-scan] the scanner can actually find a pattern — the control', () => {
+        // `scanForPattern` was reported dead by `scripts/selector-teeth.mjs`:
+        // gutted to a constant it SURVIVED, because this describe is
+        // report-only — its results feed console.log and the final assertion
+        // is `expect(true).toBe(true)`, a placeholder for the "Phase 2" promotion
+        // to `expect(totalRefs).toBe(0)`.
+        //
+        // Report-only is a legitimate design, but it makes the REPORT the
+        // product, and an unasserted scanner means the report is unverifiable.
+        // A broken `scanForPattern` prints "🎉 No scope references found!
+        // Migration done." — which a reader takes as a fact about the codebase
+        // rather than as a fact about the scanner.
+        //
+        // So the control asserts the scanner can find something that is
+        // certainly present, rather than asserting anything about scope refs.
+        // It stays true whatever the migration's state, which is what lets it
+        // sit beside a report-only body without pre-empting Phase 2.
+        const sanity = scanForPattern(files, 'export-keyword', /\bexport\b/);
+        console.log(`[scope-scan] control: ${sanity.count} line(s) match /\bexport\b/`);
+        expect(sanity.count).toBeGreaterThan(100);
+        expect(sanity.files.length).toBeGreaterThan(50);
+        // And the shape it reports, since the printed table reads these.
+        expect(sanity.pattern).toBe('export-keyword');
+        expect(sanity.files[0].lineNumbers.length).toBeGreaterThan(0);
+    });
+
     it('reports remaining scope references across the codebase', () => {
         const results: ScanResult[] = [];
         let totalRefs = 0;
