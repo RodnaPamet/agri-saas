@@ -167,7 +167,12 @@ export const TaskDTOSchema = z.object({
  * reaches whichever views project it by editing one place.
  *
  * The twelve are `taskListSelect` in `WorkItemRepository`, read off the
- * projection rather than guessed. Before this split both responses were
+ * projection rather than guessed — plus `mayDelete`, which is COMPUTED per
+ * caller rather than projected (#2395), and the two fields it is computed from
+ * are stripped on the way out. So `taskListSelect` is now wider than this view,
+ * and deliberately: those two are facts about the ROW, which is what lets the
+ * shared list cache hold them while the per-caller decision happens after the
+ * cache read. Before this split both responses were
  * documented as `Task`, so the list promised ten properties it has never
  * sent — `description`, `tenantId`, `source`, `resolution`, `metadataJson`,
  * `reviewer`, `createdBy` and more. All optional, so a decoder survived; the
@@ -191,10 +196,35 @@ export const TaskListItemDTOSchema = TaskDTOSchema.pick({
     assigneeUserId: true,
     assignee: true,
 })
+    .extend({
+        mayDelete: z.boolean().openapi({
+            description:
+                'Whether THIS caller may delete THIS task — the flag to gate a «Изтрий» control on '
+                + '(#2395).\n\n'
+                + 'Computed server-side because the row cannot answer it: `DELETE /tasks/{taskId}` '
+                + 'refuses three cases, and a client has none of the facts for two of them. '
+                + '`canWrite` (a READER sees the list and can delete nothing on it), '
+                + 'creator-or-admin (`TASK_DELETE_NOT_PERMITTED`, 403), and whether the task is one '
+                + 'block\u2019s share of a recorded treatment (`TASK_BELONGS_TO_TREATMENT`, 409, '
+                + 'which binds administrators too).\n\n'
+                + 'ONE flag for all three, deliberately \u2014 the same choice the journal row\u2019s '
+                + '`mayDelete` makes and for the same reason: a client does not want to know WHICH '
+                + 'reason applies, it wants to know whether to draw the control, and an offered '
+                + '«\u0418\u0437\u0442\u0440\u0438\u0439» that refuses is worse than an absent one.\n\n'
+                + '**Read it as `mayDelete === false`, never `!mayDelete`.** An ABSENT field is a '
+                + 'row cached before this field existed; treating absence as denial hides the '
+                + 'control from the person who created the task. A stale permit costs one refusal, '
+                + 'a stale denial costs a farmer their own row.\n\n'
+                + 'Advisory, not the control: the route re-checks and answers the codes above. A '
+                + 'recorded treatment writes one task per block, so on a farm that records '
+                + 'treatments many ordinary-looking rows carry `false` for the 409 reason rather '
+                + 'than a permission one.',
+        }),
+    })
     .passthrough()
     .openapi('TaskListItem', {
         description:
-            'One row of `GET /tasks`. A PROJECTION of `Task`, not the whole record — twelve fields, matching `taskListSelect`. Do not decode a list row as a detail row: `description`, `resolution`, `metadataJson`, `reviewer`, `createdBy` and the relations are absent here and present on `TaskDetail`.',
+            'One row of `GET /tasks`. A PROJECTION of `Task`, not the whole record — twelve fields matching `taskListSelect`, plus the computed `mayDelete`. Do not decode a list row as a detail row: `description`, `resolution`, `metadataJson`, `reviewer`, `createdBy` and the relations are absent here and present on `TaskDetail`.\n\n`createdByUserId` and `treatmentGroupId` are projected by the server to compute `mayDelete` and are STRIPPED before the response — a list row should not widen what it says about who did what.',
     });
 
 /**

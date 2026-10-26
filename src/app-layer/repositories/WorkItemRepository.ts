@@ -45,6 +45,21 @@ export interface TaskListParams {
  * not keep, and `.passthrough()` means nothing else notices.
  */
 export const taskListSelect = {
+    /**
+     * These two are projected for the COMPUTED `mayDelete` on the row (#2395)
+     * and are stripped before the response — `TaskListItem` is documented as a
+     * twelve-field projection plus that flag, and leaking an author id into a
+     * list would widen what the row says about who did what.
+     *
+     * They are also what makes the flag cacheable: both are facts about the
+     * ROW, not about the caller, so the shared list cache can hold them and the
+     * per-caller decision is made after the cache read. Putting `mayDelete`
+     * itself in the cached payload would serve one farmer's permissions to
+     * another for the TTL — the key is
+     * `prefix:entity:operation:tenantId:vN:filterHash` and carries no user.
+     */
+    createdByUserId: true,
+    treatmentGroupId: true,
     id: true,
     key: true,
     title: true,
