@@ -116,15 +116,21 @@ export const declaresUnbacked = (runbook: string, stack: string): boolean =>
 export const namesAsTarget = (workflow: string, stack: string): boolean =>
     new RegExp(`Restore Test \\(${stack}\\)|target:\\s*${stack}\\b`).test(workflow);
 
-/** A stack is drilled when the workflow names it as a target. */
-const isDrilled = (s: string) => namesAsTarget(WORKFLOW, s);
-
 /**
- * A stack is declared unbacked when the runbook says so about it by name.
- * Matched on a heading rather than anywhere in the file, so a passing mention
- * in the history section cannot be read as the declaration.
+ * There are deliberately NO `isDrilled` / `isDeclaredUnbacked` adapters here.
+ *
+ * The first attempt at this fix kept them as one-line wrappers over the pure
+ * predicates above. `scripts/selector-teeth` then reported
+ * `isDeclaredUnbacked` dead for the SECOND time, and it was right both times:
+ * making the predicate pure and testing the pure version left the WRAPPER
+ * ungraded, and with no stack currently unbacked an always-false wrapper is
+ * indistinguishable from the real one on the live population. Creating a seam
+ * and testing only one side of it is its own defect.
+ *
+ * So the call sites pass the text directly. `declaresUnbacked(RUNBOOK, s)`
+ * reads no worse than `isDeclaredUnbacked(s)` and there is no third function
+ * whose wiring nothing checks.
  */
-const isDeclaredUnbacked = (s: string) => declaresUnbacked(RUNBOOK, s);
 
 describe('both predicates can actually select — the controls (#2365-adjacent)', () => {
     // Synthetic input only. These must keep their teeth when the repo has no
@@ -193,6 +199,19 @@ describe('the restore drill targets what exists (#2332)', () => {
         // Two is what the runbook has described throughout. A parse that
         // started matching nothing would make every assertion below pass over
         // an empty set — the shape this guard exists to prevent, one level up.
+        //
+        // NOTE for anyone applying #2377's both-branches rule here: this
+        // population is deliberately UNIFORM and must stay assertable that
+        // way. Every stack is currently drilled, truthfully, so an assertion
+        // that each side of the partition holds an element would FAIL — and
+        // satisfying it would mean declaring a backed-up stack unbacked, which
+        // is a lie in the runbook to feed a check.
+        //
+        // A uniform population is exactly what made the second predicate
+        // vacuous, so it is not harmless; it is handled, in the synthetic
+        // controls above, which exercise both branches on inputs the repo
+        // cannot contain. That is the only place the partition CAN be
+        // exercised while both stacks have backups.
         expect(STACKS.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -229,8 +248,8 @@ describe('the restore drill targets what exists (#2332)', () => {
     it.each(STACKS.map((s) => [s] as const))(
         '%s is either drilled or declared unbacked, never neither',
         (stack) => {
-            const drilled = asState(isDrilled(stack), `isDrilled(${stack})`);
-            const unbacked = asState(isDeclaredUnbacked(stack), `isDeclaredUnbacked(${stack})`);
+            const drilled = asState(namesAsTarget(WORKFLOW, stack), `namesAsTarget(${stack})`);
+            const unbacked = asState(declaresUnbacked(RUNBOOK, stack), `declaresUnbacked(${stack})`);
             // Literals on the expected side. Both are booleans by now, so
             // `!==` is a value comparison rather than an identity one.
             expect({ stack, inExactlyOneState: drilled !== unbacked })
@@ -245,7 +264,7 @@ describe('the restore drill targets what exists (#2332)', () => {
         //
         // `=== true`, not truthiness: `[]` is truthy, so a gutted predicate
         // made `filter` keep every stack and this assertion pass over nothing.
-        const drilled = STACKS.filter((s) => isDrilled(s) === true);
+        const drilled = STACKS.filter((s) => namesAsTarget(WORKFLOW, s) === true);
         expect({ drilledCount: drilled.length, drilled })
             .toEqual({ drilledCount: drilled.length, drilled: expect.arrayContaining([]) });
         expect(drilled.length).toBeGreaterThanOrEqual(1);
