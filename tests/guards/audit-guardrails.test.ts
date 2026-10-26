@@ -25,6 +25,11 @@ function readFile(relPath: string): string {
  * Recursively collect all .ts/.tsx files under a directory.
  */
 function collectTsFiles(dir: string, results: string[] = []): string[] {
+    // Named throw on the top-level root (#875, #2407). Recursion only descends
+    // into entries `readdirSync` just returned, so this judges `SRC_DIR` only.
+    if (!fs.existsSync(dir)) {
+        throw new Error(`audit-guardrails: scan root does not exist: ${dir}`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== '.next') {
@@ -83,6 +88,26 @@ describe('Audit Guardrails — No Deprecated logAudit Usage', () => {
         // The deprecated wrapper itself
         path.resolve(SRC_DIR, 'lib', 'audit-log.ts'),
     ];
+
+    it('[audit-guards] the scan reaches a real population — the denominator', () => {
+        // `collectTsFiles` was reported dead by `scripts/selector-teeth.mjs`:
+        // gutted to a constant it SURVIVED. All three tests that use it are
+        // ABSENCE assertions — no file calls `logAudit()`, none constructs a
+        // raw `PrismaClient`, none bypasses the extension — so an empty
+        // population satisfies every one of them and reports compliance having
+        // read nothing (#2407).
+        const allFiles = collectTsFiles(SRC_DIR);
+        console.log(`[audit-guards] ${allFiles.length} .ts/.tsx file(s) under src/`);
+        expect(allFiles.length).toBeGreaterThan(500);
+        // The filter is part of the selector: a walk that started returning
+        // every file would scan .json and .css too, which the matchers below
+        // would read as source. Asserted on the collection, not a sample.
+        expect(allFiles.every((f) => f.endsWith('.ts') || f.endsWith('.tsx'))).toBe(true);
+        // And the one file the logAudit test exempts must actually be in the
+        // population — an allowlist entry for a file nothing scans is a
+        // reason recorded for a risk that no longer exists.
+        expect(allFiles).toContain(path.resolve(SRC_DIR, 'lib', 'audit-log.ts'));
+    });
 
     it('no source file (except audit-log.ts) calls logAudit()', () => {
         const allFiles = collectTsFiles(SRC_DIR);
