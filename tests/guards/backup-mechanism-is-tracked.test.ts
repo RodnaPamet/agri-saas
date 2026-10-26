@@ -33,16 +33,48 @@ import { collectTrackedFiles } from '../helpers/collect-files';
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const DIR = 'deploy/backup';
 
-/** What the mechanism consists of, and where each piece is installed. */
-const PIECES: ReadonlyArray<{ rel: string; remote: string }> = [
-    { rel: 'backup/agrent-db-backup', remote: '/usr/local/sbin/agrent-db-backup' },
-    { rel: 'backup/agrent-db-backup.service', remote: '/etc/systemd/system/agrent-db-backup.service' },
-    { rel: 'backup/agrent-db-backup.timer', remote: '/etc/systemd/system/agrent-db-backup.timer' },
-];
+/** One stack's worth: script + unit + timer + the README. See `tracked()`. */
+const MIN_TRACKED = 4;
 
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 const DRIFT = read('deploy/check-drift.sh');
-const SCRIPT = read('deploy/backup/agrent-db-backup');
+
+/**
+ * The backup SCRIPTS, DERIVED from what is tracked — one per stack.
+ *
+ * This list used to be hand-written and named only `agrent-db-backup`, with the
+ * population asserted as `files.length >= PIECES.length`. When
+ * `inflect-db-backup` was tracked (#2367) that became 7 tracked files against 3
+ * expected, which passes — so every content assertion below graded agrent's
+ * script and inflect's was **completely ungraded**. That is the worse half to
+ * miss: its globals matter 7× more (1,010 GRANTs against agrent's 142), so a
+ * broken `pg_dumpall --roles-only` there costs the most and showed the least.
+ *
+ * Derived, so the next stack cannot be missed the same way — the failure mode
+ * of a hand-listed population is that it stays green while shrinking in
+ * coverage, which is indistinguishable from working.
+ */
+function backupScripts(): string[] {
+    return tracked()
+        .filter((f) => /^deploy\/backup\/[a-z0-9-]+-db-backup$/.test(f))
+        .sort();
+}
+
+/** Every installed piece, derived from each script: itself, its unit, its timer. */
+function pieces(): { rel: string; remote: string }[] {
+    const out: { rel: string; remote: string }[] = [];
+    for (const script of backupScripts()) {
+        const base = path.basename(script);
+        out.push({ rel: `backup/${base}`, remote: `/usr/local/sbin/${base}` });
+        for (const ext of ['service', 'timer']) {
+            out.push({
+                rel: `backup/${base}.${ext}`,
+                remote: `/etc/systemd/system/${base}.${ext}`,
+            });
+        }
+    }
+    return out;
+}
 
 /**
  * Comment lines removed. Both scripts DOCUMENT the mechanisms asserted below,
@@ -58,7 +90,6 @@ const code = (src: string) =>
         .join('\n');
 
 const DRIFT_CODE = code(DRIFT);
-const SCRIPT_CODE = code(SCRIPT);
 
 /**
  * `collectTrackedFiles` rather than a direct `git ls-files`, per
@@ -67,8 +98,10 @@ const SCRIPT_CODE = code(SCRIPT);
  *
  * `floor` is the real expectation rather than the default 1 — the module's own
  * comment asks for it ("raise it when a guard knows its population is
- * larger"), and here the population is known exactly: the three installed
- * pieces plus the README.
+ * larger"). FOUR is the floor for ONE stack: a script, its unit, its timer and
+ * the README. It is deliberately not derived from the piece list, because that
+ * list is itself derived from this collector — a floor computed from the thing
+ * it is meant to bound would be satisfied by any value, including zero.
  *
  * The helper returns ABSOLUTE paths, so they are mapped back to
  * repo-relative. Forgetting that in the sibling WIF guard doubled the path and
@@ -76,7 +109,7 @@ const SCRIPT_CODE = code(SCRIPT);
  * assertion, and indistinguishable from an empty population.
  */
 function tracked(): string[] {
-    return collectTrackedFiles({ roots: [DIR], floor: PIECES.length }).map((abs) =>
+    return collectTrackedFiles({ roots: [DIR], floor: MIN_TRACKED }).map((abs) =>
         path.relative(REPO_ROOT, abs),
     );
 }
@@ -87,15 +120,27 @@ describe('the production backup mechanism is tracked and drift-checked (#2329)',
         console.log(`[backup-tracked] ${files.length} tracked file(s) under ${DIR}: ${files.join(', ')}`);
         // git ls-files returning nothing is the exact state this guard was
         // written against, and it would make every assertion below vacuous.
-        expect(files.length).toBeGreaterThanOrEqual(PIECES.length);
+        const scripts = backupScripts();
+        const all = pieces();
+        console.log(
+            `[backup-tracked] ${scripts.length} stack(s): ${scripts.map((f) => path.basename(f)).join(', ')}`
+                + ` = ${all.length} installed piece(s)`,
+        );
+        expect(files.length).toBeGreaterThanOrEqual(MIN_TRACKED);
+        // Two stacks are live. A derivation that silently found ONE would make
+        // every per-script assertion below range over half the mechanism and
+        // still pass — which is exactly the state this guard was just in.
+        expect(scripts.length).toBeGreaterThanOrEqual(2);
+        // Every script must bring its unit and its timer.
+        expect(all.length).toBe(scripts.length * 3);
     });
 
-    it.each(PIECES.map((p) => [p.rel, p] as const))('deploy/%s is tracked', (rel) => {
+    it.each(pieces().map((p) => [p.rel, p] as const))('deploy/%s is tracked', (rel) => {
         expect({ rel, tracked: tracked().includes(`deploy/${rel}`) })
             .toEqual({ rel, tracked: true });
     });
 
-    it.each(PIECES.map((p) => [p.rel, p] as const))(
+    it.each(pieces().map((p) => [p.rel, p] as const))(
         'check-drift.sh compares deploy/%s against the installed path',
         (rel, piece) => {
             // Both halves. The repo path alone could be hashed against the
@@ -140,7 +185,10 @@ describe('the production backup mechanism is tracked and drift-checked (#2329)',
         expect(DRIFT_CODE).not.toMatch(/BACKUP_CHECKED" -eq 0/);
     });
 
-    it('the backup dumps ROLES, not only the database', () => {
+    it.each(backupScripts().map((f) => [path.basename(f), f] as const))(
+        '%s dumps ROLES, not only the database',
+        (_name, rel) => {
+            const SCRIPT_CODE = code(read(rel));
         // Without this the dump carries 142 GRANTs to a role nothing creates,
         // and a restore into a clean cluster fails every one of them.
         // Asserted on the INVOCATION, not on any line mentioning it. The
@@ -153,11 +201,15 @@ describe('the production backup mechanism is tracked and drift-checked (#2329)',
             // A `VAR=` or `VAR="…"` line is a label or a value, never a call.
             .filter((l) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(l))
             .some((l) => /pg_dumpall\b.*--roles-only/.test(l));
-        expect({ invokesRolesDump }).toEqual({ invokesRolesDump: true });
-        expect(SCRIPT_CODE).toMatch(/globals_object=/);
-    });
+            expect({ invokesRolesDump }).toEqual({ invokesRolesDump: true });
+            expect(SCRIPT_CODE).toMatch(/globals_object=/);
+        },
+    );
 
-    it('the role check is DERIVED from the dump, not a hard-coded name', () => {
+    it.each(backupScripts().map((f) => [path.basename(f), f] as const))(
+        "%s's role check is DERIVED from the dump, not a hard-coded name",
+        (_name, rel) => {
+            const SCRIPT_CODE = code(read(rel));
         // A hard-coded `app_user` would pass forever and miss the next role.
         // The script extracts the roles its own GRANTs name and requires the
         // globals to create each.
@@ -165,11 +217,103 @@ describe('the production backup mechanism is tracked and drift-checked (#2329)',
         expect(SCRIPT_CODE).toMatch(/GRANT .* TO/);
         expect(SCRIPT_CODE).toMatch(/CREATE\|ALTER\) ROLE|CREATE\|ALTER/);
         // The specific role must NOT be the thing being tested for.
-        const assertionWindow = SCRIPT_CODE.slice(
-            SCRIPT_CODE.indexOf('granted_roles='),
-            SCRIPT_CODE.indexOf('step="upload'),
-        );
-        expect({ hardCodedRole: /app_user/.test(assertionWindow) }).toEqual({ hardCodedRole: false });
+            const from = SCRIPT_CODE.indexOf('granted_roles=');
+            const to = SCRIPT_CODE.indexOf('step="upload');
+            const assertionWindow = SCRIPT_CODE.slice(from, to);
+            // The window must EXIST before anything is concluded from its
+            // contents. A rename of either marker empties it, and an empty
+            // string passes the negated assertion below while checking nothing
+            // — the failure this repo has hit from both directions.
+            expect({ rel, windowFound: from >= 0 && to > from, length: assertionWindow.length > 40 })
+                .toEqual({ rel, windowFound: true, length: true });
+            expect({ hardCodedRole: /app_user/.test(assertionWindow) }).toEqual({ hardCodedRole: false });
+        },
+    );
+
+    describe("the encryption key's durable copy is checked too (#2357)", () => {
+        /**
+         * `DATA_ENCRYPTION_KEY` cannot be in the dump — a `pg_dump` carries no
+         * environment — so a restored database is undecryptable without it. The
+         * key lives in Secret Manager as a durable COPY while the VM's env file
+         * stays the runtime source, because `roles/editor` includes 18
+         * `secretmanager.*` permissions and both VMs run as a project editor:
+         * having them read the secret at boot would need the `cloud-platform`
+         * scope, which would also hand a compromised box both products' keys.
+         *
+         * A copy of a value that can change goes stale silently, so
+         * `check-drift.sh` compares it. These assert that comparison is real.
+         */
+        const keyBlock = () =>
+            DRIFT_CODE.slice(DRIFT_CODE.indexOf('KEY_PAIRS='), DRIFT_CODE.indexOf('KEY_EXPECTED='));
+
+        it('[key-drift] the block it examines exists', () => {
+            const b = keyBlock();
+            console.log(`[key-drift] key block: ${b.replace(/\s+/g, ' ').trim().slice(0, 150)}…`);
+            // Without this every assertion below reads an empty string.
+            expect({ found: b.length > 200 }).toEqual({ found: true });
+            expect(b).toContain('gcloud secrets versions access');
+        });
+
+        it('covers every stack that has a backup script', () => {
+            // Derived from the same place as the pieces above: a stack whose
+            // database is backed up but whose KEY has no checked copy is a
+            // restore that produces unreadable columns.
+            const b = keyBlock();
+            for (const script of backupScripts()) {
+                // `agrent-db-backup` -> `agrent`, `inflect-db-backup` -> `inflect`
+                const stack = path.basename(script).replace(/-db-backup$/, '');
+                expect({ stack, inKeyTable: new RegExp(`${stack}[a-z-]*-data-encryption-key`).test(b) })
+                    .toEqual({ stack, inKeyTable: true });
+            }
+        });
+
+        it('compares a HASH, never the key itself', () => {
+            const b = keyBlock();
+            expect(b).toMatch(/sha256sum/);
+            // The value must never reach a log, a shell history or CI output.
+            // `printenv DATA_ENCRYPTION_KEY` appears, but only ever piped into
+            // a hash — never echoed, assigned bare, or compared directly.
+            const pipesToHash = b
+                .split('\n')
+                .filter((l) => l.includes('printenv DATA_ENCRYPTION_KEY'))
+                .every((l) => /sha256sum/.test(l) || /\\$/.test(l.trimEnd()));
+            expect({ pipesToHash }).toEqual({ pipesToHash: true });
+            expect({ echoesTheKey: /echo .*\$\{?DATA_ENCRYPTION_KEY/.test(b) })
+                .toEqual({ echoesTheKey: false });
+        });
+
+        it('tells "they differ" apart from "I could not look"', () => {
+            // Collapsing both into one verdict reports DRIFT when the real
+            // answer is that the check was blind — and an empty `$( )` under
+            // `set -e` makes that collapse the DEFAULT, which is why each side
+            // is classified before they are compared.
+            const b = keyBlock();
+            expect(b).toMatch(/-z "\$live_h"/);
+            expect(b).toMatch(/-z "\$stored_h"/);
+            expect(b).toMatch(/could not read/);
+        });
+
+        it('KEY_DRIFT reaches the exit status', () => {
+            // The bug this assertion exists for was in the first version of
+            // that block: KEY_DRIFT was set on every failure path and never
+            // read, so the script printed the errors and still exited 0. A
+            // check that cannot fail is the thing this whole file is about.
+            expect(DRIFT_CODE).toMatch(/KEY_DRIFT" -ne 0 \] && FAILED=/);
+            // And the count must equal the table, as the backup loop does.
+            expect(DRIFT_CODE).toMatch(/KEY_CHECKED" -ne "\$KEY_EXPECTED/);
+        });
+
+        it('the runbook says the key is not in the dump, and where it is', () => {
+            // A secret nobody knows to retrieve is not a recovery plan. The
+            // recovery procedure must name BOTH facts.
+            const runbook = read('docs/backup-restore.md');
+            expect(runbook).toMatch(/secrets versions access/);
+            expect(runbook).toMatch(/not in the dump|carries no environment/);
+            expect(runbook).toMatch(/agrent-data-encryption-key/);
+            expect(runbook).toMatch(/inflect-compliance-data-encryption-key/);
+            // And it must NOT claim the copy restricts access — it does not.
+            expect(runbook).toMatch(/durability control, not an access control/);
+        });
     });
 
     it('does not carry the service-account key into a PUBLIC repo', () => {
