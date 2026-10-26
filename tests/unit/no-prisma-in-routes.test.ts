@@ -5,6 +5,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 function getAllRouteFiles(dir: string): string[] {
     const results: string[] = [];
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -36,7 +38,12 @@ describe('Structural: No direct Prisma calls in tenant-scoped API route handlers
         for (const file of routeFiles) {
             const rel = path.relative(apiDir, file);
             if (ROUTE_EXCLUDE_DIRS.some(d => rel.includes(d))) continue;
-            const content = fs.readFileSync(file, 'utf-8');
+            // Comments blanked (#1774): the matcher below looks for
+            // `prisma.<something>`, and a docblock saying "never call
+            // prisma.user here" reads as the call it warns against. Strings
+            // are kept — blanking them is unnecessary for a code matcher and
+            // would be a wider claim than this needs.
+            const content = blankNonCode(fs.readFileSync(file, 'utf-8'));
             // Check for direct prisma calls (prisma.xxx)
             if (/\bprisma\.\w+/g.test(content)) {
                 violations.push(rel);

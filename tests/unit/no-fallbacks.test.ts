@@ -1,16 +1,25 @@
 import fs from 'fs';
 import path from 'path';
 
-function walkDir(dir: string, fileList: string[] = []) {
-    const files = fs.readdirSync(dir);
+import { blankNonCode } from '../helpers/blank-non-code';
 
-    for (const file of files) {
-        const filePath = path.join(dir, file);
-        if (fs.statSync(filePath).isDirectory()) {
-            if (file !== 'node_modules' && file !== '.next') {
+function walkDir(dir: string, fileList: string[] = []) {
+    // A named throw rather than an ENOENT, and a throw rather than a silent
+    // return: this guard asserts an ABSENCE, so an unresolvable root would
+    // make it pass having read nothing (#875, #2377).
+    if (!fs.existsSync(dir)) {
+        throw new Error(`no-fallbacks: scan root does not exist: ${dir}`);
+    }
+    // `withFileTypes` rather than a `statSync` per entry — the kind is already
+    // known from the directory read, and the extra round trip is the
+    // check-then-use race CodeQL flags (see #2384's walk, fixed the same way).
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const filePath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            if (entry.name !== 'node_modules' && entry.name !== '.next') {
                 walkDir(filePath, fileList);
             }
-        } else if (file.endsWith('.ts') || file.endsWith('.tsx')) {
+        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) {
             fileList.push(filePath);
         }
     }
@@ -22,6 +31,12 @@ describe('Static Analysis: No process.env fallbacks', () => {
     it('should not contain forbidden process.env or secret fallback patterns in src', () => {
         const srcDir = path.resolve(__dirname, '../../src');
         const files = walkDir(srcDir);
+
+        // The denominator. This test asserts that NO file contains a
+        // forbidden pattern, which an empty `files` satisfies perfectly — so
+        // the population has to be shown real before anything is concluded
+        // from its emptiness (#2377).
+        expect(files.length).toBeGreaterThan(200);
 
         let foundErrors = false;
 
@@ -203,7 +218,14 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // at import time; a client prod-gate must read NODE_ENV directly.
             if (file.endsWith('pwa/use-chunk-error-recovery.ts')) continue;
 
-            const content = fs.readFileSync(file, 'utf8');
+            // Comments blanked, STRINGS KEPT (#1774). The distinction is
+            // load-bearing here: one assertion below looks for
+            // `|| "…secret…"`, so its subject IS a string literal and
+            // `{ strings: true }` would erase exactly what it hunts. The other
+            // looks for `process.env.`, which is code. Comments are noise to
+            // both — a docblock explaining why a fallback is forbidden used to
+            // read as a fallback.
+            const content = blankNonCode(fs.readFileSync(file, 'utf8'));
 
             // Look for `process.env.Something`
             if (content.includes('process.env.')) {
