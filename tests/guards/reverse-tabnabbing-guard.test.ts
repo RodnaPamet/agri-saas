@@ -37,18 +37,33 @@ const SOURCES = walk(APP_PAGES_ROOT, []).map((p) => ({
     src: fs.readFileSync(p, 'utf-8'),
 }));
 
+interface Source {
+    file: string;
+    src: string;
+}
+
 /**
- * Scan a JSX source for opening tags that contain target="_blank" but
- * NOT rel="noopener" anywhere in the same tag. Returns file:line
- * strings for reporting.
+ * Scan JSX sources for opening tags that contain target="_blank" but NOT
+ * rel="noopener" anywhere in the same tag.
+ *
+ * Takes its sources as a PARAMETER. It closed over the module-level `SOURCES`
+ * and `scripts/selector-teeth` reported it dead: gutted to `return []` it
+ * survived, because the only assertion on it is
+ * `expect(offenders).toEqual([])` — a NEGATIVE assertion that an
+ * always-empty function satisfies perfectly. A detector whose output is only
+ * ever compared against "nothing" cannot be shown to detect anything.
+ *
+ * The parameter is what makes the control below possible: the repo contains no
+ * offender (that is the point of the guard), so the only way to prove the
+ * scanner works is to hand it one.
  */
-function findUnsafeTabnabs(): string[] {
+function findUnsafeTabnabs(sources: readonly Source[]): string[] {
     const offenders: string[] = [];
     // Match any opening tag that contains target="_blank". Uses
     // `[\s\S]` rather than the `s` (dot-all) flag so the file compiles
     // under the ES2017 regex target configured in tsconfig.
     const tagRe = /<[a-zA-Z][\s\S]*?target=["']_blank["'][\s\S]*?>/g;
-    for (const { file, src } of SOURCES) {
+    for (const { file, src } of sources) {
         const matches = src.match(tagRe) ?? [];
         for (const match of matches) {
             if (!/rel=["'][^"']*noopener/i.test(match)) {
@@ -73,8 +88,33 @@ describe('Reverse-tabnabbing guard', () => {
         expect(SOURCES.length).toBeGreaterThan(20);
     });
 
+    it('the scanner can actually find an offender — the control', () => {
+        // Synthetic, because the repo deliberately contains none. Without
+        // this the assertion below is satisfied by a scanner that returns []
+        // unconditionally, which is exactly what the tool found.
+        const unsafe = findUnsafeTabnabs([
+            { file: 'synthetic.tsx', src: '<a href="https://x" target="_blank">x</a>' },
+        ]);
+        expect(unsafe).toHaveLength(1);
+        expect(unsafe[0]).toContain('synthetic.tsx');
+
+        // And the other direction, so a scanner that flagged EVERYTHING would
+        // not pass either — that would make the real assertion unclearable.
+        expect(
+            findUnsafeTabnabs([
+                { file: 'safe.tsx', src: '<a href="https://x" target="_blank" rel="noopener noreferrer">x</a>' },
+            ]),
+        ).toEqual([]);
+        // `rel` before `target` in the same tag must also count as safe.
+        expect(
+            findUnsafeTabnabs([
+                { file: 'safe2.tsx', src: '<a rel="noopener" href="https://x" target="_blank">x</a>' },
+            ]),
+        ).toEqual([]);
+    });
+
     it('every target="_blank" in tenant pages pairs with rel="noopener"', () => {
-        const offenders = findUnsafeTabnabs();
+        const offenders = findUnsafeTabnabs(SOURCES);
         if (offenders.length > 0) {
             throw new Error(
                 `Found ${offenders.length} target="_blank" link(s) in tenant pages without rel="noopener":\n\n` +

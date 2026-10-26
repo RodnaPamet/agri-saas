@@ -348,14 +348,21 @@ function collectorsOnDisk(): string[] {
         // among them — so adding a root without recursing would have closed
         // the gap only partly while reading as though it had closed it.
         const walk = (d: string): void => {
-            for (const name of fs.readdirSync(d).sort()) {
-                const full = path.join(d, name);
-                if (fs.statSync(full).isDirectory()) {
-                    if (name === 'node_modules' || name === '__snapshots__') continue;
+            // `withFileTypes` rather than a separate `statSync(full)`. The
+            // stat version was flagged by CodeQL as a filesystem race — a
+            // check-then-use round trip, since the entry's kind is already
+            // known from the directory read. It is also the idiom every other
+            // walk in this repo uses, so the fix is to stop being the
+            // exception rather than to suppress the alert.
+            const entries = fs.readdirSync(d, { withFileTypes: true });
+            for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+                const full = path.join(d, entry.name);
+                if (entry.isDirectory()) {
+                    if (entry.name === 'node_modules' || entry.name === '__snapshots__') continue;
                     walk(full);
                     continue;
                 }
-                if (!name.endsWith('.test.ts')) continue;
+                if (!entry.name.endsWith('.test.ts')) continue;
                 const rel = path.relative(ROOT, full);
                 const src = fs.readFileSync(full, 'utf8');
                 if (COLLECTS.test(src) && !HELPER.test(src)) found.push(rel);
