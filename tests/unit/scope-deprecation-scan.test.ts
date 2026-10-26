@@ -8,6 +8,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const SRC_DIR = path.resolve(__dirname, '../../src');
 
 /** Patterns that indicate scope-related code that needs migration. */
@@ -58,7 +60,13 @@ function scanForPattern(files: string[], patternName: string, regex: RegExp): Sc
     const result: ScanResult = { pattern: patternName, count: 0, files: [] };
 
     for (const file of files) {
-        const content = fs.readFileSync(file, 'utf-8');
+        // Comments blanked (#1774). Safe to do even though this reports LINE
+        // NUMBERS: `blankNonCode` replaces each blanked character with a space
+        // and leaves every newline, so offsets and line numbers are identical
+        // to the input. That property is documented and load-bearing here —
+        // a transform that shortened lines would make every reported number
+        // point somewhere else.
+        const content = blankNonCode(fs.readFileSync(file, 'utf-8'));
         const lines = content.split('\n');
         const lineNumbers: number[] = [];
 
