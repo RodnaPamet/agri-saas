@@ -27,6 +27,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT as ROOT } from '../helpers/collect-files';
 
 /** The two transports a producer must not reach for directly. */
@@ -58,17 +59,60 @@ const MUST_RESOLVE = [
 const rel = (abs: string): string => path.relative(ROOT, abs).split(path.sep).join('/');
 
 /**
- * Raw source, deliberately.
+ * Blanked source (#2403). This read used to be raw, deliberately.
  *
- * `blankNonCode` is the repo's tool for source questions and it is currently
- * unreliable — a regex literal with an odd number of quotes opens a string
- * that swallows every comment after it, and any emoji shifts every offset
- * (#2106, 13 files under `src/`). The cost of reading raw is that a docblock
- * naming a transport counts as a call; the benefit is that this guard does not
- * inherit a known defect. Where a comment needs to name one, it is written
- * without the call parenthesis, which is what the detector keys on.
+ * The docblock that stood here said `blankNonCode` was unreliable — "a regex
+ * literal with an odd number of quotes opens a string that swallows every
+ * comment after it, and any emoji shifts every offset (#2106)" — and keyed the
+ * detector on the call PARENTHESIS so prose could still name a transport.
+ *
+ * **Both premises are now false**, and #2106 is closed. Re-tested against the
+ * live helper rather than taken from its docblock:
+ *
+ *   - the odd-quote regex from `basemap-bundle-scan.ts` no longer swallows what
+ *     follows it — the comment after it blanks, the regex survives;
+ *   - an emoji preserves length and newlines, and `canvas-auto-layout.ts` reads
+ *     10,316 -> 10,316 bytes and 290 -> 290 lines. 290 is the discriminator:
+ *     the old bug turned that exact file's 290 lines into 210.
+ *
+ * `[[a-safety-argument-expires-silently]]` — the reasoning was right when
+ * written, its premises went false, and nothing failed to say so.
+ *
+ * ## What the parenthesis alone could not do
+ *
+ * It let prose name a transport, which is most of the problem. It did not stop
+ * a comment that includes the parenthesis, and that hole fails in the dangerous
+ * direction for `MUST_RESOLVE`: a docblock reading "resolveDelivery(…) decides"
+ * satisfies "this producer consults the resolver" with no call anywhere in the
+ * file, which is the #1994 defect passing as compliant.
+ *
+ * **No verdict changes today** — measured across all 2,266 files under `src/`,
+ * raw and blanked agree on every needle this guard uses, zero deltas. So this
+ * is hardening against the next comment, not the repair of a live miss, and it
+ * does not claim to be.
+ *
+ * `{ strings: true }` because every subject here is a CALL or a declaration,
+ * never message text: a transport name inside a string literal is not a call.
  */
-const sourceOf = (abs: string): string => fs.readFileSync(abs, 'utf8');
+const blanked = (raw: string): string => blankNonCode(raw, { strings: true });
+
+/** Blanked contents of a file on disk. */
+const sourceOf = (abs: string): string => blanked(fs.readFileSync(abs, 'utf8'));
+
+/**
+ * Which transports this TEXT calls.
+ *
+ * Takes text, not a path, so the controls below drive the SAME predicate the
+ * sweep does. A control that skips a step the subject performs is testing a
+ * different function (`[[a-crosscheck-in-the-old-method]]`).
+ */
+const transportsCalledIn = (raw: string): string[] => {
+    const code = blanked(raw);
+    return TRANSPORTS.filter((t) => code.includes(`${t}(`));
+};
+
+/** Does this TEXT consult the resolver? */
+const resolvesIn = (raw: string): boolean => blanked(raw).includes('resolveDelivery(');
 
 describe('one resolveDelivery', () => {
     const files = collectSourceFiles({ roots: ['src'], floor: 50 });
@@ -95,11 +139,11 @@ describe('one resolveDelivery', () => {
         for (const abs of files) {
             const r = rel(abs);
             if ((MAY_CALL_TRANSPORTS as readonly string[]).includes(r)) continue;
-            const src = sourceOf(abs);
-            for (const t of TRANSPORTS) {
-                // The call, not the name: `sendApnsToUser(` rather than
-                // `sendApnsToUser`, so prose may refer to it.
-                if (src.includes(`${t}(`)) offenders.push(`${r} calls ${t}`);
+            // The call, not the name: `sendApnsToUser(` rather than
+            // `sendApnsToUser`. Comments are gone before the match, so prose
+            // may refer to one WITH its parenthesis and still not be a call.
+            for (const t of transportsCalledIn(fs.readFileSync(abs, 'utf8'))) {
+                offenders.push(`${r} calls ${t}`);
             }
         }
         expect(offenders).toEqual([]);
@@ -111,8 +155,7 @@ describe('one resolveDelivery', () => {
         // steps.
         const missing: string[] = [];
         for (const f of MUST_RESOLVE) {
-            const src = sourceOf(path.join(ROOT, f));
-            if (!src.includes('resolveDelivery(')) missing.push(f);
+            if (!resolvesIn(fs.readFileSync(path.join(ROOT, f), 'utf8'))) missing.push(f);
         }
         expect(missing).toEqual([]);
     });
@@ -143,14 +186,38 @@ describe('one resolveDelivery', () => {
         const MENTIONS = `// see sendApnsToUser for the fan-out`;
         const RESOLVES = `const d = resolveDelivery({ preference, now, devices });`;
 
-        const calls = (s: string) => TRANSPORTS.some((t) => s.includes(`${t}(`));
-        const resolves = (s: string) => s.includes('resolveDelivery(');
+        expect(transportsCalledIn(CALLS)).toEqual(['sendApnsToUser']);
+        // Prose may name a transport. The parenthesis alone handled this case
+        // before the blanking went in, and still does.
+        expect(transportsCalledIn(MENTIONS)).toEqual([]);
+        expect(resolvesIn(RESOLVES)).toBe(true);
+        expect(resolvesIn(CALLS)).toBe(false);
+    });
 
-        expect(calls(CALLS)).toBe(true);
-        // Prose may name a transport, which is why the parenthesis is part of
-        // the pattern — the alternative is depending on comment blanking.
-        expect(calls(MENTIONS)).toBe(false);
-        expect(resolves(RESOLVES)).toBe(true);
-        expect(resolves(CALLS)).toBe(false);
+    it('a comment is not a call even WITH the parenthesis', () => {
+        // The case the parenthesis could not reach, and the reason this guard
+        // now blanks (#2403). Both of these pass raw and fail the thing they
+        // are checking:
+        //
+        //   - the first would report an exempt-worthy module as an offender,
+        //     for a docblock telling people not to do the thing;
+        //   - the second is the direction that matters. A producer whose
+        //     docblock merely NAMES the resolver would satisfy "consults the
+        //     resolver" with no call in the file — #1994's defect, passing.
+        const WARNS = `/** Never call sendApnsToUser(ctx, u, p) here — use the resolver. */`;
+        const CLAIMS = `// resolveDelivery(…) decides this; see P7.5.\nawait sendApnsToUser(ctx, u, p);`;
+
+        expect(transportsCalledIn(WARNS)).toEqual([]);
+        expect(resolvesIn(CLAIMS)).toBe(false);
+        // And the real call in the same text is still seen — a blanker that
+        // ate everything would pass both assertions above for free.
+        expect(transportsCalledIn(CLAIMS)).toEqual(['sendApnsToUser']);
+    });
+
+    it('a transport named inside a STRING is not a call', () => {
+        // Why `{ strings: true }`. A metric label or a log key naming a
+        // transport is not an invocation of it.
+        const LABEL = `track('sendApnsToUser(ctx)', { count: 1 });`;
+        expect(transportsCalledIn(LABEL)).toEqual([]);
     });
 });
