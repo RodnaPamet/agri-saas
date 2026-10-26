@@ -162,6 +162,74 @@ function callArgs(src: string, start: number): string {
  * every literal call, and this adds the expression cases. Deleting the narrow
  * ones would leave those tests exercising a path production no longer uses.
  */
+/**
+ * Three MORE emission channels the collector did not know about (#2391).
+ *
+ * Found by writing the reverse check — "can every documented code actually
+ * happen" — which reported six codes the spec promises that this file claimed
+ * were unreachable. Five were real, raised through helpers nothing here matched.
+ *
+ * The one that matters: `STALE_DATA` is what EVERY versioned route in the
+ * product answers on an `If-Match` mismatch, and it had never been required to
+ * be documented. The three middleware codes gate every API route. These are the
+ * most widely reachable refusals there are, and they sat in the blind spot of
+ * the mechanism built to catch exactly this.
+ *
+ * Same family as #2370 and a different mechanism: that was an expression SHAPE
+ * inside a known helper; this is whole helper FAMILIES never declared.
+ */
+
+/**
+ * Helpers whose code is FIXED inside the helper, so no call site mentions it.
+ * Calling one emits that code, and the collector cannot learn it by reading the
+ * call.
+ */
+const FIXED_CODE_HELPERS: Record<string, string> = {
+    staleData: 'STALE_DATA',
+};
+
+/**
+ * Error classes with a DEFAULT code, which applies whenever a caller constructs
+ * one without passing a code — and most of the seven `new NotFoundError(…)`
+ * sites in the tree pass only a message.
+ */
+const DEFAULT_CODE_CLASSES: Record<string, string> = {
+    NotFoundError: 'NOT_FOUND',
+};
+
+/** The middleware's own refusal helper. Code first, like the `coded*` family. */
+const FORBIDDEN_JSON = /forbiddenJson\(\s*['"]([A-Z][A-Z0-9_]{2,})['"]/g;
+
+/**
+ * Codes a file emits through the three channels above.
+ *
+ * `errors/types.ts` is excluded for the fixed-code and default-code channels: it
+ * DEFINES them, and `\bstaleData\(` matches the definition's own signature, so
+ * counting that file would make the code reachable for as long as the factory
+ * exists whether or not anything calls it.
+ *
+ * UNOBSERVABLE TODAY, and said so rather than left to look load-bearing: the
+ * mutation removing this exclusion SURVIVES, because 17 other sites call
+ * `staleData()` and the code is collected either way. It is kept for the state
+ * it guards against — the last caller being deleted, leaving a code that the
+ * collector still claims is reachable, which is precisely the "documented but
+ * impossible" shape #2391 set out from.
+ */
+function channelCodes(src: string, rel: string): string[] {
+    const out: string[] = [];
+    const isDefinition = rel.endsWith('src/lib/errors/types.ts');
+    for (const m of src.matchAll(FORBIDDEN_JSON)) out.push(m[1]);
+    if (!isDefinition) {
+        for (const [helper, code] of Object.entries(FIXED_CODE_HELPERS)) {
+            if (new RegExp(`\\b${helper}\\(`).test(src)) out.push(code);
+        }
+        for (const [cls, code] of Object.entries(DEFAULT_CODE_CLASSES)) {
+            if (new RegExp(`new\\s+${cls}\\(`).test(src)) out.push(code);
+        }
+    }
+    return out;
+}
+
 const HELPER_CALL = /coded(BadRequest|NotFound|Forbidden|Conflict|UnsupportedMediaType|ClientError)\(/g;
 
 /**
@@ -687,6 +755,9 @@ function scanTreeOnce(): { codes: Map<string, string>; unreadable: UnreadableCod
         for (const c of helper.codes) {
             if (!found.has(c)) found.set(c, rel);
         }
+        for (const c of channelCodes(code, rel)) {
+            if (!found.has(c)) found.set(c, rel);
+        }
         unreadable.push(...helper.unreadable);
     }
     // The declared ones, so a computed code is held to the same standard as a
@@ -971,5 +1042,75 @@ describe('an error code the server sends is named in the spec (#1391)', () => {
             if (!src.includes(`instanceof ${decl.reThrowOf}`)) borrowed.push(u.at);
         }
         expect(borrowed.sort()).toEqual([]);
+    });
+
+    it.each([
+        ['STALE_DATA', 'staleData() — the code is fixed INSIDE the helper, so no call site names it'],
+        ['NOT_FOUND', "NotFoundError's DEFAULT argument — most of its seven sites pass only a message"],
+        ['ADMIN_REQUIRED', 'forbiddenJson() in the middleware'],
+        ['CSRF_BLOCKED', 'forbiddenJson() in the middleware'],
+        ['TERMS_ACCEPTANCE_REQUIRED', 'forbiddenJson() in the middleware'],
+        ['MFA_REQUIRED', 'forbiddenJson() in the middleware'],
+    ])('collects %s, which the narrow patterns cannot see (#2391)', (code) => {
+        // A widening that collects NOTHING passes exactly like one that works,
+        // so each channel is asserted by the code it was added for.
+        //
+        // `STALE_DATA` is the one that matters: it is what every versioned route
+        // answers on an `If-Match` mismatch, and it had never been required to
+        // be documented at all.
+        expect([code, emittedCodes().has(code)]).toEqual([code, true]);
+    });
+
+    it('and the NARROW patterns genuinely could not — the control', () => {
+        // Without this, the six above could be passing because something else
+        // already collected them, and the channels would be dead code that looks
+        // alive. Measured against the same tree, with only the `coded*`
+        // literal patterns and the two error classes.
+        const files = collectSourceFiles({
+            roots: ['src'],
+            extensions: ['.ts', '.tsx'],
+            exclude: (rel) => rel.startsWith('src/generated/'),
+            floor: 1500,
+        });
+        const narrow = new Set<string>();
+        for (const full of files) {
+            const code = blankNonCode(readFileSync(full, 'utf8'));
+            for (const pattern of EMISSIONS) {
+                for (const m of code.matchAll(pattern)) narrow.add(m[1]);
+            }
+            for (const c of classCodes(code)) narrow.add(c);
+        }
+        const channelCodesOfInterest = [
+            'STALE_DATA',
+            'NOT_FOUND',
+            'ADMIN_REQUIRED',
+            'CSRF_BLOCKED',
+            'TERMS_ACCEPTANCE_REQUIRED',
+            'MFA_REQUIRED',
+        ];
+        const invisible = channelCodesOfInterest.filter((c) => !narrow.has(c));
+        console.log(
+            `[channels] ${invisible.length} of ${channelCodesOfInterest.length} are invisible to the `
+                + `narrow patterns: ${invisible.join(', ')}`,
+        );
+        // FIVE, not six — and the exception is the reason this control exists.
+        //
+        // `MFA_REQUIRED` is ALSO raised through a `coded*` helper elsewhere, so
+        // the narrow patterns already had it and the middleware channel did not
+        // newly discover it. I expected all six and the control said five; the
+        // list below is measured rather than assumed.
+        //
+        // It stays in the per-code assertions above because the channel must
+        // still collect it — a code reachable two ways should not depend on
+        // which way the collector happens to look.
+        expect(invisible.sort()).toEqual(
+            [
+                'ADMIN_REQUIRED',
+                'CSRF_BLOCKED',
+                'NOT_FOUND',
+                'STALE_DATA',
+                'TERMS_ACCEPTANCE_REQUIRED',
+            ].sort(),
+        );
     });
 });
