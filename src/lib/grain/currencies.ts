@@ -15,6 +15,8 @@
  * never invalidates existing rows.
  */
 
+import { bgnToEur } from '@/lib/exchange/currency';
+
 /** Code + the symbol/name shown beside it in the picker. */
 export const CONTRACT_CURRENCIES: ReadonlyArray<{ code: string; symbol: string }> = [
     { code: 'BGN', symbol: 'лв.' },
@@ -58,4 +60,85 @@ export function currencyOptions(
         return [{ value: trimmed, label: trimmed }, ...base];
     }
     return base;
+}
+
+/**
+ * The calculator is EUR-only — owner ruling 2026-10-26.
+ *
+ * ## Why this exists, and why it is not FX
+ *
+ * `Калкулатор` was refusing with `COST_CURRENCY_MIXED` on the owner's own
+ * farm. The live `CostEntry` rows were: 10 × `'EUR'`, 3 × `'EURO'` (the
+ * phone's old free-text «Валута» field), 1 × `'BGN'`. Three spellings of two
+ * currencies, one of which is pegged to the other.
+ *
+ * `cost-rollup` states — correctly, when it was written — that "there is no FX
+ * table anywhere in this product … so amounts in different currencies CANNOT
+ * be converted". That argument has since expired on one axis:
+ * `src/lib/exchange/currency.ts` exists, the lev has been pegged at exactly
+ * 1.95583/€ since 1999, and the grain exchange already converted its stored
+ * BGN listings at that rate in a SQL migration. `bgnToEur` is reused here so
+ * the calculator and the exchange cannot drift to two different pegs, and so
+ * the rounding matches the `Decimal(12,2)` column both sides store.
+ *
+ * Converting at a legally fixed peg is arithmetic. Converting USD is a market
+ * quote this product still does not have — hence the asymmetry below.
+ *
+ * ## What is deliberately NOT done
+ *
+ * Stored rows are not rewritten. A farmer's `'EURO'` row stays `'EURO'` in the
+ * database; only the SUM treats it as euro. The ruling was explicit, and it is
+ * the right call twice over: an UPDATE over money rows to fix a display
+ * problem is the kind of migration that is discovered to have been wrong after
+ * it cannot be undone, and the save path below stops new ones arriving anyway.
+ */
+
+/**
+ * Spellings that mean euro. `'EURO'` is the phone's historical free-text
+ * value; the rest are the shapes a free-text field produces.
+ */
+const EURO_SPELLINGS = new Set(['EUR', 'EURO', 'EUROS', '€', 'E']);
+
+/** What a cost row contributes to a EUR total, and whether it could be read. */
+export interface NormalisedCost {
+    /** The amount in euro, or null when this row cannot be converted. */
+    eur: number | null;
+    /**
+     * Why it could not be, for the caller's refusal code. `null` on success.
+     *
+     * `FOREIGN` is a genuinely different currency — USD, GBP — which needs a
+     * market quote this product has none of. It is NOT folded into euro: the
+     * ruling named euro spellings, blanks and lev, and quietly relabelling a
+     * dollar row as euro would misstate money by whatever the rate happens to
+     * be. None exist in production today; the save path keeps it that way.
+     */
+    refusal: 'FOREIGN' | null;
+}
+
+/**
+ * One cost row's contribution to a euro total.
+ *
+ * - euro in any spelling, or unrecorded  → the amount unchanged
+ * - lev                                  → converted at the fixed peg
+ * - anything else                        → refused, amount withheld
+ *
+ * Unrecorded counts as euro because the app is EUR-only: a blank currency on a
+ * farm that can only record euro is a missing label, not an unknown unit.
+ */
+export function normaliseCostToEur(
+    amount: number | null | undefined,
+    currency: string | null | undefined,
+): NormalisedCost {
+    if (amount == null || !Number.isFinite(amount)) return { eur: null, refusal: null };
+    const code = currency?.trim().toUpperCase() ?? '';
+    if (code === '' || EURO_SPELLINGS.has(code)) return { eur: amount, refusal: null };
+    if (code === 'BGN' || code === 'ЛВ' || code === 'ЛВ.' || code === 'BGL') {
+        return { eur: bgnToEur(amount), refusal: null };
+    }
+    return { eur: null, refusal: 'FOREIGN' };
+}
+
+/** True when every row in `currencies` resolves to euro — no FOREIGN among them. */
+export function allResolveToEur(currencies: readonly (string | null | undefined)[]): boolean {
+    return currencies.every((c) => normaliseCostToEur(1, c).refusal === null);
 }

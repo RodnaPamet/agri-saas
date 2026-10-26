@@ -3,6 +3,8 @@ import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import type { PrismaTx } from '@/lib/db-context';
+import { normaliseCostToEur } from '@/lib/grain/currencies';
+import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 
 /**
  * Per-activity cost rollup (ENTERPRISE-grain, GRAIN module).
@@ -196,6 +198,22 @@ export interface FieldCostRow {
  * reports what it saw and lets the caller refuse to present a blended
  * figure — see `currencyMixed`.
  */
+/**
+ * What a row contributes to the currency SET after normalisation.
+ *
+ * Euro in any spelling, lev, and an unrecorded currency all collapse to
+ * `'EUR'`, so a farm recording euro three ways no longer reads as three
+ * currencies and `COST_CURRENCY_MIXED` stops firing on it. A genuinely foreign
+ * currency keeps its own code, which is what makes the mix refusal still fire
+ * for the one case where blending really would invent a rate.
+ */
+function resolvedCurrency(
+    raw: string | null | undefined,
+    n: { refusal: 'FOREIGN' | null },
+): string | null {
+    return n.refusal === 'FOREIGN' ? (raw ?? null) : EXCHANGE_CURRENCY;
+}
+
 function addCurrency(seen: Set<string>, next: string | null | undefined): void {
     if (next) seen.add(next);
 }
@@ -371,9 +389,23 @@ async function computePlantingCostRows(
     //
     // Aggregated in-DB per entry: nothing to truncate, and the sum is the
     // database's rather than a page of rows we happened to read.
+    // Grouped by (entry, CURRENCY), not by entry alone — owner ruling
+    // 2026-10-26, the calculator is EUR-only.
+    //
+    // A `_sum` over mixed currencies is a blend performed in SQL, before any
+    // code can see the parts, so a lev amount could not be converted at the
+    // peg afterwards: 1 BGN had already been added as 1 unit. Putting the
+    // currency in `by` keeps each currency's subtotal separable, which is what
+    // `normaliseCostToEur` needs.
+    //
+    // It also removes a query. The separate `distinct` read that used to
+    // follow existed only because "currency cannot ride on a _sum" — with the
+    // currency in `by`, the groups themselves carry it. Row count grows by the
+    // number of distinct currencies per entry, which is one in practice and a
+    // handful at worst.
     const stockTxGroups = liveLogEntryIds.length
         ? await db.stockTransaction.groupBy({
-              by: ['logEntryId'],
+              by: ['logEntryId', 'costCurrency'],
               where: {
                   tenantId: ctx.tenantId,
                   logEntryId: { in: liveLogEntryIds },
@@ -383,22 +415,11 @@ async function computePlantingCostRows(
           })
         : [];
 
-    // Currency is per-movement, so it cannot ride on a _sum. One extra
-    // bounded read, distinct on the currencies actually present.
-    const stockCurrencies = liveLogEntryIds.length
-        ? await db.stockTransaction.findMany({
-              where: {
-                  tenantId: ctx.tenantId,
-                  logEntryId: { in: liveLogEntryIds },
-                  type: { in: [...COST_BEARING_MOVEMENTS] },
-                  costCurrency: { not: null },
-              },
-              select: { logEntryId: true, costCurrency: true },
-              distinct: ['logEntryId', 'costCurrency'],
-              // guardrail-allow: unbounded — one row per (entry, currency),
-              // and a tenant has a handful of currencies at most.
-          })
-        : [];
+    // The separate currency read is GONE — `stockTxGroups` carries the
+    // currency in its grouping key now. Kept as a named constant so the loop
+    // below reads the same either way.
+    const stockCurrencies: Array<{ logEntryId: string | null; costCurrency: string | null }> =
+        stockTxGroups.map((g) => ({ logEntryId: g.logEntryId, costCurrency: g.costCurrency }));
 
     // ── Consumptions the valuation could not price ──
     //
@@ -505,23 +526,33 @@ async function computePlantingCostRows(
     for (const entry of logEntries) {
         const targets = plantingsByEntry.get(entry.id);
         if (!targets?.size) continue;
-        const share = dec(entry.costAmount) / targets.size;
+        // EUR-only: lev converts at the fixed peg, euro in any spelling and an
+        // unrecorded currency pass through, a genuinely foreign currency is
+        // withheld and recorded so the caller still refuses to blend it.
+        const n = normaliseCostToEur(dec(entry.costAmount), entry.costCurrency);
+        const share = (n.eur ?? 0) / targets.size;
         for (const pid of targets) {
             const row = ensure(pid);
             row.logCost += share;
-            addCurrency(row.currencies, entry.costCurrency);
+            addCurrency(row.currencies, resolvedCurrency(entry.costCurrency, n));
         }
     }
     for (const g of stockTxGroups) {
         const targets = g.logEntryId ? plantingsByEntry.get(g.logEntryId) : undefined;
         if (!targets?.size) continue;
-        const share = dec(g._sum.costAmount) / targets.size;
+        // Separable because `costCurrency` is in the grouping key — see the
+        // query. Before that change this subtotal was already blended in SQL
+        // and a lev amount could not be converted here at all.
+        const share = (normaliseCostToEur(dec(g._sum.costAmount), g.costCurrency).eur ?? 0) / targets.size;
         for (const pid of targets) ensure(pid).stockCost += share;
     }
     for (const c of stockCurrencies) {
         const targets = c.logEntryId ? plantingsByEntry.get(c.logEntryId) : undefined;
         if (!targets?.size) continue;
-        for (const pid of targets) addCurrency(ensure(pid).currencies, c.costCurrency);
+        const n = normaliseCostToEur(1, c.costCurrency);
+        for (const pid of targets) {
+            addCurrency(ensure(pid).currencies, resolvedCurrency(c.costCurrency, n));
+        }
     }
     // Counting rule — deliberately NOT the fractional `share` used for
     // money above. A count cannot be split: when one transaction hangs off
