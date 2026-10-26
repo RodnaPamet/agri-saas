@@ -46,7 +46,8 @@
  * for the conversion is itself a text match for `blankNonCode`: importing it
  * and never calling it satisfies that cap completely. `COMMENTED_FIXTURE` fails
  * unless the blanking actually runs, and `QUOTED_PAREN_FIXTURE` fails unless it
- * runs with `{ strings: true }`.
+ * runs with `{ strings: true }` — both verified by mutation, the second only
+ * after its first version turned out to prove nothing (see its docblock).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -156,17 +157,23 @@ const COMMENTED_FIXTURE = `
 `;
 
 /**
- * A real violation hidden behind a `)` inside a string literal.
+ * A real violation hidden behind an UNBALANCED `)` inside a string literal.
  *
  * Fails without `{ strings: true }`: `callArgs` reads the quoted paren as the
  * end of the argument list and never reaches the decorator.
+ *
+ * **Unbalanced is the whole point, and I got this wrong first.** The fixture
+ * originally read `'treated area (dca)'` and the mutation SURVIVED — a quoted
+ * `(` and `)` increment and decrement the same counter, so a balanced pair
+ * inside a string is harmless to `callArgs` and proves nothing. Only a lone
+ * closer truncates the span. A label ending in `дка)` is the realistic shape.
  */
 const QUOTED_PAREN_FIXTURE = `
     const rows = await cachedListRead({
         ctx,
         entity: 'task',
         operation: 'list',
-        params: { label: 'treated area (dca)' },
+        params: { label: 'treated area, dca)' },
         loader: () => load(ctx).then((r) => withMayDelete(ctx, r)),
     });
     return rows;
@@ -202,8 +209,9 @@ describe('a per-caller flag is computed outside the list cache (#2395)', () => {
 
     it('CONTROL: a quoted parenthesis does not truncate the argument span', () => {
         // Proves the blanking runs with `{ strings: true }`. Without it the
-        // `)` in `'treated area (dca)'` closes the span early and this real
-        // offender is missed — the silent direction.
+        // lone `)` in `'treated area, dca)'` closes the span early and this
+        // real offender is missed — the silent direction. A BALANCED pair in a
+        // string would not: see the fixture's docblock.
         const { offenders, scanned } = offendersIn(QUOTED_PAREN_FIXTURE, 'fixture');
         expect(scanned).toBe(1);
         expect(offenders).toHaveLength(1);
@@ -236,12 +244,20 @@ describe('a per-caller flag is computed outside the list cache (#2395)', () => {
         // If the key ever gains a user, this guard is unnecessary and should be
         // deleted rather than left to imply a hazard that no longer exists.
         //
-        // Blanked WITHOUT `strings` here, unlike every other read in this file:
-        // the subject IS a template literal, so blanking strings would erase
-        // the line being looked for and `.find()` would return undefined —
-        // which `toBeDefined` catches, but as a confusing failure rather than a
-        // true one. Comments still go, which is the point: a docblock quoting
-        // the key format would otherwise be found first.
+        // Blanked WITHOUT `strings` here, unlike every other read in this
+        // file: the subject IS a template literal. Measured on the real file —
+        // matching lines are raw 1, blanked 1, blanked-with-strings 0. Two
+        // things follow, and they point opposite ways:
+        //
+        //   - `strings: false` is load-bearing. Turning it on takes the count
+        //     to zero and the assertion below fails. That is a real mutation
+        //     proof, not a precaution.
+        //   - the blanking itself is a NO-OP today, and that mutation
+        //     SURVIVES: `list-cache.ts` holds one occurrence of the key format
+        //     and it is the assignment, so comments change nothing here. It
+        //     stays because the cap asks every read to be routed, and because
+        //     a docblock quoting the key would otherwise be picked ahead of
+        //     the code. Recorded rather than claimed as proven.
         const src = blankNonCode(readFileSync(join(REPO, 'src/lib/cache/list-cache.ts'), 'utf8'));
         const keyLines = src
             .split('\n')
