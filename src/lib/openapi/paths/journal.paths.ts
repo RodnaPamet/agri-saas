@@ -178,6 +178,28 @@ const Treatment = z
                 + 'field operations of that era were.',
         }),
         productName: z.string().nullable(),
+        harvestKg: z
+            .number()
+            .nullable()
+            .openapi({
+                description:
+                    'The harvest\u2019s «Продукция» in kilograms \u2014 ONE total for the activity, never '
+                    + 'apportioned across parcels (agrent-ios #446).\n\n'
+                    + '`null` on everything that is not a HARVEST, and on a harvest whose total was '
+                    + 'never recorded or has been cleared. **`null` and `0` are different '
+                    + 'statements**: 0 kg is a measured harvest of nothing.\n\n'
+                    + 'Added because the figure was readable NOWHERE. It lives on a `LogQuantity`, '
+                    + 'and the only read that returned it \u2014 '
+                    + '`GET …/activities/{treatmentGroupId}/definition` \u2014 is write-gated by '
+                    + 'design, since its body exists to be edited. So the farmer who recorded a '
+                    + 'yield could not see it again on the row they recorded it from.\n\n'
+                    + '**Derived from the TASK\u2019s `operationType`, not from the quantity\u2019s '
+                    + 'measure.** `WEIGHT` does not mean produce: a correction to a treatment writes '
+                    + 'a quantity with the product\u2019s own measure, which is `WEIGHT` for anything '
+                    + 'sold by the kilogram. Filtering on the measure would report a '
+                    + 'fertiliser\u2019s APPLIED kilograms as a yield \u2014 the same misreading that once '
+                    + 'printed «Общо за мероприятието» in a column headed «Вид» (#2364).',
+            }),
         parcelCount: z.number().int().openapi({
             description:
                 '0 on an ordinary manual entry. The discriminator for \u201cis this a treatment\u201d.\n\n'

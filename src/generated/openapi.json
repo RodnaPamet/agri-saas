@@ -15865,6 +15865,13 @@
               "null"
             ]
           },
+          "harvestKg": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "The harvest’s «Продукция» in kilograms — ONE total for the activity, never apportioned across parcels (agrent-ios #446).\n\n`null` on everything that is not a HARVEST, and on a harvest whose total was never recorded or has been cleared. **`null` and `0` are different statements**: 0 kg is a measured harvest of nothing.\n\nAdded because the figure was readable NOWHERE. It lives on a `LogQuantity`, and the only read that returned it — `GET …/activities/{treatmentGroupId}/definition` — is write-gated by design, since its body exists to be edited. So the farmer who recorded a yield could not see it again on the row they recorded it from.\n\n**Derived from the TASK’s `operationType`, not from the quantity’s measure.** `WEIGHT` does not mean produce: a correction to a treatment writes a quantity with the product’s own measure, which is `WEIGHT` for anything sold by the kilogram. Filtering on the measure would report a fertiliser’s APPLIED kilograms as a yield — the same misreading that once printed «Общо за мероприятието» in a column headed «Вид» (#2364)."
+          },
           "parcelCount": {
             "type": "integer",
             "description": "0 on an ordinary manual entry. The discriminator for “is this a treatment”.\n\n**It counts COMPLETED lines, not all of them.** The figure comes from a query keyed on the journal entries, and a PENDING line has none — the entry is written on completion. So on a partially-written treatment this is smaller than `lineCount`, and the difference is `pendingCount`."
@@ -15945,6 +15952,7 @@
           "mayCorrect",
           "kind",
           "productName",
+          "harvestKg",
           "parcelCount",
           "pendingCount",
           "lineCount",
