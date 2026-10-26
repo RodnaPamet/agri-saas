@@ -59,7 +59,25 @@ const ROOT = path.resolve(__dirname, '../..');
  * a side effect of widening a collector scan. Left alone, and the gap it points
  * at filed separately.
  */
-const GUARD_DIRS = ['tests/guards', 'tests/guardrails'];
+/**
+ * `tests/contracts` and `tests/regression` added #2385 — 12 files between
+ * them. CI's selector-teeth pathspec is widened to match in the same change:
+ * `selector-teeth-audits-every-guard-dir` reads THIS constant to decide what
+ * that job must cover, so the two move together or that guard is right to
+ * object.
+ *
+ * Kept on ONE line with no comments inside the brackets. That guard extracts
+ * this array by regex from this file's source — `const GUARD_DIRS\s*=\s*\[([^\]]+)\]`
+ * — so a comment between the brackets is parsed as a directory name and it
+ * fails with `scan root does not exist: <the comment text>`. Measured, by
+ * doing it. The formatting of this literal is load-bearing for another guard's
+ * parser, which is not visible from here without this note.
+ *
+ * `tests/unit` is deliberately absent: 980 files, and widening it here obliges
+ * that job to audit all of them. See #2385 for why the 12 guard-shaped tests
+ * in there could not simply be moved.
+ */
+const GUARD_DIRS = ['tests/guards', 'tests/guardrails', 'tests/contracts', 'tests/regression'];
 
 /**
  * Where to look for hand-rolled COLLECTORS, which is a wider question than
@@ -76,12 +94,7 @@ const GUARD_DIRS = ['tests/guards', 'tests/guardrails'];
  * read as covering. Kept separate from `GUARD_DIRS` so that scanning more
  * files does not silently assert more about what CI must audit.
  */
-const COLLECTOR_SCAN_DIRS = [
-    ...GUARD_DIRS,
-    'tests/unit',
-    'tests/contracts',
-    'tests/regression',
-];
+const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
