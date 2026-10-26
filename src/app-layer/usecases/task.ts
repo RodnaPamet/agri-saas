@@ -6,6 +6,7 @@ import { assertCanDeleteTask, assertCanDeleteTasks,
     assertCanWriteTasks,
     assertCanCommentOnTasks,
     assertCanEditTask,
+    canDeleteTask,
 } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
 import { emitAutomationEvent } from '../automation';
@@ -25,6 +26,7 @@ import {
     createBulkTaskSummaryNotification,
     type BulkTaskSummaryKind,
 } from '@/app-layer/notifications/bulk-task-summary';
+import type { PaginatedResponse } from '@/lib/dto/pagination';
 import { cachedListRead, bumpEntityCacheVersion } from '@/lib/cache/list-cache';
 import type { PrismaTx } from '@/lib/db-context';
 import {
@@ -52,7 +54,7 @@ export async function listTasks(
     options: { take?: number } = {},
 ) {
     assertCanReadTasks(ctx);
-    return cachedListRead({
+    const rows = await cachedListRead({
         ctx,
         entity: 'task',
         operation: 'list',
@@ -65,11 +67,55 @@ export async function listTasks(
                 WorkItemRepository.list(db, ctx, filters, options),
             ),
     });
+    return withMayDelete(ctx, rows);
+}
+
+/**
+ * Add `mayDelete` to list rows, and strip the two fields it was computed from
+ * (#2395).
+ *
+ * ## It runs AFTER the cache, and that is the whole design
+ *
+ * `cachedListRead`'s key is
+ * `prefix:entity:operation:tenantId:vN:filterHash` — tenant, filters and a
+ * version counter, and **no caller**. So a per-caller value inside the cached
+ * payload would be served to every other user of the same tenant and filters
+ * for the TTL: a non-creator shown a control that then 403s, or worse a creator
+ * shown none and losing a delete they are entitled to.
+ *
+ * What the cache holds is therefore the ROW facts — `createdByUserId` and
+ * `treatmentGroupId`, both caller-independent — and the decision is made here,
+ * per request, on the way out.
+ *
+ * The journal list has the same flags and no such hazard because it is not
+ * cached at all: `listLogEntriesPaginated` goes straight to the repository. So
+ * there was no precedent to copy, and copying its placement would have been the
+ * bug.
+ *
+ * ## Why one flag for two refusals
+ *
+ * `canDeleteTask` covers the authorization gates; `treatmentGroupId === null`
+ * covers the routing one (`TASK_BELONGS_TO_TREATMENT`, 409, which binds admins
+ * too). A client does not want to know which of three reasons applies — it
+ * wants to know whether to draw the control, which is the argument the journal
+ * row's own comment makes for combining its 403 and 409 arms.
+ */
+function withMayDelete<T extends { createdByUserId: string; treatmentGroupId: string | null }>(
+    ctx: RequestContext,
+    rows: T[],
+): Array<Omit<T, 'createdByUserId' | 'treatmentGroupId'> & { mayDelete: boolean }> {
+    return rows.map((row) => {
+        const { createdByUserId, treatmentGroupId, ...rest } = row;
+        return {
+            ...rest,
+            mayDelete: canDeleteTask(ctx, { createdByUserId }) && treatmentGroupId === null,
+        };
+    });
 }
 
 export async function listTasksPaginated(ctx: RequestContext, params: TaskListParams) {
     assertCanReadTasks(ctx);
-    return cachedListRead({
+    const page = (await cachedListRead({
         ctx,
         entity: 'task',
         operation: 'listPaginated',
@@ -78,7 +124,11 @@ export async function listTasksPaginated(ctx: RequestContext, params: TaskListPa
             runInTenantContext(ctx, (db) =>
                 WorkItemRepository.listPaginated(db, ctx, params),
             ),
-    });
+    })) as PaginatedResponse<{ createdByUserId: string; treatmentGroupId: string | null }>;
+    // Decorated on the way OUT, after the cache — see `withMayDelete`. Both list
+    // routes get the flag, because a client should not have to know which of
+    // them it is talking to in order to know whether to draw a delete.
+    return { ...page, items: withMayDelete(ctx, page.items) };
 }
 
 export async function getTask(ctx: RequestContext, taskId: string) {

@@ -116,6 +116,19 @@ const FarmTaskListItem = z
             }),
         assigneeUserId: z.string().nullable().optional(),
         assignee: UserRefSchema.nullable().optional(),
+        mayDelete: z.boolean().openapi({
+            description:
+                'Whether THIS caller may delete THIS task \u2014 the flag to gate a «\u0418\u0437\u0442\u0440\u0438\u0439» '
+                + 'control on (#2395). Declared here as well as on `TaskListItem` because BOTH list '
+                + 'routes carry it: a client should not have to know which list it is reading to '
+                + 'know whether to draw a delete.\n\n'
+                + 'Covers all three refusals `DELETE /tasks/{taskId}` can give \u2014 `canWrite`, '
+                + 'creator-or-admin (`TASK_DELETE_NOT_PERMITTED`), and whether the task is one '
+                + 'block\u2019s share of a recorded treatment (`TASK_BELONGS_TO_TREATMENT`, which binds '
+                + 'administrators too). See `TaskListItem.mayDelete` for the full reasoning.\n\n'
+                + '**Read it as `mayDelete === false`, never `!mayDelete`**: an absent field is a '
+                + 'row cached before it existed, and a stale denial costs a farmer their own task.',
+        }),
     })
     .passthrough()
     .openapi('FarmTaskListItem', {

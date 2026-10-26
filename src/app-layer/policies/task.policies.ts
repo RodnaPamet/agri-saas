@@ -110,6 +110,34 @@ export function assertCanEditTask(
  * Whether the task delete SHOULD be soft is a separate question and not this
  * change's to answer.
  */
+/**
+ * The same rule as `assertCanDeleteTask`, as a BOOLEAN, for a list row that has
+ * to decide whether to draw the control (#2395).
+ *
+ * The shape `canDeleteTreatment` already has beside its own assert, and for the
+ * same reason the journal row gives: "an offered «Изтрий» that 403s is worse
+ * than an absent one", so the server answers the question rather than leaving a
+ * client to guess from fields it does not have.
+ *
+ * BOTH gates the delete route applies before authorship, because a flag that
+ * covered only one would still promise a refusal:
+ *
+ *   - `canWrite`, which `assertCanWriteTasks` checks first — a READER can see
+ *     the list and cannot delete anything on it;
+ *   - creator-or-admin, which this file's assert checks second.
+ *
+ * It deliberately does NOT cover `TASK_BELONGS_TO_TREATMENT`. That is a routing
+ * precondition, not an authorization rule, and
+ * `assertTaskIsNotTreatmentShare`'s own docblock says keeping it out of this
+ * file is the point. The caller composes it — exactly as the journal row
+ * composes `mixedAuthorship` outside `canDeleteTreatment`.
+ */
+export function canDeleteTask(ctx: RequestContext, task: { createdByUserId: string }): boolean {
+    if (!ctx.permissions.canWrite) return false;
+    if (ctx.permissions.canAdmin) return true;
+    return task.createdByUserId === ctx.userId;
+}
+
 export function assertCanDeleteTask(
     ctx: RequestContext,
     task: { createdByUserId: string },

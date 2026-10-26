@@ -44,9 +44,61 @@ function declaredProperties(): string[] {
     return Object.keys(schema.properties).sort();
 }
 
-/** Top-level keys the projection asks Prisma for, relations included. */
+/**
+ * Field names `withMayDelete` removes before the response, read from the source
+ * rather than listed again here (#2395).
+ *
+ * Derived, because a second hardcoded list is how this guard would come to
+ * disagree with the code it checks. `taskListSelect` projects two fields ONLY to
+ * compute `mayDelete` from them, so "projected" stopped meaning "sent" and this
+ * guard's model had to learn the difference. Adding them to the undeclared
+ * allowlist below would have been easier and would have asserted something
+ * false: that the server sends an author id it strips.
+ */
+function strippedBeforeResponse(): string[] {
+    const src = fs.readFileSync(path.resolve(__dirname, '../../src/app-layer/usecases/task.ts'), 'utf8');
+    const m = src.match(/const \{([^}]*)\.\.\.rest\s*\} = row;/);
+    // Loud rather than silently empty: if the destructure is reshaped, this
+    // guard must fail rather than quietly stop subtracting anything.
+    expect(m).not.toBeNull();
+    return (m![1].match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []).sort();
+}
+
+/**
+ * Field names `withMayDelete` ADDS, read from the source for the same reason
+ * `strippedBeforeResponse` is (#2395).
+ *
+ * The mirror of the strip, and the other half of what this guard's model had to
+ * learn: a COMPUTED field is declared and legitimately not projected, so
+ * "declared ⇒ projected" stopped holding at the same moment "projected ⇒ sent"
+ * did. Both directions are derived, so the guard follows the decorator rather
+ * than a copy of it.
+ */
+function computedNotProjected(): string[] {
+    const src = fs.readFileSync(
+        path.resolve(__dirname, '../../src/app-layer/usecases/task.ts'),
+        'utf8',
+    );
+    const body = src.match(/\.\.\.rest,([\s\S]*?)\n        \};/);
+    expect(body).not.toBeNull();
+    // Top-level `key:` names in the returned object, beyond the spread.
+    const keys = (body![1].match(/^\s{12}([A-Za-z_][A-Za-z0-9_]*):/gm) ?? []).map((k) =>
+        k.trim().replace(':', ''),
+    );
+    expect(keys.length).toBeGreaterThan(0);
+    return keys.sort();
+}
+
+/**
+ * Top-level keys the response carries: what Prisma is asked for, minus what is
+ * stripped on the way out, plus what is computed there.
+ */
 function projectedFields(): string[] {
-    return Object.keys(taskListSelect).sort();
+    const stripped = new Set(strippedBeforeResponse());
+    return [
+        ...Object.keys(taskListSelect).filter((f) => !stripped.has(f)),
+        ...computedNotProjected(),
+    ].sort();
 }
 
 describe('FarmTaskListItem declares nothing the task-list projection omits', () => {
