@@ -628,4 +628,39 @@ describeFn('correctFarmActivity (#2373)', () => {
         expect(rows).toHaveLength(1);
         expect(Number(rows[0].value)).toBe(2200);
     });
+
+    it('a re-sent DISPLAYED area is a no-op here too (#2388)', async () => {
+        // The same rule as the treatments route, asserted on this one because
+        // the comparison is SHARED and a shared helper is only shared while both
+        // callers use it. `parcelA1` is 8 ha; 3.2478 ha shows as 32,48 дка and
+        // a form re-sending what it displays returns 3.248.
+        //
+        // Compared exactly this logged a correction on a parcel nobody touched
+        // and bumped the version. The figure is unchanged at the resolution the
+        // document prints, so nothing is written.
+        const h = `${TAG}-area-noop`;
+        await recordFarmActivity(
+            ctx(),
+            {
+                kind: 'CULTIVATE',
+                occurredOn: dayAgo(3),
+                parcelIds: [parcelA1],
+                parcels: [{ parcelId: parcelA1, treatedAreaHa: 3.2478 }],
+            },
+            h,
+        );
+        const before = await getFarmActivityDefinition(ctx(), h);
+        expect(before.lines[0].treatedAreaHa).toBe(3.2478);
+
+        const after = await correctFarmActivity(ctx(), h, {
+            parcelIds: [parcelA1],
+            parcels: [{ parcelId: parcelA1, treatedAreaHa: 3.248 }],
+        });
+        expect(after.version).toBe(before.version);
+        const trail = await globalPrisma.treatmentCorrection.count({ where: { tenantId, groupId: h } });
+        expect(trail).toBe(0);
+        // And the stored figure is the one the farmer recorded, not the rounded
+        // one the form sent back.
+        expect((await getFarmActivityDefinition(ctx(), h)).lines[0].treatedAreaHa).toBe(3.2478);
+    });
 });
