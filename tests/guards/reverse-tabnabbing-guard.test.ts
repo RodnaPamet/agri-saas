@@ -60,6 +60,19 @@ function findUnsafeTabnabs(): string[] {
 }
 
 describe('Reverse-tabnabbing guard', () => {
+    it('[tabnabbing] ranges over a real set of tenant pages — the denominator', () => {
+        // #2377. The assertion below is a NEGATIVE one: it demands that no
+        // `target="_blank"` lacks `rel="noopener"`. An empty `SOURCES` passes
+        // it by construction, reporting compliance having read nothing.
+        //
+        // The root is not the exposure — `readdirSync` throws ENOENT if
+        // `src/app/t` disappears. What this bounds is the FILTER: every tenant
+        // page renamed away from `.tsx`, or moved out of `src/app/t`, leaves a
+        // directory that still resolves and a population that is empty.
+        console.log(`[tabnabbing] ${SOURCES.length} tenant page file(s) scanned`);
+        expect(SOURCES.length).toBeGreaterThan(20);
+    });
+
     it('every target="_blank" in tenant pages pairs with rel="noopener"', () => {
         const offenders = findUnsafeTabnabs();
         if (offenders.length > 0) {
