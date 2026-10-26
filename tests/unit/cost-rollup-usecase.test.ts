@@ -35,6 +35,7 @@ import {
     getCostRollupByField,
 } from '@/app-layer/usecases/cost-rollup';
 import { makeRequestContext } from '../helpers/make-context';
+import { bgnToEur } from '@/lib/exchange/currency';
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -275,23 +276,57 @@ describe('cost rollup — a partial total says so', () => {
     });
 });
 
-describe('cost rollup — mixed currencies are reported, never blended', () => {
-    it('flags a planting whose costs span two currencies', async () => {
-        // No FX table exists in this product, so 100 BGN + 50 EUR is not
-        // 150 of anything. The old code labelled the sum with whichever
-        // currency the database returned first — and the read had no
-        // orderBy, so the label changed between refreshes.
+describe('cost rollup — lev blends at the peg, foreign currency never blends', () => {
+    // Owner ruling 2026-10-26: the app is EUR-only. Lev converts at the
+    // legally fixed 1.95583 — arithmetic, not FX — while a genuinely foreign
+    // currency still refuses, because that WOULD need a market quote this
+    // product has none of. These tests used to assert that BGN + EUR was
+    // unblendable; that was right when no conversion existed anywhere.
+    it('blends lev into euro at the fixed peg rather than refusing', async () => {
         mockDb.logEntry.findMany.mockResolvedValueOnce([
             { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
         ]);
-        mockDb.stockTransaction.findMany.mockResolvedValueOnce([
-            { logEntryId: 'le-1', costCurrency: 'EUR' },
+        // Currency now rides on the groupBy key, so the separate distinct
+        // read this used to mock no longer exists.
+        mockDb.stockTransaction.groupBy.mockResolvedValueOnce([
+            { logEntryId: 'le-1', costCurrency: 'EUR', _sum: { costAmount: 50 } },
         ]);
 
         const { rows } = await getCostRollupByPlanting(adminCtx);
         const p1 = rows.find((r) => r.plantingId === 'p-1')!;
-        expect(p1.currencies).toEqual(['BGN', 'EUR']);
+        // One currency after normalisation, so no refusal.
+        expect(p1.currencies).toEqual(['EUR']);
+        expect(p1.currencyMixed).toBe(false);
+        // 100 BGN -> 51.13 EUR at the peg, plus 50 EUR of stock.
+        expect(p1.totalCost).toBeCloseTo(bgnToEur(100) + 50, 2);
+    });
+
+    it('STILL refuses when a genuinely foreign currency is present', async () => {
+        // The teeth. Folding dollars into euro would misstate money by
+        // whatever that day's rate is, so this must not blend.
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'USD' },
+            { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
+        ]);
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        const p1 = rows.find((r) => r.plantingId === 'p-1')!;
+        expect(p1.currencies.sort()).toEqual(['EUR', 'USD']);
         expect(p1.currencyMixed).toBe(true);
+    });
+
+    it('collapses three spellings of euro to one currency', async () => {
+        // The owner's actual farm: 'EUR', 'EURO' and an unrecorded value were
+        // three currencies as far as the rollup was concerned, which is what
+        // made Калкулатор refuse.
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 1200, costCurrency: 'EURO' },
+            { id: 'le-2', costAmount: 40, costCurrency: 'EUR' },
+            { id: 'le-3', costAmount: 10, costCurrency: null },
+        ]);
+        const { rows } = await getCostRollupByPlanting(adminCtx);
+        const p1 = rows.find((r) => r.plantingId === 'p-1')!;
+        expect(p1.currencies).toEqual(['EUR']);
+        expect(p1.currencyMixed).toBe(false);
     });
 
     it('does not flag a single-currency row', async () => {
@@ -299,14 +334,25 @@ describe('cost rollup — mixed currencies are reported, never blended', () => {
         expect(rows.every((r) => r.currencyMixed === false)).toBe(true);
     });
 
-    it('propagates a mix up to the season aggregate', async () => {
+    it('propagates a FOREIGN mix up to the season aggregate', async () => {
+        // Still propagates — only the lev case stopped being a mix.
+        mockDb.logEntry.findMany.mockResolvedValueOnce([
+            { id: 'le-1', costAmount: 100, costCurrency: 'USD' },
+            { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
+        ]);
+        const { rows } = await getCostRollupBySeason(adminCtx);
+        expect(rows[0].currencyMixed).toBe(true);
+        expect(rows[0].currencies.sort()).toEqual(['EUR', 'USD']);
+    });
+
+    it('does NOT propagate a lev-and-euro mix, because it is no longer one', async () => {
         mockDb.logEntry.findMany.mockResolvedValueOnce([
             { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
             { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
         ]);
         const { rows } = await getCostRollupBySeason(adminCtx);
-        expect(rows[0].currencyMixed).toBe(true);
-        expect(rows[0].currencies).toEqual(['BGN', 'EUR']);
+        expect(rows[0].currencyMixed).toBe(false);
+        expect(rows[0].currencies).toEqual(['EUR']);
     });
 });
 
@@ -352,11 +398,11 @@ describe('cost rollup — cost per hectare and per tonne', () => {
         expect(rows[0].harvestedAreaHa).toBeNull();
     });
 
-    it('refuses a per-unit figure when the currencies are mixed', async () => {
+    it('refuses a per-unit figure when a FOREIGN currency is present', async () => {
         // A blended-currency total is not a number, so it must not become a
-        // per-hectare number either.
+        // per-hectare number either. Lev no longer triggers this; dollars do.
         mockDb.logEntry.findMany.mockResolvedValueOnce([
-            { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
+            { id: 'le-1', costAmount: 100, costCurrency: 'USD' },
             { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
         ]);
         const { rows } = await getCostRollupBySeason(adminCtx);
