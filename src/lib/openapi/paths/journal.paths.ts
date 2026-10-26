@@ -851,10 +851,10 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                 )
                 .openapi({
                     description:
-                        'The recorded parcels, for the form to show. **Read-only in this increment** '
-                        + '\u2014 the request body has no `parcelIds`, because adding or dropping a '
-                        + 'parcel needs new per-block tasks and freshly marked lines (deferred on '
-                        + '#2373).',
+                        'The recorded parcels. **Correctable**: send the whole corrected set as '
+                        + '`parcelIds`, with `parcels[].treatedAreaHa` to refine the areas \u2014 '
+                        + 'including on parcels that were already there, so a mistyped hectare '
+                        + 'figure is fixable too.',
                 }),
         })
         .openapi('FarmActivityDefinition');
@@ -998,11 +998,21 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             'Owner approved a correction route for резитба, обработка на почвата and прибиране on '
             + '2026-10-25 (#2373). Before it, the journal row\u2019s `mayCorrect` already said these '
             + 'were correctable while the only correction route refused the handle.\n\n'
-            + '**Corrects the DAY and, for a harvest, the TOTAL.** Not the kind, not the title, not '
-            + 'the parcel set \u2014 each absent for its own reason, recorded on the request schema '
+            + '**Corrects the DAY, the PARCEL SET and, for a harvest, the TOTAL.** Not the kind '
+            + 'and not the title, each absent for its own reason, recorded on the request schema '
             + 'rather than left to be discovered. The title in particular would not reach the '
             + 'farmer: a bare activity\u2019s journal title is SERVER-composed from the kind and the '
             + 'parcel, so a corrected `Task.title` would change nothing in «Дневник».\n\n'
+            + '**A parcel in a block the activity never covered is ACCEPTED** (owner, 2026-10-26) '
+            + 'and the server mints that block\u2019s task \u2014 unlike the treatment correction, whose '
+            + 'refusal rests on the БАБХ register printing one table per block. Activities are not '
+            + 'in that register, and the whole-farm diary prints ONE row per activity summing its '
+            + 'parcels\u2019 areas, so a new block changes nothing about the document.\n\n'
+            + '**The harvest total follows the record, not the row it sits on.** It is stored on '
+            + 'one line\u2019s journal entry, and dropping that parcel deletes the entry \u2014 which '
+            + 'cascades the quantity. So a correction that changes the parcel set rewrites the '
+            + 'total onto the surviving canonical entry, exactly once: dropping a parcel never '
+            + 'costs a farmer a yield they measured.\n\n'
             + 'Every field optional, and an absent field is not a change \u2014 so sending the same '
             + 'body twice leaves ONE correction on the record, because the second send finds nothing '
             + 'changed and writes nothing at all. No version bump either, so an `If-Match` another '
@@ -1029,6 +1039,17 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                 '- `HARVEST_TOTAL_NOT_APPLICABLE` \u2014 `harvestKg` was sent on an activity that is '
                 + 'not a HARVEST. Refused rather than ignored: a quantity silently dropped is a '
                 + 'farmer believing they recorded a yield they did not.\n'
+                + '- `ACTIVITY_CORRECTION_WOULD_EMPTY` \u2014 the set removes every parcel and adds '
+                + 'none. That is a withdrawal: it has its own route, its own audit event, and it '
+                + 'RELEASES the handle so it stays resumable. Use '
+                + '`DELETE /journal/treatments/{treatmentGroupId}`.\n'
+                + '- `REFERENCE_NOT_IN_TENANT` \u2014 a parcel of another farm, or one in no block. '
+                + 'The id is NOT echoed back: a refusal naming it would confirm the row exists in '
+                + 'someone else\u2019s tenant.\n'
+                + '- `ACTIVITY_CORRECTION_BLOCK_UNRESOLVED` \u2014 an added parcel could not be placed '
+                + 'in a block. Unreachable through this route; asserted rather than assumed, '
+                + 'because silently skipping a parcel would answer 200 to a correction that did '
+                + 'not happen.\n'
                 + '- `TREATMENT_DATE_INVALID` / `TREATMENT_DATE_IN_FUTURE` \u2014 the same day parser '
                 + 'as the treatments route, so the codes keep its prefix. The prefix is the '
                 + 'code\u2019s NAME, not a claim that this is a treatment.\n'

@@ -3784,6 +3784,36 @@ exports[`API contract — per-schema snapshots schema: CorrectFarmActivity 1`] =
       "exclusiveMinimum": 0,
       "description": "The corrected total in kilograms, for a HARVEST. ONE figure for the activity, never apportioned across parcels.\\n\\n**\`null\` CLEARS it** — a weight recorded by mistake has to be removable, and an absent field already means \\"unchanged\\", so there would otherwise be no way to say it.\\n\\nSent on an activity that is not a HARVEST it is refused with \`HARVEST_TOTAL_NOT_APPLICABLE\` rather than ignored: a quantity silently dropped is a farmer believing they recorded a yield they did not. The refusal is server-side here, where the record schema does it in a \`superRefine\`, because this body carries no \`kind\` to compare against — the stored one decides.",
       "example": 12400
+    },
+    "parcelIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "description": "The CORRECTED set of parcels — the whole set, not a delta. Absent means unchanged.\\n\\nParcels in this list that the activity does not have are ADDED; ones it has that are missing from this list are DROPPED. Sending the set the definition returned is therefore a no-op, which is what lets an editor submit the whole form back.\\n\\n**A parcel in a block the activity never covered IS accepted** (owner, 2026-10-26), unlike the treatment correction, which refuses it because the БАБХ register prints one table per block and a new block would appear as its own sheet. Activities are not in that register: the whole-farm «ДНЕВНИК» prints ONE row per activity summing its parcels’ areas, so a new block changes nothing about the document’s shape. The server mints that block’s task.\\n\\n**Dropping every parcel is refused** with \`ACTIVITY_CORRECTION_WOULD_EMPTY\`: that is a withdrawal, which has its own route, its own audit event and releases the handle so it stays resumable — none of which a correction does."
+    },
+    "parcels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "parcelId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "treatedAreaHa": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "parcelId",
+          "treatedAreaHa"
+        ]
+      },
+      "description": "Per-parcel worked area in HECTARES — a REFINEMENT of \`parcelIds\`, not a replacement, and every \`parcelId\` here must also appear there. Applies to retained parcels as well as added ones, so a mistyped area is correctable.\\n\\n**Send a whole parcel as its exact area, not as an omission**: a stored NULL means “the whole parcel” and the diary prints \`treatedAreaHa ?? parcel.areaHa\`, so omitting it to mean “all of it” and omitting it to mean “unchanged” would be the same request.\\n\\nRequires \`parcelIds\`; sent without it the areas would have no set to refine."
     }
   },
   "description": "A correction to a recorded field activity. Send \`If-Match\` with the version from the definition read."
@@ -6696,7 +6726,7 @@ exports[`API contract — per-schema snapshots schema: FarmActivityDefinition 1`
           "treatedAreaHa"
         ]
       },
-      "description": "The recorded parcels, for the form to show. **Read-only in this increment** — the request body has no \`parcelIds\`, because adding or dropping a parcel needs new per-block tasks and freshly marked lines (deferred on #2373)."
+      "description": "The recorded parcels. **Correctable**: send the whole corrected set as \`parcelIds\`, with \`parcels[].treatedAreaHa\` to refine the areas — including on parcels that were already there, so a mistyped hectare figure is fixable too."
     }
   },
   "required": [

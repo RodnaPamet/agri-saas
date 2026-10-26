@@ -49,7 +49,39 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
+/**
+ * The guard DIRECTORIES. Deliberately still two.
+ *
+ * `selector-teeth-audits-every-guard-dir` reads this very constant out of this
+ * file's source and requires CI's selector-teeth pathspec to cover every entry.
+ * `tests/unit` holds 980 test files, so adding it here would oblige that job to
+ * audit all of them — a real decision with a real cost, and not one to make as
+ * a side effect of widening a collector scan. Left alone, and the gap it points
+ * at filed separately.
+ */
 const GUARD_DIRS = ['tests/guards', 'tests/guardrails'];
+
+/**
+ * Where to look for hand-rolled COLLECTORS, which is a wider question than
+ * where the guard directories are.
+ *
+ * `tests/unit` and `tests/contracts` were outside the scan until #2377, and
+ * between them they held **28 hand-rolled collectors this guard could not
+ * see** — among them `no-direct-prisma`, `no-fallbacks`, `audit-guardrails`
+ * and `issue-guardrails`, which are guards by behaviour wherever they live.
+ *
+ * The register was COMPLETE for the roots it scanned — 168 + 40 = 208, exactly
+ * its length — and that completeness is what made the gap invisible. The guard
+ * was not wrong about anything it looked at; it was looking at less than it
+ * read as covering. Kept separate from `GUARD_DIRS` so that scanning more
+ * files does not silently assert more about what CI must audit.
+ */
+const COLLECTOR_SCAN_DIRS = [
+    ...GUARD_DIRS,
+    'tests/unit',
+    'tests/contracts',
+    'tests/regression',
+];
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
@@ -272,20 +304,71 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guardrails/schema-index-coverage.test.ts',
     'tests/guardrails/table-platform-drift.test.ts',
     'tests/guardrails/usecase-test-coverage.test.ts',
+
+    // ── Newly visible when the roots gained tests/unit + tests/contracts (#2377) ──
+    // Not new debt: these were always hand-rolled, just outside the scan.
+    'tests/contracts/error-bodies-match-their-declared-schema.test.ts',
+    'tests/unit/audit-guardrails.test.ts',
+    'tests/unit/data-table.test.ts',
+    'tests/unit/deploy/prune-backups.test.ts',
+    'tests/unit/digest-enum-schema-alignment.test.ts',
+    'tests/unit/filter-foundation.test.ts',
+    'tests/unit/filter-standardization.test.ts',
+    'tests/unit/filter-system.test.ts',
+    'tests/unit/filter-tokenization.test.ts',
+    'tests/unit/fonts/vendored-font-integrity.test.ts',
+    'tests/unit/issue-guardrails.test.ts',
+    'tests/unit/legacy-ui-ratchet.test.ts',
+    'tests/unit/modal-primitive.test.ts',
+    'tests/unit/no-direct-prisma.test.ts',
+    'tests/unit/no-fallbacks.test.ts',
+    'tests/unit/no-prisma-in-routes.test.ts',
+    'tests/unit/notification-eligibility-guardrail.test.ts',
+    'tests/unit/observability-foundation.test.ts',
+    'tests/unit/observability-guards.test.ts',
+    'tests/unit/offline/idb-upgrade-not-eviction.test.ts',
+    'tests/unit/onboarding.test.ts',
+    'tests/unit/policy-routes-guardrail.test.ts',
+    'tests/unit/rsc-regression.test.ts',
+    'tests/unit/scope-deprecation-scan.test.ts',
+    'tests/unit/scope-guardrails.test.ts',
+    'tests/unit/security/startup-fail-fast-execution.test.ts',
+    'tests/unit/soft-delete-guardrails.test.ts',
+    'tests/unit/tenant-isolation-structural.test.ts',
 ];
 
 function collectorsOnDisk(): string[] {
     const found: string[] = [];
-    for (const dir of GUARD_DIRS) {
+    for (const dir of COLLECTOR_SCAN_DIRS) {
         const abs = path.join(ROOT, dir);
         // This guard's own selector, held to the rule it enforces.
         if (!fs.existsSync(abs)) throw new Error(`guard directory missing: ${dir}`);
-        for (const name of fs.readdirSync(abs).sort()) {
-            if (!name.endsWith('.test.ts')) continue;
-            const rel = `${dir}/${name}`;
-            const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
-            if (COLLECTS.test(src) && !HELPER.test(src)) found.push(rel);
-        }
+        // RECURSIVE. The flat `readdirSync` this replaces missed four
+        // collectors one directory down — `tests/unit/deploy/prune-backups`
+        // among them — so adding a root without recursing would have closed
+        // the gap only partly while reading as though it had closed it.
+        const walk = (d: string): void => {
+            // `withFileTypes` rather than a separate `statSync(full)`. The
+            // stat version was flagged by CodeQL as a filesystem race — a
+            // check-then-use round trip, since the entry's kind is already
+            // known from the directory read. It is also the idiom every other
+            // walk in this repo uses, so the fix is to stop being the
+            // exception rather than to suppress the alert.
+            const entries = fs.readdirSync(d, { withFileTypes: true });
+            for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
+                const full = path.join(d, entry.name);
+                if (entry.isDirectory()) {
+                    if (entry.name === 'node_modules' || entry.name === '__snapshots__') continue;
+                    walk(full);
+                    continue;
+                }
+                if (!entry.name.endsWith('.test.ts')) continue;
+                const rel = path.relative(ROOT, full);
+                const src = fs.readFileSync(full, 'utf8');
+                if (COLLECTS.test(src) && !HELPER.test(src)) found.push(rel);
+            }
+        };
+        walk(abs);
     }
     return found;
 }
