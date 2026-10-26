@@ -18,7 +18,12 @@ import { blankNonCode } from '../helpers/blank-non-code';
 // ─── Helpers ───
 
 function findTsFiles(dir: string, results: string[] = []): string[] {
-    if (!fs.existsSync(dir)) return results;
+    // Named throw (#875, #2385). The roots are `src/app/api` and
+    // `src/app-layer`, both mandatory; recursion only descends into entries
+    // `readdirSync` returned, so this judges the top-level root only.
+    if (!fs.existsSync(dir)) {
+        throw new Error(`observability-guards: scan root does not exist: ${dir}`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== '.next') {

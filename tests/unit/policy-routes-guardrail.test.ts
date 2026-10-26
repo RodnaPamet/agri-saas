@@ -82,6 +82,13 @@ const MEASURED_ROUTE_COUNT = 144;
 
 function getAllRouteFiles(dir: string): string[] {
     const files: string[] = [];
+    // An empty return here is CORRECT, unlike the sibling guards converted
+    // under #2385. This is called per API family, and a family directory may
+    // legitimately not exist — so the emptiness is checked by the CALLER
+    // instead: `the %s family still resolves to at least one route file`
+    // asserts `>= 1` for each, and a total floor asserts the sweep size.
+    // Forcing a throw here would break a real case rather than a swallowed
+    // one, which is what `scan-roots-resolve`'s KNOWN_SWALLOWERS exists for.
     if (!fs.existsSync(dir)) return files;
 
     function walk(d: string) {

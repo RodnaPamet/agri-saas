@@ -19,7 +19,14 @@ import { blankNonCode } from '../helpers/blank-non-code';
 const SRC_ROOT = path.resolve(__dirname, '../../src');
 
 function readFilesInDir(dir: string, ext = '.ts'): { name: string; content: string; relPath: string }[] {
-    if (!fs.existsSync(dir)) return [];
+    // A named throw, not a silent empty return (#875, #2385). Every caller
+    // passes a MANDATORY root — `app-layer/repositories`, `app-layer/usecases`
+    // — so an absent one is a moved directory, and the assertions below are
+    // negated: they would read "no direct prisma calls" from having read
+    // nothing at all.
+    if (!fs.existsSync(dir)) {
+        throw new Error(`no-direct-prisma: scan root does not exist: ${dir}`);
+    }
     return fs.readdirSync(dir)
         .filter((f) => f.endsWith(ext))
         .map((f) => ({
@@ -33,7 +40,12 @@ function readFilesInDir(dir: string, ext = '.ts'): { name: string; content: stri
 }
 
 function walkDir(dir: string): string[] {
-    if (!fs.existsSync(dir)) return [];
+    // Called on `src/app/api`, which is mandatory. The recursive descent below
+    // only enters directories `readdirSync` just returned, so this check only
+    // ever judges the top-level root.
+    if (!fs.existsSync(dir)) {
+        throw new Error(`no-direct-prisma: scan root does not exist: ${dir}`);
+    }
     const results: string[] = [];
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const fullPath = path.join(dir, entry.name);

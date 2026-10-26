@@ -20,6 +20,11 @@ const SRC = path.join(ROOT, 'src');
  */
 function scanFiles(dir: string, pattern: RegExp, extensions = ['.ts', '.tsx']): Array<{ file: string; line: number; content: string }> {
     const results: Array<{ file: string; line: number; content: string }> = [];
+    // An empty return here is CORRECT. Some roots this scans are DELIBERATELY
+    // absent — the scope-era `app/api/t/[tenantSlug]/s` and `…/scopes`, whose
+    // non-existence another test in this file asserts outright
+    // (`expect(fs.existsSync(scopeDir)).toBe(false)`). A throw would fail the
+    // guard for the exact state it exists to confirm.
     if (!fs.existsSync(dir)) return results;
 
     function walk(d: string) {
