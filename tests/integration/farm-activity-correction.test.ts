@@ -13,10 +13,15 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { recordFarmActivity } from '@/app-layer/usecases/farm-activity';
-import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
+import {
+    recordDiaryTreatment,
+    correctDiaryTreatment,
+    getDiaryTreatmentCorrections,
+} from '@/app-layer/usecases/diary-treatment';
 import {
     correctFarmActivity,
     getFarmActivityDefinition,
+    getFarmActivityCorrections,
 } from '@/app-layer/usecases/farm-activity-correction';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -284,5 +289,108 @@ describeFn('correctFarmActivity (#2373)', () => {
             harvestKg: d.harvestKg,
         });
         expect(again.version).toBe(d.version);
+    });
+
+    it('serves the activity trail, with the whole previous definition', async () => {
+        const h = `${TAG}-trail`;
+        await harvest(h, 1000);
+        await correctFarmActivity(ctx(), h, { harvestKg: 2000 });
+
+        const trail = await getFarmActivityCorrections(ctx(), h);
+        expect(trail.treatmentGroupId).toBe(h);
+        expect(trail.version).toBe(1);
+        expect(trail.corrections).toHaveLength(1);
+        const [entry] = trail.corrections;
+        expect(entry.changedFields).toEqual(['harvestKg']);
+        // A display NAME, resolved per read — never a user id.
+        expect(entry.correctedBy).toBe('Correcting User');
+        expect(entry.previous?.harvestKg).toBe(1000);
+        expect(entry.previous?.kind).toBe('HARVEST');
+    });
+
+    it('the TREATMENTS trail refuses a bare handle', async () => {
+        // Without this gate that route answers with `previous` holding a
+        // FarmActivityDefinition under a contract promising a
+        // TreatmentDefinition — two shapes on one path, nothing to discriminate
+        // on. Raised by agrent-ios reading the branch before building on it.
+        const h = `${TAG}-xtrail`;
+        await prune(h);
+        await correctFarmActivity(ctx(), h, { occurredOn: dayAgo(1) });
+        await expect(getDiaryTreatmentCorrections(ctx(), h)).rejects.toMatchObject({
+            code: 'NOT_A_TREATMENT',
+        });
+    });
+
+    it('the ACTIVITIES trail refuses a treatment handle — the exact complement', async () => {
+        const h = `${TAG}-xtrail2`;
+        await recordDiaryTreatment(
+            ctx(),
+            {
+                kind: 'SEED',
+                occurredOn: dayAgo(3),
+                parcelIds: [parcelA1],
+                productItemId: seedItemId,
+                doseValue: 200,
+                doseUnitId: rateUnitId,
+            },
+            h,
+        );
+        await expect(getFarmActivityCorrections(ctx(), h)).rejects.toMatchObject({
+            code: 'NOT_AN_ACTIVITY',
+        });
+    });
+
+    it('404s an unknown handle without confirming anything', async () => {
+        await expect(getFarmActivityCorrections(ctx(), `${TAG}-nothing`)).rejects.toMatchObject({
+            code: 'ACTIVITY_NOT_FOUND',
+        });
+    });
+
+    it('both trails have the IDENTICAL envelope, which agrent-ios decodes with one type', async () => {
+        // The property they asked to be able to rely on, asserted rather than
+        // promised. One `readCorrectionTrail` serves both, so this cannot drift
+        // — and if someone splits it again, this fails.
+        const act = `${TAG}-env-a`;
+        await harvest(act, 10);
+        await correctFarmActivity(ctx(), act, { harvestKg: 20 });
+
+        const trt = `${TAG}-env-t`;
+        await recordDiaryTreatment(
+            ctx(),
+            {
+                kind: 'SEED',
+                occurredOn: dayAgo(3),
+                parcelIds: [parcelA1],
+                productItemId: seedItemId,
+                doseValue: 200,
+                doseUnitId: rateUnitId,
+            },
+            trt,
+        );
+        await correctDiaryTreatment(ctx(), trt, { doseValue: 210 });
+
+        const a = await getFarmActivityCorrections(ctx(), act);
+        const t = await getDiaryTreatmentCorrections(ctx(), trt);
+
+        // The ACTUAL key names, pinned — not just "the two agree". Comparing
+        // them only to each other would pass a rename that hit both, which is
+        // exactly what sharing the reader makes easy: one edit changes both
+        // envelopes and the symmetry assertion stays green while the phone's
+        // decoder breaks. These are the names agrent-ios decodes.
+        expect(Object.keys(a).sort()).toEqual(['corrections', 'treatmentGroupId', 'version']);
+        expect(Object.keys(a.corrections[0]).sort()).toEqual([
+            'changedFields',
+            'correctedAt',
+            'correctedBy',
+            'previous',
+        ]);
+        // And then that the treatments trail is the same envelope, so the two
+        // cannot diverge later.
+        expect(Object.keys(a).sort()).toEqual(Object.keys(t).sort());
+        expect(Object.keys(a.corrections[0]).sort()).toEqual(Object.keys(t.corrections[0]).sort());
+        // `previous` is the ONE field whose shape differs, deliberately — which
+        // is why there are two paths rather than one polymorphic endpoint.
+        expect(a.corrections[0].previous).not.toBeNull();
+        expect(t.corrections[0].previous).not.toBeNull();
     });
 });

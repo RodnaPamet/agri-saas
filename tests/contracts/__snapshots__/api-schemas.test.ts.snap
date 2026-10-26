@@ -6551,6 +6551,79 @@ exports[`API contract — per-schema snapshots schema: ExportedAccount 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmActivityCorrectionEntry 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "correctedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correctedBy": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The actor’s DISPLAY NAME, resolved per read — not a user id. \`null\` when the correction was filed by a job with no actor, or the account has since been removed: the record says a correction happened and declines to name someone it cannot name, rather than printing an opaque id into «Коригирано от …»."
+    },
+    "changedFields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Which fields this correction changed — \`occurredOn\`, \`harvestKg\`. The request field names, so a client can label the change without parsing prose."
+    },
+    "previous": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/FarmActivityDefinition"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The WHOLE definition as it stood before this correction, not a diff: a diff needs the reader to already hold the state it was a diff against, and the point of the record is that the state is gone.\\n\\n**This is the one field that differs from the treatments trail**, which carries a \`TreatmentDefinition\` here. Everything else in the envelope is identical, and served by the same reader — which is why there are two paths rather than one endpoint answering with either shape."
+        }
+      ]
+    }
+  },
+  "required": [
+    "correctedAt",
+    "correctedBy",
+    "changedFields",
+    "previous"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmActivityCorrectionTrail 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "treatmentGroupId": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "description": "The activity’s CURRENT version, so a client holding an older one can tell its trail is stale without a second read."
+    },
+    "corrections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/FarmActivityCorrectionEntry"
+      },
+      "description": "Newest first, capped at 50. Empty for an activity nobody has corrected — which is what a client should check before showing «Коригирано на …»."
+    }
+  },
+  "required": [
+    "treatmentGroupId",
+    "version",
+    "corrections"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmActivityDefinition 1`] = `
 "{
   "type": "object",

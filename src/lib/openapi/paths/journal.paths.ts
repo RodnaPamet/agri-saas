@@ -894,6 +894,101 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
         }),
     });
 
+    const FarmActivityCorrectionEntry = z
+        .object({
+            // `.datetime()` so a generated client gets a date rather than a bare
+            // string (#1391). Free: `format` is none of the classes
+            // `openapi-breaking.ts` scores, and these schemas are
+            // registration-only — never `.parse()`d, so nothing starts
+            // validating.
+            correctedAt: z.string().datetime(),
+            correctedBy: z.string().nullable().openapi({
+                description:
+                    'The actor\u2019s DISPLAY NAME, resolved per read \u2014 not a user id. `null` when '
+                    + 'the correction was filed by a job with no actor, or the account has since '
+                    + 'been removed: the record says a correction happened and declines to name '
+                    + 'someone it cannot name, rather than printing an opaque id into '
+                    + '«\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043e\u0442 \u2026».',
+            }),
+            changedFields: z.array(z.string()).openapi({
+                description:
+                    'Which fields this correction changed \u2014 `occurredOn`, `harvestKg`. The request '
+                    + 'field names, so a client can label the change without parsing prose.',
+            }),
+            previous: FarmActivityDefinition.nullable().openapi({
+                description:
+                    'The WHOLE definition as it stood before this correction, not a diff: a diff '
+                    + 'needs the reader to already hold the state it was a diff against, and the '
+                    + 'point of the record is that the state is gone.\n\n'
+                    + '**This is the one field that differs from the treatments trail**, which '
+                    + 'carries a `TreatmentDefinition` here. Everything else in the envelope is '
+                    + 'identical, and served by the same reader \u2014 which is why there are two '
+                    + 'paths rather than one endpoint answering with either shape.',
+            }),
+        })
+        .openapi('FarmActivityCorrectionEntry');
+
+    const FarmActivityCorrectionTrail = z
+        .object({
+            treatmentGroupId: z.string(),
+            version: z.number().int().openapi({
+                description:
+                    'The activity\u2019s CURRENT version, so a client holding an older one can tell '
+                    + 'its trail is stale without a second read.',
+            }),
+            corrections: z.array(FarmActivityCorrectionEntry).openapi({
+                description:
+                    'Newest first, capped at 50. Empty for an activity nobody has corrected \u2014 '
+                    + 'which is what a client should check before showing '
+                    + '«\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043d\u0430 \u2026».',
+            }),
+        })
+        .openapi('FarmActivityCorrectionTrail');
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/activities/{treatmentGroupId}/corrections',
+        operationId: 'getFarmActivityCorrections',
+        summary: 'A bare activity\u2019s correction history',
+        description:
+            'Every correction filed against a field activity, newest first, each with when, who, '
+            + 'which fields changed and the whole definition as it stood before (#2373).\n\n'
+            + '**The same ENVELOPE as the treatments trail**, field for field \u2014 one '
+            + '`readCorrectionTrail` serves both, so they cannot drift \u2014 with `previous` holding '
+            + 'a `FarmActivityDefinition` instead of a `TreatmentDefinition`. That one difference is '
+            + 'the reason there are two paths: `TreatmentCorrection` is ONE table and an '
+            + 'activity\u2019s handle already upserts a `TreatmentGroup`, so a single endpoint would '
+            + 'answer with either shape and nothing for a client to discriminate on.\n\n'
+            + 'Refusals are exact complements of the treatments trail\u2019s: a bare handle there is '
+            + '`NOT_A_TREATMENT`, a treatment handle here is `NOT_AN_ACTIVITY`. So the rule stays '
+            + 'ONE rule across the prefill, the correction and the history \u2014 gate the control on '
+            + '`mayCorrect`, pick the address by `kind`.\n\n'
+            + '**READ-gated, where `./definition` is WRITE-gated**, and the difference is the point: '
+            + 'the trail exists so an inspector can see '
+            + '«\u041a\u043e\u0440\u0438\u0433\u0438\u0440\u0430\u043d\u043e \u043d\u0430 \u2026 \u043e\u0442 \u2026» and what the record said before, and '
+            + 'an inspector is precisely who the prefill\u2019s 403 is for. No new class of fact '
+            + 'reaches a reader: every `previous` describes the same activity they are already '
+            + 'looking at.\n\n'
+            + '`404` `ACTIVITY_NOT_FOUND` for an unknown handle. Existence is established from the '
+            + 'RECORD, not from the trail: a handle with no corrections and one never used both '
+            + 'have an empty trail, and answering `200` with `corrections: []` to the second would '
+            + 'confirm an activity that is not there.',
+        tags: ['Journal'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'The activity\u2019s corrections, newest first.',
+            schema: FarmActivityCorrectionTrail,
+        },
+        extraResponses: codedErrorResponses({
+            400:
+                '- `NOT_AN_ACTIVITY` \u2014 the handle names a record that APPLIES a product, so it '
+                + 'is a treatment. Its history is at '
+                + '`/journal/treatments/{treatmentGroupId}/corrections`.',
+            404: '- `ACTIVITY_NOT_FOUND` \u2014 no activity under that handle.',
+        }),
+    });
+
     op(registry, {
         method: 'put',
         path: '/api/t/{tenantSlug}/journal/activities/{treatmentGroupId}/definition',
@@ -1266,7 +1361,14 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             + '`404` `TREATMENT_NOT_FOUND` for an unknown handle. Existence is established from the '
             + 'TASKS, not from the trail: a handle with no corrections and a handle that was never '
             + 'used both have an empty trail, and answering `200` with `corrections: []` to the '
-            + 'second would confirm a treatment that is not there.',
+            + 'second would confirm a treatment that is not there.\n\n'
+            + '`400` `NOT_A_TREATMENT` for a BARE ACTIVITY handle (#2373). Activities write their '
+            + 'trail to the same table, so without this gate the route would answer with `previous` '
+            + 'holding a `FarmActivityDefinition` under a contract promising a '
+            + '`TreatmentDefinition` \u2014 two shapes on one path with nothing to discriminate on. '
+            + 'Read an activity\u2019s history from '
+            + '`/journal/activities/{treatmentGroupId}/corrections`, whose envelope is IDENTICAL: '
+            + 'one reader serves both, so they cannot drift.',
         tags: ['Journal'],
         params: TreatmentParams,
         success: {
@@ -1274,6 +1376,11 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
             description: 'The treatment\u2019s corrections, newest first.',
             schema: TreatmentCorrectionTrail,
         },
+        extraResponses: codedErrorResponses({
+            400:
+                '- `NOT_A_TREATMENT` \u2014 the handle names a bare field activity. Its history is '
+                + 'at `/journal/activities/{treatmentGroupId}/corrections`.',
+        }),
     }),
     op(registry, {
         method: 'get',

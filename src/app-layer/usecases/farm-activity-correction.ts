@@ -48,12 +48,12 @@ import type { Prisma } from '@prisma/client';
 
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { codedBadRequest, codedConflict, codedNotFound, staleData } from '@/lib/errors/types';
-import { appliesAProduct } from '@/lib/operations/line-kind';
-import { isBareActivityKind } from '@/lib/operations/activity-labels';
 import { parseRecordedDay } from '@/lib/operations/recorded-day';
+import { classifyFromRows, classifyHandle } from './handle-kind';
+import { readCorrectionTrail, type CorrectionTrail } from './correction-trail';
 import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import { RequestContext } from '../types';
-import { assertCanWrite } from '../policies/common';
+import { assertCanRead, assertCanWrite } from '../policies/common';
 import { assertCanEditTreatment } from '../policies/task.policies';
 import { logEvent } from '../events/audit';
 import { resolveHarvestTarget } from './farm-activity';
@@ -160,11 +160,11 @@ async function loadActivityForEdit(
     // Without that fallback a treatment whose lines were never marked would be
     // accepted here, and a correction would write a trail row and bump the
     // version on a record this route cannot represent.
-    const first = lines[0];
-    const isTreatment = first
-        ? appliesAProduct(first)
-        : !isBareActivityKind(tasks[0].operationType ?? '');
-    if (isTreatment) {
+    // ONE rule, shared with both trail reads and asked over rows already in
+    // hand. Written inline here first, and that copy is exactly what let the
+    // corrections READ serve an activity under a treatment's contract — the
+    // discriminator existed in one place and the route that needed it had none.
+    if (classifyFromRows(tasks[0], lines[0] ?? null) === 'TREATMENT') {
         throw codedBadRequest(
             'NOT_AN_ACTIVITY',
             'This record applies a product, so it is a treatment rather than a field '
@@ -242,6 +242,74 @@ export async function getFarmActivityDefinition(
         });
     }
     return runInTenantContext(ctx, async (db) => (await loadActivityForEdit(db, ctx, handle)).definition);
+}
+
+/**
+ * The correction history of a bare activity (#2373).
+ *
+ * ## A READ gate, where the prefill is a write gate
+ *
+ * `getFarmActivityDefinition` requires `canWrite` and then creator-or-admin,
+ * because its body exists to be edited. This one exists to be READ: a corrected
+ * entry shows «Коригирано на … от …» with the previous values legible to an
+ * inspector, and an inspector is exactly the person the prefill's 403 is for.
+ * Putting the trail behind that gate would hide it from its audience.
+ *
+ * That is not a widening of what a reader may learn. Every `previous` is a
+ * definition of the SAME activity they are already looking at; the only new fact
+ * is that a value used to be different, which is the fact the record exists to
+ * state.
+ *
+ * ## Why this route exists rather than reusing the treatments' one
+ *
+ * The table is shared and the envelope is identical — `readCorrectionTrail`
+ * serves both, so they cannot drift. What cannot be shared is `previous`: it
+ * holds the whole definition of whatever was corrected, so one endpoint would
+ * return a `TreatmentDefinition` or a `FarmActivityDefinition` with nothing to
+ * discriminate on, under a path naming only one of them.
+ *
+ * So the refusals are exact complements, as they are on the definition routes: a
+ * bare handle sent to the treatments trail is `NOT_A_TREATMENT`, a treatment
+ * handle sent here is `NOT_AN_ACTIVITY`. One rule for a client — gate the
+ * control on `mayCorrect`, pick the address by `kind` — and no third thing to
+ * learn for the history.
+ */
+export async function getFarmActivityCorrections(
+    ctx: RequestContext,
+    treatmentGroupId: string,
+): Promise<CorrectionTrail<FarmActivityDefinition>> {
+    assertCanRead(ctx);
+
+    const handle = treatmentGroupId.trim();
+    if (!handle) {
+        throw codedNotFound('ACTIVITY_NOT_FOUND', 'No activity was recorded under that handle.', {
+            reference: 'treatmentGroupId',
+        });
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        // Existence from the RECORD, not from the trail: a handle with no
+        // corrections and a handle that was never used both have an empty
+        // trail, and answering 200 with `corrections: []` to the second would
+        // confirm an activity that is not there. The existence-hiding 404 stays
+        // contentless.
+        const kind = await classifyHandle(db, ctx, handle);
+        if (kind === null) {
+            throw codedNotFound('ACTIVITY_NOT_FOUND', 'No activity was recorded under that handle.', {
+                reference: 'treatmentGroupId',
+            });
+        }
+        if (kind === 'TREATMENT') {
+            throw codedBadRequest(
+                'NOT_AN_ACTIVITY',
+                'This record applies a product, so it is a treatment rather than a field '
+                    + 'activity. Read its correction history through the treatment route.',
+                { reference: 'treatmentGroupId' },
+            );
+        }
+
+        return readCorrectionTrail<FarmActivityDefinition>(db, ctx, handle);
+    });
 }
 
 export async function correctFarmActivity(
