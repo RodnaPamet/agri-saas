@@ -25,6 +25,12 @@ import {
 } from '@/lib/errors/types';
 import { appliesAProduct } from '@/lib/operations/line-kind';
 import { treatmentKindOfOperation, type TreatmentKind } from '@/lib/operations/treatment-kind';
+import { classifyHandle } from './handle-kind';
+import {
+    readCorrectionTrail,
+    type CorrectionTrail,
+    type CorrectionTrailEntry,
+} from './correction-trail';
 import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { withDeleted } from '@/lib/soft-delete';
@@ -2334,29 +2340,24 @@ function correctedView(
 }
 
 /** One filed correction, as an inspector reads it. */
-export interface TreatmentCorrectionEntry {
-    correctedAt: string;
-    /**
-     * A DISPLAY NAME, not a user id.
-     *
-     * `null` when the correction was filed by a job with no actor, or when the
-     * account has since been removed — which is honest: the record says a
-     * correction happened and declines to name someone it cannot name, rather
-     * than printing an opaque id into «Коригирано от …».
-     */
-    correctedBy: string | null;
-    changedFields: string[];
-    /** The whole definition as it stood BEFORE this correction. */
-    previous: TreatmentDefinition | null;
-}
+/**
+ * ALIASES of the shared trail types, not a second declaration.
+ *
+ * `TreatmentCorrection` is one table and #2373 gave bare activities a trail in
+ * it, so `correction-trail.ts` owns the envelope and each route fixes the shape
+ * of `previous`. These names stay because callers and tests use them, and
+ * because «Коригирано на … от …» is a treatments feature by origin — but they
+ * are now the same type the activities route returns, which is the property the
+ * agrent-ios session asked to be able to rely on.
+ *
+ * `correctedBy` is a DISPLAY NAME, not a user id, and `null` when the correction
+ * was filed by a job with no actor or the account has since been removed — which
+ * is honest: the record says a correction happened and declines to name someone
+ * it cannot name, rather than printing an opaque id into «Коригирано от …».
+ */
+export type TreatmentCorrectionEntry = CorrectionTrailEntry<TreatmentDefinition>;
 
-export interface TreatmentCorrectionTrail {
-    treatmentGroupId: string;
-    /** The treatment's current version, so a client can tell a stale trail. */
-    version: number;
-    /** Newest first. Empty for a treatment nobody has corrected. */
-    corrections: TreatmentCorrectionEntry[];
-}
+export type TreatmentCorrectionTrail = CorrectionTrail<TreatmentDefinition>;
 
 /**
  * The correction history of a treatment (#2172).
@@ -2410,59 +2411,31 @@ export async function getDiaryTreatmentCorrections(
         // that was never used both have an empty trail, and answering 200 with
         // `corrections: []` to the second would confirm a treatment that is not
         // there — the existence-hiding 404 stays contentless.
-        const tasks = await db.task.findMany({
-            where: { tenantId: ctx.tenantId, treatmentGroupId: handle, deletedAt: null },
-            select: { id: true },
-            take: 1,
-        });
-        if (tasks.length === 0) {
+        const kind = await classifyHandle(db, ctx, handle);
+        if (kind === null) {
             throw codedNotFound(
                 'TREATMENT_NOT_FOUND',
                 'No treatment was recorded under that handle.',
                 { reference: 'treatmentGroupId' },
             );
         }
-
-        const [group, rows] = await Promise.all([
-            db.treatmentGroup.findUnique({
-                where: { tenantId_id: { tenantId: ctx.tenantId, id: handle } },
-                select: { version: true },
-            }),
-            db.treatmentCorrection.findMany({
-                where: { tenantId: ctx.tenantId, groupId: handle },
-                select: {
-                    correctedAt: true,
-                    correctedByUserId: true,
-                    changedFields: true,
-                    previous: true,
-                },
-                orderBy: { correctedAt: 'desc' },
-                // Bounded. A treatment corrected hundreds of times is not a
-                // shape to design for, but it is a shape a client should not
-                // have to receive in one payload.
-                take: 50,
-            }),
-        ]);
-
-        const actorIds = [...new Set(rows.map((r) => r.correctedByUserId).filter((v): v is string => !!v))];
-        const names = new Map<string, string | null>();
-        if (actorIds.length > 0) {
-            const users = await db.user.findMany({
-                where: { id: { in: actorIds } },
-                select: { id: true, name: true },
-            });
-            for (const u of users) names.set(u.id, u.name ?? null);
+        // A bare ACTIVITY writes its trail to this same table (#2373), so
+        // without this gate the route would serve one — with `previous` holding
+        // a `FarmActivityDefinition` under a contract that promises a
+        // `TreatmentDefinition`, and nothing for a client to discriminate on.
+        // Caught by the agrent-ios session reading the branch before building
+        // against it; the correction PR's own claim that the trail "needed no
+        // change" was true of the TABLE and silently false of the route.
+        if (kind === 'ACTIVITY') {
+            throw codedBadRequest(
+                'NOT_A_TREATMENT',
+                'This record is a field activity rather than a treatment. Read its correction '
+                    + 'history through the activities route.',
+                { reference: 'treatmentGroupId' },
+            );
         }
 
-        return {
-            treatmentGroupId: handle,
-            version: group?.version ?? 0,
-            corrections: rows.map((r) => ({
-                correctedAt: r.correctedAt.toISOString(),
-                correctedBy: r.correctedByUserId ? (names.get(r.correctedByUserId) ?? null) : null,
-                changedFields: [...r.changedFields],
-                previous: (r.previous ?? null) as unknown as TreatmentDefinition | null,
-            })),
-        };
+        return readCorrectionTrail<TreatmentDefinition>(db, ctx, handle);
     });
 }
+

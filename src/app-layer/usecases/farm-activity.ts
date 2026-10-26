@@ -27,9 +27,16 @@
  * product to deduct anyway, but the flag also makes the entry visible in the
  * manual-only list, which it must be.
  *
- * No `TreatmentCorrection` trail yet. The owner approved a correction route for
- * these (2026-10-25); until it exists the treatment correction route refuses a
- * bare handle with `NOT_A_TREATMENT`, and `mayCorrect` is false on the row.
+ * No `TreatmentCorrection` trail written HERE. `farm-activity-correction.ts`
+ * writes one (#2373), through the same table and the same whole-definition
+ * convention the treatment correction uses — `TreatmentCorrection` is keyed on
+ * `(tenantId, groupId)` and a bare activity's handle already upserts a
+ * `TreatmentGroup`, so the trail and its read needed no change.
+ *
+ * An earlier version of this note said `mayCorrect` is false on the row. It was
+ * not: `JournalRepository` computes that flag from authorship with no condition
+ * on the kind, so a farmer was told they could correct a pruning while the only
+ * correction route refused the handle. The flag is now true and correct.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -39,6 +46,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { ACTIVITY_LABELS_BG } from '@/lib/operations/activity-labels';
 import type { RecordFarmActivityBody } from '@/lib/schemas';
 import { RequestContext } from '../types';
+import type { PrismaTx } from '@/lib/db-context';
 import { assertCanWrite } from '../policies/common';
 import { createFieldOperation, markOperationParcel } from './field-operation';
 import type { CreateFieldOperationInput } from './field-operation';
@@ -206,14 +214,60 @@ export async function recordFarmActivity(
  * field whose only consumer interprets it differently from its author is worse
  * than an empty one.
  */
+/**
+ * WHERE an activity's harvest total lives, and the two reasons it might not.
+ *
+ * Shared with the correction route (#2373) so that one question has one answer.
+ * What to do with an EXISTING row is deliberately NOT shared: recording is
+ * idempotent (a replay must not double a total) and correcting overwrites. Those
+ * are different behaviours, and a `mode` flag threading through one function
+ * would hide that rather than express it.
+ */
+export async function resolveHarvestTarget(
+    db: PrismaTx,
+    ctx: RequestContext,
+    taskIds: string[],
+): Promise<{ entryId: string; kgUnitId: string }> {
+    // Ordered so the same line wins on a replay — and on a correction — rather
+    // than an arbitrary one. Without the order a correction could attach the
+    // total to a different line than the record did, leaving two.
+    const entry = await db.logEntry.findFirst({
+        where: {
+            tenantId: ctx.tenantId,
+            operationParcelId: { not: null },
+            operationParcel: { taskId: { in: taskIds } },
+        },
+        orderBy: [{ operationParcelId: 'asc' }],
+        select: { id: true },
+    });
+    if (!entry) {
+        // The mark writes the entry, so an absent one means the completion did
+        // not happen — a coded refusal rather than a silent null, so a caller is
+        // not told the harvest was recorded when it was not.
+        throw codedBadRequest(
+            'HARVEST_NOT_RECORDED',
+            'The harvest produced no journal entry, so its quantity could not be recorded.',
+            { reference: 'harvestKg' },
+        );
+    }
+    // Global catalogue row — `Unit.key` is `@unique` across tenants, not per
+    // farm. Its absence is a seeding fault, not something a farmer did, so it is
+    // a configuration error rather than a 400.
+    const kg = await db.unit.findFirst({ where: { key: 'kg' }, select: { id: true } });
+    if (!kg) {
+        throw configurationError(
+            'The `kg` unit is missing from the catalogue, so a harvest quantity cannot be stored.',
+        );
+    }
+    return { entryId: entry.id, kgUnitId: kg.id };
+}
+
 async function recordHarvestTotal(
     ctx: RequestContext,
     taskIds: string[],
     harvestKg: number,
 ): Promise<string> {
     return runInTenantContext(ctx, async (db) => {
-        // The entry the completion mark just wrote. Ordered so the same line
-        // wins on a replay rather than an arbitrary one.
         const entry = await db.logEntry.findFirst({
             where: {
                 tenantId: ctx.tenantId,
@@ -258,7 +312,9 @@ async function recordHarvestTotal(
                 measure: 'WEIGHT',
                 value: harvestKg,
                 unitId: kg.id,
-                // What stops a reader taking this for one parcel's yield.
+                // A NOTE for anyone reading one line directly — NOT a
+                // safeguard. The docblock above records why: nothing read it,
+                // and the one reader that did misread it as the produce kind.
                 label: 'Общо за мероприятието',
             },
             select: { id: true },
