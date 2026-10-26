@@ -82,17 +82,17 @@ const AWAITING_CONVERSION: readonly string[] = [
 const SUBJECT_IS_NOT_BLANKABLE: ReadonlyArray<{ file: string; why: string }> = [
     {
         file: 'tests/guards/sw-revision-stamp.test.ts',
-        /** its subject is the BYTES of `public/sw.js` — it compares a content hash
-     * against the stamped revision. Blanking changes the bytes, so the hash
-     * stops meaning anything. */
-        why: 'its subject is the BYTES of `public/sw',
+        why:
+            'its subject is the BYTES of `public/sw.js` — it compares a content hash '
+            + 'against the stamped revision. Blanking changes the bytes, so the hash '
+            + 'stops meaning anything.',
     },
     {
         file: 'tests/guardrails/no-client-side-filtering.test.ts',
-        /** the comment IS the control surface: it honours a `// guardrail-ignore`
-     * directive on the preceding line. Blanking erases the exemption
-     * mechanism and the guard then flags what it was told to allow. */
-        why: 'the comment IS the control surface: it honours a `// guardrail-ignore` directive on the preceding line',
+        why:
+            'the comment IS the control surface: it honours a `// guardrail-ignore` '
+            + 'directive on the preceding line. Blanking erases the exemption mechanism '
+            + 'and the guard then flags what it was told to allow.',
     },
 ];
 
@@ -152,6 +152,44 @@ describe('a source-scanning guard blanks its comments (#1774)', () => {
         // refuses the second half: the list is not a place to put work any
         // more.
         expect(AWAITING_CONVERSION).toEqual([]);
+    });
+
+    it('every never-blankable entry carries a reason long enough to BE one', () => {
+        // #2366. Both entries' reasons had been truncated at the first `.`,
+        // which is a filename's dot as often as a sentence's:
+        //
+        //   'its subject is the BYTES of `public/sw'          <- cut at .js
+        //   '…it honours a `// guardrail-ignore` directive
+        //    on the preceding line'                           <- cut at the
+        //                                                        first full stop
+        //
+        // The second is the instructive one: its cut landed on a sentence
+        // boundary, so it READ as complete while having lost the half that
+        // says what goes wrong. A reason that looks finished is harder to
+        // notice than one that ends mid-word.
+        //
+        // The full text survived in a docblock above each entry, which is why
+        // nothing was lost and also why it happened: two copies of the same
+        // sentence, one of them load-bearing. The docblocks are gone and the
+        // `why` field is now the only copy.
+        //
+        // Floor of 120 characters, following `compose-paths-resolve-in-a-clone`,
+        // which demands the same for the same reason: an entry here is a claim
+        // that converting a guard would make it WRONG, and a placeholder makes
+        // that claim unreviewable while reading as coverage.
+        for (const entry of SUBJECT_IS_NOT_BLANKABLE) {
+            expect({ file: entry.file, reasonLongEnough: entry.why.length > 120 })
+                .toEqual({ file: entry.file, reasonLongEnough: true });
+            // And it must say what the SUBJECT is, not merely that blanking is
+            // bad — the distinction between a reason and a restatement.
+            expect({ file: entry.file, explainsWhat: /\bBYTES\b|comment IS|reads|subject/.test(entry.why) })
+                .toEqual({ file: entry.file, explainsWhat: true });
+            // The duplicate docblocks are gone and are not asserted against:
+            // a comment beside a COMPLETE reason is harmless, and the floor
+            // above already catches the only consequence that mattered. An
+            // assertion about this file's own comments would also have to be
+            // written around the dogfooding hazard described at the top.
+        }
     });
 
     it('the register names exactly the guards still reading prose', () => {
