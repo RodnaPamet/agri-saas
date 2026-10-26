@@ -38,8 +38,36 @@ const GUARD_DIR = path.join(ROOT, 'tests', 'guards');
  *    `KNOWN_UNFIXED` rather than a silent skip. Forcing a throw there would
  *    break a real case, not a swallowed one. Its MANDATORY root, `PAGES`, is
  *    covered instead by the `DEFS.length > 5` self-check it already carries.
+ *
+ * Two more arrived with #2385, when twelve guard-shaped tests moved out of
+ * `tests/unit` into this directory and so entered this guard's population for
+ * the first time. They are NOT new debt — they were always like this, just
+ * outside the scan — and neither can be made to throw:
+ *
+ *  · `policy-routes-guardrail` — `getAllRouteFiles` is called per API FAMILY
+ *    (`join(API_ROOT, family)`), and the empty case is already guarded by
+ *    something stronger than a throw: "the %s family still resolves to at
+ *    least one route file" asserts `>= 1` for each family, plus a total floor
+ *    against `MEASURED_ROUTE_COUNT`. A throw inside the collector would add
+ *    nothing its caller does not already catch, and would do it less
+ *    informatively.
+ *
+ *  · `scope-guardrails` — it scans the scope-era
+ *    `app/api/t/[tenantSlug]/s` and `…/scopes`, whose ABSENCE another test in
+ *    the same file asserts outright (`expect(fs.existsSync(scopeDir))
+ *    .toBe(false)`). A throw would fail the guard for the exact state it
+ *    exists to confirm. Its mandatory root, `src/`, is reached by a separate
+ *    call that now throws.
+ *
+ * The three siblings that COULD throw do — `no-direct-prisma`,
+ * `observability-guards` and `soft-delete-guardrails`, all on mandatory roots
+ * — so this list grew by two rather than by five.
  */
-const KNOWN_SWALLOWERS: readonly string[] = ['multi-select-facet-route-parity.test.ts'];
+const KNOWN_SWALLOWERS: readonly string[] = [
+    'multi-select-facet-route-parity.test.ts',
+    'policy-routes-guardrail.test.ts',
+    'scope-guardrails.test.ts',
+];
 
 const EXPECTED_EMPTY: Record<string, string> = {
     'node_modules': 'no-tracked-node-modules asserts these are NOT tracked; zero is the pass condition',

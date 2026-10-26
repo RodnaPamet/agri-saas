@@ -311,7 +311,7 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/guards/slow-mode-escape-is-not-throttled.test.ts',
             'tests/unit/filter-standardization.test.ts',
             'tests/unit/middleware-org-route-structural.test.ts',
-            'tests/unit/observability-guards.test.ts',
+            'tests/guards/observability-guards.test.ts',
             'tests/unit/tenant-isolation-structural.test.ts',
             // Batch 8, #1774. Three needed care rather than the batch
             // converter: `table-platform-drift` reads GUIDE.md among four
@@ -326,7 +326,7 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/guards/donut-chart-centering.test.ts',
             'tests/guards/p-polish-a.test.ts',
             'tests/guards/rls-coverage-skip-visibility.test.ts',
-            'tests/unit/no-direct-prisma.test.ts',
+            'tests/guards/no-direct-prisma.test.ts',
             'tests/unit/rsc-regression.test.ts',
             // Batch 9, #1774 — twelve whose reads are all `.ts`/`.tsx`, found
             // by pre-flighting the remaining eighteen for file type and for a
@@ -342,7 +342,7 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/guards/offline-spec-chunk-warmup.test.ts',
             'tests/guards/optimistic-status-rollback.test.ts',
             'tests/guards/sign-out-purges.test.ts',
-            'tests/unit/audit-guardrails.test.ts',
+            'tests/guards/audit-guardrails.test.ts',
             'tests/unit/job-scope-audit.test.ts',
             'tests/unit/job-tenant-isolation-regression.test.ts',
             // Batch 10, #1774 — the last six of the narrow register. Each
@@ -356,7 +356,7 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             'tests/guards/p-polish-c.test.ts',
             'tests/guards/p5a-snapshots-table-sidebar.test.ts',
             'tests/unit/data-table.test.ts',
-            'tests/unit/notification-eligibility-guardrail.test.ts',
+            'tests/guards/notification-eligibility-guardrail.test.ts',
         ]) {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
             expect(`${rel}: ${blanksComments(src)}`).toBe(`${rel}: true`);
