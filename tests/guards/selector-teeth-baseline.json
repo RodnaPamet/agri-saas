@@ -114,9 +114,6 @@
       "walk",
       "stripComments"
     ],
-    "tests/guards/audit-guardrails.test.ts": [
-      "collectTsFiles"
-    ],
     "tests/guards/badge-density.test.ts": [
       "isExempt",
       "walk",
