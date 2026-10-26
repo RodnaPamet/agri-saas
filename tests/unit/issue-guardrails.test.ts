@@ -23,6 +23,8 @@ import fs from 'fs';
 import path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const SRC_DIR = path.resolve(__dirname, '../../src');
 
 function grepFiles(pattern: RegExp, dir: string, extensions: string[]): { file: string; line: number; content: string }[] {
@@ -34,7 +36,11 @@ function grepFiles(pattern: RegExp, dir: string, extensions: string[]): { file: 
                 if (['node_modules', '.next', '.git', 'dist'].includes(entry.name)) continue;
                 walk(full);
             } else if (extensions.some(ext => entry.name.endsWith(ext))) {
-                const content = fs.readFileSync(full, 'utf-8');
+                // Comments blanked (#1774). Scanned per LINE below, which is
+                // safe because `blankNonCode` preserves positions and
+                // newlines — a blanked character becomes a space, so the line
+                // numbers it reports still point where they did.
+                const content = blankNonCode(fs.readFileSync(full, 'utf-8'));
                 content.split('\n').forEach((line, i) => {
                     if (pattern.test(line)) {
                         results.push({ file: path.relative(SRC_DIR, full), line: i + 1, content: line.trim() });

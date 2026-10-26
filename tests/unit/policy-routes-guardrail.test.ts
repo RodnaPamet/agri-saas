@@ -31,6 +31,8 @@
 import path from 'path';
 import fs from 'fs';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const API_ROOT = path.resolve(__dirname, '../../src/app/api/t/[tenantSlug]');
 
 /**
@@ -115,7 +117,11 @@ describe('Tenant API Route Structural Guardrails', () => {
     });
 
     describe.each(routeFiles.map((f) => [path.relative(API_ROOT, f), f]))('%s', (_, filePath) => {
-        const content = fs.readFileSync(filePath as string, 'utf-8');
+        // Comments blanked (#1774): every assertion below is a NEGATED
+        // `not.toMatch` over code shapes — `prisma.`, `db.x.y`, `logEvent(` —
+        // so a docblock saying "never call prisma here" reads as the call it
+        // forbids. Strings kept: the subjects are calls, not message text.
+        const content = blankNonCode(fs.readFileSync(filePath as string, 'utf-8'));
 
         it('should not call prisma directly', () => {
             // Check for prisma.model.method() patterns
