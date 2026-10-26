@@ -24,7 +24,11 @@ const SOFT_DELETE_FILE = path.join(__dirname, '..', '..', 'src', 'lib', 'soft-de
 /** Recursively collect .ts/.tsx files from a directory */
 function collectFiles(dir: string, extensions = ['.ts', '.tsx']): string[] {
     const files: string[] = [];
-    if (!fs.existsSync(dir)) return files;
+    // Named throw (#875, #2385). `collectFiles(SRC_DIR)` is the only
+    // top-level call and `src/` is mandatory.
+    if (!fs.existsSync(dir)) {
+        throw new Error(`soft-delete-guardrails: scan root does not exist: ${dir}`);
+    }
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
