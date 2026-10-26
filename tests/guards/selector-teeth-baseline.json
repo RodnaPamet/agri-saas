@@ -78,7 +78,30 @@
     "reader, and assert separately that it returns bytes.",
     "",
     "  The other 17 findings from that sweep are NOT here: each got a real",
-    "  control instead. A baseline entry is the exception, not the pattern."
+    "  control instead. A baseline entry is the exception, not the pattern.",
+    "",
+    "EIGHT ENTRIES ARRIVED 2026-10-26 WITH #2404, AND NONE IS NEW DEBT.",
+    "  Twelve guard-shaped tests moved out of tests/unit into tests/guards so the",
+    "  selector-teeth pathspec could reach them at all (#2385). They had never",
+    "  been audited: the job only examines guard files changed under",
+    "  tests/guards/* and tests/guardrails/*, so a guard living in tests/unit was",
+    "  audited by nothing, however long it sat in main.",
+    "",
+    "  The eight below are what the first audit found. Same shape as the two",
+    "  entries noted above as 'invisible until the tool could see them', one",
+    "  layer up: the tool could not see the FILES, not just the selectors.",
+    "",
+    "  Of the twelve moved, seven came back clean — file-collection,",
+    "  guards-blank-comments, no-fallbacks, no-prisma-in-routes,",
+    "  notification-eligibility, observability-guards and scan-roots-resolve all",
+    "  report every selector with teeth. policy-routes-guardrail's",
+    "  getAllRouteFiles cannot be gutted in a way that typechecks, so the tool",
+    "  cannot judge it either way.",
+    "",
+    "  THREE OF THE FIFTEEN CHANGED FILES WERE NOT AUDITED AT ALL on that PR:",
+    "  scope-deprecation-scan, scope-guardrails and soft-delete-guardrails, because",
+    "  the job is bounded at MAX_GUARDS=12 and the PR changed 15. They may hold",
+    "  further dead selectors that nothing has looked for yet."
   ],
   "known": {
     "tests/guards/action-label-vocabulary.test.ts": [
@@ -90,6 +113,9 @@
     "tests/guards/animation-language-lock.test.ts": [
       "walk",
       "stripComments"
+    ],
+    "tests/guards/audit-guardrails.test.ts": [
+      "collectTsFiles"
     ],
     "tests/guards/badge-density.test.ts": [
       "isExempt",
@@ -114,6 +140,19 @@
     ],
     "tests/guards/generated-columns.test.ts": [
       "walk"
+    ],
+    "tests/guards/issue-guardrails.test.ts": [
+      "grepFiles",
+      "isAllowed"
+    ],
+    "tests/guards/legacy-ui-ratchet.test.ts": [
+      "countClassToken",
+      "walk"
+    ],
+    "tests/guards/no-direct-prisma.test.ts": [
+      "getNonCommentLines",
+      "readFilesInDir",
+      "walkDir"
     ]
   }
 }
