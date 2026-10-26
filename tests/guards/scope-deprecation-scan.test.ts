@@ -91,6 +91,27 @@ function scanForPattern(files: string[], patternName: string, regex: RegExp): Sc
 describe('Scope Deprecation Scan (report-only)', () => {
     const files = walk(SRC_DIR);
 
+    it('[scope-scan] reaches a real population — the denominator', () => {
+        // Every scan below reports how many references REMAIN, and the happy
+        // path prints "🎉 No scope references found! Migration done." An empty
+        // `files` produces exactly that output having read nothing — a
+        // migration declared complete because the walk broke (#2377).
+        //
+        // Inside an `it`, deliberately. The first version of this assertion
+        // sat in the describe BODY, where it runs at collection time: gutting
+        // the walk then failed the whole suite to load and reported
+        // `Tests: 0 total` instead of a named failure. Effective, but the
+        // worst possible diagnostic — it looks like a broken test file rather
+        // than an empty population, which is the exact confusion this repo
+        // has been bitten by before.
+        //
+        // 2265 .ts/.tsx files exist under src/ today; the floor sits well
+        // below so ordinary deletion cannot trip it, and far above zero so a
+        // broken walk cannot pass.
+        console.log(`[scope-scan] walked ${files.length} file(s) under src/`);
+        expect(files.length).toBeGreaterThan(500);
+    });
+
     it('reports remaining scope references across the codebase', () => {
         const results: ScanResult[] = [];
         let totalRefs = 0;
