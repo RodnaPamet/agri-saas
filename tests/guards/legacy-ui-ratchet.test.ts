@@ -61,6 +61,11 @@ const BASELINES = {
 } as const;
 
 function walk(dir: string, out: string[]): string[] {
+    // Named throw, so a renamed root fails loudly instead of yielding an empty
+    // population that every assertion below accepts (#875, #2407).
+    if (!fs.existsSync(dir)) {
+        throw new Error(`legacy-ui-ratchet: scan root does not exist: ${dir}`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
@@ -77,13 +82,43 @@ const SOURCES = walk(APP_PAGES_ROOT, []).map((p) => ({
     src: blankNonCode(fs.readFileSync(p, 'utf-8')),
 }));
 
-function countClassToken(token: 'btn' | 'badge'): number {
+interface CountSource {
+    file: string;
+    src: string;
+}
+
+/**
+ * Takes its sources as a PARAMETER, so the control below can hand it input the
+ * repo does not contain.
+ *
+ * `scripts/selector-teeth.mjs` reported this gutted to `return 0` and
+ * SURVIVING, and the reason is specific: both baselines are **0**, so
+ * `expect(actual).toBeLessThanOrEqual(0)` passes whether the counter works or
+ * always answers zero. The ratchet could not tell "no legacy classes remain"
+ * from "the counter is broken" — and it is the former that it exists to
+ * certify.
+ *
+ * Closing over the module-level `SOURCES` made that untestable: the repo has
+ * zero `className="btn …"` by design, so there was no input that could
+ * distinguish the two answers.
+ */
+function countClassToken(token: 'btn' | 'badge', sources: readonly CountSource[] = SOURCES): number {
     // Match `className="..."` where a whole-word `token` appears among the
-    // class names. `\bbtn\b` avoids false positives on `btn-primary` vs
-    // `button-xyz` — we require the legacy token itself.
+    // class names.
+    //
+    // `\bbtn\b` excludes `button-xyz` — `button` has no word boundary after
+    // `btn` — but it does NOT exclude `btn-primary`: a hyphen IS a word
+    // boundary, so the `btn` in `btn-primary` matches. This comment used to
+    // claim the opposite, naming `btn-primary` as a false positive it avoided.
+    // Measured 2026-10-27: `className="btn-primary"` counts 1.
+    //
+    // The behaviour is the stricter of the two and is left as it is — with
+    // both baselines at 0, any occurrence fails either way, and the legacy
+    // idiom was `btn btn-primary` together so a bare `btn-primary` is a
+    // legacy class too. Only the claim was wrong.
     const re = new RegExp(`className=["'\`][^"'\`]*\\b${token}\\b[^"'\`]*["'\`]`, 'g');
     let total = 0;
-    for (const { src } of SOURCES) {
+    for (const { src } of sources) {
         const matches = src.match(re);
         if (matches) total += matches.length;
     }
@@ -91,6 +126,70 @@ function countClassToken(token: 'btn' | 'badge'): number {
 }
 
 describe('Legacy UI class ratchet — Epic 51 rollout guard', () => {
+    it('[legacy-ui] the counter can actually count — the control', () => {
+        // Both baselines are 0, so `toBeLessThanOrEqual(BASELINES.x)` passes
+        // for a counter that always answers zero. This is what makes the
+        // difference between "no legacy classes remain" and "the counter is
+        // broken" observable at all (#2407).
+        //
+        // Synthetic input, because the repo deliberately contains no
+        // `className="btn …"`. That is the whole point of the ratchet, and it
+        // is also why no real file can serve as the control.
+        expect(countClassToken('btn', [{ file: 'x.tsx', src: '<div className="btn foo">' }])).toBe(1);
+        expect(countClassToken('badge', [{ file: 'x.tsx', src: '<span className="a badge">' }])).toBe(1);
+        // Two in one file are two, so the ratchet moves per OCCURRENCE rather
+        // than per file — which is what its baseline counts.
+        expect(
+            countClassToken('btn', [
+                { file: 'x.tsx', src: '<a className="btn">1</a><a className="btn x">2</a>' },
+            ]),
+        ).toBe(2);
+    });
+
+    it('[legacy-ui] the counter does NOT count near misses', () => {
+        // The other direction. A counter that matched everything would pass
+        // the control above while making the baseline unclearable.
+        for (const src of [
+            '<div className="button foo">',   // `button` has no boundary after btn
+            '<div data-x="btn">',             // not a className attribute
+            '<div className="xbtn">',         // no boundary before btn
+        ]) {
+            expect({ src, count: countClassToken('btn', [{ file: 'x.tsx', src }]) })
+                .toEqual({ src, count: 0 });
+        }
+    });
+
+    it('[legacy-ui] a hyphenated legacy class DOES count, contrary to the old comment', () => {
+        // Pinned because the function's docblock asserted the opposite until
+        // 2026-10-27: it named `btn-primary` as a false positive that
+        // `\bbtn\b` avoided. A hyphen is a word boundary, so it never did.
+        //
+        // The behaviour is correct — the legacy idiom was `btn btn-primary`
+        // together, so a bare `btn-primary` is a legacy class — and with both
+        // baselines at 0 it fails either way. It is pinned so the comment and
+        // the regex cannot drift apart again.
+        expect(countClassToken('btn', [{ file: 'x.tsx', src: '<div className="btn-primary">' }])).toBe(1);
+    });
+
+    it('[legacy-ui] comments are blanked UPSTREAM, not by the counter', () => {
+        // Worth stating because my first version of the control above asserted
+        // that a commented-out className counts 0, and it does not: the
+        // counter is handed already-blanked source, so passing it a raw
+        // comment bypasses the blanking entirely. The protection is real but
+        // lives in SOURCES, one level up.
+        const raw = '// className="btn" in a comment';
+        expect(countClassToken('btn', [{ file: 'x.tsx', src: raw }])).toBe(1);
+        expect(countClassToken('btn', [{ file: 'x.tsx', src: blankNonCode(raw) }])).toBe(0);
+    });
+
+    it('[legacy-ui] the scan reaches a real population — the denominator', () => {
+        // `walk` is the other selector the audit reported dead. With both
+        // baselines at 0 an empty SOURCES satisfies every assertion below, so
+        // the population needs its own floor.
+        console.log(`[legacy-ui] ${SOURCES.length} .ts/.tsx file(s) under the app pages root`);
+        expect(SOURCES.length).toBeGreaterThan(100);
+    });
+
     it('count of `className="btn …"` usages does not grow beyond the baseline', () => {
         const actual = countClassToken('btn');
         expect(actual).toBeLessThanOrEqual(BASELINES.btn);

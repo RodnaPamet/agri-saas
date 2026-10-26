@@ -145,10 +145,6 @@
       "grepFiles",
       "isAllowed"
     ],
-    "tests/guards/legacy-ui-ratchet.test.ts": [
-      "countClassToken",
-      "walk"
-    ],
     "tests/guards/no-direct-prisma.test.ts": [
       "getNonCommentLines",
       "readFilesInDir",
