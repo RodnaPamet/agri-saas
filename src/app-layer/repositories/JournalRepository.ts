@@ -282,6 +282,14 @@ function buildTreatmentSummary(
     },
     agg: { parcelCount: number; totalAreaHa: number; blockNames: string[] } | undefined,
     progress: { pendingCount: number; lineCount: number } | undefined,
+    /**
+     * The HARVEST total in kilograms, or null (agrent-ios #446).
+     *
+     * Already filtered to HARVEST tasks by `_treatmentHarvestTotals` — `WEIGHT`
+     * alone does not mean produce, since a product measured in kilograms writes
+     * a WEIGHT quantity too.
+     */
+    harvestKg: number | null,
     permits: { mayDelete: boolean; mayCorrect: boolean },
 ): Record<string, unknown> {
     const line = entry.operationParcel;
@@ -317,6 +325,16 @@ function buildTreatmentSummary(
         // denial costs a farmer their own record.
         mayDelete: permits.mayDelete,
         mayCorrect: permits.mayCorrect,
+        // The harvest's «Продукция», for a reader. Null on everything that is
+        // not a harvest, and on a harvest whose total was never recorded or has
+        // been cleared — `null` and `0` are different statements, since 0 kg is
+        // a measured harvest of nothing.
+        //
+        // Added because the figure was visible NOWHERE a reader could reach: it
+        // lives on a `LogQuantity`, and the only read that returned it is
+        // write-gated by design, so the farmer who recorded a yield could not
+        // see it again on the row they recorded it from (agrent-ios #446).
+        harvestKg,
         kind: line?.task?.operationType ?? null,
         productName: line?.product?.name ?? null,
         parcelCount: agg?.parcelCount ?? 0,
@@ -479,8 +497,14 @@ export class JournalRepository {
      * `DiaryCursor`. Not `(createdAt, id)`: a cursor naming a ROW cannot skip
      * a folded group, and 3 treatments paged 2 at a time came back as 6 rows.
      *
-     * Two queries, both bounded by the page: the folded page, then one read
-     * for its groups' aggregates. Never per row.
+     * FIVE queries, each bounded by the page: the folded page, then one read
+     * each for its groups' aggregates, authorship, progress and harvest totals.
+     * Never per row — that is the property, not the count.
+     *
+     * The count was documented as "two" through three additions. Worth stating
+     * as a lesson rather than silently corrected: a number in prose beside the
+     * code that changes it goes stale the first time someone adds a sibling, and
+     * the invariant readers actually need is "bounded by the page".
      */
     static async listPaginated(db: PrismaTx, ctx: RequestContext, params: LogEntryListParams): Promise<PaginatedResponse<unknown>> {
         const limit = clampLimit(params.limit);
@@ -516,6 +540,7 @@ export class JournalRepository {
         const aggregates = await JournalRepository._treatmentAggregates(db, ctx, handles);
         const authorship = await JournalRepository._treatmentAuthorship(db, ctx, handles);
         const progress = await JournalRepository._treatmentProgress(db, ctx, handles);
+        const harvestTotals = await JournalRepository._treatmentHarvestTotals(db, ctx, handles);
 
         return {
             items: page.map((e) => ({
@@ -524,6 +549,7 @@ export class JournalRepository {
                     e,
                     aggregates.get(e.treatmentGroupId),
                     progress.get(e.treatmentGroupId),
+                    harvestTotals.get(e.treatmentGroupId) ?? null,
                     // The 403 arm AND the 409 arm, because the control has to
                     // be absent for both. A treatment with no tasks under its
                     // handle — a free-hand entry folding to itself — has no
@@ -752,6 +778,74 @@ export class JournalRepository {
         for (const r of rows) {
             out.set(r.handle, { pendingCount: r.pendingCount, lineCount: r.lineCount });
         }
+        return out;
+    }
+
+    /**
+     * The HARVEST total of each activity on ONE page (agrent-ios #446).
+     *
+     * A saved harvest's «Продукция» was visible nowhere a reader could reach.
+     * The figure is on a `LogQuantity`, and the only read that returned it —
+     * `GET …/activities/{handle}/definition` — is WRITE-gated by design, because
+     * its body exists to be edited. So the farmer who recorded a yield could not
+     * see it again on the journal row they recorded it from.
+     *
+     * ## Filtered on the TASK's type, not on `measure = 'WEIGHT'`
+     *
+     * This is the part that matters. `WEIGHT` does NOT mean "a harvest":
+     * `correctDiaryTreatment` writes a quantity with `measure:
+     * productUnit.measure`, which is `WEIGHT` for any product measured in
+     * kilograms. Filtering on the measure alone would report a fertiliser's
+     * APPLIED kilograms as a harvest yield — on the row a farmer reads to check
+     * what they harvested.
+     *
+     * That is not a hypothetical class of mistake here. `LogQuantity.label` was
+     * misread exactly this way once: `campaign-diary/gather.ts` took the first
+     * labelled quantity as the produce KIND, so «Общо за мероприятието» printed
+     * in a column headed «Вид» on a register a farmer signs (fixed in #2364).
+     * The label is a note, not a discriminator, and neither is the measure.
+     *
+     * `operationType = 'HARVEST'` on the task is the discriminator, because that
+     * is the thing that actually decides whether a quantity under this handle is
+     * produce.
+     *
+     * ## SUM over a set the writers keep at one row
+     *
+     * Both writers — `recordFarmActivity` and `correctFarmActivity` — keep
+     * exactly one WEIGHT row per handle, the second by consolidating rather than
+     * patching. So `SUM` equals that row. It is a sum rather than a pick because
+     * if the invariant ever breaks, a doubled figure is visibly wrong and someone
+     * notices, where an arbitrarily chosen one looks right.
+     *
+     * Raw SQL and bounded by the PAGE, like its two siblings above: the handle
+     * lives on `Task` and the value on `LogQuantity`, so Prisma's `groupBy`
+     * cannot express it. One row per handle, never per line.
+     */
+    private static async _treatmentHarvestTotals(
+        db: PrismaTx,
+        ctx: RequestContext,
+        handles: string[],
+    ): Promise<Map<string, number>> {
+        const out = new Map<string, number>();
+        if (handles.length === 0) return out;
+
+        const rows = await db.$queryRaw<Array<{ handle: string; kg: number }>>(Prisma.sql`
+            SELECT t."treatmentGroupId"        AS "handle",
+                   SUM(lq."value")::float8     AS "kg"
+              FROM "LogQuantity" lq
+              JOIN "LogEntry" le  ON le."id" = lq."logEntryId" AND le."tenantId" = lq."tenantId"
+              JOIN "OperationParcel" op ON op."id" = le."operationParcelId"
+              JOIN "Task" t ON t."id" = op."taskId"
+             WHERE lq."tenantId" = ${ctx.tenantId}
+               AND lq."measure" = 'WEIGHT'
+               AND le."deletedAt" IS NULL
+               AND t."deletedAt" IS NULL
+               AND t."operationType" = 'HARVEST'
+               AND t."treatmentGroupId" IN (${Prisma.join(handles)})
+             GROUP BY t."treatmentGroupId"
+        `);
+
+        for (const r of rows) out.set(r.handle, Number(r.kg));
         return out;
     }
 
