@@ -90,17 +90,100 @@ function productionStacks(): string[] {
 
 const STACKS = productionStacks();
 
+/**
+ * Both predicates take their TEXT as a parameter.
+ *
+ * They used to close over `WORKFLOW` and `RUNBOOK`, which made them impossible
+ * to exercise on anything but the repo's current state — and that is how
+ * `isDeclaredUnbacked` became a DEAD selector. Since #2367 both stacks are
+ * drilled, so no stack is in the unbacked state, and
+ * `drilled !== unbacked` evaluates `true !== false` whatever the second
+ * predicate returns. `scripts/selector-teeth` reported it gutted to
+ * `return false` and SURVIVING; verified before fixing.
+ *
+ * It would also have stayed quiet: the Selector teeth job audits guard files
+ * changed against the PR's base, and a PR cut from current main does not
+ * include this file. Found only because a peer's PR was cut from an older base
+ * and pulled it into their audit set — which is luck, not process.
+ *
+ * Taking the text as a parameter lets the controls below feed each predicate
+ * the inputs the repo does not currently contain, so both are graded on their
+ * own behaviour rather than on today's state.
+ */
+export const declaresUnbacked = (runbook: string, stack: string): boolean =>
+    new RegExp(`^>?\\s*#{0,4}\\s*\`?${stack}\`?\\s+is\\s+(STILL\\s+)?unbacked`, 'im').test(runbook);
+
+export const namesAsTarget = (workflow: string, stack: string): boolean =>
+    new RegExp(`Restore Test \\(${stack}\\)|target:\\s*${stack}\\b`).test(workflow);
+
 /** A stack is drilled when the workflow names it as a target. */
-const isDrilled = (s: string) =>
-    new RegExp(`Restore Test \\(${s}\\)|target:\\s*${s}\\b`).test(WORKFLOW);
+const isDrilled = (s: string) => namesAsTarget(WORKFLOW, s);
 
 /**
  * A stack is declared unbacked when the runbook says so about it by name.
  * Matched on a heading rather than anywhere in the file, so a passing mention
  * in the history section cannot be read as the declaration.
  */
-const isDeclaredUnbacked = (s: string) =>
-    new RegExp(`^>?\\s*#{0,4}\\s*\`?${s}\`?\\s+is\\s+(STILL\\s+)?unbacked`, 'im').test(RUNBOOK);
+const isDeclaredUnbacked = (s: string) => declaresUnbacked(RUNBOOK, s);
+
+describe('both predicates can actually select — the controls (#2365-adjacent)', () => {
+    // Synthetic input only. These must keep their teeth when the repo has no
+    // unbacked stack left, which is precisely the state that killed the
+    // original selector.
+
+    it('declaresUnbacked FIRES on the heading it is written for', () => {
+        expect(declaresUnbacked('### `foo` is unbacked', 'foo')).toBe(true);
+        // The STILL variant — the exact wording this runbook used for a year.
+        expect(declaresUnbacked('> ### `inflect-compliance` is STILL unbacked', 'inflect-compliance')).toBe(true);
+        // Backticks optional, blockquote optional, any heading depth.
+        expect(declaresUnbacked('#### foo is unbacked', 'foo')).toBe(true);
+    });
+
+    it('declaresUnbacked does NOT fire on a passing mention', () => {
+        // The whole reason it matches a HEADING. A history section that says
+        // the stack WAS unbacked must not read as a live declaration — which
+        // is not hypothetical: the runbook now contains exactly such prose.
+        expect(declaresUnbacked('It used to be the case that `foo` is unbacked, but no longer.', 'foo')).toBe(false);
+        expect(declaresUnbacked('a warning that the sibling stack had no backup at all', 'foo')).toBe(false);
+        // And it must be about THIS stack.
+        expect(declaresUnbacked('### `bar` is unbacked', 'foo')).toBe(false);
+    });
+
+    it('declaresUnbacked reads the real runbook as NOT declaring either stack unbacked', () => {
+        // The live assertion, stated positively so the current state is a
+        // recorded fact rather than an inference from a passing negation.
+        for (const stack of STACKS) {
+            expect({ stack, declaredUnbacked: declaresUnbacked(RUNBOOK, stack) })
+                .toEqual({ stack, declaredUnbacked: false });
+        }
+    });
+
+    it('namesAsTarget FIRES on both forms, and not on a near miss', () => {
+        expect(namesAsTarget('  - target: agrent', 'agrent')).toBe(true);
+        expect(namesAsTarget('name: "Restore Test (agrent)"', 'agrent')).toBe(true);
+        expect(namesAsTarget('  - target: inflect-compliance', 'inflect-compliance')).toBe(true);
+        // A workflow that mentions the stack in prose but targets nothing.
+        expect(namesAsTarget('# agrent is drilled elsewhere', 'agrent')).toBe(false);
+        expect(namesAsTarget('', 'agrent')).toBe(false);
+    });
+
+    it('a stack in NEITHER state is detectable — the case the pair exists for', () => {
+        // The guard's real subject, exercised on synthetic text because the
+        // repo cannot currently produce it. Without this, the pair's whole
+        // purpose is untested whenever every stack happens to be drilled.
+        const workflow = '  - target: agrent';
+        const runbook = '### `agrent` is unbacked';
+        const orphan = 'ghost-stack';
+        expect(namesAsTarget(workflow, orphan)).toBe(false);
+        expect(declaresUnbacked(runbook, orphan)).toBe(false);
+        // Both false === in neither state === what must fail the live assertion.
+        expect(namesAsTarget(workflow, orphan) !== declaresUnbacked(runbook, orphan)).toBe(false);
+        // And a stack in BOTH states is equally a failure.
+        expect(namesAsTarget('  - target: agrent', 'agrent')).toBe(true);
+        expect(declaresUnbacked('### `agrent` is unbacked', 'agrent')).toBe(true);
+        expect(namesAsTarget('  - target: agrent', 'agrent') !== declaresUnbacked('### `agrent` is unbacked', 'agrent')).toBe(false);
+    });
+});
 
 describe('the restore drill targets what exists (#2332)', () => {
     it('[drill-targets] ranges over the real set of stacks', () => {
