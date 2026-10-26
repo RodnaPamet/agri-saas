@@ -55,6 +55,7 @@ import {
     staleData,
 } from '@/lib/errors/types';
 import { parseRecordedDay } from '@/lib/operations/recorded-day';
+import { sameTreatedArea } from '@/lib/operations/printed-area';
 import { classifyFromRows, classifyHandle } from './handle-kind';
 import { readCorrectionTrail, type CorrectionTrail } from './correction-trail';
 import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
@@ -151,7 +152,10 @@ function changedAreas(
         const line = previous.lines.find((l) => l.parcelId === id);
         // An ADDED parcel is not an area change — it arrives with its area.
         if (!line) continue;
-        if (line.treatedAreaHa !== next) out.set(id, next);
+        // Same resolution as the treatments route, same reason (#2388) — and
+        // shared rather than restated, so the two cannot answer differently
+        // about one farm's parcel.
+        if (!sameTreatedArea(line.treatedAreaHa, next)) out.set(id, next);
     }
     return out.size === 0 ? null : out;
 }

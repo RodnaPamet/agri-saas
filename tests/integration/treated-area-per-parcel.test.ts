@@ -30,7 +30,10 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
-import { recordDiaryTreatment } from '@/app-layer/usecases/diary-treatment';
+import {
+    recordDiaryTreatment,
+    correctDiaryTreatment,
+} from '@/app-layer/usecases/diary-treatment';
 import { markOperationParcel } from '@/app-layer/usecases/field-operation';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 
@@ -266,5 +269,63 @@ describeFn('treated area per parcel', () => {
         });
         expect(after?.status).toBe('PENDING');
         expect(after?.treatedAreaHa).toBeNull();
+    });
+
+    it('a CORRECTION re-sending the displayed figure is a no-op (#2388)', async () => {
+        // #2308's ruling applied to EQUALITY instead of to the bound, which is
+        // what #2388 was. `parcelOdd` is 3.2478 ha and shows as 32,48 дка; a
+        // form that re-sends what it displays returns 3.248 ha.
+        //
+        // Compared exactly, that read as a change on a parcel nobody touched:
+        // the correction wrote a `TreatmentCorrection` row naming
+        // `treatedAreaHa`, and bumped the group version — invalidating any
+        // `If-Match` another client held, on a record a farmer signs.
+        const handle = `${TAG}-noop-area`;
+        await recordDiaryTreatment(
+            ctx(),
+            { ...base([parcelOdd]), parcels: [{ parcelId: parcelOdd, treatedAreaHa: 3.2478 }] },
+            handle,
+        );
+        const before = await prisma.treatmentGroup.findUniqueOrThrow({
+            where: { tenantId_id: { tenantId, id: handle } },
+            select: { version: true },
+        });
+
+        // The displayed figure, typed back — a difference the register cannot
+        // print.
+        await correctDiaryTreatment(ctx(), handle, {
+            parcels: [{ parcelId: parcelOdd, treatedAreaHa: 3.248 }],
+        });
+
+        const after = await prisma.treatmentGroup.findUniqueOrThrow({
+            where: { tenantId_id: { tenantId, id: handle } },
+            select: { version: true },
+        });
+        expect(after.version).toBe(before.version);
+        const trail = await prisma.treatmentCorrection.count({
+            where: { tenantId, groupId: handle },
+        });
+        expect(trail).toBe(0);
+    });
+
+    it('but a correction the register CAN print still lands', async () => {
+        // The control. One дка hundredth is 32,48 vs 32,47 on the document, so
+        // it is a real correction and must stay one — otherwise the fix above
+        // would be a tolerance that swallows edits.
+        const handle = `${TAG}-real-area`;
+        await recordDiaryTreatment(
+            ctx(),
+            { ...base([parcelOdd]), parcels: [{ parcelId: parcelOdd, treatedAreaHa: 3.2478 }] },
+            handle,
+        );
+        await correctDiaryTreatment(ctx(), handle, {
+            parcels: [{ parcelId: parcelOdd, treatedAreaHa: 3.247 }],
+        });
+        const trail = await prisma.treatmentCorrection.findMany({
+            where: { tenantId, groupId: handle },
+            select: { changedFields: true },
+        });
+        expect(trail).toHaveLength(1);
+        expect(trail[0].changedFields).toContain('treatedAreaHa');
     });
 });

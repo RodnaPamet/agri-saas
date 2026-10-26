@@ -23,8 +23,18 @@ export function haToDca(areaHa: number): number {
 
 /**
  * Convert a decare area to hectares — the inverse of {@link haToDca}.
- * Same `DCA_PER_HA` factor (divide instead of multiply), so a value
- * round-trips through both functions unchanged.
+ * Same `DCA_PER_HA` factor, divide instead of multiply.
+ *
+ * **The round trip is NOT exact**, and this sentence used to say it was.
+ * Measured 2026-10-26 over every four-decimal hectare value a `Decimal(12,4)`
+ * column can hold between 0.0001 and 50.0000 ha: **47,918 of 500,000 (9.58%)
+ * do not come back identical.** `0.0017` becomes `0.0016999999999999997`,
+ * because `×10` then `÷10` is not an identity in binary floating point.
+ *
+ * The difference is ~1e-19 and vanishes the moment the value is stored, so it
+ * matters only where two areas are COMPARED. Use `sameTreatedArea` from
+ * `@/lib/operations/printed-area` for that — never `===` — and see #2388 for
+ * what comparing exactly was costing.
  *
  * Also the correct operation for the OTHER direction a rate travels at
  * the UI boundary: a кг/дка figure the user typed is per-decare, and a

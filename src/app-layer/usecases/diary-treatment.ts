@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { haToDca } from '@/lib/agro/rate-calc';
-import { exceedsParcel } from '@/lib/operations/printed-area';
+import { exceedsParcel, sameTreatedArea } from '@/lib/operations/printed-area';
 import { parseRecordedDay } from '@/lib/operations/recorded-day';
 import {
     assertRecordedDay,
@@ -1464,7 +1464,12 @@ function changedTreatedAreas(
     if (input.parcels === undefined) return null;
     const was = new Map(previous.lines.map((l) => [l.parcelId, l.treatedAreaHa]));
     const now = new Map(input.parcels.map((p) => [p.parcelId, p.treatedAreaHa ?? null]));
-    const moved = [...now].some(([id, area]) => (was.get(id) ?? null) !== area);
+    // At the REGISTER's resolution, not exactly (#2388). A client re-sending a
+    // retained area was told it had changed — from float noise in the дка
+    // round trip (9.58% of four-decimal values), or from a field that shows дка
+    // to two places and so returns hectares to three. Either way the correction
+    // stopped being a no-op and logged a change on a parcel nobody touched.
+    const moved = [...now].some(([id, area]) => !sameTreatedArea(was.get(id) ?? null, area));
     return moved ? now : null;
 }
 
