@@ -50,6 +50,28 @@ describe('featureFlagsCapability (#2009)', () => {
         // none. `social.farm-media` is the one that mattered — with
         // `social.public-profile` present, the public page rendered while every
         // photograph 404'd.
+        //
+        // ## Scoped to the keys that existed THEN, deliberately (#2421)
+        //
+        // This asserted `missingRows` with exact equality against the whole
+        // current registry, so adding any new referenced key broke it — which
+        // it did the moment `agro.orthophoto` was registered. Neither obvious
+        // repair is right: putting the new key in the rows above would claim
+        // production held a row it did not, and adding it to the expectation
+        // would make a 2026-10-24 measurement depend on what the code gates
+        // on today.
+        //
+        // The claim worth keeping is historical: of the keys referenced THEN,
+        // exactly these two had no row. Intersecting with that set says it
+        // precisely and cannot be disturbed by a seventh key.
+        const REFERENCED_ON_2026_10_24 = [
+            'integrations.google',
+            'notifications.sse',
+            'social.farm-media',
+            'social.farm-registration',
+            'social.person-blocks',
+            'social.public-profile',
+        ];
         const r = await featureFlagsCapability(
             reader([
                 'notifications.sse',
@@ -59,7 +81,10 @@ describe('featureFlagsCapability (#2009)', () => {
             ]),
         );
         expect(r.state).toBe('incomplete');
-        expect(r.missingRows).toEqual(['integrations.google', 'social.farm-media']);
+        expect(r.missingRows.filter((k) => REFERENCED_ON_2026_10_24.includes(k))).toEqual([
+            'integrations.google',
+            'social.farm-media',
+        ]);
         expect(r.orphanRows).toBe(0);
     });
 

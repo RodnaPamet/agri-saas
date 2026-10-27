@@ -66,6 +66,18 @@
  * `isFeatureEnabled` under `src/`. The guard holds that correspondence.
  */
 export const REFERENCED_FLAG_KEYS = [
+    // #2421 — «Ортофотокарта». Dark by default and expected to STAY dark in
+    // production until МЗХ answers the owner's licence enquiry; on for the
+    // owner's tenant and the testers' cohort meanwhile, which is a row with
+    // `enabled` true AND cohorts set (they compose as AND).
+    //
+    // `feature-flags-capability` will report this key in `missingRows` until
+    // that row is inserted, and that is the correct reading rather than noise:
+    // the key gates three routes and there is no row. Inserting the row with
+    // the cohorts is what distinguishes "deliberately limited" from
+    // "nobody ever inserted it" — the `social.public-profile` failure that
+    // capability exists to report.
+    'agro.orthophoto',
     'integrations.google',
     'notifications.sse',
     'social.farm-media',

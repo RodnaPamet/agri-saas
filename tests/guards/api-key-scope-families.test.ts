@@ -27,10 +27,11 @@ const TENANT_API_DIR = path.join(REPO_ROOT, 'src/app/api/t/[tenantSlug]');
 /**
  * Families deliberately withheld from key access.
  *
- * Empty today: every family is scopable, because a scope must still be GRANTED
- * for a key to use one, and withholding a family here is a second, blunter
- * control that nobody has needed yet. Listing one is how to refuse a surface
- * to machine clients outright — `sso` or `security` would be the candidates.
+ * Listing a family here refuses the surface to machine clients outright — a
+ * second, blunter control than withholding the scope, since a scope must still
+ * be GRANTED for a key to use one. Two entries so far, and neither is about
+ * permissions: one is about whose CONSENT an act carries, the other about
+ * whose IMAGERY is being redistributed.
  */
 const DELIBERATELY_EXCLUDED: readonly string[] = [
     // P6.1 (#1810). `PUT /farm-brand/publication` is the only route here, and
@@ -49,6 +50,25 @@ const DELIBERATELY_EXCLUDED: readonly string[] = [
     // Revisit if an integration ever has a real reason to publish, which would
     // also need an answer for whose consent it is acting under.
     'farm-brand',
+    // #2421 «Ортофотокарта». Three read-only routes that proxy МЗХ aerial
+    // imagery, flight dates and the Ministry's physical blocks.
+    //
+    // Excluded rather than scoped for a licence reason, not a permission one.
+    // МЗХ publishes no licence for this imagery — the WMS's `Fees: NONE` /
+    // `AccessConstraints: NONE` are GeoServer defaults and the INSPIRE record
+    // cites an Art. 13(1)(d) IP limitation — and the owner is asking them in
+    // writing. A machine client holding a key could pull national imagery
+    // through our proxy in bulk, at our address, which is precisely the use
+    // that enquiry is about. A human panning a map is not.
+    //
+    // No client needs it either: the phone authenticates with a native JWE
+    // bearer and the web with a cookie session, so nothing is lost. The
+    // current behaviour is already refusal, so this entry changes nothing at
+    // runtime — it records that the refusal is a decision.
+    //
+    // Revisit if МЗХ grants terms that cover redistribution to third-party
+    // integrations, which is a different question from the one being asked.
+    'ortho',
 ];
 
 /**

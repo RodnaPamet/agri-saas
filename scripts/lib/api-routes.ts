@@ -49,13 +49,37 @@ export const NON_SURFACE_ROUTE_FILES: ReadonlySet<string> = new Set([
  */
 const ROUTE_FILE_FLOOR = 300;
 
-const SKIP_DIRS = ['node_modules', '.next', '.git', 'dist', 'coverage'];
+/**
+ * Directories the App Router cannot route through, so the walk may skip them.
+ *
+ * This was a NAME list — `['node_modules', '.next', '.git', 'dist',
+ * 'coverage']` — and that hid a real route. The walk starts at
+ * `src/app/api`, where a build artefact cannot legitimately appear, so the
+ * list was purely defensive; but `coverage` is also a perfectly good URL
+ * segment, and `GET /api/t/{tenantSlug}/ortho/coverage` (#2421) was therefore
+ * invisible to BOTH consumers of this module — the inventory ledger and
+ * `openapi-paths-complete`, whose whole claim is "every route on disk is
+ * accounted for".
+ *
+ * Measured before changing it: the only directory in the entire API tree
+ * matching that list was `ortho/coverage`, so the four other names had never
+ * excluded anything, and no route file sits under a dot- or
+ * underscore-prefixed directory, so this rule excludes nothing that exists.
+ *
+ * The rule is now Next's own rather than a guess at artefact names: a
+ * directory beginning with `.` or `_` is not a route segment (Next treats
+ * `_foo` as private and ignores dotfiles). Everything else IS a segment and
+ * must be walked, whatever it happens to be called.
+ */
+function isNonRoutableDir(name: string): boolean {
+    return name.startsWith('.') || name.startsWith('_');
+}
 
 function walk(dir: string, out: string[]): string[] {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-            if (SKIP_DIRS.includes(entry.name)) continue;
+            if (isNonRoutableDir(entry.name)) continue;
             walk(full, out);
         } else if (entry.isFile() && entry.name === 'route.ts') {
             out.push(full);
