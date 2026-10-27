@@ -23,15 +23,25 @@ name: Dependabot updater health
 
 on:
     schedule:
-        # Daily at 07:00 UTC. Dependabot's own schedule runs earlier in the
-        # morning, so by 07:00 the day's attempts have completed — and this is
-        # an hour after the flake-ledger probe and an hour before nothing else,
-        # so no two scheduled jobs compete for the same attention.
+        # Every 6 hours — owner ruling for issue 2422, 2026-10-27. Was daily at
+        # 07:00 UTC, and that cadence cost most of a day: the security updater
+        # began failing at 10:16 and the next scheduled report would have been
+        # 07:00 the following morning, roughly 20 hours of silence while CVE
+        # bumps for undici, brace-expansion and ip-address were not arriving.
+        #
+        # Same shape as the backup gap in restore-test.yml: a correct check whose
+        # interval is longer than the time its subject takes to matter. A nightly
+        # pg_dump is fine to check daily; "are security updates arriving at all"
+        # is not.
+        #
+        # Four times a day needs a less eager verdict, or it files on every
+        # transient red — see the SUSTAINED rule in the script. The two changes
+        # belong together and must not be separated.
         #
         # Daily rather than weekly: the gap this closes is "four failures in one
         # day went unreported", and a weekly probe would have taken until the
         # following Monday to say so.
-        - cron: "0 7 * * *"
+        - cron: "0 */6 * * *"
     workflow_dispatch:
 
 permissions:

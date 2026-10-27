@@ -53,7 +53,13 @@ set -euo pipefail
 WF_NAME="Dependabot Updates"
 TITLE="Dependabot Updates has failed with no success since"
 WINDOW=20
-REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+REPO="${GITHUB_REPOSITORY:-verdict-only/none}"
+# Verdict-only runs supply their own history and never reach the API, so the
+# repo is not required for them. Every other path still demands it.
+if [ "${HEALTH_VERDICT_ONLY:-}" != "1" ] && [ "$REPO" = "verdict-only/none" ]; then
+    echo "::error::GITHUB_REPOSITORY is required"
+    exit 1
+fi
 
 die() {
     echo "::error::$1"
@@ -65,25 +71,33 @@ die() {
 # Not by id. The id (295247577 here) is per-repository, unverifiable from this
 # file, and would silently match nothing on a fork — a probe that cannot fail
 # loudly when it is pointed at the wrong thing.
-WF_ERR="$(mktemp)"
-trap 'rm -f "$WF_ERR"' EXIT
-if ! WF_LIST="$(gh api "repos/${REPO}/actions/workflows" --paginate \
-    --jq ".workflows[] | select(.name == \"${WF_NAME}\") | .id" 2>"$WF_ERR")"; then
-    die "could not list workflows in ${REPO}: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
-fi
-WF_ID="$(printf '%s' "$WF_LIST" | head -1)"
+if [ "${HEALTH_VERDICT_ONLY:-}" = "1" ]; then
+    if [ -z "${HEALTH_RUNS_JSON:-}" ]; then
+        echo "::error::HEALTH_VERDICT_ONLY=1 needs HEALTH_RUNS_JSON. Refusing to judge an empty history, which would report the updater healthy having examined nothing."
+        exit 1
+    fi
+    RUNS="$HEALTH_RUNS_JSON"
+else
+    WF_ERR="$(mktemp)"
+    trap 'rm -f "$WF_ERR"' EXIT
+    if ! WF_LIST="$(gh api "repos/${REPO}/actions/workflows" --paginate \
+        --jq ".workflows[] | select(.name == \"${WF_NAME}\") | .id" 2>"$WF_ERR")"; then
+        die "could not list workflows in ${REPO}: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
+    fi
+    WF_ID="$(printf '%s' "$WF_LIST" | head -1)"
 
-if [ -z "$WF_ID" ]; then
-    # Not "healthy". GitHub registers this workflow as soon as a
-    # `dependabot.yml` exists, so its absence means the config is gone or the
-    # name changed — either way this probe is now blind and must say so.
-    die "no workflow named '${WF_NAME}' in ${REPO}. Dependabot config removed, or GitHub renamed it — this probe is blind until that is reconciled."
-fi
+    if [ -z "$WF_ID" ]; then
+        # Not "healthy". GitHub registers this workflow as soon as a
+        # `dependabot.yml` exists, so its absence means the config is gone or the
+        # name changed — either way this probe is now blind and must say so.
+        die "no workflow named '${WF_NAME}' in ${REPO}. Dependabot config removed, or GitHub renamed it — this probe is blind until that is reconciled."
+    fi
 
-if ! RUNS="$(gh api "repos/${REPO}/actions/workflows/${WF_ID}/runs?per_page=${WINDOW}" \
-    --jq '[.workflow_runs[] | select(.status == "completed")
-           | {created_at, conclusion}]' 2>"$WF_ERR")"; then
-    die "could not read the run history for workflow ${WF_ID}: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
+    if ! RUNS="$(gh api "repos/${REPO}/actions/workflows/${WF_ID}/runs?per_page=${WINDOW}" \
+        --jq '[.workflow_runs[] | select(.status == "completed")
+               | {created_at, conclusion}]' 2>"$WF_ERR")"; then
+        die "could not read the run history for workflow ${WF_ID}: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
+    fi
 fi
 
 TOTAL="$(printf '%s' "$RUNS" | jq 'length')"
@@ -102,13 +116,56 @@ echo "[dependabot-health] ${TOTAL} completed run(s) examined; ${FAILED_N} not su
 echo "[dependabot-health] newest success: ${LAST_OK:-none in window}"
 echo "[dependabot-health] newest failure: ${LAST_BAD:-none in window}"
 
+# Failures with NO success after them, and how far apart the first and last are.
+UNANSWERED="$(printf '%s' "$RUNS" | jq -r --arg ok "$LAST_OK" \
+    '[.[] | select(.conclusion != "success") | select($ok == "" or .created_at > $ok) | .created_at]')"
+UNANSWERED_N="$(printf '%s' "$UNANSWERED" | jq 'length')"
+SPAN_MIN="$(printf '%s' "$UNANSWERED" | jq -r \
+    'if length < 2 then 0 else (((max | fromdateiso8601) - (min | fromdateiso8601)) / 60 | floor) end')"
+
+echo "[dependabot-health] failures with no success after them: ${UNANSWERED_N}, spanning ${SPAN_MIN} min"
+
+# The span, not merely a count of two, is what separates a dead updater from one
+# batch with a bad leg: the concurrency noted at the top means two failures can
+# be two legs of the SAME batch. Calibrated on the outage that prompted the
+# 6-hourly move — 10:16 and 11:07 on 2026-10-27, 51 minutes apart, no success
+# since 18:00 the day before.
+SUSTAINED_MIN=20
+
 DOWN=0
 if [ -n "$LAST_BAD" ]; then
     if [ -z "$LAST_OK" ]; then
-        DOWN=1   # failures only, in the whole window
+        # No success ANYWHERE in the window. The whole window is red, so the
+        # span test is not the right question to ask of it.
+        DOWN=1
     elif [[ "$LAST_BAD" > "$LAST_OK" ]]; then
-        DOWN=1   # ISO-8601 UTC strings compare lexicographically
+        # ISO-8601 UTC strings compare lexicographically.
+        if [ "$UNANSWERED_N" -ge 2 ] && [ "$SPAN_MIN" -ge "$SUSTAINED_MIN" ]; then
+            DOWN=1
+        else
+            echo "[dependabot-health] newest run is red, but NOT sustained (${UNANSWERED_N} failure(s) over ${SPAN_MIN} min; needs 2 over ${SUSTAINED_MIN} min) — a per-ecosystem hiccup rather than an outage."
+        fi
     fi
+fi
+
+# ── The verdict seam, for tests ─────────────────────────────────────────────
+#
+# Set BOTH `HEALTH_VERDICT_ONLY=1` and `HEALTH_RUNS_JSON` to drive the verdict
+# above over supplied history, print it, and stop before anything is written.
+# The test therefore exercises the arithmetic PRODUCTION uses rather than a
+# copy of it that can drift.
+#
+# Placed here, after the verdict and before every write, so it needs no
+# conditionals threaded through the API reads — an earlier attempt did that and
+# promptly tripped `set -u` on an unbound variable, which is the kind of
+# fragility a once-every-six-hours script should not carry.
+#
+# TWO variables, because a single stray `HEALTH_RUNS_JSON` would otherwise
+# replace the real history with whatever it held and the probe would report on
+# data nobody fetched.
+if [ "${HEALTH_VERDICT_ONLY:-}" = "1" ]; then
+    echo "[dependabot-health] VERDICT down=${DOWN} unanswered=${UNANSWERED_N} span_min=${SPAN_MIN}"
+    exit 0
 fi
 
 if ! EXISTING="$(gh issue list --repo "$REPO" --state open --limit 50 \
