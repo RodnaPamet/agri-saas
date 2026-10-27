@@ -40,6 +40,24 @@ export interface TenantContextValue {
      * farm that should never see it.
      */
     isPlatformTenant?: boolean;
+    /**
+     * #2019 — is the `integrations.google` runtime flag on for this caller?
+     *
+     * Resolved server-side in the tenant layout because there is no
+     * client-side flags hook, and a client surface that needs it otherwise
+     * cannot ask. The two Drive-export buttons are the consumers; each ANDs it
+     * with `permissions.canAdmin`, which is the other half of the server's
+     * gate.
+     *
+     * It carries the FLAG, not the composite decision, so a surface that
+     * someday has a different permission rule does not inherit this one's.
+     *
+     * Polarity matches `isPlatformTenant` rather than its two neighbours
+     * above: absent ⇒ false, degrading CLOSED. The flag is default-OFF, so for
+     * most tenants the export route answers 404 — and a button that 404s is
+     * worse than an absent one.
+     */
+    googleIntegrationEnabled?: boolean;
     permissions: {
         canRead: boolean;
         canWrite: boolean;

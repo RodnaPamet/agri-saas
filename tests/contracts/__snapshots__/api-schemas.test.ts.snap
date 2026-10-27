@@ -7102,6 +7102,60 @@ exports[`API contract — per-schema snapshots schema: FarmProfileStaleDataError
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmRecordDriveExportRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "string",
+      "minLength": 1
+    },
+    "to": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "description": "The period for exporting a location’s БАБХ ДНЕВНИК to Google Drive. Declared once in \`src/lib/schemas/index.ts\` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555)."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmRecordDriveExportResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "fileId": {
+      "type": "string",
+      "description": "Google’s file id. The only handle for asking Drive what was sent."
+    },
+    "fileName": {
+      "type": "string",
+      "description": "The name in Drive, which carries the export DATE and so differs from the download filename. \`drive.file\` cannot overwrite and Drive permits duplicate names, so without the date a re-export leaves two identically named files and no way to tell which is newer without opening both."
+    },
+    "webViewLink": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Google’s own link to the file, or null when the upload response omitted it."
+    },
+    "folderCreated": {
+      "type": "boolean",
+      "description": "True when THIS export created the folder — the first export, or because the previous folder had been deleted or moved to the bin. Lets the UI explain an apparently empty folder instead of leaving someone to wonder where earlier exports went."
+    }
+  },
+  "required": [
+    "fileId",
+    "fileName",
+    "webViewLink",
+    "folderCreated"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmRecordGenerateRequest 1`] = `
 "{
   "type": "object",

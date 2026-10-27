@@ -428,23 +428,21 @@ function classCodes(src: string): string[] {
  * stops being emitted, so this list cannot outlive what it excuses.
  */
 const UNDOCUMENTED_BASELINE: readonly string[] = [
-    // #2019's Drive upload codes. `uploadToDrive` exists; NO ROUTE CALLS IT
-    // YET, so there is no operation to name them on — the route is the next
-    // increment, and it waits on a decision about who may export (the token
-    // resolver is `assertCanAdmin`, while the journal is EDITOR-writable).
+    // #2019's three Drive codes LEFT this list when the export routes landed,
+    // which is what the entry above them predicted: "the PR that adds the route
+    // cannot leave these three behind — it goes red until it deletes them."
+    // Both export operations now name all four Drive refusals in the spec, via
+    // `DRIVE_EXPORT_REFUSALS` in `src/lib/openapi/paths/helpers.ts`, so the
+    // 'a baselined code that HAS been documented is removed' test would have
+    // struck them had this diff left them here. It did not have to.
     //
-    // Baselined rather than documented on an unrelated operation, which is
-    // what `COMPANY_NAME_TAKEN` above does for the same reason: naming a code
-    // on a route that cannot raise it is worse than a visible line here.
+    // The decision they were waiting on — who may export, given the token
+    // resolver is `assertCanAdmin` while the journal is EDITOR-writable — was
+    // ruled by the owner on 2026-10-26: admin only, matching the token. So a
+    // writer can download a document and not export it, stated on the usecase.
     //
-    // Neither direction can rot silently. 'the baseline has no stale entries'
-    // strikes them the moment `drive.ts` stops emitting them; 'a baselined code
-    // that HAS been documented is removed from the baseline' strikes them the
-    // moment the export route names them in the spec. So the PR that adds the
-    // route cannot leave these three behind — it goes red until it deletes them.
-    'GOOGLE_DRIVE_NOT_GRANTED',
-    'GOOGLE_DRIVE_REFUSED',
-    'GOOGLE_GRANT_REVOKED',
+    // `GOOGLE_NOT_CONNECTED` was added by the same PR and never needed a line
+    // here: it was documented in the diff that introduced it.
 
     // All three upload codes LEFT this list in #1861, which documented
     // `POST /api/account/avatar` — the route that raises them.

@@ -7,6 +7,7 @@ import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getTenantPlan, getAvailableModulesForTenant } from '@/lib/entitlements-server';
 import { hasVisiblePromotions } from '@/app-layer/usecases/promotions';
 import { isPlatformTenant } from '@/lib/auth/platform-support';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 
 /**
  * This layout depends on auth cookies and database queries — it can never be statically generated.
@@ -61,7 +62,7 @@ export default async function TenantLayout({
         if (isNextControlFlow(error)) throw error;
         notFound();
     }
-    const [planRaw, availableModules, promotionsAvailable] =
+    const [planRaw, availableModules, promotionsAvailable, googleIntegrationEnabled] =
         await Promise.all([
             getTenantPlan(serverCtx.tenant.id),
             getAvailableModulesForTenant(serverCtx.tenant.id),
@@ -69,6 +70,11 @@ export default async function TenantLayout({
             // identical for every tenant, joins the existing Promise.all so it
             // costs no extra latency.
             hasVisiblePromotions(),
+            // #2019 — resolved here because there is no client-side flags hook
+            // and the two Drive-export buttons are client surfaces, one of
+            // which has no server component to pass a prop from. Joins the
+            // existing Promise.all for the same reason as the line above.
+            isFeatureEnabled('integrations.google', session.user.id),
         ]);
     const plan = planRaw ?? undefined;
 
@@ -83,6 +89,7 @@ export default async function TenantLayout({
             availableModules,
             promotionsAvailable,
             isPlatformTenant: isPlatformTenant(tenantSlug),
+            googleIntegrationEnabled,
             permissions: serverCtx.permissions,
             appPermissions: serverCtx.appPermissions,
         }}>

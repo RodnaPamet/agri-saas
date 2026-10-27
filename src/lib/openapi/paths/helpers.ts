@@ -143,6 +143,39 @@ export function rawErrorResponses(
  * carry, which is the whole point of a coded refusal: the description is where
  * a client learns what to switch on.
  */
+/**
+ * The four refusals a Google Drive export can give — #2019.
+ *
+ * Shared because BOTH export routes raise all four and both document them, and
+ * four code descriptions mirrored across two paths files is the drift the
+ * `request-body-declared-once` guard exists to stop, one level over.
+ *
+ * All four are 400-class: each is a state a person can fix, and none of them
+ * is a permission refusal. The admin gate answers 403 through
+ * `commonErrorResponses` like every other route.
+ *
+ * Three of these were in `UNDOCUMENTED_BASELINE` in
+ * `tests/contracts/error-codes-are-documented.test.ts` from #2369 to #2019:
+ * `drive.ts` raised them with no route naming them, and baselining was
+ * preferred to documenting them on an unrelated operation. Naming them here is
+ * what let those entries be deleted — and the ratchet works both ways, so a
+ * documented code that stayed baselined would have gone red too.
+ */
+export const DRIVE_EXPORT_REFUSALS =
+    '`GOOGLE_NOT_CONNECTED` — no Google account is connected for this farm. An administrator '
+    + 'connects one in Settings → Integrations.\n\n'
+    + '`GOOGLE_DRIVE_NOT_GRANTED` — connected, but Drive was never granted. Google’s consent '
+    + 'screen lets the scopes be ticked individually, so this is an ordinary state rather than a '
+    + 'corrupt one, and it is refused BEFORE the document is rendered. The fix is to reconnect '
+    + 'and grant Drive.\n\n'
+    + '`GOOGLE_GRANT_REVOKED` — the stored refresh token no longer works. The server already '
+    + 'refreshes an expired access token before trying, so a 401 from Google after that means '
+    + 'the grant itself was withdrawn, which only reconnecting fixes.\n\n'
+    + '`GOOGLE_DRIVE_REFUSED` — Google refused the write for its own reasons, most often a full '
+    + 'Drive. Distinguished from `GOOGLE_DRIVE_NOT_GRANTED` deliberately: both arrive as a 403, '
+    + 'and telling a farmer to reconnect when their storage is full would be wrong advice '
+    + 'confidently given.';
+
 export function codedErrorResponses(
     spec: Record<number, string>,
 ): NonNullable<RouteConfig['responses']> {
