@@ -55,7 +55,7 @@ const ctx = makeRequestContext('ADMIN', { tenantId: 'tenant-1', userId: 'u-1' })
 const line = (over: Record<string, unknown> = {}) => ({
     category: 'FERTILIZER' as const,
     amount: 100,
-    currency: 'BGN',
+    currency: 'EUR',
     incurredOn: '2026-03-01T00:00:00.000Z',
     ...over,
 });
@@ -65,7 +65,7 @@ const row = (id: string, key: string | null) => ({
     id,
     category: 'FERTILIZER',
     amount: 100,
-    currency: 'BGN',
+    currency: 'EUR',
     incurredOn: new Date('2026-03-01T00:00:00.000Z'),
     supplier: null,
     invoiceFileId: null,
@@ -184,6 +184,30 @@ describe('createCostEntryBatch', () => {
         ).rejects.toThrow();
 
         expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+});
+
+describe('the currency a batch may be saved in — #2398', () => {
+    it('refuses a non-euro line before writing ANY of them', async () => {
+        // `prepareCostEntry` runs over every line FIRST, so a sheet cannot
+        // half-commit and then discover line 2 is in lev. The refusal is
+        // CODED, so the client can name the offending line rather than
+        // rendering a generic 400.
+        await expect(
+            createCostEntryBatch(ctx, { lines: [line(), line({ currency: 'BGN' })] }),
+        ).rejects.toThrow(/recorded in euro/);
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a sheet whose lines use different euro SPELLINGS', async () => {
+        // 'EUR' and 'EURO' are the same currency, and both exist in
+        // production. Refusing a mixed-spelling sheet would reject a correct
+        // import for a cosmetic reason.
+        await createCostEntryBatch(ctx, {
+            lines: [line({ currency: 'EUR' }), line({ currency: 'euro' })],
+        });
+        const stored = mockDb.costEntry.create.mock.calls.map((c: any) => c[0].data.currency);
+        expect(stored).toEqual(['EUR', 'EURO']);
     });
 });
 

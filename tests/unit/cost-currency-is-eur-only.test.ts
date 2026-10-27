@@ -6,7 +6,7 @@
  * currencies, one pegged to the other. These assert the normalisation that
  * resolves that, including the exact production shape.
  */
-import { normaliseCostToEur, allResolveToEur } from '@/lib/grain/currencies';
+import { normaliseCostToEur, allResolveToEur, isStoredAsEuro } from '@/lib/grain/currencies';
 import { BGN_PER_EUR, bgnToEur } from '@/lib/exchange/currency';
 
 describe('normaliseCostToEur', () => {
@@ -76,5 +76,50 @@ describe('normaliseCostToEur', () => {
         // unconditionally would let a dollar row into a euro total.
         expect(allResolveToEur(['EUR', 'EURO', null, 'BGN'])).toBe(true);
         expect(allResolveToEur(['EUR', 'USD'])).toBe(false);
+    });
+});
+
+describe('isStoredAsEuro — the WRITE-path question, which is not the read one', () => {
+    it('says yes to every euro spelling, and to an unrecorded currency', () => {
+        for (const code of ['EUR', 'eur', ' EUR ', 'EURO', 'EUROS', '€', 'E', '', '   ', null, undefined]) {
+            expect({ code, stored: isStoredAsEuro(code) }).toEqual({ code, stored: true });
+        }
+    });
+
+    it('says NO to lev — and this is where it DIVERGES from allResolveToEur', () => {
+        // The whole reason this function exists. `allResolveToEur(['BGN'])` is
+        // TRUE, because normaliseCostToEur converts lev at the fixed peg and
+        // returns no refusal — it answers "can the rollup total this row".
+        //
+        // That is a different question from "is this row already euro", and
+        // using the rollup's answer on the save path was a real mistake caught
+        // before it shipped (#2398): it would have left the one production BGN
+        // row editable, let the form pin it to EUR, and relabelled 1.00 BGN as
+        // 1.00 EUR — overstating a farmer's cost by 1.95583x.
+        for (const code of ['BGN', 'bgn', 'лв', 'ЛВ.', 'BGL']) {
+            expect({ code, storedAsEuro: isStoredAsEuro(code), rollupCanTotal: allResolveToEur([code]) })
+                .toEqual({ code, storedAsEuro: false, rollupCanTotal: true });
+        }
+    });
+
+    it('says no to a foreign currency, where the two predicates AGREE', () => {
+        // Printed beside the divergence above so the contrast is visible: both
+        // say no here, and only lev splits them.
+        for (const code of ['USD', 'GBP', 'RON', 'PLN']) {
+            expect({ code, storedAsEuro: isStoredAsEuro(code), rollupCanTotal: allResolveToEur([code]) })
+                .toEqual({ code, storedAsEuro: false, rollupCanTotal: false });
+        }
+    });
+
+    it('classifies the owner farm\'s EXACT production mix into editable and locked', () => {
+        // 14 rows, measured read-only on production 2026-10-27: 10 'EUR',
+        // 3 'EURO', 1 'BGN'. Exactly ONE row locks.
+        const production = [...Array(10).fill('EUR'), ...Array(3).fill('EURO'), 'BGN'];
+        const locked = production.filter((c) => !isStoredAsEuro(c));
+        expect({ rows: production.length, locked }).toEqual({ rows: 14, locked: ['BGN'] });
+        // And the naive predicate, pinned as the mistake it is: a literal
+        // comparison against 'EUR' locks FOUR rows, three of them wrongly.
+        const naive = production.filter((c) => c !== 'EUR');
+        expect(naive).toEqual(['EURO', 'EURO', 'EURO', 'BGN']);
     });
 });

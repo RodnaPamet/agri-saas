@@ -260,7 +260,9 @@ const COST_WRITE_REFUSALS =
     'It is ONE code across the whole API rather than one per surface, so a client handles this refusal once. ' +
     'It answers **400 rather than 404 deliberately**: a 404 would confirm the row exists in SOME tenant, which is what a cross-tenant probe is for. The reference TYPE is returned; the id is not.' +
     '\n\n**The invoice** — `COST_ENTRY_INVOICE_FILE_NOT_FOUND`, `COST_ENTRY_INVOICE_UPLOAD_INCOMPLETE` (the upload never finished) and `COST_ENTRY_INVOICE_FILE_DELETED`.' +
-    '\n\n**The date** — `COST_ENTRY_INVALID_DATE`, with the field named in `params.field`.';
+    '\n\n**The date** — `COST_ENTRY_INVALID_DATE`, with the field named in `params.field`.' +
+    '\n\n**The currency** — `COST_ENTRY_CURRENCY_NOT_EUR`, with the submitted code in `params.currency`. Costs are recorded in euro: every euro spelling the old free-text field produced is accepted (`EUR`, `EURO`, `EUROS`, `\u20ac`, `E`), and anything else is refused. ' +
+    'Lev is refused too, which is the non-obvious part \u2014 the cost calculator CONVERTS lev at the fixed 1.95583 peg when totalling, so a lev row reads correctly on the calculator while being unsavable here. Those are deliberately different questions: \u201ccan this be totalled in euro\u201d and \u201cmay this be stored\u201d.';
 
 /**
  * The validation refusals both contract WRITES answer (#1712 batch 7).
@@ -275,6 +277,20 @@ const COST_WRITE_REFUSALS =
  * putting them in the shared block would tell a POST caller about three
  * refusals it cannot receive.
  */
+/**
+ * The one cost refusal reachable ONLY from `PATCH` (#2398).
+ *
+ * Separate from `COST_WRITE_REFUSALS` for the same reason the contract
+ * status-machine refusals below are: it comes from `assertCurrencyPatch`, which
+ * needs a STORED row to compare against, so a POST caller has no previous
+ * currency to be refused for, and documenting it on create would describe a 400
+ * that operation cannot answer.
+ */
+const COST_PATCH_ONLY_REFUSALS =
+    '\n\n**Changing a legacy row\u2019s currency is refused** \u2014 `COST_ENTRY_LEGACY_CURRENCY_LOCKED`, with the stored code in `params.stored`. ' +
+    'A row recorded before costs became euro-only keeps its own currency: it is neither converted nor relabelled. Refusing a change TO euro is the point rather than an oversight \u2014 rewriting `BGN` to `EUR` without touching `amount` would overstate the cost by the 1.95583 peg, silently. Delete and re-enter the row in euro instead. ' +
+    'Omitting `currency` is the no-op, and is what the form does, so editing such a row\u2019s description or supplier needs no special handling. Restating the row\u2019s OWN code verbatim is also accepted, because an unchanged value is not a change.';
+
 const CONTRACT_WRITE_REFUSALS =
     '\n\nValidation refusals, all 400s: `CONTRACT_COUNTERPARTY_REQUIRED`; ' +
     '`CONTRACT_VOLUME_NEGATIVE` and `CONTRACT_PRICE_NEGATIVE` (both must be zero or positive); ' +
@@ -444,7 +460,8 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         operationId: 'updateCostEntry',
         summary: 'Update a cost entry',
         description: 'Refusal code: `COST_ENTRY_NOT_FOUND` (404).' +
-            COST_WRITE_REFUSALS,
+            COST_WRITE_REFUSALS +
+            COST_PATCH_ONLY_REFUSALS,
         tags: ['Grain'],
         params: CostEntryParams,
         body: UpdateCostEntrySchema,
