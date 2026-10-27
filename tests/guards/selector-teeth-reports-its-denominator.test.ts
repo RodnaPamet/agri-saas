@@ -12,15 +12,28 @@
  * same sentence.
  *
  * That is the defect the tool exists to find, one level up — an empty selection
- * reading as a pass — and it was not rare. Measured across `tests/guards` +
- * `tests/guardrails` at `df269cddc`:
+ * reading as a pass — and it was not rare. So `auditFile` now returns
+ * `candidates`, the denominator, and the CLI reports `NOT AUDITED` when it is
+ * zero. This file pins both halves.
  *
- *     617  guard + guardrail files
- *     429  have module-level selectors  (auditable)
- *     188  have NONE                    (were getting the clean bill of health)
+ * ## The population is COMPUTED below, not quoted here
  *
- * So `auditFile` now returns `candidates`, the denominator, and the CLI reports
- * `NOT AUDITED` when it is zero. This file pins both halves.
+ * This docblock used to carry the figure:
+ *
+ *     617  guard + guardrail files      (at df269cddc)
+ *     429  have module-level selectors
+ *     188  have NONE
+ *
+ * By 2026-10-27 the real numbers were **829 / 614 / 215**, and nothing had
+ * noticed, because the figure lived in a comment and comments do not re-measure
+ * themselves. A quoted measurement rots exactly this way — see
+ * `a-number-that-does-not-move`.
+ *
+ * So the last test in this file derives it and PRINTS it on every run. The point
+ * is reporting, not ratcheting: it deliberately does not fail when the count
+ * grows, because deciding what to do about 215 unauditable guards (#2423) needs
+ * the number in front of someone first, and a floor chosen before that
+ * conversation would be a number nobody chose.
  *
  * Every assertion here drives the REAL tool — `selectorsIn` for the count, and
  * the CLI itself for the message. A test that restated the rule in its own
@@ -29,6 +42,8 @@
 import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
+
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const TOOL = path.join(ROOT, 'scripts/selector-teeth.mjs');
@@ -219,5 +234,150 @@ describe('--json emits JSON, especially when there is something to report', () =
     it('CONTROL: the empty case parsed even before the fix, so it proves nothing alone', () => {
         const empty = { results: [{ file: 'a.test.ts', candidates: 2, survivors: [], untestable: [] }], unexpected: [], stale: [] };
         expect(() => JSON.parse(formatReport(empty, true))).not.toThrow();
+    });
+});
+
+describe('the RUN reports its own denominator, not just each file (#2423)', () => {
+    const mixed = {
+        results: [
+            { file: 'a.test.ts', candidates: 3, survivors: [], untestable: [] },
+            { file: 'b.test.ts', candidates: 0, survivors: [], untestable: [] },
+            { file: 'c.test.ts', candidates: 2, survivors: [], untestable: [] },
+        ],
+        unexpected: [],
+        stale: [],
+    };
+
+    it('counts audited files, their selectors, and the unreachable remainder', () => {
+        const first = formatReport(mixed, false).split('\n')[0];
+        expect(first).toMatch(/3 file\(s\)/);
+        expect(first).toMatch(/2 audited/);
+        expect(first).toMatch(/5 selector\(s\)/);
+        expect(first).toMatch(/1 with no module-level selectors/);
+    });
+
+    it('the summary leads the report, so it is not buried under per-file lines', () => {
+        // With the audit sharded a run is routinely several files. A total that
+        // arrives after thirty lines is a total nobody reads.
+        expect(formatReport(mixed, false).startsWith('[selector-teeth] ')).toBe(true);
+    });
+
+    it('a run where EVERY file is unreachable says so in the summary', () => {
+        // The case that previously needed counting: every line says NOT AUDITED
+        // and the exit code is 0, so the summary is the only place the shape of
+        // the run appears.
+        const none = {
+            results: [
+                { file: 'a.test.ts', candidates: 0, survivors: [], untestable: [] },
+                { file: 'b.test.ts', candidates: 0, survivors: [], untestable: [] },
+            ],
+            unexpected: [],
+            stale: [],
+        };
+        const first = formatReport(none, false).split('\n')[0];
+        expect(first).toMatch(/0 audited/);
+        expect(first).toMatch(/\(0 selector\(s\)\)/);
+        expect(first).toMatch(/2 with no module-level selectors/);
+    });
+
+    it('JSON mode is UNCHANGED — the summary is a human line only', () => {
+        // The JSON shape is consumed by tooling and pinned elsewhere in this
+        // file; adding a key would be a silent contract change.
+        const parsed = JSON.parse(formatReport(mixed, true));
+        expect(Object.keys(parsed).sort()).toEqual(['results', 'stale', 'unexpected']);
+        expect(formatReport(mixed, true).trimEnd().endsWith('}')).toBe(true);
+    });
+});
+
+describe('what the audit cannot reach, computed rather than quoted (#2423)', () => {
+    /**
+     * Every guard file's selector count, in ONE node process.
+     *
+     * The FILE LIST comes from the shared `collectSourceFiles`, not from a
+     * `git ls-files` of its own. That matters twice over: the helper refuses an
+     * empty result, which is the property this file is about; and
+     * `file-collection-is-not-silently-empty` flagged the first version of this
+     * function as a hand-rolled collector, correctly — it had `ls-files` inside
+     * the embedded script and imported no helper.
+     *
+     * The subprocess therefore does only the thing it must: import the tool's
+     * real `selectorsIn`. ts-jest rewrites a dynamic import here to `require()`,
+     * which throws against a `.mjs`, and a reimplementation of the rule in this
+     * file would agree with itself and say nothing about the tool.
+     */
+    function selectorCounts(files: string[]): { file: string; selectors: number }[] {
+        const script =
+            `import { selectorsIn } from ${JSON.stringify(pathToFileURL(TOOL).href)};`
+            + `import { readFileSync } from 'node:fs';`
+            + `const files = JSON.parse(Buffer.from(process.argv[1], 'base64').toString('utf8'));`
+            + `console.log(JSON.stringify(files.map((f) => ({ file: f, selectors: selectorsIn(readFileSync(f, 'utf8')).length }))));`;
+        const out = execFileSync(
+            'node',
+            ['--input-type=module', '-e', script, Buffer.from(JSON.stringify(files), 'utf8').toString('base64')],
+            { cwd: ROOT, encoding: 'utf-8', maxBuffer: 32 * 1024 * 1024 },
+        );
+        return JSON.parse(out.trim()) as { file: string; selectors: number }[];
+    }
+
+    const ROWS = selectorCounts(
+        collectSourceFiles({
+            roots: ['tests/guards', 'tests/guardrails', 'tests/contracts', 'tests/regression'],
+            extensions: ['.test.ts'],
+            // The helper throws below this, so the measurement cannot silently
+            // range over nothing — which would report 0 unreachable of 0 files.
+            floor: 600,
+        }).map((abs) => abs.slice(ROOT.length + 1)),
+    );
+
+    it('[selector-teeth-reach] prints how much of the guard suite the audit can reach', () => {
+        const auditable = ROWS.filter((r) => r.selectors > 0);
+        const unreachable = ROWS.filter((r) => r.selectors === 0);
+        const selectors = auditable.reduce((a, r) => a + r.selectors, 0);
+        const pctUnreachable = ((100 * unreachable.length) / ROWS.length).toFixed(1);
+
+        console.log(
+            `[selector-teeth-reach] ${ROWS.length} guard file(s); `
+                + `${auditable.length} auditable holding ${selectors} selector(s); `
+                + `${unreachable.length} with NO module-level selectors (${pctUnreachable}% unreachable)`,
+        );
+
+        // The FLOOR is on the measurement, not on the debt. A `git ls-files`
+        // pathspec that stopped matching would report 0 unreachable out of 0
+        // files and read as perfect coverage — the empty-population defect this
+        // whole file is about, occurring in the thing that measures it.
+        expect(ROWS.length).toBeGreaterThanOrEqual(600);
+        expect(auditable.length).toBeGreaterThanOrEqual(400);
+        expect(selectors).toBeGreaterThanOrEqual(800);
+
+        // And the unreachable set must be NON-EMPTY, which is the uncomfortable
+        // half: 215 files have no module-level selectors today, so a zero here
+        // means the counting broke rather than that the debt was paid. When it
+        // is genuinely paid this assertion is what has to be deleted, and
+        // deleting it is a decision somebody makes in a diff.
+        expect(unreachable.length).toBeGreaterThan(0);
+    });
+
+    it('[selector-teeth-reach] names the unreachable guards whose subject is security or safety', () => {
+        // Not a ratchet and not a sample. These are checked by NAME because a
+        // vacuous guard here is discovered by the thing it was meant to prevent,
+        // and "26% unreachable" does not tell a reader that these are in it.
+        const unreachable = new Set(ROWS.filter((r) => r.selectors === 0).map((r) => r.file));
+        const WATCH = [
+            'tests/guardrails/middleware-security.test.ts',
+            'tests/guardrails/jwt-membership-bound.test.ts',
+            'tests/guardrails/pii-hash-not-null.test.ts',
+            'tests/guardrails/dose-phi-rei-gate.test.ts',
+        ];
+        const stillUnreachable = WATCH.filter((f) => unreachable.has(f));
+        console.log(
+            `[selector-teeth-reach] of ${WATCH.length} watched security/safety guards, `
+                + `${stillUnreachable.length} are still unauditable: ${stillUnreachable.join(', ') || 'none'}`,
+        );
+
+        // Every watched path must EXIST, or this list rots the way the docblock's
+        // figure did — a guard renamed away leaves a name nobody is watching and
+        // a count that looks like progress.
+        const known = new Set(ROWS.map((r) => r.file));
+        expect(WATCH.filter((f) => !known.has(f))).toEqual([]);
     });
 });

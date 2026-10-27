@@ -399,6 +399,24 @@ export function formatReport({ results, unexpected, stale }, asJson) {
     if (asJson) return JSON.stringify({ results, unexpected, stale }, null, 2);
 
     const out = [];
+
+    // The RUN's own denominator, before the per-file lines.
+    //
+    // The per-file `NOT AUDITED` message landed in #865 and is pinned by
+    // `selector-teeth-reports-its-denominator`. What it cannot do is let a
+    // reader see the SHAPE of a multi-file run: thirty files emit thirty lines,
+    // and "2 of these were audited over nothing" has to be counted by hand from
+    // the scrollback. With the audit now sharded (#2417) a run is routinely
+    // several files, so the total is the thing a reader needs first.
+    const reachable = results.filter((r) => r.candidates > 0);
+    const unreachable = results.length - reachable.length;
+    const selectorCount = reachable.reduce((a, r) => a + r.candidates, 0);
+    out.push(
+        `[selector-teeth] ${results.length} file(s): ${reachable.length} audited `
+            + `(${selectorCount} selector(s)); ${unreachable} with no module-level `
+            + `selectors and therefore NOT audited`,
+    );
+
     for (const r of results) {
         for (const s of r.survivors) out.push(`  ${r.file}:${s.line}  ${s.selector}() \u2192 return ${s.gut}  SURVIVED`);
         for (const u of r.untestable) out.push(`  ${r.file}  ${u}()  no gut typechecked \u2014 not tested`);
