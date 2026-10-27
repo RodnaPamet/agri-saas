@@ -327,19 +327,29 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
      * document, puts it in Drive and answers where it landed, so the only
      * thing to do with a success is say so.
      *
-     * ## Each refusal gets its own sentence
+     * ## The refusal's sentence comes from the SERVER
      *
-     * The route answers four distinct coded failures and every one of them has
-     * a different action behind it: connect an account, re-grant Drive,
-     * reconnect a revoked grant, or free up Drive storage. Collapsing them into
-     * one "export failed" would leave an admin with nothing to do — and the
-     * reason the server sends codes rather than Bulgarian prose is so this
-     * mapping can live here, where the copy is translated.
+     * Each of the four coded failures has a different action behind it —
+     * connect an account, re-grant Drive, reconnect a revoked grant, free up
+     * storage — so they must not collapse into one "export failed". They do
+     * not, and no catalogue here is needed to achieve that.
      *
-     * `GOOGLE_DRIVE_NOT_GRANTED` and `GOOGLE_DRIVE_REFUSED` both arrive as a
-     * 403 from Google and are deliberately NOT merged: telling a farmer to
-     * reconnect when their Drive is simply full is wrong advice confidently
-     * given.
+     * The owner's #1677 ruling is that the server resolves the locale and
+     * sends `message` already translated, *specifically* so that neither
+     * client keeps a code catalogue: `localizeErrorPayload` runs on every
+     * coded error inside `withApiErrorHandling`, and the issue measured that
+     * the web reads the error `code` NOWHERE and renders `message` in 37
+     * components.
+     *
+     * My first version of this mapped the four codes to local keys right here.
+     * That was a second catalogue for codes the central one already carries —
+     * and the two could disagree, with mine winning on this one surface while
+     * `errors.*` governed every other. `a-new-code-ships-with-its-entry`
+     * caught the half of it that was visible, which is how the whole shape got
+     * looked at.
+     *
+     * So: render `message`, and keep ONE local key for the case where there is
+     * no server message because there was no response.
      */
     const exportTreatmentToDrive = useCallback(
         async (treatmentGroupId: string) => {
@@ -353,16 +363,9 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                     // Read leniently: a failure to parse the envelope must not
                     // turn into a second, less useful failure.
                     const body = (await res.json().catch(() => null)) as
-                        | { code?: string }
+                        | { message?: string }
                         | null;
-                    const byCode: Record<string, string> = {
-                        GOOGLE_NOT_CONNECTED: 'treatmentDriveNotConnected',
-                        GOOGLE_DRIVE_NOT_GRANTED: 'treatmentDriveNoAccess',
-                        GOOGLE_GRANT_REVOKED: 'treatmentDriveRevoked',
-                        GOOGLE_DRIVE_REFUSED: 'treatmentDriveRefused',
-                    };
-                    const key = (body?.code && byCode[body.code]) || 'treatmentDriveFail';
-                    toast.error(t(key));
+                    toast.error(body?.message?.trim() || t('treatmentDriveFail'));
                     return;
                 }
                 toast.success(t('treatmentDriveOk'));

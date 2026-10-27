@@ -15,19 +15,22 @@
  * rule the journal row's own `mayDelete` follows: an offered control that
  * refuses is worse than one that is not there.
  *
- * ## Why the copy is asserted and not the keys
+ * ## The refusal copy is the SERVER's, and these cases pin that
  *
- * `tests/rendered/setup.ts` mocks `next-intl` against the REAL English
- * catalogue, so asserting the sentence proves two things at once — that the
- * right key was chosen for the code, and that the key exists at all. A
- * key-only assertion would pass against a catalogue that never gained the
- * string.
+ * The owner's #1677 ruling: the server resolves the locale and sends
+ * `message` already translated, so neither client keeps a code catalogue.
+ * `localizeErrorPayload` runs on every coded error in `withApiErrorHandling`.
  *
- * `GOOGLE_DRIVE_NOT_GRANTED` and `GOOGLE_DRIVE_REFUSED` both arrive as a 403
- * from Google and are asserted to produce DIFFERENT sentences. That is the
- * distinction worth a test: telling a farmer to reconnect when their Drive is
- * simply full is wrong advice, confidently given, and merging the two is the
- * easy mistake.
+ * So what is worth asserting here is PASS-THROUGH, not a mapping: whatever
+ * sentence the server sends is what the farmer reads, two different sentences
+ * stay two, and the ONE local string is the fallback for when there was no
+ * response to carry a message. The first version of this file asserted a
+ * local code→copy map, which was a second catalogue; the cases below are what
+ * remained once that was deleted.
+ *
+ * The success and label strings ARE asserted as copy, against the real
+ * English catalogue `tests/rendered/setup.ts` loads — so a missing key fails
+ * here rather than rendering blank in production.
  */
 import * as React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
@@ -181,12 +184,18 @@ function fetchDouble(driveAnswer: unknown) {
     });
 }
 
-/** The export answered with a coded refusal. */
-function refusal(status: number, code?: string) {
+/**
+ * The export answered with a refusal the SERVER has already localised.
+ *
+ * `message` is what the client shows; `code` rides along because the envelope
+ * carries it and the client must ignore it.
+ */
+function refusal(status: number, opts?: { code?: string; message?: string }) {
     return {
         ok: false,
         status,
-        json: async () => (code ? { code, message: 'x' } : null),
+        json: async () =>
+            opts ? { code: opts.code ?? 'SOMETHING', message: opts.message } : null,
     } as unknown as Response;
 }
 
@@ -282,50 +291,52 @@ describe('the Drive export posts to the treatment it sits on (#2019)', () => {
     });
 });
 
-describe('each Drive refusal says something different (#2019)', () => {
+describe('the refusal a farmer reads is the server\u2019s own sentence (#2019)', () => {
     it.each([
-        ['GOOGLE_NOT_CONNECTED', 'No Google account is connected. Connect one from Integrations.'],
-        [
-            'GOOGLE_DRIVE_NOT_GRANTED',
-            'The Google connection does not include Drive access. Reconnect it and grant Drive.',
-        ],
-        ['GOOGLE_GRANT_REVOKED', 'The Google connection is no longer authorised. Reconnect it.'],
-        ['GOOGLE_DRIVE_REFUSED', 'Google refused the upload. Check the Drive storage.'],
-    ])('%s has its own sentence', async (code, sentence) => {
-        global.fetch = fetchDouble(refusal(400, code)) as unknown as typeof fetch;
-        await mountWithRow([folded], true, /Тестов препарат/);
+        ['\u041d\u044f\u043c\u0430 \u0441\u0432\u044a\u0440\u0437\u0430\u043d \u0430\u043a\u0430\u0443\u043d\u0442 \u0432 Google.'],
+        ['Google \u043e\u0442\u043a\u0430\u0437\u0430 \u043a\u0430\u0447\u0432\u0430\u043d\u0435\u0442\u043e.'],
+        ['\u041d\u044f\u043c\u0430 \u0437\u0430\u043f\u0438\u0441\u0438 \u0437\u0430 \u0442\u043e\u0437\u0438 \u043f\u0435\u0440\u0438\u043e\u0434.'],
+    ])('shows %s verbatim, without translating it again', async (message) => {
+        global.fetch = fetchDouble(refusal(400, { message })) as unknown as typeof fetch;
+        await mountWithRow([folded], true, /\u0422\u0435\u0441\u0442\u043e\u0432 \u043f\u0440\u0435\u043f\u0430\u0440\u0430\u0442/);
         fireEvent.click(screen.getByTestId('treatment-drive-handle-1'));
         await waitFor(() => {
-            expect(toasts).toEqual([{ kind: 'error', message: sentence }]);
+            expect(toasts).toEqual([{ kind: 'error', message }]);
         });
     });
 
-    it('the two 403-shaped refusals do NOT collapse into one message', async () => {
-        // Both `GOOGLE_DRIVE_NOT_GRANTED` and `GOOGLE_DRIVE_REFUSED` arrive as
-        // a 403 from Google. Whichever way they were merged, one set of
-        // farmers would be told to do the wrong thing — reconnect a working
-        // connection, or free up storage that is not full.
-        global.fetch = fetchDouble(refusal(400, 'GOOGLE_DRIVE_NOT_GRANTED')) as unknown as typeof fetch;
-        const first = await mountWithRow([folded], true, /Тестов препарат/);
+    it('two different server sentences stay two different sentences', async () => {
+        // The property that used to need a local map. `GOOGLE_DRIVE_NOT_GRANTED`
+        // and `GOOGLE_DRIVE_REFUSED` both arrive as a 403 from Google and must
+        // not collapse — telling a farmer to reconnect when their Drive is
+        // simply full is wrong advice confidently given. Pass-through gets that
+        // for free, and this case is what proves the client does not flatten
+        // them on the way past.
+        global.fetch = fetchDouble(
+            refusal(400, { code: 'GOOGLE_DRIVE_NOT_GRANTED', message: 'Reconnect and grant Drive.' }),
+        ) as unknown as typeof fetch;
+        const first = await mountWithRow([folded], true, /\u0422\u0435\u0441\u0442\u043e\u0432 \u043f\u0440\u0435\u043f\u0430\u0440\u0430\u0442/);
         fireEvent.click(screen.getByTestId('treatment-drive-handle-1'));
         await waitFor(() => expect(toasts).toHaveLength(1));
         const notGranted = toasts[0].message;
         first.unmount();
 
         toasts.length = 0;
-        global.fetch = fetchDouble(refusal(400, 'GOOGLE_DRIVE_REFUSED')) as unknown as typeof fetch;
-        await mountWithRow([folded], true, /Тестов препарат/);
+        global.fetch = fetchDouble(
+            refusal(400, { code: 'GOOGLE_DRIVE_REFUSED', message: 'Check the Drive storage.' }),
+        ) as unknown as typeof fetch;
+        await mountWithRow([folded], true, /\u0422\u0435\u0441\u0442\u043e\u0432 \u043f\u0440\u0435\u043f\u0430\u0440\u0430\u0442/);
         fireEvent.click(screen.getByTestId('treatment-drive-handle-1'));
         await waitFor(() => expect(toasts).toHaveLength(1));
 
         expect(toasts[0].message).not.toBe(notGranted);
     });
 
-    it('an unrecognised code falls back to the generic failure', async () => {
-        // Not an error path to get clever about: a code this client has never
-        // heard of still has to produce a sentence rather than an empty toast.
-        global.fetch = fetchDouble(refusal(500, 'SOMETHING_NEW')) as unknown as typeof fetch;
-        await mountWithRow([folded], true, /Тестов препарат/);
+    it('a refusal carrying NO message falls back to the one local sentence', async () => {
+        // A code the catalogue has no entry for keeps its English prose, so a
+        // message is almost always present. Almost is why this exists.
+        global.fetch = fetchDouble(refusal(500, { code: 'SOMETHING_NEW' })) as unknown as typeof fetch;
+        await mountWithRow([folded], true, /\u0422\u0435\u0441\u0442\u043e\u0432 \u043f\u0440\u0435\u043f\u0430\u0440\u0430\u0442/);
         fireEvent.click(screen.getByTestId('treatment-drive-handle-1'));
         await waitFor(() => {
             expect(toasts).toEqual([
@@ -334,11 +345,24 @@ describe('each Drive refusal says something different (#2019)', () => {
         });
     });
 
-    it('an unparseable error envelope still produces the generic failure', async () => {
-        // The body is read leniently on purpose: a failure to parse the
-        // envelope must not become a second, less useful failure.
+    it('an unparseable envelope falls back too, rather than showing nothing', async () => {
+        // The body is read leniently on purpose: a failure to parse it must not
+        // become a second, less useful failure — or an empty toast.
         global.fetch = fetchDouble(refusal(502)) as unknown as typeof fetch;
-        await mountWithRow([folded], true, /Тестов препарат/);
+        await mountWithRow([folded], true, /\u0422\u0435\u0441\u0442\u043e\u0432 \u043f\u0440\u0435\u043f\u0430\u0440\u0430\u0442/);
+        fireEvent.click(screen.getByTestId('treatment-drive-handle-1'));
+        await waitFor(() => {
+            expect(toasts).toEqual([
+                { kind: 'error', message: 'The export to Google Drive failed.' },
+            ]);
+        });
+    });
+
+    it('a blank server message is treated as absent, not shown as empty', async () => {
+        // `.trim() ||` rather than `?? ` — a whitespace message would otherwise
+        // render as a toast with no text in it.
+        global.fetch = fetchDouble(refusal(400, { message: '   ' })) as unknown as typeof fetch;
+        await mountWithRow([folded], true, /\u0422\u0435\u0441\u0442\u043e\u0432 \u043f\u0440\u0435\u043f\u0430\u0440\u0430\u0442/);
         fireEvent.click(screen.getByTestId('treatment-drive-handle-1'));
         await waitFor(() => {
             expect(toasts).toEqual([

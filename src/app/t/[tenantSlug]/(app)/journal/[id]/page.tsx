@@ -259,11 +259,15 @@ export default function JournalDetailPage() {
      * No blob dance — the bytes never reach the browser. The server renders,
      * uploads and reports where the file landed.
      *
-     * `REGISTER_EMPTY_FOR_PERIOD` is listed with the Google refusals and is
-     * the one that is NOT a fault: an untreated block in a period is the
-     * ordinary case, and the owner's 2026-10-23 ruling made it a refusal
-     * rather than a blank form. It needs its own sentence for exactly that
-     * reason — "the export failed" would be wrong about what happened.
+     * The refusal's sentence comes from the SERVER, already translated — the
+     * owner's #1677 ruling, so that neither client keeps a code catalogue.
+     *
+     * That matters most for `REGISTER_EMPTY_FOR_PERIOD`, which is NOT a
+     * fault: an untreated block in a period is the ordinary case, and
+     * «Няма записи за този период.» is already its `errors.*` entry. A local
+     * "the export failed" here would be a wrong statement about what
+     * happened, and a local catalogue would be a second copy of sentences the
+     * server already sends.
      */
     const exportDnevnikToDrive = async () => {
         const locationId = entry?.fieldOperation?.locationId;
@@ -278,15 +282,8 @@ export default function JournalDetailPage() {
             if (!res.ok) {
                 // Read leniently: failing to parse the envelope must not
                 // become a second, less useful failure.
-                const body = (await res.json().catch(() => null)) as { code?: string } | null;
-                const byCode: Record<string, string> = {
-                    GOOGLE_NOT_CONNECTED: 'dnevnikDriveNotConnected',
-                    GOOGLE_DRIVE_NOT_GRANTED: 'dnevnikDriveNoAccess',
-                    GOOGLE_GRANT_REVOKED: 'dnevnikDriveRevoked',
-                    GOOGLE_DRIVE_REFUSED: 'dnevnikDriveRefused',
-                    REGISTER_EMPTY_FOR_PERIOD: 'dnevnikDriveEmpty',
-                };
-                toast.error(t((body?.code && byCode[body.code]) || 'dnevnikDriveFail'));
+                const body = (await res.json().catch(() => null)) as { message?: string } | null;
+                toast.error(body?.message?.trim() || t('dnevnikDriveFail'));
                 return;
             }
             toast.success(t('dnevnikDriveOk'));
