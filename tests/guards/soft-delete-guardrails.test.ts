@@ -46,6 +46,36 @@ function collectFiles(dir: string, extensions = ['.ts', '.tsx']): string[] {
 describe('Soft-Delete CI Guardrails', () => {
     const allFiles = collectFiles(SRC_DIR);
 
+    test('[soft-delete] reaches a real population — the denominator', () => {
+        // Found by running `scripts/selector-teeth.mjs` against this file by
+        // hand: `collectFiles` gutted to `return []` SURVIVED. Both consumers
+        // of `allFiles` are ABSENCE assertions — route files must not call a
+        // hard delete, and no file may contain a raw DELETE SQL string — so an
+        // empty population satisfies them perfectly and reports compliance
+        // having read nothing (#2377, #2407).
+        //
+        // This file could not be audited by CI at all: selector-teeth only
+        // examines guard files CHANGED against the PR's base, and this one
+        // needed no change, so no PR would ever bring it into the set. It was
+        // also one of the three that #2404's run dropped at MAX_GUARDS=12.
+        //
+        // I previously recorded this file as already-floored. That was a
+        // measurement error: I grepped for `toBeGreaterThan` and counted three
+        // hits, but two are `indexOf(...) > -1` checks on one file's contents
+        // and the third is a registry size. None bounds the SCANNED
+        // population. The pattern was there; the subject was not.
+        const routeFiles = allFiles.filter(
+            (f) => f.includes('route.ts') && f.includes(path.sep + 'api' + path.sep),
+        );
+        console.log(
+            `[soft-delete] ${allFiles.length} file(s) under src/, ${routeFiles.length} API route file(s)`,
+        );
+        expect(allFiles.length).toBeGreaterThan(500);
+        // The derived subset too, since one consumer filters before asserting
+        // and a filter that stopped matching empties it independently.
+        expect(routeFiles.length).toBeGreaterThan(20);
+    });
+
     test('soft-delete extension is wired in prisma.ts', () => {
         const content = fs.readFileSync(PRISMA_FILE, 'utf-8');
         // Prisma 7 — v5 `registerSoftDeleteMiddleware($use)` was replaced

@@ -130,7 +130,11 @@ function baseInput(over: Record<string, unknown> = {}) {
     return {
         category: 'FUEL' as const,
         amount: 340,
-        currency: 'bgn',
+        // LOWERCASE deliberately, so the uppercasing assertion below still has
+        // something to prove. It was 'bgn' until #2398 made costs euro-only;
+        // `row()` KEEPS its BGN, which is what makes every update test below an
+        // exercise of "a legacy row edited without touching its currency".
+        currency: 'eur',
         incurredOn: '2026-08-01',
         supplier: 'Petrol AD',
         description: null,
@@ -164,7 +168,7 @@ describe('createCostEntry — the happy paths', () => {
         await createCostEntry(ctx, baseInput());
 
         const data = mockDb.costEntry.create.mock.calls[0][0].data;
-        expect(data.currency).toBe('BGN');
+        expect(data.currency).toBe('EUR');
         expect(data.tenantId).toBe('tenant-1');
         expect(data.invoiceFileId).toBeNull();
         // No invoice ⇒ the file gate is never consulted.
@@ -412,6 +416,83 @@ describe('createCostEntry — one domain link only', () => {
         expect(() => assertSingleDomainLink({ plantingId: 'p-1', parcelId: 'x' })).toThrow();
         expect(() => assertSingleDomainLink({})).not.toThrow();
     });
+});
+
+describe('the currency a cost may be saved in — #2398', () => {
+    // `row()` is stored as BGN, which is the production shape: 14 rows on the
+    // owner's farm, 10 'EUR', 3 'EURO', 1 'BGN'. So the legacy cases below
+    // range over a real state rather than an invented one.
+
+    it('CREATE refuses lev, rather than relabelling it as euro', async () => {
+        // The trap this closes: lev is CONVERTIBLE at the peg, so the rollup
+        // totals it happily. Accepting it on the write path and then pinning
+        // the form to EUR is what turns 1.00 BGN into 1.00 EUR — a 1.95583x
+        // overstatement of a farmer's cost.
+        await expect(createCostEntry(ctx, baseInput({ currency: 'BGN' }))).rejects.toThrow(
+            /recorded in euro/,
+        );
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('CREATE refuses a genuinely foreign currency too', async () => {
+        for (const code of ['USD', 'GBP', 'RON', 'PLN']) {
+            await expect(createCostEntry(ctx, baseInput({ currency: code }))).rejects.toThrow(
+                /recorded in euro/,
+            );
+        }
+        expect(mockDb.costEntry.create).not.toHaveBeenCalled();
+    });
+
+    it('CREATE accepts every euro spelling the free-text field produced', async () => {
+        // Not just the literal 'EUR'. Three production rows are stored as
+        // 'EURO', and a client echoing one back must not be refused.
+        for (const code of ['EUR', 'eur', ' EUR ', 'EURO', 'EUROS', '€', 'E']) {
+            mockDb.costEntry.create.mockClear();
+            await createCostEntry(ctx, baseInput({ currency: code }));
+            expect({ code, stored: mockDb.costEntry.create.mock.calls[0][0].data.currency })
+                .toEqual({ code, stored: code.trim().toUpperCase() });
+        }
+    });
+
+    it('UPDATE of a legacy row that OMITS currency succeeds, and writes none', async () => {
+        // This is how the owner's ruling is actually honoured: the form renders
+        // the field read-only and sends nothing, so editing a BGN row's
+        // description leaves its currency alone. Asserting the absence of the
+        // key matters — a default creeping into the patch builder would relabel
+        // the row with nothing in the diff to show it.
+        await updateCostEntry(ctx, 'ce-1', { description: 'fixed a typo' });
+        const data = mockDb.costEntry.update.mock.calls[0][0].data;
+        expect(Object.prototype.hasOwnProperty.call(data, 'currency')).toBe(false);
+    });
+
+    it('UPDATE refuses to change a legacy row\'s currency — INCLUDING to euro', async () => {
+        // Refusing the change TO euro is the point, not an oversight. Rewriting
+        // 'BGN' to 'EUR' without touching the amount IS the silent
+        // overstatement the owner declined when choosing lock over convert.
+        await expect(
+            updateCostEntry(ctx, 'ce-1', { currency: 'EUR' }),
+        ).rejects.toThrow(/cannot be changed/);
+        expect(mockDb.costEntry.update).not.toHaveBeenCalled();
+    });
+
+    it('UPDATE allows a legacy row to restate its OWN currency unchanged', async () => {
+        // A client that echoes the field back verbatim is not making a change,
+        // and refusing it would make the row unsavable rather than its currency
+        // unchangeable.
+        await updateCostEntry(ctx, 'ce-1', { currency: 'bgn' });
+        expect(mockDb.costEntry.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('UPDATE of a EURO-spelled row still accepts euro', async () => {
+        // The three 'EURO' rows are euro, not legacy. Treating them as locked
+        // would disable a correct, editable field for no reason — which is what
+        // a literal `currency !== 'EUR'` check would have done to three of the
+        // four rows it caught.
+        mockDb.costEntry.findFirst.mockResolvedValue(row({ currency: 'EURO' }));
+        await updateCostEntry(ctx, 'ce-1', { currency: 'EUR' });
+        expect(mockDb.costEntry.update).toHaveBeenCalledTimes(1);
+    });
+
 });
 
 describe('updateCostEntry — validates the RESULTING row', () => {

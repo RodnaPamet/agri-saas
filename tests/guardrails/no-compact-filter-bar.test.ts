@@ -30,11 +30,14 @@ const ROOTS = [
 const ALLOWLIST = [
     // Compat-bridge utility docs — describe the legacy flat-state shape.
     'src/components/ui/filter/filter-state.ts',
-    // Filter-defs tests include historical "compat bridge" describe blocks
-    // asserting the `fromCompactFilterState` / `toCompactFilterState`
+    // Filter-foundation tests include historical "compat bridge" describe
+    // blocks asserting the `fromCompactFilterState` / `toCompactFilterState`
     // round-trip still works. The utility function names (and therefore
     // the string) are kept for backwards-compat with stored URL params.
-    'tests/unit/practices-filter-defs.test.ts',
+    //
+    // `tests/unit/practices-filter-defs.test.ts` stood here too until #2377.
+    // It was deleted in eba5cf890 (#547, the GRC teardown), so the exemption
+    // had been exempting nothing for months.
     'tests/unit/filter-foundation.test.ts',
     // This guard file itself.
     'tests/guardrails/no-compact-filter-bar.test.ts',
@@ -43,7 +46,6 @@ const ALLOWLIST = [
     // E2E specs keep historical references in docstrings / explanatory
     // comments about the pre-Epic 53 filter bar and its DOM ids.
     'tests/e2e/filters.spec.ts',
-    'tests/e2e/data-table-platform.spec.ts',
 ];
 
 function walk(dir: string, out: string[]): string[] {

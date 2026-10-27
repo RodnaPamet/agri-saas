@@ -56,7 +56,24 @@ describe('Scope Reintroduction Guardrails', () => {
 
     // ── File path guardrails ──
 
-    it('no UI pages under /s/[scopeSlug]', () => {
+        it('[scope-guards] the src scan reaches a real population — the denominator', () => {
+        // Three tests below scan all of `src/` for `scopeId`,
+        // `resolveScopeContext` and `ScopeMembership` and assert ZERO matches.
+        // A walk that returned nothing satisfies all three perfectly, and
+        // would report the scope migration complete having read no files
+        // (#2377).
+        //
+        // Asserted on the FILE COUNT, not on the findings: zero findings is
+        // the pass condition here and must stay so, which is exactly why the
+        // population needs its own floor rather than a non-empty assertion on
+        // the results.
+        const everything = scanFiles(SRC, /./);
+        const distinctFiles = new Set(everything.map((r) => r.file));
+        console.log(`[scope-guards] scanned ${distinctFiles.size} file(s) under src/`);
+        expect(distinctFiles.size).toBeGreaterThan(500);
+    });
+
+it('no UI pages under /s/[scopeSlug]', () => {
         const scopeDir = path.join(SRC, 'app', 't', '[tenantSlug]', '(app)', 's');
         expect(fs.existsSync(scopeDir)).toBe(false);
     });
