@@ -52,6 +52,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
 /**
@@ -191,10 +192,46 @@ function readsSource(src: string): boolean {
     return collects && aimsAtSrc;
 }
 
-/** Does it route that text through the shared stripper? */
+/**
+ * Does it route that text through the shared stripper — by actually CALLING it?
+ *
+ * This was `/blankNonCode|blank-non-code/.test(src)` on the RAW file (#2403),
+ * which asked whether the name APPEARS. Three things then counted as
+ * compliance that are not: an unused import, a docblock mentioning the
+ * helper, and this guard's own detector regex. The cap exists to stop prose
+ * being read as code, and its own compliance test read prose as code.
+ *
+ * One live instance when #2403 was filed: `one-resolve-delivery` read `src/`
+ * raw and said so in a docblock headed "Raw source, deliberately" — the
+ * mention alone cleared the cap. Converted in #2405, so the count does not
+ * move here.
+ *
+ * Comments AND strings are blanked before looking for the call, so a quoted
+ * example or a docblock cannot stand in for one. `strings: true` is right
+ * because the subject is a CALL.
+ *
+ * ## Two things this does NOT need, both nearly added
+ *
+ * **A self-exemption.** This file matches `aimsAtSrc` through its own control
+ * fixture, and before the change it named the helper without calling one — so
+ * it looked like it would report itself, and I wrote an exemption for that
+ * with a confident explanation. The mutation that removes the exemption
+ * passes: the count is 462 either way, because `blanksComments` now CALLS
+ * `blankNonCode` on the line above, so this file satisfies its own predicate
+ * honestly. The exemption was dead code justifying itself.
+ *
+ * **Blanking before `readsSource` as well.** That looks tidier and collapses
+ * the population from **462 to 1**, because `aimsAtSrc` matches a QUOTED
+ * `'src/…'` and blanking strings destroys exactly what it looks for. A cap
+ * falling 462 -> 1 is a detector that stopped detecting, not 462 guards
+ * fixing themselves (`[[relaxing-a-caller-removes-the-teeth]]`). So
+ * `readsSource` keeps its RAW read — its subject is a path literal — and only
+ * the call check blanks.
+ */
 function blanksComments(src: string): boolean {
-    return /blankNonCode|blank-non-code/.test(src);
+    return /blankNonCode\s*\(/.test(blankNonCode(src, { strings: true }));
 }
+
 
 function unblankedGuards(): string[] {
     const files = collectSourceFiles({
@@ -208,6 +245,9 @@ function unblankedGuards(): string[] {
         .map((abs) => abs.slice(REPO_ROOT.length + 1))
         .filter((rel) => {
             const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
+            // `readsSource` reads the RAW text on purpose: its subject is a
+            // quoted path literal, so blanking strings first would erase what
+            // it looks for. Only the CALL check blanks.
             return readsSource(src) && !blanksComments(src);
         })
         .sort();
@@ -224,9 +264,18 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
             const files = collectSourceFiles({ roots: ['src'] });
             expect(readFileSync(files[0], 'utf8')).not.toContain('withApiErrorHandling');
         `;
-        const blanks = `${greps}\n import { blankNonCode } from '../helpers/blank-non-code';`;
+        // A real CALL is compliance. An import alone is not, and neither is a
+        // docblock — which is the whole of #2403: the old predicate asked
+        // whether the NAME appeared.
+        const calls = `${greps}\n const code = blankNonCode(readFileSync(f, 'utf8'));`;
+        const importOnly = `${greps}\n import { blankNonCode } from '../helpers/blank-non-code';`;
+        const mentionOnly = `${greps}\n // TODO: route this through blankNonCode one day.`;
+
         expect(readsSource(greps) && !blanksComments(greps)).toBe(true);
-        expect(readsSource(blanks) && !blanksComments(blanks)).toBe(false);
+        expect(readsSource(calls) && !blanksComments(calls)).toBe(false);
+        // The two that used to pass for compliance and no longer do.
+        expect(readsSource(importOnly) && !blanksComments(importOnly)).toBe(true);
+        expect(readsSource(mentionOnly) && !blanksComments(mentionOnly)).toBe(true);
         // A guard that reads no source at all is not this guard's business.
         expect(readsSource(`expect(1).toBe(1);`)).toBe(false);
     });
@@ -292,7 +341,22 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
         for (const rel of [
             'tests/guardrails/api-error-wrapper-coverage.test.ts',
             'tests/guards/swr-paths-resolve.test.ts',
-            'tests/guards/comment-stripper-order.test.ts',
+            // `comment-stripper-order` was here and is NOT a converted
+            // consumer — #2403 found that out by requiring a real call.
+            //
+            // It never calls `blankNonCode`; it names it nine times in prose,
+            // which the old name-matching predicate counted as compliance. And
+            // it should not call it: this guard's docblock describes it as the
+            // SIBLING of this one — "it governs HOW a stripper is written where
+            // this governs WHETHER one is used" — and it classifies individual
+            // LINES through its own `IS_FIXTURE` skip rather than text-matching
+            // a whole file. It also has no `aimsAtSrc` match at all, so it has
+            // never been in this cap's population.
+            //
+            // So its presence on a list of "instances #1774 records as fixed"
+            // was an artefact of a predicate that could not tell a mention from
+            // a call. Removed rather than converted, because there is nothing
+            // here to convert.
             // Batch 1, #1774. Each shares one conversion: `read()` routed
             // through `blankNonCode` with comments only and NOT strings,
             // because several of these assert on string LITERALS and
