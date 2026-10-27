@@ -68,7 +68,11 @@ const ctx = () => makeRequestContext('OWNER', { userId: ownerId, tenantId: TENAN
 const costInput = () => ({
     category: 'FUEL' as const,
     amount: 1234.5,
-    currency: 'BGN',
+    // Euro since costs became euro-only (issue 2398). It was 'BGN', which
+    // the write path now refuses. This file lives in tests/integration,
+    // which no cost-NAMED glob reaches — so these four failures arrived
+    // from CI rather than from my local run.
+    currency: 'EUR',
     incurredOn: '2026-09-22',
 });
 
