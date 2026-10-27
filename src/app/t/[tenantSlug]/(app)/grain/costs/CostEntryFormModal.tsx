@@ -159,7 +159,6 @@ function linkIdOf(record: CostRow | null | undefined): string {
 type FormValues = {
     category: string;
     amount: string;
-    currency: string;
     incurredOn: Date | null;
     supplier?: string;
     description?: string;
@@ -174,7 +173,6 @@ type FormValues = {
 const DEFAULT_VALUES: FormValues = {
     category: '',
     amount: '',
-    currency: 'EUR',
     incurredOn: null,
     supplier: '',
     description: '',
@@ -238,7 +236,6 @@ export function CostEntryFormModal({
                         (v) => Number.isNaN(Number(v)) || Number(v) <= MAX_AMOUNT,
                         t('errTooLarge'),
                     ),
-                currency: z.string().min(1, t('errRequired')).max(8),
                 incurredOn: z
                     .date()
                     .nullable()
@@ -481,7 +478,6 @@ export function CostEntryFormModal({
             reset({
                 category: record.category,
                 amount: String(record.amount),
-                currency: record.currency ?? 'EUR',
                 incurredOn: isoToDate(record.incurredOn),
                 supplier: record.supplier ?? '',
                 linkKind: linkKindOf(record),
@@ -712,7 +708,6 @@ export function CostEntryFormModal({
                             </FormField>
                             <FormField
                                 label={t('currency')}
-                                error={errors.currency?.message}
                                 hint={isLegacyCurrency ? t('currencyLocked') : t('currencyEurOnly')}
                             >
                                 <Input
