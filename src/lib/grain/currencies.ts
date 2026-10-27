@@ -138,6 +138,34 @@ export function normaliseCostToEur(
     return { eur: null, refusal: 'FOREIGN' };
 }
 
+/**
+ * Is this currency ALREADY euro — as opposed to merely convertible to it?
+ *
+ * Distinct from `allResolveToEur`, and the distinction is load-bearing. That
+ * function answers "can the rollup total this row", and it says **yes** to lev:
+ * `normaliseCostToEur` converts BGN at the fixed peg and returns
+ * `refusal: null`. So `allResolveToEur(['BGN'])` is `true`.
+ *
+ * Which makes it the wrong question for the EUR-only save path (#2398). A lock
+ * predicate built on it would treat the one production BGN row as euro, pin its
+ * field to EUR, and relabel 1.00 BGN as 1.00 EUR on the next save — overstating
+ * it by 1.95583×. Three states, not two:
+ *
+ *   - stored as euro      EUR / EURO / EUROS / € / E / blank   editable
+ *   - convertible at peg  BGN / ЛВ / ЛВ. / BGL                 locked
+ *   - foreign             USD / GBP …                          locked, and
+ *                                                              refused by the
+ *                                                              rollup
+ *
+ * Blank counts as euro for the same reason `normaliseCostToEur` does: on a farm
+ * that can only record euro, a missing label is a missing label, not an unknown
+ * unit.
+ */
+export function isStoredAsEuro(currency: string | null | undefined): boolean {
+    const code = currency?.trim().toUpperCase() ?? '';
+    return code === '' || EURO_SPELLINGS.has(code);
+}
+
 /** True when every row in `currencies` resolves to euro — no FOREIGN among them. */
 export function allResolveToEur(currencies: readonly (string | null | undefined)[]): boolean {
     return currencies.every((c) => normaliseCostToEur(1, c).refusal === null);

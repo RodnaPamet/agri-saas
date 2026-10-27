@@ -7,6 +7,7 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { isStoredAsEuro } from '@/lib/grain/currencies';
 import { CostEntryRepository, type CostEntryFilters } from '../repositories/CostEntryRepository';
 import { FileRepository } from '../repositories/FileRepository';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
@@ -126,6 +127,77 @@ function assertPayrollBreakdown(input: {
             { category: String(input.category ?? '') },
         );
     }
+}
+
+/**
+ * Costs are euro-only — #2398.
+ *
+ * ## Why this is a CODED refusal here and not a narrower zod schema
+ *
+ * `CreateCostEntrySchema.currency` stays `ShortText(8)` and
+ * `UpdateCostEntrySchema.currency` stays `z.string().min(1).max(8)`, on
+ * purpose. Narrowing either to a euro enum would make zod reject first, and
+ * every refusal below would become UNREACHABLE — a dead branch that reads as
+ * protection. The client would also get a generic validation 400 instead of a
+ * code it can render. If a later change tightens the schema, delete these
+ * refusals in the same breath rather than leaving both.
+ *
+ * ## The predicate is `isStoredAsEuro`, NOT `allResolveToEur`
+ *
+ * `allResolveToEur(['BGN'])` is `true` — `normaliseCostToEur` converts lev at
+ * the fixed peg. It answers "can the rollup total this row", which is a
+ * different question from "is this row already euro". Using it here would let
+ * the one production BGN row through, the form would pin it to EUR, and the
+ * next save would relabel 1.00 BGN as 1.00 EUR: a 1.95583× overstatement.
+ */
+function assertEuroOnlyCurrency(submitted: string): void {
+    if (isStoredAsEuro(submitted)) return;
+    throw codedBadRequest(
+        'COST_ENTRY_CURRENCY_NOT_EUR',
+        'Costs are recorded in euro. This currency cannot be saved on a cost entry.',
+        { currency: submitted.trim().toUpperCase() },
+    );
+}
+
+/**
+ * A legacy row's currency cannot be changed IN PLACE — the owner's ruling for
+ * #2398 (option 2: lock, do not convert).
+ *
+ * Refusing a change TO euro is the point, not an oversight: rewriting `BGN` to
+ * `EUR` without touching the amount is exactly the silent 1.95583×
+ * overstatement the ruling declined. The row keeps its own currency until
+ * somebody deletes and re-enters it, and the rollup already converts it
+ * correctly in the meantime.
+ *
+ * The form renders this field read-only for such a row, so a well-behaved
+ * client never reaches here. That is why it is still checked: the read-only
+ * attribute is a UI affordance, not a constraint.
+ */
+function assertCurrencyPatch(stored: string | null | undefined, submitted: string): void {
+    const was = (stored ?? '').trim().toUpperCase();
+    const now = submitted.trim().toUpperCase();
+
+    // An UNCHANGED value is not a change, whatever it is. This branch has to
+    // come first, and a test is what proved it: a read-only `<input>` still
+    // submits its value — only a disabled one does not — so a client echoing
+    // 'BGN' back verbatim is making no change at all. Refusing it would make
+    // the legacy row UNSAVABLE rather than its currency unchangeable, and the
+    // farmer could no longer fix a typo in its description.
+    if (now === was) return;
+
+    // Changing a legacy row's currency is refused, INCLUDING to euro. Rewriting
+    // 'BGN' to 'EUR' without touching the amount is exactly the silent
+    // 1.95583x overstatement the owner declined in choosing lock over convert.
+    if (!isStoredAsEuro(stored)) {
+        throw codedBadRequest(
+            'COST_ENTRY_LEGACY_CURRENCY_LOCKED',
+            'This entry was recorded in another currency. Its currency cannot be changed — delete it and enter it again in euro.',
+            { stored: was },
+        );
+    }
+
+    // A euro row moving between euro spellings is fine; anything else is not.
+    assertEuroOnlyCurrency(submitted);
 }
 
 export function assertSingleDomainLink(input: {
@@ -596,6 +668,9 @@ async function createCostEntryImpl(
 function prepareCostEntry(input: CreateCostEntryInput) {
     assertSingleDomainLink(input);
     assertAllocationBasis(input);
+    // Both create paths come through here, so the euro-only rule is enforced
+    // once for the single create AND every line of a batch.
+    assertEuroOnlyCurrency(input.currency);
     return {
         supplier: input.supplier != null ? sanitizePlainText(input.supplier) : null,
         description: input.description != null ? sanitizePlainText(input.description) : null,
@@ -850,6 +925,13 @@ export async function updateCostEntry(
     const row = await runInTenantContext(ctx, async (db) => {
         const existing = await CostEntryRepository.getById(db, ctx, id);
         if (!existing) throw codedNotFound('COST_ENTRY_NOT_FOUND', 'That cost entry was not found.');
+
+        // Only when the patch actually carries a currency. Omitting it is how a
+        // legacy row survives an edit to its description untouched — and the
+        // form omits it, because the field is read-only there.
+        if (input.currency !== undefined) {
+            assertCurrencyPatch(existing.currency, input.currency);
+        }
 
         // Validate the RESULTING row, not the patch: clearing one link
         // while setting another is legal, and checking the patch alone

@@ -57,7 +57,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
-import { currencyOptions } from '@/lib/grain/currencies';
+import { isStoredAsEuro } from '@/lib/grain/currencies';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { COST_CATEGORY_VALUES } from './filter-defs';
 import { CROP_PICKER_VALUES, cropPickerValueFor } from '@/lib/grain/crop-picker';
@@ -174,7 +174,7 @@ type FormValues = {
 const DEFAULT_VALUES: FormValues = {
     category: '',
     amount: '',
-    currency: '',
+    currency: 'EUR',
     incurredOn: null,
     supplier: '',
     description: '',
@@ -295,7 +295,6 @@ export function CostEntryFormModal({
 
     const watchedCategory = useWatch({ control, name: 'category' });
     const watchedLinkKind = useWatch({ control, name: 'linkKind' });
-    const watchedCurrency = useWatch({ control, name: 'currency' });
     const watchedBasis = useWatch({ control, name: 'allocationBasis' });
 
     // Option sources — fetched lazily, and only the one the chosen kind
@@ -462,10 +461,19 @@ export function CostEntryFormModal({
         }
     }, [watchedLinkKind, plantingsQuery.data, seasonsQuery.data, locationsQuery.data, itemsQuery.data, leasesQuery.data, parcelOptions, t, formatDate]);
 
-    const currencyChoices = useMemo(
-        () => currencyOptions(watchedCurrency ?? record?.currency),
-        [watchedCurrency, record],
-    );
+    /**
+     * Costs are euro-only (#2398), so there is nothing to pick. What remains is
+     * one question: does this row already hold euro, or is it a legacy row
+     * whose currency must not be touched?
+     *
+     * `isStoredAsEuro` and NOT `allResolveToEur`: the latter answers `true` for
+     * BGN, because the rollup converts lev at the fixed peg. Using it here
+     * would make the one production BGN row editable, pin its field to EUR, and
+     * relabel 1.00 BGN as 1.00 EUR on the next save — a 1.95583x overstatement,
+     * which is the exact trap #2398 exists to close.
+     */
+    const isLegacyCurrency = record != null && !isStoredAsEuro(record.currency);
+    const shownCurrency = isLegacyCurrency ? (record?.currency ?? '') : 'EUR';
 
     useEffect(() => {
         if (!open) return;
@@ -473,7 +481,7 @@ export function CostEntryFormModal({
             reset({
                 category: record.category,
                 amount: String(record.amount),
-                currency: record.currency ?? '',
+                currency: record.currency ?? 'EUR',
                 incurredOn: isoToDate(record.incurredOn),
                 supplier: record.supplier ?? '',
                 linkKind: linkKindOf(record),
@@ -566,7 +574,13 @@ export function CostEntryFormModal({
             const body = {
                 category: values.category,
                 amount: Number(values.amount),
-                currency: values.currency.trim().toUpperCase(),
+                // CREATE is always euro. An EDIT omits the field entirely, so
+                // a legacy row keeps its own code and nothing is relabelled —
+                // `currency` is optional on the update schema precisely so
+                // omission is the no-op. The server refuses a change anyway
+                // (COST_ENTRY_LEGACY_CURRENCY_LOCKED); this is the client half,
+                // not the constraint.
+                ...(isEdit ? {} : { currency: 'EUR' }),
                 incurredOn: values.incurredOn ? values.incurredOn.toISOString() : null,
                 supplier: values.supplier?.trim() || null,
                 description: values.description?.trim() || null,
@@ -696,19 +710,16 @@ export function CostEntryFormModal({
                                     {...register('amount')}
                                 />
                             </FormField>
-                            <FormField label={t('currency')} error={errors.currency?.message}>
-                                <Controller
-                                    control={control}
-                                    name="currency"
-                                    render={({ field }) => (
-                                        <Combobox
-                                            id="cost-currency-input"
-                                            options={currencyChoices}
-                                            selected={currencyChoices.find((o) => o.value === field.value) ?? null}
-                                            setSelected={(o) => field.onChange(o?.value ?? '')}
-                                            placeholder={t('currencyPlaceholder')}
-                                        />
-                                    )}
+                            <FormField
+                                label={t('currency')}
+                                error={errors.currency?.message}
+                                hint={isLegacyCurrency ? t('currencyLocked') : t('currencyEurOnly')}
+                            >
+                                <Input
+                                    id="cost-currency-input"
+                                    value={shownCurrency}
+                                    readOnly
+                                    aria-readonly="true"
                                 />
                             </FormField>
                         </div>
