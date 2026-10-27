@@ -92,7 +92,6 @@ this list without deleting the override fails the guard.
 - `postcss`
 - `@grpc/grpc-js`
 - `find-my-way`
-- `nanoid`
 - `deepmerge-ts`
 - `sharp`
 - `fast-uri`

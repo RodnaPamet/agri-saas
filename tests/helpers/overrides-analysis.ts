@@ -216,6 +216,28 @@ function isParseableRange(range: unknown): range is string {
     return typeof range === 'string' && semver.validRange(range, { loose: true }) !== null;
 }
 
+/**
+ * Does `range` admit `version`? `null` when the range cannot be parsed.
+ *
+ * Exported so a caller does not need its own `require('semver')` and its own
+ * copy of `SemverApi`. A second declaration of that interface would be a second
+ * thing to drift — `otel-hold-expires-loudly` needs exactly this question and
+ * nothing else, and the semver access belongs in one place.
+ *
+ * `null` rather than `false` for an unparseable range, for the same reason
+ * `safeSubset` below does it: a caller that cannot tell "no" from "could not
+ * tell" will read the second as the first, which is how an unanswerable check
+ * reports a clean result.
+ */
+export function admitsVersion(range: string, version: string): boolean | null {
+    if (!isParseableRange(range)) return null;
+    try {
+        return semver.satisfies(version, range, { loose: true });
+    } catch {
+        return null;
+    }
+}
+
 function safeSubset(sub: string, dom: string): boolean | null {
     try {
         return semver.subset(sub, dom, { loose: true });

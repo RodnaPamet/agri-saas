@@ -122,6 +122,46 @@ updates:
           - "*"
     # Ignore known-noisy packages
     ignore:
+      # ── The OpenTelemetry set is held on the 2.x / 0.222 generation ────────
+      #
+      # NOT a preference, and not a migration anyone here can schedule. The set
+      # ships as a coupled whole and its halves are currently mutually
+      # unreachable:
+      #
+      #   resources       3.0.0    peer api  >=1.10.0 <1.11.0
+      #   sdk-metrics     3.0.0    peer api  >=1.10.0 <1.11.0
+      #   sdk-node        0.300.0  peer api  >=1.10.0 <1.11.0
+      #   sdk-trace-node  2.12.0   peer api  >=1.0.0  <1.10.0   <- EXCLUDES it
+      #
+      # `sdk-trace-node` has NO release compatible with api 1.10: 2.12.0 is
+      # latest and there is no 3.x (dist-tags are latest 2.12.0, canary
+      # 2.11.0-development.0). Nor is it droppable —
+      # src/lib/observability/instrumentation.ts imports NodeTracerProvider and
+      # BatchSpanProcessor from it.
+      #
+      # So nothing in package.json can make the newer generation install.
+      # Without this block Dependabot mints a production-group PR every week
+      # whose `npm ci` fails ERESOLVE, and whose 19 red checks are all that one
+      # cause — see #2383, where Typecheck and Build failing made it read as a
+      # source incompatibility although nothing was ever compiled.
+      #
+      # HOW THIS BLOCK GETS REMOVED: tests/guards/otel-hold-expires-loudly
+      # fails the moment the installed `sdk-trace-node`'s own peer range admits
+      # api 1.10. A test rather than a review date, because an ignore list with
+      # a date attached is a list that gets re-dated — this file's own
+      # 2026-12-11 entries say exactly that about themselves.
+      - dependency-name: "@opentelemetry/api"
+        versions: [">=1.10.0"]
+      - dependency-name: "@opentelemetry/resources"
+        versions: [">=3.0.0"]
+      - dependency-name: "@opentelemetry/sdk-metrics"
+        versions: [">=3.0.0"]
+      - dependency-name: "@opentelemetry/sdk-node"
+        versions: [">=0.300.0"]
+      - dependency-name: "@opentelemetry/exporter-trace-otlp-http"
+        versions: [">=0.300.0"]
+      - dependency-name: "@opentelemetry/exporter-metrics-otlp-http"
+        versions: [">=0.300.0"]
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-patch"]
       # @tanstack/react-table v9 is a REWRITE, not a bump, and needs a
