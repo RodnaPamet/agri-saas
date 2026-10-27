@@ -119,7 +119,61 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
  * code-shaped literal against file CONTENT (26), which is the actionable
  * list. Two scopes, deliberately; see #1774 for which to use when.
  */
-const UNBLANKED_CAP = 405;
+/**
+ * Every test root that can hold a source-scanning guard — owner ruling for
+ * issue 2400, 2026-10-27.
+ *
+ * This was `['tests/guards', 'tests/guardrails']`: **2 of 5 roots**, leaving 57
+ * unblanked source-scanners invisible to the cap below. Measured on
+ * `e4a7bc636`:
+ *
+ *   | root               | .test.ts | read src | UNBLANKED | was in scope |
+ *   | ------------------ | -------- | -------- | --------- | ------------ |
+ *   | tests/guards       |      708 |      537 |       354 | yes          |
+ *   | tests/guardrails   |      108 |       69 |        52 | yes          |
+ *   | tests/contracts    |       11 |        6 |         4 | NO           |
+ *   | tests/regression   |        1 |        0 |         0 | NO           |
+ *   | tests/unit         |      970 |       60 |        53 | NO           |
+ *
+ * The hazard a blanked comment prevents — a scanner matching its own prose, or
+ * a removal note read as the removal being undone — does not care which
+ * directory the test file sits in. `tests/unit` holds the bulk of it, and #2385
+ * moved guards OUT of there, so what remains are ordinary unit tests that grep
+ * `src/` and are exposed identically.
+ *
+ * `tests/regression` contributes nothing today. It is listed deliberately
+ * rather than omitted as "empty anyway": a root left out because it is empty is
+ * a root nobody adds back when it fills.
+ *
+ * Declared ONCE and read by both the cap and the denominator below. These were
+ * two separate copies of the same two-root list — the drift this guard exists
+ * to notice in other people's code.
+ */
+const SCANNED_ROOTS = [
+    'tests/guards',
+    'tests/guardrails',
+    'tests/contracts',
+    'tests/regression',
+    'tests/unit',
+];
+
+/**
+ * Separates "nothing is wrong" from "nothing was examined".
+ *
+ * Raised with the roots, and chosen to be LOAD-BEARING rather than merely low:
+ * the widened population is ~1,800 files while the two original roots are ~816,
+ * so a floor of 1,200 FAILS if `tests/unit` is dropped from the list again. A
+ * floor of 300 cleared a two-root scan silently, which is exactly how 57
+ * scanners stayed invisible while the cap looked healthy.
+ */
+const POPULATION_FLOOR = 1200;
+
+/**
+ * NOT carried over from the two-root era. Set to the count the widened scan
+ * actually prints on this branch — a cap taken from a stale measurement is
+ * either red on arrival or silently slack.
+ */
+const UNBLANKED_CAP = 462;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
@@ -144,11 +198,11 @@ function blanksComments(src: string): boolean {
 
 function unblankedGuards(): string[] {
     const files = collectSourceFiles({
-        roots: ['tests/guards', 'tests/guardrails'],
+        roots: SCANNED_ROOTS,
         extensions: ['.test.ts'],
         // ~600 guard files at the time of writing; a floor well below it
         // separates "nothing is wrong" from "nothing was examined".
-        floor: 300,
+        floor: POPULATION_FLOOR,
     });
     return files
         .map((abs) => abs.slice(REPO_ROOT.length + 1))
@@ -179,9 +233,9 @@ describe('a guard that greps source blanks comments first (#1774)', () => {
 
     it('prints the numbers — the denominator and the gap', () => {
         const all = collectSourceFiles({
-            roots: ['tests/guards', 'tests/guardrails'],
+            roots: SCANNED_ROOTS,
             extensions: ['.test.ts'],
-            floor: 300,
+            floor: POPULATION_FLOOR,
         });
         console.log(
             `[guards-blank-comments] ${all.length} guard files; ` +
