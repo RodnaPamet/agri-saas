@@ -194,7 +194,7 @@ describe('the currency a batch may be saved in — #2398', () => {
         // CODED, so the client can name the offending line rather than
         // rendering a generic 400.
         await expect(
-            createCostEntryBatch(ctx, { lines: [line(), line({ currency: 'BGN' })] } as any),
+            createCostEntryBatch(ctx, { lines: [line(), line({ currency: 'BGN' })] }),
         ).rejects.toThrow(/recorded in euro/);
         expect(mockDb.costEntry.create).not.toHaveBeenCalled();
     });
@@ -205,7 +205,7 @@ describe('the currency a batch may be saved in — #2398', () => {
         // import for a cosmetic reason.
         await createCostEntryBatch(ctx, {
             lines: [line({ currency: 'EUR' }), line({ currency: 'euro' })],
-        } as any);
+        });
         const stored = mockDb.costEntry.create.mock.calls.map((c: any) => c[0].data.currency);
         expect(stored).toEqual(['EUR', 'EURO']);
     });

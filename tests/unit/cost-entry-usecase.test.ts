@@ -460,7 +460,7 @@ describe('the currency a cost may be saved in — #2398', () => {
         // description leaves its currency alone. Asserting the absence of the
         // key matters — a default creeping into the patch builder would relabel
         // the row with nothing in the diff to show it.
-        await updateCostEntry(ctx, 'ce-1', { description: 'fixed a typo' } as any);
+        await updateCostEntry(ctx, 'ce-1', { description: 'fixed a typo' });
         const data = mockDb.costEntry.update.mock.calls[0][0].data;
         expect(Object.prototype.hasOwnProperty.call(data, 'currency')).toBe(false);
     });
@@ -470,7 +470,7 @@ describe('the currency a cost may be saved in — #2398', () => {
         // 'BGN' to 'EUR' without touching the amount IS the silent
         // overstatement the owner declined when choosing lock over convert.
         await expect(
-            updateCostEntry(ctx, 'ce-1', { currency: 'EUR' } as any),
+            updateCostEntry(ctx, 'ce-1', { currency: 'EUR' }),
         ).rejects.toThrow(/cannot be changed/);
         expect(mockDb.costEntry.update).not.toHaveBeenCalled();
     });
@@ -479,7 +479,7 @@ describe('the currency a cost may be saved in — #2398', () => {
         // A client that echoes the field back verbatim is not making a change,
         // and refusing it would make the row unsavable rather than its currency
         // unchangeable.
-        await updateCostEntry(ctx, 'ce-1', { currency: 'bgn' } as any);
+        await updateCostEntry(ctx, 'ce-1', { currency: 'bgn' });
         expect(mockDb.costEntry.update).toHaveBeenCalledTimes(1);
     });
 
@@ -489,7 +489,7 @@ describe('the currency a cost may be saved in — #2398', () => {
         // a literal `currency !== 'EUR'` check would have done to three of the
         // four rows it caught.
         mockDb.costEntry.findFirst.mockResolvedValue(row({ currency: 'EURO' }));
-        await updateCostEntry(ctx, 'ce-1', { currency: 'EUR' } as any);
+        await updateCostEntry(ctx, 'ce-1', { currency: 'EUR' });
         expect(mockDb.costEntry.update).toHaveBeenCalledTimes(1);
     });
 
