@@ -225,32 +225,40 @@ jobs:
   #  Job 1: Lint — ESLint + Next.js lint rules
   #  Fast, no DB needed. Fails immediately on lint errors.
   # ═══════════════════════════════════════════════════════════════
-  selector-teeth:
-    name: Selector teeth
+  # ── Selector teeth, SHARDED (issue 2417) ────────────────────────────────────
+  #
+  # Was ONE job with `MAX_GUARDS: "12"`: anything past the twelfth changed guard
+  # was announced in a `::warning::` and not audited, with the job still green.
+  # Measured over 400 squashed commits — the cap fired on 3 PRs and left **17
+  # guard files that nothing has ever audited**. 143 of the 164 PRs touching a
+  # guard touched one or two, so the cap never fired on ordinary work and always
+  # fired on the PRs that were ABOUT guards: its incidence was inversely
+  # correlated with risk.
+  #
+  # Raising the number was not available. The cost is `selectors x 9 guts x ~5s`
+  # and twelve files already sat near the 45-minute timeout, so the work is
+  # PARTITIONED instead and the cap is gone as a concept rather than relocated
+  # into an exemption list somebody has to maintain.
+  #
+  # Three jobs, for the same reason `docker`/`docker-summary` is split: the
+  # REQUIRED check name has to live on a job that always reports, so the shard
+  # matrix is free to be empty without leaving a required check pending forever.
+  selector-teeth-plan:
+    name: "Selector teeth (plan)"
     runs-on: ubuntu-latest
-    # One jest invocation per SELECTOR x GUT, scoped to the guard files a PR
-    # actually changes. `auditFile` runs EVERY gut for every selector with no
-    # early break — deliberately, because stopping at the first kill was the
-    # tool's own instance of the defect it hunts — so the cost is
-    #
-    #     selectors  x  9 guts  x  ~5s per jest run
-    #
-    # The previous note here read "three guards with five selectors apiece is
-    # ~3 min" and set the ceiling at 15. That arithmetic omitted the gut loop:
-    # 15 selectors is 135 invocations, ~12 min, not ~3. The ceiling was 9x too
-    # low, so a "runaway backstop" was firing on ordinary PRs — #1031 touches
-    # dependency-policy-claims (26 selectors, ~20 min on its own) and could
-    # never pass. Measured 2026-09-20; a full-repo sweep is ~12 HOURS (910
-    # selectors), not ~100 minutes, and is still deliberately NOT run here.
-    timeout-minutes: 45
+    # Minutes, not the old 45. This job runs the control and one `git diff`.
+    timeout-minutes: 12
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+      total: ${{ steps.plan.outputs.total }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          # REQUIRED, not hygiene. The audit step diffs against the base to find
-          # which guards changed; at the default depth of 1 that diff is empty,
-          # the tool audits nothing, and the job reports success having checked
-          # NOTHING. Same shape as #870.
+          # REQUIRED, not hygiene. The plan diffs against the base to find which
+          # guards changed; at the default depth of 1 that diff is empty, the
+          # partition is empty, and every shard would pass over nothing. Same
+          # shape as #870.
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-node-prisma
@@ -269,7 +277,9 @@ jobs:
           fi
           echo "control ok: the planted dead selector was reported"
 
-      - name: "Do the guards this PR changes have live selectors?"
+
+      - name: Partition the changed guards into shards
+        id: plan
         env:
           # THREE sources, one per event kind this workflow triggers on
           # (#992). `merge_group` was missing, and its absence was silent: the
@@ -279,19 +289,11 @@ jobs:
           # own base resolution, and it landed in the one event whose purpose
           # is testing the UNION of independently-green PRs.
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
-          # One jest run per mutation at ~7s. A PR touching a dozen guards is
-          # minutes; a bulk conversion touching 88 is hours.
-          #
-          # PR #894 (89 swallowing scan roots -> 2) changed 88 guard files and
-          # ran this job to the 15-minute timeout, which reported CANCELLED —
-          # neither pass nor fail, no verdict, no diagnosis. A job that cannot
-          # finish is not a gate, and a cancelled one is the silent mode this
-          # repo has spent a lot of effort eliminating elsewhere.
-          #
-          # So the coverage is BOUNDED and the bound is LOUD. Truncating in
-          # silence would let "audited 12 of 88" read as "audited everything",
-          # which is the defect class this whole job exists to catch.
-          MAX_GUARDS: "12"
+          # Files per shard — NOT a ceiling on coverage. Every changed guard
+          # lands in exactly one shard; this only decides how many run in
+          # parallel. At ~3 selectors a file, 9 guts and ~5s a run, three files
+          # is roughly 7 minutes.
+          FILES_PER_SHARD: "3"
         run: |
           set -euo pipefail
           # A base is GUARANTEED on pull_request and merge_group. If it is
@@ -339,21 +341,112 @@ jobs:
           # finish being no gate at all. A deleted guard has no selectors to
           # audit; the renamed file arrives in the same diff as an addition and
           # IS audited.
-          mapfile -t ALL < <(git diff --name-only --diff-filter=d "${BASE}" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts' 'tests/contracts/*.test.ts' 'tests/regression/*.test.ts')
+          mapfile -t ALL < <(git diff --name-only --diff-filter=d "$BASE" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts' 'tests/contracts/*.test.ts' 'tests/regression/*.test.ts')
           TOTAL=${#ALL[@]}
-          if [ "${TOTAL}" -eq 0 ]; then
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          if [ "$TOTAL" -eq 0 ]; then
             echo "no guard or guardrail files changed in this PR; the control above still ran"
+            echo 'shards=[]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "${TOTAL}" -gt "${MAX_GUARDS}" ]; then
-            echo "::warning::Selector teeth audited ${MAX_GUARDS} of ${TOTAL} changed guards/guardrails. The remaining $((TOTAL - MAX_GUARDS)) were NOT audited — this job is bounded at ${MAX_GUARDS} files because each mutation costs a jest run. Run 'node scripts/selector-teeth.mjs <file>' locally on the rest, or split the PR."
-            echo "NOT AUDITED:"
-            printf '  %s\n' "${ALL[@]:${MAX_GUARDS}}"
-          fi
-          echo "auditing ${TOTAL} changed guard/guardrail file(s), capped at ${MAX_GUARDS}:"
-          printf '  %s\n' "${ALL[@]:0:${MAX_GUARDS}}"
-          node scripts/selector-teeth.mjs "${ALL[@]:0:${MAX_GUARDS}}"
+          echo "partitioning $TOTAL changed guard/guardrail file(s), $FILES_PER_SHARD per shard:"
+          printf '  %s\n' "${ALL[@]}"
 
+          # `range(...) as $i | .[$i:$i+$n]` rather than jq's `_nwise`: the
+          # latter is an INTERNAL function, undocumented and removable, and a
+          # CI step that depends on a private builtin breaks on a jq bump with
+          # no warning. Verified identical on n = 1, 2, 3 and 5.
+          #
+          # The partition is PROVEN a cover in the same step that builds it. A
+          # partition bug would otherwise present as "every shard green" over a
+          # subset — which is the cap this change removes, one level up.
+          SHARDS="$(printf '%s\n' "${ALL[@]}" | jq -R . | jq -s --argjson n "$FILES_PER_SHARD" \
+            '[range(0; length; $n) as $i | .[$i:$i+$n] | { files: join(" "), label: ((.[0] | split("/") | last) + (if length > 1 then " +" + ((length - 1) | tostring) else "" end)) }]')"
+          COVERED="$(jq -r '[.[].files | split(" ") | length] | add // 0' <<<"$SHARDS")"
+          NSHARDS="$(jq 'length' <<<"$SHARDS")"
+          echo "$NSHARDS shard(s) covering $COVERED file(s)"
+          if [ "$COVERED" -ne "$TOTAL" ]; then
+            echo "::error::partition covers $COVERED of $TOTAL changed guard file(s). Refusing to run a matrix that would report green over a subset — that is the silent truncation this job was rebuilt to remove."
+            exit 1
+          fi
+          # GitHub's hard matrix ceiling, hit LOUDLY rather than truncated. 256
+          # shards is 768 guard files and wants splitting anyway.
+          if [ "$NSHARDS" -gt 256 ]; then
+            echo "::error::$NSHARDS shards exceeds GitHub's 256-job matrix limit. Split the PR rather than raising FILES_PER_SHARD, which would trade parallelism back for the wall-clock ceiling that made the old cap necessary."
+            exit 1
+          fi
+          echo "shards=$(jq -c . <<<"$SHARDS")" >> "$GITHUB_OUTPUT"
+
+  selector-teeth:
+    name: "Selector teeth: ${{ matrix.shard.label }}"
+    needs: selector-teeth-plan
+    # NOT the required check — `selector-teeth-summary` carries that name, so
+    # this matrix may be empty without leaving a required check pending forever.
+    if: ${{ needs.selector-teeth-plan.outputs.total != '0' }}
+    strategy:
+      # A cancelled sibling shard reports NOTHING about the guards it held, and
+      # a shard that never ran is absent rather than red. Same reasoning as
+      # `restore-test.yml`'s matrix, where a cancelled leg said nothing at all
+      # about that product.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.selector-teeth-plan.outputs.shards) }}
+    runs-on: ubuntu-latest
+    # Per SHARD, not per PR. Three files measured ~7 min; 30 leaves room for a
+    # guard with an unusually large selector count without the old failure mode,
+    # where the whole audit reported CANCELLED and gave no verdict at all.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-prisma
+      - name: Audit this shard's guards
+        run: |
+          set -euo pipefail
+          # Echoed as well as being in the job title: a reader who sees
+          # "shard 3 failed" with only an index has to go hunting for which
+          # guard is theirs.
+          echo "auditing: ${{ matrix.shard.files }}"
+          node scripts/selector-teeth.mjs ${{ matrix.shard.files }}
+
+  selector-teeth-summary:
+    name: "Selector teeth"
+    needs: [selector-teeth-plan, selector-teeth]
+    # `!cancelled()` so this still reports when the matrix fails or skips — see
+    # the docker gate for the full note.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate the shard results
+        run: |
+          plan="${{ needs.selector-teeth-plan.result }}"
+          shards="${{ needs.selector-teeth.result }}"
+          total="${{ needs.selector-teeth-plan.outputs.total }}"
+          echo "plan=$plan shards=$shards total=$total"
+          case "$plan" in
+            success) ;;
+            *) echo "::error::the plan job reported '$plan', so nothing was partitioned and no guard was audited. A green tick here would be a pass over an audit that never ran." ; exit 1 ;;
+          esac
+          # THE non-obvious case, and the reason this job exists at all. GitHub
+          # SKIPS a matrix job whose include list is empty, and a skipped job is
+          # ABSENT rather than red — aggregates score absence as success. So
+          # `skipped` is legitimate ONLY when the plan found nothing to audit.
+          # Skipped WITH files to audit means the matrix or `fromJSON` dropped
+          # them, which is silent truncation wearing a green tick.
+          if [ "$shards" = "skipped" ]; then
+            if [ "$total" = "0" ]; then
+              echo "no guard files changed; the detector control in the plan job still ran."
+              exit 0
+            fi
+            echo "::error::the shard matrix was SKIPPED while the plan found $total changed guard file(s) to audit. Nothing was mutation-tested. That is the empty-selection defect this job exists to catch, occurring in the job's own matrix."
+            exit 1
+          fi
+          case "$shards" in
+            success) echo "every shard audited its guards and found live selectors ($total file(s))." ; exit 0 ;;
+            *) echo "::error::a selector-teeth shard reported '$shards' — open the failing shard, which names its guard files in the job title." ; exit 1 ;;
+          esac
   lint:
     name: Lint
     runs-on: ubuntu-latest
