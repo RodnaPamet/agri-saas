@@ -21,10 +21,19 @@
  * data.** The WMS advertises `Fees: NONE` and `AccessConstraints: NONE`, which
  * are GeoServer defaults — the same service's contact is "Claudius Ptolomaeus,
  * Roman Empire" — and the INSPIRE record cites an Art. 13(1)(d)
- * intellectual-property limitation. The owner is asking МЗХ in writing, and
- * the agreed position is TestFlight only until they answer. An env var that
- * nobody sets in production is how that position is enforced by the system
- * rather than remembered by people.
+ * intellectual-property limitation. The owner is asking МЗХ in writing.
+ *
+ * **What the owner's ruling actually says**, because I first wrote this
+ * tighter than the decision and the iOS session was right to push back:
+ * TestFlight now, App Store only once МЗХ agrees, with the flag limiting who
+ * sees it meanwhile. So setting this variable — and enabling
+ * `agro.orthophoto` for the owner's tenant and the testers' cohort — is
+ * consistent with the ruling TODAY. What waits for МЗХ is the App Store
+ * release, which is the client's gate, not this one.
+ *
+ * This variable is therefore the MECHANISM, not the deadline: it means the
+ * surface cannot serve imagery by accident or by a config drift, and WHEN to
+ * set it is the owner's call rather than a constraint this module invents.
  *
  * ## Measured against the live service, 2026-10-27
  *

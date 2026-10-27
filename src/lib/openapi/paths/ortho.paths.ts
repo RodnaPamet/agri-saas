@@ -104,7 +104,19 @@ export function registerOrthoPaths(registry: OpenAPIRegistry): void {
             + 'which is the same silent blank the 204/503 split exists to prevent.\n\n'
             + 'Zoom is clamped to 10-19: 25 cm native resolution means the source has nothing '
             + 'beyond z19, and below z10 one tile fans across the whole country. Behind the '
-            + '`agro.orthophoto` flag AND an operator-set upstream; either absent answers 404.',
+            + '`agro.orthophoto` flag AND an operator-set upstream; either absent answers 404.\n\n'
+            + '**On the documented `429`: no rate limit applies to this route for a session or '
+            + 'bearer caller, and a client should not build backoff for one.** That status is '
+            + 'boilerplate — all 273 operations in this document carry it. The `/api/t/` limiter '
+            + 'in middleware is gated on API-key auth AND on the request presenting an `iflk_` '
+            + 'bearer; a cookie session or a native JWE bearer falls through untouched, and no '
+            + 'tile route carries a limiter of its own.\n\n'
+            + 'That is deliberate rather than an oversight. A map asks for every visible tile at '
+            + 'once — 15-20 on a cold screen, another burst per pan — so a per-user budget sized '
+            + 'for ordinary API traffic would throttle the map into a retry loop, which is worse '
+            + 'than no budget. What actually needs protecting is the МЗХ service, and that is '
+            + 'bounded server-side at four concurrent upstream requests regardless of how many '
+            + 'clients ask; a cache hit costs this server almost nothing.',
         tags: ['Maps'],
         params: TileParams,
         success: {
