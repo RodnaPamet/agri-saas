@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR, usePrefetchTenant } from '@/lib/hooks/use-tenant-swr';
-import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantContext } from '@/lib/tenant-context-provider';
 import { PullToRefresh, useCursorPagination, useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ScrollToTop } from '@/components/ui/scroll-to-top';
 import { CACHE_KEYS } from '@/lib/swr-keys';
@@ -12,7 +12,7 @@ import { useOfflineSync, type ConflictResolution } from '@/lib/offline/use-offli
 import { OfflineConflictBanner } from '@/components/offline/OfflineConflictBanner';
 import { OfflineSyncBar } from '@/components/offline/OfflineSyncBar';
 import { Button } from '@/components/ui/button';
-import { Download, Plus, Trash } from '@/components/ui/icons/nucleo';
+import { CloudUpload, Download, Plus, Trash } from '@/components/ui/icons/nucleo';
 import { apiDelete } from '@/lib/api-client';
 import { parseContentDispositionFilename } from '@/lib/http/content-disposition';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -241,6 +241,20 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
     const { online, pending, readable, queueGrowing, foreign, durability, submit: offlineSubmit, flush, conflicts, resolveConflict } = useOfflineSync();
     const [resolvingId, setResolvingId] = useState<string | null>(null);
     const [pdfBusyFor, setPdfBusyFor] = useState<string | null>(null);
+    const [driveBusyFor, setDriveBusyFor] = useState<string | null>(null);
+    /**
+     * Both halves of the server's gate, mirrored so the control is ABSENT
+     * rather than refusing (#2019).
+     *
+     * The flag comes from the tenant layout — there is no client-side flags
+     * hook, and it is resolved once there rather than per page. The permission
+     * is the caller's own. Offering this on the flag alone would offer a 403 to
+     * every writer; on admin alone it would offer a 404 to every tenant
+     * without the integration, which is most of them since the flag is
+     * default-OFF.
+     */
+    const { googleIntegrationEnabled } = useTenantContext();
+    const driveExportEnabled = !!googleIntegrationEnabled && permissions.canAdmin;
     const onResolveConflict = useCallback(
         async (id: string, resolution: ConflictResolution) => {
             setResolvingId(id);
@@ -301,6 +315,64 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                 toast.error(t('treatmentPdfFail'));
             } finally {
                 setPdfBusyFor(null);
+            }
+        },
+        [buildApiUrl, t, toast],
+    );
+
+    /**
+     * Send the same document to the farm's Google Drive (#2019).
+     *
+     * No blob dance — the bytes never come here. The server renders the
+     * document, puts it in Drive and answers where it landed, so the only
+     * thing to do with a success is say so.
+     *
+     * ## The refusal's sentence comes from the SERVER
+     *
+     * Each of the four coded failures has a different action behind it —
+     * connect an account, re-grant Drive, reconnect a revoked grant, free up
+     * storage — so they must not collapse into one "export failed". They do
+     * not, and no catalogue here is needed to achieve that.
+     *
+     * The owner's #1677 ruling is that the server resolves the locale and
+     * sends `message` already translated, *specifically* so that neither
+     * client keeps a code catalogue: `localizeErrorPayload` runs on every
+     * coded error inside `withApiErrorHandling`, and the issue measured that
+     * the web reads the error `code` NOWHERE and renders `message` in 37
+     * components.
+     *
+     * My first version of this mapped the four codes to local keys right here.
+     * That was a second catalogue for codes the central one already carries —
+     * and the two could disagree, with mine winning on this one surface while
+     * `errors.*` governed every other. `a-new-code-ships-with-its-entry`
+     * caught the half of it that was visible, which is how the whole shape got
+     * looked at.
+     *
+     * So: render `message`, and keep ONE local key for the case where there is
+     * no server message because there was no response.
+     */
+    const exportTreatmentToDrive = useCallback(
+        async (treatmentGroupId: string) => {
+            setDriveBusyFor(treatmentGroupId);
+            try {
+                const res = await fetch(
+                    buildApiUrl(`/journal/treatments/${treatmentGroupId}/farm-record/drive`),
+                    { method: 'POST' },
+                );
+                if (!res.ok) {
+                    // Read leniently: a failure to parse the envelope must not
+                    // turn into a second, less useful failure.
+                    const body = (await res.json().catch(() => null)) as
+                        | { message?: string }
+                        | null;
+                    toast.error(body?.message?.trim() || t('treatmentDriveFail'));
+                    return;
+                }
+                toast.success(t('treatmentDriveOk'));
+            } catch {
+                toast.error(t('treatmentDriveFail'));
+            } finally {
+                setDriveBusyFor(null);
             }
         },
         [buildApiUrl, t, toast],
@@ -631,6 +703,7 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                         // the button there would be offering a failure.
                         if (!tr || tr.parcelCount === 0) return null;
                         const busy = pdfBusyFor === tr.treatmentGroupId;
+                        const driveBusy = driveBusyFor === tr.treatmentGroupId;
                         return (
                             <div className="flex items-center justify-end gap-tight">
                                 <Tooltip content={t('treatmentPdf')}>
@@ -651,13 +724,44 @@ function JournalPageInner({ initialEntries, initialNextCursor, initialFilters, t
                                         <Download className="h-3.5 w-3.5" aria-hidden />
                                     </button>
                                 </Tooltip>
+                                {/*
+                                  * Absent unless the caller is an admin AND
+                                  * the integration flag is on — both resolved
+                                  * on the server, because there is no
+                                  * client-side flags hook. Offering this to a
+                                  * writer would be offering a 403, and
+                                  * offering it without the flag would be
+                                  * offering a 404.
+                                  */}
+                                {driveExportEnabled && (
+                                    <Tooltip content={t('treatmentDrive')}>
+                                        <button
+                                            type="button"
+                                            aria-label={t('treatmentDrive')}
+                                            disabled={driveBusy}
+                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                            data-testid={`treatment-drive-${tr.treatmentGroupId}`}
+                                            onClick={(e) => {
+                                                // The row navigates to the
+                                                // entry, so without this the
+                                                // export click leaves the page
+                                                // too — same reason the
+                                                // download button stops it.
+                                                e.stopPropagation();
+                                                void exportTreatmentToDrive(tr.treatmentGroupId);
+                                            }}
+                                        >
+                                            <CloudUpload className="h-3.5 w-3.5" aria-hidden />
+                                        </button>
+                                    </Tooltip>
+                                )}
                             </div>
                         );
                     },
                 },
             ]),
         // eslint-disable-next-line react-hooks/exhaustive-deps -- read 2026-10-17 for #1730: no state value is omitted. `pdfBusyFor` and `downloadTreatmentPdf` ARE listed, which is what keeps the per-row PDF button from firing a stale handler (#2033 is the sibling that was not so lucky)
-        [tenantSlug, t, te, pdfBusyFor, downloadTreatmentPdf],
+        [tenantSlug, t, te, pdfBusyFor, downloadTreatmentPdf, driveBusyFor, exportTreatmentToDrive, driveExportEnabled],
     );
 
     return (

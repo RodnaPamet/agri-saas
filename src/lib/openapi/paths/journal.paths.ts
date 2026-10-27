@@ -18,9 +18,10 @@ import {
     RecordFarmActivitySchema,
     CorrectFarmActivitySchema,
     CorrectDiaryTreatmentSchema,
+    FarmRecordDriveExportResultSchema,
 } from '@/lib/schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
-import { codedErrorResponses, op } from './helpers';
+import { codedErrorResponses, op, DRIVE_EXPORT_REFUSALS } from './helpers';
 
 // ZodObjects, because that is what the generator reads to build inline
 // parameters — see the note on OperationInput.params.
@@ -1470,6 +1471,50 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                     + 'would be a false statement about real data and would send a client looking for '
                     + 'a write that did not fail. `NOT_A_TREATMENT` would be wrong too: сеитба goes '
                     + 'through the treatments route precisely because it applies a product.',
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/journal/treatments/{treatmentGroupId}/farm-record/drive',
+        operationId: 'exportTreatmentFarmRecordToDrive',
+        summary: 'Send one treatment\u2019s \u0414\u041d\u0415\u0412\u041d\u0418\u041a to Google Drive',
+        description:
+            'The same \u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 1 document the `GET` of this path returns as bytes, put in the ' +
+            'farm\u2019s connected Google Drive instead. Answers JSON saying where it landed, so a ' +
+            'client can link straight to the file.\n\n' +
+            '**No request body.** The handle is this document\u2019s only input and it is a path ' +
+            'segment \u2014 iOS writes the full URL including the query string to the device log, ' +
+            'unsuppressably.\n\n' +
+            '**Administrators only**, and that is not a separate rule: the export needs the ' +
+            'tenant-wide Google credential, and resolving it decrypts and may rotate a stored ' +
+            'secret. So a farm worker who recorded the treatment can DOWNLOAD this document and ' +
+            'cannot export it \u2014 a real cost, accepted deliberately rather than inventing a ' +
+            'permission for \u201cmay send this farm\u2019s documents to an account the admin ' +
+            'connected\u201d.\n\n' +
+            'Exports accumulate in one folder the app creates, addressed by an id stored on the ' +
+            'connection. That id can outlive the folder: `drive.file` only sees files this app ' +
+            'created, so a farmer deleting or binning it is invisible until the next export. Both ' +
+            'are treated as ordinary states and a new folder is made \u2014 `folderCreated` says ' +
+            'so, which is what lets a client explain an apparently empty folder.\n\n' +
+            'Behind the `integrations.google` flag and the `JOURNAL` module. Node runtime, 60s ' +
+            'budget.',
+        tags: ['Journal', 'Farm records', 'Integrations'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'Exported. The file id, its name in Drive, and Google\u2019s link.',
+            schema: FarmRecordDriveExportResultSchema,
+        },
+        extraResponses: {
+            ...codedErrorResponses({
+                400: DRIVE_EXPORT_REFUSALS,
+                404:
+                    '`TREATMENT_NOT_FOUND` when the handle names nothing.\n\n'
+                    + '`NOT_IN_BABH_REGISTER` when it names a SOWING (#2316) \u2014 the record exists '
+                    + 'and prints in \u00ab\u0414\u041d\u0415\u0412\u041d\u0418\u041a \u041d\u0410 \u0421\u0422\u041e\u041f\u0410\u041d\u0421\u0422\u0412\u041e\u0422\u041e\u00bb, and only this register excludes it. '
+                    + 'Decided by the same code the download uses, so the two cannot disagree.',
             }),
         },
     });

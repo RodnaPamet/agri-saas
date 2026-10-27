@@ -38,6 +38,8 @@ import {
     CreateFieldOperationSchema,
     BulkDeleteLocationsSchema,
     FarmRecordGenerateSchema,
+    FarmRecordDriveExportSchema,
+    FarmRecordDriveExportResultSchema,
 } from '@/lib/schemas';
 import {
     CreateParcelSchema,
@@ -48,7 +50,7 @@ import {
 import { ParcelLeaseSchema } from '@/app-layer/schemas/lease.schemas';
 import { LocationListItemDTOSchema } from '@/lib/dto/location.dto';
 import { UserRefSchema } from '@/lib/dto/common';
-import { codedErrorResponses, op } from './helpers';
+import { codedErrorResponses, op, DRIVE_EXPORT_REFUSALS } from './helpers';
 import { RawErrorResponseSchema } from '@/lib/dto/common';
 
 // ─── Path parameters ────────────────────────────────────────────────
@@ -1279,6 +1281,47 @@ export function registerLocationPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The ДНЕВНИК as PDF bytes, or the saved file’s identity when `save` was true.',
             content: { 'application/pdf': PdfBody, 'application/json': FarmRecordSaved },
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/locations/{id}/farm-record/drive',
+        operationId: 'exportLocationFarmRecordToDrive',
+        summary: 'Send a block\u2019s \u0414\u041d\u0415\u0412\u041d\u0418\u041a to Google Drive',
+        description:
+            'The same document the `POST` of this path returns as bytes, put in the farm\u2019s ' +
+            'connected Google Drive instead. Answers JSON saying where it landed.\n\n' +
+            '**A separate path rather than a third value on that route\u2019s `save`.** That flag ' +
+            'is already a media-type switch \u2014 `application/pdf` bytes or `application/json` \u2014 ' +
+            'and its own schema documents it as a trap. A third destination decided by a body ' +
+            'field would compound that rather than follow it.\n\n' +
+            '**Administrators only**, unlike the download, which a writer can produce. Not a ' +
+            'separate rule: the export needs the tenant-wide Google credential, and resolving it ' +
+            'decrypts and may rotate a stored secret.\n\n' +
+            'Exports accumulate in one folder the app creates, addressed by an id stored on the ' +
+            'connection. That id can outlive the folder \u2014 `drive.file` only sees files this ' +
+            'app created, so a farmer deleting or binning it is invisible until the next export. ' +
+            'Both are ordinary states and a new folder is made; `folderCreated` says so.\n\n' +
+            'Behind the `integrations.google` flag and the `JOURNAL` module. Node runtime, 60s ' +
+            'budget.',
+        tags: ['Farm records', 'Integrations'],
+        params: LocationParams,
+        body: FarmRecordDriveExportSchema,
+        extraResponses: codedErrorResponses({
+            400: DRIVE_EXPORT_REFUSALS,
+            404:
+                'The same two the download answers, raised in the same place \u2014 inside the ' +
+                'gatherer, before Drive is touched.\n\n' +
+                '- `REGISTER_EMPTY_FOR_PERIOD` \u2014 nothing recorded for this block between ' +
+                '`from` and `to`. Not a fault, and the common case for an untreated block. ' +
+                'Nothing is uploaded.\n' +
+                '- `LOCATION_NOT_FOUND` \u2014 no such block for this tenant.',
+        }),
+        success: {
+            status: 200,
+            description: 'Exported. The file id, its name in Drive, and Google\u2019s link.',
+            schema: FarmRecordDriveExportResultSchema,
         },
     });
 

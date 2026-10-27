@@ -46,6 +46,7 @@ export default async function JournalPage({
     // a GRAIN concept, so a tenant without the module is never offered it.
     const enabledModules = await getEnabledModules(ctx);
 
+
     return (
         <div className="space-y-section animate-fadeIn">
             <JournalClient

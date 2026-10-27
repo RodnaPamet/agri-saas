@@ -2,10 +2,9 @@ import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { generateFarmRecordDiaryPdfScoped } from '@/app-layer/reports/pdf/farm-record-diary';
-import { treatmentKindOf } from '@/app-layer/usecases/diary-treatment';
 import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
+import { farmRecordAbsence } from '@/app-layer/reports/pdf/farm-record-absence';
 import { withApiErrorHandling } from '@/lib/errors/api';
-import { codedNotFound } from '@/lib/errors/types';
 import { contentDisposition } from '@/lib/http/content-disposition';
 
 export const runtime = 'nodejs';
@@ -53,38 +52,10 @@ export const GET = withApiErrorHandling(
             kind: 'treatment',
             treatmentGroupId: params.treatmentGroupId,
         });
-        // A handle with no recorded lines is a 404, not an empty register. A
-        // blank document is indistinguishable from a real one whose treatment
-        // happened to record nothing, and a farmer cannot tell which they are
-        // holding.
-        //
-        // #2316 — but a SOWING is a third case, and reporting it as either of
-        // the other two would be a false statement about real data. The record
-        // EXISTS and prints in «ДНЕВНИК НА СТОПАНСТВОТО»; it is only the БАБХ
-        // register that excludes it, because that form covers
-        // «РАСТИТЕЛНОЗАЩИТНИ МЕРОПРИЯТИЯ И ТОРЕНЕ» and a sowing is neither.
-        //
-        // `TREATMENT_NOT_FOUND` would say the handle names nothing, which is
-        // untrue and would send someone looking for a write that did not fail.
-        // `NOT_A_TREATMENT` (#2344) would say it is a field activity, which is
-        // also untrue — сеитба goes through the treatments route precisely
-        // because it applies a product. Hence a third code.
-        if (!pdfDoc) {
-            const kind = await treatmentKindOf(ctx, params.treatmentGroupId);
-            if (kind === 'SEED') {
-                throw codedNotFound(
-                    'NOT_IN_BABH_REGISTER',
-                    'A sowing is not part of the БАБХ register, which covers plant protection '
-                        + 'and fertilising. It appears in the whole-farm journal instead.',
-                    { reference: 'treatmentGroupId' },
-                );
-            }
-            throw codedNotFound(
-                'TREATMENT_NOT_FOUND',
-                'No treatment was recorded under that handle.',
-                { reference: 'treatmentGroupId' },
-            );
-        }
+        // Why an empty document is a 404 and why a sowing needs its own code
+        // lives in `refuseEmptyFarmRecord`, shared with the Drive export
+        // (#2019) so the two cannot diverge on it.
+        if (!pdfDoc) throw await farmRecordAbsence(ctx, params.treatmentGroupId);
 
         const pdfBuffer = await collectPdfBuffer(pdfDoc);
         return new Response(new Uint8Array(pdfBuffer), {

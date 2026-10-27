@@ -479,6 +479,61 @@ export const FarmRecordGenerateSchema = z
             'Generate the БАБХ ДНЕВНИК for a location over a period. Declared once in `src/lib/schemas/index.ts` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555).',
     });
 
+/**
+ * The period for a per-location Drive export — #2019.
+ *
+ * Separate from `FarmRecordGenerateSchema` rather than reused, because that
+ * one carries `save`, the media-type switch. There is no media type to switch
+ * here: the response is always JSON describing where the file landed, and the
+ * bytes go to Drive rather than to the caller. Accepting a `save` this route
+ * must ignore would be a parameter that looks like it does something.
+ *
+ * The treatment-scoped export takes no body at all — its only input is the
+ * handle, which is a path segment. That is also the right place for it:
+ * iOS writes the full URL including the query string to the device log,
+ * unsuppressably.
+ */
+export const FarmRecordDriveExportSchema = z
+    .object({
+        from: requestTimestamp().min(1, 'from is required'),
+        to: requestTimestamp().min(1, 'to is required'),
+    })
+    .strip()
+    .openapi('FarmRecordDriveExportRequest', {
+        description:
+            'The period for exporting a location’s БАБХ ДНЕВНИК to Google Drive. Declared once in `src/lib/schemas/index.ts` and imported by both the route handler and this spec entry, so the two cannot disagree (#1555).',
+    });
+
+/**
+ * What a Drive export answers — #2019. Shared by both export routes and by
+ * both spec entries, for the same reason the request schema is: a response
+ * mirrored in two paths files is a mirror nobody checks.
+ */
+export const FarmRecordDriveExportResultSchema = z
+    .object({
+        fileId: z.string().openapi({
+            description: 'Google’s file id. The only handle for asking Drive what was sent.',
+        }),
+        fileName: z.string().openapi({
+            description:
+                'The name in Drive, which carries the export DATE and so differs from the '
+                + 'download filename. `drive.file` cannot overwrite and Drive permits duplicate '
+                + 'names, so without the date a re-export leaves two identically named files and '
+                + 'no way to tell which is newer without opening both.',
+        }),
+        webViewLink: z.string().nullable().openapi({
+            description: 'Google’s own link to the file, or null when the upload response omitted it.',
+        }),
+        folderCreated: z.boolean().openapi({
+            description:
+                'True when THIS export created the folder — the first export, or because the '
+                + 'previous folder had been deleted or moved to the bin. Lets the UI explain an '
+                + 'apparently empty folder instead of leaving someone to wonder where earlier '
+                + 'exports went.',
+        }),
+    })
+    .openapi('FarmRecordDriveExportResult');
+
 // ─── Admin members / invites / field-op review (#1555 batch 2) ───
 //
 // Five more bodies that were declared twice. Unlike batch 1 these carried
