@@ -68,6 +68,57 @@ function isAllowed(file: string): boolean {
 }
 
 describe('Issue → Task Migration Guardrails', () => {
+    test('[issue-guards] grepFiles can actually find a pattern — the control', () => {
+        // Reported dead by `scripts/selector-teeth.mjs`: gutted to a constant
+        // it SURVIVED, because every assertion on it is `hits.length === 0`
+        // and an empty result satisfies all of them (#2407).
+        //
+        // The control asks for something CERTAINLY present rather than
+        // anything about Issue references, so it stays true however the
+        // migration progresses.
+        const exports = grepFiles(/\bexport\b/, SRC_DIR, ['.ts', '.tsx']);
+        console.log(`[issue-guards] grepFiles found ${exports.length} line(s) matching /\\bexport\\b/`);
+        expect(exports.length).toBeGreaterThan(100);
+        // The shape the callers read: a relative file, a 1-based line, and the
+        // trimmed content. A result that lost its `line` would still satisfy a
+        // length assertion while making every report unusable.
+        expect(exports[0].file).not.toMatch(/^\//);
+        expect(exports[0].line).toBeGreaterThan(0);
+        expect(exports[0].content.length).toBeGreaterThan(0);
+        // The extension filter is part of the selector: widened, it would feed
+        // .json and .css to a matcher that reads them as TypeScript.
+        expect(exports.every((h) => h.file.endsWith('.ts') || h.file.endsWith('.tsx'))).toBe(true);
+    });
+
+    test('[issue-guards] isAllowed excludes the allowlist and NOTHING else', () => {
+        // The more dangerous of the two. `isAllowed` is only ever reached via
+        // `.filter(h => !isAllowed(h.file))`, and `hits` is empty today — so
+        // the filter never calls it and any constant survives.
+        //
+        // A TRUTHY constant is the one that matters: `isAllowed` returning
+        // true for everything would filter out every violation, and all three
+        // tests below would report zero hits no matter what the codebase
+        // contained. The allowlist would have become a universal exemption
+        // with nothing saying so.
+        for (const allowed of ALLOWED_LEGACY_FILES) {
+            expect({ allowed, isAllowed: isAllowed(allowed) }).toEqual({ allowed, isAllowed: true });
+            // And with a leading path, since callers pass SRC_DIR-relative paths.
+            expect(isAllowed(`some/nested/${allowed}`)).toBe(true);
+            // And with Windows separators, which the implementation normalises.
+            expect(isAllowed(allowed.replace(/\//g, '\\'))).toBe(true);
+        }
+        for (const notAllowed of [
+            'lib/prisma.ts',
+            'app-layer/usecases/task.ts',
+            'events/audit-log.ts',        // a near miss on events/audit.ts
+            'other/events/audits.ts',     // plural, must not match
+            '',
+        ]) {
+            expect({ notAllowed, isAllowed: isAllowed(notAllowed) })
+                .toEqual({ notAllowed, isAllowed: false });
+        }
+    });
+
     test('Prisma schema must NOT contain Issue model', () => {
         const schema = readPrismaSchema();
         const issueModels = schema.match(/^model\s+(Issue|IssueLink|IssueComment|IssueWatcher|IssueEvidenceBundle)\s*\{/gm);

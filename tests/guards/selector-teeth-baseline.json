@@ -137,10 +137,6 @@
     ],
     "tests/guards/generated-columns.test.ts": [
       "walk"
-    ],
-    "tests/guards/issue-guardrails.test.ts": [
-      "grepFiles",
-      "isAllowed"
     ]
   }
 }
