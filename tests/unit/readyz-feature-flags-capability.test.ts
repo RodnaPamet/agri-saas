@@ -49,6 +49,12 @@ jest.mock('@/lib/redis', () => ({
     getRedis: jest.fn(() => ({ ping: pingMock })),
 }));
 
+// Imported AFTER the `jest.mock` factories above, which is fine: this module
+// is a plain `as const` array with no side effects and nothing to mock. It is
+// the registry the capability itself reads, which is the point of deriving
+// from it rather than restating it.
+import { REFERENCED_FLAG_KEYS } from '@/lib/feature-flag-keys';
+
 function loadRouteFresh() {
     jest.resetModules();
     jest.doMock('@prisma/client', () => ({
@@ -85,15 +91,22 @@ async function probe(): Promise<{ status: number; body: ProbeBody }> {
 
 const rows = (keys: string[]) => keys.map((key) => ({ key }));
 
-/** The live set as of 2026-10-24, after both missing rows were inserted. */
-const ALL_SIX = [
-    'integrations.google',
-    'notifications.sse',
-    'social.farm-media',
-    'social.farm-registration',
-    'social.person-blocks',
-    'social.public-profile',
-];
+/**
+ * A row for EVERY referenced key — derived, not listed.
+ *
+ * This was `ALL_SIX`, a hardcoded list of the live set as of 2026-10-24, and
+ * registering a seventh key (`agro.orthophoto`, #2421) broke three cases here
+ * because the mock still supplied six rows. The name had the count in it,
+ * which is its own warning: a number in a name goes stale with nothing
+ * failing.
+ *
+ * Derived from `REFERENCED_FLAG_KEYS` the capability itself reads, so "every
+ * referenced key has a row" stays a true statement about the code rather than
+ * about one afternoon. It is still a real control: the capability compares
+ * what the TABLE holds against what the CODE references, and this supplies
+ * the table.
+ */
+const ROW_PER_REFERENCED_KEY = [...REFERENCED_FLAG_KEYS];
 
 describe('GET /api/readyz — capabilities.featureFlags is REPORTED, never GATING', () => {
     const originalEnv = process.env;
@@ -104,7 +117,7 @@ describe('GET /api/readyz — capabilities.featureFlags is REPORTED, never GATIN
         process.env.REDIS_URL = 'redis://localhost:6379';
         pingMock.mockResolvedValue('PONG');
         tenantFindUnique.mockResolvedValue({ id: 't1', deletedAt: null });
-        featureFlagFindMany.mockResolvedValue(rows(ALL_SIX));
+        featureFlagFindMany.mockResolvedValue(rows(ROW_PER_REFERENCED_KEY));
     });
 
     afterAll(() => {
@@ -139,20 +152,30 @@ describe('GET /api/readyz — capabilities.featureFlags is REPORTED, never GATIN
         // must never change. #2009: a container that refuses to serve because a
         // flag row is missing turns a dark feature into an outage, and this
         // endpoint is what the uptime check reads from six regions.
-        featureFlagFindMany.mockResolvedValue(
-            rows([
-                'notifications.sse',
-                'social.farm-registration',
-                'social.person-blocks',
-                'social.public-profile',
-            ]),
-        );
+        // The exact table #2291 measured: the four rows that existed, with
+        // `integrations.google` and `social.farm-media` absent. Kept as a
+        // literal because it is a historical state — but what it MISSES is
+        // derived, so a key registered later joins the expectation instead of
+        // breaking it. Hardcoding the complement is what broke this file.
+        const PRESENT_ON_2026_10_24 = [
+            'notifications.sse',
+            'social.farm-registration',
+            'social.person-blocks',
+            'social.public-profile',
+        ];
+        featureFlagFindMany.mockResolvedValue(rows(PRESENT_ON_2026_10_24));
 
         const { status, body } = await probe();
 
         expect(body.capabilities.featureFlags.state).toBe('incomplete');
-        expect(body.capabilities.featureFlags.missingRows)
-            .toEqual(['integrations.google', 'social.farm-media']);
+        expect(body.capabilities.featureFlags.missingRows).toEqual(
+            [...REFERENCED_FLAG_KEYS].filter((k) => !PRESENT_ON_2026_10_24.includes(k)).sort(),
+        );
+        // Still names the two that mattered, so the derivation cannot quietly
+        // become an empty set.
+        expect(body.capabilities.featureFlags.missingRows).toEqual(
+            expect.arrayContaining(['integrations.google', 'social.farm-media']),
+        );
         // The two assertions that make this a REPORT and not a gate.
         expect(status).toBe(200);
         expect(body.status).toBe('ready');
@@ -175,7 +198,7 @@ describe('GET /api/readyz — capabilities.featureFlags is REPORTED, never GATIN
     it('a flag row nobody gates on does not make the verdict incomplete', async () => {
         // A retired flag is not a fault, and reddening on one would report the
         // operator's own tidy-up as a problem.
-        featureFlagFindMany.mockResolvedValue(rows([...ALL_SIX, 'social.retired']));
+        featureFlagFindMany.mockResolvedValue(rows([...ROW_PER_REFERENCED_KEY, 'social.retired']));
 
         const { body } = await probe();
 
@@ -187,7 +210,7 @@ describe('GET /api/readyz — capabilities.featureFlags is REPORTED, never GATIN
         // Belt and braces across every state, because the placement is the
         // property and a future refactor that folded this into `checks` would
         // pass every assertion above except this one.
-        for (const value of [rows([]), rows(ALL_SIX), rows(['x.y'])]) {
+        for (const value of [rows([]), rows(ROW_PER_REFERENCED_KEY), rows(['x.y'])]) {
             featureFlagFindMany.mockResolvedValue(value);
             const { status } = await probe();
             expect(status).toBe(200);
