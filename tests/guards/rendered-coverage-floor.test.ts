@@ -312,7 +312,17 @@ const ROOT = path.resolve(__dirname, '../..');
 // covers the platform seam the swipe adds to `MobileCardList` — the card list
 // every list page in the product renders, so a regression there is not
 // journal-local.
-const RENDERED_TEST_FLOOR = 268;
+// 269 is this branch's own measured live count, not 268 + 1 — the guard
+// itself reports the number, measured against this PR's base (609387062).
+// Raised by `journal-treatment-drive-export.test.tsx` (#2019), which covers
+// the Google Drive export button. It is a RENDERED suite because the property
+// is an ABSENCE: the control must not be drawn unless BOTH halves of the
+// server's gate hold — `canAdmin` and the `integrations.google` flag — and
+// each half alone yields a button that refuses. A source grep cannot tell a
+// rendered absence from a conditional nobody evaluates, and the file's own
+// docblock names both halves in prose, so a text matcher would find them after
+// the condition was removed.
+const RENDERED_TEST_FLOOR = 269;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre

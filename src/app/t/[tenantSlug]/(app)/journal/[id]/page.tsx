@@ -98,7 +98,7 @@ export default function JournalDetailPage() {
     const params = useParams();
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
-    const { permissions, tenantSlug } = useTenantContext();
+    const { permissions, tenantSlug, googleIntegrationEnabled } = useTenantContext();
     const t = useTranslations('journal.detail');
     const te = useTranslations('journalEnums');
     const entryId = params.id as string;
@@ -199,6 +199,7 @@ export default function JournalDetailPage() {
     // БАБХ ДНЕВНИК (PDF) — offered on entries that record a field operation.
     const [showDnevnik, setShowDnevnik] = useState(false);
     const [dnevnikBusy, setDnevnikBusy] = useState(false);
+    const [driveBusy, setDriveBusy] = useState(false);
     const [dnevnikFrom, setDnevnikFrom] = useState<DateValue>(() => {
         const n = new Date();
         return new Date(Date.UTC(n.getFullYear(), 0, 1));
@@ -240,6 +241,60 @@ export default function JournalDetailPage() {
             toast.error(t('dnevnikGenerateFail'));
         } finally {
             setDnevnikBusy(false);
+        }
+    };
+
+    /**
+     * Both halves of the server's gate, so the control is ABSENT rather than
+     * refusing (#2019): admin — the owner's ruling, matching the credential
+     * the export resolves — AND the `integrations.google` flag, which is
+     * default-OFF and comes from the tenant layout because there is no
+     * client-side flags hook.
+     */
+    const driveExportEnabled = !!googleIntegrationEnabled && permissions.canAdmin;
+
+    /**
+     * Send the same per-block register to Drive instead of downloading it.
+     *
+     * No blob dance — the bytes never reach the browser. The server renders,
+     * uploads and reports where the file landed.
+     *
+     * `REGISTER_EMPTY_FOR_PERIOD` is listed with the Google refusals and is
+     * the one that is NOT a fault: an untreated block in a period is the
+     * ordinary case, and the owner's 2026-10-23 ruling made it a refusal
+     * rather than a blank form. It needs its own sentence for exactly that
+     * reason — "the export failed" would be wrong about what happened.
+     */
+    const exportDnevnikToDrive = async () => {
+        const locationId = entry?.fieldOperation?.locationId;
+        if (!locationId) return;
+        setDriveBusy(true);
+        try {
+            const res = await fetch(apiUrl(`/locations/${locationId}/farm-record/drive`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ from: toYMD(dnevnikFrom), to: toYMD(dnevnikTo) }),
+            });
+            if (!res.ok) {
+                // Read leniently: failing to parse the envelope must not
+                // become a second, less useful failure.
+                const body = (await res.json().catch(() => null)) as { code?: string } | null;
+                const byCode: Record<string, string> = {
+                    GOOGLE_NOT_CONNECTED: 'dnevnikDriveNotConnected',
+                    GOOGLE_DRIVE_NOT_GRANTED: 'dnevnikDriveNoAccess',
+                    GOOGLE_GRANT_REVOKED: 'dnevnikDriveRevoked',
+                    GOOGLE_DRIVE_REFUSED: 'dnevnikDriveRefused',
+                    REGISTER_EMPTY_FOR_PERIOD: 'dnevnikDriveEmpty',
+                };
+                toast.error(t((body?.code && byCode[body.code]) || 'dnevnikDriveFail'));
+                return;
+            }
+            toast.success(t('dnevnikDriveOk'));
+            setShowDnevnik(false);
+        } catch {
+            toast.error(t('dnevnikDriveFail'));
+        } finally {
+            setDriveBusy(false);
         }
     };
 
@@ -562,7 +617,20 @@ export default function JournalDetailPage() {
                 </Modal.Body>
                 <Modal.Actions>
                     <Button variant="secondary" size="sm" type="button" onClick={() => setShowDnevnik(false)}>{t('dnevnikCancel')}</Button>
-                    <Button variant="primary" size="sm" type="button" loading={dnevnikBusy} disabled={dnevnikBusy} onClick={() => void generateDnevnik()}>{t('dnevnikDownload')}</Button>
+                    {driveExportEnabled && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            type="button"
+                            loading={driveBusy}
+                            disabled={driveBusy || dnevnikBusy}
+                            data-testid="dnevnik-drive-export"
+                            onClick={() => void exportDnevnikToDrive()}
+                        >
+                            {t('dnevnikDrive')}
+                        </Button>
+                    )}
+                    <Button variant="primary" size="sm" type="button" loading={dnevnikBusy} disabled={dnevnikBusy || driveBusy} onClick={() => void generateDnevnik()}>{t('dnevnikDownload')}</Button>
                 </Modal.Actions>
             </Modal>
         </EntityDetailLayout>
