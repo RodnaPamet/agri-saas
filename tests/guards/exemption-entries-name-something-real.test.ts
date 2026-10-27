@@ -56,7 +56,12 @@
  * `tests/unit/x.test.ts` is not a trailing segment run of `tests/guards/x.test.ts`.
  */
 import { execSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+
+import { join } from 'path';
+
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const GUARD_GLOBS = [
     'tests/guards/*.test.ts',
@@ -186,6 +191,7 @@ function resolver(): { exact: Set<string>; suffix: Set<string>; base: Set<string
     return { exact: new Set(tracked), suffix, base };
 }
 
+const REPO_ROOT = process.cwd();
 const R = resolver();
 
 export function namesSomethingReal(entry: string): boolean {
@@ -201,7 +207,21 @@ export function namesSomethingReal(entry: string): boolean {
 export function exemptionEntries(files: string[]): Entry[] {
     const out: Entry[] = [];
     for (const guard of files) {
-        const src = readFileSync(guard, 'utf8');
+        // Comments BLANKED first, and `blankNonCode` blanks to spaces rather
+        // than deleting, so every offset below still lines up.
+        //
+        // This is not hygiene, it is a correctness fix. The literal scan reads
+        // the whole bracket body, comments included, so a commented-out entry
+        //
+        //     const FOO_ALLOWLIST = [
+        //         // 'src/old.ts',   <- removed last year
+        //         'src/new.ts',
+        //     ];
+        //
+        // was read as a live entry and reported stale — a scar reported as a
+        // wound, and this guard would have been its own first false positive.
+        // Strings are KEPT (`strings` defaults to false): they are the subject.
+        const src = blankNonCode(readFileSync(guard, 'utf8'));
         const re = /^const\s+([A-Z][A-Z0-9_]*)\s*(?::[^=]*)?=\s*(?=[[{])/gm;
         let m: RegExpExecArray | null;
         while ((m = re.exec(src)) !== null) {
@@ -317,6 +337,32 @@ describe('the mechanism itself', () => {
 
     it('balanced() returns null on an unterminated literal rather than a wrong slice', () => {
         expect(balanced("const Y_ALLOWED = [\n    'a.ts',", 18)).toBeNull();
+    });
+
+    it('a commented-out entry is NOT read as a live exemption', () => {
+        // The bug the blanking fixes, and the reason this guard routes through
+        // the shared stripper: without it, removing an entry by commenting it
+        // out would make this guard report the removal as stale debt.
+        // In tmpdir, not the repo: an interrupted run must not be able to
+        // leave a stray file inside a directory this guard itself scans.
+        const tmp = join(mkdtempSync(join(tmpdir(), 'exemption-scan-')), 'fixture.ts');
+        writeFileSync(
+            tmp,
+            [
+                'const FIXTURE_ALLOWLIST = [',
+                "    // 'src/removed-last-year.ts',",
+                "    'src/still-here.ts',",
+                '];',
+            ].join('\n'),
+            'utf8',
+        );
+        try {
+            const found = exemptionEntries([tmp]).map((e) => e.value);
+            expect(found).toEqual(['src/still-here.ts']);
+            expect(found).not.toContain('src/removed-last-year.ts');
+        } finally {
+            rmSync(join(tmp, '..'), { recursive: true, force: true });
+        }
     });
 
     it('FILEISH requires a basename, so a bare extension is not a filename', () => {
