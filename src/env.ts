@@ -413,6 +413,14 @@ export const env = createEnv({
         //   CADASTRE_WMS_URL         — free INSPIRE GetMap base URL.
         //   CADASTRE_WMS_LAYERS      — WMS LAYERS value (INSPIRE default).
         //   CADASTRE_WMS_PREMIUM_URL — paid №8002 GetMap base; wins when set.
+        // #2421 — МЗХ orthophoto upstream. OPTIONAL, and unset is the shipped
+        // state: until МЗХ answers the owner's licence enquiry in writing the
+        // «Ортофотокарта» surface must not serve imagery, and an env var
+        // nobody sets is how that position is enforced by the system rather
+        // than remembered by people. Note the service is HTTP-only on port
+        // 8080 — https does not answer — so this is deliberately not
+        // constrained to https.
+        ORTHO_WMS_URL: z.string().url().optional(),
         CADASTRE_WMS_URL: z.string().url().optional(),
         CADASTRE_WMS_LAYERS: z.string().default('CP.CadastralParcel'),
         CADASTRE_WMS_PREMIUM_URL: z.string().url().optional(),
@@ -872,6 +880,7 @@ export const env = createEnv({
         BARCHART_API_KEY: process.env.BARCHART_API_KEY,
         MARKET_NEWS_FEEDS: process.env.MARKET_NEWS_FEEDS,
         CADASTRE_OPENDATA_INDEX_URL: process.env.CADASTRE_OPENDATA_INDEX_URL,
+        ORTHO_WMS_URL: process.env.ORTHO_WMS_URL,
         CADASTRE_WMS_URL: process.env.CADASTRE_WMS_URL,
         CADASTRE_WMS_LAYERS: process.env.CADASTRE_WMS_LAYERS,
         CADASTRE_WMS_PREMIUM_URL: process.env.CADASTRE_WMS_PREMIUM_URL,

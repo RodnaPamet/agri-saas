@@ -6646,6 +6646,7 @@
         "GOOGLE_CONNECTION_NOT_FOUND": "That Google connection was not found.",
         "GOOGLE_CONNECTION_NO_CREDENTIALS": "This Google connection has no stored credentials. Connect Google again.",
         "GOOGLE_SCOPES_MISSING": "Google granted no usable permissions. Connect again and allow Drive or Calendar access.",
+        "ORTHO_BBOX_INVALID": "The map area is not valid. Try a smaller view.",
         "GOOGLE_NOT_CONNECTED": "No Google account is connected. A farm administrator connects one from Integrations.",
         "GOOGLE_GRANT_REVOKED": "The Google connection is no longer authorised. Reconnect it to export again.",
         "GOOGLE_DRIVE_NOT_GRANTED": "The Google connection does not include Drive access. Reconnect it and grant Drive.",
