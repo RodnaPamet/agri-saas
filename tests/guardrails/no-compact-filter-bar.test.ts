@@ -46,7 +46,6 @@ const ALLOWLIST = [
     // E2E specs keep historical references in docstrings / explanatory
     // comments about the pre-Epic 53 filter bar and its DOM ids.
     'tests/e2e/filters.spec.ts',
-    'tests/e2e/data-table-platform.spec.ts',
 ];
 
 function walk(dir: string, out: string[]): string[] {

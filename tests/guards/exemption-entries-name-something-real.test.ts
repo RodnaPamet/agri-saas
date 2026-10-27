@@ -38,7 +38,9 @@
  *
  * ## The resolution rule is load-bearing, and three plausible rules disagree
  *
- * Measured on the same 159 entries, the count is a property of the RULE:
+ * Measured on the same population, the count is a property of the RULE. The
+ * figures below are from `e4a7bc636`, BEFORE this PR removed the two dead
+ * entries it found, so the live count is now 157:
  *
  *   | rule                              | flagged | wrong                        |
  *   | --------------------------------- | ------- | ---------------------------- |
@@ -55,19 +57,18 @@
  * Suffix matching keeps the relative forms and still fails the move, because
  * `tests/unit/x.test.ts` is not a trailing segment run of `tests/guards/x.test.ts`.
  */
-import { execSync } from 'child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-
 import { join } from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles, collectTrackedFiles } from '../helpers/collect-files';
 
-const GUARD_GLOBS = [
-    'tests/guards/*.test.ts',
-    'tests/guardrails/*.test.ts',
-    'tests/contracts/*.test.ts',
-    'tests/regression/*.test.ts',
+const GUARD_ROOTS = [
+    'tests/guards',
+    'tests/guardrails',
+    'tests/contracts',
+    'tests/regression',
 ];
 
 /**
@@ -75,6 +76,8 @@ const GUARD_GLOBS = [
  * the alternative is inferring intent from how a set is used, and a guard that
  * has to be right about that would be wrong quietly.
  */
+const REPO_ROOT = process.cwd();
+
 const EXEMPT_NAME = /(ALLOWLIST|ALLOWED|EXEMPT|WAIVER|VM_PROVIDED|PERMITTED|LEGACY|IGNORE|SKIP)/;
 
 /**
@@ -151,36 +154,44 @@ export function balanced(src: string, open: number): string | null {
 }
 
 /**
- * Tracked files PLUS untracked-but-not-ignored ones.
+ * The guard files whose exemption lists this reads.
  *
- * `git ls-files` alone lists only what is committed, so a guard added in the
- * current PR is absent from its own scan until it is staged — and so is any
- * exemption list it brings with it. This guard's self-inclusion test below is
- * what surfaced that: the file was failing to find itself.
+ * `collectSourceFiles` walks the DISK rather than the index, which matters
+ * twice over here: it refuses an empty result — the property this whole file is
+ * about — and it sees a guard added in the current PR before it is staged. An
+ * earlier version shelled out to `git ls-files`, which lists only what is
+ * committed, and this guard's own self-inclusion test below caught it by
+ * failing to find itself.
  */
 function guardFiles(): string[] {
-    return execSync(`git ls-files --cached --others --exclude-standard ${GUARD_GLOBS.map((g) => `'${g}'`).join(' ')}`, {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        maxBuffer: 32 * 1024 * 1024,
-    })
-        .trim()
-        .split('\n')
-        .filter(Boolean);
+    const abs = collectSourceFiles({
+        roots: GUARD_ROOTS,
+        extensions: ['.test.ts'],
+        // 828 on e4a7bc636 — the disk walk recurses, where an earlier
+        // non-recursive glob saw 827. A floor well under it separates
+        // "nothing is wrong" from "nothing was examined".
+        floor: 600,
+    });
+    return abs.map((a) => (a.startsWith(REPO_ROOT) ? a.slice(REPO_ROOT.length + 1) : a));
 }
 
-/** Every tracked path, plus every trailing segment run of each. */
+/**
+ * Every known path, plus every trailing segment run of each.
+ *
+ * Tracked files, with a floor, via the shared helper. An UNTRACKED file added
+ * in the current PR is not in here — `namesSomethingReal` falls back to
+ * `existsSync` for the exact-path case, which covers it locally, and in CI
+ * every file in the checkout is tracked. So the residue is a local-only false
+ * positive on a suffix-shaped entry naming a brand-new unstaged file. Stated
+ * rather than papered over.
+ */
 function resolver(): { exact: Set<string>; suffix: Set<string>; base: Set<string> } {
-    // Same reason as guardFiles(): a file ADDED in this PR must resolve, or
-    // every allowlist entry naming it reads as stale debt.
-    const tracked = execSync('git ls-files --cached --others --exclude-standard', {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-    })
-        .trim()
-        .split('\n')
-        .filter(Boolean);
+    const tracked = collectTrackedFiles({
+        roots: ['.'],
+        // The floor is the whole point: a resolver that collected nothing would
+        // report every entry in the repo as stale.
+        floor: 1000,
+    }).map((a) => (a.startsWith(REPO_ROOT) ? a.slice(REPO_ROOT.length + 1) : a));
     const suffix = new Set<string>();
     const base = new Set<string>();
     for (const p of tracked) {
@@ -191,7 +202,6 @@ function resolver(): { exact: Set<string>; suffix: Set<string>; base: Set<string
     return { exact: new Set(tracked), suffix, base };
 }
 
-const REPO_ROOT = process.cwd();
 const R = resolver();
 
 export function namesSomethingReal(entry: string): boolean {
@@ -254,7 +264,8 @@ describe('file-shaped exemption entries name something real (#2377)', () => {
                 + `${ENTRIES.length} entr(ies); `
                 + `${Object.keys(DELIBERATELY_ABSENT).length} declared deliberately absent`,
         );
-        // Measured 32 declarations / 159 entries on e4a7bc636. Floors well
+        // Measured 32 declarations / 157 entries after this PR's two removals.
+        // Floors well
         // under that, because this guard's whole subject is a check that passes
         // over nothing — an extraction that broke would otherwise be the exact
         // defect it exists to catch, one level up.
