@@ -208,16 +208,6 @@ const WAIVERS: Waiver[] = [
             'docs/dependency-policy.md, which carries no row for this entry.',
         review: '2026-12-11',
     },
-    {
-        check: 'C',
-        target: 'nanoid',
-        reason:
-            'The override restates postcss\'s own `nanoid: ^3.3.18` verbatim — the single ' +
-            'requester in the tree — so it excludes nothing. Harmless today and misleading in ' +
-            'review, which is the C class exactly. Decide on review: drop it, or state in ' +
-            'docs/dependency-policy.md that it exists to hold the floor if postcss widens.',
-        review: '2026-12-11',
-    },
 
     // ── D: silent widening ───────────────────────────────────────────────
     {
