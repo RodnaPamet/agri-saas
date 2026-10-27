@@ -67,14 +67,77 @@ function walkDir(dir: string): string[] {
  * were blanked by `blankNonCode`, so the prefix test is both redundant and
  * weaker than what replaced it; the name is kept because the contract — lines
  * with no comment text in them — still holds.
+ *
+ * To be exact, because the name invites the wrong reading: this function
+ * strips NOTHING. It is `content.split('\n')`. The contract holds only because
+ * every caller passes content that `blankNonCode` has already blanked, so the
+ * comment text is gone before it arrives. The name describes a property of the
+ * INPUT, not an action this performs — and if a future caller forgets the
+ * blanking, this function will not notice.
  */
 function getNonCommentLines(content: string): string[] {
     return content.split('\n');
 }
 
 describe('CI Guard: No direct prisma in tenant-scoped code', () => {
+    describe('[no-direct-prisma] the selectors can select — the controls', () => {
+        // All three were reported dead by `scripts/selector-teeth.mjs`
+        // (#2407), and one of them fails in a way worse than a passing
+        // assertion.
+        it('readFilesInDir reaches both populations it drives', () => {
+            // `for (const file of repos)` GENERATES the tests below. An empty
+            // population does not make them pass — it means they are never
+            // created, so the suite reports fewer tests and nothing fails.
+            // That is invisible in a way a false green is not.
+            const repoFiles = readFilesInDir(path.join(SRC_ROOT, 'app-layer/repositories'));
+            const usecaseFiles = readFilesInDir(path.join(SRC_ROOT, 'app-layer/usecases'));
+            console.log(
+                `[no-direct-prisma] ${repoFiles.length} repositor(ies), ${usecaseFiles.length} usecase(s)`,
+            );
+            expect(repoFiles.length).toBeGreaterThan(10);
+            expect(usecaseFiles.length).toBeGreaterThan(20);
+            // The shape the loops read.
+            expect(repoFiles[0].name).toMatch(/\.ts$/);
+            expect(repoFiles[0].content.length).toBeGreaterThan(0);
+            expect(repoFiles[0].relPath.startsWith('src')).toBe(true);
+            // And the allowlist must name files that are actually in the
+            // population — an exemption for a file nothing scans is a reason
+            // recorded for a risk that no longer exists.
+            const names = new Set(repoFiles.map((f) => f.name));
+            for (const allowed of REPO_ALLOWLIST) {
+                expect({ allowed, present: names.has(allowed) }).toEqual({ allowed, present: true });
+            }
+        });
+
+        it('walkDir reaches the API route population', () => {
+            const routes = walkDir(path.join(SRC_ROOT, 'app/api')).filter((f) => f.endsWith('route.ts'));
+            console.log(`[no-direct-prisma] ${routes.length} route.ts file(s) under app/api`);
+            expect(routes.length).toBeGreaterThan(100);
+            expect(routes.every((f) => f.endsWith('route.ts'))).toBe(true);
+        });
+
+        it('getNonCommentLines returns the lines, and strips nothing itself', () => {
+            // Pinned because the NAME says otherwise. It is `split('\n')`; the
+            // comment text is gone only because callers blank first. Asserting
+            // the real behaviour stops someone "fixing" the function to match
+            // its name and silently double-stripping, and stops anyone relying
+            // on it to do the blanking.
+            expect(getNonCommentLines('a\nb\nc')).toEqual(['a', 'b', 'c']);
+            expect(getNonCommentLines('// still here')).toEqual(['// still here']);
+        });
+    });
+
     // ─── Repositories ───
-    const REPO_ALLOWLIST = ['ClauseRepository.ts', 'RiskTemplateRepository.ts', 'SsoConfigRepository.ts', 'IdentityLinkRepository.ts'];
+    // `ClauseRepository.ts` and `RiskTemplateRepository.ts` were removed from
+    // this list on 2026-10-27: neither file exists anywhere under src/. They
+    // were deleted by the GRC teardown — `eba5cf890` (#547) and `c18773589`
+    // (#501) — and the exemptions outlived them by months.
+    //
+    // An exemption for a file nothing scans is a reason recorded for a risk
+    // that no longer exists, and it reads as coverage. Found by the control
+    // above, which asserts every entry here is actually in the population, so
+    // the next one cannot go stale unnoticed.
+    const REPO_ALLOWLIST = ['SsoConfigRepository.ts', 'IdentityLinkRepository.ts'];
 
     const repos = readFilesInDir(path.join(SRC_ROOT, 'app-layer/repositories'));
 
