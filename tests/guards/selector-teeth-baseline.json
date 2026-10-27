@@ -137,11 +137,6 @@
     ],
     "tests/guards/generated-columns.test.ts": [
       "walk"
-    ],
-    "tests/guards/no-direct-prisma.test.ts": [
-      "getNonCommentLines",
-      "readFilesInDir",
-      "walkDir"
     ]
   }
 }
