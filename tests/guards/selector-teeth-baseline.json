@@ -138,10 +138,6 @@
     "tests/guards/generated-columns.test.ts": [
       "walk"
     ],
-    "tests/guards/issue-guardrails.test.ts": [
-      "grepFiles",
-      "isAllowed"
-    ],
     "tests/guards/no-direct-prisma.test.ts": [
       "getNonCommentLines",
       "readFilesInDir",
