@@ -40,6 +40,7 @@ import { join } from 'path';
 
 import * as yaml from 'js-yaml';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { admitsVersion } from '../helpers/overrides-analysis';
 
 const ROOT = process.cwd();
@@ -129,7 +130,12 @@ describe('the OpenTelemetry hold is still justified by upstream (#2383)', () => 
         // If `sdk-trace-node` were unused, the fix would be to remove it rather
         // than hold six packages back. Asserting the import keeps that option
         // from being overlooked when somebody revisits this.
-        const src = readFileSync(join(ROOT, 'src/lib/observability/instrumentation.ts'), 'utf8');
+        // Comments BLANKED first, and that is correctness rather than hygiene:
+        // the assertion is that the blocker is genuinely IMPORTED. A mention in
+        // a comment — including a note explaining why it was removed — would
+        // otherwise satisfy it, and the hold would rest on a scar instead of a
+        // dependency. Strings are kept, since the module path is the subject.
+        const src = blankNonCode(readFileSync(join(ROOT, 'src/lib/observability/instrumentation.ts'), 'utf8'));
         expect(src).toContain(BLOCKER);
     });
 });
@@ -144,6 +150,21 @@ describe('the check can tell the two worlds apart', () => {
         // And the version in the tree today is admitted by the blocker, which is
         // why the install works at all.
         expect(admitsVersion('>=1.0.0 <1.10.0', '1.9.1')).toBe(true);
+    });
+
+    it('a commented-out import does NOT satisfy the still-imported check', () => {
+        // The control for the blanking. Without it, a note like
+        //   // we used to import NodeTracerProvider from sdk-trace-node
+        // would keep the hold justified after the dependency was actually
+        // removed — a scar read as a wound, and the hold resting on prose.
+        const commented = `// import { NodeTracerProvider } from '${BLOCKER}';`;
+        expect(commented).toContain(BLOCKER);
+        expect(blankNonCode(commented)).not.toContain(BLOCKER);
+
+        // And the real shape still survives blanking, or the assertion above
+        // would be passing for the wrong reason.
+        const real = `import { NodeTracerProvider } from '${BLOCKER}';`;
+        expect(blankNonCode(real)).toContain(BLOCKER);
     });
 
     it('a hypothetical unblocked range WOULD trip the failure path', () => {
