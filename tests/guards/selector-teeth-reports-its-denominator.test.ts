@@ -43,6 +43,8 @@ import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const ROOT = path.resolve(__dirname, '../..');
 const TOOL = path.join(ROOT, 'scripts/selector-teeth.mjs');
 
@@ -291,30 +293,41 @@ describe('what the audit cannot reach, computed rather than quoted (#2423)', () 
     /**
      * Every guard file's selector count, in ONE node process.
      *
-     * One subprocess per file would be ~829 spawns; this hands the list to a
-     * single module that imports the tool's real `selectorsIn`. Still the actual
-     * function the CLI uses — a reimplementation here would agree with itself
-     * and say nothing about the tool.
+     * The FILE LIST comes from the shared `collectSourceFiles`, not from a
+     * `git ls-files` of its own. That matters twice over: the helper refuses an
+     * empty result, which is the property this file is about; and
+     * `file-collection-is-not-silently-empty` flagged the first version of this
+     * function as a hand-rolled collector, correctly — it had `ls-files` inside
+     * the embedded script and imported no helper.
+     *
+     * The subprocess therefore does only the thing it must: import the tool's
+     * real `selectorsIn`. ts-jest rewrites a dynamic import here to `require()`,
+     * which throws against a `.mjs`, and a reimplementation of the rule in this
+     * file would agree with itself and say nothing about the tool.
      */
-    function population(): { file: string; selectors: number }[] {
+    function selectorCounts(files: string[]): { file: string; selectors: number }[] {
         const script =
             `import { selectorsIn } from ${JSON.stringify(pathToFileURL(TOOL).href)};`
             + `import { readFileSync } from 'node:fs';`
-            + `import { execSync } from 'node:child_process';`
-            + `const files = execSync("git ls-files 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts' "`
-            + `  + "'tests/contracts/*.test.ts' 'tests/regression/*.test.ts'", { encoding: 'utf8' })`
-            + `  .trim().split('\\n').filter(Boolean);`
-            + `const rows = files.map((f) => ({ file: f, selectors: selectorsIn(readFileSync(f, 'utf8')).length }));`
-            + `console.log(JSON.stringify(rows));`;
-        const out = execFileSync('node', ['--input-type=module', '-e', script], {
-            cwd: ROOT,
-            encoding: 'utf-8',
-            maxBuffer: 32 * 1024 * 1024,
-        });
+            + `const files = JSON.parse(Buffer.from(process.argv[1], 'base64').toString('utf8'));`
+            + `console.log(JSON.stringify(files.map((f) => ({ file: f, selectors: selectorsIn(readFileSync(f, 'utf8')).length }))));`;
+        const out = execFileSync(
+            'node',
+            ['--input-type=module', '-e', script, Buffer.from(JSON.stringify(files), 'utf8').toString('base64')],
+            { cwd: ROOT, encoding: 'utf-8', maxBuffer: 32 * 1024 * 1024 },
+        );
         return JSON.parse(out.trim()) as { file: string; selectors: number }[];
     }
 
-    const ROWS = population();
+    const ROWS = selectorCounts(
+        collectSourceFiles({
+            roots: ['tests/guards', 'tests/guardrails', 'tests/contracts', 'tests/regression'],
+            extensions: ['.test.ts'],
+            // The helper throws below this, so the measurement cannot silently
+            // range over nothing — which would report 0 unreachable of 0 files.
+            floor: 600,
+        }).map((abs) => abs.slice(ROOT.length + 1)),
+    );
 
     it('[selector-teeth-reach] prints how much of the guard suite the audit can reach', () => {
         const auditable = ROWS.filter((r) => r.selectors > 0);
