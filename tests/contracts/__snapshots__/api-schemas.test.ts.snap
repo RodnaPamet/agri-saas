@@ -11490,6 +11490,117 @@ exports[`API contract — per-schema snapshots schema: OperationParcelUpdateRequ
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: OrthoBlocks 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "FeatureCollection"
+      ]
+    },
+    "year": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when the server’s cap cut the list. **Read it** — a cut list that does not say so is indistinguishable from a complete one, and the farmer would see a map missing blocks with nothing to indicate it."
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Feature"
+            ]
+          },
+          "geometry": {
+            "description": "Polygon or MultiPolygon in EPSG:4326, lon/lat."
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The Ministry’s \`PHBIDENT\`, e.g. \`56722-1033\`.",
+                "example": "56722-1033"
+              },
+              "usage": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "example": "Обработваеми земи"
+              },
+              "usageCode": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "example": "010"
+              }
+            },
+            "required": [
+              "id",
+              "usage",
+              "usageCode"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "properties"
+        ]
+      }
+    }
+  },
+  "required": [
+    "type",
+    "year",
+    "truncated",
+    "features"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: OrthoCoverage 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "year": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "The newest flight year with imagery over this area, or null when none has. Null is an ORDINARY answer, not a failure — about two thirds of the country is uncovered in any single year."
+    },
+    "flightDate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "\`YYYY-MM-DD\`, the calendar day **in Bulgaria**. The source stores a local date serialised as UTC (\`2023-10-13T21:00:00Z\` is midnight in Sofia on the 14th), so this is resolved in \`Europe/Sofia\` — reading it as UTC reports the flight a day early."
+    },
+    "attribution": {
+      "type": "string",
+      "example": "Ортофото: МЗХ"
+    }
+  },
+  "required": [
+    "year",
+    "flightDate",
+    "attribution"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: OwnBlock 1`] = `
 "{
   "type": "object",

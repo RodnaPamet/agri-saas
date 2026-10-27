@@ -60,6 +60,16 @@ describe('the blank-tile sentinel (#2421)', () => {
         // which the phone caches as final for the session — bare ground over
         // land that is photographed. A comfortable "under 5 KB" would risk
         // that for a low-detail tile over water or snow.
+        //
+        // **This assertion encodes a judgement, not a measurement, and it is
+        // the only thing holding the ceiling down.** Widening it to 5,000
+        // fails this line and NOTHING else: the behavioural cases still pass
+        // because the real tile I measured is 10,368 bytes, comfortably above
+        // either number. The input that would discriminate behaviourally — a
+        // genuine tile between 1,200 and 5,000 bytes — is one I have not
+        // measured and cannot synthesise honestly. So the guard is the
+        // explicit bound, and this comment is why it must not be relaxed
+        // without a measurement to justify it.
         expect(ORTHO_BLANK_TILE_CEILING).toBeLessThan(2_000);
     });
 

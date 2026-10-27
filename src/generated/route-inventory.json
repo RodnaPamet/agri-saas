@@ -1875,6 +1875,21 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/ortho/blocks",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/ortho/coverage",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/ortho/tiles/{z}/{x}/{y}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/parcels/by-crop",
       "status": "live",
       "documented": true
