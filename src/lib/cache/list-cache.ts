@@ -95,6 +95,38 @@ export interface CachedReadOptions<T> {
     params: unknown;
     /** TTL in seconds. Default 60. */
     ttlSeconds?: number;
+    /**
+     * The PROJECTION this read returns — pass the Prisma `select` object
+     * (#2406). Optional, and what it buys is that a changed projection cannot
+     * be served from a payload shaped by the old one.
+     *
+     * ## The bug this exists for
+     *
+     * The key carries the tenant, the filters and a version counter. The
+     * counter is INCR'd by WRITES; a DEPLOY bumps nothing. So for up to the
+     * remaining TTL after a release, this function hands new code a payload
+     * built by the previous `select`.
+     *
+     * Harmless while every field is only read back. Not harmless when
+     * something is COMPUTED from the payload after the cache — which is
+     * mandatory for anything per-caller, because the key carries no caller.
+     * #2395 added `mayDelete` to the task list, derived from two
+     * newly-projected fields; on a pre-deploy payload both read `undefined`,
+     * `undefined === null` is false, and every arm of the flag evaluated to
+     * deny — administrators included.
+     *
+     * ## Why the SELECT and not a hand-maintained version
+     *
+     * A `projectionVersion: 3` that a caller must remember to bump is the same
+     * class of bug with an extra step. Hashing the select means the
+     * fingerprint changes exactly when the shape does, including a nested
+     * `select`, with nobody having to notice.
+     *
+     * Omitting it leaves the key BYTE-IDENTICAL to before, so adopting this is
+     * per-call-site and costs no mass invalidation for the callers that have
+     * not.
+     */
+    projection?: unknown;
     /** The underlying DB query. Only called on cache miss. */
     loader: () => Promise<T>;
 }
@@ -138,8 +170,21 @@ export async function cachedListRead<T>(opts: CachedReadOptions<T>): Promise<T> 
         .digest('hex')
         .slice(0, 16);
 
+    // Appended only when a projection is given, so a caller that passes none
+    // keeps the exact key it had — no invalidation for the six call sites that
+    // have not adopted this.
+    const projectionSuffix =
+        opts.projection === undefined
+            ? ''
+            : ':p' +
+              createHash('sha256')
+                  .update(stableStringify(opts.projection))
+                  .digest('hex')
+                  .slice(0, 12);
+
     const cacheKey =
-        `${CACHE_PREFIX}:${opts.entity}:${opts.operation}:${tenantId}:v${version}:${filterHash}`;
+        `${CACHE_PREFIX}:${opts.entity}:${opts.operation}:${tenantId}:v${version}:${filterHash}` +
+        projectionSuffix;
 
     // ── HIT path ──
     const start = Date.now();

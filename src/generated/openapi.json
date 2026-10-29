@@ -7092,8 +7092,7 @@
           "type",
           "status",
           "createdAt",
-          "updatedAt",
-          "mayDelete"
+          "updatedAt"
         ],
         "additionalProperties": {},
         "description": "One row of the operator queue. This is the `taskListSelect` projection, NOT the full Task returned by the create — it carries no tenantId, description or metadataJson.\n\n`priority` was previously named here as an omission and is not one: the projection has carried it since the list became orderable by it. It reaches you through `.passthrough()` rather than as a declared field."
@@ -15640,15 +15639,14 @@
           },
           "mayDelete": {
             "type": "boolean",
-            "description": "Whether THIS caller may delete THIS task — the flag to gate a «Изтрий» control on (#2395).\n\nComputed server-side because the row cannot answer it: `DELETE /tasks/{taskId}` refuses three cases, and a client has none of the facts for two of them. `canWrite` (a READER sees the list and can delete nothing on it), creator-or-admin (`TASK_DELETE_NOT_PERMITTED`, 403), and whether the task is one block’s share of a recorded treatment (`TASK_BELONGS_TO_TREATMENT`, 409, which binds administrators too).\n\nONE flag for all three, deliberately — the same choice the journal row’s `mayDelete` makes and for the same reason: a client does not want to know WHICH reason applies, it wants to know whether to draw the control, and an offered «Изтрий» that refuses is worse than an absent one.\n\n**Read it as `mayDelete === false`, never `!mayDelete`.** An ABSENT field is a row cached before this field existed; treating absence as denial hides the control from the person who created the task. A stale permit costs one refusal, a stale denial costs a farmer their own row.\n\nAdvisory, not the control: the route re-checks and answers the codes above. A recorded treatment writes one task per block, so on a farm that records treatments many ordinary-looking rows carry `false` for the 409 reason rather than a permission one."
+            "description": "Whether THIS caller may delete THIS task — the flag to gate a «Изтрий» control on (#2395).\n\nComputed server-side because the row cannot answer it: `DELETE /tasks/{taskId}` refuses three cases, and a client has none of the facts for two of them. `canWrite` (a READER sees the list and can delete nothing on it), creator-or-admin (`TASK_DELETE_NOT_PERMITTED`, 403), and whether the task is one block’s share of a recorded treatment (`TASK_BELONGS_TO_TREATMENT`, 409, which binds administrators too).\n\nONE flag for all three, deliberately — the same choice the journal row’s `mayDelete` makes and for the same reason: a client does not want to know WHICH reason applies, it wants to know whether to draw the control, and an offered «Изтрий» that refuses is worse than an absent one.\n\n**OPTIONAL, and absence is an ordinary state (#2406).** The field is computed after the list cache from two projected columns, and a payload cached by an older projection does not carry them — so rather than report a denial it has no evidence for, the server omits the field. **Read it as `mayDelete === false`, never `!mayDelete`.** An ABSENT field is a row cached before this field existed; treating absence as denial hides the control from the person who created the task. A stale permit costs one refusal, a stale denial costs a farmer their own row.\n\nAdvisory, not the control: the route re-checks and answers the codes above. A recorded treatment writes one task per block, so on a farm that records treatments many ordinary-looking rows carry `false` for the 409 reason rather than a permission one."
           }
         },
         "required": [
           "id",
           "title",
           "type",
-          "status",
-          "mayDelete"
+          "status"
         ],
         "additionalProperties": {},
         "description": "One row of `GET /tasks`. A PROJECTION of `Task`, not the whole record — twelve fields matching `taskListSelect`, plus the computed `mayDelete`. Do not decode a list row as a detail row: `description`, `resolution`, `metadataJson`, `reviewer`, `createdBy` and the relations are absent here and present on `TaskDetail`.\n\n`createdByUserId` and `treatmentGroupId` are projected by the server to compute `mayDelete` and are STRIPPED before the response — a list row should not widen what it says about who did what."

@@ -197,7 +197,7 @@ export const TaskListItemDTOSchema = TaskDTOSchema.pick({
     assignee: true,
 })
     .extend({
-        mayDelete: z.boolean().openapi({
+        mayDelete: z.boolean().optional().openapi({
             description:
                 'Whether THIS caller may delete THIS task — the flag to gate a «Изтрий» control on '
                 + '(#2395).\n\n'
@@ -211,6 +211,7 @@ export const TaskListItemDTOSchema = TaskDTOSchema.pick({
                 + '`mayDelete` makes and for the same reason: a client does not want to know WHICH '
                 + 'reason applies, it wants to know whether to draw the control, and an offered '
                 + '«\u0418\u0437\u0442\u0440\u0438\u0439» that refuses is worse than an absent one.\n\n'
+                + '**OPTIONAL, and absence is an ordinary state (#2406).** The field is computed after the list cache from two projected columns, and a payload cached by an older projection does not carry them — so rather than report a denial it has no evidence for, the server omits the field. '
                 + '**Read it as `mayDelete === false`, never `!mayDelete`.** An ABSENT field is a '
                 + 'row cached before this field existed; treating absence as denial hides the '
                 + 'control from the person who created the task. A stale permit costs one refusal, '
