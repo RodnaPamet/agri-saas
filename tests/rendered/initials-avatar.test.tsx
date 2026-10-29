@@ -43,15 +43,27 @@ describe('getInitials', () => {
     });
 });
 
+/*
+ * The initials are `data-initials` plus a `::before` rule in globals.css, not a
+ * DOM text node — WCAG 2.5.3 (#2449). `aria-hidden` kept them out of the
+ * accessible NAME of the interactive parent, but axe compares that name against
+ * `visibleVirtual(node, screenReader=false, …)`, where `aria-hidden` counts for
+ * nothing because it hides from assistive tech and not from the screen. The
+ * initials were therefore the parent's visible text and absent from its name.
+ *
+ * So these assertions query the ATTRIBUTE: `getByText` cannot see generated
+ * content, and that invisibility to text queries is precisely the property
+ * being relied on.
+ */
 describe('<InitialsAvatar>', () => {
     it('renders the derived initials (name mode)', () => {
         render(<InitialsAvatar value="Ada Lovelace" />);
-        expect(screen.getByText('AL')).toBeInTheDocument();
+        expect(document.querySelector('[data-initials="AL"]')).not.toBeNull();
     });
 
     it('renders slug initials in slug mode', () => {
         render(<InitialsAvatar value="acme-corp" mode="slug" />);
-        expect(screen.getByText('AC')).toBeInTheDocument();
+        expect(document.querySelector('[data-initials="AC"]')).not.toBeNull();
     });
 
     it('is decorative — aria-hidden, so the parent practice owns the label', () => {
@@ -74,7 +86,7 @@ describe('<InitialsAvatar> — image-backed (avatar roadmap P2)', () => {
     it('renders no <img> when imageUrl is absent — initials only', () => {
         render(<InitialsAvatar value="Ada Lovelace" />);
         expect(screen.queryByTestId('initials-avatar-image')).toBeNull();
-        expect(screen.getByText('AL')).toBeInTheDocument();
+        expect(document.querySelector('[data-initials="AL"]')).not.toBeNull();
     });
 
     it('renders the image at the supplied URL when imageUrl is given', () => {
@@ -87,7 +99,7 @@ describe('<InitialsAvatar> — image-backed (avatar roadmap P2)', () => {
         const img = screen.getByTestId('initials-avatar-image');
         expect(img).toHaveAttribute('src', 'https://cdn.example.com/ada.jpg');
         // Initials stay in the DOM underneath as the fallback layer.
-        expect(screen.getByText('AL')).toBeInTheDocument();
+        expect(document.querySelector('[data-initials="AL"]')).not.toBeNull();
     });
 
     it('falls back to initials when the image fails to load', () => {
@@ -102,12 +114,12 @@ describe('<InitialsAvatar> — image-backed (avatar roadmap P2)', () => {
         // broken-image glyph; the initials beneath carry through.
         fireEvent.error(img);
         expect(screen.queryByTestId('initials-avatar-image')).toBeNull();
-        expect(screen.getByText('AL')).toBeInTheDocument();
+        expect(document.querySelector('[data-initials="AL"]')).not.toBeNull();
     });
 
     it('a null imageUrl is treated as initials-only', () => {
         render(<InitialsAvatar value="Cher" imageUrl={null} />);
         expect(screen.queryByTestId('initials-avatar-image')).toBeNull();
-        expect(screen.getByText('C')).toBeInTheDocument();
+        expect(document.querySelector('[data-initials="C"]')).not.toBeNull();
     });
 });

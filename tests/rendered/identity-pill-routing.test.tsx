@@ -37,11 +37,17 @@ describe('IdentityPill — routing stays at /tenants (scope-locked)', () => {
     });
 
     it('both pills render an initials avatar for their context', () => {
+        // The initials are `data-initials` + a `::before` rule, not a text
+        // node — WCAG 2.5.3 (#2449), so `getByText` cannot see them. Asserting
+        // the attribute keeps the original claim (each pill renders the avatar
+        // for ITS context) against the new mechanism.
         const tenant = render(<TenantIdentityPill />);
         // "Acme Corp" → AC.
-        expect(tenant.getByText('AC')).toBeInTheDocument();
+        expect(
+            tenant.container.querySelector('[data-initials="AC"]'),
+        ).not.toBeNull();
         const org = render(<OrgIdentityPill />);
         // "Globex Org" → GO.
-        expect(org.getByText('GO')).toBeInTheDocument();
+        expect(org.container.querySelector('[data-initials="GO"]')).not.toBeNull();
     });
 });
