@@ -48,6 +48,44 @@ describe('Translation labels — no "+ " prefix antipattern', () => {
         expect(files.length).toBeGreaterThan(0);
     });
 
+    /*
+     * THE SELECTOR'S OWN CONTROL — #2417.
+     *
+     * `selector-teeth` found `flatten()` DEAD: gutted to `return []` it
+     * survived every test in this file. The reason is narrow and worth
+     * stating, because the file already looked careful.
+     *
+     * The assertion each locale makes is `expect(violations).toEqual([])`,
+     * over `flatten(json).filter(...)`. An empty `flatten` makes `violations`
+     * empty, so the suite reports "no `+ ` labels" having read nothing. The
+     * existing control above checks that FILES were found — a real control,
+     * and the one that caught #1813's bundle split — but it says nothing about
+     * whether the extraction inside each file reached any strings. Two
+     * different denominators; only one was checked.
+     *
+     * Measured: 6,011 string pairs per locale bundle. The floor is well under
+     * that so an ordinary catalogue edit does not move it, while a `flatten`
+     * that returns nothing — or stops recursing into nested objects, which is
+     * where nearly all of them live — fails here.
+     */
+    it('flatten reaches the catalogue strings the filter runs over', () => {
+        const pairs = flatten(readCatalogue(files[0]) as unknown);
+        expect(pairs.length).toBeGreaterThan(2000);
+        // And they are really [key, value] string pairs, so the count cannot
+        // be satisfied by 6,011 of something else.
+        expect(pairs.every(([k, v]) => typeof k === 'string' && typeof v === 'string')).toBe(true);
+    });
+
+    it('the "+ " filter fires on a value that has the prefix', () => {
+        // The other half. The control above proves the population is reached;
+        // this proves the predicate over it can still discriminate, so a
+        // broken regex fails too rather than passing over a real catalogue.
+        const hit = flatten({ nested: { label: '+ Asset' }, ok: 'Create Asset' }).filter(
+            ([, v]) => /^\+\s/.test(v),
+        );
+        expect(hit).toEqual([['nested.label', '+ Asset']]);
+    });
+
     for (const file of files) {
         it(`${file} has no values starting with "+ "`, () => {
             const json = readCatalogue(file) as unknown;
