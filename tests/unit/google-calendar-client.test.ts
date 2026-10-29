@@ -209,6 +209,31 @@ describe('reading back what we wrote (#2020)', () => {
         expect(calls[1].url).toContain('pageToken=p2');
     });
 
+    it('reports the start day, which the sync needs to bound deletion', async () => {
+        // The sync reads a BOUNDED window, so absence from the desired set is
+        // only evidence of deletion for an event inside it. Without this
+        // field every aged-out event would be deleted on the next sync.
+        const { impl } = sequence([jsonRes({ items: [ours('A', 'a')] })]);
+        const [row] = await listFarmEvents(TOK, CAL, { fetchImpl: impl });
+        expect(row.startDay).toBe('2026-11-05');
+    });
+
+    it('narrows a TIMED event to its day, because a farmer may convert one', async () => {
+        // We only ever write all-day events, but the farmer owns this
+        // calendar. A `dateTime` left whole would never compare equal to a
+        // window bound.
+        const timed = {
+            id: 'g-T',
+            summary: 'x',
+            start: { dateTime: '2026-11-05T09:00:00+02:00' },
+            end: { dateTime: '2026-11-05T10:00:00+02:00' },
+            extendedProperties: { private: { [AGRENT_ID_PROPERTY]: 'T' } },
+        };
+        const { impl } = sequence([jsonRes({ items: [timed] })]);
+        const [row] = await listFarmEvents(TOK, CAL, { fetchImpl: impl });
+        expect(row.startDay).toBe('2026-11-05');
+    });
+
     it('computes what the event says NOW, for edit detection', async () => {
         const { impl } = sequence([jsonRes({ items: [ours('A', 'Пръскане')] })]);
         const [row] = await listFarmEvents(TOK, CAL, { fetchImpl: impl });
@@ -223,7 +248,7 @@ describe('reading back what we wrote (#2020)', () => {
 });
 
 describe('a farmer’s own edit wins (#2020)', () => {
-    const base = { eventId: 'g1', agrentId: 'A' };
+    const base = { eventId: 'g1', agrentId: 'A', startDay: '2026-11-05' };
 
     it('an untouched event is not an edit', () => {
         expect(wasEditedByUser({ ...base, writtenHash: 'h1', currentHash: 'h1' })).toBe(false);

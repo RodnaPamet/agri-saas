@@ -181,6 +181,20 @@ export interface ExistingEvent {
     writtenHash: string | null;
     /** What the event says NOW — used to detect a farmer's own edit. */
     currentHash: string;
+    /**
+     * The event's own start day, as Calendar reports it.
+     *
+     * Needed because the sync reads a BOUNDED window of the farm's sources,
+     * so "not in the desired set" is only evidence of deletion for an event
+     * INSIDE that window. Without this the first sync would delete every
+     * event that had aged out of the window — turning a rolling window into a
+     * destroyer of the farm's own history.
+     *
+     * An all-day event reports `start.date`; one with a time reports
+     * `start.dateTime`. We only ever write all-day events, but a farmer may
+     * have converted one, so both are narrowed to the leading `YYYY-MM-DD`.
+     */
+    startDay: string;
 }
 
 /**
@@ -246,6 +260,7 @@ export async function listFarmEvents(
             out.push({
                 eventId: item.id,
                 agrentId,
+                startDay: (item.start?.date ?? item.start?.dateTime ?? '').slice(0, 10),
                 writtenHash: priv[AGRENT_HASH_PROPERTY] ?? null,
                 currentHash: contentFingerprint({
                     summary: item.summary ?? '',
