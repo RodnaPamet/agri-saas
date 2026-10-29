@@ -70,7 +70,9 @@ describe('<AvatarUploadField>', () => {
         // The privacy note about client-side EXIF stripping is present.
         expect(screen.getByText(/metadata/i)).toBeInTheDocument();
         // Initials render as the fallback identity.
-        expect(screen.getByText('AL')).toBeInTheDocument();
+        // Initials are `data-initials` + a `::before` rule, not a text node —
+        // WCAG 2.5.3 (#2449), so `getByText` cannot see them.
+        expect(document.querySelector('[data-initials="AL"]')).not.toBeNull();
     });
 
     it('with an avatar — shows Change + Remove; Remove DELETEs and clears', async () => {

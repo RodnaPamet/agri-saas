@@ -331,7 +331,14 @@ describe('the three-step treatment form', () => {
     it('keeps the picker’s own day when one is chosen', async () => {
         const { submit } = mount();
         const u = user();
-        await u.click(screen.getByRole('button', { name: 'Date carried out' }));
+        // The trigger's accessible name now ENDS WITH its value: WCAG 2.5.3
+        // requires the name to contain the visible text, so #2449 extends
+        // `aria-labelledby` with the value slot («Date carried out 15 Jan 2026»,
+        // or the placeholder when empty). An exact-name query therefore cannot
+        // match, and pinning the full string would re-couple this test to a
+        // formatted date. Substring is the right granularity: it asserts WHICH
+        // control, which is all this line ever meant.
+        await u.click(screen.getByRole('button', { name: /Date carried out/ }));
         // The 1st — a day that is never in the future, unlike a fixed 15th.
         const first = () =>
             screen.getAllByRole('button').find((b) => b.textContent?.trim() === '1');
