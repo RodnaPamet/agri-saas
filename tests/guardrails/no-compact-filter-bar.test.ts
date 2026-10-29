@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { assertAllowlistIsLive } from '../helpers/assert-allowlist-is-live';
 
 const ROOTS = [
     path.resolve(__dirname, '../../src'),
@@ -28,8 +29,6 @@ const ROOTS = [
 // should import from a deleted module — this allowlist is for
 // historical notes only.
 const ALLOWLIST = [
-    // Compat-bridge utility docs — describe the legacy flat-state shape.
-    'src/components/ui/filter/filter-state.ts',
     // Filter-foundation tests include historical "compat bridge" describe
     // blocks asserting the `fromCompactFilterState` / `toCompactFilterState`
     // round-trip still works. The utility function names (and therefore
@@ -41,12 +40,32 @@ const ALLOWLIST = [
     'tests/unit/filter-foundation.test.ts',
     // This guard file itself.
     'tests/guardrails/no-compact-filter-bar.test.ts',
-    // Standardisation test documents the removed legacy stack.
+    // Standardisation test documents the removed legacy stack — `it.each`
+    // titles like '%s does not import CompactFilterBar' put the string in a
+    // STRING LITERAL, which survives `blankNonCode`. That is why it is live
+    // and the two removed below were not.
     'tests/unit/filter-standardization.test.ts',
-    // E2E specs keep historical references in docstrings / explanatory
-    // comments about the pre-Epic 53 filter bar and its DOM ids.
-    'tests/e2e/filters.spec.ts',
 ];
+
+/**
+ * TWO ENTRIES WERE REMOVED HERE, AND THEY WERE DEAD THE SECOND WAY — #2414.
+ *
+ *     'src/components/ui/filter/filter-state.ts'   // 1 occurrence, in a docblock
+ *     'tests/e2e/filters.spec.ts'                  // 1 occurrence, in a docblock
+ *
+ * Both files exist, so #2377's existence check passed them. Neither matches
+ * the ban below, because the ban reads `blankNonCode(src)` and their only
+ * occurrence is inside a comment. They exempted nothing, and read as
+ * "known, accepted violation" over clean files.
+ *
+ * The rationale is what gives the class away: the comment above this list
+ * said these files were allowed to reference the string **"in comments or
+ * docstrings"**. For a guard that blanks comments before matching, that
+ * sentence describes a file which cannot violate — so the exemption was
+ * never needed. Any guard blanking comments can be screened the same way, by
+ * grepping its own reasons for "comment"/"docstring"/"historical", before
+ * reading a single file.
+ */
 
 function walk(dir: string, out: string[]): string[] {
     if (!fs.existsSync(dir)) return out;
@@ -96,6 +115,31 @@ describe('Epic 53 — no CompactFilterBar references', () => {
             }
         }
         expect(offenders).toEqual([]);
+    });
+
+    it('every exemption is LIVE — present and still matching the ban (#2414)', () => {
+        // Strictly stronger than "the file exists", which is what #2377's
+        // generic scan can ask. The helper applies THIS guard's own ban —
+        // supplied below, not inferred — so it separates the two ways an
+        // exemption dies: gone, and irrelevant.
+        //
+        // `blankOptions` is deliberately `{}`, matching the ban above:
+        // comments blanked, STRING LITERALS KEPT. Turning `strings` on would
+        // reclassify `filter-standardization.test.ts` as irrelevant and invite
+        // its deletion, after which the guard would stop covering a file that
+        // really does name the banned component in its `it.each` titles.
+        const report = assertAllowlistIsLive({
+            label: 'no-compact-filter-bar ALLOWLIST',
+            entries: ALLOWLIST,
+            blankOptions: {},
+            violates: (code) => code.includes('CompactFilterBar'),
+        });
+        // The denominator, printed: a gate that cannot say how many entries it
+        // checked cannot say what it covers.
+        console.log(
+            `[no-compact-filter-bar] ${report.live.length} of ${ALLOWLIST.length} exemption(s) live`,
+        );
+        expect(report.live).toHaveLength(ALLOWLIST.length);
     });
 
     it('the deleted component file is actually gone', () => {
