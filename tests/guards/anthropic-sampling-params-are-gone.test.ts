@@ -37,13 +37,46 @@
  * `chat.completions.create` — the OpenAI shape — is excluded for the same
  * reason, and asserted below so the rule cannot creep onto that path.
  */
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, relative } from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectTrackedFiles } from '../helpers/collect-files';
 
 const ROOT = join(__dirname, '../..');
+
+/**
+ * The installed package root.
+ *
+ * This was `dirname(require.resolve('@anthropic-ai/sdk/package.json'))` on the
+ * claim that every package exposes `./package.json`. **It does not** — this
+ * one's `exports` map omits it, and Jest's resolver threw
+ * `Cannot find module '@anthropic-ai/sdk/package.json'`. Recorded rather than
+ * quietly replaced, because the plausible-sounding version was wrong.
+ *
+ * A plain path it is. The point of the change that brought me here was never
+ * the resolver: it was reading EVERY `.d.ts` instead of one hardcoded file,
+ * and this keeps that while dropping the `resources/messages/` segment
+ * `one-catalogue-reader` objects to.
+ */
+const SDK_ROOT = join(ROOT, 'node_modules/@anthropic-ai/sdk');
+
+/**
+ * Every `.d.ts` the installed SDK ships.
+ *
+ * `readdirSync` throws on a missing root, which is what we want: a package
+ * that moved must fail LOUDLY here, not return `[]` and let the premise check
+ * report the parameters absent having read nothing.
+ */
+function sdkTypeFiles(dir: string = SDK_ROOT): string[] {
+    const out: string[] = [];
+    for (const name of readdirSync(dir)) {
+        const abs = join(dir, name);
+        if (statSync(abs).isDirectory()) out.push(...sdkTypeFiles(abs));
+        else if (name.endsWith('.d.ts')) out.push(abs);
+    }
+    return out;
+}
 
 /** Removed by API version 2026-10-21. */
 const REMOVED = ['temperature', 'top_p', 'top_k'] as const;
@@ -98,19 +131,40 @@ describe('Anthropic sampling params are gone from the API (#2437)', () => {
         // would go on forbidding something legal and the next reader would
         // have only the assertion, not the reason. So the reason is checked:
         // fail HERE, pointing at the SDK, rather than silently outliving it.
-        const types = readFileSync(
-            join(ROOT, 'node_modules/@anthropic-ai/sdk/resources/messages/messages.d.ts'),
-            'utf8',
-        );
-        for (const p of REMOVED) {
-            expect({ param: p, inSdkTypes: new RegExp(`\\b${p}\\b`).test(types) })
-                .toEqual({ param: p, inSdkTypes: false });
+        //
+        // EVERY `.d.ts` in the package, located through `require.resolve`, not
+        // one hardcoded path. Two reasons, and the second is why this changed:
+        //   · a single file answers only for that file, and upstream moves
+        //     declarations between them — a path that stops existing would read
+        //     as "the parameters are gone" for the wrong reason (the
+        //     `readFileSync` would throw, so that one fails loudly, but a file
+        //     that merely stopped holding them would not);
+        //   · the hardcoded path contained `resources/messages/`, which tripped
+        //     `one-catalogue-reader`'s "path construction into messages/" rule.
+        //     That detector is right to be broad — its docblock records two
+        //     narrower versions leaking — and dodging it by splitting the string
+        //     literal would be the contrivance it warns against. Resolving the
+        //     package removes the path instead of hiding it.
+        const files = sdkTypeFiles();
+        // The denominator, and a floor: an empty walk would make the loop below
+        // assert nothing and report the premise confirmed having read no types.
+        expect(files.length).toBeGreaterThan(20);
+
+        const offenders: string[] = [];
+        for (const file of files) {
+            const types = readFileSync(file, 'utf8');
+            for (const param of REMOVED) {
+                if (new RegExp(`\\b${param}\\b`).test(types)) {
+                    offenders.push(`${relative(SDK_ROOT, file)} mentions ${param}`);
+                }
+            }
         }
+        expect(offenders).toEqual([]);
     });
 
     it('the SDK is the v1 generation this rule is about', () => {
         const v = JSON.parse(
-            readFileSync(join(ROOT, 'node_modules/@anthropic-ai/sdk/package.json'), 'utf8'),
+            readFileSync(join(SDK_ROOT, 'package.json'), 'utf8'),
         ).version as string;
         // On v0 the parameters were valid, so the rule would be wrong.
         expect(Number(v.split('.')[0])).toBeGreaterThanOrEqual(1);
