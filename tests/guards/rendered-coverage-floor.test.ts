@@ -322,7 +322,18 @@ const ROOT = path.resolve(__dirname, '../..');
 // rendered absence from a conditional nobody evaluates, and the file's own
 // docblock names both halves in prose, so a text matcher would find them after
 // the condition was removed.
-const RENDERED_TEST_FLOOR = 269;
+//
+// 269 → 270 for `google-card-calendar-sync.test.tsx` (#2020). Rendered rather
+// than a guard because two fields of the sync's response are CONTRACTS and the
+// question is whether they reach the screen: `partial` means the sync declined
+// to delete anything (the source read was truncated) and `skippedEdited` means
+// events the farmer had edited were left alone. A plain "Calendar updated"
+// over either is a claim about a clean run that did not happen — and each
+// "no warning shown" case is paired with one that DOES warn, because a
+// never-warning implementation satisfies the negative half alone.
+// 270 is this branch's own measured live count against base 0b47fdc95
+// (269 files → 270), not a projected total.
+const RENDERED_TEST_FLOOR = 270;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
