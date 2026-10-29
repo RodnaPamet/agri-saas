@@ -174,9 +174,25 @@ export function MarketTrendsWidget() {
             <Link
                 href={tenantHref('/trends')}
                 id="market-trends-widget"
-                aria-label={t('widget.tapThrough')}
                 className="block rounded-lg transition-colors hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             >
+                {/*
+                  * WCAG 2.5.3 Label in Name. This link used to carry
+                  * `aria-label={t('widget.tapThrough')}`, which REPLACED its name
+                  * with «Отвори пазарните тенденции» while the visible text is the
+                  * headline price, its unit and its delta. The accessible name
+                  * therefore contained none of the visible text, so a voice-control
+                  * user saying the figure they can see could not activate it —
+                  * axe 4.14's `label-content-name-mismatch`, same rule as #2430.
+                  *
+                  * An aria-label cannot be the fix here: the visible text is live
+                  * numeric data, so any static label would stop containing it the
+                  * next time the price moved. So the name comes from CONTENT —
+                  * this `sr-only` span plus the figures — which contains the
+                  * visible text by construction. Same idiom as
+                  * `left-accordion-rail.tsx`.
+                  */}
+                <span className="sr-only">{t('widget.tapThrough')}</span>
                 <AsyncState
                     data={data}
                     error={error}
