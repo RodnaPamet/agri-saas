@@ -37,33 +37,33 @@
  * `chat.completions.create` — the OpenAI shape — is excluded for the same
  * reason, and asserted below so the rule cannot creep onto that path.
  */
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join, relative } from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectTrackedFiles } from '../helpers/collect-files';
 
 const ROOT = join(__dirname, '../..');
-const SRC = join(ROOT, 'src');
 
 /** Removed by API version 2026-10-21. */
 const REMOVED = ['temperature', 'top_p', 'top_k'] as const;
 
 const CALL = /messages\.(create|stream)\(/;
 
-function tsFiles(dir: string): string[] {
-    const out: string[] = [];
-    for (const name of readdirSync(dir)) {
-        const p = join(dir, name);
-        if (statSync(p).isDirectory()) {
-            out.push(...tsFiles(p));
-        } else if (name.endsWith('.ts') || name.endsWith('.tsx')) {
-            out.push(p);
-        }
-    }
-    return out;
-}
-
-const ALL = tsFiles(SRC);
+/**
+ * The SHARED collector, not a walk of my own. A hand-rolled one can be gutted
+ * to return `[]` and every assertion below then passes over nothing — and
+ * since the defect this file guards is already invisible to `tsc`, an empty
+ * population would restore exactly the silence it was written to end.
+ * `collectTrackedFiles` throws on an empty result and takes a floor.
+ * Enforced by `tests/guards/file-collection-is-not-silently-empty.test.ts`,
+ * which is how the first version of this file was caught.
+ */
+const ALL = collectTrackedFiles({
+    roots: ['src'],
+    extensions: ['.ts', '.tsx'],
+    floor: 500,
+});
 const CALLERS = ALL.filter((f) => CALL.test(readFileSync(f, 'utf8')));
 
 describe('Anthropic sampling params are gone from the API (#2437)', () => {
