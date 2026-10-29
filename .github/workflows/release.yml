@@ -116,6 +116,52 @@ jobs:
         id: prev_tag
         run: echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo none)" >> "$GITHUB_OUTPUT"
 
+      # ── SBOM (SPDX-JSON) generation — BEFORE semantic-release ──
+      # anchore/sbom-action wraps syft; pinned to a release tag (not a
+      # mutable major) so the supply-chain tooling itself is
+      # reproducible. Scans the repository source tree (the built
+      # `app`/`worker` images are produced + scanned separately by
+      # Watchtower/Trivy on the deploy VM; the source SBOM is what we
+      # attach to the GitHub Release for downstream consumers /
+      # vulnerability-feed ingestion).
+      #
+      # IT RUNS BEFORE THE RELEASE, UNGATED, AND THAT ORDER IS THE FIX
+      # FOR #2458. It used to sit after `Detect published release`, gated
+      # on `released == 'true'`, which made the SBOM producible only in
+      # the window after semantic-release returned. On 2026-10-29
+      # semantic-release PUBLISHED v12.80.2 at 14:45:21 (78s in) and then
+      # hung until the job's `timeout-minutes: 10` cancelled it at
+      # 14:54:19 — so steps 7-10 were all `skipped`, the release shipped
+      # with no asset, and v12.80.2 is the only release of the twelve
+      # with an empty asset list. Generating first means the bytes exist
+      # before anything slow or flaky can starve them.
+      #
+      # `continue-on-error` is load-bearing in the OTHER direction. With
+      # generation ahead of the release, a hard failure here would stop
+      # the release being cut at all — and a syft download 504 is a
+      # measured event, not a hypothetical (#685, 2026-08-21). An SBOM is
+      # a document ABOUT a release; it must never gate shipping one. The
+      # failure is NOT thereby suppressed: `Attach SBOM` below fails loud
+      # when a release published and no file is here, which is the
+      # actionable property ("this release has no SBOM") rather than the
+      # mechanism ("a CDN returned 504"). `sbom-backfill.yml` is the
+      # repair path, and it argues for exactly this placement of the
+      # signal.
+      #
+      # Named off the commit, not the tag: no tag exists yet at this
+      # point, by construction.
+      - name: Generate SBOM (SPDX-JSON)
+        continue-on-error: true
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: "sbom.spdx.json"
+          artifact-name: "sbom-${{ github.sha }}.spdx.json"
+          # Bounded because this now runs on EVERY main push rather than
+          # only on publishing ones: ~2.5 MB a time, ~25 pushes a day.
+          upload-artifact-retention: 14
+
       # semantic-release reads release.config.js and does everything:
       # analyze commits → determine version → generate notes → publish.
       #
@@ -125,6 +171,12 @@ jobs:
       # COMMIT_BACK mirrors the token's presence and gates @semantic-release/git
       # in release.config.js — so with no token, no push to main is even attempted.
       - name: Run semantic-release
+        # Bounds the #2458 hang at the STEP rather than letting it eat the
+        # job budget: a step timeout is a clean step failure, so the steps
+        # after it still run with time to spare, where a JOB cancellation
+        # skipped all four. 6 min is ~4.6x the observed publish (78s) and
+        # ~70x a no-op run (3-5s).
+        timeout-minutes: 6
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           SEMANTIC_RELEASE_COMMIT_BACK: ${{ secrets.RELEASE_TOKEN != '' }}
@@ -134,9 +186,15 @@ jobs:
       # GitHub Release was published this run and `released` is `true`;
       # `version` carries the tag (e.g. v1.2.3) for the SBOM asset
       # upload below.
+      # `always()`, not `success()`: the whole point of #2458 is the case
+      # where semantic-release PUBLISHED and then did not return cleanly.
+      # Under `success()` this step skipped, `released` was never set, and
+      # the attach below could not fire however it was gated. A genuine
+      # failure before any tag was cut still reports `released=false` here,
+      # so widening the gate does not invent a release.
       - name: Detect published release
         id: release
-        if: success()
+        if: always()
         run: |
           NEW_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo none)"
           echo "version=${NEW_TAG}" >> "$GITHUB_OUTPUT"
@@ -148,36 +206,46 @@ jobs:
             echo "No new release published this run."
           fi
 
-      # ── SBOM (SPDX-JSON) generation — only on a real release ──
-      # anchore/sbom-action wraps syft; pinned to a release tag (not a
-      # mutable major) so the supply-chain tooling itself is
-      # reproducible. Scans the repository source tree (the built
-      # `app`/`worker` images are produced + scanned separately by
-      # Watchtower/Trivy on the deploy VM; the source SBOM is what we
-      # attach to the GitHub Release for downstream consumers /
-      # vulnerability-feed ingestion). Gated on
-      # `steps.release.outputs.released == 'true'` so dry/no-op release
-      # runs don't emit a stray SBOM.
-      - name: Generate SBOM (SPDX-JSON)
-        if: success() && steps.release.outputs.released == 'true'
-        uses: anchore/sbom-action@v0.24.3
-        with:
-          path: .
-          format: spdx-json
-          output-file: "sbom.spdx.json"
-          # Name the artifact deterministically off the released tag.
-          artifact-name: "sbom-${{ steps.release.outputs.version }}.spdx.json"
-
-      # Attach the SBOM to the just-published GitHub Release as a
-      # downloadable asset. `gh release upload --clobber` is idempotent
-      # if the workflow is re-run for the same tag.
+      # Attach the SBOM generated at the top of this job to the
+      # just-published GitHub Release. `gh release upload --clobber` is
+      # idempotent if the workflow is re-run for the same tag.
+      #
+      # `always()` so a release that published without a clean return
+      # still gets its asset — that is #2458. Still gated on
+      # `released == 'true'`, so a no-op run attaches nothing.
+      #
+      # This step is ALSO where a missing SBOM becomes loud. Generation
+      # is `continue-on-error`, so without the `test -s` below a syft
+      # outage would ship a release with no asset and a green job — the
+      # silent gap `sbom-backfill.yml` was written to argue against. The
+      # package floor is that workflow's check, for its reason: a tree
+      # with this lockfile cannot legitimately resolve to a handful of
+      # packages, so a small count means syft scanned the wrong thing and
+      # a zero-byte file would upload happily and look like a fix.
       - name: Attach SBOM to GitHub Release
-        if: success() && steps.release.outputs.released == 'true'
+        if: always() && steps.release.outputs.released == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ steps.release.outputs.version }}" \
-            sbom.spdx.json --clobber
+          set -euo pipefail
+          TAG='${{ steps.release.outputs.version }}'
+
+          if [ ! -s sbom.spdx.json ]; then
+            echo "::error::${TAG} published but no SBOM was generated." \
+                 "Repair it with the 'SBOM backfill' workflow:" \
+                 "gh workflow run sbom-backfill.yml -f tag=${TAG}"
+            exit 1
+          fi
+
+          PKGS="$(jq '.packages | length' sbom.spdx.json)"
+          if [ "${PKGS}" -lt 100 ]; then
+            echo "::error::SBOM for ${TAG} has only ${PKGS} packages —" \
+                 "syft almost certainly scanned the wrong tree."
+            exit 1
+          fi
+          echo "Attaching an SBOM of ${PKGS} packages to ${TAG}."
+
+          gh release upload "${TAG}" sbom.spdx.json --clobber
 
       - name: Post release summary
         if: success()
