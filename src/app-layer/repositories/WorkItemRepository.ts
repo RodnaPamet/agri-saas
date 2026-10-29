@@ -536,6 +536,48 @@ export class WorkItemRepository {
         };
     }
 
+    /**
+     * List ROWS for a known id set, newest first (#2463).
+     *
+     * Distinct from {@link listByIds} below, which is the BULK status path and
+     * projects `{ id, status }` only. Same shape of input, different question:
+     * that one validates transitions, this one renders a list.
+     *
+     * Distinct from {@link list} because the ORDER is a different contract.
+     * `list` sorts by `CURSOR_ORDER_BY` (priority, then date) because the Tasks
+     * page is a work queue. A parcel's task history is a history, so it reads
+     * newest-first.
+     *
+     * **The order is TOTAL, deliberately.** `createdAt` alone is not — a
+     * treatment writes several tasks at once, which is precisely this read's
+     * common case, so same-millisecond rows would order arbitrarily. The
+     * caller takes `cap + 1` and slices to detect truncation, so an unstable
+     * order would drop a different row on each request and a client diffing
+     * the list would see rows appear and vanish with nothing having changed.
+     * `id` breaks the tie.
+     *
+     * **`deletedAt: null` is load-bearing.** `list` gets it from
+     * `_buildWhere`; this is a raw `findMany` and would otherwise show
+     * soft-deleted tasks in a parcel's history — rows the Tasks page itself
+     * hides.
+     */
+    static async listRowsByIds(
+        db: PrismaTx,
+        ctx: RequestContext,
+        ids: readonly string[],
+        options: { take: number },
+    ) {
+        // A valid `{ id: { in: [] } }` matches nothing, but issuing it is a
+        // round trip to learn what the caller already knows.
+        if (ids.length === 0) return [];
+        return db.task.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, deletedAt: null },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            select: taskListSelect,
+            take: options.take,
+        });
+    }
+
     // ─── Bulk ───
 
     /**
@@ -642,6 +684,39 @@ export class TaskLinkRepository {
             take: 500,
         });
         return rows.map((r) => r.entityId);
+    }
+
+    /**
+     * The INVERSE of {@link listParcelIdsByTask}: every task linked to one
+     * parcel through a `PARCEL` task link.
+     *
+     * Covered exactly by `@@index([tenantId, entityType, entityId])`, which
+     * `TaskLink` already carries — this read needed no schema change.
+     *
+     * Returns no duplicates, and that is a property of the schema rather than
+     * of this query: `@@unique([tenantId, taskId, entityType, entityId])` means
+     * one row per (task, parcel). The SIBLING source does duplicate, so the
+     * caller deduplicates anyway — see `parcelTaskIds`.
+     *
+     * `take` is a real bound, unlike its mirror's. `listParcelIdsByTask` bounds
+     * the parcels of ONE task, where 500 is already absurd. This bounds the
+     * tasks of one parcel over the parcel's whole life, which genuinely
+     * accumulates: a decade of sprays, fertilising, scouting and harvest on one
+     * field is a four-figure number. The caller reports truncation rather than
+     * silently serving a prefix.
+     */
+    static async listTaskIdsByParcel(
+        db: PrismaTx,
+        ctx: RequestContext,
+        parcelId: string,
+        take: number,
+    ): Promise<string[]> {
+        const rows = await db.taskLink.findMany({
+            where: { tenantId: ctx.tenantId, entityType: TaskLinkEntityType.PARCEL, entityId: parcelId },
+            select: { taskId: true },
+            take,
+        });
+        return rows.map((r) => r.taskId);
     }
 
     static async link(db: PrismaTx, ctx: RequestContext, taskId: string, entityType: string, entityId: string, relation?: string) {

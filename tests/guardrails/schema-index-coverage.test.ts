@@ -338,7 +338,9 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'TaskLink',
         fields: ['tenantId', 'entityType', 'entityId'],
         justification:
-            'WorkItemRepository.list() linkedEntityType+linkedEntityId reverse-lookup',
+            'WorkItemRepository.list() linkedEntityType+linkedEntityId reverse-lookup; and '
+            + 'TaskLinkRepository.listTaskIdsByParcel (#2463), which filters the same three '
+            + 'columns to find every task linked to one parcel — the index already covered it',
     },
     // ── Enterprise-grain (Contract + YieldRecord list filters) ──────
     {
@@ -398,7 +400,7 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     Item:
         'listItems filters by tenantId + category and searches name — covered by @@index([tenantId, category]) / @@index([tenantId, name]).',
     OperationParcel:
-        'OperationParcel is read per-job (taskId + tenantId) — covered by @@index([tenantId, taskId]); status rollups use @@index([tenantId, status]).',
+        'OperationParcel is read per-job (taskId + tenantId) — covered by @@index([tenantId, taskId]); status rollups use @@index([tenantId, status]); and since #2463 per-PARCEL too (listOperationTaskIdsForParcel, the inverse that lets a parcel find the field operations whose lines touch it) — covered by the @@index([tenantId, parcelId]) the model already carried, so that read needed no migration. Both directions are take-bounded.',
     // ─── Agro-intel (weather obs + data streams + signals) ───
     WeatherObservation:
         'agro-signals + getPlantingGdd findMany by tenantId + locationId + obsDate range, ordered by obsDate — covered exactly by @@unique([tenantId, locationId, obsDate]) (the upsert key) + @@index([tenantId, obsDate]); both reads are take-bounded (64 / 400).',

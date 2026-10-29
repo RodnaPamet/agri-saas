@@ -1139,6 +1139,160 @@ export async function taskParcelIds(
 }
 
 /**
+ * Caps for a parcel's task history (#2463).
+ *
+ * Three numbers because they bound three different things, and collapsing
+ * them would make one of the three wrong:
+ *
+ * `LINK_IDS` bounds ROWS that are already one-per-(task, parcel) by the
+ * unique constraint, so it is a task count.
+ *
+ * `LINE_IDS` bounds rows that multiply tasks BY products per line, so the
+ * same number of jobs produces several times the rows — it has to be looser
+ * or a parcel with multi-product sprays would truncate long before one with
+ * single-product ones, for no reason a farmer could see.
+ *
+ * `PAGE` bounds what is RENDERED, and is the only one a client observes. The
+ * other two exist so an unbounded id read cannot be issued; this one exists
+ * because a decade of field work on one parcel is not a screen.
+ */
+const PARCEL_TASKS_LINK_IDS = 2_000;
+const PARCEL_TASKS_LINE_IDS = 5_000;
+const PARCEL_TASKS_PAGE = 200;
+
+/**
+ * The INVERSE of {@link taskParcelIds}: every task that touches one parcel.
+ *
+ * **This is one function for the same reason its mirror is.** That docblock
+ * says two copies of the union "would drift the moment a third source of task
+ * parcels appeared, and the drift would show up as a 400 on a parcel the map
+ * had just drawn". The same is true in this direction with a worse symptom: a
+ * task would appear on the parcel and the parcel not on the task, or the
+ * reverse, and neither screen would be wrong on its own evidence. So the two
+ * directions must name the same two sources, and they do — side by side, in
+ * one file, where a third source has to be added to both or neither.
+ *
+ * Reads the operation lines UNCONDITIONALLY rather than filtering on
+ * `type === FIELD_OPERATION`, matching the mirror: only a field operation has
+ * `OperationParcel` rows by construction, so for every other type this is an
+ * indexed read returning nothing — and a type filter would silently exclude a
+ * future task type that gains lines.
+ *
+ * **Why `GET /tasks?linkedEntityType=PARCEL` is not enough**, which is the
+ * whole reason this exists: a field operation reaches its parcels through its
+ * lines, NOT through a `PARCEL` task link. So that filter answers with the
+ * scouting and the hand-made tasks and silently omits every planned spray and
+ * fertilising — the majority of what a farmer did to the field, missing with
+ * no indication that anything was left out.
+ *
+ * Deduplication is load-bearing, not tidiness: `OperationParcel` rows are per
+ * (task, parcel, product), so one job spraying two products on this parcel
+ * arrives twice; and a task can be BOTH linked and on a line, so the union is
+ * where a duplicate appears even if each source were distinct.
+ *
+ * `truncated` reports either id read hitting its cap. An id list silently
+ * serving a prefix would make a partial history indistinguishable from a
+ * complete one — the same reason the calendar sync refuses to delete on a
+ * truncated read.
+ */
+export async function parcelTaskIds(
+    db: PrismaTx,
+    ctx: RequestContext,
+    parcelId: string,
+): Promise<{ ids: string[]; truncated: boolean }> {
+    const linkedIds = await TaskLinkRepository.listTaskIdsByParcel(
+        db, ctx, parcelId, PARCEL_TASKS_LINK_IDS,
+    );
+    const lineIds = await ParcelRepository.listOperationTaskIdsForParcel(
+        db, ctx, parcelId, PARCEL_TASKS_LINE_IDS,
+    );
+    return {
+        ids: [...new Set([...linkedIds, ...lineIds])],
+        truncated:
+            linkedIds.length >= PARCEL_TASKS_LINK_IDS || lineIds.length >= PARCEL_TASKS_LINE_IDS,
+    };
+}
+
+/**
+ * Every task that touches one parcel, newest first — what «Блокове» → a parcel
+ * shows beneath its risk (#2463, agrent-ios).
+ *
+ * ## Deliberately NOT cached, unlike `listTasks`
+ *
+ * `listTasks` goes through `cachedListRead` with a 60s TTL. This does not, and
+ * the journal list is the precedent rather than the Tasks page:
+ * `listLogEntriesPaginated` reads straight through because a history is read
+ * right after it changes.
+ *
+ * Two reasons, and the second is the one that decided it:
+ *
+ *  1. **Freshness is the point.** A farmer taps a parcel to see what they just
+ *     recorded on it. A minute of "the task I made is not here" is the
+ *     #1738-shaped confusion — a correct row and a stale view, with nothing
+ *     saying which.
+ *  2. **The cache could not be invalidated correctly anyway.** The id union
+ *     depends on `TaskLink` AND `OperationParcel`. Adding a parcel line to an
+ *     existing job changes what this route returns while writing no `Task`
+ *     row, so a `task`-keyed cache version would not bump and the stale answer
+ *     would persist for the whole TTL. Caching it correctly means a second
+ *     invalidation key on a model that has never had one.
+ *
+ * The consequence for `mayDelete` is the good one, and it is stronger than
+ * threading a projection through the cache: `taskListSelect` always projects
+ * `createdByUserId` and `treatmentGroupId`, so the flag is computed from real
+ * inputs on every row and is never OMITTED. #2406's stale-projection hazard
+ * cannot arise on a path that does not cache.
+ *
+ * ## The 404 belongs to the PARCEL and never to its tasks
+ *
+ * A parcel that exists and has no tasks answers `200 { rows: [], truncated:
+ * false }`. Conflating the two would make "nothing recorded here yet"
+ * indistinguishable from "wrong id", so a client could not tell an untouched
+ * field from a typo — the same split `listTaskParcels` makes in the other
+ * direction.
+ *
+ * ## Status is NOT filtered here
+ *
+ * Every status is returned, terminal ones included, because the phone files
+ * the terminal three under «Архив» and the rest under current. That split is
+ * the client's: the status enum is already the contract, so a server-side
+ * grouping would freeze a UI decision behind a deploy for no gain. If a count
+ * badge ever needs one authoritative split, that is the moment to move it.
+ */
+export async function listTasksForParcel(
+    ctx: RequestContext,
+    parcelId: string,
+): Promise<{ rows: Awaited<ReturnType<typeof listTasks>>; truncated: boolean }> {
+    assertCanReadTasks(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        // Resolved rather than trusted: the id reads below are both
+        // tenant-scoped, so a cross-tenant parcel would answer an empty list —
+        // which reads as "an untouched field" rather than "not yours".
+        const parcel = await db.parcel.findFirst({
+            where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found.');
+
+        const { ids, truncated: idsTruncated } = await parcelTaskIds(db, ctx, parcelId);
+
+        // `PAGE + 1` is the repo's truncation probe — one extra row is cheaper
+        // than a second COUNT, and its presence IS the answer.
+        const rows = await WorkItemRepository.listRowsByIds(db, ctx, ids, {
+            take: PARCEL_TASKS_PAGE + 1,
+        });
+        const page = rows.slice(0, PARCEL_TASKS_PAGE);
+
+        return {
+            rows: withMayDelete(ctx, page),
+            // Either bound counts. A client that only saw the row cap would
+            // read a history truncated at the ID stage as complete.
+            truncated: idsTruncated || rows.length > PARCEL_TASKS_PAGE,
+        };
+    });
+}
+
+/**
  * The parcels a task touches, as a map needs them: `{ id, name, geometry }`.
  *
  * Contract agreed with agrent-ios and recorded on #1391 — read that before

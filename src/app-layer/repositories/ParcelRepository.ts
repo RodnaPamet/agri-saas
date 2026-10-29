@@ -592,6 +592,38 @@ export class ParcelRepository {
     }
 
     /**
+     * The INVERSE of {@link listOperationParcelIdsForTask}: every field
+     * operation whose lines touch one parcel.
+     *
+     * Covered exactly by `@@index([tenantId, parcelId])`, which
+     * `OperationParcel` already carries.
+     *
+     * **Returns DUPLICATES by design**, for the same reason its mirror does:
+     * uniqueness is `@@unique([taskId, parcelId, productItemId])`, so one job
+     * spraying two products on this parcel is two rows with the same `taskId`.
+     * `distinct` is deliberately not used — it would hide the shape from the
+     * caller, and a caller that then stopped deduplicating would break
+     * silently the day a second source of ids was unioned in. That union is
+     * `parcelTaskIds`, and it already exists.
+     *
+     * `take` bounds rows, not tasks, so it must be the looser of the two caps:
+     * the row count is tasks MULTIPLIED by products per line.
+     */
+    static async listOperationTaskIdsForParcel(
+        db: PrismaTx,
+        ctx: RequestContext,
+        parcelId: string,
+        take: number,
+    ): Promise<string[]> {
+        const rows = await db.operationParcel.findMany({
+            where: { tenantId: ctx.tenantId, parcelId },
+            select: { taskId: true },
+            take,
+        });
+        return rows.map((r) => r.taskId);
+    }
+
+    /**
      * The crops this farm grows, farm-wide, with parcel counts and total area
      * (#1740 step 2).
      *
