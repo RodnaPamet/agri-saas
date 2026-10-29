@@ -104,6 +104,27 @@ export const SENTRY_DATA_COLLECTION: SentryDataCollection = {
     urlQueryParams: false,
     graphQL: { document: false, variables: false },
     genAI: { inputs: false, outputs: false },
+    /**
+     * MCP tool-call arguments, prompt arguments and tool results — added by
+     * `@sentry/core` 11.9 (#2465), and the first time the parity test below
+     * caught a category the SDK grew.
+     *
+     * Documented `@default { inputs: true, outputs: true }`, so the posture
+     * inverts for this surface the moment the SDK is upgraded. This repo has
+     * AI surfaces under `src/app-layer/ai/*` — field briefing, notice scoring,
+     * scheme and news extraction, vision — whose payloads carry prompt and
+     * document content, which is exactly what the rest of this object exists
+     * to keep out of a third party.
+     *
+     * Set EXPLICITLY rather than left to inherit. The SDK says an unset field
+     * "falls back to the matching `genAI` field", which here is `false`, so
+     * omitting it would very likely have been safe — and that is the kind of
+     * safety this module deliberately refuses to rely on, because it depends
+     * on a fallback in someone else's release notes rather than on a value we
+     * wrote down. Metadata (method, tool name, session, error status) is
+     * always collected and is not governed by this.
+     */
+    mcp: { inputs: false, outputs: false },
     /** Bound parameters and returned rows. Structural metadata still flows. */
     databaseQueryData: false,
     /** Job payloads carry tenant data. */
