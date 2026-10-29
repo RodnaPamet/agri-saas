@@ -128,6 +128,31 @@ describe('uploadToDrive (#2019)', () => {
         ).rejects.toMatchObject({ code: 'GOOGLE_DRIVE_REFUSED' });
     });
 
+    it('429 is a RATE LIMIT with its OWN code, not the storage sentence', async () => {
+        // #2447. A 429 used to fall through to `externalServiceError`, which
+        // is a 502 — and `DomainError` sets `expose = status < 500`, so the
+        // message became the literal 'An error occurred', with no
+        // `errors.EXTERNAL_SERVICE_ERROR` entry to replace it. The operator
+        // got no remedy at all.
+        //
+        // And it is NOT `GOOGLE_DRIVE_REFUSED`, whose sentence tells them to
+        // check their Drive storage. That is right for the 403 quota case and
+        // wrong here — the same wrong-advice trap the 403 arm above guards
+        // against, pointing the other way.
+        await expect(
+            uploadToDrive('tok', file, { fetchImpl: fetchReturning(429, 'Rate Limit Exceeded') }),
+        ).rejects.toMatchObject({ code: 'GOOGLE_DRIVE_RATE_LIMITED' });
+    });
+
+    it('a 5xx stays an UPSTREAM error, deliberately not a refusal', async () => {
+        // The control for the case above: "Drive is down" is not "Drive
+        // refused", and a 502 propagates the first honestly. Collapsing them
+        // would make an outage read as something the farmer could act on.
+        await expect(
+            uploadToDrive('tok', file, { fetchImpl: fetchReturning(503, 'boom') }),
+        ).rejects.toMatchObject({ code: 'EXTERNAL_SERVICE_ERROR' });
+    });
+
     it('a 200 with no file id is NOT a success', async () => {
         // Returning a null id would make the caller report an export that may
         // not exist — a success message for a file nobody can find.

@@ -85,6 +85,22 @@ async function refuseCalendar(res: Response, what: string): Promise<never> {
             'The Google connection is no longer authorised. Reconnect it to sync the calendar.',
         );
     }
+    if (res.status === 429) {
+        // The SAME condition as the 403-rate-limit arm below, arriving under a
+        // different status — so it gets the same answer. Falling through to
+        // `externalServiceError` would be a 502, and `DomainError` sets
+        // `expose = status < 500`, so the message is replaced by the literal
+        // 'An error occurred'; `errors.EXTERNAL_SERVICE_ERROR` has no
+        // catalogue entry to put anything better in its place. A farmer who
+        // hit a rate limit would be told nothing and given no remedy, while
+        // the identical situation reported as a 403 says «Опитайте отново
+        // след малко». Treating one condition two ways by status number is
+        // the inconsistency, not the status.
+        throw codedBadRequest(
+            'GOOGLE_CALENDAR_REFUSED',
+            'Google refused the calendar write. Try again shortly.',
+        );
+    }
     if (res.status === 403) {
         // Read the reason rather than assume it. A 403 here is usually a
         // missing scope, but Calendar also 403s a rate limit — and telling
@@ -284,10 +300,27 @@ export interface FarmEventContent {
     endDayExclusive: string;
 }
 
-/** A short digest of exactly the fields we write, and nothing else. */
+/**
+ * A short digest of exactly the fields we write, and nothing else.
+ *
+ * The separator is a NUL, written as the ESCAPE rather than as a raw byte, and
+ * both halves of that matter.
+ *
+ * A NUL is the right separator because it cannot occur in any of the inputs,
+ * so the digest is unambiguous: with a space, `{summary: 'a b', startDay: 'c'}`
+ * and `{summary: 'a', startDay: 'b c'}` would hash the same and a real content
+ * change could read as unchanged.
+ *
+ * It is spelled `\u0000` because a raw NUL makes this file BINARY to
+ * `grep` — ugrep skips such a file silently, for every pattern, which exempts
+ * it from `scripts/detect-secrets.sh` and from every `grep -r` over `src/`.
+ * This function shipped with raw NULs and went dark exactly that way; see
+ * #2446, which also found the same idiom in two files on main. Identical at
+ * runtime, so no digest changes.
+ */
 export function contentFingerprint(c: FarmEventContent): string {
     return createHash('sha256')
-        .update(`${c.summary} ${c.startDay} ${c.endDayExclusive}`)
+        .update(`${c.summary}\u0000${c.startDay}\u0000${c.endDayExclusive}`)
         .digest('hex')
         .slice(0, 16);
 }

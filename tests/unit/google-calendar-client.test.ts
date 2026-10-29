@@ -150,6 +150,32 @@ describe('the farm calendar (#2020)', () => {
         ).rejects.toMatchObject({ code: 'GOOGLE_CALENDAR_REFUSED' });
     });
 
+    it('429 is a RATE LIMIT and says to retry, not "An error occurred"', async () => {
+        // #2020 names 429 among the statuses this client must handle, and the
+        // default was the worst available answer: `externalServiceError` is a
+        // 502, `DomainError` sets `expose = status < 500` so the message is
+        // replaced by the literal 'An error occurred', and
+        // `errors.EXTERNAL_SERVICE_ERROR` has no catalogue entry to put
+        // anything better there. A farmer would be told nothing and given no
+        // remedy — while the SAME condition reported as a 403 rate limit got
+        // «Опитайте отново след малко».
+        const { impl } = sequence([jsonRes('Rate Limit Exceeded', 429)]);
+        await expect(
+            ensureFarmCalendar(TOK, CAL, { name: 'Agrent', fetchImpl: impl }),
+        ).rejects.toMatchObject({ code: 'GOOGLE_CALENDAR_REFUSED' });
+    });
+
+    it('a 5xx stays an UPSTREAM error, deliberately not a refusal', async () => {
+        // The control, and the distinction worth keeping: "Google is down" is
+        // not "Google refused". A 502 propagates it honestly, and collapsing
+        // the two would make a provider outage read as something the farmer
+        // could act on.
+        const { impl } = sequence([jsonRes('boom', 503)]);
+        await expect(
+            ensureFarmCalendar(TOK, CAL, { name: 'Agrent', fetchImpl: impl }),
+        ).rejects.toMatchObject({ code: 'EXTERNAL_SERVICE_ERROR' });
+    });
+
     it('a created calendar with no id is NOT a success', async () => {
         // Proceeding would write the farm's deadlines into the PRIMARY
         // calendar, which is what a separate calendar exists to prevent.
