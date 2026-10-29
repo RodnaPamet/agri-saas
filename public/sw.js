@@ -507,9 +507,10 @@ function isStaticAsset(url) {
         // which is not under /_next/static/. Matching only `js` left it
         // uncached, so offline the map — 60vh of the operator's screen on a
         // phone — was an empty rectangle with no spinner, icon or error, since
-        // MapCanvas registers no onError. Its maplibre-gl-shared.mjs sibling
-        // has the same problem. STATIC_CACHE_MAX_ENTRIES is a COUNT, so two
-        // more entries cost nothing.
+        // MapCanvas registers no onError. (It had a maplibre-gl-shared.mjs
+        // sibling with the same problem until maplibre 6.15 inlined that chunk
+        // into the worker — #2443.) STATIC_CACHE_MAX_ENTRIES is a COUNT, so the
+        // extra entry costs nothing.
         /\.(?:css|m?js|woff2?|ttf|svg|png|jpg|jpeg|gif|webp|ico)$/.test(url.pathname)
     );
 }

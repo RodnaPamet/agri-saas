@@ -413,21 +413,28 @@ describe('the newest cached payload wins, never the oldest', () => {
 });
 
 describe('the MapLibre worker is cached, so the map can boot offline', () => {
-    it.each([
-        '/maplibre/maplibre-gl-worker.mjs',
-        '/maplibre/maplibre-gl-shared.mjs',
-    ])('caches %s as a static asset', async (path) => {
-        // isStaticAsset matched `js` but not `mjs`, and these two are not under
-        // /_next/static/, so they fell off the end of the fetch handler with no
+    it.each(['/maplibre/maplibre-gl-worker.mjs'])(
+        'caches %s as a static asset',
+        async (path) => {
+        // isStaticAsset matched `js` but not `mjs`, and this is not under
+        // /_next/static/, so it fell off the end of the fetch handler with no
         // respondWith at all. Offline that left MapCanvas — 60vh of a phone
         // screen — an empty rectangle with no spinner, icon or error, because
         // it registers no onError. An absence with nothing to explain it, which
         // is the whole class of bug this worker keeps producing.
+        //
+        // `/maplibre/maplibre-gl-shared.mjs` was a second case here until
+        // maplibre 6.15 inlined that chunk into the worker (#2443). The file is
+        // no longer served, so asserting it gets cached asserted routing for a
+        // URL nothing requests — coverage of nothing. The regex is still
+        // exercised in both directions: this case for `.mjs`, and the API-route
+        // control below for what must NOT match.
         const w = loadWorker({ online: true });
         await dispatch(w, asset('https://app.test' + path));
         const cached = (w.buckets['agrent-v1-static']?.entries ?? []).map((e) => e.url);
         expect(cached).toContain('https://app.test' + path);
-    });
+        },
+    );
 
     it('still does not treat an API route as a static asset', async () => {
         // Positive control for the widened regex: `m?js` must not start

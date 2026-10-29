@@ -33,10 +33,29 @@
  * prints and the seam a CI step could call. Whether CI should call it is
  * #1807; nothing here depends on that answer.
  *
- * BOTH files are required. `maplibre-gl-worker.mjs` does
- * `import … from "./maplibre-gl-shared.mjs"`, so the sibling must sit in the
- * same directory with that relative specifier intact — shipping only the worker
- * yields a 404 on the shared chunk and the same dead map.
+ * ## ONE file since maplibre 6.15 (#2443)
+ *
+ * This docblock used to say "BOTH files are required", because up to 6.11.2
+ * `maplibre-gl-worker.mjs` was a 19 KB ES module doing
+ * `import … from "./maplibre-gl-shared.mjs"` and the 516 KB sibling had to sit
+ * beside it or the map 404'd.
+ *
+ * 6.15 inlined that chunk into the worker — 519 KB, self-contained, **zero**
+ * references to the sibling — and still publishes `maplibre-gl-shared.mjs` as
+ * a **0-byte file**. So the old sentence stayed grammatical and became false,
+ * while the guard kept passing: its only cross-asset check was that the two
+ * digests DIFFER, and an empty file differs from a 519 KB one. A safety
+ * argument expiring with nothing going red.
+ *
+ * Keeping it would have meant requiring an empty file nothing imports, on the
+ * strength of a sentence that is no longer true — so it is dropped from
+ * `REQUIRED_ASSETS` and deleted from `public/maplibre/`. The 0-byte file was
+ * never protection for a stale client either: it resolves and then fails on
+ * missing exports.
+ *
+ * What makes that reversible is the inverted assertion below: the worker must
+ * import NOTHING. If upstream re-splits the bundle, that fails and names the
+ * fix, instead of the map 404ing at runtime.
  */
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -47,10 +66,19 @@ const SERVED_DIR = path.join(ROOT, 'public/maplibre');
 const DIST_DIR = path.join(ROOT, 'node_modules/maplibre-gl/dist');
 
 /**
- * Every file that must be served. The worker is the entry point; the shared
- * chunk is its static import. Neither works without the other.
+ * Every file that must be served. One entry since 6.15 inlined the shared
+ * chunk — see the header. A second entry returning here means upstream
+ * re-split the bundle, and `the worker imports nothing` below is what will
+ * tell you.
  */
-const REQUIRED_ASSETS = ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs'];
+const REQUIRED_ASSETS = ['maplibre-gl-worker.mjs'];
+
+/**
+ * Dropped from REQUIRED_ASSETS, and named so the deletion is searchable: a
+ * reader finding `maplibre-gl-shared.mjs` in a stale comment elsewhere lands
+ * here rather than concluding the sync script forgot a file.
+ */
+const INLINED_SINCE_6_15 = 'maplibre-gl-shared.mjs';
 
 const sha256 = (p: string) =>
     createHash('sha256').update(fs.readFileSync(p)).digest('hex');
@@ -75,21 +103,30 @@ describe('maplibre worker asset is in sync with the installed package', () => {
      * function discriminates on this very population, and that the two sides
      * are actually two places.
      */
-    it('CONTROL: sha256 tells this population apart', () => {
-        // Two REQUIRED_ASSETS are needed for the control to mean anything —
-        // one digest is never unequal to anything.
-        expect(REQUIRED_ASSETS.length).toBeGreaterThan(1);
+    it('CONTROL: sha256 tells two different files apart', () => {
+        // THIS CONTROL USED TO REST ON THERE BEING TWO REQUIRED ASSETS — it
+        // hashed the worker and its shared chunk and asserted the digests
+        // differ. Dropping the shared chunk (#2443) would have left it hashing
+        // ONE file and comparing a set of size 1 to a length of 1, which is
+        // true for `sha256` returning '' / 0 / null / undefined / false — the
+        // precise mutation `scripts/selector-teeth.mjs` already proved
+        // survives here. The list shrank for a good reason; the control must
+        // not shrink with it.
+        //
+        // So it no longer borrows its second value from the required set. It
+        // hashes the asset and a file guaranteed to differ, which keeps the
+        // discrimination independent of how many assets ship.
+        const asset = sha256(path.join(DIST_DIR, REQUIRED_ASSETS[0]));
+        const other = sha256(path.join(ROOT, 'scripts/sync-maplibre-worker.mjs'));
 
-        const digests = REQUIRED_ASSETS.map((a) => sha256(path.join(DIST_DIR, a)));
+        expect(asset).not.toBe(other);
+        expect(asset).toMatch(/^[0-9a-f]{64}$/);
+        expect(other).toMatch(/^[0-9a-f]{64}$/);
 
-        // The worker and its shared chunk are different files, so their
-        // digests must differ. A `sha256` returning '' / 0 / null / undefined /
-        // false collapses them to one value — the exact mutation that survived.
-        expect(new Set(digests).size).toBe(REQUIRED_ASSETS.length);
-
-        // And each is a real digest, so the inequality above cannot be
-        // satisfied by two different flavours of nothing.
-        for (const d of digests) expect(d).toMatch(/^[0-9a-f]{64}$/);
+        // And the population is non-empty: `it.each([])` registers NO tests,
+        // so an emptied list would delete every assertion below rather than
+        // fail one.
+        expect(REQUIRED_ASSETS.length).toBeGreaterThan(0);
     });
 
     it('CONTROL: the two compared sides are different directories', () => {
@@ -133,23 +170,56 @@ describe('maplibre worker asset is in sync with the installed package', () => {
         },
     );
 
-    it('the worker still imports the shared chunk as a same-directory sibling', () => {
-        // The reason two files ship rather than one. If upstream ever inlines
-        // the shared chunk or renames it, REQUIRED_ASSETS is wrong and this
-        // says so, instead of the map silently 404ing at runtime.
+    it('the worker is self-contained — it imports NOTHING', () => {
+        // THE INVERSION, and the thing that makes dropping the sibling safe to
+        // reverse. This test used to assert the opposite: that the worker DOES
+        // import a same-directory sibling, which was the stated reason two
+        // files shipped. 6.15 inlined the chunk, so that assertion now fails
+        // loudly — which is correct, and is how this change was found.
+        //
+        // Asserting the absence is what keeps the claim honest in the other
+        // direction: if upstream re-splits the bundle, the worker regains an
+        // import, this fails, and the message says to put the sibling back.
+        // Without it, a re-split would 404 the shared chunk at runtime and the
+        // map would die silently — MapCanvas registers no onError, so that is
+        // 60vh of empty rectangle with nothing to explain it.
         const worker = fs.readFileSync(
-            path.join(SERVED_DIR, 'maplibre-gl-worker.mjs'),
+            path.join(SERVED_DIR, REQUIRED_ASSETS[0]),
             'utf8',
         );
         const specifiers = [...worker.matchAll(/from\s*["']([^"']+)["']/g)].map(
             (m) => m[1],
         );
-        expect(specifiers.length).toBeGreaterThan(0);
-        for (const spec of specifiers) {
-            // Every import must be a sibling in the same served directory.
-            expect(spec.startsWith('./')).toBe(true);
-            const name = spec.slice(2);
-            expect(REQUIRED_ASSETS).toContain(name);
+        if (specifiers.length > 0) {
+            throw new Error(
+                `${REQUIRED_ASSETS[0]} imports ${specifiers.length} module(s) — `
+                    + `${specifiers.join(', ')}.\n\n`
+                    + `Upstream has re-split the worker bundle. Every specifier must be a `
+                    + `same-directory sibling that is actually SERVED, so add it to `
+                    + `REQUIRED_ASSETS in this file and to ASSETS in `
+                    + `scripts/sync-maplibre-worker.mjs, then run \`npm run maplibre:sync\`.\n\n`
+                    + `Until then the map 404s that import at runtime and dies with no `
+                    + `error UI. maplibre 6.15 inlined \`${INLINED_SINCE_6_15}\` (#2443), `
+                    + `which is why only the worker ships today.`,
+            );
+        }
+        expect(specifiers).toEqual([]);
+
+        // And the file really was read — an empty string has no imports either,
+        // which would satisfy the assertion above for the wrong reason.
+        expect(worker.length).toBeGreaterThan(100_000);
+    });
+
+    it(`${INLINED_SINCE_6_15} is no longer served, and upstream ships it empty`, () => {
+        // Both halves of the decision, pinned. If a future bump gives the file
+        // real content again, the second assertion fails — which is the signal
+        // to reconsider serving it rather than to edit this number.
+        expect(fs.existsSync(path.join(SERVED_DIR, INLINED_SINCE_6_15))).toBe(false);
+
+        const upstream = path.join(DIST_DIR, INLINED_SINCE_6_15);
+        if (fs.existsSync(upstream)) {
+            expect({ file: INLINED_SINCE_6_15, bytes: fs.statSync(upstream).size })
+                .toEqual({ file: INLINED_SINCE_6_15, bytes: 0 });
         }
     });
 
