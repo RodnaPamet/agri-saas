@@ -14,6 +14,7 @@ import { registerJournalPaths } from './journal.paths';
 import { registerFarmTaskPaths } from './farm-tasks.paths';
 import { registerFieldOperationPaths } from './field-operations.paths';
 import { registerLocationPaths } from './locations.paths';
+import { registerGoogleCalendarPaths } from './google-calendar.paths';
 import { registerOrthoPaths } from './ortho.paths';
 import { registerGrainPaths } from './grain.paths';
 import { registerTaskPaths } from './tasks.paths';
@@ -55,6 +56,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerFarmTaskPaths(registry);
     registerFieldOperationPaths(registry);
     registerLocationPaths(registry);
+    registerGoogleCalendarPaths(registry);
     registerOrthoPaths(registry);
     registerGrainPaths(registry);
     registerTaskPaths(registry);

@@ -871,7 +871,14 @@
             "googleNotGranted": "Not granted",
             "googleDisconnect": "Disconnect",
             "googleNoConnection": "No Google account is connected.",
-            "googleReconnectForMissing": "To grant the missing permissions, connect Google again."
+            "googleReconnectForMissing": "To grant the missing permissions, connect Google again.",
+            "googleCalendarSync": "Sync calendar",
+            "googleCalendarSyncing": "Syncing…",
+            "googleCalendarSyncDone": "Calendar updated. New: {created} · Updated: {updated} · Removed: {deleted} · Unchanged: {unchanged}",
+            "googleCalendarSyncPartial": "Deadlines were written and updated, but nothing was removed: the farm's deadlines could not be read in full, and deleting on an incomplete read would remove a deadline that still stands. The calendar may hold an event that no longer applies. Try again later.",
+            "googleCalendarSyncSkipped": "Left unchanged because you edited them in Google: {count}. Your edit wins — delete the event in Google if you want us to write it again.",
+            "googleCalendarSyncHint": "Deadlines are written to a separate «Agrent — Срокове» calendar in the connected Google account. Deleting that calendar in Google stops the sync.",
+            "googleCalendarSyncFailed": "The calendar sync did not complete."
         },
         "ledgerIntegrity": {
             "colRunAt": "Run at",
