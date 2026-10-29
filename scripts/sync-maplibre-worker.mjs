@@ -45,8 +45,22 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'node_modules/maplibre-gl/dist');
 const SERVED = join(ROOT, 'public/maplibre');
 
-/** Kept in lockstep with REQUIRED_ASSETS in the guard. */
-const ASSETS = ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs'];
+/**
+ * Kept in lockstep with REQUIRED_ASSETS in the guard.
+ *
+ * ONE asset since maplibre 6.15 (#2443). Up to 6.11.2 the worker was a 19 KB
+ * ES module doing `import … from "./maplibre-gl-shared.mjs"`, so the 516 KB
+ * sibling had to ship beside it. 6.15 inlined that chunk into the worker —
+ * 519 KB, self-contained, zero references to the sibling — and still publishes
+ * `maplibre-gl-shared.mjs` as a **0-byte file**.
+ *
+ * Copying an empty file nothing imports is pure cargo, and a guard requiring
+ * it would outlive anyone's memory of why. So it is dropped here and deleted
+ * from `public/maplibre/`. The guard asserts the worker imports NOTHING, which
+ * is what makes this reversible: if upstream re-splits the bundle, that fails
+ * and names the fix rather than 404ing the map at runtime.
+ */
+const ASSETS = ['maplibre-gl-worker.mjs'];
 
 const sha256 = (p) => createHash('sha256').update(readFileSync(p)).digest('hex');
 

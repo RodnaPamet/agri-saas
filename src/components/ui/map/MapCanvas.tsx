@@ -254,10 +254,12 @@ export interface MapCanvasProps {
  * the same resolved `.then()`, so the ordering is guaranteed with no
  * module-level shim.
  *
- * The two files under `public/maplibre/` are checked in and kept in sync by
- * `tests/guards/maplibre-worker-asset-sync.test.ts`. Both are required:
- * `maplibre-gl-worker.mjs` does `import … from "./maplibre-gl-shared.mjs"`, so
- * they must sit in the SAME directory with that relative specifier intact.
+ * The file under `public/maplibre/` is checked in and kept in sync by
+ * `tests/guards/maplibre-worker-asset-sync.test.ts`. ONE file since maplibre
+ * 6.15 (#2443): the worker used to be a 19 KB module importing
+ * `./maplibre-gl-shared.mjs`, and 6.15 inlined that chunk into it — 519 KB,
+ * self-contained. The guard asserts the worker imports NOTHING, so a future
+ * re-split reddens there instead of 404ing a sibling at runtime.
  */
 const MAPLIBRE_WORKER_URL = '/maplibre/maplibre-gl-worker.mjs';
 
