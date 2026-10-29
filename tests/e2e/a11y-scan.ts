@@ -26,30 +26,14 @@
 import { expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-/**
- * `auto` — whatever `prefers-color-scheme` resolves to (dark or light).
- * `sunlight` — the «Слънце» high-contrast palette over the light one.
- */
-export type ScanTheme = 'auto' | 'sunlight';
+import {
+    formatAxeReport,
+    SEVERITY_GATE,
+    type AxeViolation,
+    type ScanTheme,
+} from './a11y-report';
 
-export interface AxeViolationNode {
-    target: string[];
-    failureSummary?: string;
-    html?: string;
-}
-export interface AxeViolation {
-    id: string;
-    impact: 'minor' | 'moderate' | 'serious' | 'critical' | null;
-    description: string;
-    help: string;
-    helpUrl: string;
-    nodes: AxeViolationNode[];
-}
-
-export const SEVERITY_GATE: Array<NonNullable<AxeViolation['impact']>> = [
-    'serious',
-    'critical',
-];
+export { SEVERITY_GATE, type AxeViolation, type ScanTheme };
 
 /**
  * Read back the theme attributes and fail if they are not the ones asked for.
@@ -229,42 +213,8 @@ export async function runA11yScan(
 
     const violations = results.violations as unknown as AxeViolation[];
 
-    const byImpact = new Map<string, AxeViolation[]>();
-    for (const v of violations) {
-        const k = v.impact ?? 'unknown';
-        const arr = byImpact.get(k) ?? [];
-        arr.push(v);
-        byImpact.set(k, arr);
-    }
-
-    if (violations.length > 0) {
-        const lines: string[] = [
-            '',
-            `── axe report — ${surfaceLabel} [${theme}] (${page.url()}) ──`,
-            `   total violations: ${violations.length}`,
-        ];
-        for (const sev of ['critical', 'serious', 'moderate', 'minor', 'unknown']) {
-            const items = byImpact.get(sev) ?? [];
-            if (items.length === 0) continue;
-            lines.push(`   ${sev.padEnd(9)}: ${items.length}`);
-        }
-        for (const sev of ['critical', 'serious', 'moderate', 'minor', 'unknown']) {
-            const items = byImpact.get(sev) ?? [];
-            for (const v of items) {
-                lines.push('');
-                lines.push(`   [${sev}] ${v.id} — ${v.help}`);
-                lines.push(`       ${v.helpUrl}`);
-                for (const n of v.nodes.slice(0, 3)) {
-                    lines.push(`       node: ${n.target.join(' › ')}`);
-                }
-                if (v.nodes.length > 3) {
-                    lines.push(`       … and ${v.nodes.length - 3} more node(s)`);
-                }
-            }
-        }
-
-        console.log(lines.join('\n'));
-    }
+    const report = formatAxeReport(surfaceLabel, theme, page.url(), violations);
+    if (report) console.log(report);
 
     // Hard fail on the severity gate; everything else is logged.
     const gating = violations.filter(
