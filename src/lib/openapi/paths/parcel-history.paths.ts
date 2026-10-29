@@ -11,7 +11,7 @@
  */
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 // The SAME component `/tasks` serves, not a second spelling of a task row.
 // agrent-ios decodes this route with the same decoder it uses there, so a
 // parallel schema that drifted by one field would break the phone with both
@@ -352,6 +352,102 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
                     truncated: z.boolean(),
                 })
                 .openapi('ParcelTasksResponse'),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/comments',
+        operationId: 'listParcelComments',
+        summary: 'A parcel’s comments and closing notes',
+        description:
+            'The history under «Блокове» → a parcel: every task comment and every closing '
+            + 'note on the tasks that touched this parcel, newest first, in ONE read.\n\n'
+            + 'Over the same task set as `listParcelTasks` — both resolve it the same way — so '
+            + 'the history and the task list on one screen cannot disagree about which tasks '
+            + 'touched the parcel.\n\n'
+            + '**Two kinds in one list.** `COMMENT` is a task comment; `RESOLUTION` is the note '
+            + 'left when the task was closed. They are merged server-side because the screen is '
+            + 'one chronological history, and a client assembling it from two lists would have '
+            + 'to re-derive an ordering the server already knows.\n\n'
+            + '`createdAt` is ONE field for both kinds — the comment’s own time, or the task’s '
+            + 'close time for a resolution — so a client sorts and renders a single key.\n\n'
+            + '`createdBy` is **null on a RESOLUTION**, and that is a statement about the data '
+            + 'rather than a gap: `Task.resolution` is a column with no author, so naming the '
+            + 'assignee or the last status-changer would attribute the note to somebody the row '
+            + 'does not identify.\n\n'
+            + '`truncated` has the same two causes as `listParcelTasks`: this page’s cap, or the '
+            + 'upstream task-id read on a parcel with an extreme number of jobs. Either means '
+            + 'the history is a PREFIX — do not infer completeness from the row count.\n\n'
+            + 'Ordered newest first on a TOTAL key (`createdAt`, then `id`): a treatment can '
+            + 'close several tasks in the same millisecond, and an unstable order would move the '
+            + 'truncation boundary between identical requests.\n\n'
+            + 'No query string, deliberately — the parcel id is a path segment because iOS '
+            + 'writes the full URL including the query to the device log.',
+        tags: ['Parcel history', 'Tasks'],
+        params: ParcelParams,
+        success: {
+            status: 200,
+            description: 'The parcel’s history, newest first.',
+            schema: z
+                .object({
+                    rows: z.array(
+                        z
+                            .object({
+                                id: z.string().openapi({
+                                    description:
+                                        'Stable across refreshes so a client can key a list on '
+                                        + 'it: the comment’s own id for `COMMENT`, and '
+                                        + '`resolution:<taskId>` for `RESOLUTION`, which has no '
+                                        + 'row of its own to borrow an id from.',
+                                }),
+                                taskId: z.string(),
+                                taskKey: z.string().nullable().openapi({
+                                    description:
+                                        'Nullable because `Task.key` is. Not coerced to a '
+                                        + 'placeholder — an invented key would be '
+                                        + 'indistinguishable from a real one.',
+                                }),
+                                taskTitle: z.string(),
+                                kind: z.enum(['COMMENT', 'RESOLUTION']),
+                                body: z.string(),
+                                createdAt: z.string().openapi({
+                                    format: 'date-time',
+                                    description:
+                                        'ISO 8601. ONE field for both kinds — the comment’s own '
+                                        + 'time, or the task’s close time for a `RESOLUTION` — so '
+                                        + 'a client sorts and renders a single key. A resolution '
+                                        + 'on a task closed without a terminal status falls back '
+                                        + 'to the task’s `updatedAt`, because a closing note with '
+                                        + 'an approximate time is worth more than a dropped row.',
+                                }),
+                                createdByUserId: z.string().nullable(),
+                                createdBy: z
+                                    .object({
+                                        id: z.string(),
+                                        name: z.string().nullable(),
+                                        email: z.string(),
+                                    })
+                                    .nullable()
+                                    .openapi({
+                                        description:
+                                            'The same shape `GET /tasks/{taskId}/comments` '
+                                            + 'sends, so a client decodes both with one '
+                                            + 'decoder. Null on a `RESOLUTION`.',
+                                    }),
+                            })
+                            .openapi('ParcelCommentRow'),
+                    ),
+                    truncated: z.boolean(),
+                })
+                .openapi('ParcelCommentsResponse'),
+        },
+        extraResponses: {
+            ...codedErrorResponses({
+                404: '`PARCEL_NOT_FOUND` — no such parcel in this farm. A parcel that EXISTS '
+                    + 'with nothing recorded answers `200` with an empty `rows`, so an untouched '
+                    + 'field is distinguishable from a wrong id.',
+            }),
         },
     });
 }

@@ -578,6 +578,50 @@ export class WorkItemRepository {
         });
     }
 
+    /**
+     * The closing notes of a known task set, for a parcel's history (#2474).
+     *
+     * A `RESOLUTION` row in that history is `Task.resolution` — there is no
+     * separate table and no author column, which is why the response omits an
+     * author for this kind rather than attributing it to somebody the data
+     * does not name.
+     *
+     * `resolution: { not: null }` is safe on an ENCRYPTED column because the
+     * ciphertext is non-null exactly when the plaintext is. A `contains` or an
+     * equality filter would NOT be — it would compare against ciphertext — so
+     * do not extend this filter without reading `docs/epic-b-encryption.md`.
+     *
+     * `completedAt` is the time the history shows. It can be null on a task
+     * that carries a resolution without a terminal status, so the caller falls
+     * back rather than dropping the row.
+     */
+    static async listResolutionsByIds(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskIds: readonly string[],
+        take: number,
+    ) {
+        if (taskIds.length === 0) return [];
+        return db.task.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                id: { in: [...taskIds] },
+                deletedAt: null,
+                resolution: { not: null },
+            },
+            select: {
+                id: true,
+                key: true,
+                title: true,
+                resolution: true,
+                completedAt: true,
+                updatedAt: true,
+            },
+            orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
+            take,
+        });
+    }
+
     // ─── Bulk ───
 
     /**
@@ -719,6 +763,43 @@ export class TaskLinkRepository {
         return rows.map((r) => r.taskId);
     }
 
+    /**
+     * The PARCEL links of MANY tasks at once, as `(taskId, parcelId)` pairs
+     * (#2474).
+     *
+     * Batched rather than looped. A MECHANISATOR's queue is up to 200 rows and
+     * the map needs every row's parcels, so the per-task read this replaces
+     * would be 200 round trips — and `query-shape-guardrails`' D1 layer bans a
+     * Prisma read inside a loop for exactly that reason.
+     *
+     * Covered by `@@index([tenantId, taskId])`, the same index the per-task
+     * read uses; an `IN` over task ids is the same access path with a wider
+     * key list.
+     *
+     * `take` bounds the PAIR count, not the task count: one task can link
+     * several parcels, so the ceiling is tasks x parcels-per-task. Returned as
+     * pairs rather than grouped because grouping is the caller's business and
+     * the caller already has the task order.
+     */
+    static async listParcelIdsByTasks(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskIds: readonly string[],
+        take: number,
+    ): Promise<Array<{ taskId: string; parcelId: string }>> {
+        if (taskIds.length === 0) return [];
+        const rows = await db.taskLink.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                entityType: TaskLinkEntityType.PARCEL,
+                taskId: { in: [...taskIds] },
+            },
+            select: { taskId: true, entityId: true },
+            take,
+        });
+        return rows.map((r) => ({ taskId: r.taskId, parcelId: r.entityId }));
+    }
+
     static async link(db: PrismaTx, ctx: RequestContext, taskId: string, entityType: string, entityId: string, relation?: string) {
         return db.taskLink.create({
             data: {
@@ -759,7 +840,10 @@ export class TaskCommentRepository {
         return db.taskComment.findMany({
             where: { taskId, tenantId: ctx.tenantId },
             orderBy: { createdAt: 'asc' },
-            include: { createdBy: { select: { id: true, name: true, email: true } } },
+            // `WITH_AUTHOR`, not a second inline copy. That constant exists so
+            // the author shape cannot diverge between reads, and this was
+            // already the divergence it warns about (#2474).
+            include: TaskCommentRepository.WITH_AUTHOR,
         });
     }
 
@@ -775,6 +859,48 @@ export class TaskCommentRepository {
     private static readonly WITH_AUTHOR = {
         createdBy: { select: { id: true, name: true, email: true } },
     } as const;
+
+    /**
+     * The comments of MANY tasks at once, newest first (#2474).
+     *
+     * Batched because a parcel's history spans every task that touched it —
+     * up to the parcel-tasks cap — and the per-task read would be one request
+     * per task on the phone, which is the whole reason this exists. Covered by
+     * `@@index([tenantId, taskId])`, the same index `listByTask` uses.
+     *
+     * Uses `WITH_AUTHOR` rather than a third inline copy of the include, which
+     * is what that constant's docblock asks for.
+     *
+     * `body` is ENCRYPTED at rest and arrives decrypted because this goes
+     * through the Prisma client extension. That is also why the task-id set is
+     * resolved separately rather than by a raw anti-join: raw SQL would hand
+     * back ciphertext.
+     */
+    static async listByTasks(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskIds: readonly string[],
+        take: number,
+    ) {
+        if (taskIds.length === 0) return [];
+        return db.taskComment.findMany({
+            where: { tenantId: ctx.tenantId, taskId: { in: [...taskIds] } },
+            // Total order: `createdAt` alone ties when a client posts twice in
+            // the same millisecond, and the caller merges these with
+            // resolutions and then slices, so an unstable order would move the
+            // boundary between requests.
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            include: {
+                ...TaskCommentRepository.WITH_AUTHOR,
+                // The task's own identity, through the relation rather than a
+                // third read joined in memory. A parcel's history labels each
+                // row with the task it belongs to, and `TaskComment` carries
+                // only the id.
+                task: { select: { key: true, title: true } },
+            },
+            take,
+        });
+    }
 
     static async add(
         db: PrismaTx,

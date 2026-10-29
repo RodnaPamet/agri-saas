@@ -116,6 +116,22 @@ const FarmTaskListItem = z
             }),
         assigneeUserId: z.string().nullable().optional(),
         assignee: UserRefSchema.nullable().optional(),
+        parcelIds: z.array(z.string()).openapi({
+            description:
+                'Every parcel this task touches — PARCEL task links AND, for a field '
+                + 'operation, its operation lines, deduplicated. The same union '
+                + '`GET /tasks/{taskId}/parcels` returns, because a field operation reaches its '
+                + 'parcels through its LINES and `?linkedEntityType=PARCEL` would silently omit '
+                + 'every planned spray.\n\n'
+                + 'Present so a client can count a queue per parcel — the numbers on a '
+                + 'MECHANISATOR\'s whole-farm map — without one request per row on rural LTE '
+                + '(#2474). ALWAYS an array: a task touching no parcel sends `[]`, never an '
+                + 'absent field, so a caller need not tell the two apart.\n\n'
+                + 'Computed per request rather than cached. Adding a parcel to an existing field '
+                + 'operation writes an `OperationParcel` row and no `Task` row, so a task-keyed '
+                + 'cache version would not bump and stale ids would be served for the TTL.',
+            example: ['cmvtj2kbu000kt50d70cg1ody'],
+        }),
         mayDelete: z.boolean().optional().openapi({
             description:
                 'Whether THIS caller may delete THIS task \u2014 the flag to gate a «\u0418\u0437\u0442\u0440\u0438\u0439» '

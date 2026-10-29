@@ -1213,6 +1213,230 @@ export async function parcelTaskIds(
     };
 }
 
+/** What a parcel's history shows, per row (#2474). */
+export interface ParcelCommentRow {
+    /**
+     * Stable across refreshes, so a client can key a list on it. A comment's
+     * own id for `COMMENT`; `resolution:<taskId>` for `RESOLUTION`, which has
+     * no row of its own to borrow an id from.
+     */
+    id: string;
+    taskId: string;
+    /**
+     * NULLABLE, because `Task.key` is. Not coerced to a placeholder: a client
+     * showing "—" where there is no key is honest, and inventing one would
+     * make an absent key indistinguishable from a real one.
+     */
+    taskKey: string | null;
+    taskTitle: string;
+    /**
+     * `COMMENT` is a task comment; `RESOLUTION` is the note left when the task
+     * was closed (`Task.resolution`).
+     */
+    kind: 'COMMENT' | 'RESOLUTION';
+    body: string;
+    /**
+     * ONE field for both kinds, so a client sorts and renders one key: the
+     * comment's own time, or the task's close time for a resolution. Agreed
+     * with agrent-ios rather than sending two optional times and making the
+     * client choose.
+     */
+    createdAt: string;
+    /**
+     * Null on a `RESOLUTION`, and that is a statement about the data rather
+     * than an omission: `Task.resolution` is a column with no author, so
+     * naming anyone — the assignee, the last status-changer — would attribute
+     * the note to somebody the row does not identify.
+     */
+    createdByUserId: string | null;
+    createdBy: { id: string; name: string | null; email: string } | null;
+}
+
+/** What one parcel's history page holds, matching `listTasksForParcel`. */
+const PARCEL_COMMENTS_PAGE = 200;
+const PARCEL_COMMENT_ROWS = 1_000;
+
+/**
+ * A parcel's comments and closing notes, newest first (#2474, agrent-ios).
+ *
+ * The history under «Блокове» → a parcel, for a MECHANISATOR whose whole app
+ * is one screen. One read per parcel rather than one per task: a sprayer on
+ * rural LTE opening a field with a season of work on it would otherwise make
+ * dozens of requests.
+ *
+ * ## Over the same task set as `listTasksForParcel`
+ *
+ * Both call `parcelTaskIds`, so the history and the task list on the same
+ * screen cannot disagree about which tasks touched the parcel. That is the
+ * reason this lives beside it rather than in a file of its own.
+ *
+ * ## Two sources, one list
+ *
+ * A task comment is a row in `TaskComment`; a closing note is a COLUMN on the
+ * task. They are merged here rather than returned as two arrays because the
+ * screen is one chronological history, and a client assembling it from two
+ * lists would have to re-derive the ordering this already knows.
+ *
+ * Both `TaskComment.body` and `Task.resolution` are ENCRYPTED at rest and
+ * arrive decrypted through the Prisma extension. That is why neither read can
+ * be a raw anti-join over the task set, and why the row carries the body
+ * rather than a pointer to fetch it with.
+ *
+ * ## `truncated` has the same two causes as the task list
+ *
+ * The upstream id read can cap, and this page can cap. Either means the
+ * history shown is a prefix, and a client that inferred completeness from the
+ * row count would be wrong in both cases.
+ */
+export async function listParcelComments(
+    ctx: RequestContext,
+    parcelId: string,
+): Promise<{ rows: ParcelCommentRow[]; truncated: boolean }> {
+    assertCanReadTasks(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        // The 404 belongs to the PARCEL, exactly as in `listTasksForParcel`: a
+        // parcel with nothing recorded answers an empty list, and conflating
+        // the two would make an untouched field indistinguishable from a typo.
+        const parcel = await db.parcel.findFirst({
+            where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found.');
+
+        const { ids, truncated: idsTruncated } = await parcelTaskIds(db, ctx, parcelId);
+
+        const [comments, resolutions] = await Promise.all([
+            TaskCommentRepository.listByTasks(db, ctx, ids, PARCEL_COMMENT_ROWS),
+            WorkItemRepository.listResolutionsByIds(db, ctx, ids, PARCEL_COMMENT_ROWS),
+        ]);
+
+        const rows: ParcelCommentRow[] = [
+            ...comments.map((c) => ({
+                id: c.id,
+                taskId: c.taskId,
+                taskKey: c.task.key,
+                taskTitle: c.task.title,
+                kind: 'COMMENT' as const,
+                body: c.body,
+                createdAt: c.createdAt.toISOString(),
+                createdByUserId: c.createdByUserId,
+                createdBy: c.createdBy
+                    ? { id: c.createdBy.id, name: c.createdBy.name, email: c.createdBy.email }
+                    : null,
+            })),
+            ...resolutions.map((t) => ({
+                id: `resolution:${t.id}`,
+                taskId: t.id,
+                taskKey: t.key,
+                taskTitle: t.title,
+                kind: 'RESOLUTION' as const,
+                // Non-null by the repository's `resolution: { not: null }`
+                // filter; the cast records that rather than inventing a
+                // fallback string for a row that cannot occur.
+                body: t.resolution as string,
+                // `completedAt` is the close time and is what the history
+                // means. It can be null on a task carrying a resolution
+                // without a terminal status, so `updatedAt` stands in rather
+                // than the row being dropped — a closing note with an
+                // approximate time is worth more than a missing one.
+                createdAt: (t.completedAt ?? t.updatedAt).toISOString(),
+                createdByUserId: null,
+                createdBy: null,
+            })),
+        ];
+
+        // Newest first, with `id` as the tie-break so the order is TOTAL: a
+        // treatment can close several tasks in the same millisecond, and the
+        // slice below would otherwise drop a different row per request.
+        rows.sort((a, b) =>
+            a.createdAt === b.createdAt
+                ? b.id.localeCompare(a.id)
+                : b.createdAt.localeCompare(a.createdAt),
+        );
+
+        return {
+            rows: rows.slice(0, PARCEL_COMMENTS_PAGE),
+            truncated: idsTruncated || rows.length > PARCEL_COMMENTS_PAGE,
+        };
+    });
+}
+
+/**
+ * Caps for the batched parcel lookup behind a queue's map badges (#2474).
+ *
+ * Derived rather than picked. The queue is capped at 200 tasks. A link row is
+ * one per (task, parcel), so 5,000 allows 25 parcels on every one of the 200 —
+ * already beyond any real farm task. A line ROW multiplies by product as well,
+ * so 20,000 allows 25 parcels x 4 products on every row.
+ *
+ * What a cap costs here is a map badge that UNDER-COUNTS, not a task that
+ * disappears: the task is still in the list below the map either way. That is
+ * why this does not report truncation the way `listTasksForParcel` does —
+ * there an absence was indistinguishable from a complete history; here the
+ * authoritative list is on the same screen.
+ */
+const QUEUE_LINK_PAIRS = 5_000;
+const QUEUE_LINE_ROWS = 20_000;
+
+/**
+ * Attach each row's parcel ids, for the per-parcel counts on a MECHANISATOR's
+ * map (#2474, agrent-ios).
+ *
+ * ## Why a decorator AFTER the cache, not a field in `taskListSelect`
+ *
+ * Two reasons, and the second decides it:
+ *
+ *  1. `parcelIds` is a RELATION aggregate over two tables, not a column, so it
+ *     cannot be a `select` key without an `include` on each.
+ *  2. It would be WRONG in the cache. Adding a parcel to an existing field
+ *     operation writes an `OperationParcel` row and no `Task` row, so a
+ *     task-keyed cache version would not bump and stale ids would be served
+ *     for the rest of the TTL. Same argument that keeps `listTasksForParcel`
+ *     uncached, and the same shape as #2406 — except the staleness here would
+ *     be silent rather than an omitted flag.
+ *
+ * So it sits where `withMayDelete` sits: after the cache read, on the way out.
+ * That function's reason differs (a per-CALLER value must not be shared) but
+ * the placement is the same, and following the precedent beats inventing a
+ * third pattern.
+ *
+ * ## Batched, because the alternative is 200 round trips
+ *
+ * Two reads for the whole queue regardless of length, both on
+ * `@@index([tenantId, taskId])`. The per-task shape this replaces is what the
+ * phone does today — one `/tasks/{id}/parcels` per row on rural LTE — and a
+ * loop here would also trip `query-shape-guardrails`' D1 layer.
+ *
+ * Deduplicated per task: `OperationParcel` is unique per (task, parcel,
+ * product), so a two-product spray yields the same pair twice, and a parcel
+ * can be both linked and on a line.
+ */
+export async function attachParcelIds<T extends { id: string }>(
+    ctx: RequestContext,
+    rows: T[],
+): Promise<Array<T & { parcelIds: string[] }>> {
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.id);
+    const byTask = new Map<string, Set<string>>();
+
+    await runInTenantContext(ctx, async (db) => {
+        const [links, lines] = await Promise.all([
+            TaskLinkRepository.listParcelIdsByTasks(db, ctx, ids, QUEUE_LINK_PAIRS),
+            ParcelRepository.listOperationParcelIdsForTasks(db, ctx, ids, QUEUE_LINE_ROWS),
+        ]);
+        for (const { taskId, parcelId } of [...links, ...lines]) {
+            const set = byTask.get(taskId) ?? new Set<string>();
+            set.add(parcelId);
+            byTask.set(taskId, set);
+        }
+    });
+
+    // A task with no parcels gets `[]`, never a missing key: the phone counts
+    // by iterating these arrays, and an absent field would have to be told
+    // apart from an empty one at every call site.
+    return rows.map((r) => ({ ...r, parcelIds: [...(byTask.get(r.id) ?? [])] }));
+}
+
 /**
  * Every task that touches one parcel, newest first — what «Блокове» → a parcel
  * shows beneath its risk (#2463, agrent-ios).
