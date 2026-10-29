@@ -188,7 +188,6 @@ export async function scoreNotice(notice: NoticeToScore): Promise<NoticeScoreRes
         const response = await client.messages.create({
             model: NOTICE_SCORE_MODEL,
             max_tokens: MAX_TOKENS,
-            temperature: 0,
             system: SYSTEM_PROMPT,
             messages: [{ role: 'user', content: buildUserContent(notice) }],
             tools: [

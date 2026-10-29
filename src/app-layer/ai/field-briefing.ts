@@ -267,7 +267,6 @@ export async function generateFieldBriefing(input: BriefingInput): Promise<Field
         const response = await client.messages.create({
             model: BRIEFING_MODEL,
             max_tokens: MAX_TOKENS,
-            temperature: 0.3,
             system: withLocaleInstruction(SYSTEM_PROMPT, input.locale),
             messages: [{ role: 'user', content: buildUserContent(input) }],
             tools: [

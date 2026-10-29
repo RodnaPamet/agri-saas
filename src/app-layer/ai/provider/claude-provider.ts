@@ -123,7 +123,6 @@ export class ClaudeProvider implements AiProvider {
             system,
             messages,
             tools,
-            temperature: opts.temperature,
             stream: opts.stream === true,
             signal: opts.signal,
         });
@@ -194,7 +193,6 @@ export class ClaudeProvider implements AiProvider {
             system,
             messages,
             tool,
-            temperature: opts.temperature,
             signal: opts.signal,
         });
         const firstParse = this.tryParse(schema, first.input);
@@ -226,7 +224,6 @@ export class ClaudeProvider implements AiProvider {
             system,
             messages: repairMessages,
             tool,
-            temperature: opts.temperature,
             signal: opts.signal,
         });
         const repairedParse = this.tryParse(schema, repaired.input);
@@ -363,7 +360,6 @@ export class ClaudeProvider implements AiProvider {
         system: Anthropic.Messages.TextBlockParam[] | undefined;
         messages: MessageParam[];
         tool: ToolParam;
-        temperature?: number;
         signal?: AbortSignal;
     }): Promise<{ input: unknown; usage: AiUsage }> {
         const response = await this.client.messages.create(
@@ -374,7 +370,6 @@ export class ClaudeProvider implements AiProvider {
                 messages: args.messages,
                 tools: [args.tool],
                 tool_choice: { type: 'tool', name: args.tool.name },
-                ...(args.temperature !== undefined ? { temperature: args.temperature } : {}),
             },
             args.signal ? { signal: args.signal } : undefined,
         );
@@ -401,7 +396,6 @@ export class ClaudeProvider implements AiProvider {
         system: Anthropic.Messages.TextBlockParam[] | undefined;
         messages: MessageParam[];
         tools?: ToolParam[];
-        temperature?: number;
         stream: boolean;
         signal?: AbortSignal;
     }): Promise<{ text: string; toolCalls: AiToolCall[]; usage: AiUsage }> {
@@ -412,7 +406,6 @@ export class ClaudeProvider implements AiProvider {
             ...(args.system ? { system: args.system } : {}),
             messages: args.messages,
             ...(args.tools ? { tools: args.tools } : {}),
-            ...(args.temperature !== undefined ? { temperature: args.temperature } : {}),
         };
 
         if (args.stream) {
