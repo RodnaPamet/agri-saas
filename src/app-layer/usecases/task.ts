@@ -1,5 +1,5 @@
 import { RequestContext } from '../types';
-import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskFilters, TaskListParams } from '../repositories/WorkItemRepository';
+import { WorkItemRepository, TaskLinkRepository, TaskCommentRepository, TaskFilters, TaskListParams, taskListSelect } from '../repositories/WorkItemRepository';
 import { ParcelRepository, type ParcelSummaryGeo } from '../repositories/ParcelRepository';
 import { assertCanDeleteTask, assertCanDeleteTasks,
     assertCanReadTasks,
@@ -62,6 +62,11 @@ export async function listTasks(
         // results have different shapes; sharing a key would let a
         // bounded SSR fetch poison the unbounded API GET cache.
         params: options.take ? { ...filters, _take: options.take } : filters,
+        // #2406 — the key carries no projection otherwise, so a payload built
+        // by the PREVIOUS `select` is served to new code for up to the TTL
+        // after a deploy. That is how `mayDelete` came to deny everyone for a
+        // minute: it is computed from two fields a stale payload lacks.
+        projection: taskListSelect,
         loader: () =>
             runInTenantContext(ctx, (db) =>
                 WorkItemRepository.list(db, ctx, filters, options),
@@ -103,9 +108,32 @@ export async function listTasks(
 function withMayDelete<T extends { createdByUserId: string; treatmentGroupId: string | null }>(
     ctx: RequestContext,
     rows: T[],
-): Array<Omit<T, 'createdByUserId' | 'treatmentGroupId'> & { mayDelete: boolean }> {
+): Array<Omit<T, 'createdByUserId' | 'treatmentGroupId'> & { mayDelete?: boolean }> {
     return rows.map((row) => {
         const { createdByUserId, treatmentGroupId, ...rest } = row;
+        // ## A row without the inputs gets NO flag, rather than a false one
+        //
+        // #2406. `createdByUserId` is non-null in the schema, so `undefined`
+        // means the field was not PROJECTED — a payload cached by an older
+        // `select`, which the key could not distinguish before this change.
+        // `treatmentGroupId` is checked for absence rather than falsiness
+        // because `null` is its ordinary value and means "not a treatment".
+        //
+        // Computing the flag from that row yields `false` on every arm, for
+        // everyone, administrators included: `undefined === ctx.userId` is
+        // false and `undefined === null` is false. That is the strongest
+        // possible claim from no evidence, and the client treats `false` as a
+        // hard denial.
+        //
+        // Omitting it instead routes the gap through the contract already
+        // written for exactly this: both schema descriptions say an ABSENT
+        // field is a row cached before the field existed, and that a client
+        // must read `mayDelete === false`, never `!mayDelete`. So absent
+        // degrades to "offered", the server re-checks, and the cost is one
+        // refusal rather than a farmer losing their own row.
+        if (createdByUserId === undefined || treatmentGroupId === undefined) {
+            return rest as Omit<T, 'createdByUserId' | 'treatmentGroupId'>;
+        }
         return {
             ...rest,
             mayDelete: canDeleteTask(ctx, { createdByUserId }) && treatmentGroupId === null,
@@ -120,6 +148,8 @@ export async function listTasksPaginated(ctx: RequestContext, params: TaskListPa
         entity: 'task',
         operation: 'listPaginated',
         params,
+        // Same select, same reason — see the sibling above (#2406).
+        projection: taskListSelect,
         loader: () =>
             runInTenantContext(ctx, (db) =>
                 WorkItemRepository.listPaginated(db, ctx, params),

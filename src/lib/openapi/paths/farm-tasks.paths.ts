@@ -116,7 +116,7 @@ const FarmTaskListItem = z
             }),
         assigneeUserId: z.string().nullable().optional(),
         assignee: UserRefSchema.nullable().optional(),
-        mayDelete: z.boolean().openapi({
+        mayDelete: z.boolean().optional().openapi({
             description:
                 'Whether THIS caller may delete THIS task \u2014 the flag to gate a «\u0418\u0437\u0442\u0440\u0438\u0439» '
                 + 'control on (#2395). Declared here as well as on `TaskListItem` because BOTH list '
