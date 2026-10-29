@@ -930,8 +930,23 @@ export async function expectRouteTransition(
     // on #1862. Playwright's `requestfailed` sees it.
     const failedRequests: string[] = [];
     const onRequestFailed = (req: Request): void => {
+        // PREFETCH or NAVIGATION, which the previous shape could not say
+        // (#1076). Next sets `Next-Router-Prefetch: 1` on a speculative RSC
+        // fetch and omits it on a real one, so the header separates "a
+        // sidebar link's prefetch was superseded", which is ORDINARY and
+        // happens on every run, from "the fetch this navigation depended on
+        // was aborted", which is not. Four captures showed the clicked row's
+        // own `?_rsc=` URL appearing twice — once succeeding, once aborted —
+        // and no way to tell which of the two the router was waiting for.
+        let kind = '';
+        try {
+            const h = req.headers();
+            kind = h['next-router-prefetch'] ? ' [prefetch]' : h['rsc'] ? ' [NAVIGATION rsc]' : '';
+        } catch {
+            /* headers unavailable on a failed request — leave untagged */
+        }
         failedRequests.push(
-            `${req.method()} ${req.url().slice(-100)} — ${req.failure()?.errorText ?? 'unknown'}`,
+            `${req.method()} ${req.url().slice(-100)}${kind} — ${req.failure()?.errorText ?? 'unknown'}`,
         );
     };
     page.on('requestfailed', onRequestFailed);
@@ -962,6 +977,7 @@ export async function expectRouteTransition(
                     : `  rows BEFORE gesture: ${opts.rowsBefore}   <- compare with \`rows\` below;` +
                       ` a DROP means the set changed under the gesture\n`) +
                 (await describeNavDelta(page, opts.navBefore)) +
+                (await describeUrlChanges(page)) +
                 (await describeListState(page)) +
                 (await describeColumnState(page)),
         );
@@ -1022,6 +1038,10 @@ export async function expectRouteTransition(
                     failedRequests,
                 })) +
                 (await describeNavDelta(page, opts.navBefore)) +
+                // Unconditional, and this is the branch that matters: the
+                // rollback is what needs explaining, and only this line says
+                // which mechanism performed it (#1076).
+                (await describeUrlChanges(page)) +
                 (rolledBack
                     ? `  --- the URL ROLLED BACK to a non-matching route, so the list state below is THIS page's ---\n` +
                       (await describeListState(page))
@@ -1180,6 +1200,215 @@ export async function instrumentRowGestures(page: Page): Promise<void> {
             );
         }
     });
+}
+
+/**
+ * WHO changes the URL, and by which mechanism (#1076).
+ *
+ * ## The question this exists to answer, and why the other probes cannot
+ *
+ * Four captures read on 2026-10-29 agree exactly: the gesture is delivered in
+ * full, `spa +1, history +1` so the push COMMITS, `document loads: 1` so
+ * nothing reloads, and the URL is then back on the list. Every probe so far
+ * samples state AFTER the fact, so all three mechanisms that produce that
+ * reading are still live:
+ *
+ *   - `history.back()` / a `popstate` — something moved the history position;
+ *   - `history.replaceState` — the detail entry was overwritten with the list;
+ *   - Next's own router reverting an optimistic navigation whose RSC payload
+ *     never arrived.
+ *
+ * They are indistinguishable from counters and distinguishable from CALLS. A
+ * `popstate` with no preceding `pushState` is the first; a `replaceState` back
+ * to the list URL is the second; a `pushState` to the detail followed by a
+ * `replaceState` from inside a framework chunk is the third.
+ *
+ * ## Why a stack, and what it is worth in a production build
+ *
+ * The frames are minified, so this will not name a function. It does not need
+ * to — the discriminator is COARSE: whether the call comes from an app chunk
+ * or from Next's framework chunk. That separates "our code did this" from "the
+ * router did this", which is the fork the next fix depends on and the one thing
+ * no capture has ever recorded.
+ *
+ * Trimmed to four frames because the top of the stack is the patch itself and
+ * the bottom is React's scheduler on every path, so neither end discriminates.
+ *
+ * ## Armed BEFORE the gesture, like `instrumentRowGestures`
+ *
+ * A URL change that has already happened leaves nothing to read, and this
+ * patch cannot be installed retroactively. Idempotent so a spec may call it
+ * twice, and installed once per page: the document is never reloaded in the
+ * failing case (`document loads: 1` in all four captures), so one install
+ * holds for the whole test.
+ *
+ * Tolerant by construction — it records and never throws, because it runs on
+ * the normal path and must never be the reason a test fails.
+ */
+export async function instrumentUrlChanges(page: Page): Promise<void> {
+    try {
+        await page.evaluate(() => {
+            interface UrlRec {
+                kind: 'pushState' | 'replaceState' | 'popstate';
+                to: string;
+                from: string;
+                frames: string[];
+            }
+            const w = window as unknown as { __urlChanges?: UrlRec[] };
+            if (w.__urlChanges) return; // idempotent — a spec may call this twice
+            const log: UrlRec[] = [];
+            w.__urlChanges = log;
+
+            /**
+             * Four frames, skipping this patch's own. Minified names are
+             * expected; the chunk PATH is the signal.
+             */
+            const frames = (): string[] =>
+                (new Error().stack ?? '')
+                    .split('\n')
+                    .slice(2, 6)
+                    .map((l) => l.trim().replace(/^at\s+/, ''))
+                    .filter(Boolean);
+
+            const path = (u: unknown): string => {
+                try {
+                    return new URL(String(u), location.href).pathname;
+                } catch {
+                    return String(u);
+                }
+            };
+
+            for (const kind of ['pushState', 'replaceState'] as const) {
+                const original = history[kind].bind(history);
+                // ANONYMOUS rather than `function patched(...)`, as cheap
+                // insurance rather than a fix for an observed break.
+                //
+                // Under PLAYWRIGHT's transform — the only one that runs this
+                // in CI — a named function expression works: measured, armed
+                // and recording all three mechanisms. Under **tsx/esbuild** it
+                // does NOT: `keepNames` emits a `__name(...)` call, and
+                // `page.evaluate` serialises this closure as source into a
+                // page that has no esbuild prelude, so the patch dies with
+                // `__name is not defined` before its first statement.
+                //
+                // That matters only to someone importing these helpers from a
+                // one-off `npx tsx` script, which is how it was found — and
+                // the lesson there is that the probe was wrong, not the code.
+                // Anonymous costs nothing and removes the trap for both.
+                // No `this` is needed because `original` is already bound.
+                history[kind] = ((
+                    data: unknown,
+                    unused: string,
+                    url?: string | URL | null,
+                ) => {
+                    // Recorded BEFORE delegating, so `from` is the URL being
+                    // left rather than the one just set.
+                    log.push({
+                        kind,
+                        from: location.pathname,
+                        to: url == null ? location.pathname : path(url),
+                        frames: frames(),
+                    });
+                    return original(data, unused, url as string);
+                }) as typeof history.pushState;
+            }
+
+            // A popstate carries no stack worth having — it is the browser
+            // telling us the position moved, and the CALLER (back/forward/a
+            // router) is already gone. Its mere presence is the discriminator.
+            window.addEventListener(
+                'popstate',
+                () => {
+                    log.push({
+                        kind: 'popstate',
+                        from: '(previous entry)',
+                        to: location.pathname,
+                        frames: [],
+                    });
+                },
+                true, // CAPTURE, matching `instrumentRowGestures`
+            );
+
+            // Proof the patch took, recorded in the page so the dump can tell
+            // "installed and saw nothing" from "never installed".
+            //
+            // This exists because the install CAN fail silently, and did
+            // once under a tsx harness: the `catch` below swallowed the error,
+            // `__urlChanges` had already been created, and the dump therefore
+            // printed "NONE recorded after instrumenting" — which reads as the
+            // positive finding that no URL change occurred.
+            //
+            // The harness that produced it was the wrong one, but the hazard
+            // is not hypothetical: any future throw between creating the log
+            // and patching `history` reproduces it, and a tolerant instrument
+            // that reports its own breakage as evidence would retire a
+            // hypothesis on nothing. Three states, not two.
+            (window as unknown as { __urlChangesArmed?: boolean }).__urlChangesArmed =
+                Object.prototype.hasOwnProperty.call(history, 'pushState') &&
+                Object.prototype.hasOwnProperty.call(history, 'replaceState');
+        });
+    } catch {
+        /* a closed page or a hostile CSP — `__urlChangesArmed` stays unset
+           and the dump says the install FAILED rather than staying silent */
+    }
+}
+
+/**
+ * The recorded URL changes, newest last, with the mechanism named (#1076).
+ *
+ * Printed rather than asserted, like `describeColumnState`: the value of this
+ * line is that it says permanently which of the three mechanisms fired, so a
+ * hypothesis can be killed rather than re-argued.
+ *
+ * EXPORTED, unlike its sibling `describe*` helpers, and only so it can be
+ * tested. It runs exclusively on a failure path, so a green run never executes
+ * it — which is the same shape as a guard that cannot express failure. Its
+ * self-test lives in `e2e-utils-isolation.spec.ts`.
+ */
+export async function describeUrlChanges(page: Page): Promise<string> {
+    try {
+        const probe = await page.evaluate(() => {
+            const w = window as unknown as {
+                __urlChanges?: Array<{ kind: string; to: string; from: string; frames: string[] }>;
+                __urlChangesArmed?: boolean;
+            };
+            return { recs: w.__urlChanges ?? null, armed: w.__urlChangesArmed === true };
+        });
+        const recs = probe.recs;
+        if (recs === null) {
+            return (
+                '  url changes        : NOT INSTRUMENTED' +
+                ' (call `await instrumentUrlChanges(page)` before the gesture)\n'
+            );
+        }
+        if (!probe.armed) {
+            // THREE states, not two. The patch can be absent, present, or
+            // half-installed — and the third printed as "NONE recorded" once,
+            // which is a false negative dressed as a finding.
+            return (
+                '  url changes        : INSTALL FAILED — the history patch did not take, so the\n' +
+                '                       absence of records below is NOT evidence about the URL\n'
+            );
+        }
+        if (recs.length === 0) {
+            // A real answer, not a gap: the URL reached the destination and
+            // came back WITHOUT any scripted history call, which leaves only
+            // a browser-level move or a framework path that bypasses these.
+            return '  url changes        : NONE recorded after instrumenting   <- no scripted pushState/replaceState/popstate\n';
+        }
+        const lines = recs.map((r, i) => {
+            const where = r.frames.length === 0 ? '' : `\n                         via ${r.frames.join('  <- ')}`;
+            return `    ${i + 1}. ${r.kind.padEnd(12)} ${r.from} -> ${r.to}${where}`;
+        });
+        return (
+            `  url changes        : ${recs.length}\n${lines.join('\n')}\n` +
+            '                       <- a popstate with no preceding pushState means something moved the history POSITION;\n' +
+            '                          a replaceState back to the list means the entry was overwritten;\n' +
+            '                          read the frames for whether an app chunk or a framework chunk did it\n'
+        );
+    } catch {
+        return '  url changes        : (unreadable — page closed)\n';
+    }
 }
 
 /**

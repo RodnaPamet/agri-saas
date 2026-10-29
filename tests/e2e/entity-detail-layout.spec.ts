@@ -24,6 +24,7 @@ import {
     waitForHydration,
     expectRouteTransition,
     instrumentRowGestures,
+    instrumentUrlChanges,
     readNavCounters,
 } from './e2e-utils';
 
@@ -53,6 +54,12 @@ test.describe('EntityDetailLayout', () => {
         // See the note in data-table-platform.spec.ts — measure the event,
         // not the paint (#1076).
         await instrumentRowGestures(page);
+        // WHO changes the URL back (#1076). Four captures agree the push
+        // COMMITS and the URL then returns to the list with no reload; every
+        // probe so far samples state after the fact, so `back()`, a
+        // `replaceState` and a framework revert are all still live. This
+        // records the CALL, which separates them.
+        await instrumentUrlChanges(page);
         // The count BEFORE the gesture. `expectRouteTransition` asks for it
         // because its own capture showed `rows: 1` at failure against a seed
         // of more than one, and only the caller can see the before — without
