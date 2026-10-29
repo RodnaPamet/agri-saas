@@ -92,10 +92,8 @@ this list without deleting the override fails the guard.
 - `postcss`
 - `@grpc/grpc-js`
 - `find-my-way`
-- `deepmerge-ts`
 - `sharp`
 - `fast-uri`
-- `mysql2`
 - `brace-expansion@^5`
 
 ## Security overrides
