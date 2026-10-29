@@ -102,18 +102,43 @@ export function InitialsAvatar({
     const resolvedUrl =
         imageUrl && imageUrl !== failedUrl ? imageUrl : null;
 
+    /*
+     * THE INITIALS ARE PAINTED BY CSS, NOT RENDERED AS A TEXT NODE — WCAG
+     * 2.5.3 (#2449).
+     *
+     * They used to sit here as `{getInitials(value, mode)}`. This span is
+     * `aria-hidden`, which correctly keeps them out of the accessible NAME of
+     * the interactive parent (a switcher button, an identity pill). But axe's
+     * `label-content-name-mismatch` computes the other side of its comparison
+     * with `visibleVirtual(node, screenReader=false, …)`, and `aria-hidden`
+     * is NOT a visual property — it hides from assistive tech, not from the
+     * screen. So the initials counted as the parent's visible text while being
+     * excluded from its name, and the two could never match.
+     *
+     * Measured in real Chromium with axe-core 4.14. A button labelled
+     * «Current workspace: Acme Corp» containing aria-hidden initials "AC" plus
+     * the visible workspace name VIOLATES; the same markup with the initials
+     * as generated content PASSES. Setting `display:none` on them also passes,
+     * which is the discriminator: visual visibility decides it, aria-hidden
+     * does not.
+     *
+     * Generated content is not a DOM text node, so it is invisible to that
+     * walk — and to `textContent`, which is why
+     * `tests/rendered/initials-avatar-is-not-text.test.tsx` asserts the
+     * attribute rather than the rendered string. The glyphs paint identically.
+     */
     return (
         <span
             aria-hidden="true"
+            data-initials={getInitials(value, mode)}
             className={cn(
                 'relative flex items-center justify-center overflow-hidden rounded-full bg-[var(--brand-subtle)] font-semibold text-[var(--brand-emphasis)]',
                 SIZE_CLASS[size],
                 className,
             )}
         >
-            {/* Initials are the always-present fallback layer — the
-                image (when it resolves) is painted on top. */}
-            {getInitials(value, mode)}
+            {/* The initials layer is `data-initials` + a `::before` rule (see
+                above); the image, when it resolves, is painted on top. */}
             {resolvedUrl && (
                 // Plain <img>, not next/image — these avatars are
                 // 20–32px chrome; the optimizer round-trip costs more

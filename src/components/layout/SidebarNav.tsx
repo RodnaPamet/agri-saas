@@ -457,7 +457,6 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                     'mx-2 mb-2 flex items-center rounded-lg border border-border-subtle bg-bg-default px-3 py-2 text-xs text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
                     collapsed ? 'justify-center' : 'gap-tight',
                 )}
-                aria-label={t('openPalette')}
                 data-testid="sidebar-search-anchor"
             >
                 <svg
@@ -477,12 +476,31 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                 {!collapsed && (
                     <span
                         className="hidden items-center gap-[2px] rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-content-subtle md:flex"
-                        aria-hidden="true"
                     >
                         <span>⌘</span>
                         <span>K</span>
                     </span>
                 )}
+                {/*
+                  * WCAG 2.5.3 (#2449). This button had `aria-label={t('openPalette')}`,
+                  * and #2441 widened that label to contain the visible word. It did
+                  * NOT fix the violation, because the label was never the cause: the
+                  * ⌘K badge above is `hidden … md:flex`, so on desktop it is ON SCREEN,
+                  * and axe compares the name against `visibleVirtual(node,
+                  * screenReader=false, …)` — where `aria-hidden` counts for nothing,
+                  * since it hides from assistive tech, not from the screen. The badge
+                  * was therefore in the visible text and absent from the name.
+                  *
+                  * So the badge is exposed (its `aria-hidden` is gone) and the
+                  * `aria-label` is gone with it, leaving the name computed FROM
+                  * CONTENT — which contains the visible text by construction. This
+                  * sr-only span keeps the destination in the announcement, which the
+                  * old label carried.
+                  *
+                  * Measured in real Chromium with axe-core 4.14: the name becomes
+                  * "Search ⌘K open command palette" and the rule no longer applies.
+                  */}
+                <span className="sr-only">{t('openPalette')}</span>
             </button>
 
             {/* Collapse / expand the desktop sidebar to an icon rail.
