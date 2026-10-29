@@ -3,6 +3,7 @@ import {
     expectRouteTransition,
     expectSettledSingle,
     instrumentRowGestures,
+    instrumentUrlChanges,
     loginAndGetTenant,
     waitForHydration,
     readNavCounters,
@@ -200,6 +201,12 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // remaining #1076 hypothesis sits on and the one thing reading the DOM
         // afterwards cannot settle.
         await instrumentRowGestures(page);
+        // WHO changes the URL back (#1076). Four captures agree the push
+        // COMMITS and the URL then returns to the list with no reload; every
+        // probe so far samples state after the fact, so `back()`, a
+        // `replaceState` and a framework revert are all still live. This
+        // records the CALL, which separates them.
+        await instrumentUrlChanges(page);
         const navBefore = await readNavCounters(page);
         await rows.first().locator('td').last().dblclick();
         // ONE helper, two budgets sized for what each half does (#1076). The
@@ -236,6 +243,12 @@ test.describe('DataTable Platform — Row click navigation', () => {
         // remaining #1076 hypothesis sits on and the one thing reading the DOM
         // afterwards cannot settle.
         await instrumentRowGestures(page);
+        // WHO changes the URL back (#1076). Four captures agree the push
+        // COMMITS and the URL then returns to the list with no reload; every
+        // probe so far samples state after the fact, so `back()`, a
+        // `replaceState` and a framework revert are all still live. This
+        // records the CALL, which separates them.
+        await instrumentUrlChanges(page);
         const navBefore = await readNavCounters(page);
         await rows.first().locator('td').last().dblclick();
         // Same shape, same fix as the Assets case above.
