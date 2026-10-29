@@ -174,7 +174,30 @@ const POPULATION_FLOOR = 1200;
  * actually prints on this branch — a cap taken from a stale measurement is
  * either red on arrival or silently slack.
  */
-const UNBLANKED_CAP = 462;
+/**
+ * 462 → 463 for `acquisition-probe-is-inert`, which is a DETECTOR FALSE
+ * POSITIVE rather than new debt — recorded here because this file's own rule is
+ * "lower the cap every batch, never bank the slack", so a rise needs a reason.
+ *
+ * `readsSource` pairs any `readFileSync` with any quoted `src/…` literal, and
+ * reads RAW text on purpose: the comment at its call site explains that its
+ * subject IS a quoted path literal, so blanking strings first would erase what
+ * it looks for. That breadth is the safe direction for a cap, and it is not a
+ * defect.
+ *
+ * But that guard holds a path to `src/lib/db/acquisition-probe.ts` only to hand
+ * the module to a subprocess, and the only file it reads is the probe's own
+ * JSONL output. It scans no source text, so there are no comments to blank.
+ * Satisfying `blanksComments` — which matches merely on the string
+ * `blankNonCode` — would mean importing the stripper without using it.
+ *
+ * I tried the alternative first: restructuring so the subprocess read its own
+ * output, removing the pairing. It did not work (the detector matches file
+ * TEXT, so `readFileSync` inside the subprocess script string still counts) and
+ * it made the test worse. Raising the number and saying why is the honest
+ * version of the same outcome.
+ */
+const UNBLANKED_CAP = 463;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.

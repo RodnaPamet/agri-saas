@@ -179,6 +179,21 @@ export const env = createEnv({
         // different licence — one flag would make "which third party did this
         // run reach" unanswerable, which is the question #781 was about.
         E2E_SOIL_FIXTURE_TILES: z.enum(["0", "1"]).optional(),
+        // LOAD-MEASUREMENT ONLY, and unset everywhere else — #2381. A path; when
+        // present the Prisma client is built with query events and
+        // `db/acquisition-probe` counts them, to answer how many Postgres
+        // ACQUISITIONS one request makes. Under a driver adapter each query is
+        // its own acquisition, and the count is not derivable by reading the
+        // code: `resolveFlags` holds a `Promise.all` and `readFlagTable` may be
+        // cached, so it differs between a cold and a warm process.
+        //
+        // Declared here rather than read as raw `process.env`, which
+        // `no-fallbacks` forbids in src/ — the sibling probe
+        // `tests/load/loop-lag.cjs` escapes that rule only by living outside
+        // src/. Going through the schema also gives the semantics the probe
+        // wants: captured ONCE at module load, so the variable cannot switch
+        // the instrument on mid-process.
+        ACQUISITION_PROBE_OUT: z.string().optional(),
         // E2E/test ONLY. "1" makes checkPasswordAgainstHIBP answer from a
         // local fixture instead of reaching api.pwnedpasswords.com. Every
         // isolated-tenant test registers a user, so a full E2E run made ~55-65
@@ -823,6 +838,7 @@ export const env = createEnv({
         AUTH_TEST_MODE: process.env.AUTH_TEST_MODE,
         E2E_BASEMAP_FIXTURE_TILES: process.env.E2E_BASEMAP_FIXTURE_TILES,
         E2E_SOIL_FIXTURE_TILES: process.env.E2E_SOIL_FIXTURE_TILES,
+        ACQUISITION_PROBE_OUT: process.env.ACQUISITION_PROBE_OUT,
         E2E_HIBP_FIXTURE: process.env.E2E_HIBP_FIXTURE,
         AUTH_REQUIRE_EMAIL_VERIFICATION: process.env.AUTH_REQUIRE_EMAIL_VERIFICATION,
         UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,

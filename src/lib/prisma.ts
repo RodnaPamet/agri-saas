@@ -8,6 +8,7 @@ import { withPiiEncryptionExtension } from './security/pii-middleware';
 import { withEncryptionExtension } from './db/encryption-middleware';
 import { withRlsTripwireExtension } from './db/rls-middleware';
 import { PG_POOL_MAX } from './db/pool-config';
+import { ACQUISITION_PROBE_ON, attachAcquisitionProbe } from './db/acquisition-probe';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
 import { recordAuditWriteFailure } from '@/lib/observability/metrics';
 // Imported DIRECTLY, not through `@/lib/audit` — seven unit suites mock that
@@ -416,7 +417,27 @@ function buildClient(): PrismaClient {
         // `deploy/docker-compose.vm.yml` by a guard.
         max: PG_POOL_MAX,
     });
-    return new PrismaClient({ adapter });
+
+    // The DEFAULT path is unchanged — `new PrismaClient({ adapter })`, no
+    // `log:`, no listener. Prisma emits query events only when asked, and
+    // asking has a cost, so the probe's `log:` is added ONLY when its
+    // environment variable is set (#2381). See ./db/acquisition-probe.
+    if (!ACQUISITION_PROBE_ON) return new PrismaClient({ adapter });
+
+    const probed = new PrismaClient({
+        adapter,
+        log: [{ emit: 'event', level: 'query' }],
+    });
+    // Asserted rather than assumed: with `log:` set and nothing attached, the
+    // events are emitted and dropped — all of the cost, none of the
+    // measurement, and an empty output file that reads as 'no queries'.
+    if (!attachAcquisitionProbe(probed)) {
+        throw new Error(
+            'ACQUISITION_PROBE_ON is true but attachAcquisitionProbe declined. '
+                + 'The client would emit query events nobody reads.',
+        );
+    }
+    return probed;
 }
 
 function buildExtended() {
