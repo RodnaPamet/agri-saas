@@ -32,7 +32,7 @@
 import { cn } from '@/lib/cn';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Calendar as CalendarIcon, ChevronDown } from 'lucide-react';
-import { forwardRef, type ComponentProps } from 'react';
+import { forwardRef, type ComponentProps, useId } from 'react';
 
 // R20-PR-B — date-picker trigger migrated to the R20 practice-parity
 // edge tokens. The rest/hover/focus channels now ride
@@ -84,10 +84,39 @@ const Trigger = forwardRef<HTMLButtonElement, TriggerProps>(
             disabled,
             type,
             'aria-invalid': ariaInvalid,
+            'aria-labelledby': ariaLabelledBy,
             ...props
         },
         forwardedRef,
     ) => {
+        /*
+         * WCAG 2.5.3 (#2449): the NAME must contain the visible value.
+         *
+         * Callers label this trigger with `aria-labelledby` pointing at the
+         * field's label — «Purchase date». Its visible text, though, is the
+         * formatted value («15 Jan 2026») or the placeholder, and an
+         * `aria-labelledby` REPLACES the name, so the value was never in it.
+         * axe reported `#asset-purchase-date-input` for exactly this.
+         *
+         * The fix is to extend the label chain with the value slot rather than
+         * to restate the value in a label: `aria-labelledby` takes a LIST, so
+         * the name becomes «Purchase date 15 Jan 2026» and contains the visible
+         * text whatever the value happens to be. No string has to be kept in
+         * sync, which is the trap the market-trends widget (#2459) hit from the
+         * other direction — there the visible text was live data, so no static
+         * label could keep containing it.
+         *
+         * Measured in real Chromium with axe-core 4.14: label alone VIOLATES,
+         * label + value slot PASSES, and it passes for the placeholder too.
+         *
+         * `useId` rather than a caller-supplied id: the trigger is rendered in
+         * many places and two on one page must not collide.
+         */
+        const valueSlotId = useId();
+        const labelledBy = [ariaLabelledBy, valueSlotId]
+            .filter(Boolean)
+            .join(' ');
+
         return (
             // eslint-disable-next-line jsx-a11y/role-supports-aria-props -- aria-invalid IS valid on <button> per WAI-ARIA 1.1 (global state); the lint rule's role-spec table is overly strict here. The form-trigger UX requires the invalid state to be announced.
             <button
@@ -100,13 +129,17 @@ const Trigger = forwardRef<HTMLButtonElement, TriggerProps>(
                 data-date-picker-trigger
                 aria-invalid={hasError ? true : ariaInvalid}
                 aria-haspopup="dialog"
+                aria-labelledby={labelledBy}
                 {...props}
             >
                 <CalendarIcon
                     aria-hidden="true"
                     className="size-4 shrink-0 text-content-muted group-hover:text-content-default"
                 />
-                <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left">
+                <span
+                    id={valueSlotId}
+                    className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left"
+                >
                     {children ? (
                         <span
                             className="text-content-emphasis"

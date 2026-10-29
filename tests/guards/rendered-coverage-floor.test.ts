@@ -333,7 +333,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // never-warning implementation satisfies the negative half alone.
 // 270 is this branch's own measured live count against base 0b47fdc95
 // (269 files → 270), not a projected total.
-const RENDERED_TEST_FLOOR = 270;
+const RENDERED_TEST_FLOOR = 271;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
