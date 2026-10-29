@@ -186,7 +186,14 @@ describe('reading back what we wrote (#2020)', () => {
             }),
         ]);
         const rows = await listFarmEvents(TOK, CAL, { fetchImpl: impl });
-        expect(rows.map((r) => r.agrentId)).toEqual(['TASK:1:task-due']);
+        // Mapped to `eventId`, not `agrentId`, and the length asserted
+        // separately. `toEqual` ELIDES a trailing `undefined` array item
+        // (measured: `expect(['a', undefined]).toEqual(['a'])` passes), so a
+        // foreign row arriving with no `agrentId` would have been invisible to
+        // the obvious assertion — which is how the mutation dropping this
+        // discard survived its first proof. `eventId` is always defined.
+        expect(rows).toHaveLength(1);
+        expect(rows.map((r) => r.eventId)).toEqual(['g-TASK:1:task-due']);
     });
 
     it('PAGINATES, so a second page is not treated as absent', async () => {
@@ -197,6 +204,7 @@ describe('reading back what we wrote (#2020)', () => {
             jsonRes({ items: [ours('B', 'b')] }),
         ]);
         const rows = await listFarmEvents(TOK, CAL, { fetchImpl: impl });
+        expect(rows).toHaveLength(2);
         expect(rows.map((r) => r.agrentId)).toEqual(['A', 'B']);
         expect(calls[1].url).toContain('pageToken=p2');
     });
