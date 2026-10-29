@@ -5,7 +5,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { JournalRepository } from '../repositories/JournalRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
-import { createTask, addTaskLink, listTasks } from './task';
+import { createTask, addTaskLink, listTasks, attachParcelIds } from './task';
 import { getFarmTaskType } from '@/lib/agriculture/farm-task-types';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 
@@ -233,7 +233,10 @@ export async function listMyFarmTasks(ctx: RequestContext, opts: FarmTaskQueueOp
         if (da !== db) return da - db;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-    return merged.slice(0, 200);
+    // The parcel ids the map badges count, attached once for the whole capped
+    // queue rather than fetched per row by the client (#2474). After the slice,
+    // so the two reads cover only what is returned.
+    return attachParcelIds(ctx, merged.slice(0, 200));
 }
 
 // ─── Dashboard trend ───

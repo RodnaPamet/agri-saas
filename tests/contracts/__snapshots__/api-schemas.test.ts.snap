@@ -7424,6 +7424,16 @@ exports[`API contract — per-schema snapshots schema: FarmTaskListItem 1`] = `
         }
       ]
     },
+    "parcelIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Every parcel this task touches — PARCEL task links AND, for a field operation, its operation lines, deduplicated. The same union \`GET /tasks/{taskId}/parcels\` returns, because a field operation reaches its parcels through its LINES and \`?linkedEntityType=PARCEL\` would silently omit every planned spray.\\n\\nPresent so a client can count a queue per parcel — the numbers on a MECHANISATOR's whole-farm map — without one request per row on rural LTE (#2474). ALWAYS an array: a task touching no parcel sends \`[]\`, never an absent field, so a caller need not tell the two apart.\\n\\nComputed per request rather than cached. Adding a parcel to an existing field operation writes an \`OperationParcel\` row and no \`Task\` row, so a task-keyed cache version would not bump and stale ids would be served for the TTL.",
+      "example": [
+        "cmvtj2kbu000kt50d70cg1ody"
+      ]
+    },
     "mayDelete": {
       "type": "boolean",
       "description": "Whether THIS caller may delete THIS task — the flag to gate a «Изтрий» control on (#2395). Declared here as well as on \`TaskListItem\` because BOTH list routes carry it: a client should not have to know which list it is reading to know whether to draw a delete.\\n\\nCovers all three refusals \`DELETE /tasks/{taskId}\` can give — \`canWrite\`, creator-or-admin (\`TASK_DELETE_NOT_PERMITTED\`), and whether the task is one block’s share of a recorded treatment (\`TASK_BELONGS_TO_TREATMENT\`, which binds administrators too). See \`TaskListItem.mayDelete\` for the full reasoning.\\n\\n**Read it as \`mayDelete === false\`, never \`!mayDelete\`**: an absent field is a row cached before it existed, and a stale denial costs a farmer their own task."
@@ -7435,7 +7445,8 @@ exports[`API contract — per-schema snapshots schema: FarmTaskListItem 1`] = `
     "type",
     "status",
     "createdAt",
-    "updatedAt"
+    "updatedAt",
+    "parcelIds"
   ],
   "additionalProperties": {},
   "description": "One row of the operator queue. This is the \`taskListSelect\` projection, NOT the full Task returned by the create — it carries no tenantId, description or metadataJson.\\n\\n\`priority\` was previously named here as an omission and is not one: the projection has carried it since the list became orderable by it. It reaches you through \`.passthrough()\` rather than as a declared field."
@@ -11965,6 +11976,110 @@ exports[`API contract — per-schema snapshots schema: ParcelClusterOverview 1`]
     "truncated"
   ],
   "description": "Proximity clusters for a location’s parcels, labelled with the nearest settlement."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelCommentRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable across refreshes so a client can key a list on it: the comment’s own id for \`COMMENT\`, and \`resolution:<taskId>\` for \`RESOLUTION\`, which has no row of its own to borrow an id from."
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "taskKey": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Nullable because \`Task.key\` is. Not coerced to a placeholder — an invented key would be indistinguishable from a real one."
+    },
+    "taskTitle": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "COMMENT",
+        "RESOLUTION"
+      ]
+    },
+    "body": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. ONE field for both kinds — the comment’s own time, or the task’s close time for a \`RESOLUTION\` — so a client sorts and renders a single key. A resolution on a task closed without a terminal status falls back to the task’s \`updatedAt\`, because a closing note with an approximate time is worth more than a dropped row."
+    },
+    "createdByUserId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdBy": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "email"
+      ],
+      "description": "The same shape \`GET /tasks/{taskId}/comments\` sends, so a client decodes both with one decoder. Null on a \`RESOLUTION\`."
+    }
+  },
+  "required": [
+    "id",
+    "taskId",
+    "taskKey",
+    "taskTitle",
+    "kind",
+    "body",
+    "createdAt",
+    "createdByUserId",
+    "createdBy"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelCommentsResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ParcelCommentRow"
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rows",
+    "truncated"
+  ]
 }"
 `;
 

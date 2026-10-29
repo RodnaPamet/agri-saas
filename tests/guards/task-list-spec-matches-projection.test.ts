@@ -90,14 +90,43 @@ function computedNotProjected(): string[] {
 }
 
 /**
+ * Field names `attachParcelIds` ADDS — the SECOND decorator (#2474).
+ *
+ * There are now two, and the guard has to follow both for the reason it
+ * follows the first: a list of names copied here would go stale the moment a
+ * decorator changed, and the failure would be a green guard over a promise the
+ * server no longer keeps.
+ *
+ * Derived separately rather than by widening `computedNotProjected`'s regex
+ * because the two decorators have genuinely different shapes —
+ * `withMayDelete` destructures and returns a multi-line object after
+ * `...rest,`, while this one is a single-line `({ ...r, key: … })` inside a
+ * `.map`. One regex loose enough for both would be loose enough to match
+ * almost anything.
+ *
+ * Loud rather than silently empty, like its sibling: if the decorator is
+ * reshaped this must fail rather than quietly stop contributing a field.
+ */
+function computedByParcelDecorator(): string[] {
+    const src = fs.readFileSync(
+        path.resolve(__dirname, '../../src/app-layer/usecases/task.ts'),
+        'utf8',
+    );
+    const m = src.match(/rows\.map\(\(r\) => \(\{\s*\.\.\.r,\s*([A-Za-z_][A-Za-z0-9_]*):/);
+    expect(m).not.toBeNull();
+    return [m![1]];
+}
+
+/**
  * Top-level keys the response carries: what Prisma is asked for, minus what is
- * stripped on the way out, plus what is computed there.
+ * stripped on the way out, plus what EITHER decorator computes there.
  */
 function projectedFields(): string[] {
     const stripped = new Set(strippedBeforeResponse());
     return [
         ...Object.keys(taskListSelect).filter((f) => !stripped.has(f)),
         ...computedNotProjected(),
+        ...computedByParcelDecorator(),
     ].sort();
 }
 

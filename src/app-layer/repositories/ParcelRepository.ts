@@ -592,6 +592,36 @@ export class ParcelRepository {
     }
 
     /**
+     * The operation-line parcels of MANY tasks at once, as `(taskId, parcelId)`
+     * pairs (#2474).
+     *
+     * Batched for the reason {@link WorkItemRepository.listParcelIdsByTasks}
+     * is: a 200-row queue would otherwise be 200 reads, which D1 bans.
+     *
+     * **Returns DUPLICATE pairs by design**, like every other read of this
+     * table: uniqueness is `@@unique([taskId, parcelId, productItemId])`, so a
+     * job spraying two products on one parcel yields that pair twice. The
+     * caller deduplicates — and must, because it unions these with the link
+     * pairs where the same pair can appear from both sources.
+     *
+     * `take` bounds ROWS, which multiply tasks BY parcels BY products, so it
+     * has to be the loosest of the three caps involved.
+     */
+    static async listOperationParcelIdsForTasks(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskIds: readonly string[],
+        take: number,
+    ): Promise<Array<{ taskId: string; parcelId: string }>> {
+        if (taskIds.length === 0) return [];
+        return db.operationParcel.findMany({
+            where: { tenantId: ctx.tenantId, taskId: { in: [...taskIds] } },
+            select: { taskId: true, parcelId: true },
+            take,
+        });
+    }
+
+    /**
      * The INVERSE of {@link listOperationParcelIdsForTask}: every field
      * operation whose lines touch one parcel.
      *
