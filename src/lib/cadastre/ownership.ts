@@ -170,7 +170,12 @@ export function extractCompanyOwners(sheet: OwnershipSheet): CompanyOwner[] {
         if (!cadastralId || !isReadableName(name) || !isEik(eik)) continue;
         const rightType = cRight >= 0 ? (row[cRight] ?? '').trim() || null : null;
         const subjectKind = cKind >= 0 ? (row[cKind] ?? '').trim() || null : null;
-        const key = `${cadastralId} ${eik} ${rightType ?? ''}`;
+        // NUL-separated so two different splits of the same characters cannot
+        // produce one key. Written as the ESCAPE, not a raw byte: a raw NUL
+        // makes this file binary to `grep`, which exempts it from
+        // `scripts/detect-secrets.sh` and from every `grep -r` over `src/`
+        // (#2446). Identical at runtime.
+        const key = `${cadastralId}\u0000${eik}\u0000${rightType ?? ''}`;
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({ cadastralId, eik, name, rightType, subjectKind });

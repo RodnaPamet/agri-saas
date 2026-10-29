@@ -197,7 +197,23 @@ const POPULATION_FLOOR = 1200;
  * it made the test worse. Raising the number and saying why is the honest
  * version of the same outcome.
  */
-const UNBLANKED_CAP = 463;
+/**
+ * 463 -> 464 for `no-raw-nul-bytes` (#2446), a second DETECTOR FALSE POSITIVE
+ * of exactly the kind recorded above — and a stronger case than the first.
+ *
+ * `readsSource`'s `aimsAtSrc` matches the bare `'src'` in that guard's ROOTS
+ * array, so it is paired as a source reader. It cannot satisfy
+ * `blanksComments`, and must not: `blankNonCode` replaces string and comment
+ * CONTENTS, and every raw NUL this repo has ever carried sits inside a string
+ * or template literal. Blanking would erase the exact bytes the guard exists
+ * to find, turning it into a control that cannot express failure.
+ *
+ * Where `acquisition-probe-is-inert` scanned no source text at all (so
+ * blanking was merely pointless), this one scans BYTES and blanking is
+ * actively destructive. Raising the number and saying why is the honest
+ * version, as that entry concluded.
+ */
+const UNBLANKED_CAP = 464;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
