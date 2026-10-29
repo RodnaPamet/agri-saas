@@ -12,6 +12,11 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
+// The SAME component `/tasks` serves, not a second spelling of a task row.
+// agrent-ios decodes this route with the same decoder it uses there, so a
+// parallel schema that drifted by one field would break the phone with both
+// sides individually correct.
+import { TaskListItemDTOSchema } from '@/lib/dto/task.dto';
 // The REQUEST bodies come from the schema layer the routes actually validate
 // with, not from copies written here. This module used to hand-write them, so
 // the documented body and the enforced one were two objects that merely
@@ -300,5 +305,53 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             observationId: z.string().openapi({ param: { name: 'observationId', in: 'path' } }),
         }),
         success: { status: 200, description: 'Removed.', schema: z.object({ ok: z.boolean() }) },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/tasks',
+        operationId: 'listParcelTasks',
+        summary: 'Every task that touches this parcel',
+        description:
+            'What «Блокове» → a parcel shows beneath its risk: the parcel\'s whole task '
+            + 'history, newest first, in the same row shape as `/tasks`.\n\n'
+            + '**Use this rather than `GET /tasks?linkedEntityType=PARCEL`.** That filter '
+            + 'returns the scouting and hand-made tasks and silently OMITS every planned spray '
+            + 'and fertilising, because a field operation reaches its parcels through its '
+            + 'operation lines rather than through a `PARCEL` task link. The answer looks '
+            + 'complete and is missing most of what was done to the field. This operation '
+            + 'unions both sources and deduplicates by task id.\n\n'
+            + '**Every status is returned, terminal ones included.** The current/archive split '
+            + 'is the client\'s: `RESOLVED` / `CLOSED` / `CANCELED` are archive, the rest are '
+            + 'current. That grouping is deliberately NOT server-side — the status enum is '
+            + 'already the contract, so a server-side split would freeze a UI decision behind '
+            + 'a deploy.\n\n'
+            + '**`truncated` means the list is a PREFIX of the history**, from either of two '
+            + 'caps: the rendered page, or the upstream id read on a parcel with an extreme '
+            + 'number of jobs. Read it — a cut history that does not say so is '
+            + 'indistinguishable from a complete one.\n\n'
+            + 'Ordered `createdAt` descending, with `id` as a tie-break so the order is TOTAL: '
+            + 'a treatment writes several tasks in the same millisecond, and an unstable order '
+            + 'would make the truncation boundary move between requests.\n\n'
+            + 'There is no `limit` or cursor, deliberately: one shape, so a client needs one '
+            + 'branch. The parcel id is a path segment rather than a query parameter because '
+            + 'iOS writes the full URL including the query to the device log.\n\n'
+            + 'NOT cached server-side, unlike `/tasks` — a farmer opens this right after '
+            + 'recording work on the field, and the id union depends on `OperationParcel`, '
+            + 'which writes no `Task` row and so would not invalidate a task-keyed cache.',
+        tags: ['Parcel history', 'Tasks'],
+        params: ParcelParams,
+        success: {
+            status: 200,
+            description:
+                'The parcel\'s tasks, newest first. `mayDelete` is per-caller and always '
+                + 'computed here — read `mayDelete === false`, never `!mayDelete`.',
+            schema: z
+                .object({
+                    rows: z.array(TaskListItemDTOSchema),
+                    truncated: z.boolean(),
+                })
+                .openapi('ParcelTasksResponse'),
+        },
     });
 }

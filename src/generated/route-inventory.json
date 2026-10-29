@@ -896,6 +896,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/tasks",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations",
       "status": "live",
       "documented": true

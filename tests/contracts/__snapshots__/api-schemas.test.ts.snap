@@ -12849,6 +12849,27 @@ exports[`API contract — per-schema snapshots schema: ParcelSplitResult 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ParcelTasksResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TaskListItem"
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "rows",
+    "truncated"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ParcelUpdateRequest 1`] = `
 "{
   "type": "object",
