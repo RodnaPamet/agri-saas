@@ -203,6 +203,23 @@ describe('release.yml generates its SBOM before the release (#2458)', () => {
         expect(violations(source)).toEqual([]);
     });
 
+    it('names the steps it reports on', () => {
+        // `label()` feeds the denominator print above, and a reading nobody can
+        // read is worth nothing — selector-teeth caught this exact gap: the
+        // helper had no assertion behind it, so mutating it to return nothing
+        // SURVIVED. The steps are LOCATED by their action/command fingerprints,
+        // which is what makes this guard robust to a rename; this asserts they
+        // are also NAMED for what they do, so the step summary and the job log
+        // stay legible to whoever is reading a failed release.
+        const steps = stepsOf(source);
+        expect(label(steps[sbomIndex(steps)])).toMatch(/sbom/i);
+        expect(label(steps[releaseIndex(steps)])).toMatch(/semantic-release/i);
+        expect(label(steps[attachIndex(steps)])).toMatch(/attach/i);
+        expect(label(steps[detectIndex(steps)])).toMatch(/detect/i);
+        // No step may be anonymous, or the ordering print loses its subject.
+        expect(steps.map(label).filter((l) => l === '(unnamed)')).toEqual([]);
+    });
+
     it('bounds the semantic-release step itself', () => {
         // The #2458 hang ran 9 minutes past a 78-second publish. A step
         // timeout is a clean step FAILURE, so the steps after it still run;
