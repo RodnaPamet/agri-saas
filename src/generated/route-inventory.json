@@ -671,6 +671,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/integrations/google/calendar/sync",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/integrations/google/connect",
       "status": "live",
       "documented": false

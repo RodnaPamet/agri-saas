@@ -89,6 +89,8 @@ const ADMIN_ONLY_ROUTES = [
     // #2005 — Google Drive + Calendar connection management (consent OAuth)
     'admin/integrations/google/route.ts',
     'admin/integrations/google/connect/route.ts',
+    // #2020 — bring the farm's Google Calendar into line with its deadlines
+    'admin/integrations/google/calendar/sync/route.ts',
     'admin/roles/route.ts',
     'admin/roles/[roleId]/route.ts',
     // Bulk-delete custom roles (selection action-row)

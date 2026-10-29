@@ -7939,6 +7939,64 @@ exports[`API contract — per-schema snapshots schema: GddDay 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: GoogleCalendarSync 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "calendarId": {
+      "type": "string",
+      "description": "Google’s id for the «Agrent — Срокове» calendar this farm writes into."
+    },
+    "calendarCreated": {
+      "type": "boolean",
+      "description": "True when THIS run made the calendar — the first sync, or because the farmer had deleted the previous one. Deleting it is the documented way to reset this integration, so a \`true\` here on an established farm is an ordinary event rather than a fault."
+    },
+    "created": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updated": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "deleted": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unchanged": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Events already correct. Counted so a no-op sync is distinguishable from one that did nothing because it failed to read anything."
+    },
+    "skippedEdited": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Events the farmer had edited, left untouched — NOT updated and NOT deleted. Their edit is authoritative: an edited event has been repurposed, so withdrawing it because the original deadline moved on would destroy their work. **Surface this.** A non-zero count means the calendar deliberately disagrees with the farm, and a client reporting a clean sync over it is wrong."
+    },
+    "partial": {
+      "type": "boolean",
+      "description": "True when deletion was SUPPRESSED because the source read was truncated. **Read it.** Creates and updates still ran, but the calendar may hold an event the farm no longer has, and a truncated run is indistinguishable from a complete one without this field."
+    },
+    "locale": {
+      "type": "string",
+      "description": "The language the event titles were written in, \`bg\` or \`en\`. Fixed when the calendar is created and reused thereafter, so the titles do not change with whichever administrator pressed sync last.",
+      "example": "bg"
+    }
+  },
+  "required": [
+    "calendarId",
+    "calendarCreated",
+    "created",
+    "updated",
+    "deleted",
+    "unchanged",
+    "skippedEdited",
+    "partial",
+    "locale"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
 "{
   "type": "object",

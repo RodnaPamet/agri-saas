@@ -13,6 +13,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { apiPost } from '@/lib/api-client';
 import { useToastWithUndo } from '@/components/ui/hooks';
 
 /**
@@ -39,6 +40,22 @@ interface GoogleConnection {
     createdAt: string;
 }
 
+/**
+ * What the sync reports (#2020). Two of these are CONTRACTS, not statistics:
+ * `partial` means the sync declined to delete anything, and `skippedEdited`
+ * counts events the farmer had edited and we left alone. Rendering a plain
+ * success over either one claims a clean run that did not happen, so both get
+ * their own notice below.
+ */
+interface CalendarSyncResult {
+    created: number;
+    updated: number;
+    deleted: number;
+    unchanged: number;
+    skippedEdited: number;
+    partial: boolean;
+}
+
 export function GoogleCard() {
     const t = useTranslations('admin.integrations');
     const apiUrl = useTenantApiUrl();
@@ -48,6 +65,8 @@ export function GoogleCard() {
     const [connections, setConnections] = useState<GoogleConnection[]>([]);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [syncing, setSyncing] = useState(false);
+    const [syncResult, setSyncResult] = useState<CalendarSyncResult | null>(null);
 
     /** Status handed back by the consent callback via the query string. */
     const status = searchParams.get('google');
@@ -85,6 +104,41 @@ export function GoogleCard() {
             setBusy(false);
         }
     }, [apiUrl, t]);
+
+    const syncCalendar = useCallback(async () => {
+        setSyncing(true);
+        setError(null);
+        setSyncResult(null);
+        try {
+            // `apiPost` so the SERVER's message reaches the screen: owner
+            // ruling #1677 — the server resolves the locale and sends
+            // `message` already translated, and the web reads the error
+            // `code` nowhere. A local code->copy map here would be the second
+            // catalogue that ruling exists to prevent.
+            //
+            // The signal is OURS, which is the point: `apiPost` otherwise
+            // applies `API_CLIENT_TIMEOUT_MS` (20s) while the route declares
+            // `maxDuration = 60`. A first sync on an established farm makes
+            // one Google call per changed event and can outrun 20 seconds, so
+            // the default would abort the request and report a failure for a
+            // sync that went on to succeed. 65s lets the SERVER's own bound
+            // fire first and answer with something true.
+            const result = await apiPost<CalendarSyncResult>(
+                apiUrl('/admin/integrations/google/calendar/sync'),
+                {},
+                undefined,
+                { signal: AbortSignal.timeout(65_000) },
+            );
+            setSyncResult(result);
+            // The calendar id and the stored locale may have just been
+            // written, and `grantedProducts` is on the same row.
+            void load();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : t('googleCalendarSyncFailed'));
+        } finally {
+            setSyncing(false);
+        }
+    }, [apiUrl, t, load]);
 
     const disconnect = useCallback(
         (conn: GoogleConnection) => {
@@ -142,6 +196,26 @@ export function GoogleCard() {
                     {error}
                 </InlineNotice>
             )}
+            {syncResult && (
+                <InlineNotice variant="success">
+                    {t('googleCalendarSyncDone', {
+                        created: syncResult.created,
+                        updated: syncResult.updated,
+                        deleted: syncResult.deleted,
+                        unchanged: syncResult.unchanged,
+                    })}
+                </InlineNotice>
+            )}
+            {syncResult?.partial && (
+                <InlineNotice variant="warning">
+                    {t('googleCalendarSyncPartial')}
+                </InlineNotice>
+            )}
+            {syncResult != null && syncResult.skippedEdited > 0 && (
+                <InlineNotice variant="warning">
+                    {t('googleCalendarSyncSkipped', { count: syncResult.skippedEdited })}
+                </InlineNotice>
+            )}
 
             {connections.length === 0 ? (
                 <p className="text-sm text-content-muted">{t('googleNoConnection')}</p>
@@ -182,11 +256,30 @@ export function GoogleCard() {
                 </ul>
             )}
 
-            <div>
+            <div className="flex flex-wrap items-center gap-default">
                 <Button onClick={connect} disabled={busy}>
                     {busy ? t('googleConnecting') : t('googleConnect')}
                 </Button>
+                {/*
+                  * Offered when ANY connection reports Calendar granted, not
+                  * when the one the sync will USE does. The sync takes the
+                  * OLDEST enabled connection (so the destination is unchanged
+                  * by connecting a second Google account) and this list
+                  * carries no promise of order — encoding one here would be a
+                  * second, silent copy of that rule. Where the two disagree
+                  * the server refuses with GOOGLE_CALENDAR_NOT_GRANTED, whose
+                  * message already says to reconnect and grant Calendar,
+                  * which is the actionable answer either way.
+                  */}
+                {connections.some((c) => c.configJson?.grantedProducts?.calendar === true) && (
+                    <Button variant="secondary" onClick={syncCalendar} disabled={syncing}>
+                        {syncing ? t('googleCalendarSyncing') : t('googleCalendarSync')}
+                    </Button>
+                )}
             </div>
+            {connections.some((c) => c.configJson?.grantedProducts?.calendar === true) && (
+                <p className="text-sm text-content-muted">{t('googleCalendarSyncHint')}</p>
+            )}
         </Card>
     );
 }

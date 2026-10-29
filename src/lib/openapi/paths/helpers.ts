@@ -174,7 +174,13 @@ export const DRIVE_EXPORT_REFUSALS =
     + '`GOOGLE_DRIVE_REFUSED` — Google refused the write for its own reasons, most often a full '
     + 'Drive. Distinguished from `GOOGLE_DRIVE_NOT_GRANTED` deliberately: both arrive as a 403, '
     + 'and telling a farmer to reconnect when their storage is full would be wrong advice '
-    + 'confidently given.';
+    + 'confidently given.\n\n'
+    + '`GOOGLE_DRIVE_RATE_LIMITED` — Google is rate-limiting requests; retry shortly. A THIRD '
+    + 'code rather than a second meaning for `GOOGLE_DRIVE_REFUSED`, whose sentence tells the '
+    + 'operator to check their Drive storage — right for the 403 quota case and wrong advice '
+    + 'for a 429, which is the same trap one line up pointing the other way. Before #2447 a 429 '
+    + 'fell through to a 502, and because `expose` is `status < 500` the message was replaced '
+    + 'by a bare "An error occurred" with no remedy at all.';
 
 export function codedErrorResponses(
     spec: Record<number, string>,

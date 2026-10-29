@@ -78,7 +78,24 @@ async function refuseDrive(res: Response, what: string): Promise<never> {
     if (res.status === 401) {
         throw codedBadRequest(
             'GOOGLE_GRANT_REVOKED',
-            'The Google connection is no longer authorised. Reconnect it to export again.',
+            'The Google connection is no longer authorised. Reconnect it.',
+        );
+    }
+    if (res.status === 429) {
+        // A RATE LIMIT, and it gets its own code rather than joining
+        // `GOOGLE_DRIVE_REFUSED` below — whose sentence tells the farmer to
+        // check their Drive storage. That is the right remedy for the 403
+        // quota case and the wrong one here, which is the same mistake this
+        // function's 403 arm already guards against, pointing the other way.
+        //
+        // Not left to fall through either: `externalServiceError` is a 502,
+        // `DomainError` sets `expose = status < 500`, and
+        // `errors.EXTERNAL_SERVICE_ERROR` has no catalogue entry — so the
+        // operator would be shown the bare literal 'An error occurred' with no
+        // remedy at all (#2447).
+        throw codedBadRequest(
+            'GOOGLE_DRIVE_RATE_LIMITED',
+            'Google is rate-limiting requests. Try again shortly.',
         );
     }
     if (res.status === 403) {
