@@ -116,17 +116,28 @@ test.describe('GAP-23 — createIsolatedTenant', () => {
  *     moment the dump is the only evidence, which is the shape of a control
  *     that cannot express failure.
  *
- * Uses `/login` rather than `about:blank` or a `data:` URL because both of
- * those are opaque origins and `history.pushState` throws on them — the test
- * would pass for the wrong reason, having never exercised the patch.
+ * ## The fixture has to be a document with NO client router
+ *
+ * `about:blank` and `data:` URLs are opaque origins and `history.pushState`
+ * throws on them, so the test would pass for the wrong reason, having never
+ * exercised the patch. But `/login` is worse in the opposite direction:
+ * measured in CI, Next's App Router makes its OWN history calls on a real
+ * page, so the log carried three extra records and an exact-array assertion
+ * failed on a working instrument.
+ *
+ * `/api/health` is the right fixture — same origin so `pushState` works,
+ * public so no sign-in is needed, and a JSON document with no router, so the
+ * only history calls are the ones this test makes. That also matches the
+ * context the instrument was validated in locally; a router-ful page is a
+ * different environment and answered a different question.
  */
 test.describe('#1076 — instrumentUrlChanges', () => {
     test('records each mechanism AND still performs the navigation', async ({ page }) => {
-        await page.goto('/login');
+        await page.goto('/api/health');
         await instrumentUrlChanges(page);
 
-        await page.evaluate(() => history.pushState({}, '', '/login?pushed=1'));
-        await page.evaluate(() => history.replaceState({}, '', '/login?replaced=1'));
+        await page.evaluate(() => history.pushState({}, '', '/api/health?pushed=1'));
+        await page.evaluate(() => history.replaceState({}, '', '/api/health?replaced=1'));
 
         // THE load-bearing assertion: the patch delegates. A patch that
         // recorded and swallowed would satisfy every assertion below while
@@ -142,7 +153,7 @@ test.describe('#1076 — instrumentUrlChanges', () => {
         );
         expect(recs.map((r) => r.kind)).toEqual(['pushState', 'replaceState', 'popstate']);
         // The path is normalised, so a relative URL is recorded as a path.
-        expect(recs[0].to).toBe('/login');
+        expect(recs[0].to).toBe('/api/health');
 
         // A pushState/replaceState record carries frames; a popstate cannot.
         const dump = await describeUrlChanges(page);
@@ -153,11 +164,11 @@ test.describe('#1076 — instrumentUrlChanges', () => {
     });
 
     test('is idempotent — a second call keeps the existing log', async ({ page }) => {
-        await page.goto('/login');
+        await page.goto('/api/health');
         await instrumentUrlChanges(page);
-        await page.evaluate(() => history.pushState({}, '', '/login?first=1'));
+        await page.evaluate(() => history.pushState({}, '', '/api/health?first=1'));
         await instrumentUrlChanges(page); // the specs may call it twice
-        await page.evaluate(() => history.pushState({}, '', '/login?second=1'));
+        await page.evaluate(() => history.pushState({}, '', '/api/health?second=1'));
 
         const kinds = await page.evaluate(
             () =>
@@ -166,9 +177,13 @@ test.describe('#1076 — instrumentUrlChanges', () => {
                         .__urlChanges ?? []
                 ).map((r) => r.kind),
         );
-        // Two records, not one: re-patching would have reset the log, and
-        // double-patching would have recorded the second push twice.
-        expect(kinds).toEqual(['pushState', 'pushState']);
+        // Asserted as a COUNT rather than an exact list. Both failure modes
+        // this guards are count-shaped — a re-patch RESETS the log (1) and a
+        // double-patch records the second push TWICE (3) — and a count does
+        // not break if the fixture ever gains a history call of its own,
+        // which is how the `/login` version of this failed.
+        expect(kinds).toHaveLength(2);
+        expect(new Set(kinds)).toEqual(new Set(['pushState']));
     });
 
     test('says NOT INSTRUMENTED rather than implying nothing happened', async ({ page }) => {
@@ -176,7 +191,7 @@ test.describe('#1076 — instrumentUrlChanges', () => {
         // instrument that saw nothing are opposite findings, and a formatter
         // that printed "NONE" for both would retire a hypothesis on no
         // evidence.
-        await page.goto('/login');
+        await page.goto('/api/health');
         const dump = await describeUrlChanges(page);
         expect(dump).toContain('NOT INSTRUMENTED');
 
