@@ -107,18 +107,45 @@ export function assertAllowlistIsLive(
 
     for (const rel of opts.entries) {
         const abs = path.resolve(root, rel);
-        if (!fs.existsSync(abs)) {
-            report.missing.push(rel);
-            continue;
+
+        // ONE filesystem call, classified by its error — not `existsSync`
+        // then `readFileSync`.
+        //
+        // The first version did exactly that, and CodeQL flagged it high
+        // severity: `js/file-system-race`, the check-then-use (TOCTOU) race
+        // where the path can change between the two calls. In a test helper
+        // reading the repo that is not an exploitable hole, but the rule is
+        // pointing at real sloppiness — the second call can fail for reasons
+        // the first said were impossible, and the `!isFile()` branch then
+        // depends on a stat that may already be stale.
+        //
+        // Reading once and classifying by `code` removes the window and is
+        // shorter: ENOENT is "gone", EISDIR is "a directory", and anything
+        // else is a real problem that must not be swallowed into a verdict.
+        let text: string;
+        try {
+            text = fs.readFileSync(abs, 'utf-8');
+        } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT') {
+                report.missing.push(rel);
+                continue;
+            }
+            if (code === 'EISDIR') {
+                // Not judged rather than guessed: a directory-shaped entry
+                // needs a walk, and which files inside it the guard means is
+                // the guard's business. Reported so it cannot pass as checked.
+                report.notAFile.push(rel);
+                continue;
+            }
+            // EACCES, ELOOP, EMFILE — a failure this helper cannot interpret.
+            // Rethrowing is deliberate: folding it into `missing` would report
+            // "the exemption is dead" on evidence that says nothing of the
+            // kind.
+            throw err;
         }
-        if (!fs.statSync(abs).isFile()) {
-            // Not judged rather than guessed: a directory-shaped entry needs a
-            // walk, and which files inside it the guard means is the guard's
-            // business. Reported so it cannot pass as checked.
-            report.notAFile.push(rel);
-            continue;
-        }
-        const code = blankNonCode(fs.readFileSync(abs, 'utf-8'), opts.blankOptions ?? {});
+
+        const code = blankNonCode(text, opts.blankOptions ?? {});
         if (opts.violates(code, rel)) report.live.push(rel);
         else report.irrelevant.push(rel);
     }
