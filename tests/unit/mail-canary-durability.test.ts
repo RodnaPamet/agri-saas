@@ -22,20 +22,27 @@ import {
 import { mailCanaryCapability } from '@/lib/email/mail-canary-capability';
 import type { MailCanaryResult } from '@/app-layer/jobs/mail-canary';
 
-/** Minimal in-memory stand-in for the two commands these modules use. */
+/**
+ * Minimal in-memory stand-in for the two commands these modules use.
+ *
+ * Variadic on purpose: the point of one test below is that `set` is called
+ * with EXACTLY two arguments, so the double has to be able to observe a third.
+ * `unknown[]` is still assignable to the narrow `(key, value)` signature, so
+ * this satisfies both interfaces with no cast — which is why the modules take
+ * `MailCanaryRecordWriter`/`Reader` rather than a `Redis`.
+ */
 function fakeRedis() {
     const store = new Map<string, string>();
     const setCalls: unknown[][] = [];
     return {
         store,
         setCalls,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        set: jest.fn(async (...args: any[]) => {
+        set: jest.fn((...args: unknown[]): Promise<unknown> => {
             setCalls.push(args);
             store.set(String(args[0]), String(args[1]));
-            return 'OK';
+            return Promise.resolve('OK');
         }),
-        get: jest.fn(async (k: string) => store.get(k) ?? null),
+        get: jest.fn((k: string): Promise<string | null> => Promise.resolve(store.get(k) ?? null)),
     };
 }
 
@@ -45,8 +52,7 @@ const at = (iso: string) => () => new Date(iso);
 describe('recordMailCanaryRun', () => {
     it('writes the record under the shared key', async () => {
         const r = fakeRedis();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await recordMailCanaryRun(r as any, sent, at('2026-10-30T06:00:00.000Z'));
+        await recordMailCanaryRun(r, sent, at('2026-10-30T06:00:00.000Z'));
         expect(r.store.get(MAIL_CANARY_RECORD_KEY)).toBe(
             JSON.stringify({
                 at: '2026-10-30T06:00:00.000Z',
@@ -58,8 +64,7 @@ describe('recordMailCanaryRun', () => {
 
     it('sets NO expiry, so absence keeps meaning "never ran"', async () => {
         const r = fakeRedis();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await recordMailCanaryRun(r as any, sent);
+        await recordMailCanaryRun(r, sent);
         // Exactly key + value. A third argument would be 'EX'/'PX'/'KEEPTTL',
         // and a TTL here collapses `never_recorded` into `stale` — the single
         // confusion #2467 exists to remove.
@@ -72,11 +77,7 @@ describe('recordMailCanaryRun', () => {
         'records the %s outcome too, not just successes',
         async (outcome) => {
             const r = fakeRedis();
-            await recordMailCanaryRun(
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                r as any,
-                { outcome, provider: 'ResendProvider', detail: 'boom' },
-            );
+            await recordMailCanaryRun(r, { outcome, provider: 'ResendProvider', detail: 'boom' });
             const stored = parseMailCanaryRecord(r.store.get(MAIL_CANARY_RECORD_KEY) ?? null);
             expect(stored?.outcome).toBe(outcome);
         },
@@ -84,15 +85,11 @@ describe('recordMailCanaryRun', () => {
 
     it('persists no recipient and no provider detail', async () => {
         const r = fakeRedis();
-        await recordMailCanaryRun(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            r as any,
-            {
-                outcome: 'FAILED',
-                provider: 'ResendProvider',
-                detail: 'Resend API error 403: key revoked for someone@example.test',
-            },
-        );
+        await recordMailCanaryRun(r, {
+            outcome: 'FAILED',
+            provider: 'ResendProvider',
+            detail: 'Resend API error 403: key revoked for someone@example.test',
+        });
         const raw = r.store.get(MAIL_CANARY_RECORD_KEY) ?? '';
         // /api/readyz is probed unauthenticated from six regions, so this
         // value is effectively public. The enum is the signal; the detail
@@ -104,12 +101,10 @@ describe('recordMailCanaryRun', () => {
 
     it('never throws when the write fails', async () => {
         const r = {
-            set: jest.fn(async () => {
-                throw new Error('READONLY You cannot write against a read only replica');
-            }),
+            set: (): Promise<unknown> =>
+                Promise.reject(new Error('READONLY You cannot write against a read only replica')),
         };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await expect(recordMailCanaryRun(r as any, sent)).resolves.toBeUndefined();
+        await expect(recordMailCanaryRun(r, sent)).resolves.toBeUndefined();
     });
 });
 
@@ -140,8 +135,7 @@ describe('parseMailCanaryRecord', () => {
 
 describe('mailCanaryCapability', () => {
     const write = async (r: ReturnType<typeof fakeRedis>, outcome: MailCanaryResult['outcome'], when: string) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        recordMailCanaryRun(r as any, { outcome, provider: 'ResendProvider' }, at(when));
+        recordMailCanaryRun(r, { outcome, provider: 'ResendProvider' }, at(when));
 
     it('reports unknown when Redis is unconfigured', async () => {
         const c = await mailCanaryCapability(null);
@@ -151,27 +145,22 @@ describe('mailCanaryCapability', () => {
     });
 
     it('reports unknown — not stale — when the read fails', async () => {
-        const r = { get: jest.fn(async () => { throw new Error('ECONNREFUSED'); }) };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = await mailCanaryCapability(r as any);
+        const r = { get: (): Promise<string | null> => Promise.reject(new Error('ECONNREFUSED')) };
+        const c = await mailCanaryCapability(r);
         // Collapsing this into `stale` would send an operator to the mail
         // subsystem during a Redis incident.
         expect(c.state).toBe('unknown');
     });
 
     it('reports never_recorded when no key exists', async () => {
-        const c = await mailCanaryCapability(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            fakeRedis() as any,
-        );
+        const c = await mailCanaryCapability(fakeRedis());
         expect(c.state).toBe('never_recorded');
     });
 
     it('round-trips a fresh SENT run to ok', async () => {
         const r = fakeRedis();
         await write(r, 'SENT', '2026-10-30T06:00:00.000Z');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = await mailCanaryCapability(r as any, at('2026-10-30T07:30:00.000Z'));
+        const c = await mailCanaryCapability(r, at('2026-10-30T07:30:00.000Z'));
         expect(c).toEqual({
             state: 'ok',
             outcome: 'SENT',
@@ -187,8 +176,7 @@ describe('mailCanaryCapability', () => {
         async (outcome) => {
             const r = fakeRedis();
             await write(r, outcome, '2026-10-30T06:00:00.000Z');
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const c = await mailCanaryCapability(r as any, at('2026-10-30T07:00:00.000Z'));
+            const c = await mailCanaryCapability(r, at('2026-10-30T07:00:00.000Z'));
             expect(c.state).toBe('not_sending');
             expect(c.outcome).toBe(outcome);
         },
@@ -198,8 +186,7 @@ describe('mailCanaryCapability', () => {
         const r = fakeRedis();
         await write(r, 'SENT', '2026-10-30T00:00:00.000Z');
         // 7h later: one run (06:00) has been missed, and that must not shout.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = await mailCanaryCapability(r as any, at('2026-10-30T07:00:00.000Z'));
+        const c = await mailCanaryCapability(r, at('2026-10-30T07:00:00.000Z'));
         expect(c.state).toBe('ok');
         expect(c.ageMinutes).toBe(420);
     });
@@ -207,8 +194,7 @@ describe('mailCanaryCapability', () => {
     it('reports stale once the record outlives the threshold', async () => {
         const r = fakeRedis();
         await write(r, 'SENT', '2026-10-29T00:00:00.000Z');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = await mailCanaryCapability(r as any, at('2026-10-30T00:00:00.000Z'));
+        const c = await mailCanaryCapability(r, at('2026-10-30T00:00:00.000Z'));
         expect(c.state).toBe('stale');
         expect(c.ageMinutes).toBe(24 * 60);
         // The outcome is still reported: "it was fine, 24h ago" and "it failed,
@@ -219,8 +205,7 @@ describe('mailCanaryCapability', () => {
     it('reports stale even when the stale record says SENT', async () => {
         const r = fakeRedis();
         await write(r, 'SENT', '2026-10-01T00:00:00.000Z');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = await mailCanaryCapability(r as any, at('2026-10-30T00:00:00.000Z'));
+        const c = await mailCanaryCapability(r, at('2026-10-30T00:00:00.000Z'));
         // Staleness outranks the outcome — a month-old success is not "ok",
         // which is the whole defect: an erased record and a passing canary
         // must not read alike.
@@ -230,16 +215,14 @@ describe('mailCanaryCapability', () => {
     it('treats a malformed stored value as never_recorded', async () => {
         const r = fakeRedis();
         r.store.set(MAIL_CANARY_RECORD_KEY, '{truncated');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = await mailCanaryCapability(r as any);
+        const c = await mailCanaryCapability(r);
         expect(c.state).toBe('never_recorded');
     });
 
     it('clamps a future timestamp instead of reporting a negative age', async () => {
         const r = fakeRedis();
         await write(r, 'SENT', '2026-10-30T12:00:00.000Z');
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = await mailCanaryCapability(r as any, at('2026-10-30T06:00:00.000Z'));
+        const c = await mailCanaryCapability(r, at('2026-10-30T06:00:00.000Z'));
         expect(c.ageMinutes).toBe(0);
         expect(c.state).toBe('ok');
     });

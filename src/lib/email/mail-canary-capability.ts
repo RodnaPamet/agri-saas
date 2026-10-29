@@ -61,8 +61,6 @@
  * cached `stale` would be the stale alarm that teaches people to ignore the
  * report. One `GET` of one small key against a probe every 60s.
  */
-import type Redis from 'ioredis';
-
 import type { MailCanaryOutcome } from '@/app-layer/jobs/mail-canary';
 import {
     MAIL_CANARY_PERIOD_MINUTES,
@@ -71,6 +69,11 @@ import {
     parseMailCanaryRecord,
 } from '@/lib/email/mail-canary-record';
 import { logger } from '@/lib/observability/logger';
+
+/** The one command this needs — see `MailCanaryRecordWriter` for why. */
+export interface MailCanaryRecordReader {
+    get(key: string): Promise<string | null>;
+}
 
 export type MailCanaryState = 'ok' | 'not_sending' | 'stale' | 'never_recorded' | 'unknown';
 
@@ -103,7 +106,7 @@ const BASE = {
  *        here would widen that route's graph for nothing.
  */
 export async function mailCanaryCapability(
-    connection: Redis | null,
+    connection: MailCanaryRecordReader | null,
     now: () => Date = () => new Date(),
 ): Promise<MailCanaryCapability> {
     if (!connection) return { ...BASE, state: 'unknown' };

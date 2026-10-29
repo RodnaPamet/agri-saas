@@ -43,22 +43,30 @@ function fakeRedis() {
     const store = new Map<string, string>();
     return {
         store,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        set: jest.fn(async (...args: any[]) => {
-            store.set(String(args[0]), String(args[1]));
-            return 'OK';
+        set: jest.fn((key: string, value: string): Promise<unknown> => {
+            store.set(key, value);
+            return Promise.resolve('OK');
         }),
-        get: jest.fn(async (k: string) => store.get(k) ?? null),
+        get: jest.fn((key: string): Promise<string | null> => Promise.resolve(store.get(key) ?? null)),
     };
 }
+
+/**
+ * The shape this test needs off the registry. Narrowed through `unknown`
+ * rather than `any` so no suppression is required — the Lint gate prices an
+ * `eslint-disable` exactly like the warning it hides, and a cast in a test is
+ * not worth a line of the repo's suppression budget.
+ */
+type MailCanaryExecutor = (
+    payload: Record<string, unknown>,
+) => Promise<{ jobName: string; itemsScanned: number; itemsActioned: number }>;
 
 const runExecutor = async () => {
     const fn = executorRegistry.getExecutor('mail-canary' as never);
     // If the registration is ever renamed, fail here rather than silently
     // asserting nothing — the empty-selection failure mode.
     expect(fn).toBeDefined();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (fn as any)({}, undefined);
+    return (fn as unknown as MailCanaryExecutor)({});
 };
 
 beforeEach(() => {

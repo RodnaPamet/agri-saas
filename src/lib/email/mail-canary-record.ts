@@ -58,8 +58,6 @@
  * worth making. A failed write costs one record; the reader tolerates one
  * missed run before it reports anything.
  */
-import type Redis from 'ioredis';
-
 import type { MailCanaryOutcome, MailCanaryResult } from '@/app-layer/jobs/mail-canary';
 import { logger } from '@/lib/observability/logger';
 
@@ -82,6 +80,18 @@ export const MAIL_CANARY_PERIOD_MINUTES = 6 * 60;
  */
 export const MAIL_CANARY_STALE_AFTER_MINUTES = 13 * 60;
 
+/**
+ * The one command this needs, so a caller can pass anything that has it —
+ * `featureFlagsCapability`'s `FeatureFlagKeyReader` pattern. A real `Redis`
+ * satisfies it structurally, and a test double satisfies it without a cast,
+ * which is the point: casting a double to `Redis` costs an `eslint-disable`
+ * per call site, and the Lint gate prices a suppression exactly like the
+ * warning it hides.
+ */
+export interface MailCanaryRecordWriter {
+    set(key: string, value: string): Promise<unknown>;
+}
+
 export interface MailCanaryRecord {
     /** ISO-8601 instant the run finished. */
     readonly at: string;
@@ -101,7 +111,7 @@ export interface MailCanaryRecord {
  * detail for whoever has log access.
  */
 export async function recordMailCanaryRun(
-    connection: Redis,
+    connection: MailCanaryRecordWriter,
     result: MailCanaryResult,
     now: () => Date = () => new Date(),
 ): Promise<void> {
