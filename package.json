@@ -97,7 +97,7 @@
         "@aws-sdk/s3-request-presigner": "^3.1146.0",
         "@dagrejs/dagre": "^3.1.1",
         "@google/earthengine": "^1.7.46",
-        "@hookform/resolvers": "^5.9.1",
+        "@hookform/resolvers": "^6.0.0",
         "@next-auth/prisma-adapter": "1.0.7",
         "@node-saml/node-saml": "^5.1.0",
         "@number-flow/react": "^0.6.2",
