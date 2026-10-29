@@ -64,6 +64,15 @@
  * The detector is proved against synthetic workflows below rather than by
  * mutating the real file, so a green run here means the assertions can
  * actually fail.
+ *
+ * ## One thing NOT to do while writing about this
+ *
+ * Do not quote the offending commit's subject into a commit message. The
+ * commit-back commit's subject carries a skip-CI marker, and GitHub matches
+ * that substring without understanding quotation — #2478's first commit
+ * described the defect by pasting it, and got zero workflow runs on the pull
+ * request while reading as "CI has not started". See the CI-skip-marker
+ * subsection in CLAUDE.md under "A merged PR body is not a tracker".
  */
 
 import * as fs from 'node:fs';

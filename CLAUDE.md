@@ -3132,6 +3132,45 @@ negated. Say what remains instead:
 > Ships one measured cause; the swallowed `networkidle` waits are a separate
 > PR. Refs #748.
 
+### The same parser eats a QUOTED CI-skip marker — 2026-10-30
+
+The section above is about one substring GitHub matches without understanding
+context. There is a second, and it is worse, because it fails SILENTLY in the
+direction of nothing happening at all.
+
+A commit message that **quotes** a skip-CI marker still skips CI. #2478's body
+described the defect it was fixing by naming the offending commit verbatim:
+
+    ... the commit-back landed as `3debc28c chore(release): 12.80.2 [skip ci]`
+    — then hung for nine more minutes ...
+
+Backticks, an indented block and a surrounding sentence are all invisible to
+the parser. The result was **zero workflow runs** on the pull request: no
+check-runs on the head sha, `mergeStateStatus: BLOCKED`, and `gh pr checks`
+reporting "no checks reported on the branch" — which reads exactly like CI not
+having started yet. Closing and reopening the PR did not help, because the head
+commit's message is what is read. Three recent PRs had 28 check-runs each, which
+is what made it clear the cause was the PR and not the repository.
+
+**It compounds at the merge.** `squash_merge_commit_message` is
+`COMMIT_MESSAGES`, so the marker rides the squashed commit onto `main` — where
+it suppresses `main`'s own CI *and* the Release workflow, whose job-level `if:`
+reads that exact token (`release.yml`, the `!contains(...)` guard). A PR fixing
+the release pipeline would therefore never have been released.
+
+**How to apply.** Never write a skip marker — `[skip ci]`, `[ci skip]`,
+`[skip actions]`, `[no ci]`, `***NO_CI***` — into a commit message or a squash
+body, even inside a quotation, a diff excerpt, a log paste or a table. Refer to
+it instead: "carrying a skip-ci marker", "the commit-back commit (whose subject
+suppresses CI)". If you have already pushed one, the branch is not broken —
+push a further commit whose own message is clean, and supply an explicit
+`--body` at squash time so the marker does not reach `main`. Pasting a job log
+or a `git log` excerpt into a commit message is the likeliest way to do this by
+accident. Same family as [[github-squash-closing-keyword-trap]]: the lesson is
+not "be careful", it is that **a commit message is executable input**, so
+quoting one inside another is a code-injection shape with no escaping
+mechanism.
+
 ## Key Conventions
 
 - **Zod schemas** for all API input validation live in `src/app-layer/schemas/` (backend) and `src/lib/schemas/` (shared).
