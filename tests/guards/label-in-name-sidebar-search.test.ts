@@ -44,6 +44,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { readCatalogue } from '../helpers/catalogue';
 
 const ROOT = process.cwd();
 const LOCALES = ['bg', 'en'] as const;
@@ -53,11 +54,19 @@ interface SidebarNavMessages {
     openPalette: string;
 }
 
+/**
+ * Read through `tests/helpers/catalogue`, which is the ONE module allowed to
+ * know where the catalogue lives.
+ *
+ * The first version of this file did `readFileSync(.../messages/${locale}/app.json)`
+ * directly, and `one-catalogue-reader` failed it. Correctly: the catalogue was
+ * split into bundles, and every direct reader has to be updated by hand when
+ * that shape changes — a reader that keeps working while pointing at the wrong
+ * file is the silent half.
+ */
 function sidebarNav(locale: string): SidebarNavMessages {
-    const msgs = JSON.parse(readFileSync(join(ROOT, `messages/${locale}/app.json`), 'utf8')) as {
-        sidebarNav?: Partial<SidebarNavMessages>;
-    };
-    const ns = msgs.sidebarNav;
+    const ns = (readCatalogue(locale) as unknown as { sidebarNav?: Partial<SidebarNavMessages> })
+        .sidebarNav;
     // An ABSENT namespace must not read as a pass: `undefined.includes` would
     // throw, but a missing KEY would make containment vacuously checkable
     // against an empty string. Assert both are real strings first.
