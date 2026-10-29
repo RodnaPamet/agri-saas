@@ -107,7 +107,6 @@ export class ClaudeVisionProvider implements VisionProvider {
         const response = await client.messages.create({
             model: this.model,
             max_tokens: 512,
-            temperature: 0,
             system: SYSTEM_PROMPT,
             tools: [tool],
             tool_choice: { type: 'tool', name: tool.name },

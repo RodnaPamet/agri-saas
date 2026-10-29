@@ -397,7 +397,6 @@ export async function extractSupportSchemes(
         const response = await client.messages.create({
             model: EXTRACTION_MODEL,
             max_tokens: MAX_TOKENS,
-            temperature: 0.2,
             system: withLocaleInstruction(SYSTEM_PROMPT, 'bg'),
             messages: [{ role: 'user', content: buildUserContent(items) }],
             tools: [

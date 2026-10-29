@@ -80,7 +80,25 @@ export interface AiCompleteOptions<T = unknown> {
     tools?: AiToolDef[];
     /** Opt into streaming — `complete()` returns once the stream drains. */
     stream?: boolean;
-    /** Sampling temperature (provider default when unset). */
+    /**
+     * Sampling temperature (provider default when unset).
+     *
+     * **IGNORED by the Claude provider.** Anthropic API version `2026-10-21`
+     * — which `@anthropic-ai/sdk` v1 pins in its `anthropic-version` header —
+     * removed `temperature`, `top_p` and `top_k` from the Messages API
+     * entirely; they are absent from the SDK's types, and there is no
+     * replacement field to forward this to. `ClaudeProvider` therefore drops
+     * it rather than sending a parameter the API would reject.
+     *
+     * It is still honoured by `OpenAiCompatibleProvider` and by the
+     * OpenRouter call in `llm-client.ts`, which is why the option stays on
+     * this shared type instead of being deleted.
+     *
+     * So a caller setting this gets different behaviour per provider. That is
+     * stated here because the alternative — a field that looks universal and
+     * silently does nothing on one backend — is the failure this comment
+     * exists to prevent. See `tests/guards/anthropic-sampling-params-are-gone.test.ts`.
+     */
     temperature?: number;
     /** Max completion tokens. */
     maxTokens?: number;
