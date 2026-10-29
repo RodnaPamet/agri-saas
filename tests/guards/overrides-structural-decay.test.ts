@@ -224,29 +224,6 @@ const WAIVERS: Waiver[] = [
             'next release still builds on the root postcss line.',
         review: '2026-12-11',
     },
-    {
-        check: 'D',
-        target: 'deepmerge-ts',
-        reason:
-            '@prisma/config pins deepmerge-ts@7.1.5 exactly and the ^8.0.1 override excludes ' +
-            'it, moving that edge across a MAJOR. That may well be intended (the 8.x line ' +
-            'carries the fix the floor was added for) but a cross-major override of an exact ' +
-            'pin is the highest-risk shape in the table and carries no row in ' +
-            'docs/dependency-policy.md. On review: record the advisory and the compatibility ' +
-            'argument there, or drop the floor.',
-        review: '2026-12-11',
-    },
-    {
-        check: 'D',
-        target: 'mysql2',
-        reason:
-            'prisma pins mysql2@3.15.3 exactly and the ^3.23.1 override excludes it. This is ' +
-            'the other half of the decision recorded in scripts/audit-exemptions.mjs, where ' +
-            "npm's suggested fix for the mysql2/prisma pair was a MAJOR DOWNGRADE and was " +
-            'correctly rejected (#800): we hold the floor and accept the pin break instead. ' +
-            'On review: confirm prisma still starts against the floored mysql2 line.',
-        review: '2026-12-11',
-    },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
