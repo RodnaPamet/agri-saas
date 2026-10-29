@@ -537,7 +537,7 @@ export class WorkItemRepository {
     }
 
     /**
-     * List ROWS for a known id set, newest first (#2459).
+     * List ROWS for a known id set, newest first (#2463).
      *
      * Distinct from {@link listByIds} below, which is the BULK status path and
      * projects `{ id, status }` only. Same shape of input, different question:

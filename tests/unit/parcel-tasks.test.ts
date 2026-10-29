@@ -1,5 +1,5 @@
 /**
- * A parcel's task history — #2459, contract agreed with agrent-ios.
+ * A parcel's task history — #2463, contract agreed with agrent-ios.
  *
  * The repositories are doubles and `withMayDelete` runs for real, because the
  * flag is the part a client acts on.
@@ -106,7 +106,7 @@ function seed(...rows: Array<ReturnType<typeof row>>) {
     for (const r of rows) pool.set(r.id, r);
 }
 
-describe('a field operation is reachable ONLY through its lines (#2459)', () => {
+describe('a field operation is reachable ONLY through its lines (#2463)', () => {
     it('returns a task that has NO parcel link but does have an operation line', async () => {
         // The justification for the whole endpoint. `linkedEntityType=PARCEL`
         // cannot see this task.
@@ -135,7 +135,7 @@ describe('a field operation is reachable ONLY through its lines (#2459)', () => 
     });
 });
 
-describe('deduplication (#2459)', () => {
+describe('deduplication (#2463)', () => {
     it('a task that is BOTH linked and on a line appears once', async () => {
         linkIdsMock.mockResolvedValue(['a']);
         lineIdsMock.mockResolvedValue(['a']);
@@ -153,7 +153,7 @@ describe('deduplication (#2459)', () => {
     });
 });
 
-describe('truncation is reported from BOTH bounds (#2459)', () => {
+describe('truncation is reported from BOTH bounds (#2463)', () => {
     it('the rendered page cap sets truncated, and the extra row is not returned', async () => {
         const ids = Array.from({ length: 201 }, (_, i) => `t${i}`);
         linkIdsMock.mockResolvedValue(ids);
@@ -189,7 +189,7 @@ describe('truncation is reported from BOTH bounds (#2459)', () => {
     });
 });
 
-describe('mayDelete is always computed here (#2459 + #2406)', () => {
+describe('mayDelete is always computed here (#2463 + #2406)', () => {
     it('is present on every row, never omitted', async () => {
         // The #2406 hazard cannot arise on this path: it does not cache, so
         // `taskListSelect` always projects the two inputs. Asserted as the KEY
@@ -211,7 +211,7 @@ describe('mayDelete is always computed here (#2459 + #2406)', () => {
     });
 });
 
-describe('the parcel, and what a missing one means (#2459)', () => {
+describe('the parcel, and what a missing one means (#2463)', () => {
     it('a parcel outside the tenant is a 404, not an empty list', async () => {
         // An empty list would read as "an untouched field" rather than "not
         // yours", and the id reads are tenant-scoped so that is exactly what
@@ -246,7 +246,7 @@ describe('the parcel, and what a missing one means (#2459)', () => {
     });
 });
 
-describe('status is not filtered server-side (#2459)', () => {
+describe('status is not filtered server-side (#2463)', () => {
     it('terminal statuses are returned, because the archive tab is the client’s', async () => {
         linkIdsMock.mockResolvedValue(['a', 'b', 'c']);
         seed(row('a', { status: 'RESOLVED' }),

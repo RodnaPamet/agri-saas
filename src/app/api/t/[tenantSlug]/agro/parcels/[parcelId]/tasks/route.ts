@@ -8,7 +8,7 @@ import { jsonWithETag } from '@/lib/http/etag';
  * GET /api/t/{slug}/agro/parcels/{parcelId}/tasks
  *
  * Every task that touches this parcel, newest first — what «Блокове» → a
- * parcel shows beneath its risk (#2459, contract agreed with agrent-ios).
+ * parcel shows beneath its risk (#2463, contract agreed with agrent-ios).
  *
  * ## Why this exists when `GET /tasks` already filters by linked entity
  *

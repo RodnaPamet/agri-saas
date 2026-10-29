@@ -1139,7 +1139,7 @@ export async function taskParcelIds(
 }
 
 /**
- * Caps for a parcel's task history (#2459).
+ * Caps for a parcel's task history (#2463).
  *
  * Three numbers because they bound three different things, and collapsing
  * them would make one of the three wrong:
@@ -1215,7 +1215,7 @@ export async function parcelTaskIds(
 
 /**
  * Every task that touches one parcel, newest first — what «Блокове» → a parcel
- * shows beneath its risk (#2459, agrent-ios).
+ * shows beneath its risk (#2463, agrent-ios).
  *
  * ## Deliberately NOT cached, unlike `listTasks`
  *

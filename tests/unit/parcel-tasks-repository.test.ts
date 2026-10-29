@@ -1,5 +1,5 @@
 /**
- * The three reads behind a parcel's task history, as QUERIES — #2459.
+ * The three reads behind a parcel's task history, as QUERIES — #2463.
  *
  * `tests/unit/parcel-tasks.test.ts` doubles these repositories to test the
  * usecase's logic, which means the queries themselves are invisible there.
@@ -33,7 +33,7 @@ function capturing() {
     return { db, calls };
 }
 
-describe('WorkItemRepository.listRowsByIds (#2459)', () => {
+describe('WorkItemRepository.listRowsByIds (#2463)', () => {
     it('excludes soft-deleted tasks and scopes to the tenant', async () => {
         const { db, calls } = capturing();
         await WorkItemRepository.listRowsByIds(db as never, ctx, ['a', 'b'], { take: 10 });
@@ -71,7 +71,7 @@ describe('WorkItemRepository.listRowsByIds (#2459)', () => {
     });
 });
 
-describe('the two inverse id reads (#2459)', () => {
+describe('the two inverse id reads (#2463)', () => {
     it('TaskLinkRepository.listTaskIdsByParcel filters the three indexed columns', async () => {
         // Exactly @@index([tenantId, entityType, entityId]) — which is why
         // this needed no migration.
