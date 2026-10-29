@@ -132,6 +132,55 @@ describe('package-lock.json keeps its libc platform metadata', () => {
         expect(Array.from(families).sort()).toEqual(['glibc', 'musl']);
     });
 
+    /**
+     * THE PREVENTION, not just the detection — #2428.
+     *
+     * Everything above notices the loss after it happens. `packageManager`
+     * stops it: Corepack runs the pinned npm regardless of what the developer
+     * has installed, so the writer that strips cannot be the one that writes.
+     *
+     * Measured on main's own lockfile (34 entries at the time of writing),
+     * both with `--package-lock-only --ignore-scripts` on a copy:
+     *
+     *     npm 10.9.8  ->  0   (strips all 34)
+     *     npm 11.19.0 -> 34   (preserves)
+     *
+     * So the floor must be ELEVEN. #2428 originally suggested pinning
+     * `npm@10.9.8` — "whichever version the committed lockfile reflects" — and
+     * that is exactly backwards: 10.9.8 is the version that strips. The
+     * suggestion was written before anyone measured which writer did it.
+     *
+     * `engines.npm` is deliberately NOT raised to match. CI's npm is whatever
+     * ships with Node 22 (10.x) and `setup-node-prisma` sets
+     * `npm_config_engine_strict`, so a `>=11` engines range would fail every
+     * CI install. It does not need to: CI runs `npm ci`, which never writes
+     * the lockfile. The only writer that can strip is a developer running
+     * `npm install`, which is precisely where Corepack applies.
+     */
+    it('packageManager pins an npm that PRESERVES libc (>= 11)', () => {
+        const pkg = JSON.parse(
+            fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'),
+        ) as { packageManager?: string };
+
+        const pinned = pkg.packageManager;
+        expect(typeof pinned).toBe('string');
+
+        const match = /^npm@(\d+)\.(\d+)\.(\d+)$/.exec(pinned!);
+        // An exact version, not a range: Corepack wants one, and "whatever 11
+        // resolves to today" is how a toolchain drifts back under the floor.
+        expect({ pinned, parsed: Boolean(match) }).toEqual({ pinned, parsed: true });
+
+        const major = Number(match![1]);
+        if (major < 11) {
+            throw new Error(
+                `packageManager is pinned to ${pinned}, but npm 10 STRIPS the \`libc\` `
+                    + `fields this file exists to protect — measured 34 -> 0 on main's own `
+                    + `lockfile. Pin npm 11 or later.`,
+            );
+        }
+        expect(major).toBeGreaterThanOrEqual(11);
+    });
+
     it('keeps the entries on the packages that actually ship binaries', () => {
         // The count alone could be satisfied by unrelated packages. These two
         // scopes are the ones whose binaries land in the production image.
