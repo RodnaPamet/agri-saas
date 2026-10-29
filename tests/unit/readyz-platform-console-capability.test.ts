@@ -165,6 +165,7 @@ describe('GET /api/readyz — capabilities.platformConsole is REPORTED, never GA
                 'email',
                 'featureFlags',
                 'lookupKey',
+                'mailCanary',
                 'platformConsole',
                 'satellite',
             ]);
