@@ -115,6 +115,23 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  there for why binding this to the platform tenant would be a trap.
     Company: ['contactName', 'contactEmail', 'contactPhone', 'notes'],
 
+    // ─── FarmDocument («Документи», #2495) ─────────────
+    //  A document TITLE is routinely «Договор аренда <фамилия>.pdf» — third
+    //  party personal data in a column — and the library is designed to hold
+    //  lease contracts. The list is newest-first, so nothing needs to sort or
+    //  search on it server-side, which is what makes encrypting it cheap.
+    //
+    //  Not sufficient on its own, and #2497 is the other half: the uploaded
+    //  FILENAME used to sit in `FileRecord.pathKey` and in the on-disk path.
+    //  That is fixed — keys are `<uuid>.<ext>` now — and the residue is
+    //  `FileRecord.originalName`, still plaintext, tracked there.
+    //
+    //  Nullable because a DELETED tombstone CLEARS it (owner ruling): expiry
+    //  is policy and the farm's index earns the name, while a manual delete is
+    //  a person's intent and keeping it would preserve for good the one field
+    //  encrypted BECAUSE it names third parties.
+    FarmDocument: ['name'],
+
     // ─── Promotion leads (promotions #12) ──────────────
     //  The farmer's free-text request. It routinely names the farm, the
     //  field and what they are short of, and it is written expressly to

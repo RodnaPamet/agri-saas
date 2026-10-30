@@ -203,6 +203,47 @@ enum EvidenceStatus {
   NEEDS_REVIEW
 }
 
+/// How long a document is kept on the Agrent server (#2495).
+///
+/// The values ARE the wire values, so there is no mapping layer to disagree
+/// with itself. ISO-8601 duration codes rather than a day count: months and
+/// years in days reintroduces the leap-year question at every read, and the
+/// UI offers exactly these six choices.
+///
+/// `RetentionPolicy` already exists (`NONE | FIXED_DATE | DAYS_AFTER_UPLOAD`)
+/// and is Evidence's, which ARCHIVES rather than deleting bytes. This feature
+/// deletes bytes, so it is a different mechanism rather than a reuse.
+enum DocumentRetention {
+  P3M
+  P6M
+  P1Y
+  P2Y
+  P5Y
+  NONE
+}
+
+/// State of the one-way copy into the farm's «Agrent» Drive folder (#2495).
+///
+/// `OFF` is "sync was not on when this was uploaded", which is distinct from
+/// `FAILED`: one is a setting, the other is an error an admin can retry.
+enum DocumentDriveState {
+  OFF
+  PENDING
+  COPIED
+  FAILED
+}
+
+/// Why a document's bytes went (#2495).
+///
+/// Explicit rather than inferred from which fields are null: three states that
+/// read differently to a farmer — «Само в Google Drive», «Изтекъл срок на …»,
+/// «Изтрит на … от …» — should BE three states. One uniform outcome is what
+/// blinds a client.
+enum DocumentPurgeReason {
+  EXPIRED
+  DELETED
+}
+
 enum RetentionPolicy {
   NONE
   FIXED_DATE

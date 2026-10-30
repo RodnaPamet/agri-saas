@@ -211,6 +211,8 @@ model Tenant {
   knowledgeArticleVersions   KnowledgeArticleVersion[]
   knowledgeAcks              KnowledgeAcknowledgement[]
   knowledgeChunks            KnowledgeChunk[]
+  farmDocuments              FarmDocument[]
+  documentSettings           TenantDocumentSettings?
 
   @@index([organizationId])
 }
@@ -896,6 +898,8 @@ model User {
   // Enterprise-grain — payroll/labour cost register.
   costEntriesCreated            CostEntry[]                  @relation("CostEntryCreator")
   featureFlagCohorts            FeatureFlagCohortMember[]    @relation("FeatureFlagCohortMemberships")
+  farmDocumentsUploaded         FarmDocument[]               @relation("FarmDocumentUploader")
+  farmDocumentsPurged           FarmDocument[]               @relation("FarmDocumentPurger")
   // P6.1 — the person's own public identity. One per USER, not per
   // membership: a person exists once across every farm they belong to,
   // which is what TenantMembership is for.

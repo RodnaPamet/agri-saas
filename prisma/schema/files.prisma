@@ -55,6 +55,7 @@ model FileRecord {
   deletedByUserId      String?
   retentionUntil       DateTime?
   evidence             Evidence[]
+  farmDocuments             FarmDocument[]
   tenant               Tenant         @relation(fields: [tenantId], references: [id])
   uploadedBy           User           @relation("FileUploader", fields: [uploadedByUserId], references: [id])
   // Epic G-4 — campaigns whose evidence PDF this row carries.
@@ -175,4 +176,136 @@ model EvidenceReview {
 
   @@index([tenantId])
   @@index([tenantId, evidenceId])
+}
+
+/// A farm's document library row (#2495).
+///
+/// ## Why this is a thin row over `FileRecord`
+///
+/// `FileRecord` already carries the bytes' metadata — `pathKey`, `mimeType`,
+/// `sizeBytes`, `sha256` — and a `FileRecordStatus` that already includes
+/// `DELETED`. So this model holds only what a document IS beyond its bytes:
+/// its title, its retention, its Drive copy and its tombstone. Same shape as
+/// `Evidence` in this file, for the same reason.
+///
+/// ## There is deliberately NO `deletedAt`
+///
+/// The tombstone IS the record of deletion: a manual delete sets `purgedAt`,
+/// `purgeReason = DELETED` and `purgedByUserId`, and clears `name`. Adding a
+/// soft-delete column beside that would be two mechanisms for one fact, and
+/// the list deliberately SHOWS tombstones — a farm needs to know a contract
+/// expired, and that its Drive copy survives — so there is nothing for a
+/// `deletedAt` filter to hide. Models carrying `deletedAt` also acquire
+/// soft-delete semantics through `classification.ts`, which would then be a
+/// second lifecycle on top of this one.
+///
+/// ## `name` is encrypted; on a manual delete it is CLEARED
+///
+/// A document title is routinely «Договор аренда <фамилия>.pdf» — third-party
+/// personal data — so it is in `ENCRYPTED_FIELDS`. Owner ruling 2026-10-30:
+/// an EXPIRED tombstone KEEPS the name, because expiry is policy and the
+/// farm's index of what it held is the point; a DELETED tombstone clears it,
+/// because a manual delete is a person's intent and is very often "this was
+/// the wrong file". Keeping it would preserve indefinitely the one field
+/// encrypted *because* it names third parties.
+model FarmDocument {
+  id               String                @id @default(cuid())
+  tenantId         String
+
+  /// Display title. ENCRYPTED. Null once a DELETED tombstone has cleared it.
+  name             String?
+
+  /// The stored bytes. Stays set on a tombstone, pointing at a `FileRecord`
+  /// moved to `DELETED` — so "what was this file" survives without the bytes.
+  fileRecordId     String
+  uploadedByUserId String
+
+  /// The retention period AS IT WAS AT UPLOAD.
+  ///
+  /// Stored per document, not read from the tenant setting at display time.
+  /// `expiresOn` alone loses WHY that date was given: with the period, a row
+  /// can say «Пази се 1 година, до …», and an audit can tell a 1-year
+  /// document from a 2-year one uploaded a year earlier. It is also what
+  /// makes a settings change unable to touch existing documents.
+  retention        DocumentRetention
+
+  /// Expiry as a CALENDAR DAY KEY (`YYYY-MM-DD`), null for «Без срок».
+  ///
+  /// A day key and not a `DateTime`, deliberately. The concept is a calendar
+  /// date, so a timestamp would carry information the concept does not have
+  /// and every reader would then decide which day it meant. `calendar-day-key
+  /// .ts` states the rule: "lexicographic order IS calendar order, and there
+  /// is no Date arithmetic to get wrong at a DST boundary." The sweep is then
+  /// a string compare against `farmToday()`, and the expiry is integer month
+  /// arithmetic with month-end clamping — neither has a timezone to get
+  /// wrong. Computed in `FARM_TIME_ZONE` (Europe/Sofia), never
+  /// `NOTIFICATIONS_TZ`, which defaults to Europe/London.
+  ///
+  /// The migration adds a CHECK constraint on the shape, so a malformed key
+  /// cannot be written by any path.
+  expiresOn        String?
+
+  /// Set when the bytes were deleted. ONE field for every tombstone, whatever
+  /// the reason — `purgeReason` carries the distinction. Two fields for one
+  /// fact is how a client ends up reading whichever is populated.
+  purgedAt         DateTime?
+  purgeReason      DocumentPurgeReason?
+  /// Who, when a person did it. Null when `EXPIRED`.
+  purgedByUserId   String?
+
+  driveState       DocumentDriveState    @default(OFF)
+  /// The Drive file id, so a copy can be verified or re-pointed. Never a URL.
+  driveFileId      String?
+  driveCopiedAt    DateTime?
+  /// Automatic retries before the row goes FAILED and an admin sees «Опитай пак».
+  driveAttempts    Int                   @default(0)
+
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fileRecord       FileRecord            @relation(fields: [fileRecordId], references: [id])
+  uploadedBy       User                  @relation("FarmDocumentUploader", fields: [uploadedByUserId], references: [id])
+  purgedBy         User?                 @relation("FarmDocumentPurger", fields: [purgedByUserId], references: [id])
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  /// The list: newest first within a tenant.
+  @@index([tenantId, purgedAt])
+  @@index([tenantId, driveState])
+  /// The SWEEP runs across tenants — `expiresOn <= today AND purgedAt IS NULL`
+  /// — so it needs a non-tenant-leading index. Layer A only requires that AT
+  /// LEAST one index leads with `tenantId`; this is an addition, not a
+  /// replacement.
+  @@index([expiresOn, purgedAt])
+  @@index([fileRecordId])
+  @@index([uploadedByUserId])
+  @@index([purgedByUserId])
+}
+
+/// One-per-tenant document settings (#2495).
+///
+/// A fourth singleton of the shape `FarmProfile`'s docblock documents —
+/// `tenantId @unique`, RLS trio in the migration, no soft-delete — rather
+/// than fields bolted onto `TenantModuleSettings`, whose own columns
+/// (`enabledModules`, `meteobotStationUrl`) are a different concern.
+///
+/// The per-tenant byte ceiling is NOT here: it is an env var, so changing it
+/// is a restart rather than a migration, and it applies whatever the plan.
+/// `PLAN_LIMITS` would have been inert — `STRIPE_SECRET_KEY` is absent on the
+/// VM, so every tenant resolves to ENTERPRISE and every ENTERPRISE limit is
+/// null.
+model TenantDocumentSettings {
+  id         String            @id @default(cuid())
+  tenantId   String            @unique
+  /// Applies to NEW uploads only; each document carries its own period.
+  retention  DocumentRetention @default(P1Y)
+  /// Turning this off stops new copies. It does NOT revoke the Google
+  /// connection, which the ДНЕВНИК export still uses.
+  driveSync  Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
