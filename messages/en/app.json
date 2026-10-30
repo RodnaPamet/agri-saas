@@ -572,6 +572,23 @@
                 "title": "Task due today",
                 "body": "{label} is due today."
             }
+        },
+        "agro": {
+            "sprayWindow": {
+                "title": "Spray window unsuitable",
+                "body": "Today's conditions at {label} are unsuitable for spraying.",
+                "bodyWithDetail": "Today's conditions at {label} are unsuitable for spraying — {detail}"
+            },
+            "diseaseRisk": {
+                "title": "Disease pressure rising",
+                "body": "High disease pressure detected at {label}.",
+                "bodyWithDetail": "High disease pressure detected at {label} — {detail}"
+            },
+            "copilot": {
+                "title": "Agronomy copilot explanation",
+                "body": "An agronomy explanation is ready for {label}.",
+                "bodyWithDetail": "An agronomy explanation is ready for {label} — {detail}"
+            }
         }
     },
     "admin": {
@@ -5060,6 +5077,10 @@
                 "rainUnsuitable": "Rain {rain} mm risks wash-off (limit {limit} mm)",
                 "tempOutside": "Temperature {temp}°C outside the {min}–{max}°C window",
                 "withinLimits": "Conditions within spray limits"
+            },
+            "diseaseReason": {
+                "noSustainedWarmWet": "No sustained warm-wet period",
+                "consecutiveWarmWetDays": "Consecutive warm-wet days: {days} — favourable for foliar disease"
             }
         },
         "detail": {

@@ -95,6 +95,65 @@ describe('evaluateLocationSignals — first run (signals fire)', () => {
             expect(call[2].recipientUserId).toBe(ctx.userId);
         }
     });
+
+    // ── #2490: the recipient's LANGUAGE, and the reason rendered in it ──
+    //
+    // The notification writer is doubled here, so these assert the WIRING:
+    // that the locale reaching it is the owner's rather than a default, and
+    // that `detail` is a rendered sentence rather than `reasons[0]`, which
+    // is English whatever the recipient speaks.
+
+    it('threads the owner uiLanguage through as the notification locale', async () => {
+        mockDb.location.findFirst.mockResolvedValue({
+            id: 'loc-1', name: 'Home Field', ownerUserId: 'owner-1',
+            owner: { uiLanguage: 'en' },
+        });
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+
+        await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        expect(createAgroNotificationMock).toHaveBeenCalledTimes(2);
+        for (const call of createAgroNotificationMock.mock.calls) {
+            expect(call[2].locale).toBe('en');
+        }
+    });
+
+    it('falls back to bg — the column default — when the preference is absent', async () => {
+        // The fixture deliberately omits `owner`, which is the unowned-location
+        // case: notified to ctx.userId, whose language this query never read.
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+
+        await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        for (const call of createAgroNotificationMock.mock.calls) {
+            expect(call[2].locale).toBe('bg');
+        }
+    });
+
+    it('passes a RENDERED reason as the detail, not the English sentence', async () => {
+        mockDb.location.findFirst.mockResolvedValue({
+            id: 'loc-1', name: 'Home Field', ownerUserId: 'owner-1',
+            owner: { uiLanguage: 'bg' },
+        });
+        mockDb.agroSignal.createMany.mockResolvedValue({ count: 1 });
+
+        await evaluateLocationSignals(ctx, 'loc-1', NOW);
+
+        const byKind = new Map(createAgroNotificationMock.mock.calls.map((c) => [c[1], c[2]]));
+
+        // warmWetDay() is 6 mm of rain, so the first spray reason is the
+        // wash-off one. The English sentence that used to be passed here
+        // reads 'Rain 6 mm — wash-off risk (limit 2 mm)'.
+        const spray = byKind.get('SPRAY_WINDOW_WARNING');
+        expect(spray.detail).toBe('Дъжд 6 мм — риск от отмиване (граница 2 мм)');
+        expect(spray.detail).not.toMatch(/[A-Za-z]/);
+
+        // 5 consecutive conducive days; the count rides AFTER a label
+        // because `translateFor` has no ICU.
+        const disease = byKind.get('DISEASE_RISK_RAISED');
+        expect(disease.detail).toBe('Топло-влажни дни подред: 5 — благоприятни за листни болести');
+        expect(disease.detail).not.toMatch(/[A-Za-z]/);
+    });
 });
 
 describe('evaluateLocationSignals — idempotent re-run (no duplicates)', () => {

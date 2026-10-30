@@ -30,6 +30,8 @@ import { assertCanWrite } from '../policies/common';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { createAgroSignalNotification } from '../notifications/agro';
+import { renderDiseaseReason, renderSprayReason } from '@/lib/agro/reason-label';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import {
     evaluateSprayWindow,
     evaluateDiseaseRisk,
@@ -104,9 +106,26 @@ export async function evaluateLocationSignals(
     const phase1 = await runInTenantContext(ctx, async (db) => {
         const location = await db.location.findFirst({
             where: { id: locationId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true, name: true, ownerUserId: true },
+            select: {
+                id: true,
+                name: true,
+                ownerUserId: true,
+                // The recipient's language, for the notification copy
+                // (#2490). Taken off the existing relation rather than a
+                // second query: this runs inside the claim transaction, and
+                // a read that needs its own connection is #1191's P0.8
+                // deadlock at `PG_POOL_MAX`.
+                owner: { select: { uiLanguage: true } },
+            },
         });
         if (!location) return null;
+
+        // Both notifications go to the location's owner, falling back to the
+        // acting user. `resolveRecipientLocale` answers `bg` for an absent
+        // preference — which is the column default, so the fallback branch
+        // (an unowned location, notified to `ctx.userId`) lands on the same
+        // language the row would have carried anyway.
+        const recipientLocale = resolveRecipientLocale(location.owner?.uiLanguage);
 
         const since = new Date(now.getTime() - DISEASE_LOOKBACK_DAYS * 86_400_000);
         const obs = (await db.weatherObservation.findMany({
@@ -124,7 +143,12 @@ export async function evaluateLocationSignals(
             },
         })) as ObsRow[];
 
-        if (obs.length === 0) return { location, sprayNew: false, diseaseNew: false, sprayStatus: null, diseaseLevel: null, diseaseReasons: '' };
+        if (obs.length === 0) {
+            return {
+                location, sprayNew: false, diseaseNew: false, sprayStatus: null,
+                diseaseLevel: null, diseaseDetail: null, recipientLocale,
+            };
+        }
 
         // Today's observation (or the most recent we have) for the spray window.
         const todayKey = signalDate.toISOString().slice(0, 10);
@@ -205,7 +229,13 @@ export async function evaluateLocationSignals(
                 locationId,
                 locationLabel: location.name,
                 tenantSlug: ctx.tenantSlug ?? '',
-                detail: spray.reasons[0] ?? null,
+                // The REASON the window is unsuitable, in the recipient's
+                // language. `reasons[0]` is the English sentence and is
+                // what used to go here; `reasonCodes[0]` is the same
+                // reason as a code+params, rendered through the catalogue
+                // the Smart Defaults banner already uses.
+                detail: await renderSprayReason(recipientLocale, spray.reasonCodes[0]),
+                locale: recipientLocale,
             }, now);
             sprayNotification = sprayOut.notification ?? null;
             await db.agroSignal.updateMany({
@@ -235,7 +265,10 @@ export async function evaluateLocationSignals(
             diseaseNew,
             sprayStatus: spray.status,
             diseaseLevel: disease.level,
-            diseaseReasons: disease.reasons.join('; '),
+            recipientLocale,
+            // Rendered here rather than in phase 2 so the locale is
+            // resolved once, from the row this transaction already read.
+            diseaseDetail: await renderDiseaseReason(recipientLocale, disease.reasonCodes[0]),
             sprayNotification,
             sprayRecipientUserId,
         };
@@ -277,7 +310,8 @@ export async function evaluateLocationSignals(
                     locationId,
                     locationLabel: phase1.location.name,
                     tenantSlug: ctx.tenantSlug ?? '',
-                    detail: phase1.diseaseReasons || null,
+                    detail: phase1.diseaseDetail,
+                    locale: phase1.recipientLocale,
                 }, now);
             });
         } catch (err) {

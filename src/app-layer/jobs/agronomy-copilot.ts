@@ -18,6 +18,7 @@ import {
     type CopilotWeatherDay,
 } from '@/app-layer/ai/agronomy/copilot';
 import { createAgroSignalNotification } from '@/app-layer/notifications/agro';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { isLocale } from '@/lib/i18n/locales';
 import type { JobRunResult, AgronomyCopilotPayload } from './types';
 
@@ -119,7 +120,20 @@ export async function runAgronomyCopilot(payload: AgronomyCopilotPayload): Promi
                                 locationId,
                                 locationLabel: location.name,
                                 tenantSlug: location.tenant?.slug ?? '',
+                                // Already in the recipient's language: the
+                                // generator above is passed the same
+                                // `uiLanguage`, which pins its OUTPUT locale.
                                 detail: explanation.explanation.slice(0, 140),
+                                // TWO narrowings of one column, deliberately
+                                // not unified. The prompt above takes
+                                // `isLocale(x) ? x : undefined`, where
+                                // `undefined` lets the generator choose; a
+                                // notification has to NAME a language, so it
+                                // takes the `bg` fallback the column default
+                                // justifies. Collapsing them would either
+                                // hand the generator a locale it was not
+                                // given, or leave the row's language unset.
+                                locale: resolveRecipientLocale(location.owner?.uiLanguage),
                             },
                             new Date(),
                         );

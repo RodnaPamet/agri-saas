@@ -48,9 +48,15 @@ export const DEFAULT_SPRAY_THRESHOLDS: SprayWindowThresholds = {
 
 /**
  * Structured, i18n-ready spray-window reason. The English `reasons[]` above
- * stay as-is for server consumers (AI copilot prompt, audit/signal details,
- * notifications); `reasonCodes[]` is the parallel machine form the UI
- * translates at render time so the Bulgarian app shows Bulgarian reasons.
+ * stay as-is for the consumers that genuinely want English — the AI copilot
+ * prompt (whose OUTPUT language is pinned separately) and the audit / signal
+ * `detailsJson`, whose only reader is that prompt. `reasonCodes[]` is the
+ * parallel machine form, rendered per recipient at display time so the
+ * Bulgarian app shows Bulgarian reasons.
+ *
+ * This list said "notifications" until #2490, and that was the defect: a
+ * notification is read by a FARMER, so it belongs on the second side of the
+ * split, not the first. See `@/lib/agro/reason-label`.
  */
 export type SprayReasonCode =
     | 'windUnsuitable'
@@ -221,6 +227,25 @@ export interface DiseaseDay {
 
 export type DiseaseRiskLevel = 'LOW' | 'MODERATE' | 'HIGH';
 
+/**
+ * Machine form of a disease-risk reason (#2490).
+ *
+ * Spray has carried `reasonCodes` beside its English `reasons` since #37 —
+ * see `SprayReason` above and the split documented there. Disease never got
+ * them, so its only form was an English sentence, and the push that
+ * interpolates one reached a Bulgarian farmer in English.
+ *
+ * Codes mirror the spray namespace (`locations.smart.diseaseReason.<code>`),
+ * so a UI surface can render them the way `SmartDefaultsBanner` already
+ * renders spray's.
+ */
+export type DiseaseReasonCode = 'noSustainedWarmWet' | 'consecutiveWarmWetDays';
+
+export interface DiseaseReason {
+    code: DiseaseReasonCode;
+    params: Record<string, number>;
+}
+
 export interface DiseaseRiskThresholds {
     /** A day is "conducive" if leaf-wetness proxy AND temperature band hold. */
     wetPrecipMm: number;
@@ -246,7 +271,10 @@ export interface DiseaseRiskResult {
     conduciveDays: number;
     /** Longest run of consecutive conducive days. */
     maxConsecutive: number;
+    /** English sentences — for AI/audit consumers. */
     reasons: string[];
+    /** Structured codes+params — for i18n at the render layer (#2490). */
+    reasonCodes: DiseaseReason[];
 }
 
 /** A day favours foliar disease when leaf wetness (rain OR high RH) meets a warm band. */
@@ -282,8 +310,17 @@ export function evaluateDiseaseRisk(
     if (maxConsecutive >= thresholds.highRun) level = 'HIGH';
     else if (maxConsecutive >= thresholds.moderateRun) level = 'MODERATE';
 
+    // Both forms, the same way `evaluateSprayWindow` returns both: the English
+    // sentence for the AI prompt and the audit row, the code for anything a
+    // person reads. See `SprayWindowResult`.
     const reasons: string[] = [];
-    if (level === 'LOW') reasons.push('No sustained warm-wet period');
-    else reasons.push(`${maxConsecutive} consecutive warm-wet days favour foliar disease`);
-    return { level, conduciveDays, maxConsecutive, reasons };
+    const reasonCodes: DiseaseReason[] = [];
+    if (level === 'LOW') {
+        reasons.push('No sustained warm-wet period');
+        reasonCodes.push({ code: 'noSustainedWarmWet', params: {} });
+    } else {
+        reasons.push(`${maxConsecutive} consecutive warm-wet days favour foliar disease`);
+        reasonCodes.push({ code: 'consecutiveWarmWetDays', params: { days: maxConsecutive } });
+    }
+    return { level, conduciveDays, maxConsecutive, reasons, reasonCodes };
 }
