@@ -106,7 +106,7 @@ const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
  * length — see the ratchet test for why slack is the thing being refused.
  * Lower it in the same PR that migrates a file.
  */
-const REGISTER_CEILING = 214;
+const REGISTER_CEILING = 213;
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
@@ -232,7 +232,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/prisma-include-fields-exist.test.ts',
     'tests/guards/promotions-drift.test.ts',
     'tests/guards/public-routes-self-authenticate.test.ts',
-    'tests/guards/r14-nav-bar-import-discipline.test.ts',
     'tests/guards/r14-no-page-searchbars.test.ts',
     'tests/guards/r20-pra-foundation.test.ts',
     'tests/guards/r21-prf-bar3d-capstone.test.ts',
