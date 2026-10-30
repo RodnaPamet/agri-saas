@@ -342,7 +342,7 @@ function ranAtAll(out) {
     return /Tests:\s+[^\n]*\d+ (passed|failed)/.test(out);
 }
 
-export function auditFile(file) {
+export function auditFile(file, opts = {}) {
     restoreIfStray(file);
     const original = readFileSync(file, 'utf8');
     const backup = BAK(file);
@@ -350,10 +350,23 @@ export function auditFile(file) {
     ACTIVE = file;
     const survivors = [];
     const untestable = [];
+    /**
+     * `--selector` narrows which module-level functions this run mutates.
+     *
+     * The audit costs `selectors x 9 guts x ~33s` of jest startup, so a file
+     * with five selectors is ~2000s and exceeds any single-invocation ceiling
+     * (#2479). Auditing a file a piece at a time is the only way to reach those
+     * without a longer-running context.
+     *
+     * It is a NARROWING, and the report says so — a partial run must never be
+     * readable as a clean bill of health for the whole file.
+     */
+    const only = opts.only ?? null;
     // Counted, and reported, because "every selector was killed" and "there
     // was nothing to kill" are the SAME output otherwise — see the note on
     // `candidates` in the return value below.
-    const selectors = selectorsIn(original);
+    const allSelectors = selectorsIn(original);
+    const selectors = only ? allSelectors.filter((s) => only.has(s.name)) : allSelectors;
     try {
         for (const sel of selectors) {
             // EVERY gut that typechecks must be killed. Stopping at the first
@@ -416,7 +429,17 @@ export function auditFile(file) {
      * the parser the honest number is 186 of 621, and the denominator this
      * field reports finally means what it says.
      */
-    return { file, candidates: selectors.length, survivors, untestable };
+    return {
+        file,
+        candidates: selectors.length,
+        survivors,
+        untestable,
+        /** Names actually mutated this run — what the stale check may judge. */
+        auditedSelectors: selectors.map((s) => s.name),
+        /** Every module-level selector the file HAS, narrowed or not. */
+        totalSelectors: allSelectors.length,
+        partial: Boolean(only) && selectors.length < allSelectors.length,
+    };
 }
 
 /**
@@ -462,6 +485,12 @@ export function formatReport({ results, unexpected, stale }, asJson) {
     );
 
     for (const r of results) {
+        if (r.partial) {
+            out.push(
+                `  ${r.file}  PARTIAL audit: ${r.candidates} of ${r.totalSelectors} selector(s) `
+                    + `mutated (--selector). The others are UNTESTED by this run, not clean.`,
+            );
+        }
         for (const s of r.survivors) out.push(`  ${r.file}:${s.line}  ${s.selector}() \u2192 return ${s.gut}  SURVIVED`);
         for (const u of r.untestable) out.push(`  ${r.file}  ${u}()  no gut typechecked \u2014 not tested`);
         if (r.candidates === 0) {
@@ -513,9 +542,40 @@ function loadBaseline() {
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
-const files = args.filter((a) => !a.startsWith('--'));
+
+// `--selector <name>`, repeatable. Its VALUES must not be mistaken for paths,
+// which is why the file list is built by walking the argv rather than by
+// filtering on a leading `--`.
+const wanted = [];
+const files = [];
+for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--selector') {
+        const name = args[++i];
+        if (!name || name.startsWith('--')) {
+            console.error('selector-teeth: --selector needs a function name');
+            process.exit(2);
+        }
+        // ...and a PATH is not a function name. Without this, `--selector
+        // tests/guards/x.test.ts` consumed the file as the selector, left the
+        // file list empty, and printed the usage text — which reads as "you
+        // forgot the file" when the file is right there in the command.
+        if (/[\/]/.test(name) || name.endsWith('.ts') || name.endsWith('.tsx')) {
+            console.error(
+                `selector-teeth: --selector takes a FUNCTION name, got a path: ${name}\n`
+                    + '  usage: --selector <name> <file.test.ts>',
+            );
+            process.exit(2);
+        }
+        wanted.push(...name.split(',').map((n) => n.trim()).filter(Boolean));
+        continue;
+    }
+    if (args[i].startsWith('--')) continue;
+    files.push(args[i]);
+}
+const only = wanted.length > 0 ? new Set(wanted) : null;
+
 if (files.length === 0) {
-    console.error('usage: selector-teeth.mjs [--json] <file.test.ts> [...]');
+    console.error('usage: selector-teeth.mjs [--json] [--selector <name>] <file.test.ts> [...]');
     process.exit(2);
 }
 // A path that no longer exists is not an audit failure — it is a file the
@@ -535,7 +595,24 @@ if (missing.length > 0) {
     process.exit(2);
 }
 
-const results = files.map(auditFile);
+// A `--selector` naming nothing would audit ZERO functions and exit 0 — the
+// empty-selection pass this whole tool exists to hunt, in its own CLI. Refuse
+// it, and say which names the files actually offer.
+if (only) {
+    const available = new Set();
+    for (const f of files) for (const s of selectorsIn(readFileSync(f, 'utf8'))) available.add(s.name);
+    const unknown = [...only].filter((n) => !available.has(n));
+    if (unknown.length > 0) {
+        console.error(
+            'selector-teeth: --selector named function(s) that do not exist at module level in the given file(s):\n'
+                + unknown.map((n) => `  ${n}`).join('\n')
+                + `\n\nAvailable: ${[...available].sort().join(', ') || '(none)'}`,
+        );
+        process.exit(2);
+    }
+}
+
+const results = files.map((f) => auditFile(f, { only }));
 const baseline = loadBaseline();
 
 /** Survivors this run found that the baseline does not excuse. */
@@ -548,8 +625,13 @@ for (const r of results) {
         if (!listed.includes(s.selector)) unexpected.push(`${r.file}:${s.line}  ${s.selector}()`);
     }
     const found = new Set(r.survivors.map((s) => s.selector));
+    // ONLY selectors this run mutated. Under `--selector` the baseline holds
+    // entries for functions we deliberately skipped, and judging those would
+    // report "no longer survives" about a selector nobody tested — a partial
+    // run deleting another selector's recorded debt.
+    const judged = new Set(r.auditedSelectors);
     for (const name of listed) {
-        if (!found.has(name)) stale.push(`${r.file}  ${name}()`);
+        if (judged.has(name) && !found.has(name)) stale.push(`${r.file}  ${name}()`);
     }
 }
 
