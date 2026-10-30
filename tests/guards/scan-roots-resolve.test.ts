@@ -15,8 +15,40 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { collectTrackedFiles } from '../helpers/collect-files';
+
 const ROOT = path.resolve(__dirname, '..', '..');
 const GUARD_DIR = path.join(ROOT, 'tests', 'guards');
+
+/**
+ * The audit's four roots, not just this one directory — #2377.
+ *
+ * The detector below is correct and #875 paid down 87 swallowers with it. What
+ * was wrong was the POPULATION: `tests/guards` is 721 of the 841 guard-shaped
+ * test files in this repo, and 17 of the same shape sat in `tests/guardrails`
+ * where nothing looked. `admin-layout-guard`'s `findPageFiles` opened
+ *
+ *     if (!fs.existsSync(dir)) return files;
+ *
+ * immediately above its `readdirSync`, so renaming the admin route root would
+ * have emptied it and passed. A detector is only as wide as the population it
+ * is handed, which is the same shape as the gate that names the right check
+ * and covers one directory of four.
+ *
+ * Entries are keyed by REPO-RELATIVE PATH from here on, not basename, because
+ * the basename is no longer unique: `no-explicit-any-ratchet.test.ts` exists in
+ * BOTH `tests/guards` and `tests/guardrails`, and CLAUDE.md documents them as
+ * two different guards checking two different things.
+ */
+const AUDIT_ROOTS = [
+    'tests/guards',
+    'tests/guardrails',
+    'tests/contracts',
+    'tests/regression',
+] as const;
+
+/** This file's own fixtures contain the shape it hunts, so it never judges itself. */
+const SELF = 'tests/guards/scan-roots-resolve.test.ts';
 
 /**
  * Roots that are SUPPOSED to match nothing, with the reason. `no-tracked-node-modules`
@@ -64,9 +96,9 @@ const GUARD_DIR = path.join(ROOT, 'tests', 'guards');
  * — so this list grew by two rather than by five.
  */
 const KNOWN_SWALLOWERS: readonly string[] = [
-    'multi-select-facet-route-parity.test.ts',
-    'policy-routes-guardrail.test.ts',
-    'scope-guardrails.test.ts',
+    'tests/guards/multi-select-facet-route-parity.test.ts',
+    'tests/guards/policy-routes-guardrail.test.ts',
+    'tests/guards/scope-guardrails.test.ts',
 ];
 
 const EXPECTED_EMPTY: Record<string, string> = {
@@ -146,15 +178,19 @@ export function hasComputedRoots(src: string): boolean {
     return false;
 }
 
-function readGuard(f: string): string {
-    return fs.readFileSync(path.join(GUARD_DIR, f), 'utf-8');
+function readGuard(rel: string): string {
+    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 }
 
 function guardFiles(): string[] {
-    return fs
-        .readdirSync(GUARD_DIR)
-        .filter((f) => f.endsWith('.test.ts'))
-        .sort();
+    // `collectTrackedFiles` rather than a `readdirSync` per root: it throws
+    // below the floor, so a renamed root cannot quietly shrink THIS population
+    // either — which would be the defect being detected, one level up.
+    return collectTrackedFiles({
+        roots: AUDIT_ROOTS,
+        extensions: ['.test.ts'],
+        floor: 800,
+    }).map((abs) => path.relative(ROOT, abs));
 }
 
 function tracked(rel: string): number {
@@ -171,14 +207,21 @@ function tracked(rel: string): number {
     }
 }
 
-describe('scan roots in tests/guards still resolve', () => {
+describe('scan roots in the four audit roots still resolve', () => {
     const files = guardFiles();
 
     it('the meta-guard found guards to read', () => {
         // Without this, a directory rename empties THIS selection too and the
         // assertion below passes over nothing — the very bug it exists to catch.
-        expect(files.length).toBeGreaterThan(400);
-        expect(files).toContain('no-legacy-brand.test.ts');
+        expect(files.length).toBeGreaterThan(800);
+        expect(files).toContain('tests/guards/no-legacy-brand.test.ts');
+        // ...and EVERY root contributes. The floor alone would still pass if
+        // the population collapsed back to `tests/guards`, which is 721 of
+        // 841 — comfortably above any floor worth setting.
+        for (const root of AUDIT_ROOTS) {
+            expect({ root, contributes: files.some((f) => f.startsWith(`${root}/`)) })
+                .toEqual({ root, contributes: true });
+        }
     });
 
     it('...and it extracts roots from both spellings — a control on the emptiness below', () => {
@@ -234,9 +277,7 @@ describe('scan roots in tests/guards still resolve', () => {
         // must not join the list. Take entries OUT of KNOWN_SWALLOWERS as you
         // fix them — the test below fails if a name here no longer swallows,
         // so the list cannot rot into a permanent allowlist.
-        const current = files.filter(
-            (f) => f !== 'scan-roots-resolve.test.ts' && swallowsMissingRoot(readGuard(f)),
-        );
+        const current = files.filter((f) => f !== SELF && swallowsMissingRoot(readGuard(f)));
         const added = current.filter((f) => !KNOWN_SWALLOWERS.includes(f));
         expect({ added }).toEqual({ added: [] });
 
@@ -258,8 +299,8 @@ describe('scan roots in tests/guards still resolve', () => {
         // fail. Using resolveScanRoots() is the other acceptable answer.
         const swallowing: string[] = [];
         for (const f of files) {
-            if (f === 'scan-roots-resolve.test.ts') continue;
-            const src = fs.readFileSync(path.join(GUARD_DIR, f), 'utf-8');
+            if (f === SELF) continue;
+            const src = readGuard(f);
             if (/_helpers\/scan-roots/.test(src)) continue;
             if (KNOWN_SWALLOWERS.includes(f)) continue;
             if (swallowsMissingRoot(src)) {
@@ -272,7 +313,7 @@ describe('scan roots in tests/guards still resolve', () => {
     it('every declared scan root matches at least one tracked file', () => {
         const broken: string[] = [];
         for (const f of files) {
-            const src = fs.readFileSync(path.join(GUARD_DIR, f), 'utf-8');
+            const src = readGuard(f);
             for (const { root } of declaredRoots(src, f)) {
                 if (root in EXPECTED_EMPTY) continue;
                 if (tracked(root) === 0) broken.push(`${f}: '${root}' matches no tracked file`);

@@ -54,7 +54,9 @@ describe('No duplicate admin guards on pages', () => {
 
     function findPageFiles(dir: string): string[] {
         const files: string[] = [];
-        if (!fs.existsSync(dir)) return files;
+        if (!fs.existsSync(dir)) {
+            throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+        }
 
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
@@ -68,11 +70,35 @@ describe('No duplicate admin guards on pages', () => {
         return files;
     }
 
+    /**
+     * The denominator, hoisted so both assertions below range over the SAME
+     * measured population — and so the selector has teeth.
+     *
+     * Both tests derive `violations` from these pages and assert it is empty,
+     * which an EMPTY page list satisfies for free. `selector-teeth` reported
+     * `findPageFiles()` as a dead selector for exactly that reason: mutating it
+     * to return nothing left the guard green, so nothing here was checking that
+     * any admin page had been read at all.
+     *
+     * Measured 2026-10-30 at 21 `page.tsx` files under this tree. The floor
+     * sits below that so adding or removing a page does not move it, and well
+     * above zero so an emptied walk fails instead of passing.
+     */
+    const PAGES = findPageFiles(ADMIN_PAGES_DIR);
+    const PAGE_FLOOR = 15;
+
+    test('[admin-layout-guard] ranges over a real set of admin pages', () => {
+        console.log(
+            `[admin-layout-guard] ${PAGES.length} page.tsx under the tenant admin tree, `
+                + `${ALLOWLIST.size} allowlisted`,
+        );
+        expect(PAGES.length).toBeGreaterThanOrEqual(PAGE_FLOOR);
+    });
+
     test('no admin page.tsx files import RequirePermission for admin resource', () => {
-        const pages = findPageFiles(ADMIN_PAGES_DIR);
         const violations: string[] = [];
 
-        for (const pagePath of pages) {
+        for (const pagePath of PAGES) {
             const basename = path.basename(pagePath);
             if (ALLOWLIST.has(basename)) continue;
 
@@ -91,10 +117,9 @@ describe('No duplicate admin guards on pages', () => {
     });
 
     test('no admin page.tsx files import ServerForbiddenPage', () => {
-        const pages = findPageFiles(ADMIN_PAGES_DIR);
         const violations: string[] = [];
 
-        for (const pagePath of pages) {
+        for (const pagePath of PAGES) {
             const content = fs.readFileSync(pagePath, 'utf-8');
             if (
                 content.includes("from '@/components/ForbiddenPage'") ||

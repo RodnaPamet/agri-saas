@@ -46,7 +46,9 @@ const PROTECTED_OBJECTS: ReadonlyArray<{ name: string; create: RegExp; kind: str
 ];
 
 function migrationFiles(): { rel: string; sql: string }[] {
-    if (!fs.existsSync(MIGRATIONS_DIR)) return [];
+    if (!fs.existsSync(MIGRATIONS_DIR)) {
+        throw new Error(`scan root does not exist: ${MIGRATIONS_DIR} — a renamed root would scan zero files and pass (#875)`);
+    }
     const out: { rel: string; sql: string }[] = [];
     for (const dir of fs.readdirSync(MIGRATIONS_DIR)) {
         const file = path.join(MIGRATIONS_DIR, dir, 'migration.sql');

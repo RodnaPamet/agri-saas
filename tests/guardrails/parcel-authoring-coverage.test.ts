@@ -54,7 +54,9 @@ describe('parcel areaHa is server-derived', () => {
 function walk(dir: string): string[] {
     const out: string[] = [];
     const abs = path.join(REPO_ROOT, dir);
-    if (!fs.existsSync(abs)) return out;
+    if (!fs.existsSync(abs)) {
+        throw new Error(`scan root does not exist: ${abs} — a renamed root would scan zero files and pass (#875)`);
+    }
     for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
         const rel = path.join(dir, e.name);
         if (e.isDirectory()) out.push(...walk(rel));

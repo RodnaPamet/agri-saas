@@ -122,7 +122,9 @@ describe('Migrated page anti-drift', () => {
 
 describe('Duplicate implementation detector', () => {
     function findComponentFiles(dir: string, acc: string[] = []): string[] {
-        if (!fs.existsSync(dir)) return acc;
+        if (!fs.existsSync(dir)) {
+            throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+        }
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             const full = path.join(dir, entry.name);
             if (entry.isDirectory()) findComponentFiles(full, acc);
@@ -178,7 +180,9 @@ describe('Duplicate implementation detector', () => {
 
 describe('New page token discipline', () => {
     function findPageFiles(dir: string, acc: string[] = []): string[] {
-        if (!fs.existsSync(dir)) return acc;
+        if (!fs.existsSync(dir)) {
+            throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+        }
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             const full = path.join(dir, entry.name);
             if (entry.isDirectory()) findPageFiles(full, acc);
@@ -395,6 +399,26 @@ describe('New page token discipline', () => {
         // It uses PageHeader rather than a hand-rolled breadcrumbs+Heading+<p>
         // stack precisely because the inline-subtitle budget names that
         // component as the canonical home for a page subtitle.
+        // THE DENOMINATOR, BEFORE THE CAP — #2377.
+        //
+        // `unmigrated` derives from `allPages`, so a walk that found nothing
+        // leaves it empty and `0 <= 96` passes: the ratchet reports that no
+        // page is unmigrated having discovered no pages at all. `selector-teeth`
+        // reported `findPageFiles()` DEAD for exactly that reason.
+        //
+        // The sibling "migrated page count is at least 4" does not close this —
+        // `existing` derives from the hard-coded MIGRATED_PAGES list, not from
+        // the walk, so it is green whatever the filesystem says.
+        //
+        // Measured 2026-10-30 at 112 page-ish files (`page.tsx`, `*Client.tsx`,
+        // `*Browser.tsx`). The floor sits well below that so ordinary churn
+        // does not move it, and far above zero so an emptied walk fails.
+        console.log(
+            `[design-system-drift] ${allPages.length} page-ish file(s) under the tenant tree, `
+                + `${unmigrated.length} unmigrated (cap 96)`,
+        );
+        expect(allPages.length).toBeGreaterThanOrEqual(80);
+
         expect(unmigrated.length).toBeLessThanOrEqual(96);
     });
 
