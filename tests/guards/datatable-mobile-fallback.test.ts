@@ -31,7 +31,15 @@
  *
  * Non-list DataTables (multi-section dashboards, detail-page sub-tables,
  * wizards, sub-components) are curated in `EXEMPTIONS` with a one-line reason.
- * A "no stale exemptions" test keeps that list honest.
+ * A "no stale exemptions" test keeps that list honest — and it is written
+ * INLINE rather than through `tests/helpers/assert-allowlist-is-live.ts`,
+ * deliberately. That helper always applies `blankNonCode` before handing the
+ * text to the caller's predicate, and this contract REQUIRES A COMMENT:
+ * `hasScrollReasonComment` is what makes `mobileFallback="scroll"` acceptable.
+ * Blanking would make it false for the two files that use scroll mode
+ * (`grain/PortfolioGrainClient.tsx`, `grain/yield/YieldClient.tsx`) and report
+ * both as violations. A guard whose ban depends on prose cannot delegate to a
+ * helper that removes prose.
  *
  * Sibling ratchets: `tests/guards/list-page-shell-coverage.test.ts` (the
  * viewport-clamp wrapper) and `tests/guards/no-horizontal-drift-patterns.test.ts`
@@ -114,8 +122,6 @@ const EXEMPTIONS: Record<string, string> = {
     // ── Multi-section dashboards / multi-table admin pages ──
     't/[tenantSlug]/(app)/admin/api-keys/page.tsx':
         'multi-table page (active + revoked keys stacked)',
-    't/[tenantSlug]/(app)/admin/members/page.tsx':
-        'multi-table admin page (members + pending invites) — members table opts into card mode itself',
     't/[tenantSlug]/(app)/admin/notifications/page.tsx':
         'tabbed admin settings (form + fixed 3-row stats table)',
     't/[tenantSlug]/(app)/admin/integrations/page.tsx':
@@ -132,8 +138,6 @@ const EXEMPTIONS: Record<string, string> = {
         'detail page — DataTable is the inner links sub-table',
     't/[tenantSlug]/(app)/planning/[cropPlanId]/PlantingBoard.tsx':
         'detail-page sub-table — plantings of one crop plan (succession board)',
-    't/[tenantSlug]/(app)/locations/[locationId]/page.tsx':
-        'detail page — parcels sub-table (opts into card mode itself, but not a list page)',
 
     // ── Wizards / browsers ──
 
@@ -206,8 +210,24 @@ describe('DataTable mobile-fallback coverage ratchet', () => {
                 stale.push(`${rel} (file no longer exists)`);
                 continue;
             }
-            if (!analyze(fs.readFileSync(abs, 'utf-8')).isRenderSite) {
+            const a = analyze(fs.readFileSync(abs, 'utf-8'));
+            if (!a.isRenderSite) {
                 stale.push(`${rel} (no longer renders a DataTable / EntityListPage)`);
+                continue;
+            }
+            // ...AND it must still FAIL the contract. Checking only
+            // `isRenderSite` was half the predicate: a page that has since
+            // added `mobileFallback="card"` with `meta.mobileCard` descriptors
+            // satisfies the rule, so its exemption excuses nothing while
+            // reading as accepted debt over a compliant file (#2414).
+            //
+            // Measured 2026-10-30: two of ten entries were exactly that —
+            // `admin/members/page.tsx` and `locations/[locationId]/page.tsx`,
+            // both card=true meta=true. Removed in this diff.
+            if (!violationReason(a)) {
+                stale.push(
+                    `${rel} (now satisfies the mobile-fallback contract — remove from EXEMPTIONS)`,
+                );
             }
         }
         if (stale.length > 0) {
