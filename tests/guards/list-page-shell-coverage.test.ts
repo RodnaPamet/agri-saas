@@ -36,6 +36,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { assertAllowlistIsLive } from '../helpers/assert-allowlist-is-live';
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const APP_ROOT = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)',
@@ -182,7 +185,10 @@ interface Finding {
 
 function audit(): Finding[] {
     return walk(APP_ROOT).map((file) => {
-        const content = fs.readFileSync(file, 'utf-8');
+        // Comments blanked, so a page that merely DISCUSSES ListPageShell or
+        // DataTable is judged on what it imports. Verified to change no verdict
+        // today: 0 violations either way (#2414).
+        const content = blankNonCode(fs.readFileSync(file, 'utf-8'));
         return {
             relPath: path
                 .relative(APP_ROOT, file)
@@ -219,21 +225,34 @@ describe('list-page-shell coverage ratchet', () => {
         }
     });
 
-    test('no exempt entry has a stale path (file moved/deleted)', () => {
-        const stale: string[] = [];
-        for (const exemptPath of Object.keys(EXEMPTIONS)) {
-            const abs = path.join(APP_ROOT, exemptPath);
-            if (!fs.existsSync(abs)) {
-                stale.push(exemptPath);
-            }
-        }
-        if (stale.length > 0) {
-            throw new Error(
-                `EXEMPTIONS contains ${stale.length} stale path(s) — file no longer exists:\n  ` +
-                    stale.join('\n  ') +
-                    '\n\nRemove these entries; the underlying file was moved or deleted.',
-            );
-        }
+    test('[list-page-shell-coverage] every exempt entry still earns its place', () => {
+        // Was an EXISTENCE check only. A file that has since been wrapped in
+        // ListPageShell — or that stopped importing DataTable altogether —
+        // satisfies the rule, so its exemption excuses nothing while reading as
+        // accepted debt over a compliant page (#2414).
+        //
+        // All 12 are live today; this is what stops the next one rotting. The
+        // sibling `datatable-mobile-fallback` had 2 of 10 dead and
+        // `shadow-discipline` 5 of 15, so the class is not hypothetical.
+        //
+        // `repoRoot` is APP_ROOT because these entries are relative to the
+        // tenant app segment, not the repository.
+        const report = assertAllowlistIsLive({
+            label: 'list-page-shell-coverage EXEMPTIONS',
+            entries: Object.keys(EXEMPTIONS),
+            repoRoot: APP_ROOT,
+            // The SAME transform the audit applies.
+            blankOptions: {},
+            violates: (code) =>
+                DATATABLE_IMPORT_RE.test(code)
+                && /\bDataTable\b/.test(code)
+                && !SHELL_IMPORT_RE.test(code),
+        });
+        console.log(
+            `[list-page-shell-coverage] ${report.live.length} of `
+                + `${Object.keys(EXEMPTIONS).length} exemption(s) still import DataTable unwrapped`,
+        );
+        expect(report.live.length).toBe(Object.keys(EXEMPTIONS).length);
     });
 
     test('coverage floor is met (defence against the audit collapsing to zero)', () => {
