@@ -39,10 +39,52 @@ import { GLOBAL_CORPUS } from '../../scripts/rag/corpus';
 import { ALL_SEED_ARTICLES } from '../../scripts/import-knowledge';
 import { SATELLITE_GUIDES } from '../../scripts/rag/ingest-satellite-guide';
 
+/**
+ * The three shipped-content populations, as NAMED module-level selectors.
+ *
+ * They were inline `.map(...)` closures inside `it.each(...)`, which made this
+ * guard unreachable by `scripts/selector-teeth` — one of the 203 with no named
+ * selector (#2483) and one of the 4 its reach reading watches, because
+ * pre-harvest and re-entry intervals are agronomic SAFETY.
+ *
+ * The risk is not theoretical for this shape: `it.each([])` registers ZERO
+ * tests and the suite passes. So an import that resolved to an empty array
+ * reported "no unregistered dose/PHI/REI in the shipped content" having scanned
+ * none of it. `GLOBAL_CORPUS` was floored already; the other two were not.
+ *
+ * Named here rather than inside the `describe` so `selectorsIn` reaches them at
+ * module level, and so gutting one to `return []` fails the denominator test
+ * below instead of silently emptying a population.
+ */
+/**
+ * Measured 2026-10-30: 44 corpus entries, 8 seed articles, 10 satellite
+ * guides. Floors sit below each so ordinary authoring does not move them, and
+ * far enough above zero that a gutted selector or an emptied import fails.
+ */
+const CORPUS_FLOOR = 30;
+const SEED_FLOOR = 6;
+const SATELLITE_FLOOR = 8;
+
+export function corpusCases(): readonly (readonly [string, string])[] {
+    return GLOBAL_CORPUS.map((e) => [e.sourceRef, e.text] as const);
+}
+
+export function seedArticleCases(): readonly (readonly [string, string])[] {
+    return ALL_SEED_ARTICLES.map(
+        (g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const,
+    );
+}
+
+export function satelliteGuideCases(): readonly (readonly [string, string])[] {
+    return SATELLITE_GUIDES.map(
+        (g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const,
+    );
+}
+
 describe('dose/PHI/REI structural gate', () => {
     // ── 1. Structural: the real shipped content is clean ──────────────
     describe('shipped content carries no unregistered dose/PHI/REI', () => {
-        it.each(GLOBAL_CORPUS.map((e) => [e.sourceRef, e.text] as const))(
+        it.each(corpusCases())(
             'GLOBAL_CORPUS entry "%s"',
             (sourceRef, text) => {
                 expect(scanForUnregisteredRegulatedContent(text)).toEqual([]);
@@ -50,9 +92,7 @@ describe('dose/PHI/REI structural gate', () => {
             },
         );
 
-        it.each(
-            ALL_SEED_ARTICLES.map((g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const),
-        )('ALL_SEED_ARTICLES entry "%s"', (slug, text) => {
+        it.each(seedArticleCases())('ALL_SEED_ARTICLES entry "%s"', (slug, text) => {
             expect(scanForUnregisteredRegulatedContent(text)).toEqual([]);
             expect(() => assertNoUnregisteredRegulatedContent(text, slug)).not.toThrow();
         });
@@ -60,18 +100,31 @@ describe('dose/PHI/REI structural gate', () => {
         // W5 (final task) — the GLOBAL satellite-imagery guide, promoted
         // out of ALL_SEED_ARTICLES (see that array's doc comment). Scanned
         // here so it stays covered by the same hard-rule gate.
-        it.each(
-            SATELLITE_GUIDES.map((g) => [g.slug, `${g.title} ${g.summary} ${g.content}`] as const),
-        )('SATELLITE_GUIDES entry "%s"', (slug, text) => {
+        it.each(satelliteGuideCases())('SATELLITE_GUIDES entry "%s"', (slug, text) => {
             expect(scanForUnregisteredRegulatedContent(text)).toEqual([]);
             expect(() => assertNoUnregisteredRegulatedContent(text, slug)).not.toThrow();
         });
 
-        it('GLOBAL_CORPUS actually has substantial Bulgarian-first agronomy content', () => {
+        it('[dose-phi-rei] all three shipped populations are non-trivially exercised', () => {
             // Guards against someone "fixing" a false positive by deleting content
             // instead of rewriting it — the gate should stay non-trivially
             // exercised, not empty.
-            expect(GLOBAL_CORPUS.length).toBeGreaterThanOrEqual(30);
+            //
+            // All THREE are floored now. Only GLOBAL_CORPUS was, so gutting
+            // either of the other two selectors emptied an `it.each` and the
+            // suite still passed, reporting the shipped content clean having
+            // scanned none of it (#2483, #2377).
+            const corpus = corpusCases();
+            const seeds = seedArticleCases();
+            const satellites = satelliteGuideCases();
+            console.log(
+                `[dose-phi-rei] ${corpus.length} corpus entr(ies), `
+                    + `${seeds.length} seed article(s), ${satellites.length} satellite guide(s) scanned`,
+            );
+            expect(corpus.length).toBeGreaterThanOrEqual(CORPUS_FLOOR);
+            expect(seeds.length).toBeGreaterThanOrEqual(SEED_FLOOR);
+            expect(satellites.length).toBeGreaterThanOrEqual(SATELLITE_FLOOR);
+
             const bgEntries = GLOBAL_CORPUS.filter((e) => e.language === 'bg');
             expect(bgEntries.length).toBeGreaterThanOrEqual(GLOBAL_CORPUS.length / 2);
         });

@@ -84,7 +84,7 @@ const ROOT = path.resolve(__dirname, '../..');
  * guards, which is the restructuring #2423 names rather than a tool fix. Do not
  * read the ceiling as a backlog the auditor can work off.
  */
-const UNAUDITABLE_CEILING = 203;
+const UNAUDITABLE_CEILING = 200;
 
 const TOOL = path.join(ROOT, 'scripts/selector-teeth.mjs');
 
