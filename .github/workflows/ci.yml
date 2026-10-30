@@ -342,6 +342,39 @@ jobs:
           # audit; the renamed file arrives in the same diff as an addition and
           # IS audited.
           mapfile -t ALL < <(git diff --name-only --diff-filter=d "$BASE" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts' 'tests/contracts/*.test.ts' 'tests/regression/*.test.ts')
+          # ALSO audit guards whose INPUTS changed, not only guards whose file
+          # changed — #2377 §2.
+          #
+          # A guard can be made vacuous without being touched. #2367 edited
+          # docs/backup-restore.md, both stacks became drilled, and
+          # `drilled !== unbacked` turned into `true !== false` — so
+          # `isDeclaredUnbacked` stopped mattering and NOTHING audited it, because
+          # the guard file was unchanged. It surfaced when an unrelated PR went red
+          # on content already in main, which is luck rather than process.
+          #
+          # scripts/guard-inputs.mjs inverts guard->input from path literals
+          # checked against `git ls-files`. 666 of 840 guards have a resolvable
+          # input; the other 174 compute their population, so no literal exists to
+          # map and they keep the file-changed trigger alone. The script prints that
+          # denominator, and tests/guards/guard-inputs-window-is-real.test.ts pins it.
+          #
+          # SAME-PR ONLY, deliberately. An input changed three PRs ago with the
+          # guard untouched is missed exactly as completely as before — which is why
+          # #2377 ranks the vacuity property above this and why this is not sold as
+          # the fix for the class.
+          mapfile -t CHANGED < <(git diff --name-only --diff-filter=d "$BASE" HEAD)
+          BY_INPUT=()
+          if [ ${#CHANGED[@]} -gt 0 ]; then
+            mapfile -t BY_INPUT < <(node scripts/guard-inputs.mjs --guards-for "${CHANGED[@]}" || true)
+          fi
+          if [ ${#BY_INPUT[@]} -gt 0 ]; then
+            echo "${#BY_INPUT[@]} guard(s) selected because an input changed:"
+            printf '  %s\n' "${BY_INPUT[@]}"
+          fi
+          # Union, de-duplicated: a guard whose file AND input both changed is one
+          # entry, or the partition-cover assertion below would count it twice and
+          # fail on a correct partition.
+          mapfile -t ALL < <(printf '%s\n' "${ALL[@]}" "${BY_INPUT[@]}" | grep -v '^$' | sort -u)
           TOTAL=${#ALL[@]}
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           if [ "$TOTAL" -eq 0 ]; then
