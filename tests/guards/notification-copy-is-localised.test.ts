@@ -48,6 +48,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = 'src/app-layer/notifications';
@@ -66,10 +67,20 @@ const STILL_ENGLISH: Record<string, string> = {
         'sentence with an English clause in it.',
 };
 
-/** Block and line comments removed, so a docblock QUOTING prose is not a hit. */
-function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-}
+/**
+ * Comments blanked so a docblock QUOTING prose is not a hit — through
+ * `blankNonCode`, not a local stripper.
+ *
+ * The shape this replaces ran BLOCK comments before LINE comments, which is
+ * the defect `comment-stripper-order` exists for and which CI caught here: a
+ * line comment containing a block-open is ordinary in this repo, and with
+ * blocks stripped first the regex runs to the next block-close and deletes
+ * every real line between. Measured on the live tree at 511 lines lost across
+ * nine files — a scanner reporting clean over 40% of a file.
+ *
+ * `blankNonCode` is state-aware, keeps string contents, and BLANKS rather than
+ * removes, so positions survive for anything anchored.
+ */
 
 /**
  * English prose assigned to a copy field. Two or more words, first one
@@ -80,7 +91,7 @@ function stripComments(src: string): string {
 const PROSE = /\b(?:title|phrase|body|message|subject)\s*:\s*'([A-Z][a-z]+(?: [A-Za-z’']+){1,})'/g;
 
 function proseIn(src: string): string[] {
-    return [...stripComments(src).matchAll(PROSE)].map((m) => m[1]);
+    return [...blankNonCode(src).matchAll(PROSE)].map((m) => m[1]);
 }
 
 /**
