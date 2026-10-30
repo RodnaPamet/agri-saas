@@ -11,6 +11,19 @@ export type PermissionSet = {
      * shows, not a separate privilege tier.
      */
     knowledge: { view: boolean };
+    /**
+     * «Документи» — the farm document library (#2495).
+     *
+     * Its own family rather than a reuse of `evidence.*`: the two hold
+     * different things, and sharing the flags would mean a change to evidence
+     * permissions silently changed who can read lease contracts.
+     *
+     * `manage` is the settings tier (retention period, Drive sync), not
+     * delete. Deleting is `upload` at the route plus an uploader-or-admin
+     * check in the usecase, because "may delete their OWN document" is not
+     * something a role flag can express.
+     */
+    documents: { view: boolean; upload: boolean; manage: boolean };
     admin: {
         view: boolean;
         manage: boolean;
@@ -66,6 +79,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     tasks: ['view', 'create', 'edit', 'assign'],
     reports: ['view', 'export'],
     knowledge: ['view'],
+    documents: ['view', 'upload', 'manage'],
     admin: ['view', 'manage', 'members', 'sso', 'scim', 'tenant_lifecycle', 'owner_management'],
 };
 
@@ -88,6 +102,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tasks: { view: true, create: true, edit: true, assign: true },
                 reports: { view: true, export: true },
                 knowledge: { view: true },
+                documents: { view: true, upload: true, manage: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     tenant_lifecycle: true, owner_management: true,
@@ -99,6 +114,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tasks: { view: true, create: true, edit: true, assign: true },
                 reports: { view: true, export: true },
                 knowledge: { view: true },
+                documents: { view: true, upload: true, manage: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     // Explicit false: ADMIN is NOT the tenant owner.
@@ -114,6 +130,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tasks: { view: true, create: true, edit: true, assign: true },
                 reports: { view: true, export: true },
                 knowledge: { view: true },
+                documents: { view: true, upload: true, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'AUDITOR':
@@ -125,6 +142,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 reports: { view: true, export: true },
                 knowledge: { view: true },
+                documents: { view: true, upload: false, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'MECHANISATOR':
@@ -144,6 +162,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Restricted persona — the same "opposite of READER" reasoning
                 // as every other domain above applies to the knowledge base.
                 knowledge: { view: false },
+                documents: { view: false, upload: false, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'READER':
@@ -153,6 +172,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 tasks: { view: true, create: false, edit: false, assign: false },
                 reports: { view: true, export: false },
                 knowledge: { view: true },
+                documents: { view: true, upload: false, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
     }

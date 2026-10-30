@@ -179,6 +179,10 @@ export const STORAGE_DOMAINS = [
     'spatial',
     'cost-invoice',
     'farm-media',
+    // «Документи» (#2495). The regex below interpolates this list, so adding
+    // a domain here keeps `parseTenantKey` able to read keys this module
+    // mints — the drift that bit `cost-invoice` cannot recur.
+    'documents',
 ] as const;
 
 export type StorageDomain = (typeof STORAGE_DOMAINS)[number];

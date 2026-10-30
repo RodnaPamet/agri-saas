@@ -34,6 +34,20 @@ const TENANT_API_DIR = path.join(REPO_ROOT, 'src/app/api/t/[tenantSlug]');
  * whose IMAGERY is being redistributed.
  */
 const DELIBERATELY_EXCLUDED: readonly string[] = [
+    // «Документи» (#2495 Decision 4). The library holds the farm's own
+    // contracts and, by design, lease agreements naming third parties —
+    // `ParcelLease.lessorName` is in `ENCRYPTED_FIELDS` for exactly that
+    // reason, and the persistent-SWR allowlist deliberately excludes
+    // `/leases` on the same grounds.
+    //
+    // Excluded rather than scoped because the question an API key answers is
+    // "may this machine client do routine work on my behalf", and a key that
+    // could read this surface would let an integration pull every lease
+    // contract a farm holds — with no person in the loop and no screen
+    // showing it happened. The refusal is already the behaviour
+    // (fail-closed); this records that it is a decision. Revisit only with
+    // an answer for whose consent a machine read carries.
+    'documents',
     // P6.1 (#1810). `PUT /farm-brand/publication` is the only route here, and
     // it is the act of making a real farm's identity public — a page that can
     // be shared, printed onto A6 paper and into a QR code (P6.7), and later
