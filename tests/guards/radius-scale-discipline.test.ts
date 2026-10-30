@@ -60,6 +60,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -93,6 +94,32 @@ const ALLOWLIST: AllowlistEntry[] = [
 ];
 
 const ALLOWED = new Set(ALLOWLIST.map((e) => e.file));
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * This was an inline recursive `walk` inside the `it()` below, so
+ * `selector-teeth` reported the file as having no module-level selector: there
+ * was nothing at module scope to mutate. The assertion is
+ * `expect(offenders).toEqual([])`, which an emptied walk satisfies for free.
+ *
+ * Migrated rather than hoisted. #2483's remedy is extraction so the auditor can
+ * gut the walk; `collectSourceFiles` is stronger because it REFUSES an empty
+ * result — the population cannot be empty rather than being emptied and caught.
+ * #865: "the guarantee moves from 'we mutated its collector and it noticed' to
+ * 'its collector cannot return empty'", and it expects the harness to then
+ * report the file NOT AUDITED, which is correct here.
+ *
+ * Population parity measured BEFORE the change: 868 files by the
+ * hand-rolled walk and by this call, zero difference either way.
+ * `DEFAULT_SKIP_DIRS` already covers the `node_modules` / `.next` skips.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.tsx'],
+    exclude: (rel) => ALLOWED.has(rel),
+    floor: 600,
+});
+
 const OFF_SCALE_RE = /\brounded-(xl|2xl|3xl)\b/;
 
 interface Offence {
@@ -119,33 +146,21 @@ describe('Radius scale discipline (Roadmap-5 PR-3)', () => {
 
     it('no .tsx file under src/ uses rounded-xl / rounded-2xl outside the allowlist', () => {
         const offenders: Offence[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const raw = fs.readFileSync(full, 'utf-8');
+            const stripped = blankNonCode(raw);
+            const lines = stripped.split('\n');
+            lines.forEach((line, i) => {
+                if (OFF_SCALE_RE.test(line)) {
+                    offenders.push({
+                        file: rel,
+                        line: i + 1,
+                        snippet: line.trim().slice(0, 200),
+                    });
                 }
-                if (!/\.tsx$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                if (ALLOWED.has(rel)) continue;
-                const raw = fs.readFileSync(full, 'utf-8');
-                const stripped = blankNonCode(raw);
-                const lines = stripped.split('\n');
-                lines.forEach((line, i) => {
-                    if (OFF_SCALE_RE.test(line)) {
-                        offenders.push({
-                            file: rel,
-                            line: i + 1,
-                            snippet: line.trim().slice(0, 200),
-                        });
-                    }
-                });
-            }
-        };
-        walk(path.join(ROOT, 'src'));
+            });
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)
