@@ -49,6 +49,34 @@ describe('PR-B TASK_DUE emit coverage', () => {
         read('src/app-layer/jobs/task-due-notification.ts');
 
     describe('1. The emit helper exists + is unique', () => {
+        /**
+         * The helper's source, bounded on its OWN closing brace at column 0.
+         *
+         * The three assertions below each sliced a fixed 1800-character window
+         * from the declaration. On 2026-10-30 an eight-line addition to the
+         * helper — the recipient-locale lookup, so a bell row is not written in
+         * English — left `logger.warn` starting at character 1795, FIVE
+         * characters short of that window. The slice ended mid-token, the
+         * assertion failed, and the property it checks still held perfectly:
+         * the catch and the log were both there.
+         *
+         * Worse than the false failure was where it pointed. Jest truncates a
+         * long "Received string", so the report showed only the signature,
+         * which reads like an extraction that found nothing rather than one
+         * that stopped five characters early.
+         *
+         * A window bounded on a magic number rather than on something the
+         * source HAS goes wrong silently as the source grows. The robust shape
+         * was already in this file, at the two extractions further down.
+         */
+        function emitHelperSource(src: string): string {
+            const start = src.indexOf('async function emitTaskDueNotification');
+            expect(start).toBeGreaterThan(-1);
+            const end = src.indexOf('\n}\n', start);
+            expect(end).toBeGreaterThan(start);
+            return src.slice(start, end);
+        }
+
         it('emitTaskDueNotification is defined exactly once in task.ts', () => {
             const s = taskSrc();
             const decls = s.match(/async function emitTaskDueNotification\b/g) ?? [];
@@ -57,16 +85,13 @@ describe('PR-B TASK_DUE emit coverage', () => {
 
         it('the helper calls createTaskDueNotification (shared with the cron)', () => {
             const s = taskSrc();
-            const start = s.indexOf('async function emitTaskDueNotification');
-            // Match a generous body window — the helper is ~40 lines.
-            const body = s.slice(start, start + 1800);
+            const body = emitHelperSource(s);
             expect(body).toMatch(/createTaskDueNotification\(/);
         });
 
         it('the helper runs in its own runInTenantContext (NOT the caller\'s tx)', () => {
             const s = taskSrc();
-            const start = s.indexOf('async function emitTaskDueNotification');
-            const body = s.slice(start, start + 1800);
+            const body = emitHelperSource(s);
             expect(body).toMatch(/runInTenantContext\(ctx,/);
         });
 
@@ -75,8 +100,7 @@ describe('PR-B TASK_DUE emit coverage', () => {
             // the caller — otherwise the task write would surface
             // a notification-system error to the user.
             const s = taskSrc();
-            const start = s.indexOf('async function emitTaskDueNotification');
-            const body = s.slice(start, start + 1800);
+            const body = emitHelperSource(s);
             expect(body).toMatch(/try \{/);
             expect(body).toMatch(/catch \(err\)/);
             expect(body).toMatch(/logger\.warn/);
