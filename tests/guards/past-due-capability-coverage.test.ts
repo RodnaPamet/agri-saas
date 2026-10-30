@@ -208,5 +208,27 @@ describe('§5 every upload-byte path carries the `upload` gate (#2030)', () => {
         for (const p of Object.keys(UPLOAD_WRITER_EXEMPT)) {
             expect(present.has(p)).toBe(true);
         }
+
+        // ...and say which SIDE of the ban each entry sits on — #2414.
+        //
+        // Existence is half the question. `FileRepository.ts` does NOT match
+        // `/FileRepository\.markStored\s*\(/`: it DEFINES `markStored`, and
+        // the scan looks for CALLS through the class. So the exemption excuses
+        // nothing today, which its own reason explains ("Defines `markStored`;
+        // it is the write primitive rather than an upload surface").
+        //
+        // Kept rather than deleted, because it is DEFENSIVE in the sense
+        // `no-secrets`' lockfile entries are: a future re-entrant
+        // `FileRepository.markStored(` inside this file would make it
+        // load-bearing immediately, and the reason records a design decision
+        // worth keeping. What was missing is this assertion — the entry's state
+        // is now PINNED, so it becoming load-bearing is a visible diff rather
+        // than a silent change of meaning.
+        for (const [p, reason] of Object.entries(UPLOAD_WRITER_EXEMPT)) {
+            const code = blankNonCode(readFileSync(join(ROOT, p), 'utf8'));
+            const calls = /FileRepository\.markStored\s*\(/.test(code);
+            expect({ p, calls, defensive: reason.length > 40 })
+                .toEqual({ p, calls: false, defensive: true });
+        }
     });
 });
