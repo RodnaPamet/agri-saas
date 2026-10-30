@@ -68,7 +68,21 @@ function makeTask(overrides: Partial<TaskRow> = {}): TaskRow {
 }
 
 function makeDb(tasks: TaskRow[], recipientLocale: 'en' | 'bg' = 'en') {
-    const findMany = jest.fn().mockResolvedValue(tasks);
+    // The job reads the recipient's language off the `assignee` relation on
+    // the query it already makes — not a second `user.findMany`, which would
+    // have needed an `if (tenantId)` gate that a read of the tenantless `User`
+    // table cannot honestly carry (`job-scope-audit`). So the locale is
+    // injected here, on the rows.
+    //
+    // 'en' by default so the English copy assertions below stay readable AND
+    // become a live check on the wiring: if the relation is ever dropped from
+    // the select, `resolveRecipientLocale(undefined)` answers `bg` and every
+    // one of them fails.
+    const findMany = jest
+        .fn()
+        .mockResolvedValue(
+            tasks.map((t) => ({ ...t, assignee: { uiLanguage: recipientLocale } })),
+        );
     // `createMany` + `skipDuplicates` → `{ count: 1 }` on insert,
     // `{ count: 0 }` when the dedupeKey already existed.
     const createMany = jest.fn().mockResolvedValue({ count: 1 });
@@ -82,23 +96,11 @@ function makeDb(tasks: TaskRow[], recipientLocale: 'en' | 'bg' = 'en') {
         async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
             where.dedupeKey.in.map((dedupeKey, i) => ({ id: `notif-${i + 1}`, dedupeKey })),
     );
-    // The job resolves each recipient's language in ONE batched query (the
-    // D1 guardrail bans a read inside the loop), so this seam has to exist or
-    // every notification falls back to `RECIPIENT_FALLBACK_LOCALE`.
-    //
-    // Answering 'en' is deliberate: it keeps the English copy assertions below
-    // meaningful AND makes them a live check on the lookup. If the batched
-    // query is ever dropped, the fallback is `bg` and every one of them fails
-    // — which is the regression this file should catch.
-    const userFindMany = jest
-        .fn()
-        .mockResolvedValue([{ id: 'user-1', uiLanguage: recipientLocale }]);
     const db = {
         task: { findMany },
-        user: { findMany: userFindMany },
         notification: { createMany, findMany: notificationFindMany },
     } as unknown as PrismaClient;
-    return { db, findMany, createMany, notificationFindMany, userFindMany };
+    return { db, findMany, createMany, notificationFindMany };
 }
 
 /** Last row payload passed to `notification.createMany`. */
@@ -338,15 +340,19 @@ describe('processTaskDueNotifications — notification creation', () => {
         // assertions elsewhere in this file cover the other branch; without
         // this one the suite would be green over a feature that only works
         // for the minority of users who chose English.
-        const { db, createMany, userFindMany } = makeDb(
+        const { db, createMany, findMany } = makeDb(
             [makeTask({ id: 't-tomorrow', key: null, dueAt: DUE_TOMORROW })],
             'bg',
         );
 
         await processTaskDueNotifications(db, { now: NOW });
 
-        // One batched lookup, not one per task — the D1 guardrail.
-        expect(userFindMany).toHaveBeenCalledTimes(1);
+        // ONE query for the whole run: the locale rides the task select, so
+        // there is no per-recipient lookup to be an N+1.
+        expect(findMany).toHaveBeenCalledTimes(1);
+        expect(findMany.mock.calls[0][0].select).toMatchObject({
+            assignee: { select: { uiLanguage: true } },
+        });
         const data = lastCreateData(createMany);
         expect(data.title).toBe('Задача с краен срок утре');
         expect(data.message).toBe('"Rotate API keys" е с краен срок утре.');

@@ -105,7 +105,13 @@ describeFn('task-due-notification (integration)', () => {
         expect(notifs[0]).toMatchObject({
             userId: user.id,
             type: 'TASK_DUE',
-            title: 'Task due today',
+            // BULGARIAN, through a real database, and that is the point: this
+            // user is created by the factory with no explicit `uiLanguage`, so
+            // the column's own `@default("bg")` applies — which is the path
+            // almost every real recipient takes. The unit suite covers the
+            // 'en' branch with an injected locale; only this one proves the
+            // DEFAULT reaches the rendered row.
+            title: 'Задача с краен срок днес',
             linkUrl: `/t/${tenant.slug}/farm-tasks/${task.id}`,
             read: false,
         });
