@@ -46,9 +46,16 @@
  *
  * ## Localised, unlike its siblings
  *
- * `assignment.ts` and `task-due.ts` hold English literals. This follows
- * `jobs/push-summary.ts` instead and goes through `translateFor`, because the
- * product is Bulgarian and new prose should not add to that debt.
+ * This follows `jobs/push-summary.ts` and goes through `translateFor`, because
+ * the product is Bulgarian and new prose should not add to that debt.
+ *
+ * `assignment.ts` and `task-due.ts` held English literals when this was
+ * written and no longer do — they were brought through `translateFor` by the
+ * fix for the owner's "notifications are in English" report. `agro.ts` is
+ * still English and is tracked on #2490, where the blocker is that its body
+ * interpolates a pre-rendered English sentence (`spray.reasons[0]`) rather
+ * than a descriptor, so translating it at this layer alone would ship a
+ * Bulgarian sentence with an English clause inside it.
  *
  * Two copy keys per kind rather than one ICU plural: `translateFor`'s
  * interpolation is a plain `{name}` replacement and does not evaluate

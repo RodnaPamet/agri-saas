@@ -36,6 +36,7 @@ import {
     createTaskDueNotification,
     type TaskDueWindow,
 } from '../notifications/task-due';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 
 // Re-export the shared surface so existing importers (tests, the
 // executor registry) keep resolving it from this module.
@@ -127,6 +128,16 @@ export async function processTaskDueNotifications(
             key: true,
             dueAt: true,
             assigneeUserId: true,
+            // The recipient's language, on the query that already runs.
+            //
+            // This was a second `user.findMany` keyed on the distinct assignee
+            // ids. That was correct and still worse: `job-scope-audit` requires
+            // every `findMany` in a job to carry an `if (tenantId)` gate, and a
+            // read of the tenantless `User` table cannot honestly have one —
+            // so satisfying it would have meant either a meaningless gate or
+            // loosening an audit that exists to catch an unscoped scan. The
+            // relation removes the question by removing the query.
+            assignee: { select: { uiLanguage: true } },
             tenant: { select: { slug: true } },
         },
         orderBy: { dueAt: 'asc' },
@@ -151,6 +162,10 @@ export async function processTaskDueNotifications(
                 key: task.key,
                 dueAt: task.dueAt,
                 assigneeUserId: task.assigneeUserId,
+                // An assignee the relation could not load falls back rather
+                // than throwing; `resolveRecipientLocale` answers `bg`, which
+                // is what the column's own default would have given us.
+                locale: resolveRecipientLocale(task.assignee?.uiLanguage),
             },
             now,
             tz,

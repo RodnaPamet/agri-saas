@@ -177,16 +177,22 @@ export async function updateAsset(ctx: RequestContext, id: string, data: any) {
     if (newOwnerId && newOwnerId !== previousOwnerId && ctx.tenantSlug) {
         const tenantSlug = ctx.tenantSlug;
         try {
-            await runInTenantContext(ctx, (db) =>
-                createAssignmentNotification(db, 'ASSET_ASSIGNED', {
+            await runInTenantContext(ctx, async (db) => {
+                // The new OWNER's language — the bell row is rendered once here.
+                const owner = await db.user.findUnique({
+                    where: { id: newOwnerId },
+                    select: { uiLanguage: true },
+                });
+                return createAssignmentNotification(db, 'ASSET_ASSIGNED', {
                     tenantId: ctx.tenantId,
                     assigneeUserId: newOwnerId,
                     entityId: id,
                     entityLabel: updated.name ?? '(untitled)',
                     entityKey: null,
                     tenantSlug,
-                }),
-            );
+                    locale: resolveRecipientLocale(owner?.uiLanguage),
+                });
+            });
         } catch (err) {
             logger.warn('failed to create asset-assigned notification', {
                 component: 'notifications',
@@ -270,6 +276,7 @@ export async function bulkDeleteAsset(
 
 import { restoreEntity, purgeEntity } from './soft-delete-operations';
 import { withDeleted } from '@/lib/soft-delete';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 
 export async function restoreAsset(ctx: RequestContext, id: string) {
     return restoreEntity(ctx, 'Asset', id);

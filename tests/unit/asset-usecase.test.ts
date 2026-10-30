@@ -22,6 +22,13 @@
  */
 
 const mockDb = {
+    // The ASSET_ASSIGNED bell row is rendered once, at creation, in the NEW
+    // OWNER's language — so the usecase reads their `uiLanguage` before
+    // writing it. Without this seam that read throws, the fire-and-forget
+    // catch swallows it, and the notification is simply never created: the
+    // assertion that failed read "expected 1 call, received 0", which points
+    // at the notification rather than at the mock.
+    user: { findUnique: jest.fn(async () => ({ uiLanguage: 'bg' })) },
     asset: { findFirst: jest.fn(), findMany: jest.fn() },
     evidence: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     // B7 — listAssets now folds in WorkItemRepository.countLinkedToEntities

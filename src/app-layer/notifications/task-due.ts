@@ -39,6 +39,10 @@
  *   three notifications (7d → 1d → 0d).
  */
 import type { PrismaClient } from '@prisma/client';
+
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
+
 import { publishFreshNotifications } from './publish-fresh';
 
 /** ms in a UTC day. */
@@ -50,10 +54,10 @@ export type TaskDueWindow = 'week' | 'day' | 'today';
 interface WindowCopy {
     /** Integer calendar days (in the active tz) from now to `dueAt` that triggers it. */
     days: number;
-    /** Bell title line. */
-    title: string;
-    /** Sentence fragment — "<task label> <phrase>." */
-    phrase: string;
+    /** Copy key for the bell title line, resolved per recipient. */
+    titleKey: string;
+    /** Copy key for the body; takes a `{label}` parameter. */
+    bodyKey: string;
 }
 
 /**
@@ -62,9 +66,21 @@ interface WindowCopy {
  * the human copy.
  */
 export const TASK_DUE_WINDOWS: Record<TaskDueWindow, WindowCopy> = {
-    week: { days: 7, title: 'Task due in one week', phrase: 'is due in one week' },
-    day: { days: 1, title: 'Task due tomorrow', phrase: 'is due tomorrow' },
-    today: { days: 0, title: 'Task due today', phrase: 'is due today' },
+    week: {
+        days: 7,
+        titleKey: 'notifications.taskDue.week.title',
+        bodyKey: 'notifications.taskDue.week.body',
+    },
+    day: {
+        days: 1,
+        titleKey: 'notifications.taskDue.day.title',
+        bodyKey: 'notifications.taskDue.day.body',
+    },
+    today: {
+        days: 0,
+        titleKey: 'notifications.taskDue.today.title',
+        bodyKey: 'notifications.taskDue.today.body',
+    },
 };
 
 /** UTC midnight of the given instant. */
@@ -139,6 +155,13 @@ export interface TaskDueTarget {
     key?: string | null;
     dueAt: Date;
     assigneeUserId: string;
+    /**
+     * The RECIPIENT's language, resolved by the caller. Required, not
+     * defaulted — see `AssignmentTarget.locale` for the reasoning; the row
+     * stores rendered text, so an omitted locale is silently wrong rather
+     * than loudly missing.
+     */
+    locale: Locale;
 }
 
 export interface TaskDueNotificationOutcome {
@@ -177,8 +200,12 @@ export async function createTaskDueNotification(
         tenantId: task.tenantId,
         userId: task.assigneeUserId,
         type: 'TASK_DUE' as const,
-        title: copy.title,
-        message: `${label} ${copy.phrase}.`,
+        title: await translateFor(task.locale, copy.titleKey),
+        // The full sentence is one key rather than "<label> <phrase>." built
+        // here: Bulgarian puts the copula and the deadline in an order the
+        // English fragment cannot express, so a shared fragment would have
+        // forced a calque.
+        message: await translateFor(task.locale, copy.bodyKey, { label }),
         linkUrl: `/t/${task.tenantSlug}/farm-tasks/${task.id}`,
         dedupeKey: buildTaskDueDedupeKey(
             task.tenantId,

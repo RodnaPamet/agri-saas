@@ -75,6 +75,9 @@ function makeTarget(overrides: Partial<AssignmentTarget> = {}): AssignmentTarget
         entityLabel: 'Patch the firewall',
         entityKey: 'T-42',
         tenantSlug: 'acme',
+        // English so the copy assertions in this file stay readable; the
+        // Bulgarian rendering is pinned separately below.
+        locale: 'en' as const,
         ...overrides,
     };
 }
@@ -174,6 +177,34 @@ describe('createAssignmentNotification', () => {
         expect(row.message).toContain('"Patch firewall"');
     });
 
+    it('renders in the RECIPIENT\'s language, with Bulgarian gender agreement', async () => {
+        // The reason TASK_ASSIGNED and ASSET_ASSIGNED carry separate body keys
+        // rather than one shared "is now yours": Bulgarian agrees the
+        // possessive with the noun's gender. задача is feminine and актив is
+        // masculine, so one shared string cannot be correct for both — and
+        // English collapses them to "yours", which is exactly how a shared
+        // key would have hidden it.
+        createManyMock.mockResolvedValue({ count: 1 });
+
+        await createAssignmentNotification(
+            db as never,
+            'TASK_ASSIGNED',
+            makeTarget({ locale: 'bg' }),
+        );
+        const taskRow = createManyMock.mock.calls[0][0].data[0];
+        expect(taskRow.title).toBe('Възложена Ви е задача');
+        expect(taskRow.message).toBe('T-42 "Patch the firewall" вече е Ваша.');
+
+        await createAssignmentNotification(
+            db as never,
+            'ASSET_ASSIGNED',
+            makeTarget({ locale: 'bg' }),
+        );
+        const assetRow = createManyMock.mock.calls[1][0].data[0];
+        expect(assetRow.title).toBe('Възложен Ви е актив');
+        expect(assetRow.message).toBe('T-42 "Patch the firewall" вече е Ваш.');
+    });
+
     it('falls back to just `"entityLabel"` when key is null', async () => {
         createManyMock.mockResolvedValueOnce({ count: 1 });
         await createAssignmentNotification(
@@ -232,6 +263,7 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
                 entityLabel: 'Test task',
                 entityKey: 'T-1',
                 tenantSlug: 'acme',
+                locale: 'bg',
             },
             new Date('2026-05-28T12:00:00Z'),
         );
@@ -287,6 +319,7 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
                 entityLabel: 'Test',
                 entityKey: null,
                 tenantSlug: 'acme',
+                locale: 'bg',
             },
         );
         expect(result.status).toBe('duplicate');
@@ -328,6 +361,7 @@ describe('createAssignmentNotification — SSE publish (2026-05-28 follow-up)', 
                 entityLabel: 'Some asset',
                 entityKey: 'A-1',
                 tenantSlug: 'acme',
+                locale: 'bg',
             },
         );
 
