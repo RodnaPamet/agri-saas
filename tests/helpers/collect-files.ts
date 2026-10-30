@@ -49,7 +49,35 @@ import * as path from 'path';
 
 export const REPO_ROOT = path.resolve(__dirname, '../..');
 
-/** Directories never worth walking into. */
+/**
+ * Directories never worth walking into — BY NAME, and that has already cost an
+ * incident once.
+ *
+ * `coverage` and `dist` are build artefacts at the repo root AND perfectly
+ * ordinary domain words. The identical list in `scripts/lib/api-routes.ts` hid
+ * `GET /api/t/{tenantSlug}/ortho/coverage` from the route inventory and from
+ * `openapi-paths-complete` while it served traffic (#2421); the fix there
+ * replaced the names with Next's own structural rule (`.`/`_` prefix). This
+ * list cannot do the same, because `node_modules` is not structurally
+ * distinguishable from a source directory.
+ *
+ * So the hazard is live here. Measured 2026-10-31: TWO real directories under
+ * the roots callers walk collide with a name on this list —
+ * `src/app/api/t/[tenantSlug]/ortho/coverage` (1 `.ts`, a real route) and
+ * `tests/fixtures/coverage` (1 `.ts`, a deliberate fixture) — and 92 guard
+ * files include `.ts` and rely on these defaults, against 2 that pass an
+ * explicit `skipDirs`.
+ *
+ * IF YOUR GUARD INCLUDES `.ts` AND WALKS `src`, pass `skipDirs` explicitly.
+ * `animation-vocabulary` does, and says why at the call site; it is the one
+ * guard whose parity check caught the drop (2291 vs 2290).
+ *
+ * The list is deliberately NOT narrowed: dropping `coverage` would newly expose
+ * that fixture to the three guards walking the `tests` root, and a fixture is
+ * written to contain the patterns guards ban. New collisions are made loud by
+ * `tests/guards/skip-dir-names-do-not-collide-with-source.test.ts` rather than
+ * prevented by a default change nobody measured.
+ */
 const DEFAULT_SKIP_DIRS: readonly string[] = ['node_modules', '.next', 'dist', 'coverage', '.git'];
 
 export interface CollectOptions {
@@ -57,7 +85,13 @@ export interface CollectOptions {
     roots: readonly string[];
     /** File extensions to keep, with the dot. Default `.ts` + `.tsx`. */
     extensions?: readonly string[];
-    /** Directory names to skip. Replaces the default when given. */
+    /**
+     * Directory names to skip. REPLACES the default when given.
+     *
+     * Pass this whenever `extensions` includes `.ts` and a root is `src` — see
+     * the note on `DEFAULT_SKIP_DIRS`, which excludes `coverage` and `dist` by
+     * NAME and so hides a real API route from anyone taking the defaults.
+     */
     skipDirs?: readonly string[];
     /** Drop a file by its repo-relative path. */
     exclude?: (relativePath: string) => boolean;
