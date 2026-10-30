@@ -54,7 +54,10 @@ function grepFiles(pattern: RegExp, dir: string, extensions: string[]): { file: 
 }
 
 // Allowed files that contain legacy Issue references as shims/compatibility wrappers
-const ALLOWED_LEGACY_FILES = [
+// Annotated explicitly: the list is EMPTY, and an empty array literal infers
+// `any[]` under noImplicitAny — `tsc` reported TS7034/TS7005 three times once
+// the last entry went. The single entry used to supply the type for free.
+const ALLOWED_LEGACY_FILES: readonly string[] = [
     // The other four entries (`repositories/IssueRepository.ts`,
     // `repositories/EvidenceBundleRepository.ts`, `usecases/issue.ts`,
     // `policies/issue.policies.ts`) were deleted by #1479. This list is
@@ -81,9 +84,20 @@ export function isAllowedIn(list: readonly string[], file: string): boolean {
     return list.some(allowed => file.replace(/\\/g, '/').endsWith(allowed));
 }
 
-function isAllowed(file: string): boolean {
-    return isAllowedIn(ALLOWED_LEGACY_FILES, file);
-}
+// NO `isAllowed(file)` ADAPTER — #2377 names this trap about its own author:
+//
+//   "making the predicate pure and testing the pure version is not enough. My
+//    first attempt kept one-line adapters over the pure predicates, and
+//    selector-teeth reported the same selector dead a SECOND time — the wrapper
+//    was ungraded ... The adapters were removed rather than wrapped in more
+//    tests."
+//
+// I wrote exactly that adapter and selector-teeth reported it on the next run:
+// `isAllowed() -> return false SURVIVED`. With the list empty the real
+// implementation already returns false for every input, so the gut is a no-op
+// and the wrapper cannot be graded at all. Call sites use `isAllowedIn` with
+// the list passed explicitly, which IS graded — gutting it fails the synthetic
+// control below.
 
 describe('Issue → Task Migration Guardrails', () => {
     test('[issue-guards] grepFiles can actually find a pattern — the control', () => {
@@ -108,12 +122,12 @@ describe('Issue → Task Migration Guardrails', () => {
         expect(exports.every((h) => h.file.endsWith('.ts') || h.file.endsWith('.tsx'))).toBe(true);
     });
 
-    test('[issue-guards] isAllowed excludes the allowlist and NOTHING else', () => {
-        // The more dangerous of the two. `isAllowed` is only ever reached via
-        // `.filter(h => !isAllowed(h.file))`, and `hits` is empty today — so
+    test('[issue-guards] isAllowedIn excludes the allowlist and NOTHING else', () => {
+        // The more dangerous of the two. `isAllowedIn` is only ever reached via
+        // `.filter(h => !isAllowedIn(ALLOWED_LEGACY_FILES, h.file))`, and `hits` is empty today — so
         // the filter never calls it and any constant survives.
         //
-        // A TRUTHY constant is the one that matters: `isAllowed` returning
+        // A TRUTHY constant is the one that matters: `isAllowedIn` returning
         // true for everything would filter out every violation, and all three
         // tests below would report zero hits no matter what the codebase
         // contained. The allowlist would have become a universal exemption
@@ -139,7 +153,7 @@ describe('Issue → Task Migration Guardrails', () => {
             'other/events/audits.ts',     // plural, must not match
             '',
         ]) {
-            expect({ notAllowed, isAllowed: isAllowed(notAllowed) })
+            expect({ notAllowed, isAllowed: isAllowedIn(ALLOWED_LEGACY_FILES, notAllowed) })
                 .toEqual({ notAllowed, isAllowed: false });
         }
     });
@@ -152,7 +166,7 @@ describe('Issue → Task Migration Guardrails', () => {
 
     test('No code references db.issue (raw Prisma Issue model access)', () => {
         const hits = grepFiles(/\bdb\.issue\b(?!s)/, SRC_DIR, ['.ts', '.tsx'])
-            .filter(h => !isAllowed(h.file));
+            .filter(h => !isAllowedIn(ALLOWED_LEGACY_FILES, h.file));
         if (hits.length > 0) {
             const summary = hits.map(h => `  ${h.file}:${h.line}  ${h.content}`).join('\n');
             fail(`Found ${hits.length} references to db.issue (should use db.task):\n${summary}`);
@@ -161,7 +175,7 @@ describe('Issue → Task Migration Guardrails', () => {
 
     test('No code references db.issueLink/db.issueComment/db.issueWatcher', () => {
         const hits = grepFiles(/\bdb\.(issueLink|issueComment|issueWatcher|issueEvidenceBundle)\b/, SRC_DIR, ['.ts', '.tsx'])
-            .filter(h => !isAllowed(h.file));
+            .filter(h => !isAllowedIn(ALLOWED_LEGACY_FILES, h.file));
         if (hits.length > 0) {
             const summary = hits.map(h => `  ${h.file}:${h.line}  ${h.content}`).join('\n');
             fail(`Found references to legacy Issue sub-models:\n${summary}`);
