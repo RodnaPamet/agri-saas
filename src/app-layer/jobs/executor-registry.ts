@@ -573,6 +573,21 @@ executorRegistry.register('mail-canary', async (payload) => {
     const startMs = performance.now();
     const { runMailCanary } = await import('./mail-canary');
     const r = await runMailCanary({ to: payload.to });
+
+    // #2467 — the durable record, written here rather than inside
+    // `runMailCanary` so that module keeps no Redis dependency, and written
+    // for EVERY outcome rather than only `SENT`: a canary that has been
+    // skipping for a week must read differently from one that has been
+    // flying, and that is the distinction the job's own docblock is built
+    // around. Awaited but never throwing — see `recordMailCanaryRun`. BullMQ
+    // already retains this result, but `removeOnComplete` on `inflect-jobs`
+    // is a count of 500 against ~71 scheduled completions an hour, so that
+    // copy survives ~7h against a 6h period: a race, not a record.
+    const { getRedis } = await import('@/lib/redis');
+    const { recordMailCanaryRun } = await import('@/lib/email/mail-canary-record');
+    const redis = getRedis();
+    if (redis) await recordMailCanaryRun(redis, r);
+
     // scanned = 1 (one send path checked), actioned = 1 only when a real
     // transport accepted it. So the job's own telemetry distinguishes "the
     // canary ran" from "the canary flew", which a single success counter

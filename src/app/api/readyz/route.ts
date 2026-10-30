@@ -53,8 +53,19 @@
  *                                            // NOT safely rotatable (P1.1)
  *       "featureFlags": { "state": "complete" | "incomplete" | "unknown",
  *                         "missingRows": string[], "referenced": N,
- *                         "orphanRows": N }  // a referenced key with no row is
- *                                            // a surface off for everybody
+ *                         "orphanRows": N },  // a referenced key with no row is
+ *                                             // a surface off for everybody
+ *       "mailCanary": { "state": "ok" | "not_sending" | "stale"
+ *                                | "never_recorded" | "unknown",
+ *                       "outcome": "SENT" | "SKIPPED_NO_RECIPIENT"
+ *                                | "NOT_CONFIGURED" | "FAILED" | null,
+ *                       "lastRunAt": "..." | null, "ageMinutes": N | null,
+ *                       "expectedEveryMinutes": N, "staleAfterMinutes": N }
+ *                       // #2467 — the canary's only record used to be a
+ *                       // container log erased ~15x a day, so `stale` is the
+ *                       // state that was previously unobservable. Carries no
+ *                       // recipient and no provider error text: this endpoint
+ *                       // is probed unauthenticated from six regions.
  *     },
  *     "latencyMs": N           // total probe time
  *   }
@@ -78,6 +89,7 @@ import { isLookupKeyPinned } from '@/lib/security/encryption';
 import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { platformConsoleCapability } from '@/lib/auth/platform-console-capability';
 import { featureFlagsCapability } from '@/lib/feature-flags-capability';
+import { mailCanaryCapability } from '@/lib/email/mail-canary-capability';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
 import { logger } from '@/lib/observability/logger';
@@ -340,6 +352,13 @@ export async function GET() {
     // the raw client is also the right one.
     const featureFlags = await featureFlagsCapability(prisma);
 
+    // #2467 — WATCHED, not gated, like every sibling in `capabilities`: a
+    // canary that missed a run must never 503 the probe the GCP uptime check
+    // reads. The client is the one `getRedis` already hands this route for
+    // `checks.redis`; `null` when Redis is unconfigured, which the capability
+    // reports as `unknown` rather than inventing a mail problem.
+    const mailCanary = await mailCanaryCapability(getRedis ? getRedis() : null);
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -364,7 +383,15 @@ export async function GET() {
             version: process.env.BUILD_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'dev',
             checks,
             failed,
-            capabilities: { satellite, basemap, email, lookupKey, platformConsole, featureFlags },
+            capabilities: {
+                satellite,
+                basemap,
+                email,
+                lookupKey,
+                platformConsole,
+                featureFlags,
+                mailCanary,
+            },
             latencyMs: Date.now() - start,
         },
         { status: allOk ? 200 : 503 },
