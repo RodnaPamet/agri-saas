@@ -21,9 +21,18 @@
  *
  * What this ratchet locks
  *
- *   `shadow-{sm|md|lg|xl|2xl}` and `drop-shadow-*` may only
- *   appear in the documented allowlist below. Each entry has a
- *   written reason matching the surface's role:
+ *   `shadow-{sm|md|lg|xl|2xl}` and `drop-shadow-{sm|md|lg|xl|2xl}`
+ *   may only appear in the documented allowlist below. Each entry
+ *   has a written reason matching the surface's role:
+ *
+ *   This read `drop-shadow-*`, which overstates the regex: the
+ *   SIZE list binds both prefixes, so an arbitrary-value
+ *   `drop-shadow-[...]` is out of scope. One use exists —
+ *   `icons/dub-crafted-shield.tsx`'s `drop-shadow-[0_1px_1px_#0004]`
+ *   — and it is inside icon artwork rather than on a page surface,
+ *   so the scope is right and the sentence was wrong. Nine
+ *   `shadow-[...]` uses are likewise out of scope; they are hairline
+ *   inset rings, not elevation.
  *
  *     - Floating overlay primitives (Modal, Sheet, Popover,
  *       Tooltip, Command palette, Undo toast).
@@ -40,6 +49,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertAllowlistIsLive } from '../helpers/assert-allowlist-is-live';
 import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -50,14 +60,6 @@ interface AllowlistEntry {
 }
 
 const ALLOWLIST: AllowlistEntry[] = [
-    {
-        file: 'src/components/ui/modal.tsx',
-        reason: 'Modal floats above the page; shadow communicates lift.',
-    },
-    {
-        file: 'src/components/ui/sheet.tsx',
-        reason: 'Sheet floats above the page; shadow communicates lift.',
-    },
     {
         file: 'src/components/ui/fab.tsx',
         reason: 'mobile-forms PR-3 — the FAB is a floating action button (Material elevation); shadow-lg communicates its lift above the page + bottom-tab bar.',
@@ -83,24 +85,12 @@ const ALLOWLIST: AllowlistEntry[] = [
         reason: 'R31 Bundle 8 — canvas-local command palette inherits the same shadow-2xl lift as the app-wide palette. Floating dialog over the canvas plane needs the same topmost emphasis.',
     },
     {
-        file: 'src/components/ui/undo-toast.tsx',
-        reason: 'Undo toast is a floating notification; shadow communicates lift.',
-    },
-    {
         file: 'src/components/ui/switch.tsx',
         reason: 'Switch thumb shadow communicates depth on the moving element — sliding without depth reads as flat.',
     },
     {
         file: 'src/components/ui/charts/interaction.tsx',
         reason: 'Chart tooltip floats above the chart canvas; shadow communicates lift.',
-    },
-    {
-        file: 'src/components/ui/charts/funnel-chart.tsx',
-        reason: 'Funnel chart tooltip floats above the canvas; shadow communicates lift.',
-    },
-    {
-        file: 'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx',
-        reason: 'Hand-rolled overflow menu floats above the row; shadow communicates lift. Future PR may migrate to Popover.',
     },
     {
         file: 'src/components/ui/hooks/use-pull-to-refresh.tsx',
@@ -122,17 +112,29 @@ interface Offence {
 }
 
 describe('Shadow discipline (Roadmap-5 PR-4)', () => {
-    it('every allowlisted file still exists', () => {
-        const stale: string[] = [];
-        for (const e of ALLOWLIST) {
-            if (!fs.existsSync(path.join(ROOT, e.file))) stale.push(e.file);
-        }
-        if (stale.length > 0) {
-            throw new Error(
-                `Allowlist entries no longer reference real files:\n  ${stale.join('\n  ')}`,
-            );
-        }
-        expect(stale).toEqual([]);
+    it('[shadow-discipline] every allowlisted file still uses a banned shadow', () => {
+        // Was an EXISTENCE check only, which cannot tell an exemption that is
+        // doing its job from one that excuses a file already clean (#2414).
+        //
+        // Five of the fifteen entries were the second kind. Each file had
+        // migrated its elevation into a composed primitive exactly as this
+        // ratchet wanted — `modal.tsx` and `undo-toast.tsx` now mention the
+        // word only in a comment reading "the class provides bg, border, and
+        // shadow" — and nobody removed the entry, so the list claimed five
+        // accepted violations that no longer existed. They are deleted here;
+        // this check is what stops the next five accumulating.
+        const report = assertAllowlistIsLive({
+            label: 'shadow-discipline ALLOWLIST',
+            entries: ALLOWLIST.map((e) => e.file),
+            // The SAME transform the scan below applies, line by line.
+            blankOptions: {},
+            violates: (code) => code.split('\n').some((line) => SHADOW_RE.test(line)),
+        });
+        console.log(
+            `[shadow-discipline] ${report.live.length} of ${ALLOWLIST.length} allowlisted file(s) `
+                + 'still use a banned shadow utility',
+        );
+        expect(report.live.length).toBe(ALLOWLIST.length);
     });
 
     it('no .tsx file under src/ uses shadow-* outside the allowlist', () => {
