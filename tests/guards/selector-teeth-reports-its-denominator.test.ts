@@ -24,16 +24,27 @@
  *     429  have module-level selectors
  *     188  have NONE
  *
- * By 2026-10-27 the real numbers were **829 / 614 / 215**, and nothing had
- * noticed, because the figure lived in a comment and comments do not re-measure
+ * By 2026-10-27 the real numbers were 829 / 614 / 215, and nothing had noticed,
+ * because the figure lived in a comment and comments do not re-measure
  * themselves. A quoted measurement rots exactly this way — see
- * `a-number-that-does-not-move`.
+ * `a-number-that-does-not-move`. **It rotted a second time**: by 2026-10-30 the
+ * file count had moved again, which is why no figure is quoted in this prose
+ * any more. The only number written down is `UNAUDITABLE_CEILING` below, and it
+ * is enforced, so it cannot drift quietly.
  *
- * So the last test in this file derives it and PRINTS it on every run. The point
- * is reporting, not ratcheting: it deliberately does not fail when the count
- * grows, because deciding what to do about 215 unauditable guards (#2423) needs
- * the number in front of someone first, and a floor chosen before that
- * conversation would be a number nobody chose.
+ * ## The no-ratchet stance has ended, deliberately
+ *
+ * This docblock used to say the point was "reporting, not ratcheting", because
+ * "a floor chosen before that conversation would be a number nobody chose".
+ * That was right, and the conversation has now happened: #2423 put the measured
+ * population and the shape distribution in front of the owner, who chose to
+ * extend `selectorsIn` to describe level and to floor the remainder. So there is
+ * now a ceiling, and it is a number somebody chose.
+ *
+ * `selectorsIn` was extended in the same change (#2423): a function declared at
+ * DESCRIBE level is shared setup and is now audited, while one inside `it()` is
+ * an assertion and is still not. That moved 11 files out of the unauditable set
+ * — verified additive, zero previously-found selectors lost or moved.
  *
  * Every assertion here drives the REAL tool — `selectorsIn` for the count, and
  * the CLI itself for the message. A test that restated the rule in its own
@@ -46,6 +57,35 @@ import { pathToFileURL } from 'url';
 import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
+
+/**
+ * The most guard files allowed to have NO auditable selector — #2423.
+ *
+ * Measured on 2026-10-30 after `selectorsIn` gained describe-level reach, over
+ * the SAME four roots the audit itself uses — guards, guardrails, contracts,
+ * regression: 839 files, 636 auditable holding 1,498 selectors, **203** with
+ * none. The ceiling is that 203, not a round number above it, because slack in
+ * a floor is room for the thing it exists to prevent.
+ *
+ * The four-root population is load-bearing and was got wrong once while writing
+ * this: a hand-rolled walk over `tests/guards` + `tests/guardrails` alone gives
+ * 827/627/200, and a ceiling of 200 fails immediately against the real 203.
+ * Derive the population from `collectSourceFiles` with the audit's own roots,
+ * never from a convenient subset.
+ *
+ * Of those 203, measured on the same population:
+ *
+ *    28  have a named function but only inside `it()`, reachable only by the
+ *        variant this design rejects as noise
+ *   175  have NO named function at all — they assert directly, so there is
+ *        nothing for a mutation technique to gut and no tool change reaches them
+ *
+ * Lowering this number therefore means extracting a named selector in those
+ * guards, which is the restructuring #2423 names rather than a tool fix. Do not
+ * read the ceiling as a backlog the auditor can work off.
+ */
+const UNAUDITABLE_CEILING = 203;
+
 const TOOL = path.join(ROOT, 'scripts/selector-teeth.mjs');
 
 /**
@@ -145,14 +185,55 @@ describe('selectorsIn — the denominator', () => {
         expect(selectorNamesOfSource(src)).toEqual([]);
     });
 
-    it('does not mutate a function declared inside describe()', () => {
+    it('DOES count a function declared at describe() level', () => {
+        // CHANGED BY #2423, and the inversion is the point. This used to assert
+        // `[]` — the walk stopped at `sourceFile.statements`, so a `describe`-level
+        // helper was invisible and a guard whose only selecting happened there was
+        // reported NOT AUDITED. Measured at the time: 827 guard files, 211 of them
+        // unauditable, and 11 were this exact shape.
+        //
+        // A describe-level declaration is shared SETUP — the `walk`, the `read`,
+        // the thing every `it` in the block asserts over — so gutting it is the
+        // question this tool exists to ask. The test below keeps the other half:
+        // inside `it()` is an assertion, and that is still not mutated.
         const src = [
             'describe("d", () => {',
             '    function helper() { return []; }',
             '    it("t", () => { expect(helper()).toEqual([]); });',
             '});',
         ].join('\n');
+        expect(selectorNamesOfSource(src)).toEqual(['helper']);
+    });
+
+    it('still does NOT count a function declared inside it()', () => {
+        // The boundary, asserted rather than assumed. #2423 measured the
+        // alternative: recursing into `it()` bodies too would have reached 27
+        // more files and created 84 mutation targets inside assertions, which
+        // the tool's own rationale calls noise. Not taken, so this must stay
+        // empty — it is the only thing distinguishing the two designs.
+        const src = [
+            'describe("d", () => {',
+            '    it("t", () => {',
+            '        const helper = () => [];',
+            '        expect(helper()).toEqual([]);',
+            '    });',
+            '});',
+        ].join('\n');
         expect(selectorNamesOfSource(src)).toEqual([]);
+    });
+
+    it('a describe-level selector is found even when nested two blocks deep', () => {
+        // `describe` inside `describe` is common in this suite, and a walk that
+        // only went one level down would miss it while looking like it worked.
+        const src = [
+            'describe("outer", () => {',
+            '    describe("inner", () => {',
+            '        const walk = () => [];',
+            '        it("t", () => { expect(walk()).toEqual([]); });',
+            '    });',
+            '});',
+        ].join('\n');
+        expect(selectorNamesOfSource(src)).toEqual(['walk']);
     });
 });
 
@@ -350,11 +431,38 @@ describe('what the audit cannot reach, computed rather than quoted (#2423)', () 
         expect(selectors).toBeGreaterThanOrEqual(800);
 
         // And the unreachable set must be NON-EMPTY, which is the uncomfortable
-        // half: 215 files have no module-level selectors today, so a zero here
-        // means the counting broke rather than that the debt was paid. When it
-        // is genuinely paid this assertion is what has to be deleted, and
-        // deleting it is a decision somebody makes in a diff.
+        // half: the debt is real today, so a zero here means the counting broke
+        // rather than that it was paid. The size lives in
+        // `UNAUDITABLE_CEILING`, not in this comment — the figure that used to
+        // sit here rotted twice. When the debt is genuinely paid this assertion
+        // is what has to be deleted, and deleting it is a decision somebody
+        // makes in a diff.
         expect(unreachable.length).toBeGreaterThan(0);
+
+        // THE RATCHET (#2423). The set may shrink freely; it may not grow.
+        //
+        // A new guard that does all its selecting inline adds a file nothing can
+        // audit, and the old `::warning::`-shaped reporting meant that landed
+        // green. Lowering this is the expected direction of travel and needs no
+        // ceremony beyond the diff; RAISING it is a decision to make the audit
+        // reach less of the repo, which should cost an argument.
+        if (unreachable.length > UNAUDITABLE_CEILING) {
+            throw new Error(
+                `${unreachable.length} guard files have no auditable selector, above the `
+                    + `ceiling of ${UNAUDITABLE_CEILING}.\n\n`
+                    + `A guard whose selecting happens inline inside it() cannot be `
+                    + `mutation-audited, so it passes whether or not it selects anything. `
+                    + `Extract the selection into a named helper at module or describe `
+                    + `level — which is also how it becomes testable — or raise the `
+                    + `ceiling in this file with the reason.\n\n`
+                    + `new since the ceiling was set:\n`
+                    + unreachable
+                        .slice(0, 10)
+                        .map((f) => `  ${f}`)
+                        .join('\n'),
+            );
+        }
+        expect(unreachable.length).toBeLessThanOrEqual(UNAUDITABLE_CEILING);
     });
 
     it('[selector-teeth-reach] names the unreachable guards whose subject is security or safety', () => {

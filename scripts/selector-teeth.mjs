@@ -206,20 +206,64 @@ export function selectorsIn(src) {
         });
     };
 
-    for (const stmt of sf.statements) {
-        if (ts.isFunctionDeclaration(stmt) && stmt.name && stmt.body) {
-            record(stmt.name.text, stmt, stmt.body);
-            continue;
+    /** The callee name of a call expression, for `it(...)` / `describe.each(...)`. */
+    const calleeName = (node) => {
+        if (!ts.isCallExpression(node)) return null;
+        const e = node.expression;
+        if (ts.isIdentifier(e)) return e.text;
+        // `it.each`, `describe.only` — the leftmost identifier is the gate.
+        if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression)) return e.expression.text;
+        return null;
+    };
+
+    const named = (node) => {
+        if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+            record(node.name.text, node, node.body);
+            return true;
         }
-        if (!ts.isVariableStatement(stmt)) continue;
-        for (const decl of stmt.declarationList.declarations) {
-            if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
-            const init = decl.initializer;
+        if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+            const init = node.initializer;
             if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) {
-                record(decl.name.text, decl, init.body);
+                record(node.name.text, node, init.body);
+                return true;
             }
         }
-    }
+        return false;
+    };
+
+    /*
+     * Descends into `describe()` but NEVER into `it()` / `test()` — #2423.
+     *
+     * The distinction is the whole design, not an implementation shortcut. A
+     * function declared at DESCRIBE level is shared setup: the `walk`, the
+     * `read`, the thing that gathers the population every `it` then asserts
+     * over. Gutting it is exactly the question this tool asks. A function
+     * declared INSIDE an `it()` is part of an assertion, and gutting that
+     * produces noise rather than a finding — which is why this walk used to
+     * stop at `sourceFile.statements` altogether.
+     *
+     * Measured over tests/guards + tests/guardrails when this changed:
+     *
+     *   module level only   616 files auditable   1,292 selectors   211 unauditable
+     *   + describe level    627 files auditable   1,451 selectors   200 unauditable
+     *   + it() level too    654 files auditable   1,535 selectors   173 unauditable
+     *
+     * The third row is not taken. It reaches 27 more files, but 84 of its
+     * targets sit inside `it()` bodies — the noise case above — so it buys
+     * reach by weakening what a finding means. Verified additive either way:
+     * zero previously-found selectors are lost or moved by this change.
+     */
+    const visit = (node, insideIt) => {
+        const callee = calleeName(node);
+        const entersIt = callee === 'it' || callee === 'test';
+        if (!insideIt) named(node);
+        ts.forEachChild(node, (child) => visit(child, insideIt || entersIt));
+    };
+    ts.forEachChild(sf, (child) => visit(child, false));
+
+    // Offset order, so a report reads top to bottom rather than module-level
+    // declarations first and nested ones after.
+    out.sort((a, b) => a.bodyStart - b.bodyStart);
     return out;
 }
 
