@@ -61,11 +61,6 @@ const ALLOWLIST: Array<{ file: string; reason: string }> = [
         reason:
             'Decorative arrow primitive with a hover-translate animation; deliberate motion contained in a single component used as a CTA-arrow accent.',
     },
-    {
-        file: 'src/components/ui/file-upload.tsx',
-        reason:
-            'Drag-affordance icon scales on hover/active to signal the drop zone; deliberate single-icon treatment.',
-    },
 ];
 
 const HOVER_BAN_RE =
@@ -139,6 +134,11 @@ describe('State language (Polish PR-8)', () => {
             const abs = path.resolve(ROOT, a.file);
             expect(fs.existsSync(abs)).toBe(true);
         }
+        // 2 today, cap 4. `file-upload.tsx` was removed 2026-10-30: its reason
+        // said "drag-affordance icon scales on hover/active", and the file no
+        // longer contains a single `hover:scale-*` / `hover:translate-*` /
+        // `hover:shadow-*` — 0 matching lines against HOVER_BAN_RE, versus 2 in
+        // `expanding-arrow.tsx`. The exemption excused nothing (#2414).
         expect(ALLOWLIST.length).toBeLessThanOrEqual(4);
     });
 });

@@ -58,8 +58,10 @@ const EXEMPTIONS: Record<string, string> = {
         'Roadmap Q2 — org-scoped audit feed projection; pending direct tests.',
 
     // Q3 — Reports + cross-domain
-    'src/app-layer/usecases/notification.ts':
-        'Roadmap Q3 — notification dispatch; covered indirectly by deadline-monitor + automation tests.',
+    // notification.ts removed 2026-10-30: its reason was "covered indirectly
+    // ... the ratchet asks for a direct import", and
+    // `tests/unit/small-modules-wave-6.test.ts` now imports it DIRECTLY. The
+    // exemption described a past state and excused nothing (#2414).
 
 
     // Test-internal hardening — last priority, low blast radius.
