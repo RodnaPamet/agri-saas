@@ -2678,9 +2678,17 @@ jobs:
     #
     # Step budgets are individual caps, not a summed allowance: the property
     # that matters is that any ONE hanging step hits its own bound before the
-    # job does. Build 24m + measured worst-case overhead ~6m = 30m < 35m;
-    # Trivy gate 6m + a median build ~16m + rest ~4m = 26m < 35m.
-    timeout-minutes: 35
+    # job does. Build 40m + measured worst-case overhead ~6m = 46m < 50m;
+    # Trivy gate 6m + a median build ~16m + rest ~4m = 26m < 50m.
+    #
+    # Raised from 35 with the build step's 24 -> 40 (#2475), using the same
+    # derivation: the job must OUTLIVE the step or that step budget cannot
+    # fire at all, and a step bound at or above its job's is decorative —
+    # the job dies first and the failure names the job rather than the slow
+    # step, which is the attribution a step budget exists to provide.
+    # `tests/guards/step-budgets-can-actually-fire.test.ts` holds exactly
+    # that relationship, across every workflow.
+    timeout-minutes: 50
 
     steps:
       - uses: actions/checkout@v7
@@ -2741,14 +2749,47 @@ jobs:
       - name: Build Docker image (no push)
         # ── #748, second job type ──
         # This step ran 31m49s against the job's `timeout-minutes: 30` on
-        # `212bafbd` and cancelled the job. Durations over the preceding 14
-        # runs were 10-20m, so the outlier is ~1.6x the worst normal build.
-        # A STEP budget fails the step instead, which keeps the job in
-        # `failure` rather than `cancelled` — the distinction the notifier
-        # and every human reader use to decide whether to investigate.
-        # No shell wrapper here: this is a `uses:` action, so `timeout` has
-        # nothing to wrap.
-        timeout-minutes: 24
+        # `212bafbd` and cancelled the job. A STEP budget fails the step
+        # instead, which keeps the job in `failure` rather than `cancelled` —
+        # the distinction the notifier and every human reader use to decide
+        # whether to investigate. No shell wrapper here: this is a `uses:`
+        # action, so `timeout` has nothing to wrap.
+        #
+        # ── #2475: 24 was a coin flip; the bound is argued now ──
+        # There are TWO cost classes, not one, because `cache-from: type=gha`
+        # caches the `RUN npm ci` layer and `package-lock.json` is the only
+        # thing that invalidates it (the deps stage COPYs nothing else before
+        # the install):
+        #
+        #   lockfile UNCHANGED — install layer HITS       18-19m
+        #     #2461 18m04s, #2466 19m22s, #2471 17m50s, all success,
+        #     all within ninety minutes of each other
+        #   lockfile CHANGED — install layer MISSES       ~32m
+        #     19m + the 12m52s `npm ci` measured inside #2473's build log
+        #
+        # 24 covered the first class with ~26% headroom and the second not at
+        # all — so a dependency bump, the one PR shape that always changes the
+        # lockfile, timed out: #2473, with the job at 27m46s. The red then
+        # reads as "the production group broke the image", and a reviewer goes
+        # looking for a dependency defect that is not there.
+        #
+        # 40 gives the EXPENSIVE class the same proportional headroom the
+        # cheap class already had: 32 x 1.26. A timeout censors its own
+        # samples — a run killed at the bound says nothing about how long it
+        # needed — so this is derived from the three successes and the
+        # in-build measurement above, never from the runs that hit the cap.
+        # Re-measure both classes before moving it; the figure above this one
+        # (892s, 2026-09-21) was a warm build too, and it has since grown by
+        # ~4 minutes with nothing noticing.
+        #
+        # A BuildKit cache mount for npm's cache dir was considered (#2475's
+        # option 2) and is deliberately NOT here: `--mount=type=cache` state
+        # lives in the builder, while `cache-to: type=gha` exports layers, not
+        # mounts — so on a fresh runner it starts empty every time. It would
+        # speed up a repeated LOCAL build and do nothing for this job, which
+        # is the one that times out. Verify that before building it rather
+        # than inheriting this comment.
+        timeout-minutes: 40
         uses: docker/build-push-action@v7
         with:
           context: .
