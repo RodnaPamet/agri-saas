@@ -48,7 +48,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const DIR = path.resolve(__dirname, '../../src/app-layer/notifications');
+import { collectSourceFiles } from '../helpers/collect-files';
+
+const ROOT = 'src/app-layer/notifications';
+const DIR = path.resolve(__dirname, '../..', ROOT);
 
 /**
  * Still English, with the issue that tracks it. Delete the entry in the same
@@ -80,10 +83,22 @@ function proseIn(src: string): string[] {
     return [...stripComments(src).matchAll(PROSE)].map((m) => m[1]);
 }
 
+/**
+ * Through `collectSourceFiles` rather than `readdirSync`, because
+ * `file-collection-is-not-silently-empty` is right about what it prevents: a
+ * hand-rolled collector can be gutted to return `[]` with every assertion
+ * built on it still green. CI caught exactly that here — this guard shipped
+ * with a private walker and shard 1/6 refused it. The floor is what separates
+ * "no module holds English prose" from "no module was read".
+ */
 function modules(): string[] {
-    return fs
-        .readdirSync(DIR)
-        .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+    return collectSourceFiles({
+        roots: [ROOT],
+        extensions: ['.ts'],
+        exclude: (rel) => rel.endsWith('.test.ts'),
+        floor: 10,
+    })
+        .map((abs) => path.basename(abs))
         .sort();
 }
 
