@@ -53,6 +53,7 @@ import { ACTIVITY_LABELS_BG } from '@/lib/operations/activity-labels';
 import { campaignWindow } from '@/lib/reports/campaign-window';
 import { buildCampaignRows, type DiaryLineInput } from './rows';
 import type { CampaignDiaryData } from '@/app-layer/reports/pdf/campaign-diary';
+import { cropLabelForDocument, loadDocumentCropLabels } from '../crop-label';
 
 /**
  * `REGISTER_EMPTY_FOR_PERIOD` is passed as a LITERAL below, not through a
@@ -81,6 +82,10 @@ export async function gatherCampaignDiary(
     ctx: RequestContext,
     campaignLabel: string,
 ): Promise<CampaignDiaryData> {
+    // One load per document — see `crop-label.ts`. `Parcel.cropType` is a
+    // catalogue key; the register must print its Bulgarian label.
+    const cropLabels = await loadDocumentCropLabels();
+
     // Same privilege model as the per-location and season routes: authorised
     // inside the gatherer, no `requirePermission`.
     assertCanRead(ctx);
@@ -168,7 +173,7 @@ export async function gatherCampaignDiary(
             completedAt: l.completedAt,
             parcelId: l.parcelId,
             parcelName: l.parcel?.name ?? '',
-            cropName: l.parcel?.cropType ?? null,
+            cropName: cropLabelForDocument(cropLabels, l.parcel?.cropType),
             parcelAreaHa: dec(l.parcel?.areaHa),
             treatedAreaHa: dec(l.treatedAreaHa),
             productName: l.product?.name ?? null,

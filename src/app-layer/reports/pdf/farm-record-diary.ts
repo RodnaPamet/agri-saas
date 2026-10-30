@@ -30,6 +30,7 @@ import { getStorageProvider, buildTenantObjectKey } from '@/lib/storage';
 import type { ReportMeta } from '@/lib/pdf/types';
 import { techniqueLabelBg } from '@/lib/agro/application-techniques';
 import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
+import { cropLabelForDocument, loadDocumentCropLabels } from '../crop-label';
 
 // ─────────────────────────────────────────────────────────────────────
 // Bulgarian labels (document language is BG regardless of UI locale)
@@ -254,7 +255,15 @@ export interface FieldHeaderData {
     /** Склад за растителна продукция */
     produceStore: string | null;
     /** Култура */
-    cropType: string | null;
+    /**
+     * The crop as it should PRINT — already resolved, not a catalogue key.
+     *
+     * Named `cropType` until 2026-10-30, which is how «Wheat» reached the crop
+     * column of a Bulgarian regulatory form: the field carried a
+     * `Parcel.cropType` key and every reader treated it as display text. The
+     * name now says which of the two it is.
+     */
+    cropLabel: string | null;
     /** Сорт/хибрид */
     variety: string | null;
     /** Засята площ — stored in ha, PRINTED in дка. */
@@ -591,7 +600,7 @@ export function buildChemFieldHeaderRow(
         f?.locality ?? '',
         f?.cadastralId ?? '',
         f?.fieldNo ?? '',
-        f?.cropType ?? '',
+        f?.cropLabel ?? '',
         f?.variety ?? '',
         f ? toDka(f.areaHa) : '',
         f?.predecessor ?? '',
@@ -603,7 +612,7 @@ export function buildChemFieldHeaderRow(
 export function buildObsFieldHeaderRow(f: FieldHeaderData | null): string[] {
     return [
         f?.fieldNo ?? '',
-        f?.cropType ?? '',
+        f?.cropLabel ?? '',
         f?.variety ?? '',
         f ? toDka(f.areaHa) : '',
         f?.predecessor ?? '',
@@ -1601,6 +1610,11 @@ export async function gatherFarmRecord(
             arr.sort((a, b) => (sownOn(b)?.getTime() ?? -Infinity) - (sownOn(a)?.getTime() ?? -Infinity));
         }
 
+        // Seven cache-warm lookups for the whole register, not one per
+        // parcel. Only the `Parcel.cropType` fallback below goes through it;
+        // `cropPlan.cropType.name` is farm-authored and prints as written.
+        const cropLabels = await loadDocumentCropLabels();
+
         const fields: FieldHeaderData[] = parcels.map((pc) => {
             const history = historyByParcel.get(pc.id) ?? [];
             // The crop this sheet is about: the most recent planting that had
@@ -1611,7 +1625,9 @@ export async function gatherFarmRecord(
                     const d = sownOn(h);
                     return d !== null && d <= toD;
                 }) ?? null;
-            const cropName = current?.cropPlan?.cropType?.name ?? pc.cropType ?? null;
+            const cropName =
+                current?.cropPlan?.cropType?.name ??
+                cropLabelForDocument(cropLabels, pc.cropType);
             // Предшественик — the most recent DIFFERENT crop before it. With
             // nothing currently planted, the last crop grown IS the
             // predecessor, which is why the scan starts at 0 in that case.
@@ -1630,7 +1646,7 @@ export async function gatherFarmRecord(
                 landDistrict: pc.landDistrict,
                 locality: pc.locality,
                 produceStore: pc.produceStore,
-                cropType: cropName,
+                cropLabel: cropName,
                 variety: current?.variety?.name ?? current?.cropPlan?.variety?.name ?? null,
                 areaHa: pc.areaHa != null ? Number(pc.areaHa) : null,
                 predecessor,
