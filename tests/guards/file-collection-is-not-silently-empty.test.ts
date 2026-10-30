@@ -27,7 +27,7 @@
  *
  * ## Why the list is 223 and not 47
  *
- * (That 223 is the figure at landing. It is **232** today: down to 208 as
+ * (That 223 is the figure at landing. It is **231** today: down to 208 as
  * batches migrated, then +28 in ba1bb19c8 when the register's own scanned
  * roots were widened and disclosed 28 collectors that had been invisible to
  * it, then down again. `REGISTER_CEILING` is the live number.)
@@ -106,7 +106,7 @@ const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
  * length — see the ratchet test for why slack is the thing being refused.
  * Lower it in the same PR that migrates a file.
  */
-const REGISTER_CEILING = 232;
+const REGISTER_CEILING = 231;
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
