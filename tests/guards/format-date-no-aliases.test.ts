@@ -36,6 +36,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -46,33 +47,46 @@ const ROOT = path.resolve(__dirname, '../..');
 const ALIASED_FORMAT_DATE_IMPORT =
     /import\s*\{[^}]*\bas\s+\w+[^}]*\}\s*from\s*['"]@\/lib\/format-date['"]/;
 
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * Was an inline recursive `walk` inside the `it()` below, so `selector-teeth`
+ * found nothing at module scope to mutate, while the assertion
+ * `expect(offenders).toEqual([])` is satisfied for free by an emptied walk.
+ * `collectSourceFiles` REFUSES an empty result, so the population cannot be
+ * empty rather than being emptied and caught (#865).
+ *
+ * Parity measured BEFORE the change: 2287 files both ways, zero difference,
+ * with no exclusions applied identically.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.ts', '.tsx'],
+    // EXPLICIT skipDirs: this guard includes `.ts`, and `DEFAULT_SKIP_DIRS`
+    // excludes any directory named `coverage` — which is the orthophoto
+    // coverage API route here, not a build artefact (#2421, #2517). With the
+    // defaults this scan would silently stop reading
+    // `src/app/api/t/[tenantSlug]/ortho/coverage/route.ts`.
+    skipDirs: ['node_modules', '.next'],
+    floor: 600,
+});
+
 describe('format-date import discipline (Roadmap-4 PR-5)', () => {
     it('no .tsx / .ts file under src/ uses an "as" alias on a format-date import', () => {
         const offenders: { file: string; line: string }[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
-                }
-                if (!/\.(tsx?|ts)$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                const src = fs.readFileSync(full, 'utf-8');
-                // Iterate line-by-line so the offender entry can
-                // include the offending statement verbatim — easier
-                // to debug than a "this file has it somewhere" hint.
-                for (const line of src.split('\n')) {
-                    if (ALIASED_FORMAT_DATE_IMPORT.test(line)) {
-                        offenders.push({ file: rel, line: line.trim() });
-                        break;
-                    }
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const src = fs.readFileSync(full, 'utf-8');
+            // Iterate line-by-line so the offender entry can
+            // include the offending statement verbatim — easier
+            // to debug than a "this file has it somewhere" hint.
+            for (const line of src.split('\n')) {
+                if (ALIASED_FORMAT_DATE_IMPORT.test(line)) {
+                    offenders.push({ file: rel, line: line.trim() });
+                    break;
                 }
             }
-        };
-        walk(path.join(ROOT, 'src'));
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}\n    ${o.line}`)

@@ -25,6 +25,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -34,49 +35,56 @@ interface Offence {
     snippet: string;
 }
 
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * Was an inline recursive `walk` inside the `it()` below, so `selector-teeth`
+ * found nothing at module scope to mutate, while the assertion
+ * `expect(offenders).toEqual([])` is satisfied for free by an emptied walk.
+ * `collectSourceFiles` REFUSES an empty result, so the population cannot be
+ * empty rather than being emptied and caught (#865).
+ *
+ * Parity measured BEFORE the change: 872 files both ways, zero difference,
+ * with no exclusions applied identically.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.tsx'],
+    floor: 600,
+});
+
 describe('Inline form action-cluster ordering (Roadmap-5 PR-7)', () => {
     it('cancel buttons appear before submit buttons in inline forms', () => {
         const offenders: Offence[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
-                }
-                if (!/\.tsx$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                const raw = fs.readFileSync(full, 'utf-8');
-                // Pattern: <Button type="submit" ... > ... </Button> followed,
-                // within ~250 chars, by <Button ... onClick=...setShowForm(false)>.
-                // Whitespace-tolerant; works on single-line and multi-line
-                // forms. The match indicates Submit precedes Cancel — the
-                // reversed (incorrect) order.
-                const VIOLATION =
-                    /<Button[^>]*type="submit"[^>]*>[\s\S]{0,80}<\/Button>\s*<Button[^>]*onClick=\{[^}]*setShowForm\(false\)/;
-                if (VIOLATION.test(raw)) {
-                    // Find the line number of the first match.
-                    const lines = raw.split('\n');
-                    let buf = '';
-                    let lineIdx = 0;
-                    for (let i = 0; i < lines.length; i++) {
-                        buf += lines[i] + '\n';
-                        if (VIOLATION.test(buf)) {
-                            lineIdx = i + 1;
-                            break;
-                        }
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const raw = fs.readFileSync(full, 'utf-8');
+            // Pattern: <Button type="submit" ... > ... </Button> followed,
+            // within ~250 chars, by <Button ... onClick=...setShowForm(false)>.
+            // Whitespace-tolerant; works on single-line and multi-line
+            // forms. The match indicates Submit precedes Cancel — the
+            // reversed (incorrect) order.
+            const VIOLATION =
+                /<Button[^>]*type="submit"[^>]*>[\s\S]{0,80}<\/Button>\s*<Button[^>]*onClick=\{[^}]*setShowForm\(false\)/;
+            if (VIOLATION.test(raw)) {
+                // Find the line number of the first match.
+                const lines = raw.split('\n');
+                let buf = '';
+                let lineIdx = 0;
+                for (let i = 0; i < lines.length; i++) {
+                    buf += lines[i] + '\n';
+                    if (VIOLATION.test(buf)) {
+                        lineIdx = i + 1;
+                        break;
                     }
-                    offenders.push({
-                        file: rel,
-                        line: lineIdx,
-                        snippet: lines[lineIdx - 1]?.trim().slice(0, 200) ?? '',
-                    });
                 }
+                offenders.push({
+                    file: rel,
+                    line: lineIdx,
+                    snippet: lines[lineIdx - 1]?.trim().slice(0, 200) ?? '',
+                });
             }
-        };
-        walk(path.join(ROOT, 'src'));
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)
