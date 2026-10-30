@@ -25,6 +25,9 @@
 import * as fs from "fs";
 import * as path from "path";
 
+import { assertAllowlistIsLive } from "../helpers/assert-allowlist-is-live";
+import { blankNonCode } from "../helpers/blank-non-code";
+
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIR = "src/app";
 
@@ -183,7 +186,21 @@ describe("FilterToolbar coverage", () => {
     it("every file mounting <DataTable> either mounts <FilterToolbar> or is in EXEMPTIONS", () => {
         const violations: Violation[] = [];
         for (const file of walk(path.join(ROOT, SCAN_DIR))) {
-            const content = fs.readFileSync(file, "utf8");
+            // COMMENTS BLANKED — #2414.
+            //
+            // The satisfaction check is `/FilterToolbar/`, and it read raw
+            // text, so MENTIONING the component in a comment satisfied the
+            // rule. Measured 2026-10-30: `admin/members/page.tsx` mounts
+            // <DataTable> twice, mounts no toolbar, and its only occurrence of
+            // the word is a note advising a future reader to "adopt
+            // FilterToolbar" — so the page was skipped here and its EXEMPTIONS
+            // entry was never consulted. A third kind of dead exemption beyond
+            // #2414's gone/irrelevant pair: UNREACHABLE, because the guard
+            // short-circuits before the list is read.
+            //
+            // Blanking changes no verdict today (28 files in the population
+            // and 0 violations, both ways) and makes that entry do its job.
+            const content = blankNonCode(fs.readFileSync(file, "utf8"));
             if (!/<DataTable\b/.test(content)) continue;
             if (/FilterToolbar/.test(content)) continue;
             const rel = path.relative(ROOT, file);
@@ -202,19 +219,30 @@ describe("FilterToolbar coverage", () => {
         expect(violations).toHaveLength(0);
     });
 
-    it("EXEMPTIONS entries point at real files", () => {
-        for (const exemptPath of Object.keys(EXEMPTIONS)) {
-            const full = path.join(ROOT, exemptPath);
-            if (!fs.existsSync(full)) {
-                throw new Error(
-                    `EXEMPTIONS contains a path that no longer exists: ${exemptPath}. Drop the entry — the ratchet only enforces real files.`,
-                );
-            }
-            // The file must still mount DataTable, otherwise the
-            // exemption is stale (the file was refactored, etc.).
-            const content = fs.readFileSync(full, "utf8");
-            expect(content).toMatch(/<DataTable\b/);
-        }
+    it("[filter-toolbar-coverage] every EXEMPTIONS entry still earns its place", () => {
+        // Was an existence check plus HALF the relevance predicate: it
+        // asserted the file still mounts <DataTable> and never asked whether
+        // it had since gained a FilterToolbar — in which case the exemption
+        // excuses a page that now satisfies the rule, reading as accepted debt
+        // on a file that is clean (#2414).
+        //
+        // `assertAllowlistIsLive` takes the guard's own predicate, so both
+        // halves are checked by the code that knows them, and it classifies a
+        // missing file too — strictly stronger than the existence check it
+        // replaces.
+        const report = assertAllowlistIsLive({
+            label: "filter-toolbar-coverage EXEMPTIONS",
+            entries: Object.keys(EXEMPTIONS),
+            // The SAME transform the scan above applies, or this would judge
+            // prose while the scan judges code.
+            blankOptions: {},
+            violates: (code) => /<DataTable\b/.test(code) && !/FilterToolbar/.test(code),
+        });
+        console.log(
+            `[filter-toolbar-coverage] ${report.live.length} of ${Object.keys(EXEMPTIONS).length} `
+                + "exemption(s) still mount <DataTable> without a FilterToolbar",
+        );
+        expect(report.live.length).toBe(Object.keys(EXEMPTIONS).length);
     });
 
     it("EXEMPTIONS entries each have a non-trivial reason", () => {
