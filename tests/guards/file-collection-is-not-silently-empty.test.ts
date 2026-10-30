@@ -245,7 +245,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/rendered-coverage-floor.test.ts',
     'tests/guards/required-marker-discipline.test.ts',
     'tests/guards/reverse-tabnabbing-guard.test.ts',
-    'tests/guards/scan-roots-resolve.test.ts',
     'tests/guards/scim-routes-self-authenticate.test.ts',
     'tests/guards/search-placeholder-vocabulary.test.ts',
     'tests/guards/selector-teeth-no-stray-mutations.test.ts',

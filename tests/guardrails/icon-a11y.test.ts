@@ -18,7 +18,9 @@ const SCAN_DIRS = [
 ];
 
 function findTsxFiles(dir: string, acc: string[] = []): string[] {
-    if (!fs.existsSync(dir)) return acc;
+    if (!fs.existsSync(dir)) {
+        throw new Error(`scan root does not exist: ${dir} — a renamed root would scan zero files and pass (#875)`);
+    }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) findTsxFiles(full, acc);
