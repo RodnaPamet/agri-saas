@@ -67,7 +67,7 @@ function makeTask(overrides: Partial<TaskRow> = {}): TaskRow {
     };
 }
 
-function makeDb(tasks: TaskRow[]) {
+function makeDb(tasks: TaskRow[], recipientLocale: 'en' | 'bg' = 'en') {
     const findMany = jest.fn().mockResolvedValue(tasks);
     // `createMany` + `skipDuplicates` → `{ count: 1 }` on insert,
     // `{ count: 0 }` when the dedupeKey already existed.
@@ -82,11 +82,23 @@ function makeDb(tasks: TaskRow[]) {
         async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
             where.dedupeKey.in.map((dedupeKey, i) => ({ id: `notif-${i + 1}`, dedupeKey })),
     );
+    // The job resolves each recipient's language in ONE batched query (the
+    // D1 guardrail bans a read inside the loop), so this seam has to exist or
+    // every notification falls back to `RECIPIENT_FALLBACK_LOCALE`.
+    //
+    // Answering 'en' is deliberate: it keeps the English copy assertions below
+    // meaningful AND makes them a live check on the lookup. If the batched
+    // query is ever dropped, the fallback is `bg` and every one of them fails
+    // — which is the regression this file should catch.
+    const userFindMany = jest
+        .fn()
+        .mockResolvedValue([{ id: 'user-1', uiLanguage: recipientLocale }]);
     const db = {
         task: { findMany },
+        user: { findMany: userFindMany },
         notification: { createMany, findMany: notificationFindMany },
     } as unknown as PrismaClient;
-    return { db, findMany, createMany, notificationFindMany };
+    return { db, findMany, createMany, notificationFindMany, userFindMany };
 }
 
 /** Last row payload passed to `notification.createMany`. */
@@ -216,6 +228,7 @@ describe('timezone-aware classification', () => {
                 key: 'TSK-9',
                 dueAt: dueNearLondonMidnight,
                 assigneeUserId: 'user-1',
+                locale: 'en' as const,
             },
             londonCronFire,
             'Europe/London',
@@ -312,8 +325,31 @@ describe('processTaskDueNotifications — notification creation', () => {
         await processTaskDueNotifications(db, { now: NOW });
 
         const data = lastCreateData(createMany);
-        expect(data.title).toBe(TASK_DUE_WINDOWS.day.title);
+        // The table holds KEYS now, not prose; the rendered title comes from
+        // the catalogue for the recipient's resolved locale ('en' here).
+        expect(TASK_DUE_WINDOWS.day.titleKey).toBe('notifications.taskDue.day.title');
+        expect(data.title).toBe('Task due tomorrow');
         expect(data.message).toBe('"Rotate API keys" is due tomorrow.');
+    });
+
+    test('renders the bell row in the RECIPIENT\'s language, not English', async () => {
+        // The product is Bulgarian and `User.uiLanguage` defaults to `bg`, so
+        // this is the path almost every real notification takes. The English
+        // assertions elsewhere in this file cover the other branch; without
+        // this one the suite would be green over a feature that only works
+        // for the minority of users who chose English.
+        const { db, createMany, userFindMany } = makeDb(
+            [makeTask({ id: 't-tomorrow', key: null, dueAt: DUE_TOMORROW })],
+            'bg',
+        );
+
+        await processTaskDueNotifications(db, { now: NOW });
+
+        // One batched lookup, not one per task — the D1 guardrail.
+        expect(userFindMany).toHaveBeenCalledTimes(1);
+        const data = lastCreateData(createMany);
+        expect(data.title).toBe('Задача с краен срок утре');
+        expect(data.message).toBe('"Rotate API keys" е с краен срок утре.');
     });
 
     test('ignores tasks not on a {7,1,0}-day touchpoint', async () => {
@@ -484,6 +520,7 @@ describe('createTaskDueNotification — per-task helper', () => {
         key: 'TSK-9',
         dueAt: DUE_TOMORROW,
         assigneeUserId: 'user-1',
+        locale: 'en' as const,
     };
 
     it('creates a TASK_DUE notification for an in-window task', async () => {

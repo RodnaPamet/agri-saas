@@ -36,6 +36,10 @@ import {
     createTaskDueNotification,
     type TaskDueWindow,
 } from '../notifications/task-due';
+import {
+    RECIPIENT_FALLBACK_LOCALE,
+    resolveRecipientLocale,
+} from '@/lib/email/recipient-locale';
 
 // Re-export the shared surface so existing importers (tests, the
 // executor registry) keep resolving it from this module.
@@ -132,6 +136,26 @@ export async function processTaskDueNotifications(
         orderBy: { dueAt: 'asc' },
     });
 
+    // ── Recipient locales in ONE query, not one per task ──
+    //
+    // The bell row stores RENDERED text, so each notification needs its
+    // assignee's language. A `findUnique` inside the loop below would be a
+    // textbook N+1 and trips the D1 query-shape guardrail, which bans a Prisma
+    // read inside a loop — so the whole set is fetched once and mapped.
+    // Distinct ids, because several tasks routinely share one assignee.
+    const assigneeIds = [
+        ...new Set(tasks.map((t) => t.assigneeUserId).filter((v): v is string => !!v)),
+    ];
+    const recipients = assigneeIds.length
+        ? await db.user.findMany({
+              where: { id: { in: assigneeIds } },
+              select: { id: true, uiLanguage: true },
+          })
+        : [];
+    const localeByUser = new Map(
+        recipients.map((u) => [u.id, resolveRecipientLocale(u.uiLanguage)] as const),
+    );
+
     const byWindow: Record<TaskDueWindow, number> = { week: 0, day: 0, today: 0 };
     let created = 0;
     let skippedDuplicate = 0;
@@ -151,6 +175,10 @@ export async function processTaskDueNotifications(
                 key: task.key,
                 dueAt: task.dueAt,
                 assigneeUserId: task.assigneeUserId,
+                // A user row that vanished between the two queries falls back
+                // rather than throwing — the column's own default is `bg`, so
+                // the fallback is what that row would have given us.
+                locale: localeByUser.get(task.assigneeUserId) ?? RECIPIENT_FALLBACK_LOCALE,
             },
             now,
             tz,

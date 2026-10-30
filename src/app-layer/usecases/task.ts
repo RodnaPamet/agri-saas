@@ -850,8 +850,15 @@ async function emitTaskDueNotification(
     const assigneeUserId = task.assigneeUserId;
     const dueAt = task.dueAt;
     try {
-        await runInTenantContext(ctx, (db) =>
-            createTaskDueNotification(
+        await runInTenantContext(ctx, async (db) => {
+            // The ASSIGNEE's language — this row is rendered once, here. The
+            // daily cron sibling resolves the same thing in one batched query;
+            // this path handles a single task, so a lookup is the right shape.
+            const assignee = await db.user.findUnique({
+                where: { id: assigneeUserId },
+                select: { uiLanguage: true },
+            });
+            return createTaskDueNotification(
                 db,
                 {
                     id: task.id,
@@ -861,14 +868,15 @@ async function emitTaskDueNotification(
                     key: task.key,
                     dueAt,
                     assigneeUserId,
+                    locale: resolveRecipientLocale(assignee?.uiLanguage),
                 },
                 new Date(),
                 // Classify in the same zone as the daily cron so the
                 // event-driven and steady-state paths agree on the
                 // window + dedupeKey for a task due near local midnight.
                 env.NOTIFICATIONS_TZ,
-            ),
-        );
+            );
+        });
     } catch (err) {
         logger.warn('failed to create task-due notification', {
             component: 'notifications',
@@ -915,16 +923,24 @@ async function emitTaskAssignedNotification(
     const tenantSlug = ctx.tenantSlug;
     const assigneeUserId = task.assigneeUserId;
     try {
-        const outcome = await runInTenantContext(ctx, (db) =>
-            createAssignmentNotification(db, 'TASK_ASSIGNED', {
+        const outcome = await runInTenantContext(ctx, async (db) => {
+            // The ASSIGNEE's language, not the assigner's — the bell row and
+            // the push below are rendered once, here. Same lookup the
+            // TASK_ASSIGNED email already makes a few hundred lines up.
+            const assignee = await db.user.findUnique({
+                where: { id: assigneeUserId },
+                select: { uiLanguage: true },
+            });
+            return createAssignmentNotification(db, 'TASK_ASSIGNED', {
                 tenantId: task.tenantId,
                 assigneeUserId,
                 entityId: task.id,
                 entityLabel: task.title,
                 entityKey: task.key,
                 tenantSlug,
-            }),
-        );
+                locale: resolveRecipientLocale(assignee?.uiLanguage),
+            });
+        });
         // ── push leaves on a QUEUE, not on this request — P7.4 (#1993) ──
         //
         // This awaited both transports until now: `sendWebPushToUser` then

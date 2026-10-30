@@ -548,6 +548,30 @@
                 "bodyOne": "The due date of 1 of your tasks changed.",
                 "bodyMany": "The due dates of {count} of your tasks changed."
             }
+        },
+        "assignment": {
+            "task": {
+                "title": "You were assigned a task",
+                "body": "{label} is now yours."
+            },
+            "asset": {
+                "title": "You were assigned an asset",
+                "body": "{label} is now yours."
+            }
+        },
+        "taskDue": {
+            "week": {
+                "title": "Task due in one week",
+                "body": "{label} is due in one week."
+            },
+            "day": {
+                "title": "Task due tomorrow",
+                "body": "{label} is due tomorrow."
+            },
+            "today": {
+                "title": "Task due today",
+                "body": "{label} is due today."
+            }
         }
     },
     "admin": {

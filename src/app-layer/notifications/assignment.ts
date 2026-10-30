@@ -24,6 +24,10 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
+
 import { publishFreshNotifications } from './publish-fresh';
 
 export interface AssignmentTarget {
@@ -39,6 +43,17 @@ export interface AssignmentTarget {
     entityKey?: string | null;
     /** Tenant slug for the deep link. */
     tenantSlug: string;
+    /**
+     * The RECIPIENT's language, resolved by the caller.
+     *
+     * Required rather than defaulted, which is `EnqueueEmailInput.locale`'s
+     * rule and for its reason: the row stores RENDERED text, so a forgotten
+     * locale is indistinguishable from a chosen one and would silently ship
+     * the assigner's language to the assignee. A caller that genuinely cannot
+     * read the recipient writes `RECIPIENT_FALLBACK_LOCALE`, so the decision
+     * shows in the diff.
+     */
+    locale: Locale;
 }
 
 export type AssignmentNotificationKind =
@@ -46,20 +61,33 @@ export type AssignmentNotificationKind =
     | 'ASSET_ASSIGNED';
 
 interface AssignmentCopy {
-    title: string;
-    body: (label: string) => string;
+    titleKey: string;
+    bodyKey: string;
     linkPath: (tenantSlug: string, entityId: string) => string;
 }
 
+/**
+ * Copy KEYS, resolved against the recipient's locale at creation time.
+ *
+ * These were English literals until #2490's sibling fix. The bell row and the
+ * push are rendered once, here, so this is the only place the recipient's
+ * language can be honoured — and the product is Bulgarian.
+ *
+ * A key PER KIND rather than one shared "is now yours" body, because Bulgarian
+ * agrees the possessive with the noun's gender: задача is feminine («вече е
+ * Ваша») and актив is masculine («вече е Ваш»). English collapses both to
+ * "yours", which is exactly how one shared string would have hidden the
+ * problem.
+ */
 const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
     TASK_ASSIGNED: {
-        title: 'You were assigned a task',
-        body: (label) => `${label} is now yours.`,
+        titleKey: 'notifications.assignment.task.title',
+        bodyKey: 'notifications.assignment.task.body',
         linkPath: (slug, id) => `/t/${slug}/farm-tasks/${id}`,
     },
     ASSET_ASSIGNED: {
-        title: 'You were assigned an asset',
-        body: (label) => `${label} is now yours.`,
+        titleKey: 'notifications.assignment.asset.title',
+        bodyKey: 'notifications.assignment.asset.body',
         linkPath: (slug, id) => `/t/${slug}/assets/${id}`,
     },
 };
@@ -106,8 +134,8 @@ export async function createAssignmentNotification(
         tenantId: target.tenantId,
         userId: target.assigneeUserId,
         type: kind,
-        title: copy.title,
-        message: copy.body(label),
+        title: await translateFor(target.locale, copy.titleKey),
+        message: await translateFor(target.locale, copy.bodyKey, { label }),
         linkUrl: copy.linkPath(target.tenantSlug, target.entityId),
         dedupeKey: buildAssignmentDedupeKey(
             target.tenantId,
