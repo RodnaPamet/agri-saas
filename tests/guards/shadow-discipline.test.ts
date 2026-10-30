@@ -49,6 +49,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 import { assertAllowlistIsLive } from '../helpers/assert-allowlist-is-live';
 import { blankNonCode } from '../helpers/blank-non-code';
 
@@ -111,6 +112,25 @@ interface Offence {
     snippet: string;
 }
 
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * Was an inline recursive `walk` inside the `it()` below, so `selector-teeth`
+ * found nothing at module scope to mutate, while the assertion
+ * `expect(offenders).toEqual([])` is satisfied for free by an emptied walk.
+ * `collectSourceFiles` REFUSES an empty result, so the population cannot be
+ * empty rather than being emptied and caught (#865).
+ *
+ * Parity measured BEFORE the change: 862 files both ways, zero difference,
+ * with ALLOWED exclusions applied identically.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.tsx'],
+    exclude: (rel) => ALLOWED.has(rel),
+    floor: 600,
+});
+
 describe('Shadow discipline (Roadmap-5 PR-4)', () => {
     it('[shadow-discipline] every allowlisted file still uses a banned shadow', () => {
         // Was an EXISTENCE check only, which cannot tell an exemption that is
@@ -139,33 +159,21 @@ describe('Shadow discipline (Roadmap-5 PR-4)', () => {
 
     it('no .tsx file under src/ uses shadow-* outside the allowlist', () => {
         const offenders: Offence[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const raw = fs.readFileSync(full, 'utf-8');
+            const stripped = blankNonCode(raw);
+            const lines = stripped.split('\n');
+            lines.forEach((line, i) => {
+                if (SHADOW_RE.test(line)) {
+                    offenders.push({
+                        file: rel,
+                        line: i + 1,
+                        snippet: line.trim().slice(0, 200),
+                    });
                 }
-                if (!/\.tsx$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                if (ALLOWED.has(rel)) continue;
-                const raw = fs.readFileSync(full, 'utf-8');
-                const stripped = blankNonCode(raw);
-                const lines = stripped.split('\n');
-                lines.forEach((line, i) => {
-                    if (SHADOW_RE.test(line)) {
-                        offenders.push({
-                            file: rel,
-                            line: i + 1,
-                            snippet: line.trim().slice(0, 200),
-                        });
-                    }
-                });
-            }
-        };
-        walk(path.join(ROOT, 'src'));
+            });
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)

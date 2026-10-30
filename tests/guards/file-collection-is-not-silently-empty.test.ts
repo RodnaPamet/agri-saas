@@ -27,7 +27,7 @@
  *
  * ## Why the list is 223 and not 47
  *
- * (That 223 is the figure at landing. It is **221** today: down to 208 as
+ * (That 223 is the figure at landing. It is **214** today: down to 208 as
  * batches migrated, then +28 in ba1bb19c8 when the register's own scanned
  * roots were widened and disclosed 28 collectors that had been invisible to
  * it, then down again. `REGISTER_CEILING` is the live number.)
@@ -106,7 +106,7 @@ const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
  * length — see the ratchet test for why slack is the thing being refused.
  * Lower it in the same PR that migrates a file.
  */
-const REGISTER_CEILING = 221;
+const REGISTER_CEILING = 214;
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
@@ -164,7 +164,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/e2e-teardown-tables.test.ts',
     'tests/guards/empty-loading-primitive-only.test.ts',
     'tests/guards/empty-state-coverage.test.ts',
-    'tests/guards/empty-state-vocabulary.test.ts',
     'tests/guards/entity-detail-shell-coverage.test.ts',
     'tests/guards/epic51-theme-token-guard.test.ts',
     'tests/guards/epic52-datatable-ratchet.test.ts',
@@ -175,9 +174,7 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/file-security-guards.test.ts',
     'tests/guards/filter-toolbar-coverage.test.ts',
     'tests/guards/focus-ring-discipline.test.ts',
-    'tests/guards/focus-ring-offset-discipline.test.ts',
     'tests/guards/form-drift.test.ts',
-    'tests/guards/format-date-no-aliases.test.ts',
     'tests/guards/formfield-coverage.test.ts',
     'tests/guards/generated-columns.test.ts',
     'tests/guards/heromemtric-canonical-home.test.ts',
@@ -189,7 +186,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/icon-only-action-discipline.test.ts',
     'tests/guards/icon-size-discipline.test.ts',
     'tests/guards/infra-directories-are-referenced.test.ts',
-    'tests/guards/inline-form-action-order.test.ts',
     'tests/guards/inline-notice-discipline.test.ts',
     'tests/guards/inline-subtitle-budget.test.ts',
     'tests/guards/invite-email-locale-wiring.test.ts',
@@ -198,7 +194,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/legacy-badge-eradication.test.ts',
     'tests/guards/list-page-shell-coverage.test.ts',
     'tests/guards/load-script-routes-exist.test.ts',
-    'tests/guards/loading-text-discipline.test.ts',
     'tests/guards/metadatabar-detail-coverage.test.ts',
     'tests/guards/metric-typography.test.ts',
     'tests/guards/modal-action-order.test.ts',
@@ -251,7 +246,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/scim-routes-self-authenticate.test.ts',
     'tests/guards/search-placeholder-vocabulary.test.ts',
     'tests/guards/selector-teeth-no-stray-mutations.test.ts',
-    'tests/guards/shadow-discipline.test.ts',
     'tests/guards/shell-checks-that-cannot-fail.test.ts',
     'tests/guards/sign-out-purges.test.ts',
     'tests/guards/single-app-shell.test.ts',
@@ -269,7 +263,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/tab-count-discipline.test.ts',
     'tests/guards/toast-vocabulary.test.ts',
     'tests/guards/tooltip-touch-uniformity.test.ts',
-    'tests/guards/truncation-max-width-tokens.test.ts',
     'tests/guards/typography-eradication.test.ts',
     'tests/guards/ui-hooks-barrel.test.ts',
     'tests/guards/upload-route-scan-reachability.test.ts',

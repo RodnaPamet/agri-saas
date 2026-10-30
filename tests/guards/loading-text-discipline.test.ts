@@ -50,6 +50,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -62,35 +63,42 @@ interface Offence {
 
 const VIOLATION_RE = /Loading\s+[a-z][a-z]*\.\.\./;
 
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * Was an inline recursive `walk` inside the `it()` below, so `selector-teeth`
+ * found nothing at module scope to mutate, while the assertion
+ * `expect(offenders).toEqual([])` is satisfied for free by an emptied walk.
+ * `collectSourceFiles` REFUSES an empty result, so the population cannot be
+ * empty rather than being emptied and caught (#865).
+ *
+ * Parity measured BEFORE the change: 872 files both ways, zero difference,
+ * with no exclusions applied identically.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.tsx'],
+    floor: 600,
+});
+
 describe('Loading-text typographic discipline (Roadmap-6 PR-6)', () => {
     it('no .tsx file uses "Loading X..." (three-dot ellipsis)', () => {
         const offenders: Offence[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const raw = fs.readFileSync(full, 'utf-8');
+            const stripped = blankNonCode(raw);
+            const lines = stripped.split('\n');
+            lines.forEach((line, i) => {
+                if (VIOLATION_RE.test(line)) {
+                    offenders.push({
+                        file: rel,
+                        line: i + 1,
+                        text: line.trim().slice(0, 200),
+                    });
                 }
-                if (!/\.tsx$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                const raw = fs.readFileSync(full, 'utf-8');
-                const stripped = blankNonCode(raw);
-                const lines = stripped.split('\n');
-                lines.forEach((line, i) => {
-                    if (VIOLATION_RE.test(line)) {
-                        offenders.push({
-                            file: rel,
-                            line: i + 1,
-                            text: line.trim().slice(0, 200),
-                        });
-                    }
-                });
-            }
-        };
-        walk(path.join(ROOT, 'src'));
+            });
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.text}`)
