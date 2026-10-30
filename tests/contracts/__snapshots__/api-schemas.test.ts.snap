@@ -6941,6 +6941,164 @@ exports[`API contract — per-schema snapshots schema: FarmBrandSaveResult 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmDocumentDeleteResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentDriveState 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "OFF",
+        "PENDING",
+        "COPIED",
+        "FAILED"
+      ],
+      "description": "The one-way copy into the farm’s «Agrent» Drive folder. \`OFF\` means sync was not on when this was uploaded — a SETTING — which is deliberately distinct from \`FAILED\`, an error an admin can retry. Always \`OFF\` until the copy job ships."
+    }
+  },
+  "required": [
+    "state"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/FarmDocumentRow"
+      }
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when the library holds more than one page. The list is newest-first and capped rather than cursor-paginated, and this flag is derived by taking one row more than the cap — not from a separate count, which could disagree with the page it describes."
+    }
+  },
+  "required": [
+    "rows",
+    "truncated"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The document title. NULL on a tombstone whose bytes were deleted by a person — the name is dropped on a manual delete and KEPT on expiry, because an expiry is the platform acting on a policy and the title is what makes that tombstone readable. Encrypted at rest: a title is routinely «Договор аренда <фамилия>.pdf»."
+    },
+    "contentType": {
+      "type": "string",
+      "description": "The RESOLVED media type — what the bytes are, not what the upload claimed."
+    },
+    "sizeBytes": {
+      "type": "integer"
+    },
+    "uploadedAt": {
+      "type": "string",
+      "description": "ISO 8601."
+    },
+    "uploadedBy": {
+      "$ref": "#/components/schemas/FarmDocumentUploader"
+    },
+    "expiresAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The expiry as a calendar DAY KEY (\`YYYY-MM-DD\`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Fixed at upload from the retention period in force then, so a later settings change never moves it."
+    },
+    "purgedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Set when the bytes were deleted, by expiry or by a person. The ROW SURVIVES: dropping it would make \\"destroyed by policy on 14 March\\" and \\"this never existed\\" the same observation, which for a compliance register is the worse failure. \`/content\` answers 404 once this is set."
+    },
+    "mayDelete": {
+      "type": "boolean",
+      "description": "Whether THIS caller may delete this document — the uploader, or an administrator. Computed per row and per caller, because a role flag cannot express \\"may delete their own\\"."
+    },
+    "drive": {
+      "$ref": "#/components/schemas/FarmDocumentDriveState"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "contentType",
+    "sizeBytes",
+    "uploadedAt",
+    "uploadedBy",
+    "expiresAt",
+    "purgedAt",
+    "mayDelete",
+    "drive"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentUpload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary"
+    }
+  },
+  "required": [
+    "file"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentUploader 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
 "{
   "type": "object",
