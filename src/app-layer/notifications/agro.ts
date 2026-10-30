@@ -21,6 +21,8 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
 import { publishFreshNotifications } from './publish-fresh';
 
 export type AgroNotificationKind = 'SPRAY_WINDOW_WARNING' | 'DISEASE_RISK_RAISED' | 'AGRO_COPILOT_READY';
@@ -35,32 +37,77 @@ export interface AgroNotificationTarget {
     locationLabel: string;
     /** Tenant slug for the deep link. */
     tenantSlug: string;
-    /** Short reason summary for the notification body. */
+    /**
+     * Short reason summary for the notification body — ALREADY in
+     * `locale` (#2490).
+     *
+     * The caller renders it, because the caller is what holds the
+     * structured reason: `evaluateSprayWindow` / `evaluateDiseaseRisk`
+     * return `reasonCodes`, and `@/lib/agro/reason-label` turns one into
+     * a sentence. Passing the English `reasons[0]` here puts an English
+     * clause inside a Bulgarian sentence, which is what this issue was.
+     */
     detail?: string | null;
+    /**
+     * The RECIPIENT's language. Required, not defaulted — the row stores
+     * RENDERED text, so a forgotten locale is indistinguishable from a
+     * chosen one and would silently ship the wrong language. Same rule as
+     * `EnqueueEmailInput.locale`; resolve it with `resolveRecipientLocale`.
+     */
+    locale: Locale;
 }
 
+/**
+ * Catalogue keys, not sentences (#2490).
+ *
+ * These three titles were English string literals and the bodies were
+ * English template functions, so every bell row and every Web Push on the
+ * agro surface arrived in English — in a product whose `User.uiLanguage`
+ * column defaults to `bg` and four of whose five users carry it.
+ *
+ * TWO body keys rather than one with a conditional, because `translateFor`
+ * is a plain `interpolate` with NO ICU support: a `{detail, select, ...}`
+ * would come back as the literal template, and the i18n drift check would
+ * read its inner words as placeholder names. The same reason the digest
+ * reasons and the task-due copy are shaped this way.
+ */
 interface AgroCopy {
-    title: string;
-    body: (label: string, detail?: string | null) => string;
+    titleKey: string;
+    bodyKey: string;
+    bodyWithDetailKey: string;
 }
 
 const COPY: Record<AgroNotificationKind, AgroCopy> = {
     SPRAY_WINDOW_WARNING: {
-        title: 'Spray window unsuitable',
-        body: (label, detail) =>
-            `Today's conditions at ${label} are unsuitable for spraying${detail ? ` — ${detail}` : '.'}`,
+        titleKey: 'notifications.agro.sprayWindow.title',
+        bodyKey: 'notifications.agro.sprayWindow.body',
+        bodyWithDetailKey: 'notifications.agro.sprayWindow.bodyWithDetail',
     },
     DISEASE_RISK_RAISED: {
-        title: 'Disease pressure rising',
-        body: (label, detail) =>
-            `High disease pressure detected at ${label}${detail ? ` — ${detail}` : '.'} A risk has been raised.`,
+        titleKey: 'notifications.agro.diseaseRisk.title',
+        bodyKey: 'notifications.agro.diseaseRisk.body',
+        bodyWithDetailKey: 'notifications.agro.diseaseRisk.bodyWithDetail',
     },
     AGRO_COPILOT_READY: {
-        title: 'Agronomy copilot explanation',
-        body: (label, detail) =>
-            `An agronomy explanation is ready for ${label}${detail ? ` — ${detail}` : '.'}`,
+        titleKey: 'notifications.agro.copilot.title',
+        bodyKey: 'notifications.agro.copilot.body',
+        bodyWithDetailKey: 'notifications.agro.copilot.bodyWithDetail',
     },
 };
+
+/**
+ * Every catalogue key this module can resolve, DERIVED from the table above.
+ *
+ * Exported so the completeness check reads the real table rather than
+ * restating it — a second copy is how a fourth notification kind ends up
+ * shipping its key as a push title, since `translateFor` returns the key on
+ * a miss and throws nothing.
+ */
+export const AGRO_COPY_KEYS: readonly string[] = Object.values(COPY).flatMap((c) => [
+    c.titleKey,
+    c.bodyKey,
+    c.bodyWithDetailKey,
+]);
 
 /**
  * Build the idempotency key. Pure helper so tests can assert the format.
@@ -90,6 +137,14 @@ export async function createAgroSignalNotification(
     now: Date = new Date(),
 ): Promise<AgroNotificationOutcome> {
     const copy = COPY[kind];
+    const detail = target.detail?.trim() || null;
+    const title = await translateFor(target.locale, copy.titleKey);
+    const message = detail
+        ? await translateFor(target.locale, copy.bodyWithDetailKey, {
+              label: target.locationLabel,
+              detail,
+          })
+        : await translateFor(target.locale, copy.bodyKey, { label: target.locationLabel });
     const dedupeKey = buildAgroDedupeKey(
         target.tenantId,
         kind,
@@ -102,8 +157,8 @@ export async function createAgroSignalNotification(
         userId: target.recipientUserId,
         // Reuse GENERAL — no enum migration; semantics ride the title/body.
         type: 'GENERAL' as const,
-        title: copy.title,
-        message: copy.body(target.locationLabel, target.detail),
+        title,
+        message,
         linkUrl: `/t/${target.tenantSlug}/locations/${target.locationId}`,
         dedupeKey,
     };

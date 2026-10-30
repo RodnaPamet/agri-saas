@@ -30,19 +30,34 @@
  * covers `src/app` and `src/components`, and notification copy lives in
  * neither.
  *
- * ## The exemption is a forcing function, not a carve-out
+ * ## The exemption was a forcing function, and it fired — 2026-10-30
  *
- * `agro.ts` is still English, deliberately, and tracked on #2490: its body
- * interpolates `spray.reasons[0]`, which is a pre-rendered English sentence
- * built in `src/lib/agro/rules.ts`. Translating the title alone would ship a
- * Bulgarian sentence with an English clause inside it — visibly fixed and
- * actually not. CLAUDE.md already settled that shape for `DueItem.reason`: a
- * recipient-facing string produced far from its reader wants `{ key, params }`.
+ * `STILL_ENGLISH` is EMPTY now, and the history is the point. It held
+ * `agro.ts`, whose body interpolated `spray.reasons[0]` — a pre-rendered
+ * English sentence built in `src/lib/agro/rules.ts`. Translating that title
+ * alone would have shipped a Bulgarian sentence with an English clause inside
+ * it: visibly fixed and actually not.
  *
- * The exemption therefore asserts the file STILL has English prose. When
- * #2490 lands, this guard fails until the entry is deleted, so the carve-out
- * cannot outlive its reason — the no-stale-entries rule every exemption map
- * in this repo carries.
+ * The entry therefore asserted the file STILL had English prose, so the
+ * carve-out could not outlive its reason. #2490 converted the disease reasons
+ * to `{ code, params }`, rendered the push detail through the catalogue and
+ * put the three titles behind keys — and this guard went RED on the
+ * no-stale-entries assertion until the entry was deleted, in that same diff.
+ * That is the mechanism working, not a failure: the exemption is what made
+ * the fix impossible to forget and impossible to half-do.
+ *
+ * Keep the map and its no-stale test even while empty. A future kind that
+ * needs a staged fix gets an entry with its issue number, and the assertion
+ * below is what collects it again.
+ *
+ * ## What this guard does NOT cover — #2511
+ *
+ * `ROOT` is `src/app-layer/notifications` alone, so the population is the
+ * modules under that one directory. Eight more producers write a
+ * `Notification` row from `src/app-layer/jobs` and `src/app-layer/usecases`
+ * and are OUTSIDE this scan entirely — five hardcode English, three hardcode
+ * Bulgarian. Widening `ROOT` is the fix tracked on #2511; do not build a
+ * second guard for it.
  */
 
 import * as fs from 'node:fs';
@@ -60,11 +75,8 @@ const DIR = path.resolve(__dirname, '../..', ROOT);
  * left.
  */
 const STILL_ENGLISH: Record<string, string> = {
-    'agro.ts':
-        '#2490 — the body interpolates spray.reasons[0], a pre-rendered English ' +
-        'sentence from lib/agro/rules.ts. Needs the { key, params } descriptor ' +
-        'conversion first; translating this layer alone ships a Bulgarian ' +
-        'sentence with an English clause in it.',
+    // Empty since #2490 discharged the `agro.ts` entry. See the docblock —
+    // the map and its no-stale test stay for the next staged fix.
 };
 
 /**
@@ -137,16 +149,29 @@ describe('notification copy is written in the recipient language', () => {
         },
     );
 
-    it.each(Object.entries(STILL_ENGLISH))(
-        '%s is still English, so its exemption is not stale',
-        (file, reason) => {
+    // ONE test looping the map, not `it.each`. Jest THROWS on
+    // `it.each([])` — "called with an empty Array of table data" — so the
+    // `.each` form made an empty map a failing suite, and the map is
+    // SUPPOSED to reach empty: that is what a discharged exemption looks
+    // like. #2490 emptied it and this is the shape that survives it.
+    //
+    // The loop's assertions run `proseIn`, whose own behaviour is pinned by
+    // the positive controls in the second describe below — so this cannot
+    // pass by having a broken detector, only by having nothing to check.
+    it('no exemption outlives its cause', () => {
+        const entries = Object.entries(STILL_ENGLISH);
+        console.log(
+            `[notification-copy-localised] ${entries.length} staged exemption(s)` +
+                `${entries.length === 0 ? ' — none outstanding' : `: ${entries.map(([f]) => f).join(', ')}`}`,
+        );
+        for (const [file, reason] of entries) {
             expect(reason.length).toBeGreaterThan(40);
             const found = proseIn(fs.readFileSync(path.join(DIR, file), 'utf8'));
-            // If this fails, the file was fixed — delete its STILL_ENGLISH
+            // If this fails, the file was FIXED — delete its STILL_ENGLISH
             // entry in the same diff. The exemption must not outlive its cause.
             expect(found.length).toBeGreaterThan(0);
-        },
-    );
+        }
+    });
 });
 
 describe('the detector can express each failure', () => {
