@@ -55,12 +55,38 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 
 // Match a className that contains BOTH `text-[var(--brand-default)]`
 // (or the equivalent `hover:text-[var(--brand-default)]`) and
 // `hover:underline`. Any order, anywhere in the class string.
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * This was an inline recursive `walk` inside the `it()` below, so
+ * `selector-teeth` reported the file as having no module-level selector: there
+ * was nothing at module scope to mutate. The assertion is
+ * `expect(offenders).toEqual([])`, which an emptied walk satisfies for free.
+ *
+ * Migrated rather than hoisted. #2483's remedy is extraction so the auditor can
+ * gut the walk; `collectSourceFiles` is stronger because it REFUSES an empty
+ * result — the population cannot be empty rather than being emptied and caught.
+ * #865: "the guarantee moves from 'we mutated its collector and it noticed' to
+ * 'its collector cannot return empty'", and it expects the harness to then
+ * report the file NOT AUDITED, which is correct here.
+ *
+ * Population parity measured BEFORE the change: 872 files by the
+ * hand-rolled walk and by this call, zero difference either way.
+ * `DEFAULT_SKIP_DIRS` already covers the `node_modules` / `.next` skips.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.tsx'],
+    floor: 600,
+});
+
 const DRIFT_RE =
     /className\s*=\s*["'`][^"'`]*\btext-\[var\(--brand-default\)\][^"'`]*\bhover:underline\b[^"'`]*["'`]|className\s*=\s*["'`][^"'`]*\bhover:underline\b[^"'`]*\btext-\[var\(--brand-default\)\][^"'`]*["'`]/;
 
@@ -85,30 +111,19 @@ describe('Link styling discipline (Roadmap-4 PR-10)', () => {
 
     it('no .tsx under src/ pairs text-[var(--brand-default)] with hover:underline', () => {
         const offenders: Offence[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const lines = fs.readFileSync(full, 'utf-8').split('\n');
+            lines.forEach((line, i) => {
+                if (DRIFT_RE.test(line)) {
+                    offenders.push({
+                        file: rel,
+                        line: i + 1,
+                        snippet: line.trim().slice(0, 200),
+                    });
                 }
-                if (!/\.tsx$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                const lines = fs.readFileSync(full, 'utf-8').split('\n');
-                lines.forEach((line, i) => {
-                    if (DRIFT_RE.test(line)) {
-                        offenders.push({
-                            file: rel,
-                            line: i + 1,
-                            snippet: line.trim().slice(0, 200),
-                        });
-                    }
-                });
-            }
-        };
-        walk(path.join(ROOT, 'src'));
+            });
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)

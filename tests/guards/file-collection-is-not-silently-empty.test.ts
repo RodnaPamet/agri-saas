@@ -27,7 +27,7 @@
  *
  * ## Why the list is 223 and not 47
  *
- * (That 223 is the figure at landing. It is **230** today: down to 208 as
+ * (That 223 is the figure at landing. It is **226** today: down to 208 as
  * batches migrated, then +28 in ba1bb19c8 when the register's own scanned
  * roots were widened and disclosed 28 collectors that had been invisible to
  * it, then down again. `REGISTER_CEILING` is the live number.)
@@ -106,7 +106,7 @@ const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
  * length — see the ratchet test for why slack is the thing being refused.
  * Lower it in the same PR that migrates a file.
  */
-const REGISTER_CEILING = 230;
+const REGISTER_CEILING = 226;
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
@@ -185,7 +185,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/format-date-no-aliases.test.ts',
     'tests/guards/formfield-coverage.test.ts',
     'tests/guards/generated-columns.test.ts',
-    'tests/guards/heading-primitive-discipline.test.ts',
     'tests/guards/heromemtric-canonical-home.test.ts',
     'tests/guards/hover-recipe-discipline.test.ts',
     'tests/guards/hover-state-language.test.ts',
@@ -202,7 +201,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/ios-input-autozoom.test.ts',
     'tests/guards/k6-threshold-binding.test.ts',
     'tests/guards/legacy-badge-eradication.test.ts',
-    'tests/guards/link-styling-discipline.test.ts',
     'tests/guards/list-page-shell-coverage.test.ts',
     'tests/guards/load-script-routes-exist.test.ts',
     'tests/guards/loading-text-discipline.test.ts',
@@ -250,7 +248,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/r21-prf-bar3d-capstone.test.ts',
     'tests/guards/r22-prf-capstone.test.ts',
     'tests/guards/r30-group-nodes.test.ts',
-    'tests/guards/radius-scale-discipline.test.ts',
     'tests/guards/raw-color-eradication.test.ts',
     'tests/guards/regression-scanner.test.ts',
     'tests/guards/rendered-coverage-floor.test.ts',
@@ -266,7 +263,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/single-h1-per-page.test.ts',
     'tests/guards/single-tab-pattern.test.ts',
     'tests/guards/skeleton-shimmer-adoption.test.ts',
-    'tests/guards/skeleton-tone-discipline.test.ts',
     'tests/guards/spacing-cadence.test.ts',
     'tests/guards/spacing-scale-discipline.test.ts',
     'tests/guards/state-coverage.test.ts',

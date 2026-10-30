@@ -41,6 +41,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -59,6 +60,32 @@ const ALLOWLIST: AllowlistEntry[] = [
 ];
 
 const ALLOWLIST_PATHS = new Set(ALLOWLIST.map((e) => e.file));
+
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * This was an inline recursive `walk` inside the `it()` below, so
+ * `selector-teeth` reported the file as having no module-level selector: there
+ * was nothing at module scope to mutate. The assertion is
+ * `expect(offenders).toEqual([])`, which an emptied walk satisfies for free.
+ *
+ * Migrated rather than hoisted. #2483's remedy is extraction so the auditor can
+ * gut the walk; `collectSourceFiles` is stronger because it REFUSES an empty
+ * result — the population cannot be empty rather than being emptied and caught.
+ * #865: "the guarantee moves from 'we mutated its collector and it noticed' to
+ * 'its collector cannot return empty'", and it expects the harness to then
+ * report the file NOT AUDITED, which is correct here.
+ *
+ * Population parity measured BEFORE the change: 871 files by the
+ * hand-rolled walk and by this call, zero difference either way.
+ * `DEFAULT_SKIP_DIRS` already covers the `node_modules` / `.next` skips.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.tsx'],
+    exclude: (rel) => ALLOWLIST_PATHS.has(rel),
+    floor: 600,
+});
 
 const RAW_HEADING_RE = /<h[1-6][\s>]/;
 
@@ -80,28 +107,16 @@ describe('Heading-primitive discipline (Roadmap-4 PR-8)', () => {
 
     it('no .tsx file under src/ ships a raw <h1>…<h6> outside the allowlist', () => {
         const offenders: string[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
-                }
-                if (!/\.tsx$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                if (ALLOWLIST_PATHS.has(rel)) continue;
-                const src = fs.readFileSync(full, 'utf-8');
-                // Strip block + line comments first so JSDoc usage
-                // examples ("`<h1>Risks</h1>`") don't false-positive.
-                const stripped = blankNonCode(src);
-                if (RAW_HEADING_RE.test(stripped)) {
-                    offenders.push(rel);
-                }
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const src = fs.readFileSync(full, 'utf-8');
+            // Strip block + line comments first so JSDoc usage
+            // examples ("`<h1>Risks</h1>`") don't false-positive.
+            const stripped = blankNonCode(src);
+            if (RAW_HEADING_RE.test(stripped)) {
+                offenders.push(rel);
             }
-        };
-        walk(path.join(ROOT, 'src'));
+        }
         if (offenders.length > 0) {
             throw new Error(
                 `These files render a raw <h1>…<h6> instead of the <Heading> primitive. Use <Heading level={N}> from @/components/ui/typography:\n  ${offenders.join('\n  ')}\n\nIf the file is genuinely outside the in-app type scale (external surface, special boundary, …), add it to ALLOWLIST in this ratchet with a written reason.`,
