@@ -30,6 +30,30 @@ const ALLOWED_METHODS: ReadonlySet<HttpMethod> = new Set<HttpMethod>([
 ]);
 
 describe('route-permissions HttpMethod hygiene', () => {
+    /**
+     * THE DENOMINATOR — #2483.
+     *
+     * Both loops below are `for (const rule of ROUTE_PERMISSIONS) { if
+     * (!rule.methods) continue; ... }`. They assert over METHOD ENTRIES, not
+     * over rules — so the population empties if `ROUTE_PERMISSIONS` empties OR
+     * if the two rules that carry a `methods` array stop carrying one, and in
+     * either case both tests pass having checked nothing.
+     *
+     * Measured 2026-10-30: 24 rules, of which only 2 carry `methods`, for 5
+     * method entries in total. That is a thin population, which is exactly why
+     * it needs saying out loud rather than being inferred from "24 rules".
+     */
+    it('[route-permissions-uppercase] methods entries are actually asserted over', () => {
+        const withMethods = ROUTE_PERMISSIONS.filter((r) => r.methods && r.methods.length > 0);
+        const methodEntries = withMethods.reduce((a, r) => a + (r.methods?.length ?? 0), 0);
+        console.log(
+            `[route-permissions-uppercase] ${ROUTE_PERMISSIONS.length} rule(s), `
+                + `${withMethods.length} with a methods array, ${methodEntries} method entr(y/ies) asserted`,
+        );
+        expect(ROUTE_PERMISSIONS.length).toBeGreaterThanOrEqual(15);
+        expect(methodEntries).toBeGreaterThanOrEqual(3);
+    });
+
     it('every rule.methods entry is an allowed HttpMethod union member', () => {
         for (const rule of ROUTE_PERMISSIONS) {
             if (!rule.methods) continue;

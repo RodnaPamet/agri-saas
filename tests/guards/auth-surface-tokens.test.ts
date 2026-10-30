@@ -101,6 +101,23 @@ describe('Auth/error/fallback surface token discipline (Polish PR-4)', () => {
         expect(offenders).toHaveLength(0);
     });
 
+    /**
+     * THE DENOMINATOR — #2483.
+     *
+     * Two tests here range over `SCAN_FILES`, and NEITHER can fail over an
+     * empty one. The offender scan does `if (!fs.existsSync(abs)) continue;`
+     * so a renamed file is skipped rather than reported, leaving `offenders`
+     * empty and `toHaveLength(0)` satisfied; the existence test below then
+     * iterates the same list, so emptying it passes that too. The vacuity sits
+     * one level up from either assertion.
+     *
+     * Measured 2026-10-30 at 5 entry-surface files.
+     */
+    it('[auth-surface-tokens] the scanned list is non-trivial', () => {
+        console.log(`[auth-surface-tokens] ${SCAN_FILES.length} entry-surface file(s) scanned`);
+        expect(SCAN_FILES.length).toBeGreaterThanOrEqual(3);
+    });
+
     it('every scanned file exists', () => {
         for (const rel of SCAN_FILES) {
             const abs = path.resolve(ROOT, rel);
