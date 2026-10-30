@@ -1,7 +1,7 @@
 /**
  * Guardrail test: Admin API route authorization coverage.
  *
- * Scans all admin-only API route files to ensure they import a centralised
+ * Scans the TENANT admin API route files to ensure they import a centralised
  * authorization guard rather than raw `getTenantCtx`.
  *
  * Accepted guard:
@@ -27,6 +27,23 @@ import { blankNonCode } from '../helpers/blank-non-code';
 
 /**
  * Routes that MUST use the centralized `requirePermission` guard.
+ *
+ * ## Scope: the tenant tree only, and that is correct
+ *
+ * This docblock said "all admin-only API route files". It is not: `BASE_DIR`
+ * is `src/app/api/t/[tenantSlug]`, so the 22 route files under
+ * `src/app/api/admin` are never seen here.
+ *
+ * That exclusion is right rather than an oversight — those are PLATFORM admin
+ * routes and use a different mechanism, so `requirePermission` would never
+ * appear in them. Measured: of the 22, **21** are guarded by
+ * `verifyPlatformApiKey` and 1 (`diagnostics`) by `ctx.permissions.canAdmin`;
+ * none is unguarded.
+ *
+ * What is missing is a coverage guard for THAT tree — a new platform admin
+ * route added without either mechanism would pass CI silently, exactly as a
+ * tenant one would have before this file existed. Tracked separately rather
+ * than widened into here, because the predicate is different.
  *
  * Format: relative path from src/app/api/t/[tenantSlug]/
  * Every route file listed here is checked for the centralized admin guard import.
@@ -180,7 +197,29 @@ describe('Admin API route authorization coverage', () => {
     // Scan for new admin/* route files not in the allowlist
     test('no admin/* route file exists without being listed in ADMIN_ONLY_ROUTES', () => {
         const adminDir = path.join(BASE_DIR, 'admin');
-        if (!fs.existsSync(adminDir)) return;
+
+        /*
+         * TWO WAYS THIS PASSED OVER NOTHING — #2377 §1.
+         *
+         * It read `if (!fs.existsSync(adminDir)) return;`. A rename or a move
+         * of the admin route tree made this test RETURN EARLY and report
+         * success, which is the shape that issue is about: the absence of the
+         * thing being checked reading as the thing being fine. The directory
+         * missing is not "nothing to check", it is "this guard no longer knows
+         * where to look", and the only honest answer is to fail.
+         *
+         * The second path is the assertion below. `missing` derives from
+         * `routeFiles`, so a walk that found nothing leaves `missing` empty and
+         * `expect(missing).toEqual([])` passes — reporting that no admin route
+         * is unlisted having discovered no admin routes at all.
+         *
+         * Both are closed here: the directory must exist, and the walk must
+         * find a plausible number of routes. Measured at the time: 43 route.ts
+         * files under this tree against 50 allowlist entries, so the floor sits
+         * well below it and an ordinary route being added or removed does not
+         * move it.
+         */
+        expect({ adminDir, exists: fs.existsSync(adminDir) }).toEqual({ adminDir, exists: true });
 
         const routeFiles: string[] = [];
         function walk(dir: string, prefix: string) {
@@ -195,6 +234,9 @@ describe('Admin API route authorization coverage', () => {
             }
         }
         walk(adminDir, '');
+
+        // The denominator, before anything is derived from it.
+        expect(routeFiles.length).toBeGreaterThan(30);
 
         const missing = routeFiles.filter(
             f => !ADMIN_ONLY_ROUTES.includes(f)
