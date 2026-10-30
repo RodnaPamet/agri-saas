@@ -57,8 +57,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_LAYER_DIR = path.join(REPO_ROOT, 'src/app-layer');
+/** Measured 2026-10-30: 386 `.ts` under src/app-layer, 25 under repositories. */
+const APP_LAYER_TS_FLOOR = 300;
+const REPOSITORY_FLOOR = 20;
 const REPOSITORIES_DIR = path.join(REPO_ROOT, 'src/app-layer/repositories');
 
 // ─────────────────────────────────────────────────────────────────────
@@ -67,19 +72,11 @@ const REPOSITORIES_DIR = path.join(REPO_ROOT, 'src/app-layer/repositories');
 
 /** All `.ts` files under a directory, recursively. */
 function listTsFiles(dir: string): string[] {
-    const out: string[] = [];
-    const walk = (d: string): void => {
-        for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-            const full = path.join(d, entry.name);
-            if (entry.isDirectory()) {
-                walk(full);
-            } else if (entry.name.endsWith('.ts')) {
-                out.push(full);
-            }
-        }
-    };
-    walk(dir);
-    return out;
+    return collectSourceFiles({
+        roots: [dir],
+        extensions: ['.ts'],
+        floor: APP_LAYER_TS_FLOOR,
+    });
 }
 
 /** POSIX-style relative path from repo root (stable across OSes). */
@@ -316,10 +313,16 @@ function scanUnboundedFindMany(): UnboundedFinding[] {
     const findings: UnboundedFinding[] = [];
     // Repository files only — `src/app-layer/repositories/*.ts`,
     // non-recursive (the directory is flat).
-    const files = fs
-        .readdirSync(REPOSITORIES_DIR)
-        .filter((f) => f.endsWith('.ts'))
-        .map((f) => path.join(REPOSITORIES_DIR, f));
+    // Was a flat `readdirSync` under a comment asserting the directory IS
+    // flat. Measured 2026-10-30: 25 `.ts` files, 0 subdirectories — so this
+    // collects the same set today. It is deliberately RECURSIVE now: a future
+    // subdirectory of repositories would have been silently unscanned for
+    // unbounded `findMany`, and the flatness was an assumption nothing held.
+    const files = collectSourceFiles({
+        roots: [REPOSITORIES_DIR],
+        extensions: ['.ts'],
+        floor: REPOSITORY_FLOOR,
+    });
 
     const findManyRe = /\.findMany\s*\(/g;
     for (const file of files) {

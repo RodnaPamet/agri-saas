@@ -24,6 +24,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_LAYER_DIR = path.join(REPO_ROOT, 'src/app-layer');
 
@@ -61,18 +63,23 @@ const EXPECTED_AG_SPANS: ReadonlyArray<{ operation: string; file: string }> = [
     { operation: 'crop-planning.generatePlantings', file: 'usecases/crop-planning.ts' },
 ];
 
+/**
+ * Measured 2026-10-30. A hand-rolled walk here can be gutted to `return []`
+ * and every assertion built on it still passes, because they all look for a
+ * MISSING entry — so an empty population reports full coverage having read
+ * nothing. #865 measured that shape at 81% of the guards a sweep could audit.
+ * `collectSourceFiles` refuses an empty result, which makes the guarantee
+ * structural rather than inferred from a mutation (#2377).
+ */
+const APP_LAYER_TS_FLOOR = 300;
+
 function listTsFiles(dir: string): string[] {
-    const out: string[] = [];
-    function walk(d: string) {
-        for (const name of fs.readdirSync(d)) {
-            const abs = path.join(d, name);
-            const stat = fs.statSync(abs);
-            if (stat.isDirectory()) walk(abs);
-            else if (name.endsWith('.ts') && !name.endsWith('.d.ts')) out.push(abs);
-        }
-    }
-    walk(dir);
-    return out;
+    return collectSourceFiles({
+        roots: [dir],
+        extensions: ['.ts'],
+        exclude: (rel) => rel.endsWith('.d.ts'),
+        floor: APP_LAYER_TS_FLOOR,
+    });
 }
 
 function readAllAppLayerSources(): string {

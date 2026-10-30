@@ -71,6 +71,8 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_LAYER_DIR = path.join(REPO_ROOT, 'src/app-layer');
 
@@ -521,20 +523,22 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
 // ─────────────────────────────────────────────────────────────────────
 
 /** All `.ts` files under `src/app-layer`, recursively. */
+/**
+ * Measured 2026-10-30. A hand-rolled walk here can be gutted to `return []`
+ * and every assertion built on it still passes, because they all look for a
+ * MISSING entry — so an empty population reports full coverage having read
+ * nothing. #865 measured that shape at 81% of the guards a sweep could audit.
+ * `collectSourceFiles` refuses an empty result, which makes the guarantee
+ * structural rather than inferred from a mutation (#2377).
+ */
+const APP_LAYER_TS_FLOOR = 300;
+
 function listAppLayerFiles(): string[] {
-    const out: string[] = [];
-    const walk = (dir: string): void => {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                walk(full);
-            } else if (entry.name.endsWith('.ts')) {
-                out.push(full);
-            }
-        }
-    };
-    walk(APP_LAYER_DIR);
-    return out;
+    return collectSourceFiles({
+        roots: [APP_LAYER_DIR],
+        extensions: ['.ts'],
+        floor: APP_LAYER_TS_FLOOR,
+    });
 }
 
 /** True if a `blockIndexes` entry on `model` exactly equals `fields`. */

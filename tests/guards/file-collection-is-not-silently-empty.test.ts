@@ -27,6 +27,11 @@
  *
  * ## Why the list is 223 and not 47
  *
+ * (That 223 is the figure at landing. It is **231** today: down to 208 as
+ * batches migrated, then +28 in ba1bb19c8 when the register's own scanned
+ * roots were widened and disclosed 28 collectors that had been invisible to
+ * it, then down again. `REGISTER_CEILING` is the live number.)
+ *
  * The 47 are the confirmed-dead subset of a 94-file at-risk sample. Widening the
  * query to "collects files at all" gives 223 — meaning 176 collectors have
  * never been audited by anything. They are not known-bad; they are unknown,
@@ -95,6 +100,13 @@ const GUARD_DIRS = ['tests/guards', 'tests/guardrails', 'tests/contracts', 'test
  * files does not silently assert more about what CI must audit.
  */
 const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
+
+/**
+ * How many hand-rolled collectors remain. Pinned EQUAL to the register's
+ * length — see the ratchet test for why slack is the thing being refused.
+ * Lower it in the same PR that migrates a file.
+ */
+const REGISTER_CEILING = 231;
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
@@ -278,7 +290,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/workflow-rls-role-bootstrap.test.ts',
     'tests/guardrails/admin-layout-guard.test.ts',
     'tests/guardrails/admin-route-coverage.test.ts',
-    'tests/guardrails/ag-audit-event-coverage.test.ts',
     'tests/guardrails/ag-ledger-migration-safety.test.ts',
     'tests/guardrails/api-error-wrapper-coverage.test.ts',
     'tests/guardrails/api-permission-coverage.test.ts',
@@ -304,16 +315,13 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guardrails/no-explicit-any-ratchet.test.ts',
     'tests/guardrails/no-secrets.test.ts',
     'tests/guardrails/offline-pwa-coverage.test.ts',
-    'tests/guardrails/org-audit-coverage.test.ts',
     'tests/guardrails/parcel-authoring-coverage.test.ts',
     'tests/guardrails/pii-hash-not-null.test.ts',
     'tests/guardrails/pr-asset-practice-codes.test.ts',
     'tests/guardrails/prisma-schema-folder-coverage.test.ts',
-    'tests/guardrails/query-shape-guardrails.test.ts',
     'tests/guardrails/raw-color-ratchet.test.ts',
     'tests/guardrails/responsive-tokens.test.ts',
     'tests/guardrails/rls-coverage.test.ts',
-    'tests/guardrails/schema-index-coverage.test.ts',
     'tests/guardrails/table-platform-drift.test.ts',
     'tests/guardrails/usecase-test-coverage.test.ts',
 
@@ -423,6 +431,35 @@ describe('no NEW guard collects files by hand', () => {
             );
         }
         expect(unrecorded).toEqual([]);
+    });
+
+    it('the register only shrinks — a RATCHET on the COUNT, not just membership', () => {
+        /*
+         * The two membership tests around this one are bidirectional and
+         * correct, and neither stops the register GROWING.
+         *
+         * "every collector is either migrated or recorded" REQUIRES a new
+         * hand-rolled collector to be added here to pass. Nothing refused the
+         * addition, so landing one more was a one-line append in a green diff —
+         * and this guard's own docblock says the point is that "the class
+         * cannot grow while the batches migrate". It could.
+         *
+         * Measured over the register's history, the growth that did happen was
+         * honest: 223 at landing, down to 208 as batches migrated, then 236 in
+         * ba1bb19c8 — whose subject is "The collector register was complete for
+         * the roots it scanned, and that hid 28". A disclosed widening, not
+         * drift. So this ratchet is closing a door nobody has walked through,
+         * which is the cheapest moment to close it.
+         *
+         * The ceiling is pinned EQUAL to the count, not merely above it. Slack
+         * is what lets an append be free later: a migration that lowers the
+         * count without lowering the ceiling re-opens exactly this gap. The
+         * cost is that two concurrent migrations conflict on this line, which
+         * is the right outcome — a conflict beats silent slack.
+         */
+        const count = HAND_ROLLED_COLLECTORS.length;
+        expect(count).toBeLessThanOrEqual(REGISTER_CEILING);
+        expect({ count, ceiling: REGISTER_CEILING }).toEqual({ count, ceiling: count });
     });
 
     it('the list only shrinks — a migrated file must lose its line', () => {
