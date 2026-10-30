@@ -7026,12 +7026,24 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
     "uploadedBy": {
       "$ref": "#/components/schemas/FarmDocumentUploader"
     },
-    "expiresAt": {
+    "expiresOn": {
       "type": [
         "string",
         "null"
       ],
-      "description": "The expiry as a calendar DAY KEY (\`YYYY-MM-DD\`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Fixed at upload from the retention period in force then, so a later settings change never moves it."
+      "description": "The expiry as a calendar DAY KEY (\`YYYY-MM-DD\`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Computed in Europe/Sofia and fixed at upload from the retention period in force then, so a later settings change never moves it. Named \`expiresOn\`, not \`expiresAt\`, because \`uploadedAt\` and \`purgedAt\` beside it are INSTANTS and this is a day — one \`…At\` meaning something different is an exception every client has to remember."
+    },
+    "retention": {
+      "type": "string",
+      "enum": [
+        "P3M",
+        "P6M",
+        "P1Y",
+        "P2Y",
+        "P5Y",
+        "NONE"
+      ],
+      "description": "The retention period AS IT WAS AT UPLOAD, so a client can say «Пази се 1 година, до …». \`expiresOn\` alone loses WHY that date was given, and cannot tell a 1-year document from a 2-year one uploaded a year earlier."
     },
     "purgedAt": {
       "type": [
@@ -7039,6 +7051,32 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
         "null"
       ],
       "description": "Set when the bytes were deleted, by expiry or by a person. The ROW SURVIVES: dropping it would make \\"destroyed by policy on 14 March\\" and \\"this never existed\\" the same observation, which for a compliance register is the worse failure. \`/content\` answers 404 once this is set."
+    },
+    "purgeReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "EXPIRED",
+        "DELETED",
+        null
+      ],
+      "description": "Why the bytes went. EXPLICIT rather than inferable: a client should not have to work out which state a tombstone is in from which fields happen to be null. \`name\` is dropped on a DELETED tombstone and kept on an EXPIRED one, so null-ness nearly works — and would fail on any row that ever has a null name for another reason."
+    },
+    "purgedBy": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/FarmDocumentUploader"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Who deleted it, for «Изтрит на … от <име>». Null when nobody did: an expiry has no actor, which is the other half of telling the two tombstones apart."
+        }
+      ]
     },
     "mayDelete": {
       "type": "boolean",
@@ -7055,8 +7093,11 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
     "sizeBytes",
     "uploadedAt",
     "uploadedBy",
-    "expiresAt",
+    "expiresOn",
+    "retention",
     "purgedAt",
+    "purgeReason",
+    "purgedBy",
     "mayDelete",
     "drive"
   ]
@@ -7070,6 +7111,10 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentUpload 1`] = 
     "file": {
       "type": "string",
       "format": "binary"
+    },
+    "name": {
+      "type": "string",
+      "description": "The farmer's own title for the document. Send this rather than relying on the file part's filename: a Cyrillic name in a multipart part header depends on every parser agreeing about the encoding, while a text field does not. Falls back to the filename when absent or blank, so a web form that sends only \`file\` keeps working."
     }
   },
   "required": [

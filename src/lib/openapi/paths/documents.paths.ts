@@ -44,13 +44,25 @@ const FarmDocumentRowSchema = z
         sizeBytes: z.number().int(),
         uploadedAt: z.string().openapi({ description: 'ISO 8601.' }),
         uploadedBy: UserRefSchema,
-        expiresAt: z.string().nullable().openapi({
+        expiresOn: z.string().nullable().openapi({
             description:
-                'The expiry as a calendar DAY KEY (`YYYY-MM-DD`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Fixed at upload from the retention period in force then, so a later settings change never moves it.',
+                'The expiry as a calendar DAY KEY (`YYYY-MM-DD`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Computed in Europe/Sofia and fixed at upload from the retention period in force then, so a later settings change never moves it. Named `expiresOn`, not `expiresAt`, because `uploadedAt` and `purgedAt` beside it are INSTANTS and this is a day — one `…At` meaning something different is an exception every client has to remember.',
+        }),
+        retention: z.enum(['P3M', 'P6M', 'P1Y', 'P2Y', 'P5Y', 'NONE']).openapi({
+            description:
+                'The retention period AS IT WAS AT UPLOAD, so a client can say «Пази се 1 година, до …». `expiresOn` alone loses WHY that date was given, and cannot tell a 1-year document from a 2-year one uploaded a year earlier.',
         }),
         purgedAt: z.string().nullable().openapi({
             description:
                 'Set when the bytes were deleted, by expiry or by a person. The ROW SURVIVES: dropping it would make "destroyed by policy on 14 March" and "this never existed" the same observation, which for a compliance register is the worse failure. `/content` answers 404 once this is set.',
+        }),
+        purgeReason: z.enum(['EXPIRED', 'DELETED']).nullable().openapi({
+            description:
+                'Why the bytes went. EXPLICIT rather than inferable: a client should not have to work out which state a tombstone is in from which fields happen to be null. `name` is dropped on a DELETED tombstone and kept on an EXPIRED one, so null-ness nearly works — and would fail on any row that ever has a null name for another reason.',
+        }),
+        purgedBy: UserRefSchema.nullable().openapi({
+            description:
+                'Who deleted it, for «Изтрит на … от <име>». Null when nobody did: an expiry has no actor, which is the other half of telling the two tombstones apart.',
         }),
         mayDelete: z.boolean().openapi({
             description:
@@ -80,6 +92,10 @@ const DocumentListSchema = z
 const UploadBodySchema = z
     .object({
         file: z.string().openapi({ type: 'string', format: 'binary' }),
+        name: z.string().optional().openapi({
+            description:
+                "The farmer's own title for the document. Send this rather than relying on the file part's filename: a Cyrillic name in a multipart part header depends on every parser agreeing about the encoding, while a text field does not. Falls back to the filename when absent or blank, so a web form that sends only `file` keeps working.",
+        }),
     })
     .openapi('FarmDocumentUpload');
 
@@ -121,7 +137,7 @@ export function registerDocumentPaths(registry: OpenAPIRegistry): void {
         operationId: 'readFarmDocumentContent',
         summary: 'Open a document for preview',
         description:
-            'The bytes, with their resolved `Content-Type` and `Content-Disposition: inline`. THIS IS THE ANTIVIRUS EGRESS GATE: bytes are written before the scan resolves, so this route is what stops an unscanned or infected file being served. A 403 therefore means the scan refused it — infected, or still pending under a strict scan mode — and is part of the contract, not an edge case. A 404 means either no such document or a tombstone whose bytes are gone.',
+            'The bytes, with their resolved `Content-Type` and `Content-Disposition: inline`. THIS IS THE ANTIVIRUS EGRESS GATE: bytes are written before the scan resolves, so this route is what stops an unscanned or infected file being served, and its 403 is part of the contract rather than an edge case.\n\nTWO distinct 403 codes, because they mean opposite things to the person reading the screen: `FILE_SCAN_PENDING` is "wait and try again" (the scan has not finished, under a strict scan mode), and `FILE_SCAN_REJECTED` is "this file is not coming" (antivirus flagged it). One code for both would leave a client unable to say which happened, so it would have to say neither.\n\nA 404 is `DOCUMENT_NOT_FOUND` for no such document, or `DOCUMENT_PURGED` for a tombstone whose bytes are gone — the row is still in the list.',
         tags: ['Documents'],
         params: DocumentParams,
         success: {
@@ -137,7 +153,7 @@ export function registerDocumentPaths(registry: OpenAPIRegistry): void {
         operationId: 'deleteFarmDocument',
         summary: 'Delete a document',
         description:
-            'The uploader or an administrator, matching `mayDelete` on the row. The bytes go; the ROW SURVIVES as a tombstone recording who deleted it and when, with the title dropped. Idempotent: a second call on an existing tombstone does not move `purgedAt`, because that timestamp is what an audit dates from. Any Google Drive copy STAYS — it lives in the farm’s own Drive and this product does not reach back into it.',
+            'The uploader or an administrator, matching `mayDelete` on the row; anyone else gets 403 `DOCUMENT_DELETE_NOT_ALLOWED`, which a client will normally only see from a STALE list. The bytes go; the ROW SURVIVES as a tombstone carrying `purgeReason: DELETED`, `purgedBy` and `purgedAt`, with the title dropped — the title is KEPT on an expiry, because that is the platform acting on a policy rather than a person asking. Idempotent: a second call on an existing tombstone does not move `purgedAt`, because that timestamp is what an audit dates from. Any Google Drive copy STAYS — it lives in the farm’s own Drive and this product does not reach back into it.',
         tags: ['Documents'],
         params: DocumentParams,
         success: {

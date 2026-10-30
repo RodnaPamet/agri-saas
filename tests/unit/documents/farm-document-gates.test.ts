@@ -251,13 +251,76 @@ describe('uploadFarmDocument — idempotency', () => {
         });
 
         const file = new File([new Uint8Array([1, 2, 3])], 'Договор.pdf', { type: 'application/pdf' });
-        const row = await uploadFarmDocument(ctxFor('EDITOR', UPLOADER), file, 'key-1');
+        const row = await uploadFarmDocument(ctxFor('EDITOR', UPLOADER), file, { idempotencyKey: 'key-1' });
 
         expect(row.id).toBe('doc-1');
         // The whole point: the pre-check runs BEFORE ingest, so a retry over
         // a bad connection does not re-upload and re-scan the bytes.
         expect(ingestMock).not.toHaveBeenCalled();
         expect(db.farmDocument.create).not.toHaveBeenCalled();
+    });
+
+    /** The upload fixture, parameterised by what the caller titles it. */
+    async function uploadWith(opts: { title?: string | null }) {
+        db.farmDocument.findFirst.mockResolvedValue(null);
+        db.tenantDocumentSettings.findUnique.mockResolvedValue({ retention: 'P1Y' });
+        ingestMock.mockResolvedValue({
+            pathKey: cleanFile().pathKey,
+            originalName: 'document.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 4096,
+            sha256: 'abc',
+            storageProvider: 'local',
+            bucket: null,
+            domain: 'documents',
+            scanStatus: 'CLEAN',
+            buffer: Buffer.from([1, 2, 3]),
+        });
+        createPending.mockResolvedValue({ id: 'file-1' });
+        db.farmDocument.create.mockResolvedValue({
+            id: 'doc-new',
+            name: null,
+            retention: 'P1Y',
+            expiresOn: '2027-10-30',
+            purgedAt: null,
+            purgeReason: null,
+            driveState: 'OFF',
+            createdAt: new Date('2026-10-30T09:00:00Z'),
+            uploadedByUserId: UPLOADER,
+            uploadedBy: { id: UPLOADER, name: 'Иван' },
+            purgedBy: null,
+            fileRecord: { mimeType: 'application/pdf', sizeBytes: 4096 },
+        });
+        const file = new File([new Uint8Array([1, 2, 3])], 'document.pdf', {
+            type: 'application/pdf',
+        });
+        await uploadFarmDocument(ctxFor('EDITOR', UPLOADER), file, opts);
+        return db.farmDocument.create.mock.calls[0][0].data.name as string;
+    }
+
+    // The defect this pins: a native client cannot put a Cyrillic title in a
+    // multipart part header and rely on every parser agreeing about the
+    // encoding, so it sends an ASCII filename plus a `name` TEXT field.
+    // Taking the title from the file part alone would label EVERY upload from
+    // the phone «document.pdf» — a silent defect, because the row is valid
+    // and the list renders fine.
+    it('prefers the supplied title over the filename', async () => {
+        expect(await uploadWith({ title: 'Договор аренда 2026.pdf' })).toBe(
+            'Договор аренда 2026.pdf',
+        );
+    });
+
+    it('falls back to the filename when no title is sent', async () => {
+        // A web form that posts only `file` must keep working.
+        expect(await uploadWith({})).toBe('document.pdf');
+        expect(await uploadWith({ title: null })).toBe('document.pdf');
+    });
+
+    it('falls back when the title is only whitespace', async () => {
+        // `sanitizePlainText` trims since #1825, so this is empty rather than
+        // truthy — storing three spaces as a document title would render as
+        // a nameless row.
+        expect(await uploadWith({ title: '   ' })).toBe('document.pdf');
     });
 
     it('ingests normally when no key is supplied', async () => {

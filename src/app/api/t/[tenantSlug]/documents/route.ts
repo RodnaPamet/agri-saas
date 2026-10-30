@@ -41,7 +41,18 @@ export const POST = withApiErrorHandling(
         // is the write most likely to be retried, and documents are
         // deliberately not an outbox surface.
         const idempotencyKey = req.headers.get('Idempotency-Key');
-        const row = await uploadFarmDocument(ctx, file, idempotencyKey);
+        // The farmer's own title, as a TEXT field beside the file.
+        //
+        // A native client cannot put a Cyrillic title in a multipart part
+        // header and rely on every parser agreeing about the encoding, so it
+        // sends an ASCII filename plus `name`. Taking the title from the file
+        // part alone would label every upload from the phone «document.pdf».
+        // The usecase sanitises it and falls back to the filename.
+        const title = formData.get('name');
+        const row = await uploadFarmDocument(ctx, file, {
+            idempotencyKey,
+            title: typeof title === 'string' ? title : null,
+        });
         return jsonResponse(row, { status: 201 });
     }),
 );

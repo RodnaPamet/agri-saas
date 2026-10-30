@@ -40,8 +40,9 @@ import { runInTenantContext } from '@/lib/db-context';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { assertTenantKey, getStorageProvider } from '@/lib/storage';
-import { codedNotFound, forbidden } from '@/lib/errors/types';
+import { codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { farmToday } from '@/lib/calendar-day-key';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 
 /**
@@ -106,9 +107,35 @@ export interface FarmDocumentRow {
     sizeBytes: number;
     uploadedAt: string;
     uploadedBy: { id: string; name: string | null };
-    /** Day key, or null for «Без срок». */
-    expiresAt: string | null;
+    /**
+     * Day key, or null for «Без срок».
+     *
+     * Named `expiresOn`, not `expiresAt`, and the two sibling timestamps are
+     * why: `uploadedAt` and `purgedAt` are instants, this is a calendar DAY.
+     * One `…At` among them that means something different is a field every
+     * client has to remember an exception for. It also matches the column.
+     * #2495's Routes section writes `expiresAt`; this deviates from that text
+     * deliberately — see the note on the issue.
+     */
+    expiresOn: string | null;
+    /**
+     * The retention period AS IT WAS AT UPLOAD, so a client can say «Пази се
+     * 1 година, до …». `expiresOn` alone loses WHY that date was given, and
+     * cannot tell a 1-year document from a 2-year one uploaded a year
+     * earlier.
+     */
+    retention: string;
     purgedAt: string | null;
+    /**
+     * Why the bytes went, when they did. EXPLICIT rather than inferable:
+     * a client should not have to work out which of two states it is in from
+     * which fields happen to be null — `name` is dropped on a manual delete
+     * and kept on expiry, so null-ness nearly works and would fail on any
+     * row that ever has a null name for another reason.
+     */
+    purgeReason: 'EXPIRED' | 'DELETED' | null;
+    /** Who deleted it. Null when nobody did — an expiry has no actor. */
+    purgedBy: { id: string; name: string | null } | null;
     mayDelete: boolean;
     drive: { state: string };
 }
@@ -121,24 +148,30 @@ function mayDelete(ctx: RequestContext, uploadedByUserId: string): boolean {
 const ROW_SELECT = {
     id: true,
     name: true,
+    retention: true,
     expiresOn: true,
     purgedAt: true,
+    purgeReason: true,
     driveState: true,
     createdAt: true,
     uploadedByUserId: true,
     uploadedBy: { select: { id: true, name: true } },
+    purgedBy: { select: { id: true, name: true } },
     fileRecord: { select: { mimeType: true, sizeBytes: true } },
 } as const;
 
 type RowShape = {
     id: string;
     name: string | null;
+    retention: string;
     expiresOn: string | null;
     purgedAt: Date | null;
+    purgeReason: string | null;
     driveState: string;
     createdAt: Date;
     uploadedByUserId: string;
     uploadedBy: { id: string; name: string | null } | null;
+    purgedBy: { id: string; name: string | null } | null;
     fileRecord: { mimeType: string | null; sizeBytes: number | null } | null;
 };
 
@@ -150,8 +183,11 @@ function toRow(ctx: RequestContext, r: RowShape): FarmDocumentRow {
         sizeBytes: r.fileRecord?.sizeBytes ?? 0,
         uploadedAt: r.createdAt.toISOString(),
         uploadedBy: { id: r.uploadedBy?.id ?? r.uploadedByUserId, name: r.uploadedBy?.name ?? null },
-        expiresAt: r.expiresOn,
+        expiresOn: r.expiresOn,
+        retention: r.retention,
         purgedAt: r.purgedAt ? r.purgedAt.toISOString() : null,
+        purgeReason: (r.purgeReason as 'EXPIRED' | 'DELETED' | null) ?? null,
+        purgedBy: r.purgedBy ? { id: r.purgedBy.id, name: r.purgedBy.name } : null,
         mayDelete: mayDelete(ctx, r.uploadedByUserId),
         drive: { state: r.driveState },
     };
@@ -197,11 +233,12 @@ export async function listFarmDocuments(
 export async function uploadFarmDocument(
     ctx: RequestContext,
     file: File,
-    idempotencyKey?: string | null,
+    opts: { idempotencyKey?: string | null; title?: string | null } = {},
     now: Date = new Date(),
 ): Promise<FarmDocumentRow> {
+    const idempotencyKey = opts.idempotencyKey;
     try {
-        return await uploadFarmDocumentImpl(ctx, file, idempotencyKey, now);
+        return await uploadFarmDocumentImpl(ctx, file, opts, now);
     } catch (err) {
         // Race backstop. The pre-check below is not a lock, so two retries
         // arriving together can both pass it; the PARTIAL unique index is
@@ -218,9 +255,10 @@ export async function uploadFarmDocument(
 async function uploadFarmDocumentImpl(
     ctx: RequestContext,
     file: File,
-    idempotencyKey: string | null | undefined,
+    opts: { idempotencyKey?: string | null; title?: string | null },
     now: Date,
 ): Promise<FarmDocumentRow> {
+    const { idempotencyKey } = opts;
     assertCanWrite(ctx);
 
     // Answer a replay BEFORE spending the bytes. An upload is the one write
@@ -266,10 +304,26 @@ async function uploadFarmDocumentImpl(
         const created = (await db.farmDocument.create({
             data: {
                 tenantId: ctx.tenantId,
-                // Encrypted at rest by the client extension — `FarmDocument`
-                // is in `ENCRYPTED_FIELDS` because a title is routinely
+                // The farmer's own title when the upload supplied one,
+                // falling back to the filename.
+                //
+                // This is NOT cosmetic. A native client cannot put a
+                // Cyrillic title in a multipart part header and expect every
+                // parser to agree on the encoding, so it sends an ASCII
+                // filename plus a `name` TEXT field. Reading only the file
+                // part would title every document from the phone
+                // «document.pdf».
+                //
+                // Sanitised because it is user-supplied free text going into
+                // a stored field (Epic C.5, at the usecase layer).
+                // `sanitizePlainText` trims since #1825, so a
+                // whitespace-only title falls through to the filename rather
+                // than storing blanks.
+                //
+                // Encrypted at rest — `FarmDocument` is in
+                // `ENCRYPTED_FIELDS` because a title is routinely
                 // «Договор аренда <фамилия>.pdf».
-                name: ingested.originalName,
+                name: sanitizePlainText(opts.title) || ingested.originalName,
                 fileRecordId: fileRecord.id,
                 uploadedByUserId: ctx.userId,
                 retention,
@@ -362,13 +416,24 @@ export async function downloadFarmDocument(ctx: RequestContext, documentId: stri
         // `ingest.ts` does it: the gate answers "may this be served", and an
         // infected file deserves its own refusal rather than the generic one.
         if (fileRecord.scanStatus === 'INFECTED') {
-            throw forbidden('That document was flagged by antivirus scanning and cannot be opened.');
+            throw codedForbidden(
+                'FILE_SCAN_REJECTED',
+                'That document was flagged by antivirus scanning and cannot be opened.',
+            );
         }
         // NO DEFAULT on this argument. `isDownloadAllowed('SKIPPED')` is true
         // in every `AV_SCAN_MODE`, so `?? 'SKIPPED'` would turn "we never
         // scanned this" into "serve it".
         if (!isDownloadAllowed(fileRecord.scanStatus)) {
-            throw forbidden('That document is still being scanned. Please try again shortly.');
+            // A SEPARATE code from the rejection above, because the two mean
+            // opposite things to the person holding the phone: one is "wait
+            // and try again", the other is "this file is not coming". One
+            // code for both would be the uniform-failure-shape defect — the
+            // client cannot say which happened, so it has to say neither.
+            throw codedForbidden(
+                'FILE_SCAN_PENDING',
+                'That document is still being scanned. Please try again shortly.',
+            );
         }
 
         return {
@@ -402,7 +467,15 @@ export async function deleteFarmDocument(ctx: RequestContext, documentId: string
         });
         if (!doc) throw codedNotFound('DOCUMENT_NOT_FOUND', 'That document was not found.');
         if (!mayDelete(ctx, doc.uploadedByUserId)) {
-            throw forbidden('Only the person who uploaded this document, or an administrator, may delete it.');
+            // Coded, even though `mayDelete` tells the client in advance:
+            // the case this fires in is a STALE list — an admin revoked, or
+            // the row belongs to somebody else and the page is old — and that
+            // is exactly when a client needs to say something specific rather
+            // than render an English sentence it cannot translate.
+            throw codedForbidden(
+                'DOCUMENT_DELETE_NOT_ALLOWED',
+                'Only the person who uploaded this document, or an administrator, may delete it.',
+            );
         }
         // Already a tombstone — idempotent, so a double tap does not rewrite
         // `purgedAt` and move the date an audit reads.
