@@ -60,11 +60,29 @@ const ALLOWED_LEGACY_FILES = [
     // `policies/issue.policies.ts`) were deleted by #1479. This list is
     // SHRINK-ONLY: an addition means a new file carrying legacy Issue
     // references, which is the thing these guardrails exist to prevent.
-    'events/audit.ts',                     // event names
+    // `events/audit.ts` removed 2026-10-30 (#2414). It was the last entry and
+    // it was DEAD: measured against this file's three legacy patterns —
+    // /\bdb\.issue\b(?!s)/, /\bdb\.(issueLink|issueComment|issueWatcher|
+    // issueEvidenceBundle)\b/ and /prisma\.issue(Link|Comment)?\.create/ — it
+    // matches NONE on comment-blanked source. The entry read as an accepted
+    // legacy reference over a file that has none.
 ];
 
+/**
+ * The matcher, parameterised over the list — #2377's reusable principle.
+ *
+ * The list is EMPTY now, so a control that iterates it proves nothing: "every
+ * entry matches itself" is vacuously true over zero entries. Taking the list as
+ * an argument lets the control feed a suffix the repo no longer contains, which
+ * is the only way to keep the `endsWith` logic proven while the live list is
+ * empty.
+ */
+export function isAllowedIn(list: readonly string[], file: string): boolean {
+    return list.some(allowed => file.replace(/\\/g, '/').endsWith(allowed));
+}
+
 function isAllowed(file: string): boolean {
-    return ALLOWED_LEGACY_FILES.some(allowed => file.replace(/\\/g, '/').endsWith(allowed));
+    return isAllowedIn(ALLOWED_LEGACY_FILES, file);
 }
 
 describe('Issue → Task Migration Guardrails', () => {
@@ -100,13 +118,20 @@ describe('Issue → Task Migration Guardrails', () => {
         // tests below would report zero hits no matter what the codebase
         // contained. The allowlist would have become a universal exemption
         // with nothing saying so.
-        for (const allowed of ALLOWED_LEGACY_FILES) {
-            expect({ allowed, isAllowed: isAllowed(allowed) }).toEqual({ allowed, isAllowed: true });
-            // And with a leading path, since callers pass SRC_DIR-relative paths.
-            expect(isAllowed(`some/nested/${allowed}`)).toBe(true);
-            // And with Windows separators, which the implementation normalises.
-            expect(isAllowed(allowed.replace(/\//g, '\\'))).toBe(true);
-        }
+        // The live list is EMPTY, so iterating it proves nothing. Feed the
+        // matcher a SYNTHETIC entry instead — the suffix logic must stay
+        // proven even though the repo no longer contains a legacy file.
+        const SYNTH = ['events/legacy-example.ts'];
+        expect(isAllowedIn(SYNTH, 'events/legacy-example.ts')).toBe(true);
+        // ...with a leading path, since callers pass SRC_DIR-relative paths
+        expect(isAllowedIn(SYNTH, 'some/nested/events/legacy-example.ts')).toBe(true);
+        // ...and with Windows separators, which the implementation normalises
+        expect(isAllowedIn(SYNTH, 'some\\nested\\events\\legacy-example.ts')).toBe(true);
+        // ...and a near miss must NOT match
+        expect(isAllowedIn(SYNTH, 'events/legacy-examples.ts')).toBe(false);
+        // The live list being empty means nothing is exempt, which the negative
+        // cases below still prove against a truthy constant.
+        expect(ALLOWED_LEGACY_FILES).toEqual([]);
         for (const notAllowed of [
             'lib/prisma.ts',
             'app-layer/usecases/task.ts',
