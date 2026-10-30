@@ -60,6 +60,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { collectSourceFiles } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -70,38 +71,57 @@ interface Offence {
     snippet: string;
 }
 
+/**
+ * The scanned population, via the SANCTIONED collector — #2483 class A.
+ *
+ * Was an inline recursive `walk` inside the `it()` below, so `selector-teeth`
+ * found nothing at module scope to mutate. The assertion is
+ * `expect(offenders).toEqual([])`, which an emptied walk satisfies for free.
+ * `collectSourceFiles` REFUSES an empty result, so the population cannot be
+ * empty rather than being emptied and caught (#865).
+ *
+ * Parity measured BEFORE the change: 2291 files both ways, zero difference.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.ts', '.tsx', '.css'],
+    // EXPLICIT skipDirs, and the reason is a real route.
+    //
+    // `DEFAULT_SKIP_DIRS` is ['node_modules', '.next', 'dist', 'coverage',
+    // '.git'] — build artefacts. But `coverage` is also an ordinary product
+    // noun: `src/app/api/t/[tenantSlug]/ortho/coverage/route.ts` is the
+    // orthophoto coverage API. With the defaults this scan would silently stop
+    // reading it, which the parity check caught as a diff of exactly 1
+    // (2291 hand vs 2290 helper).
+    //
+    // Only guards including `.ts` are exposed: that directory holds 1 `.ts`
+    // file and 0 `.tsx`, so the `.tsx`-only migrations in #2513 and #2514 were
+    // unaffected — verified rather than assumed.
+    skipDirs: ['node_modules', '.next'],
+    floor: 600,
+});
+
 describe('Animation vocabulary discipline (Roadmap-6 PR-1)', () => {
     it('animate-slideIn is retired (zero callsites)', () => {
         const offenders: Offence[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
+        for (const full of SCANNED) {
+            const rel = path.relative(ROOT, full);
+            const raw = fs.readFileSync(full, 'utf-8');
+            // Strip line comments + block comments first so the
+            // documentation note in globals.css explaining the
+            // retirement doesn't trip the scanner.
+            const stripped = blankNonCode(raw);
+            const lines = stripped.split('\n');
+            lines.forEach((line, i) => {
+                if (/\banimate-slideIn\b/.test(line)) {
+                    offenders.push({
+                        file: rel,
+                        line: i + 1,
+                        snippet: line.trim().slice(0, 200),
+                    });
                 }
-                if (!/\.(tsx?|css)$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                const raw = fs.readFileSync(full, 'utf-8');
-                // Strip line comments + block comments first so the
-                // documentation note in globals.css explaining the
-                // retirement doesn't trip the scanner.
-                const stripped = blankNonCode(raw);
-                const lines = stripped.split('\n');
-                lines.forEach((line, i) => {
-                    if (/\banimate-slideIn\b/.test(line)) {
-                        offenders.push({
-                            file: rel,
-                            line: i + 1,
-                            snippet: line.trim().slice(0, 200),
-                        });
-                    }
-                });
-            }
-        };
-        walk(path.join(ROOT, 'src'));
+            });
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)

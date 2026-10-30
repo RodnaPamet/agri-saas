@@ -27,7 +27,7 @@
  *
  * ## Why the list is 223 and not 47
  *
- * (That 223 is the figure at landing. It is **226** today: down to 208 as
+ * (That 223 is the figure at landing. It is **221** today: down to 208 as
  * batches migrated, then +28 in ba1bb19c8 when the register's own scanned
  * roots were widened and disclosed 28 collectors that had been invisible to
  * it, then down again. `REGISTER_CEILING` is the live number.)
@@ -106,7 +106,7 @@ const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
  * length — see the ratchet test for why slack is the thing being refused.
  * Lower it in the same PR that migrates a file.
  */
-const REGISTER_CEILING = 226;
+const REGISTER_CEILING = 221;
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
@@ -125,7 +125,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/admin-cell-text-size.test.ts',
     'tests/guards/admin-datatable-no-double-card.test.ts',
     'tests/guards/animation-language-lock.test.ts',
-    'tests/guards/animation-vocabulary.test.ts',
     'tests/guards/app-router-module-exports.test.ts',
     'tests/guards/async-params-route-typing.test.ts',
     'tests/guards/audit-gate-no-ci-overrides.test.ts',
@@ -138,15 +137,12 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/button-label-centering.test.ts',
     'tests/guards/button-variant-cull.test.ts',
     'tests/guards/cancel-button-size-parity.test.ts',
-    'tests/guards/cancel-button-variant-discipline.test.ts',
     'tests/guards/card-density-discipline.test.ts',
     'tests/guards/card-elevation-discipline.test.ts',
-    'tests/guards/card-padding-lockdown.test.ts',
     'tests/guards/card-pretender-eradication.test.ts',
     'tests/guards/cardvariants-server-import.test.ts',
     'tests/guards/ci-failure-watchlist.test.ts',
     'tests/guards/columns-dropdown-coverage.test.ts',
-    'tests/guards/content-tone-opacity-discipline.test.ts',
     'tests/guards/create-button-uniformity.test.ts',
     'tests/guards/csp-nonce-component-scripts-patch.test.ts',
     'tests/guards/csp-script-guardrails.test.ts',
@@ -163,7 +159,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/detail-page-metastrip-adoption.test.ts',
     'tests/guards/detail-page-tabs-slot.test.ts',
     'tests/guards/deterministic-install.test.ts',
-    'tests/guards/disabled-state-discipline.test.ts',
     'tests/guards/download-route-gate-reachability.test.ts',
     'tests/guards/e2e-isolation.test.ts',
     'tests/guards/e2e-teardown-tables.test.ts',
