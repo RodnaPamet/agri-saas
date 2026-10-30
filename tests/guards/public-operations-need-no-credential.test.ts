@@ -58,11 +58,12 @@
  * admit it). This asks only whether the SPEC agrees — a third thing neither of
  * them looks at.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
 import { REPO_ROOT } from '../helpers/collect-files';
+import { routePathTemplates } from '../../scripts/lib/api-routes';
 
 import { isPublicPath } from '@/lib/auth/guard';
 
@@ -81,23 +82,32 @@ const spec = JSON.parse(
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
-/** Spec-shaped paths for every route file under `src/app/api/public/`. */
+/**
+ * Spec-shaped paths for every route file under `src/app/api/public/`.
+ *
+ * Delegated to `scripts/lib/api-routes.ts` rather than walked here. CLAUDE.md
+ * is explicit about why: "The route derivation is held ONCE, in
+ * `scripts/lib/api-routes.ts`, shared by the generator and by
+ * `openapi-paths-complete.test.ts` ... Two copies of a selection rule is how
+ * two answers diverge. Do not fork it." This file had forked it.
+ *
+ * It is not a style point. The fork re-derived both the walk AND the
+ * `[param]` -> `{param}` rewrite, and a route walk is precisely where this
+ * repo has been bitten: a name-based skip list hid
+ * `GET /api/t/{tenantSlug}/ortho/coverage` from the inventory and the spec
+ * while it served traffic (#2421). The canonical collector now excludes by
+ * Next's own structural rule (a `.`/`_` prefix is not a route segment), so
+ * delegating inherits that fix instead of being one edit away from repeating
+ * it. `collectSourceFiles` would NOT do here — its DEFAULT_SKIP_DIRS still
+ * excludes `coverage` by name (#2517).
+ *
+ * Parity verified before the change: both derivations return the same 4 paths,
+ * with nothing on either side only.
+ */
 function publicRouteFiles(): string[] {
-    const root = join(REPO_ROOT, 'src/app/api/public');
-    const out: string[] = [];
-    const walk = (dir: string): void => {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-            const full = join(dir, entry.name);
-            if (entry.isDirectory()) walk(full);
-            // `[param]` on disk is `{param}` in the spec.
-            else if (entry.name === 'route.ts') {
-                const rel = full.slice(root.length, full.length - '/route.ts'.length);
-                out.push(`/api/public${rel.replace(/\[([^\]]+)\]/g, '{$1}')}`);
-            }
-        }
-    };
-    walk(root);
-    return out.sort();
+    return routePathTemplates()
+        .filter((p) => p.startsWith('/api/public'))
+        .sort();
 }
 
 function publicOperations(): Array<{ path: string; method: string; op: Operation }> {
