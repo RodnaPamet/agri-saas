@@ -39,10 +39,41 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PRIMITIVE = 'src/components/ui/card.tsx';
 const VARIANTS = 'src/components/ui/card-variants.ts';
+
+/**
+ * The scanned population, collected by the SANCTIONED helper — #2483 class A.
+ *
+ * This was an inline recursive `walk` inside the `it()` below, which is why
+ * `selector-teeth` reported this file as having no module-level selector: there
+ * was nothing at module scope to mutate. The assertion is
+ * `expect(offenders).toEqual([])`, so an emptied walk reported no legacy
+ * `glass-card` anywhere having read nothing.
+ *
+ * Migrated rather than merely hoisted. #2483's remedy is to extract the walk so
+ * the auditor can gut it, but `collectSourceFiles` is strictly stronger: it
+ * REFUSES an empty result, so the population cannot be empty at all rather than
+ * being emptied and caught. #865's docblock states the trade explicitly — "the
+ * guarantee moves from 'we mutated its collector and it noticed' to 'its
+ * collector cannot return empty'" — and expects the harness to then report the
+ * file as NOT AUDITED, which is correct here rather than a regression.
+ *
+ * Population parity verified before the change: the hand-rolled walk and this
+ * call both collect 871 files, with zero difference in either direction.
+ * `DEFAULT_SKIP_DIRS` already covers the `node_modules` / `.next` skips the
+ * walk spelled by hand.
+ */
+const SCANNED = collectSourceFiles({
+    roots: ['src'],
+    extensions: ['.tsx'],
+    exclude: (rel) => rel === PRIMITIVE,
+    // 871 today. The helper throws below this, which is the whole point.
+    floor: 600,
+});
 
 interface Offence {
     file: string;
@@ -71,35 +102,23 @@ describe('Card-primitive eradication of glass-card (Roadmap-5 PR-1)', () => {
 
     it('no .tsx file under src/ uses the glass-card literal in non-comment JSX', () => {
         const offenders: Offence[] = [];
-        const walk = (dir: string) => {
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, e.name);
-                if (e.isDirectory()) {
-                    if (e.name === 'node_modules' || e.name === '.next')
-                        continue;
-                    walk(full);
-                    continue;
+        for (const abs of SCANNED) {
+            const rel = path.relative(ROOT, abs);
+            const raw = fs.readFileSync(abs, 'utf-8');
+            // Strip block + line comments first so JSDoc / inline
+            // // comments referencing glass-card don't trip.
+            const stripped = blankNonCode(raw);
+            const lines = stripped.split('\n');
+            lines.forEach((line, i) => {
+                if (/\bglass-card\b/.test(line)) {
+                    offenders.push({
+                        file: rel,
+                        line: i + 1,
+                        snippet: line.trim().slice(0, 200),
+                    });
                 }
-                if (!/\.tsx$/.test(e.name)) continue;
-                const rel = path.relative(ROOT, full);
-                if (rel === PRIMITIVE) continue;
-                const raw = fs.readFileSync(full, 'utf-8');
-                // Strip block + line comments first so JSDoc / inline
-                // // comments referencing glass-card don't trip.
-                const stripped = blankNonCode(raw);
-                const lines = stripped.split('\n');
-                lines.forEach((line, i) => {
-                    if (/\bglass-card\b/.test(line)) {
-                        offenders.push({
-                            file: rel,
-                            line: i + 1,
-                            snippet: line.trim().slice(0, 200),
-                        });
-                    }
-                });
-            }
-        };
-        walk(path.join(ROOT, 'src'));
+            });
+        }
         if (offenders.length > 0) {
             const lines = offenders
                 .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)
