@@ -235,6 +235,7 @@ async function uploadFarmDocumentImpl(
     const ingested = await ingestUploadedFile(ctx.tenantId, file, {
         domain: 'documents',
         fallbackName: 'document',
+        component: 'farm-documents',
     });
 
     return runInTenantContext(ctx, async (db) => {

@@ -75,6 +75,7 @@ const mockCtx: RequestContext = {
         tasks: { view: true, create: true, edit: true, assign: true },
         reports: { view: true, export: true },
         knowledge: { view: true },
+        documents: { view: true, upload: true, manage: true },
         admin: { view: true, manage: true, members: true, sso: true, scim: true, tenant_lifecycle: true, owner_management: true },
     },
 };
