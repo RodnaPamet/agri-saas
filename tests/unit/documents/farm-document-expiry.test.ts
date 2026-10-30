@@ -71,7 +71,7 @@ describe('documentExpiryDayKey', () => {
         expect(documentExpiryDayKey('P1Y', new Date('2026-12-31T22:30:00Z'))).toBe('2028-01-01');
     });
 
-    it('is zero-padded, which is what makes the sweep's string compare safe', () => {
+    it('is zero-padded, which is what the sweep string-compare relies on', () => {
         const early = documentExpiryDayKey('P3M', new Date('2026-01-05T09:00:00Z'))!;
         const late = documentExpiryDayKey('P3M', new Date('2026-01-15T09:00:00Z'))!;
         expect(early < late).toBe(true);
