@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test mocks mirror the
- * narrow Prisma surface the notification writer takes. */
 /**
  * The agro notifications arrive in the RECIPIENT's language (#2490).
  *
@@ -22,8 +20,10 @@
  */
 const publishFreshMock = jest.fn().mockResolvedValue(undefined);
 jest.mock('@/app-layer/notifications/publish-fresh', () => ({
-    publishFreshNotifications: (...args: any[]) => publishFreshMock(...args),
+    publishFreshNotifications: (...args: unknown[]) => publishFreshMock(...args),
 }));
+
+import type { PrismaClient } from '@prisma/client';
 
 import {
     AGRO_COPY_KEYS,
@@ -32,16 +32,32 @@ import {
     type AgroNotificationTarget,
 } from '@/app-layer/notifications/agro';
 import { renderDiseaseReason, renderSprayReason } from '@/lib/agro/reason-label';
-import { evaluateDiseaseRisk, type DiseaseDay } from '@/lib/agro/rules';
+import {
+    evaluateDiseaseRisk,
+    type DiseaseDay,
+    type DiseaseReasonCode,
+    type SprayReasonCode,
+} from '@/lib/agro/rules';
 import { loadMessagesFor } from '@/lib/i18n/server-messages';
 import { LOCALES } from '@/lib/i18n/locales';
 
 const NOW = new Date('2026-06-15T09:00:00Z');
 
-/** Captures the row `createMany` was handed. */
+/**
+ * Captures the row `createMany` was handed.
+ *
+ * Typed through `Pick<PrismaClient, 'notification'>` — the narrow surface
+ * `createAgroSignalNotification` actually takes — via `as unknown as` rather
+ * than `any`. The writer's parameter is deliberately narrow so a double needs
+ * no cast to the whole client; `unknown` keeps that honest without adding an
+ * `any` the lint ratchet would (rightly) charge for.
+ */
+type NotificationDouble = Pick<PrismaClient, 'notification'>;
+
 function makeDb() {
     const createMany = jest.fn().mockResolvedValue({ count: 1 });
-    return { db: { notification: { createMany } } as any, createMany };
+    const db = { notification: { createMany } } as unknown as NotificationDouble;
+    return { db, createMany };
 }
 
 function target(over: Partial<AgroNotificationTarget> = {}): AgroNotificationTarget {
@@ -121,7 +137,13 @@ describe('the catalogue covers every key the COPY table names', () => {
         expect(keys.length).toBe(9);
         console.log(`[agro-notification-locale] ${locale}: ${keys.length} copy keys checked`);
         for (const key of keys) {
-            const value = key.split('.').reduce<any>((node, part) => node?.[part], messages);
+            const value = key.split('.').reduce<unknown>(
+                (node, part) =>
+                    node && typeof node === 'object'
+                        ? (node as Record<string, unknown>)[part]
+                        : undefined,
+                messages,
+            );
             expect(typeof value).toBe('string');
             expect((value as string).trim()).not.toBe('');
         }
@@ -153,8 +175,8 @@ describe('a reason renders as a sentence a person can read', () => {
         await expect(renderSprayReason('bg', undefined)).resolves.toBeNull();
         // A code added to the union without copy must not put the KEY in
         // front of a farmer — `translateFor` returns the key on a miss.
-        await expect(renderSprayReason('bg', { code: 'notACode' as any, params: {} })).resolves.toBeNull();
-        await expect(renderDiseaseReason('bg', { code: 'notACode' as any, params: {} })).resolves.toBeNull();
+        await expect(renderSprayReason('bg', { code: 'notACode' as unknown as SprayReasonCode, params: {} })).resolves.toBeNull();
+        await expect(renderDiseaseReason('bg', { code: 'notACode' as unknown as DiseaseReasonCode, params: {} })).resolves.toBeNull();
     });
 });
 
