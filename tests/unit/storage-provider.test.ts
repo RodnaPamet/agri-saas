@@ -189,7 +189,7 @@ describe('generatePathKey', () => {
     it('produces tenant-scoped path', () => {
         const key = generatePathKey('tenant-abc', 'report.pdf');
         // generatePathKey uses buildTenantObjectKey with domain='general'
-        expect(key).toMatch(/^tenants\/tenant-abc\/general\/\d{4}\/\d{2}\/[a-f0-9-]+_report\.pdf$/);
+        expect(key).toMatch(/^tenants\/tenant-abc\/general\/\d{4}\/\d{2}\/[a-f0-9-]+\.pdf$/);
     });
 
     it('sanitizes dangerous filenames', () => {

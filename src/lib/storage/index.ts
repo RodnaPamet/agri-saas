@@ -120,7 +120,15 @@ export function getProviderByName(name: StorageProviderType): StorageProvider {
 // ─── Path Generation ───
 
 /**
- * Sanitize a filename: strip directory separators, practice chars, limit length.
+ * Sanitize a filename: strip directory separators, unsafe chars, limit length.
+ *
+ * NOTE: as of #2497 this has no production caller. Its only one was
+ * `buildTenantObjectKey`, which no longer puts a filename in the object key —
+ * see that function. Kept exported because it is still the right tool for any
+ * caller that needs a path-safe filename (a download name, a temp file), and
+ * deleting a correct utility to make a grep come out empty would be the wrong
+ * trade. If a second release passes with no caller, remove it rather than
+ * leaving this note to rot.
  */
 export function sanitizeFileName(name: string): string {
     // path.basename on Linux doesn't treat '\' as separator,
@@ -197,9 +205,34 @@ export interface BuildKeyOptions {
  * - UUID prefix ensures uniqueness
  * - domain groups related objects (evidence, reports, exports, temp)
  *
+ * ## The filename is NOT in the key (#2497)
+ *
+ * It was, until 2026-10-30: the key ended `<uuid>_<sanitised filename>`. A
+ * filename in this product routinely IS personal data — «Договор аренда
+ * Иванов.pdf» names a third party — and that put a lessor's surname into
+ * `FileRecord.pathKey` (plaintext, `@unique`) and, with
+ * `STORAGE_PROVIDER=local`, into a real path under `/data/uploads` that rides
+ * every daily boot-disk snapshot. `ParcelLease.lessorName` is encrypted
+ * precisely because it names a third party; the filename of the contract it
+ * came from was not.
+ *
+ * The extension is kept, because content-type sanity and a readable object in
+ * a bucket listing are worth something and an extension names no one.
+ *
+ * `originalName` is still REQUIRED, and still validated, because it is where
+ * the extension comes from — so every one of the nine call sites is unchanged.
+ * The filename itself continues to live on `FileRecord.originalName`, which is
+ * one column and CAN be encrypted; `pathKey` could not be, being `@unique` and
+ * the address of the bytes.
+ *
+ * Safe to change in place because **nothing re-derives a key**: every caller
+ * builds one at write time and stores it, so existing objects keep resolving
+ * at their current paths and no data moves. Verified across all nine sites
+ * before this landed.
+ *
  * @example
  *   buildTenantObjectKey('cuid123', 'evidence', 'audit-report.pdf')
- *   // → 'tenants/cuid123/evidence/2026/03/a1b2c3d4-..._audit-report.pdf'
+ *   // → 'tenants/cuid123/evidence/2026/03/a1b2c3d4-....pdf'
  */
 export function buildTenantObjectKey(
     tenantId: string,
@@ -221,9 +254,30 @@ export function buildTenantObjectKey(
     const yyyy = now.getFullYear().toString();
     const mm = (now.getMonth() + 1).toString().padStart(2, '0');
     const uuid = crypto.randomUUID();
-    const safe = sanitizeFileName(originalName);
 
-    return `tenants/${tenantId}/${domain}/${yyyy}/${mm}/${uuid}_${safe}`;
+    return `tenants/${tenantId}/${domain}/${yyyy}/${mm}/${uuid}${extensionOf(originalName)}`;
+}
+
+/**
+ * The `.ext` of a filename, or `''` — never anything else.
+ *
+ * Deliberately strict rather than reusing `sanitizeFileName`, which is built
+ * to make a whole filename path-safe and would happily return `_______.txt`
+ * for junk. Here the only acceptable outputs are a short alphanumeric
+ * extension or nothing at all, because this value goes into an object key:
+ *
+ *   - the last dot-segment only, so `archive.tar.gz` yields `.gz`
+ *   - lowercased, so the same upload twice cannot differ by case alone
+ *   - `[a-z0-9]{1,12}` or nothing, so `..`, a path separator, a NUL, a
+ *     Cyrillic word or a 300-character tail can never reach a path
+ *   - a leading dot is not an extension: `.gitignore` yields `''`
+ */
+function extensionOf(originalName: string): string {
+    const base = originalName.split(/[\\/]/).pop() ?? '';
+    const dot = base.lastIndexOf('.');
+    if (dot <= 0) return '';
+    const ext = base.slice(dot + 1).toLowerCase();
+    return /^[a-z0-9]{1,12}$/.test(ext) ? `.${ext}` : '';
 }
 
 /**
@@ -248,7 +302,20 @@ export function generatePathKey(tenantId: string, originalName: string): string 
  * nothing type-checks a string.
  */
 const TENANT_KEY_REGEX = new RegExp(
-    `^tenants/([^/]+)/(${STORAGE_DOMAINS.join('|')})/\\d{4}/\\d{2}/[a-f0-9-]+_.+$`,
+    // The tail accepts BOTH key shapes, and that is not tidiness — it is the
+    // reason #2497 could change the builder without moving data.
+    //
+    //   `<uuid>_<filename>`  minted before 2026-10-30, still addressing live
+    //                        objects, and `parseTenantKey` must keep reading
+    //                        them or every pre-change file becomes malformed
+    //   `<uuid>.ext` / `<uuid>`  minted since
+    //
+    // This regex has drifted from the builder once before: `cost-invoice` was
+    // added to the domain union and to `buildTenantObjectKey` and not here, so
+    // `parseTenantKey` returned null for keys this module had itself minted.
+    // Changing the key shape without changing this line would have been that
+    // defect again, for EVERY new key rather than one domain.
+    `^tenants/([^/]+)/(${STORAGE_DOMAINS.join('|')})/\\d{4}/\\d{2}/[a-f0-9-]+(?:_.+|\\.[a-z0-9]{1,12})?$`,
 );
 
 /**

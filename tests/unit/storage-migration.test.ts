@@ -97,7 +97,7 @@ describe('Dual-read download logic', () => {
 describe('New uploads use configured provider', () => {
     it('upload creates key with buildTenantObjectKey', () => {
         const key = buildTenantObjectKey('tenant-1', 'evidence', 'doc.pdf');
-        expect(key).toMatch(/^tenants\/tenant-1\/evidence\/\d{4}\/\d{2}\/[a-f0-9-]+_doc\.pdf$/);
+        expect(key).toMatch(/^tenants\/tenant-1\/evidence\/\d{4}\/\d{2}\/[a-f0-9-]+\.pdf$/);
     });
 
     it('assertTenantKey enforces isolation on new keys', () => {

@@ -56,7 +56,7 @@ describe('File Storage — Path Generation', () => {
     test('generatePathKey includes tenant, year, month, uuid, and sanitized name', () => {
         const key = generatePathKey('tenant-abc', 'report.pdf');
         // generatePathKey uses buildTenantObjectKey with domain='general'
-        expect(key).toMatch(/^tenants\/tenant-abc\/general\/\d{4}\/\d{2}\/[0-9a-f-]+_report\.pdf$/);
+        expect(key).toMatch(/^tenants\/tenant-abc\/general\/\d{4}\/\d{2}\/[0-9a-f-]+\.pdf$/);
     });
 
     test('generatePathKey generates unique keys', () => {
@@ -65,11 +65,16 @@ describe('File Storage — Path Generation', () => {
         expect(key1).not.toBe(key2);
     });
 
-    test('generatePathKey sanitizes dangerous filenames', () => {
+    test('generatePathKey carries no filename, so a traversal has nothing to ride', () => {
+        // This asserted `toContain('passwd')` — that the sanitised basename
+        // survived into the key. Since #2497 the key carries no filename at
+        // all, so the traversal property it was really checking now holds more
+        // strongly: there is nothing to sanitise and nothing to escape.
         const key = generatePathKey('t1', '../../../etc/passwd');
-        expect(key).toContain('passwd');
+        expect(key).not.toContain('passwd');
         expect(key).not.toContain('..');
-        expect(key).toMatch(/^tenants\/t1\//);
+        expect(key).not.toContain('etc');
+        expect(key).toMatch(/^tenants\/t1\/general\/\d{4}\/\d{2}\/[0-9a-f-]+$/);
     });
 });
 
@@ -238,6 +243,6 @@ describe('File Storage — FileRecord Lifecycle', () => {
         expect(parts[2]).toBe('general');     // domain
         expect(parts[3]).toMatch(/^\d{4}$/); // year
         expect(parts[4]).toMatch(/^\d{2}$/); // month
-        expect(parts[5]).toMatch(/^[0-9a-f-]+_report\.pdf$/); // uuid_name
+        expect(parts[5]).toMatch(/^[0-9a-f-]+\.pdf$/); // uuid_name
     });
 });

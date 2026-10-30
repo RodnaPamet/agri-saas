@@ -32,9 +32,35 @@ import type { StorageDomain } from '@/lib/storage/index';
 describe('buildTenantObjectKey', () => {
     const fixedDate = new Date('2026-03-15T10:00:00Z');
 
-    it('produces key with correct format: tenants/{tenantId}/{domain}/{yyyy}/{mm}/{uuid}_{name}', () => {
+    it('produces key with correct format: tenants/{tenantId}/{domain}/{yyyy}/{mm}/{uuid}.{ext}', () => {
         const key = buildTenantObjectKey('tenant-abc', 'evidence', 'report.pdf', { date: fixedDate });
-        expect(key).toMatch(/^tenants\/tenant-abc\/evidence\/2026\/03\/[a-f0-9-]+_report\.pdf$/);
+        expect(key).toMatch(/^tenants\/tenant-abc\/evidence\/2026\/03\/[a-f0-9-]+\.pdf$/);
+    });
+
+    it('does NOT put the filename in the key (#2497)', () => {
+        // The property, not a format detail. A filename in this product
+        // routinely IS personal data, and `pathKey` is plaintext, `@unique`,
+        // and — under STORAGE_PROVIDER=local — a real path on a disk that is
+        // snapshotted daily.
+        const key = buildTenantObjectKey('t1', 'evidence', 'Договор аренда Иванов.pdf', {
+            date: fixedDate,
+        });
+        expect(key).not.toContain('Иванов');
+        expect(key).not.toContain('Договор');
+        expect(key).toMatch(/^tenants\/t1\/evidence\/2026\/03\/[a-f0-9-]+\.pdf$/);
+    });
+
+    it('keeps only the LAST dot-segment, lowercased and bounded', () => {
+        const ext = (name: string) =>
+            buildTenantObjectKey('t1', 'evidence', name, { date: fixedDate }).split('/').pop()!.replace(/^[a-f0-9-]+/, '');
+        expect(ext('archive.tar.gz')).toBe('.gz');
+        expect(ext('REPORT.PDF')).toBe('.pdf');
+        // A leading dot is not an extension.
+        expect(ext('.gitignore')).toBe('');
+        expect(ext('noextension')).toBe('');
+        // Nothing unbounded or non-alphanumeric reaches a path.
+        expect(ext('x.' + 'y'.repeat(50))).toBe('');
+        expect(ext('x.документ')).toBe('');
     });
 
     it('uses correct domain in path', () => {
@@ -45,17 +71,22 @@ describe('buildTenantObjectKey', () => {
         }
     });
 
-    it('sanitizes dangerous filenames', () => {
+    it('cannot be made to carry a traversal, because it carries no name at all', () => {
+        // This asserted `/_passwd$/` — that the sanitised basename survived.
+        // Since #2497 the key has no filename, so the traversal property holds
+        // more strongly: there is nothing to sanitise and nothing to escape.
         const key = buildTenantObjectKey('t1', 'evidence', '../../../etc/passwd', { date: fixedDate });
         expect(key).not.toContain('..');
-        expect(key).toMatch(/^tenants\/t1\/evidence\//);
-        expect(key).toMatch(/_passwd$/);
+        expect(key).not.toContain('passwd');
+        expect(key).toMatch(/^tenants\/t1\/evidence\/2026\/03\/[a-f0-9-]+$/);
     });
 
     it('handles filenames with special characters', () => {
         const key = buildTenantObjectKey('t1', 'reports', 'my <file> "test".pdf', { date: fixedDate });
         expect(key).not.toMatch(/[<>"]/);
         expect(key).toMatch(/^tenants\/t1\/reports\//);
+        // Nothing of the name survives, special characters included.
+        expect(key).not.toContain('test');
     });
 
     it('throws if tenantId is empty', () => {
@@ -103,7 +134,7 @@ describe('generatePathKey (backward-compat)', () => {
 
     it('produces valid tenant-scoped key', () => {
         const key = generatePathKey('t1', 'doc.pdf');
-        expect(key).toMatch(/^tenants\/t1\/general\/\d{4}\/\d{2}\/[a-f0-9-]+_doc\.pdf$/);
+        expect(key).toMatch(/^tenants\/t1\/general\/\d{4}\/\d{2}\/[a-f0-9-]+\.pdf$/);
     });
 });
 
@@ -136,6 +167,33 @@ describe('assertTenantKey', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('parseTenantKey', () => {
+    it('still parses keys minted BEFORE the filename was dropped (#2497)', () => {
+        // The property that makes #2497 safe to do in place. Existing objects
+        // live at `<uuid>_<filename>` keys and nothing moves them, so if this
+        // regex stopped accepting that shape, every file uploaded before the
+        // change would read as malformed — `parseTenantKey` returning null and
+        // callers treating a perfectly valid key as crafted.
+        //
+        // This exact drift has happened once already: `cost-invoice` was added
+        // to the domain union and to the builder but not to this regex, so
+        // keys this module had itself minted parsed as null. Changing the key
+        // shape without widening the tail would have been that bug again, for
+        // EVERY new key rather than one domain.
+        const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+        const base = `tenants/t1/evidence/2026/03/${uuid}`;
+
+        expect(parseTenantKey(`${base}_audit-report.pdf`)).toEqual({
+            tenantId: 't1',
+            domain: 'evidence',
+        });
+        expect(parseTenantKey(`${base}.pdf`)).toEqual({ tenantId: 't1', domain: 'evidence' });
+        expect(parseTenantKey(base)).toEqual({ tenantId: 't1', domain: 'evidence' });
+
+        // And still refuses what it always refused.
+        expect(parseTenantKey('tenants/t1/not-a-domain/2026/03/' + uuid)).toBeNull();
+        expect(parseTenantKey('tenants/t1/evidence/26/3/' + uuid)).toBeNull();
+    });
+
     it('extracts tenantId and domain from valid key', () => {
         const key = buildTenantObjectKey('my-tenant', 'reports', 'quarterly.pdf');
         const parsed = parseTenantKey(key);
