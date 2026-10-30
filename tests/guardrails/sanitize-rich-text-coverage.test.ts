@@ -236,6 +236,18 @@ const RICH_TEXT_COVERAGE: Readonly<
  * text — sanitisation does not apply. Each carries a written reason.
  */
 const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
+    FarmDocument:
+        'FarmDocument.name is a document TITLE — a single-line label a person ' +
+        'types or that arrives as a filename, never markup. It is encrypted ' +
+        'because it routinely names a third party («Договор аренда ' +
+        '<фамилия>.pdf»), which is a privacy reason rather than a rich-text ' +
+        'one, and those are different axes: every ENCRYPTED_FIELDS model lands ' +
+        'in this suite, but only the ones holding user HTML belong in ' +
+        'RICH_TEXT_COVERAGE. It still gets `sanitizePlainText` at the usecase ' +
+        'when the upload route lands (#2495 step 2) — which also trims, so a ' +
+        'whitespace-only title is refused rather than stored. Not KNOWN_UNCOVERED: ' +
+        'that bucket is for a real gap, and a plain-text label passing through ' +
+        'the plain-text sanitiser is not one.',
     ReportSnapshot:
         'ReportSnapshot.body is content the SERVER captured from its own ' +
         'tables, not text a client sent — P5.2 ignores client-supplied ' +

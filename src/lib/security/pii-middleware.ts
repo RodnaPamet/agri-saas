@@ -230,6 +230,10 @@ export const RELATION_KEY_TO_MODEL: Record<string, string> = {
     invitedBy: 'User',
     owner: 'User',
     ownerUser: 'User',
+    // #2495 — `FarmDocument.purgedBy`, who deleted a document. `uploadedBy`
+    // was already mapped; this key is new, and without it a nested include
+    // renders the envelope verbatim.
+    purgedBy: 'User',
     reviewer: 'User',
     subjectUser: 'User',
     target: 'User',
