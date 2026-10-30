@@ -470,11 +470,38 @@ describe('what the audit cannot reach, computed rather than quoted (#2423)', () 
         // vacuous guard here is discovered by the thing it was meant to prevent,
         // and "26% unreachable" does not tell a reader that these are in it.
         const unreachable = new Set(ROWS.filter((r) => r.selectors === 0).map((r) => r.file));
-        const WATCH = [
+const WATCH = [
+            // ── The original four. All reachable now: middleware-security,
+            // jwt-membership-bound and dose-phi-rei-gate were extracted in
+            // #2493; pii-hash-not-null already had module-level selectors.
             'tests/guardrails/middleware-security.test.ts',
             'tests/guardrails/jwt-membership-bound.test.ts',
             'tests/guardrails/pii-hash-not-null.test.ts',
             'tests/guardrails/dose-phi-rei-gate.test.ts',
+
+            // ── Extended 2026-10-30, because clearing the first four emptied
+            // the reading and left #2483's remaining ~197 files with no printed
+            // signal to order them by. Ordering by subject beats file order,
+            // and this list is what makes that mechanical rather than
+            // remembered.
+            //
+            // Chosen by subject keyword in the PATH, over the 200 guards the
+            // tool reports as having no module-level selector. That screen is
+            // deliberately conservative and its limit is worth stating: 193 of
+            // the 200 carry no subject keyword in their name, so a guard whose
+            // subject is security but whose filename is not will be missed.
+            // This is a starting point, not a census.
+            //
+            // (The first attempt at that screen was wrong in both directions —
+            // `av-` matched n-AV-item and `token` matched DESIGN tokens — which
+            // is why the patterns it came from now anchor on `/` or `-`.)
+            'tests/guards/auth-server-gate-coverage.test.ts',
+            'tests/guards/auth-surface-tokens.test.ts',
+            'tests/guards/mfa-enrolment-is-reachable-while-pending.test.ts',
+            'tests/guardrails/route-permissions-uppercase.test.ts',
+            'tests/guards/r14-tenant-switcher-discipline.test.ts',
+            'tests/guards/rls-coverage-skip-visibility.test.ts',
+            'tests/guardrails/audit-s10-field-level-deferral-closure.test.ts',
         ];
         const stillUnreachable = WATCH.filter((f) => unreachable.has(f));
         console.log(

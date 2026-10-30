@@ -69,6 +69,24 @@ const AUTH_SERVER_GATE_TESTS: ReadonlyArray<{
 ];
 
 describe('auth server-gate coverage — integration tests we rely on', () => {
+    /**
+     * THE DENOMINATOR — #2483.
+     *
+     * The existence check below is `it.each(AUTH_SERVER_GATE_TESTS)`, and
+     * `it.each([])` registers ZERO tests and passes. So emptying this list
+     * would report that every integration test we depend on is present, having
+     * checked none of them — and the whole point of the list is that deleting
+     * one reopens a gap invisibly.
+     *
+     * Measured 2026-10-30 at 5 entries. The floor sits below that because the
+     * docblock permits a deliberate removal paired with a README edit; it is
+     * far enough above zero that emptying or gutting the list fails.
+     */
+    it('[auth-server-gate] the list it.each ranges over is non-trivial', () => {
+        console.log(`[auth-server-gate] ${AUTH_SERVER_GATE_TESTS.length} integration test(s) depended on`);
+        expect(AUTH_SERVER_GATE_TESTS.length).toBeGreaterThanOrEqual(3);
+    });
+
     it.each(AUTH_SERVER_GATE_TESTS)(
         '$file exists ($covers)',
         ({ file }) => {
