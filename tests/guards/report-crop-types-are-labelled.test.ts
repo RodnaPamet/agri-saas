@@ -37,6 +37,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT_REL = 'src/app-layer/reports';
@@ -53,9 +54,24 @@ function walk(): string[] {
     return collectSourceFiles({ roots: [ROOT_REL], extensions: ['.ts'], floor: 5 });
 }
 
-function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
-}
+/**
+ * Comments blanked by `blankNonCode`, not a local stripper.
+ *
+ * The shape this replaces ran BLOCK comments before LINE comments — the defect
+ * `comment-stripper-order` exists for, and which CI caught on the sibling
+ * guard. A line comment containing a block-open is ordinary in this repo, and
+ * with blocks stripped first the regex runs to the next block-close and deletes
+ * every real line between: 511 lines lost across nine files when measured on
+ * the live tree.
+ *
+ * It matters here specifically. This guard reads `src/app-layer/reports/`, and
+ * `pdf/farm-record-diary.ts` is 1700 lines of mixed comment styles — exactly
+ * the file where a swallowed span would hide a raw `cropType` read and report
+ * clean.
+ *
+ * `blankNonCode` is state-aware, keeps string contents, and BLANKS rather than
+ * removes, so positions survive for anything anchored.
+ */
 
 /**
  * A `cropType` VALUE read — `x.cropType` / `x?.cropType` — excluding:
@@ -65,7 +81,7 @@ function stripComments(src: string): string {
 const RAW_READ = /\??\.cropType\b(?!\s*\??\s*\.\s*name)(?!\s*:)/g;
 
 function rawReads(src: string): string[] {
-    const clean = stripComments(src);
+    const clean = blankNonCode(src);
     return clean
         .split('\n')
         .filter((line) => {
