@@ -61,11 +61,6 @@ const ALLOWLIST: Array<{ file: string; reason: string }> = [
         reason:
             'Decorative arrow primitive with a hover-translate animation; deliberate motion contained in a single component used as a CTA-arrow accent.',
     },
-    {
-        file: 'src/components/ui/file-upload.tsx',
-        reason:
-            'Drag-affordance icon scales on hover/active to signal the drop zone; deliberate single-icon treatment.',
-    },
 ];
 
 const HOVER_BAN_RE =
@@ -95,11 +90,37 @@ function walk(dir: string): string[] {
 }
 
 describe('State language (Polish PR-8)', () => {
+    /**
+     * The walked population, hoisted so the denominator can be asserted.
+     *
+     * `selector-teeth` reported `walk()` DEAD: `offenders` derives from it and
+     * the assertion is `expect(offenders).toHaveLength(0)`, which an EMPTY walk
+     * satisfies for free. Gutting the collector to `return []` left the guard
+     * green over zero files (#2414, #2377).
+     *
+     * The `existsSync` throw at the top of `walk` covers a renamed ROOT (#875);
+     * it says nothing about whether the walk FOUND anything, which is the other
+     * vacuity path through the same function.
+     */
+    const WALKED = SCAN_DIRS.flatMap((dir) => walk(path.join(ROOT, dir)));
+    const WALK_FLOOR = 900;
+
+    it('[state-language] ranges over a real population — the denominator', () => {
+        console.log(`[state-language] ${WALKED.length} file(s) walked across ${SCAN_DIRS.join(' + ')}`);
+        expect(WALKED.length).toBeGreaterThanOrEqual(WALK_FLOOR);
+        // ...and every scan root contributes, so a collapse to one directory
+        // cannot clear the floor on the strength of the other.
+        for (const dir of SCAN_DIRS) {
+            expect({ dir, found: walk(path.join(ROOT, dir)).length > 0 })
+                .toEqual({ dir, found: true });
+        }
+    });
+
     it('zero hover/group-hover scale/translate/elevation-shadow outside the allowlist', () => {
         const offenders: Hit[] = [];
         const allowedFiles = new Set(ALLOWLIST.map((a) => a.file));
-        for (const dir of SCAN_DIRS) {
-            for (const file of walk(path.join(ROOT, dir))) {
+        {
+            for (const file of WALKED) {
                 const rel = path.relative(ROOT, file);
                 if (allowedFiles.has(rel)) continue;
                 const content = fs.readFileSync(file, 'utf8');
@@ -139,6 +160,11 @@ describe('State language (Polish PR-8)', () => {
             const abs = path.resolve(ROOT, a.file);
             expect(fs.existsSync(abs)).toBe(true);
         }
+        // 2 today, cap 4. `file-upload.tsx` was removed 2026-10-30: its reason
+        // said "drag-affordance icon scales on hover/active", and the file no
+        // longer contains a single `hover:scale-*` / `hover:translate-*` /
+        // `hover:shadow-*` — 0 matching lines against HOVER_BAN_RE, versus 2 in
+        // `expanding-arrow.tsx`. The exemption excused nothing (#2414).
         expect(ALLOWLIST.length).toBeLessThanOrEqual(4);
     });
 });
