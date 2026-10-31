@@ -1,0 +1,17 @@
+-- LOW_STOCK alerts become one per EPISODE rather than one per day (#2511).
+--
+-- The sweep deduped on `(tenantId, itemId, userId, day)`, so an item left
+-- below its reorder level wrote a fresh notification every morning to every
+-- OWNER/ADMIN. Measured in production 2026-10-30: 9,438 English LOW_STOCK
+-- rows, still growing at roughly 66 a day, against 44 rows of every other
+-- kind combined. The phone reads the newest 50, so the farm's notification
+-- screen showed nothing but low stock.
+--
+-- `lowStockNotifiedAt` is the episode marker: stamped when an item drops
+-- below its level and an alert goes out, cleared by the same sweep when
+-- on-hand recovers. NULL therefore means "not currently announced", which is
+-- also the correct state for every existing row — the backfill is the default.
+--
+-- Additive and nullable, so the previous image keeps working against it and
+-- no inverse script is required under `destructive-migration-has-inverse`.
+ALTER TABLE "Item" ADD COLUMN "lowStockNotifiedAt" TIMESTAMP(3);

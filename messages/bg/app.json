@@ -533,6 +533,10 @@
     "notifications": {
         "title": "Известия",
         "loading": "Зареждане на известия...",
+        "lowStock": {
+            "title": "Ниска наличност",
+            "body": "{name}: наличност {onHand}, минимум {reorderLevel}."
+        },
         "markRead": "Маркирай като прочетено",
         "noNotifications": "Няма известия",
         "crumbDashboard": "Табло",

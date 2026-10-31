@@ -289,6 +289,24 @@ model Item {
   /// lots list surfaces "low stock" when SUM(lot.quantityOnHand) drops
   /// below it; null disables the check.
   reorderLevel         Decimal?     @db.Decimal(14, 3)
+  /// Set when a LOW_STOCK notification has been written for the CURRENT
+  /// episode of this item sitting below `reorderLevel`; cleared by the sweep
+  /// when on-hand recovers to at-or-above it. Owner ruling 2026-10-31: one
+  /// alert per item per episode, not one per day.
+  ///
+  /// This column IS the episode, not a timestamp anybody renders. The sweep
+  /// used to dedupe on `(item, recipient, day)`, so an item left below its
+  /// minimum wrote a fresh row every morning — 9,438 rows accumulated, and
+  /// because the phone reads only the newest 50 notifications that flood
+  /// pushed every other kind off the screen entirely.
+  ///
+  /// Why a column rather than inferring the episode from the newest
+  /// notification: notifications are per RECIPIENT and this fact is per ITEM,
+  /// so inferring it would ask "has any admin been told" and give a different
+  /// answer per admin as membership changes. It also has to survive the
+  /// cleanup that deletes the English backlog — inferring from rows that are
+  /// about to be deleted would re-announce every low item at once.
+  lowStockNotifiedAt   DateTime?
   /// БАБХ farm-record regulatory fields (structured, not attributesJson —
   /// the ДНЕВНИК generator reads these directly). quarantinePeriodDays is
   /// the карантинен срок на ПРЗ; "най-ранна дата за прибиране" is computed

@@ -533,6 +533,10 @@
     "notifications": {
         "title": "Notifications",
         "loading": "Loading notifications...",
+        "lowStock": {
+            "title": "Low stock",
+            "body": "{name}: {onHand} on hand, minimum {reorderLevel}."
+        },
         "markRead": "Mark read",
         "noNotifications": "No notifications",
         "crumbDashboard": "Dashboard",
