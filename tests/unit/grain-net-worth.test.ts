@@ -472,6 +472,79 @@ describe('getGrainNetWorth — payroll allocation', () => {
 });
 
 describe('getGrainNetWorth — currency handling and net worth', () => {
+    it('a cost row with NO currency does not take down the whole calculator', async () => {
+        /*
+         * `computeCashOut` keyed its Map on `row.currency` and then sorted with
+         * `a.currency.localeCompare(b.currency)`. `CostEntry.currency` is
+         * nullable, so a null key threw a TypeError — and this runs inside
+         * `buildCalculatorPayload`, so the cost is not one missing section:
+         * `/grain/calculator` answers 500 and the phone shows its failure state
+         * for EVERY crop on the farm.
+         *
+         * No production row has been null yet, which is the only reason nobody
+         * has seen it. The owner ruling of 2026-10-26 is that an unrecorded
+         * currency counts as euro, so nulls are expected rather than exotic.
+         */
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-null', category: 'OTHER', amount: 40, currency: null, plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        // It returns at all — that is the assertion. Before the fix this threw.
+        expect(result.cashOut).toEqual([
+            { currency: 'EUR', amount: 40, categories: ['OTHER'] },
+        ]);
+    });
+
+    it('a blank-string currency buckets with the unrecorded ones, not as its own line', async () => {
+        // `''` is the other shape the column takes. Two lines for "no
+        // currency recorded" would be a breakdown that double-counts a farm's
+        // own categories.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-null', category: 'OTHER', amount: 40, currency: null, plantingId: 'p-1', seasonId: null },
+            { id: 'c-blank', category: 'FUEL', amount: 10, currency: '   ', plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        expect(result.cashOut).toEqual([
+            { currency: 'EUR', amount: 50, categories: ['FUEL', 'OTHER'] },
+        ]);
+    });
+
+    it('does NOT fold BGN into EUR — that needs the amounts converted (#2546)', async () => {
+        /*
+         * The boundary of this fix, and the control that keeps it honest.
+         * Collapsing `'BGN'` here would relabel a lev amount as euro without
+         * dividing by the peg and overstate it by 1.95583x — the overstating
+         * error, in the cash-out breakdown. Folding the spellings together is
+         * #2546 and needs the conversion in the same change.
+         */
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-eur', category: 'OTHER', amount: 100, currency: 'EUR', plantingId: 'p-1', seasonId: null },
+            { id: 'c-bgn', category: 'FUEL', amount: 100, currency: 'BGN', plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        expect(result.cashOut.map((l) => l.currency)).toEqual(['BGN', 'EUR']);
+        expect(result.cashOut.find((l) => l.currency === 'BGN')?.amount).toBe(100);
+    });
+
     it('a лв/дка rent contributes EUR to cashCostCurrencies, not a sentinel', async () => {
         /*
          * THE BUG, asserted on the path it actually took.

@@ -29,6 +29,7 @@ import {
 } from '@/lib/market/commodity-vocabulary';
 import { summarizePlannedYield, type PlannedYieldInputRow } from '@/lib/planning/planned-yield';
 import { resolveRentBasis, type RentBasisLease } from '@/lib/grain/rent-basis';
+import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
 import { canConvert, convert } from '@/lib/units/unit-conversion';
 import type { CostAllocationBasis, Prisma } from '@prisma/client';
@@ -1472,10 +1473,34 @@ function computePayroll(
 function computeCashOut(rows: readonly CostEntryRow[]): GrainCashOutLine[] {
     const byCurrency = new Map<string, { amount: number; categories: Set<string> }>();
     for (const row of rows) {
-        let bucket = byCurrency.get(row.currency);
+        /*
+         * A blank currency buckets as EUR, and the ONLY reason this line
+         * exists is that the alternative is a 500 for the whole farm.
+         *
+         * `CostEntry.currency` is nullable. A null key reached
+         * `a.currency.localeCompare(b.currency)` below and threw a TypeError —
+         * and `computeCashOut` runs inside `buildCalculatorPayload`, so the
+         * throw does not cost one missing section: `/grain/calculator` answers
+         * 500 and the phone shows its failure state for every crop on the
+         * farm. No production row has been null yet, which is the only reason
+         * nobody has seen it.
+         *
+         * EUR rather than a placeholder because of the owner ruling of
+         * 2026-10-26 (EUR-only): on a farm that can only record euro, a
+         * missing currency is a missing LABEL, not an unknown unit — the same
+         * reading `normaliseCostToEur` already gives a blank code.
+         *
+         * Every other code is left EXACTLY as stored, deliberately. Collapsing
+         * `'BGN'` to `'EUR'` here would relabel a lev amount as euro without
+         * dividing it by the peg and overstate it by 1.95583x. Folding the
+         * spellings together is #2546 and needs the amounts converted in the
+         * same change; this fixes the crash and nothing else.
+         */
+        const key = row.currency?.trim() || EXCHANGE_CURRENCY;
+        let bucket = byCurrency.get(key);
         if (!bucket) {
             bucket = { amount: 0, categories: new Set<string>() };
-            byCurrency.set(row.currency, bucket);
+            byCurrency.set(key, bucket);
         }
         bucket.amount += dec(row.amount);
         bucket.categories.add(row.category);
