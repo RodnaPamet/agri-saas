@@ -38,6 +38,8 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const users: string[] = [];
 const actions: string[] = [];
+/** Keeps backdated rows deterministically ordered among themselves. */
+let seeded = 0;
 const statements: string[] = [];
 
 /**
@@ -71,17 +73,117 @@ async function makeQueuedStatement(recipientUserId: string, actionKind = 'CONTEN
     actions.push(actionId);
 
     const statementId = `sor-p54b-${randomUUID()}`;
+    // `createdAt` is BACKDATED, and that is what makes this suite independent
+    // of the queue — #2522.
+    //
+    // `runStatementDispatch` takes the 50 OLDEST undelivered rows
+    // (`orderBy: createdAt asc`, `DEFAULT_BATCH = 50`). Measured in the
+    // database this suite actually uses: **111 undelivered rows, every one with
+    // no recipient at all**, oldest 2026-10-14, none of them this suite's. They
+    // are minted by `statement-queue.ts` through the real `queueStatement`, by
+    // suites that then delete their Users and leave the statements — so the
+    // dispatch can never resolve a mailbox for them and they can never drain.
+    // 111 > 50, so the batch was entirely undrainable rows and a freshly
+    // seeded statement was never reached. Nine of ten tests failed, the first
+    // as `TypeError: Cannot read properties of undefined (reading '0')` from
+    // `mock.calls[0][0]` — "nothing was sent", three frames from its cause.
+    //
+    // Backdating sorts this suite's rows ahead of any backlog, so the suite
+    // stops depending on how much garbage is in front of it. The alternative —
+    // deleting every undelivered row — would make this suite's correctness
+    // depend on destroying other suites' fixtures. The leak itself is #2574.
     await globalPrisma.$executeRawUnsafe(
-        `INSERT INTO "StatementOfReasons"("id","actionId","recipientUserId","locale","bodyRendered")
-         VALUES ($1,$2,$3,'bg',$4)`,
+        `INSERT INTO "StatementOfReasons"("id","actionId","recipientUserId","locale","bodyRendered","createdAt")
+         VALUES ($1,$2,$3,'bg',$4, TIMESTAMP '2000-01-01 00:00:00' + ($5::int * INTERVAL '1 second'))`,
         statementId, actionId, recipientUserId, encryptField('DRAFT — replaced at send time'),
+        String(seeded++),
     );
     statements.push(statementId);
     return { actionId, statementId };
 }
 
+/**
+ * The send for a statement THIS test seeded — #2522.
+ *
+ * CLAUDE.md's rule for this file is already written: *"A test asserting on this
+ * queue must scope itself to its own rows. The queue is global and ordered
+ * oldest-first, so `mockRejectedValueOnce` lands on whichever row the run
+ * reaches first — which may be one another suite left stuck. Aim a failure at a
+ * RECIPIENT, not a call index."* This suite did not follow it, and #2522 is the
+ * result: nine of ten tests failed on any reused database, the first as
+ * `TypeError: Cannot read properties of undefined (reading '0')` from
+ * `sendEmail.mock.calls[0][0]` — "the dispatch sent nothing", three frames from
+ * its cause.
+ *
+ * Scoped by `subjectIds` rather than by the recipient address, which is
+ * stronger than the rule asks for: the payload carries the statement's own id,
+ * so this cannot match a different statement that happens to share a recipient.
+ */
+type SentMail = { to: string; subject: string; text: string; subjectIds?: string[] };
+function sendFor(statementId: string): SentMail | undefined {
+    const call = sendEmail.mock.calls.find((c) => {
+        const mail = c[0] as SentMail | undefined;
+        return Array.isArray(mail?.subjectIds) && mail.subjectIds.includes(statementId);
+    });
+    return call?.[0] as SentMail | undefined;
+}
+
+/**
+ * Backdates a row the PRODUCTION `queueStatementForAction` created — #2522.
+ *
+ * `makeQueuedStatement` backdates its own inserts, but two tests deliberately
+ * go through the real usecase to prove the auto-composed DRAFT is what gets
+ * delivered. Those rows arrive with `createdAt = now()`, which puts them at the
+ * BACK of an oldest-first queue — behind the 111 undrainable rows #2574 is
+ * about — so the dispatch never reaches them either. Backdating after the fact
+ * keeps the usecase under test while making its output reachable.
+ */
+async function backdate(statementId: string): Promise<void> {
+    await globalPrisma.$executeRawUnsafe(
+        `UPDATE "StatementOfReasons"
+         SET "createdAt" = TIMESTAMP '2000-01-01 00:00:00' + ($2::int * INTERVAL '1 second')
+         WHERE "id" = $1`,
+        statementId, String(seeded++),
+    );
+}
+
+/** Asserts the statement was sent, and returns it. Fails naming the id. */
+function requireSendFor(statementId: string): SentMail {
+    const mail = sendFor(statementId);
+    expect({ statementId, sent: mail !== undefined }).toEqual({ statementId, sent: true });
+    return mail as SentMail;
+}
+
 describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
-    beforeAll(async () => { await globalPrisma.$connect(); });
+    beforeAll(async () => {
+        await globalPrisma.$connect();
+        // Clear this suite's OWN leftovers — #2522, and note what this does
+        // NOT do: it does not make the suite pass. Measured, the backlog
+        // contains ZERO rows with this prefix. What it does is stop an
+        // INTERRUPTED run of this suite from adding to the undrainable pile
+        // that #2574 is about, since `afterAll` never runs when a run is
+        // killed and `sendEmail` is mocked here so nothing is ever stamped
+        // delivered.
+        //
+        // `afterAll` below already deletes what a completed run created, and
+        // that is not enough: an INTERRUPTED run never reaches it, and
+        // `sendEmail` is mocked here so `deliveredAt` is never stamped — which
+        // is correct, and is the property this suite exists to protect. So
+        // every killed run leaves rows that can never drain, and the dispatch
+        // takes the 50 OLDEST, so once the backlog crosses `take` the suite's
+        // freshly-seeded rows are never reached at all. Measured on this
+        // checkout: 67 undelivered rows, oldest 18 days old, all from here.
+        //
+        // Scoped to the `p54b` id prefix this suite mints, so it cannot touch
+        // another suite's rows even though integration tests run in band.
+        // Children first: StatementOfReasons references ModerationAction.
+        await globalPrisma.$executeRawUnsafe(
+            `DELETE FROM "StatementOfReasons" WHERE "id" LIKE 'sor-p54b-%'`);
+        await globalPrisma.$executeRawUnsafe(
+            `DELETE FROM "ModerationAction" WHERE "id" LIKE 'ma-p54b-%'`);
+        await globalPrisma.$executeRawUnsafe(
+            `DELETE FROM "User" WHERE "id" LIKE 'u-p54b-%'`);
+    });
 
     beforeEach(() => {
         // `clearAllMocks` clears CALLS, not IMPLEMENTATIONS — a throwing
@@ -126,11 +228,11 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
         // key that stopped being interpolated would leave a literal
         // `{address}` in a legal notice and still match the catalogue.
         const { id } = await makeUser('bg');
-        await makeQueuedStatement(id);
+        const { statementId } = await makeQueuedStatement(id);
 
         await runStatementDispatch();
 
-        const sent = sendEmail.mock.calls[0][0] as { text: string };
+        const sent = requireSendFor(statementId);
         expect(sent.text).not.toMatch(/\{address\}|\{url\}/);
         expect(sent.text).not.toContain('/dsa-contact');
         expect(sent.text).not.toMatch(/отговорете на това съобщение|reply to this message/i);
@@ -168,6 +270,7 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
         });
         expect(queued).not.toBeNull();
         statements.push(queued!.statementId);
+        await backdate(queued!.statementId);
 
         const draft = (await globalPrisma.statementOfReasons.findUnique({
             where: { id: queued!.statementId },
@@ -189,7 +292,7 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
         // which is why the rows come back as ciphertext at all.)
         expect(decryptField(delivered.bodyRendered)).toBe(decryptField(draft.bodyRendered));
         // And it is the text that actually went out.
-        expect((sendEmail.mock.calls[0][0] as { text: string }).text).toBe(
+        expect(requireSendFor(queued!.statementId).text).toBe(
             decryptField(delivered.bodyRendered),
         );
     });
@@ -215,6 +318,7 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
             rationale: 'repeated unsubstantiated grade claims',
         });
         statements.push(queued!.statementId);
+        await backdate(queued!.statementId);
         const draft = (await globalPrisma.statementOfReasons.findUnique({
             where: { id: queued!.statementId }, select: { bodyRendered: true },
         }))!;
@@ -239,13 +343,14 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
 
         await runStatementDispatch({ limit: 50 });
 
-        const call = sendEmail.mock.calls.find((c) =>
-            typeof c[0]?.text === 'string' && c[0].text.includes('substantiated'));
-        expect(call).toBeDefined();
+        // Scoped by the statement's own id, not by a phrase every row in this
+        // suite shares — `subjectIds` carries it, so this cannot match a
+        // sibling statement.
+        const call = requireSendFor(statementId);
         // English, because THEIR column says so — even though the row was
         // queued with `locale: 'bg'` by the console's default.
-        expect(call![0].subject).toMatch(/decision about your content/i);
-        expect(call![0].text).toMatch(/Digital Services Act/);
+        expect(call.subject).toMatch(/decision about your content/i);
+        expect(call.text).toMatch(/Digital Services Act/);
 
         const row = await globalPrisma.$queryRawUnsafe<Array<{ l: string }>>(
             `SELECT "locale" AS l FROM "StatementOfReasons" WHERE "id" = $1`, statementId);
@@ -349,6 +454,39 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
         // The suspension wording, not the removal wording. An Art 17 statement
         // that described the wrong action would be worse than none.
         expect(sent).toMatch(/профил/);
+    });
+
+    it('matches each statement to its OWN send, not to a position in the call list', async () => {
+        // The scoping half of #2522, and this test is what makes it real.
+        //
+        // Backdating alone makes this suite's rows the oldest, so `calls[0]`
+        // happens to be the right one — measured: reverting a call site to
+        // `sendEmail.mock.calls[0][0]` left all ten tests GREEN. A change
+        // nothing can detect is a change nothing protects, and CLAUDE.md's rule
+        // for this file ("aim a failure at a RECIPIENT, not a call index") would
+        // have been satisfied in letter and unprotected in fact.
+        //
+        // Two statements in ONE batch, so a positional lookup must get one of
+        // them wrong whichever position it picks.
+        const a = await makeUser('bg');
+        const b = await makeUser('en');
+        const first = await makeQueuedStatement(a.id);
+        const second = await makeQueuedStatement(b.id);
+
+        await runStatementDispatch({ limit: 50 });
+
+        const mailA = requireSendFor(first.statementId);
+        const mailB = requireSendFor(second.statementId);
+        expect(mailA.to).toBe(a.email);
+        expect(mailB.to).toBe(b.email);
+        // And they are DIFFERENT sends. Without this, a lookup returning the
+        // same call for both would satisfy the two assertions above whenever
+        // the recipients happened to match.
+        expect(mailA.to).not.toBe(mailB.to);
+        // The locale follows the RECIPIENT, which is the second thing that
+        // cannot be true of one mail read twice.
+        expect(mailB.subject).toMatch(/decision about your content/i);
+        expect(mailA.subject).not.toMatch(/decision about your content/i);
     });
 
     it('does not re-send an already delivered statement', async () => {
