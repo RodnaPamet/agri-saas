@@ -132,9 +132,18 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
             + 'route reads NO farm data at all (there is no tool loop yet), so '
             + 'tenant membership via `getTenantCtx` plus the '
             + '`assistant.enabled` flag is the whole gate, and the owner ruled '
-            + 'the surface is for every role. Revisit this entry in the PR that '
-            + 'adds the first tool — if that PR does not touch this line, the '
-            + 'per-tool claim above has not been kept.',
+            + 'the surface is for every role.\n\n'
+            + 'REVISITED in #2578, as this entry required of the first-tool '
+            + 'PR. Two things changed. The route now READS farm data, so the '
+            + '"reads no farm data today" clause above is history rather than '
+            + 'current state. And the per-tool claim is now held rather than '
+            + 'asserted: `tests/guards/assistant-tools-go-through-usecases.test.ts` '
+            + 'fails if `tools.ts` imports a repository or the Prisma client '
+            + 'instead of a usecase. That matters because a repository read is '
+            + 'tenantId-scoped and still SKIPS the policy — `listTasks` opens '
+            + 'with `assertCanReadTasks(ctx)`, so a role the policy refuses is '
+            + 'refused by the same code path an HTTP route would have used. '
+            + 'Revisit again only if a tool needs data no usecase exposes.',
     },
     // ── Catalogue READS (#P1) ───────────────────────────────────────
     // The frameworks + schemes roots are in scope because their WRITES reach

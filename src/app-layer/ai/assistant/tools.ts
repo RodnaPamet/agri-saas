@@ -34,6 +34,7 @@
  *   longest and most sensitive free text to answer a list-level question. A
  *   later single-task tool can fetch one deliberately.
  */
+import { WorkItemStatus } from '@prisma/client';
 import { z } from 'zod';
 
 import { listTasks } from '@/app-layer/usecases/task';
@@ -56,12 +57,26 @@ interface AssistantTool {
     readonly run: (ctx: RequestContext, args: unknown) => Promise<unknown>;
 }
 
+/**
+ * Status values DERIVED from the schema enum, never retyped.
+ *
+ * I hand-wrote `['OPEN','IN_PROGRESS','BLOCKED','DONE','CANCELLED']` first and
+ * two of those are not members — `DONE` and `CANCELLED` do not exist, while
+ * `TRIAGED`, `PENDING_REVIEW` and `RESOLVED` do. `tsc` caught it as a type
+ * mismatch against `TaskFilters.status`, but the runtime cost would have been
+ * worse than a rejected argument: the JSON-Schema below is what the MODEL is
+ * told the valid values are, so it would have been invited to send `DONE` and
+ * the tool would have passed it to Prisma.
+ *
+ * `z.nativeEnum` and `Object.values` mean a schema change reaches both the
+ * validator and the model's instructions without anybody editing this file —
+ * `a-number-that-does-not-move`, applied to a vocabulary.
+ */
+const STATUS_VALUES = Object.values(WorkItemStatus);
+
 const ListFarmTasksArgs = z
     .object({
-        status: z
-            .array(z.enum(['OPEN', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']))
-            .max(5)
-            .optional(),
+        status: z.array(z.nativeEnum(WorkItemStatus)).max(STATUS_VALUES.length).optional(),
         due: z.enum(['overdue', 'next7d']).optional(),
     })
     .strict();
@@ -78,10 +93,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 properties: {
                     status: {
                         type: 'array',
-                        items: {
-                            type: 'string',
-                            enum: ['OPEN', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
-                        },
+                        items: { type: 'string', enum: STATUS_VALUES },
                         description: 'Narrow to these statuses.',
                     },
                     due: {

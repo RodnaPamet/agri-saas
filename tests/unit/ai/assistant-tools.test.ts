@@ -72,7 +72,16 @@ describe('assistant tools (#2578)', () => {
         // `TaskFilters.q` is real and deliberately NOT exposed: it is the one
         // argument whose content cannot be bounded by a charset, and a list
         // question needs `due`, not prose.
-        for (const raw of ['{"q":"пшеница"}', '{"assigneeUserId":["x"]}', '{"take":9999}']) {
+        for (const raw of [
+            '{"q":"пшеница"}',
+            '{"assigneeUserId":["x"]}',
+            '{"take":9999}',
+            // `DONE` is NOT a WorkItemStatus — I invented it, and the schema
+            // enum is now the source for both the validator and what the model
+            // is told. A value that does not exist must be refused rather than
+            // handed to Prisma.
+            '{"status":["DONE"]}',
+        ]) {
             const out = await runTool(ctx, 'list_farm_tasks', raw);
             expect(out.ok).toBe(false);
             expect(out.content).toContain('Arguments rejected');
