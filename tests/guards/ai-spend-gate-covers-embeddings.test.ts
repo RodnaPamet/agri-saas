@@ -101,6 +101,8 @@ const DELIBERATELY_UNGATED: Readonly<Record<string, string>> = {
         'A provider IMPLEMENTATION, same reasoning as claude-provider — the spend is attributed at the caller, which is where the tenant is known.',
     'src/app-layer/ai/vision/claude-vision-provider.ts':
         'A provider implementation for the vision surface; its callers hold the RequestContext and are where a budget decision belongs.',
+    'src/app-layer/ai/invoice-reader.ts':
+        'A provider implementation for the invoice-scan surface (#482): it takes bytes and returns a parsed result, holding no RequestContext and making no budget decision. Its ONE caller, `usecases/invoice-scan.ts`, does both halves — `assertAiBudget(ctx)` before the call and `recordAiUsage(ctx, …)` after it, including when the read FAILS, since an unreadable document still spent the tokens. That is the arrangement this exemption asserts rather than assumes, and it is the difference from the sibling entry above, whose caller (`jobs/classify-photo.ts`) gates nothing — see #2596.',
 
 };
 
