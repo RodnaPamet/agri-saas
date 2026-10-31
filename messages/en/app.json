@@ -537,6 +537,10 @@
             "title": "Low stock",
             "body": "{name}: {onHand} on hand, minimum {reorderLevel}."
         },
+        "leaseExpiring": {
+            "title": "Lease expiring",
+            "body": "The lease for “{parcel}” with {lessor} expires on {date} (days remaining: {days})."
+        },
         "markRead": "Mark read",
         "noNotifications": "No notifications",
         "slaBreach": {
