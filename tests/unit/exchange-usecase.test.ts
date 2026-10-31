@@ -127,6 +127,8 @@ import { assertWithinLimit } from '@/lib/billing/entitlements';
 import type { UpdateListingBody } from '@/app-layer/schemas/exchange.schemas';
 import { forbidden } from '@/lib/errors/types';
 import { Prisma } from '@prisma/client';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeRequestContext } from '../helpers/make-context';
 
 const assertWithinLimitMock = assertWithinLimit as jest.MockedFunction<typeof assertWithinLimit>;
@@ -421,7 +423,7 @@ describe('respondToInquiry (seller-only)', () => {
         'refuses ACCEPT on a %s listing (no contact may be revealed)',
         async (status) => {
             repo.getInquiry.mockResolvedValue(inq({ listing: { ...inq().listing, status } }) as never);
-            await expect(respondToInquiry(meCtx, 'inq-1', 'ACCEPTED')).rejects.toMatchObject({ code: 'LISTING_NOT_ACTIVE' });
+            await expect(respondToInquiry(meCtx, 'inq-1', 'ACCEPTED')).rejects.toMatchObject({ code: 'INQUIRY_ACCEPT_REQUIRES_ACTIVE_LISTING' });
             expect(repo.updateInquiryStatus).not.toHaveBeenCalled();
         },
     );
@@ -499,7 +501,7 @@ describe('listing state machine (FULFILLED / WITHDRAWN are terminal)', () => {
 
     it('refuses EXPIRED → FULFILLED — a lapsed listing is no evidence of a sale', async () => {
         repo.getListing.mockResolvedValue(listing({ status: 'EXPIRED' }));
-        await expect(fulfillListing(meCtx, 'lst-1')).rejects.toMatchObject({ code: 'LISTING_NOT_ACTIVE' });
+        await expect(fulfillListing(meCtx, 'lst-1')).rejects.toMatchObject({ code: 'LISTING_FULFIL_REQUIRES_ACTIVE' });
         expect(repo.updateListingStatus).not.toHaveBeenCalled();
     });
 
@@ -794,5 +796,100 @@ describe('updateListingFields', () => {
         expect(data.regionName.length).toBeGreaterThan(0);
         expect(typeof data.lat).toBe('number');
         expect(typeof data.lon).toBe('number');
+    });
+});
+
+/**
+ * #2564 — three refusals about a listing that is not ACTIVE, and the property
+ * is that they stay TOLD APART.
+ *
+ * Written as a COMPARISON rather than three independent code assertions,
+ * because the defect being guarded is not "this site returns the wrong code" —
+ * each site's code was individually defensible — it is that three sites SHARED
+ * one, and `localizeErrorPayload` then gave all three the sentence written for
+ * one of them. Three separate `toMatchObject({ code })` tests all pass happily
+ * on the day somebody collapses two of them back together and updates both
+ * expectations; this one does not.
+ *
+ * The second half is the half that reaches a farmer. Distinct CODES with equal
+ * SENTENCES would satisfy a code-only check while putting the wrong advice back
+ * in front of the wrong reader, which is the whole of #2564.
+ */
+describe('#2564 — the three not-active refusals stay distinguishable', () => {
+    async function codeOf(run: () => Promise<unknown>): Promise<string> {
+        try {
+            await run();
+        } catch (err) {
+            const e = err as { code?: string; message?: string };
+            // Reports the MESSAGE when there is no code, because "NO_CODE"
+            // alone cannot tell an uncoded refusal from the probe's own setup
+            // throwing — two very different findings that read identically.
+            return e.code ?? `NO_CODE: ${e.message ?? String(err)}`;
+        }
+        throw new Error('expected a refusal, got none — the probe proves nothing');
+    }
+
+    it('three sites, three codes, and three sentences in BOTH locales', async () => {
+        const fulfil = await codeOf(() => {
+            repo.getListing.mockResolvedValue(listing({ status: 'EXPIRED' }));
+            return fulfillListing(meCtx, 'lst-1');
+        });
+        const enquire = await codeOf(() => {
+            repo.getListing.mockResolvedValue(
+                listing({ sellerTenantId: otherTenantId, status: 'FULFILLED' }),
+            );
+            return createInquiry(meCtx, { listingId: 'lst-1', message: 'interested' });
+        });
+        const accept = await codeOf(() => {
+            // A MINIMAL inquiry rather than the sibling describe's `inq`
+            // fixture, which is scoped to it. Minimal is also more honest
+            // here: these four fields are exactly what the refusal reads —
+            // PENDING so the earlier guard passes, the seller tenant so it is
+            // the caller's to answer, and a non-ACTIVE listing as the cause.
+            repo.getInquiry.mockResolvedValue({
+                id: 'inq-1',
+                status: 'PENDING',
+                listing: {
+                    id: 'lst-1',
+                    sellerTenantId: meCtx.tenantId,
+                    commodity: 'Wheat',
+                    status: 'EXPIRED',
+                },
+            } as never);
+            return respondToInquiry(meCtx, 'inq-1', 'ACCEPTED');
+        });
+
+        expect(fulfil).toBe('LISTING_FULFIL_REQUIRES_ACTIVE');
+        expect(enquire).toBe('LISTING_NOT_ACTIVE');
+        expect(accept).toBe('INQUIRY_ACCEPT_REQUIRES_ACTIVE_LISTING');
+        // The comparison itself, stated separately so a failure reads as
+        // "two of these are the same code" rather than as one wrong value.
+        expect(new Set([fulfil, enquire, accept]).size).toBe(3);
+
+        // And what the reader actually gets. `localizeErrorPayload` keys on the
+        // code, so distinct codes with identical entries would put the fulfil
+        // advice back in front of a buyer while every code assertion above
+        // stayed green.
+        for (const locale of ['en', 'bg'] as const) {
+            // `readFileSync`, not `require`: a dynamic `require` needs a
+            // directive to silence two rules, and the directive turned out to
+            // suppress only one of them — so it read as settled while eslint
+            // still reported the finding AND the directive as unused. The
+            // guards in this repo read catalogues this way for the same reason.
+            const messages = JSON.parse(
+                readFileSync(join(process.cwd(), 'messages', locale, 'app.json'), 'utf8'),
+            ) as { errors: Record<string, string> };
+            const sentences = [fulfil, enquire, accept].map((c) => {
+                const s = messages.errors[c];
+                expect(typeof s).toBe('string');
+                return s;
+            });
+            expect(new Set(sentences).size).toBe(3);
+            // The fulfil one is the only one entitled to say "withdraw", and
+            // the buyer's must not: they cannot withdraw a listing they do not
+            // own, which is the sentence that was reaching them before #2564.
+            const buyer = messages.errors[enquire].toLowerCase();
+            expect(buyer).not.toMatch(locale === 'bg' ? /оттегл/ : /withdraw/);
+        }
     });
 });
