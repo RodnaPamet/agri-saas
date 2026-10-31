@@ -572,12 +572,28 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'MAINTENANCE_RECORD_NOT_FOUND',
     'TASK_EVIDENCE_NOT_FOUND',
     'TASK_LINK_NOT_FOUND',
-    // `AI_BUDGET_REQUIRES_VERIFIED_FARM` is new to this list as of #1645 and
-    // for the `COMPANY_NAME_TAKEN` reason above, not because the code is
-    // unclear: its only emission path is `assertAiBudget` → `completeWithRouting`,
-    // whose sole route is `/api/t/{tenantSlug}/ai/copilot` — and NO `/ai/` path
-    // is in the spec at all. Naming it would mean documenting the AI surface,
-    // which is larger than the change that made the code visible.
+    // `AI_BUDGET_REQUIRES_VERIFIED_FARM` is on this list as of #1645 and for
+    // the `COMPANY_NAME_TAKEN` reason above, not because the code is unclear:
+    // its only emission path is `assertAiBudget` → `completeWithRouting`, and
+    // no route that reaches it is in the spec. Naming it would mean documenting
+    // the AI surface, which is larger than the change that made the code
+    // visible.
+    //
+    // That used to read "whose sole route is `/api/t/{tenantSlug}/ai/copilot`",
+    // which was already wrong when it was written and is now wrong twice over.
+    // `completeWithRouting` is also reached by `/api/t/{tenantSlug}/knowledge/
+    // ask` — route → `askAgronomyAdvisor` → `safety/advisor.ts`, which imports
+    // and calls it — so the gate was never confined to one route. And the route
+    // it did name was RETIRED on 2026-10-31 (#2578) for having no caller on
+    // either client, so a reader chasing the citation would now find nothing
+    // and could reasonably conclude the exemption had expired.
+    //
+    // It has not. The conclusion survives the correction, which is why this is
+    // a reworded comment and not a removed entry: BOTH routes that reach the
+    // gate sit in `openapi-undocumented-baseline.json`, and the spec carries no
+    // `/ai/` path at all — so there is still no documented route for the code to
+    // be documented on. Stated as a property of the population rather than of
+    // one path, so retiring or adding a route cannot silently falsify it again.
     //
     // It was not "new" in any other sense. It has been thrown since the AI
     // budget gate landed, as `forbidden('AI_BUDGET_REQUIRES_VERIFIED_FARM')` —

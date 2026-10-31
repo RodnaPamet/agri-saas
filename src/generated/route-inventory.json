@@ -922,8 +922,9 @@
     },
     {
       "path": "/api/t/{tenantSlug}/ai/copilot",
-      "status": "live",
-      "documented": false
+      "status": "retired",
+      "documented": false,
+      "reason": "Retired 2026-10-31 (#2578). A streaming AI chat endpoint with NO caller on either client. Measured both sides before removing it: nothing under src/ referenced it, and the iOS peer found no call anywhere in the full history of their master -- `git log -S copilot` over their route-contract file returns zero commits, and their RouteContractTests fails CI for any path the app builds that is not listed, so an unlisted call could not have slipped in. The only occurrence of the name in that repo is inside their snapshot OF THIS LEDGER. It is superseded rather than merely unused: the assistant surface (#2578, agrent-ios#483) is a governed superset -- same wire format, plus an outbound secret scan, a page-context schema, a refusal that carries its reason, and a halt that says an answer is real but incomplete. Keeping this one would have left a second streaming AI route on the tenant path that spends the tenant's model budget with none of those. Owner decision, 2026-10-31. The entry stays here because the ledger is append-only, which is what stops a future client calling a path nobody serves -- #1087."
     },
     {
       "path": "/api/t/{tenantSlug}/assets",

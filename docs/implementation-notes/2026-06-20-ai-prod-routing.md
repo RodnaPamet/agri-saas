@@ -1,5 +1,14 @@
 # 2026-06-20 — Production AI inference + task routing (Claude)
 
+> **The Copilot SSE route described below was RETIRED on 2026-10-31 (#2578).**
+> `src/app/api/t/[tenantSlug]/ai/copilot/route.ts` no longer exists and
+> `/api/t/{tenantSlug}/ai/copilot` is `status: "retired"` in
+> `src/generated/route-inventory.json`. It never had a caller on either client,
+> and the assistant surface (#2578, agrent-ios#483) is its governed successor.
+> Everything else in this note — the routing table, the tier gate, the failover
+> and the provider layer — is live and unaffected; `completeWithRouting` is
+> reached today by `knowledge/ask`, the scheduled AI jobs and the RAG path.
+
 **Commit:** `<pending> feat(ai): native Claude provider + task-routing policy + copilot SSE`
 
 ## Design

@@ -161,7 +161,18 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // the gap, which is how an upward ratchet quietly becomes a denylist. I
 // shortened the baseline and left the ceiling, which is exactly the drift
 // the `toBe` is there to refuse.
-const UNDOCUMENTED_CEILING = 216;
+// MEASURED from the merged baseline, not carried from either side. This line
+// conflicted, and the interesting part is that the VALUE did not: main had
+// independently lowered 217 → 216 for a different route while this branch
+// lowered 217 → 216 for `/api/t/{tenantSlug}/ai/copilot` (#2578). Git
+// resolved the comment and left one number standing over a baseline that had
+// lost TWO rows — an off-by-one that would have left exactly the slack the
+// `toBe` below exists to refuse.
+//
+// So it is re-derived: 215 entries in the merged
+// `openapi-undocumented-baseline.json`. Anyone editing this again after a
+// merge should count the file rather than subtract from memory.
+const UNDOCUMENTED_CEILING = 215;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

@@ -133,7 +133,6 @@
     "/api/t/{tenantSlug}/admin/settings",
     "/api/t/{tenantSlug}/admin/tenant-dek-rotation",
     "/api/t/{tenantSlug}/ai/automation-suggestions",
-    "/api/t/{tenantSlug}/ai/copilot",
     "/api/t/{tenantSlug}/assets",
     "/api/t/{tenantSlug}/assets/bulk/delete",
     "/api/t/{tenantSlug}/assets/kpi",
