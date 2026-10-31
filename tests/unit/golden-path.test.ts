@@ -140,7 +140,7 @@ describe('Central Event Writer Contract', () => {
     it('logEvent passes detailsJson through to appendAuditEntry', async () => {
         const ctx = createCtx();
         const detailsJson = {
-            category: 'entity_lifecycle',
+            category: 'entity_lifecycle' as const,
             entityName: 'Practice',
             operation: 'created',
             summary: 'Test practice created',

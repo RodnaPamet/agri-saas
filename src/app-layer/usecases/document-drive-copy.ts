@@ -231,7 +231,12 @@ export async function copyDocumentToDrive(
                 // No `webViewLink`: a Drive URL in the audit trail is a
                 // credential-adjacent handle to a third-party resource, and the
                 // file id is what identifies the copy.
-                detailsJson: { driveFileId: uploaded.fileId },
+                detailsJson: {
+                    category: 'data_lifecycle',
+                    entityName: 'FarmDocument',
+                    operation: 'copied_to_drive',
+                    driveFileId: uploaded.fileId,
+                },
             });
         });
 
@@ -320,7 +325,11 @@ export async function requeueDocumentDriveCopy(
             action: 'FARM_DOCUMENT_DRIVE_COPY_REQUEUED',
             entityType: 'FarmDocument',
             entityId: documentId,
-            detailsJson: { from: doc.driveState },
+            detailsJson: {
+                category: 'status_change',
+                fromStatus: doc.driveState,
+                toStatus: 'PENDING',
+            },
         });
 
         return { documentId, state: 'PENDING' as const };

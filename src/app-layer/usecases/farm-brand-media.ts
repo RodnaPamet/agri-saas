@@ -153,7 +153,7 @@ export async function uploadFarmBrandMedia(
             entityType: 'FileRecord',
             entityId: fileRecord.id,
             details: 'Uploaded a profile image',
-            detailsJson: { category: 'content', entityName: 'FarmBrandMedia' },
+            detailsJson: { category: 'entity_lifecycle', entityName: 'FarmBrandMedia', operation: 'created' },
         });
 
         logger.info('farm-brand-media.stored', {

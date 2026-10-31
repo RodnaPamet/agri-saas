@@ -123,7 +123,10 @@ export const DELETE = withApiErrorHandling(
                     event: 'session_revoked_by_admin',
                     targetUserId: row.userId,
                     sessionId,
-                    reason: reason ?? null,
+                    // OMITTED when absent, never null: `reason` is a declared
+                    // `z.string().optional()` on the audit schema, so `null`
+                    // fails it and the revoke 400s with no reason given.
+                    ...(reason ? { reason } : {}),
                 },
                 metadata: {
                     targetUserId: row.userId,

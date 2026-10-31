@@ -93,6 +93,9 @@ export async function createAutomationRule(
             entityType: 'AutomationRule',
             entityId: rule.id,
             detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'AutomationRule',
+                operation: 'created',
                 name: rule.name,
                 triggerEvent: rule.triggerEvent,
                 actionType: rule.actionType,
@@ -140,7 +143,13 @@ export async function updateAutomationRule(
             action: 'AUTOMATION_RULE_UPDATED',
             entityType: 'AutomationRule',
             entityId: rule.id,
-            detailsJson: { name: rule.name, status: rule.status },
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'AutomationRule',
+                operation: 'updated',
+                name: rule.name,
+                status: rule.status,
+            },
         });
         return rule;
     });
@@ -161,7 +170,12 @@ export async function toggleAutomationRule(
             action: status === 'ENABLED' ? 'AUTOMATION_RULE_ENABLED' : 'AUTOMATION_RULE_DISABLED',
             entityType: 'AutomationRule',
             entityId: rule.id,
-            detailsJson: { name: rule.name, status },
+            detailsJson: {
+                category: 'status_change',
+                entityName: 'AutomationRule',
+                toStatus: status,
+                name: rule.name,
+            },
         });
         return rule;
     });
@@ -177,7 +191,12 @@ export async function archiveAutomationRule(ctx: RequestContext, id: string) {
             action: 'AUTOMATION_RULE_ARCHIVED',
             entityType: 'AutomationRule',
             entityId: id,
-            detailsJson: { name: existing.name },
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'AutomationRule',
+                operation: 'archived',
+                name: existing.name,
+            },
         });
         return rule;
     });
