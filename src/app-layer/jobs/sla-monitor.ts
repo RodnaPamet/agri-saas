@@ -20,6 +20,9 @@ import { AutomationExecutionRepository } from '../automation';
 import { logEvent } from '../events/audit';
 import type { RequestContext } from '../types';
 import type { JobRunResult } from './types';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
 
 function makeSystemCtx(tenantId: string): RequestContext {
     return {
@@ -88,6 +91,36 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
             take: 500,
         });
 
+        // The tenant's member languages, read ONCE per sweep and memoised.
+        //
+        // LAZILY, not eagerly: a breach needs a RUNNING execution already past
+        // its window, so the queue is empty on almost every run — an
+        // unconditional read would be a query per tenant every two minutes for
+        // nothing.
+        //
+        // And once per SWEEP rather than once per breached execution, which is
+        // the N+1 Layer D1 caught in the first draft of this change. Several
+        // rules breaching in the same window is the normal shape here, not an
+        // edge case: they share a tenant and usually a cause.
+        //
+        // Scoped to the tenant rather than to the configured ids, because the
+        // ids differ per rule and the union would have to be collected in a
+        // first pass over the same loop. A farm's ACTIVE membership is a
+        // handful of rows, so the whole set is cheaper than the bookkeeping.
+        let localeCache: Map<string, Locale> | null = null;
+        const memberLocales = async (): Promise<Map<string, Locale>> => {
+            if (localeCache) return localeCache;
+            const members = await db.tenantMembership.findMany({
+                where: { tenantId, status: 'ACTIVE' },
+                select: { userId: true, user: { select: { uiLanguage: true } } },
+                take: 500,
+            });
+            localeCache = new Map(
+                members.map((m) => [m.userId, resolveRecipientLocale(m.user?.uiLanguage)]),
+            );
+            return localeCache;
+        };
+
         let count = 0;
         for (const exec of running) {
             const windowMin = exec.rule.slaWindowMinutes;
@@ -123,17 +156,34 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                 const cfg = exec.rule.slaBreachConfigJson as { userIds?: string[]; message?: string };
                 const userIds = Array.isArray(cfg.userIds) ? cfg.userIds : [];
                 if (userIds.length > 0) {
-                    await db.notification.createMany({
-                        data: userIds.map((userId) => ({
+                    // Read through the membership rather than `User` directly:
+                    // this runs in a tenant context and `User` carries no
+                    // `tenantId`, so RLS returns nothing from here. The
+                    // configured ids are tenant members by construction — the
+                    // rule builder picks them from this list.
+                    const localeByUser = await memberLocales();
+
+                    // `cfg.message` stays a PASSTHROUGH when set: it is the
+                    // operator's own wording, typed into the rule builder, and
+                    // translating a tenant's own copy would be rewriting it.
+                    // Only the fallback is ours to localise (#2511).
+                    const rows = [];
+                    for (const userId of userIds) {
+                        const locale =
+                            localeByUser.get(userId) ?? resolveRecipientLocale(undefined);
+                        rows.push({
                             tenantId,
                             userId,
                             type: 'GENERAL' as const,
-                            title: 'Automation SLA breached',
+                            title: await translateFor(locale, 'notifications.slaBreach.title'),
                             message:
                                 cfg.message ??
-                                `An automation rule's ${windowMin}m SLA window was breached.`,
-                        })),
-                    });
+                                (await translateFor(locale, 'notifications.slaBreach.body', {
+                                    minutes: String(windowMin),
+                                })),
+                        });
+                    }
+                    await db.notification.createMany({ data: rows });
                 }
             }
             count++;

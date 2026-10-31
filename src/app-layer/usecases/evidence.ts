@@ -311,8 +311,32 @@ export async function reviewEvidence(ctx: RequestContext, id: string, data: { ac
                         tenantId: ctx.tenantId,
                         userId: ownerUser.id,
                         type: newStatus === 'APPROVED' ? 'EVIDENCE_APPROVED' : 'EVIDENCE_REJECTED',
-                        title: `Evidence ${newStatus.toLowerCase()}: ${evidence.title}`,
-                        message: comment || `Your evidence "${evidence.title}" has been ${newStatus.toLowerCase()}.`,
+                        // A key per OUTCOME rather than one key with the status
+                        // interpolated: `translateFor` is a plain interpolate
+                        // with no ICU, and «одобрено»/«отхвърлено» are not a
+                        // substitution into one sentence in Bulgarian. Same
+                        // reason `agro.ts` carries two body keys (#2511).
+                        //
+                        // `evidence.title` and `comment` stay PASSTHROUGHS —
+                        // the farmer's own file name and the reviewer's own
+                        // words. Translating either would rewrite what a person
+                        // wrote.
+                        title: await translateFor(
+                            resolveRecipientLocale(ownerUser.uiLanguage),
+                            newStatus === 'APPROVED'
+                                ? 'notifications.evidenceReview.approved.title'
+                                : 'notifications.evidenceReview.rejected.title',
+                            { title: evidence.title },
+                        ),
+                        message:
+                            comment ||
+                            (await translateFor(
+                                resolveRecipientLocale(ownerUser.uiLanguage),
+                                newStatus === 'APPROVED'
+                                    ? 'notifications.evidenceReview.approved.body'
+                                    : 'notifications.evidenceReview.rejected.body',
+                                { title: evidence.title },
+                            )),
                         linkUrl: `/evidence`,
                     },
                 });
@@ -479,6 +503,8 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
 import { stripImageMetadata } from '@/lib/images/strip-metadata';
 import { stripPdfMetadata } from '@/lib/files/strip-pdf-metadata';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 
 /**
  * Upload a file and create an Evidence record of type FILE in one flow.
