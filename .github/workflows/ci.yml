@@ -575,6 +575,20 @@ jobs:
       - name: "Secret patterns: generated module matches .secret-patterns"
         run: npm run secret-patterns:check
 
+      # The second instance of that same pattern, and naming it here because
+      # there are now two: `src/app` is not in the runtime image either — the
+      # runner stage's only `src` path is the PDF fonts — so the assistant
+      # validates its page context against a GENERATED route list. A stale one
+      # rejects a screen the client is really on, which surfaces as the
+      # assistant losing context rather than as an error.
+      #
+      # Both conflicted here on merge, additively: each branch added a step
+      # after the tokens check and git could not know they were siblings
+      # rather than alternatives. If a third generated-because-not-in-the-image
+      # artefact appears, it belongs in this block too. #2578.
+      - name: "Page routes: generated list matches src/app"
+        run: npm run page-routes:check
+
       # Same shape as the tokens check above, for the same reason and one more.
       #
       # `public/maplibre/*.mjs` are checked-in copies of files in
