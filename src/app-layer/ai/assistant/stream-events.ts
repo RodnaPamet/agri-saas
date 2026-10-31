@@ -61,7 +61,16 @@ export type AssistantStreamEvent =
           readonly ok: boolean;
           readonly truncated: boolean;
       }
-    | { readonly type: 'answer'; readonly text: string }
+    | {
+          readonly type: 'answer';
+          readonly text: string;
+          /**
+           * Server-BUILT, never model-emitted — see `links.ts`. Concrete and
+           * tenant-relative. Absent rather than empty when there are none,
+           * so a client need not distinguish the two.
+           */
+          readonly links?: readonly { readonly route: string; readonly label: string }[];
+      }
     | { readonly type: 'refusal'; readonly code: RefusalCode; readonly message: string }
     | { readonly type: 'halt'; readonly code: HaltCode; readonly message: string }
     | { readonly type: 'done'; readonly truncatedAny: boolean };

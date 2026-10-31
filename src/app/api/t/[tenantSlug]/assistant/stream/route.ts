@@ -175,6 +175,7 @@ export const POST = withApiErrorHandling(
                         // event.
                         const answered = await emitAnswer(send, loop.text, {
                             tenantId: ctx.tenantId,
+                            links: loop.links,
                         });
                         // The halt comes AFTER the answer, because it says the
                         // answer above is incomplete — and only when the

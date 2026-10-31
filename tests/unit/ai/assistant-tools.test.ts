@@ -45,6 +45,52 @@ describe('assistant tools (#2578)', () => {
         }
     });
 
+    it('every declared link template names a REAL screen', async () => {
+        // A tool whose template is not a screen produces links that 404 — and
+        // the failure would land on a phone rather than in CI. Asserted here
+        // rather than in the text-reading guard, because answering it needs
+        // the generated template set loaded.
+        const { linkTemplateIsReal } = await import('@/app-layer/ai/assistant/links');
+        const declared = Object.values(ASSISTANT_TOOLS)
+            .map((t) => t.link?.template)
+            .filter((t): t is string => typeof t === 'string');
+        console.log(`[assistant-tools] ${declared.length} link template(s): ${declared.join(', ')}`);
+        // A control: if no tool declared one, the loop below would pass over
+        // nothing. One tool does today.
+        expect(declared.length).toBeGreaterThanOrEqual(1);
+        for (const template of declared) {
+            expect(linkTemplateIsReal(template)).toBe(true);
+        }
+    });
+
+    it('returns links built from the ROWS, before truncation', async () => {
+        listTasks.mockResolvedValue([
+            { id: 'a1', title: 'Пръскане', status: 'OPEN' },
+            { id: 'a2', title: 'Торене', status: 'OPEN' },
+        ]);
+        const out = await runTool(ctx, 'list_farm_tasks', '{}');
+        expect(out.links).toEqual([
+            { route: '/farm-tasks/a1', label: 'Пръскане' },
+            { route: '/farm-tasks/a2', label: 'Торене' },
+        ]);
+    });
+
+    it('a TRUNCATED result still carries its links', async () => {
+        // Built from the rows rather than parsed back out of `content`, so
+        // truncation cannot silently drop the links for records the model was
+        // still shown.
+        listTasks.mockResolvedValue(
+            Array.from({ length: 400 }, (_, i) => ({
+                id: `t${i}`,
+                title: 'a'.repeat(40),
+                status: 'OPEN',
+            })),
+        );
+        const out = await runTool(ctx, 'list_farm_tasks', '{}');
+        expect(out.truncated).toBe(true);
+        expect(out.links.length).toBeGreaterThan(0);
+    });
+
     it('calls the USECASE, which is what enforces the policy', async () => {
         await runTool(ctx, 'list_farm_tasks', '{"due":"overdue"}');
         expect(listTasks).toHaveBeenCalledTimes(1);

@@ -146,6 +146,31 @@ describe('the assistant tool loop (#2578)', () => {
         expect(second.some((m) => m.role === 'tool' && m.content.includes('No such tool'))).toBe(true);
     });
 
+    it('merges links across tool calls, de-duplicated', async () => {
+        listTasks
+            .mockResolvedValueOnce([{ id: 'a1', title: 'Пръскане', status: 'OPEN' }])
+            .mockResolvedValueOnce([
+                { id: 'a1', title: 'Пръскане', status: 'OPEN' },
+                { id: 'a2', title: 'Торене', status: 'OPEN' },
+            ]);
+        const h = harness();
+        const complete = jest
+            .fn()
+            .mockResolvedValueOnce({ text: '', toolCalls: [call('list_farm_tasks')] })
+            .mockResolvedValueOnce({ text: '', toolCalls: [call('list_farm_tasks')] })
+            .mockResolvedValueOnce({ text: 'Две задачи.' });
+        const r = await runToolLoop({ ctx, complete, send: h.send }, []);
+        // `a1` came back twice and appears once — de-duplicated by ROUTE.
+        expect(r.links.map((l) => l.route)).toEqual(['/farm-tasks/a1', '/farm-tasks/a2']);
+    });
+
+    it('a turn with no tool calls offers no links', async () => {
+        const h = harness();
+        const complete = jest.fn().mockResolvedValue({ text: 'Нищо спешно.' });
+        const r = await runToolLoop({ ctx, complete, send: h.send }, []);
+        expect(r.links).toEqual([]);
+    });
+
     it('emitHalt sends nothing when there is no halt', async () => {
         const h = harness();
         await emitHalt(h.send, null);
