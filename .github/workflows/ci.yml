@@ -277,6 +277,43 @@ jobs:
           fi
           echo "control ok: the planted dead selector was reported"
 
+      # The control for the OTHER direction (#2544). The step above proves the
+      # tool reports a selector with no teeth; this proves it does NOT report
+      # one whose teeth simply did not get a chance to bite.
+      #
+      # It exists because that is how this job spent its life lying about
+      # DB-gated suites. `tests/guardrails/rls-coverage.test.ts` gates its
+      # assertions on a database probe and keeps ONE always-running test — the
+      # banner that makes the skip visible — and this job declares no services.
+      # So the suite reported `Tests: N skipped, 1 passed`, `cleanPass` was
+      # satisfied by that single pass, and every gut of every DB-gated selector
+      # scored SURVIVED by construction. The guard that exists to make a skip
+      # visible was supplying the pass that hid it.
+      #
+      # THREE assertions, because each alone passes on a broken tool: exit 0
+      # (an unaudited selector must not redden a build), the NOT AUDITED line
+      # present (it must say so rather than stay silent), and no SURVIVED line
+      # (the old verdict must be gone, not merely accompanied).
+      - name: "Control: a skipped suite is NOT AUDITED, never survived"
+        run: |
+          set -euo pipefail
+          if ! out="$(node scripts/selector-teeth.mjs tests/fixtures/selector-teeth-skipped-suite.test.ts)"; then
+            echo "::error::CONTROL FAILED - a suite whose assertions were SKIPPED made the audit exit non-zero. An unaudited selector is unknown, not dead, and must not fail a build."
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          if ! grep -q "NOT AUDITED" <<<"$out"; then
+            echo "::error::CONTROL FAILED - the skipped-suite fixture produced no NOT AUDITED line. Silence here is the #2544 defect: the selector reads as audited."
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          if grep -q "SURVIVED" <<<"$out"; then
+            echo "::error::CONTROL FAILED - the skipped-suite fixture was reported as SURVIVED. Its selector has teeth; the assertion that would have bitten was skipped."
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          echo "control ok: the skipped suite was reported NOT AUDITED, exit 0, no SURVIVED"
+
 
       - name: Partition the changed guards into shards
         id: plan
