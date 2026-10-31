@@ -63,26 +63,51 @@ import { pathToFileURL } from 'node:url';
  */
 const REAL_EXEMPT = [
     {
-        id: 'GHSA-86w9-cpqp-85rv',
-        package: 'node-forge',
+        id: 'GHSA-3g3m-2fjr-6pw4',
+        package: 'glob',
         reason:
-            'node-forge RSA PKCS#1 v1.5 signature VERIFICATION accepts extra nested ' +
-            'DigestAlgorithm elements. Range is `*` with `fixAvailable: false` — every ' +
-            'published version is affected, so no floor can fix this and the usual ' +
-            'override is unavailable. Removal is also unavailable: the only path to it ' +
-            'is `@google/earthengine` -> `googleapis` -> `google-auth-library` -> ' +
-            '`gtoken` -> `google-p12-pem` -> `node-forge`, and earthengine is live code ' +
-            '(`src/lib/agro/earth-engine.ts`, `gee-config.ts`, `index-recipes.ts`). ' +
-            'REACHABILITY: `google-p12-pem` calls exactly four forge functions — ' +
-            '`asn1.fromDer`, `pkcs12.pkcs12FromAsn1`, `pki.privateKeyToPem`, ' +
-            '`util.decode64` — all of which parse OUR OWN service-account P12 and export ' +
-            'its private key. None is signature verification. The JWT is then signed by ' +
-            '`jws.sign()` (gtoken/build/src/index.js:225), not by forge. So the vulnerable ' +
-            'predicate is never asked to judge a signature from anyone, let alone an ' +
-            'untrusted party. Verified by enumerating the call sites, not by assuming the ' +
-            'package is unused.',
-        review: '2026-11-03',
+            'Glob AbortSignal cancellation bypass: a glob walk can continue after its ' +
+            'signal aborts. Affected range `3.0.0 - 14.0.1` covers the installed 13.0.6, ' +
+            'and npm offers no in-range fix — its only `fixAvailable` is ' +
+            '`@sentry/nextjs@10.76.1`, a DOWNGRADE from the installed 11.10.0 (the ' +
+            'advisory range is `@sentry/nextjs >= 10.76.2`), so "upgrade" is not ' +
+            'available and a major downgrade of the error reporter is a worse trade. ' +
+            'REACHABILITY: the only path is `@sentry/nextjs` -> ' +
+            '`@sentry/bundler-plugins` -> `glob`, and that package exposes exactly one ' +
+            'glob call — `globFiles(patterns, options)` in ' +
+            '`build/cjs/core/glob.js`, a two-line wrapper over `glob.glob`. Every ' +
+            'importer of it lives under `bundler-plugin/` (esbuild, vite, webpack, ' +
+            'rollup) or `config/` (`webpack.js`, `getBuildPluginOptions`): it is the ' +
+            'BUILD-TIME sourcemap uploader. No runtime entry of `@sentry/nextjs` or ' +
+            '`@sentry/node` imports it, so it never runs in the serving process. The ' +
+            'patterns are Sentry config paths over our own `.next` output, never ' +
+            'request input, and we pass no AbortSignal — so the bypassed cancellation ' +
+            'is of a signal that does not exist. Verified by enumerating the importers, ' +
+            'not by assuming the package is unused.',
+        review: '2026-12-01',
     },
+    {
+        id: 'GHSA-g3hv-75wg-m249',
+        package: 'minimatch',
+        reason:
+            'minimatch denial of service via a crafted glob pattern. Reached ONLY ' +
+            'through the glob above — `@sentry/nextjs` -> `@sentry/bundler-plugins` -> ' +
+            '`glob@13.0.6` -> `minimatch@10.2.5` — so its reachability argument is the ' +
+            'same one and stands or falls with it: build-time only, patterns from ' +
+            'Sentry\'s own config over our own build output, never a request and never ' +
+            'attacker-supplied. A DoS predicate needs a pattern an attacker chose; ' +
+            'nothing here lets one reach it. Affected `<11.0.1` against installed ' +
+            '10.2.5; an override to ^11 would cross glob@13\'s declared dependency and ' +
+            'is not worth the risk for a build-time path. Delete this entry together ' +
+            'with the glob one.',
+        review: '2026-12-01',
+    },
+    // The node-forge entry (GHSA-86w9-cpqp-85rv) that lived here was deleted when
+    // the `node-forge: ^1.4.2` override landed in #2526: 1.4.2 fixes it, so the
+    // gate reported the exemption as STALE and refused to pass until it went.
+    // That is the no-stale-entries rule doing exactly its job — the entry's own
+    // reasoning had argued no floor could fix it, which was true of 1.4.0.
+    //
     // Was intentionally empty until 2026-10-02.
     //
     // The adm-zip entry (GHSA-vwc7-r8mq-g2x9) that lived here was removed
