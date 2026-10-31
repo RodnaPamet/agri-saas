@@ -101,7 +101,26 @@
     "  THREE OF THE FIFTEEN CHANGED FILES WERE NOT AUDITED AT ALL on that PR:",
     "  scope-deprecation-scan, scope-guardrails and soft-delete-guardrails, because",
     "  the job is bounded at MAX_GUARDS=12 and the PR changed 15. They may hold",
-    "  further dead selectors that nothing has looked for yet."
+    "  further dead selectors that nothing has looked for yet.",
+    "",
+    "UPDATED 2026-10-31 by #2525 (the node-forge advisory wave).",
+    "  · dependency-policy-claims:expectExamined ADDED — PRE-EXISTING, and the PR",
+    "    that surfaced it changed only package.json, the lockfile and",
+    "    docs/dependency-policy.md. It became visible because a dependency change",
+    "    pulls that guard into the audit population, not because anything about it",
+    "    moved. `expectExamined` is itself an ASSERTION helper — its whole effect is",
+    "    the `expect` inside it — so a mutation that replaces its RETURN removes the",
+    "    assertion and nothing is left to notice. That is a real gap and also a",
+    "    shape this tool's return-value model cannot reach for ANY void assertion",
+    "    helper; giving it teeth means having its callers assert on a value it",
+    "    returns, across every call site. Per the rule above that is a judgement",
+    "    per guard, not work to hold a security fix hostage to.",
+    "  · node-forge-exemption-premises:readOrThrow NOT added, deliberately: it went",
+    "    dead because that same PR deleted the exemption its population came from,",
+    "    which is NEW debt and is blocked. Fixed in place instead — the file now",
+    "    carries a live half asserting the override that replaced the exemption,",
+    "    read through that same helper. Verified with `--selector readOrThrow`:",
+    "    all 1 selector(s) have teeth."
   ],
   "known": {
     "tests/guards/action-label-vocabulary.test.ts": [
@@ -134,6 +153,9 @@
       "isExempt",
       "walk",
       "findOffenders"
+    ],
+    "tests/guards/dependency-policy-claims.test.ts": [
+      "expectExamined"
     ],
     "tests/guards/generated-columns.test.ts": [
       "walk"

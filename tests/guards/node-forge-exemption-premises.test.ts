@@ -1,4 +1,24 @@
 /**
+ * node-forge: the FIX that is in force, and the exemption premises behind it.
+ *
+ * TWO HALVES, and which one is live depends on `scripts/audit-exemptions.mjs`.
+ *
+ * The exemption is GONE as of #2525 — `overrides: { "node-forge": "^1.4.2" }`
+ * fixes every advisory in the family instead of arguing them unreachable — so
+ * the premises below are dormant and the FIX half is what runs. If a future
+ * advisory ever lands on a node-forge with no published fix, re-adding the
+ * entry wakes the premises up automatically.
+ *
+ * Dormant is not the same as free: with the exemption gone, `readOrThrow` had
+ * no live caller and `selector-teeth` reported it SURVIVED every gut — a guard
+ * whose population went empty, which is the exact defect this repo built that
+ * tool to find. The FIX half is therefore not decoration. It is what gives
+ * this file a population at all, and it reads the INSTALLED tree through the
+ * same helper for the same reason the premises did: "it is patched" and "I
+ * could not look" must not report the same thing.
+ *
+ * ── The original subject, kept because the history is the lesson ───────────
+ *
  * The node-forge exemption's REACHABILITY argument, machine-checked.
  *
  * `scripts/audit-exemptions.mjs` exempts `GHSA-86w9-cpqp-85rv` — node-forge's
@@ -78,7 +98,8 @@ describe('node-forge exemption — status', () => {
         // become moot and this line is how a reader sees that happened.
         console.log(
             `[forge-exemption] ${GHSA} exempted: ${isExempted}`
-                + ` · premises ${isExempted ? 'CHECKED below' : 'moot'}`,
+                + ` · premises ${isExempted ? 'CHECKED below' : 'dormant (fixed by override, #2525)'}`
+                + ` · fix half: ALWAYS checked`,
         );
         expect(typeof isExempted).toBe('boolean');
     });
@@ -93,6 +114,113 @@ describe('node-forge exemption — status', () => {
             // Named without the `forge.` prefix in the prose.
             expect(exemptionSource).toContain(call.replace('forge.', ''));
         }
+    });
+});
+
+/**
+ * The lowest version no advisory in the family covers.
+ *
+ * Every one of the twelve is bounded `<=1.4.0`, so the floor has to be
+ * STRICTLY above it — an inclusive bound is where an off-by-one floor stops
+ * excluding the thing it names, which `dependency-policy-claims` checks for
+ * the doc and this checks for the tree.
+ */
+const FIRST_PATCHED = [1, 4, 1] as const;
+
+/** `^1.4.2` → [1,4,2]. Returns null for anything this does not understand. */
+function floorOf(range: string): readonly number[] | null {
+    const m = /^\^?(\d+)\.(\d+)\.(\d+)/.exec(range.trim());
+    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/**
+ * Is `got` at least `want`, both as `[major, minor, patch]`?
+ *
+ * The REFUSAL at the top is not defensive clutter — it is the whole reason
+ * this comparison can be trusted, and `selector-teeth` is what proved that.
+ *
+ * The first version of this function started straight at
+ * `for (let i = 0; i < Math.max(got.length, want.length); i++)`. Gutting
+ * `floorOf` to `0`, `false`, `{}`, `new Set()` or `new Map()` then produced a
+ * `got` with **no `length` at all**, so `Math.max(undefined, 3)` is `NaN`,
+ * `0 < NaN` is false, the loop never ran once, and the function returned its
+ * closing `true`. Five of the nine mutations SURVIVED: the version check
+ * reported "patched" having compared nothing.
+ *
+ * `[]`, `''`, `null` and `undefined` were all caught, which is what makes this
+ * worth writing down — the four shapes a reader would think to test are
+ * exactly the four that were safe, and the gap was in the ones with a missing
+ * property rather than a missing value. Same family as
+ * `an-empty-window-passes-a-negated-assertion`, one level down: here the
+ * window was not empty, it was unmeasurable.
+ */
+function atLeast(got: readonly number[], want: readonly number[]): boolean {
+    for (const [label, v] of [['got', got], ['want', want]] as const) {
+        if (!Array.isArray(v) || v.length !== 3 || v.some((n) => typeof n !== 'number' || !Number.isFinite(n))) {
+            throw new Error(
+                `atLeast(): ${label} is not a [major, minor, patch] tuple — got `
+                + `${JSON.stringify(v)}. Refusing rather than comparing nothing and `
+                + `reporting "patched".`,
+            );
+        }
+    }
+    for (let i = 0; i < 3; i++) {
+        if (got[i] !== want[i]) return got[i] > want[i];
+    }
+    return true;
+}
+
+describe('node-forge — the fix the exemption was replaced by', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as {
+        overrides?: Record<string, unknown>;
+    };
+
+    it('package.json pins a floor strictly above every advisory in the family', () => {
+        const range = pkg.overrides?.['node-forge'];
+        expect(typeof range).toBe('string');
+        const floor = floorOf(String(range));
+        // The SHAPE, not just non-null: `floorOf` gutted to `0` or `{}` is
+        // non-null too, and that is what let a vacuous comparison through.
+        expect({ range, tuple: Array.isArray(floor) && floor.length === 3 })
+            .toEqual({ range, tuple: true });
+        expect({
+            range,
+            clearsEveryAdvisory: atLeast(floor as number[], FIRST_PATCHED),
+        }).toEqual({ range, clearsEveryAdvisory: true });
+    });
+
+    it('the INSTALLED node-forge is at or above that floor', () => {
+        // Through `readOrThrow`, deliberately. The lockfile is a claim about
+        // what should be on disk; this is the disk. It is also what gives the
+        // helper a live caller now the premises are dormant — gutting it to
+        // any constant fails here rather than passing silently.
+        const manifest = JSON.parse(
+            readOrThrow('node_modules/node-forge/package.json'),
+        ) as { version?: string };
+        const installed = floorOf(String(manifest.version));
+        expect({
+            version: manifest.version,
+            tuple: Array.isArray(installed) && installed.length === 3,
+        }).toEqual({ version: manifest.version, tuple: true });
+        expect({
+            version: manifest.version,
+            patched: atLeast(installed as number[], FIRST_PATCHED),
+        }).toEqual({ version: manifest.version, patched: true });
+    });
+
+    it('node-forge is still a transitive, so the override is what holds the line', () => {
+        // If it ever becomes a direct dependency the floor belongs in
+        // `dependencies` and the override becomes a second spelling of it —
+        // and `overrides-no-direct-dep-conflict` would then require the
+        // `$name` form. Same check the dormant half makes, for the opposite
+        // reason: there, that node-forge is unreachable; here, that the
+        // override still has an edge to rewrite.
+        const direct = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as {
+            dependencies?: Record<string, string>;
+            devDependencies?: Record<string, string>;
+        };
+        expect(direct.dependencies?.['node-forge']).toBeUndefined();
+        expect(direct.devDependencies?.['node-forge']).toBeUndefined();
     });
 });
 
