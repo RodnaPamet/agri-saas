@@ -198,6 +198,12 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // for the same reason, and `NoticeScore` likewise carries no tenantId:
         // the score is about a notice, and a notice belongs to no farm.
         'notice-score',
+        // document-retention-sweep (#2495 step 5) purges expired farm documents
+        // in ONE cross-tenant pass. The retention deadline is a per-document day
+        // key, and `@@index([expiresOn, purgedAt])` deliberately does not lead
+        // with tenantId for that reason — retention is a platform duty. The
+        // tenant axis is per ROW, not per payload.
+        'document-retention-sweep',
         // account-erasure-sweep (P5.6b) erases a PERSON's account across every
         // tenant they ever dealt with. A tenantId would be contradictory, not
         // merely unused — the sweep's whole job is to span them.
@@ -307,6 +313,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // Person-scoped too: a notice belongs to no farm, so neither does its
         // shadow score. See 'notice-score' above.
         'NoticeScorePayload',
+        // Cross-tenant sweep over a per-document deadline; the tenant axis is
+        // per row. See 'document-retention-sweep' above.
+        'DocumentRetentionSweepPayload',
         // Person-scoped: an account belongs to a person, who may hold several
         // farms or none. See 'account-erasure-sweep' above.
         'AccountErasureSweepPayload',

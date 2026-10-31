@@ -29,9 +29,9 @@ import {
 } from '@/lib/market/commodity-vocabulary';
 import { summarizePlannedYield, type PlannedYieldInputRow } from '@/lib/planning/planned-yield';
 import { resolveRentBasis, type RentBasisLease } from '@/lib/grain/rent-basis';
+import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
 import { canonicalCostCurrency, normaliseCostToEur } from '@/lib/grain/currencies';
-import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import { canConvert, convert } from '@/lib/units/unit-conversion';
 import type { CostAllocationBasis, Prisma } from '@prisma/client';
 import {
@@ -1488,14 +1488,42 @@ function computePayroll(
 function computeCashOut(rows: readonly CostEntryRow[]): GrainCashOutLine[] {
     const byCurrency = new Map<string, { amount: number; categories: Set<string> }>();
     for (const row of rows) {
-        // CANONICAL key, for two reasons. It stops 'EUR' / 'EURO' / 'BGN'
-        // becoming three cash-out lines for one currency — and it fixes a
-        // CRASH: `CostEntry.currency` is nullable, a null key reached the
-        // `localeCompare` below, and `GRAIN_CASH_OUT` threw a TypeError for
-        // any farm with an unrecorded cost currency. Found by a test written
-        // for the set bug next door; the owner ruling that an unrecorded
-        // currency counts as euro is what makes 'EUR' the right key rather
-        // than a placeholder.
+        /*
+         * A CANONICAL key, and it does two jobs that arrived as two PRs.
+         *
+         * ## It stops a crash — #2547
+         *
+         * `CostEntry.currency` is nullable. A null key reached
+         * `a.currency.localeCompare(b.currency)` below and threw a TypeError —
+         * and `computeCashOut` runs inside `buildCalculatorPayload`, so the
+         * throw does not cost one missing section: `/grain/calculator` answers
+         * 500 and the phone shows its failure state for EVERY crop on the
+         * farm. No production row has been null yet, which is the only reason
+         * nobody has seen it. `canonicalCostCurrency` never returns null, so
+         * the comparator cannot be reached with one.
+         *
+         * EUR for a blank rather than a placeholder, by the owner ruling of
+         * 2026-10-26 (EUR-only): on a farm that can only record euro, a
+         * missing currency is a missing LABEL, not an unknown unit — the same
+         * reading `normaliseCostToEur` already gives a blank code.
+         *
+         * ## It folds the spellings — #2546
+         *
+         * `'EUR'` / `'EURO'` / `'BGN'` stop becoming three cash-out lines for
+         * one currency, which is the farm-visible half: the owner's own farm
+         * records all three.
+         *
+         * #2547 deliberately did NOT do this, and its reasoning is worth
+         * keeping rather than deleting with the line: collapsing `'BGN'` here
+         * would relabel a lev amount as euro without dividing it by the peg,
+         * overstating it by 1.95583x. That was exactly right while the amounts
+         * were raw. It is safe now only because this change converts them at
+         * the read site in the same commit — the label and the amount move
+         * together or neither moves.
+         *
+         * A genuinely foreign code is still left as stored and still gets its
+         * own bucket, unconverted, because there is no rate to use.
+         */
         const key = canonicalCostCurrency(row.currency);
         let bucket = byCurrency.get(key);
         if (!bucket) {

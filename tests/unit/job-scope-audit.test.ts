@@ -129,7 +129,16 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // all. `ContentReport` and `NoticeScore` both carry no tenantId, so
             // there is no tenant axis to scope by — and inventing one would
             // charge an arbitrary farm for platform moderation work.
-            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert'].includes(jobName)) continue;
+            // document-retention-sweep (#2495 step 5) purges expired farm
+            // documents in one pass. CROSS-tenant by design: the deadline is a
+            // per-document day key and `@@index([expiresOn, purgedAt])`
+            // deliberately does not lead with tenantId, because retention is a
+            // platform duty rather than a tenant action. The tenant axis is PER
+            // ROW — each document carries its own tenantId, which the job reads
+            // for its log lines — so a payload tenantId would be a narrower
+            // claim than the job makes, and a per-tenant schedule would need one
+            // schedule per farm to reach them all.
+            if (['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {
