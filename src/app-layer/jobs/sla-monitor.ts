@@ -145,6 +145,8 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                 entityType: 'AutomationExecution',
                 entityId: exec.id,
                 detailsJson: {
+                    category: 'custom',
+                    event: 'automation_sla_breached',
                     ruleId: exec.ruleId,
                     slaWindowMinutes: windowMin,
                     breachAction: exec.rule.slaBreachActionType ?? null,

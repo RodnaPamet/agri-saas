@@ -169,8 +169,26 @@ describe('updateFarmDocumentSettings', () => {
             entityType: 'TenantDocumentSettings',
             detailsJson: { retention: 'P6M' },
         });
-        // No prose about the farm in detailsJson beyond the patch itself.
-        expect(Object.keys(payload.detailsJson)).toEqual(['retention']);
+        /**
+         * No prose about the farm in detailsJson beyond the patch itself, plus
+         * the `category` discriminator `validateAuditDetailsJson` REQUIRES —
+         * without which this write throws an uncoded 400 and the retention
+         * change fails outright, which is how the owner found it.
+         *
+         * Still an EXACT key set, so farm prose added here still fails; the
+         * two assertions below are the ones the old key list gave for free and
+         * are kept explicit now that the set is wider.
+         */
+        expect(Object.keys(payload.detailsJson).sort()).toEqual([
+            'category',
+            'changedFields',
+            'entityName',
+            'operation',
+            'retention',
+        ]);
+        expect(payload.detailsJson.changedFields).toEqual(['retention']);
+        // The field that did NOT change must not appear.
+        expect(payload.detailsJson.driveSync).toBeUndefined();
     });
 
     it('accepts every retention the sweep understands', async () => {
