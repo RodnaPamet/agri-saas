@@ -19,7 +19,17 @@ const SRC_DIR = path.join(ROOT, 'src');
 function grepSrc(pattern: string, includes: string = '*.ts'): string[] {
     try {
         const result = execSync(
-            `npx rg -l "${pattern}" --glob "${includes}" "${SRC_DIR}" 2>nul`,
+            // `2>/dev/null`, not `2>nul`. On Windows `nul` is the null
+            // device; on Linux it is a FILENAME, so the old spelling created
+            // and truncated `./nul` in `cwd` — which is this repo's root —
+            // every time this suite ran. That file is one of the six #2567
+            // removes, and deleting it was not durable while this line stood.
+            //
+            // The redirect was also hiding that this helper greps nothing at
+            // all: `rg` is not installed, so `npx` fetches whatever the
+            // registry serves under that name. See #2585, which owns the fix;
+            // this change is only the part that keeps the deletion durable.
+            `npx rg -l "${pattern}" --glob "${includes}" "${SRC_DIR}" 2>/dev/null`,
             { encoding: 'utf-8', cwd: ROOT }
         );
         return result.trim().split('\n').filter(Boolean);
