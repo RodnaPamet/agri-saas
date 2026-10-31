@@ -9,6 +9,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { blankNonCode } from '../helpers/blank-non-code';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -32,7 +33,27 @@ describe('generated secret patterns (#2578)', () => {
     it('carries a real pattern set — an empty one would report every scan clean', () => {
         // Not `module` — Next's `no-assign-module-variable` rule forbids the
         // name outright, and the lint ceiling allows zero errors.
-        const generated = readFileSync(path.join(REPO_ROOT, TARGET), 'utf8');
+        //
+        // `blankNonCode` first, with `strings: true`. Both halves are MEASURED
+        // rather than assumed, because the cap in
+        // `guards-blank-comments-before-matching` warns that a stripper call
+        // which does nothing teaches a later reader something false — and the
+        // justification first written here was exactly that. A `//` comment can
+        // never match `^\\s{4}\\{`: the slash occupies column one. Two shapes
+        // CAN, and each was injected into this very file to find out.
+        //
+        //   raw   blanked
+        //    14      14    the file as it stands
+        //    16      14    + a BLOCK comment whose lines are indented four
+        //    15      14    + a template literal holding the same text
+        //
+        // So the comment half earns its place on `/* */` and not on `//`, and
+        // `strings: true` earns its own — which is also what the helper
+        // prescribes when the subject is a code STRUCTURE rather than message
+        // text, as an object literal is.
+        const generated = blankNonCode(readFileSync(path.join(REPO_ROOT, TARGET), 'utf8'), {
+            strings: true,
+        });
         const rows = (generated.match(/^\s{4}\{ name: /gm) ?? []).length;
         const sourceRows = readFileSync(path.join(REPO_ROOT, SOURCE), 'utf8')
             .split('\n')
@@ -50,7 +71,18 @@ describe('generated secret patterns (#2578)', () => {
         //
         // If someone adds the file to the runtime stage, this fails and asks
         // for a decision rather than leaving a generator nobody needs.
-        const dockerfile = readFileSync(path.join(REPO_ROOT, DOCKERFILE), 'utf8');
+        //
+        // The hash comments are stripped by hand and deliberately NOT through
+        // `blankNonCode`, which is a JS/TS stripper: on a Dockerfile it would
+        // be a call that demonstrably does nothing. `^COPY` already excludes a
+        // whole-line comment; what it does not exclude is a TRAILING one, so
+        // `COPY x ./x  # deliberately NOT .secret-patterns` would read as a
+        // copy. That direction fails LOUD rather than silent, but a guard owes
+        // the false-alarm question too — proved by injecting that exact line.
+        const dockerfile = readFileSync(path.join(REPO_ROOT, DOCKERFILE), 'utf8')
+            .split('\n')
+            .map((l) => l.replace(/#.*$/, ''))
+            .join('\n');
         const runner = dockerfile.slice(dockerfile.lastIndexOf('AS runner'));
         const copiesIt = /^COPY[^\n]*\.secret-patterns/m.test(runner);
         expect({
