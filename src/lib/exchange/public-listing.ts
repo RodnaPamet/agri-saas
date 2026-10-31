@@ -52,6 +52,12 @@ export interface ExchangeListingRow {
     status: string;
     createdAt: Date | string;
     expiresAt: Date | string | null;
+    /**
+     * Optional because the feed query selects a narrower row. Present on the
+     * seller's own read, where `toListingEdit` uses it as the edit
+     * precondition.
+     */
+    updatedAt?: Date | string;
 }
 
 export type ExchangeKindValue = 'CULTURE' | 'FERTILIZER' | 'SEEDS' | 'PRODUCT';
@@ -207,5 +213,90 @@ export function toPublicListing(
         createdAt: iso(row.createdAt),
         expiresAt: row.expiresAt != null ? iso(row.expiresAt) : null,
         isOwn: row.sellerTenantId === viewerTenantId,
+    };
+}
+
+/**
+ * The seller's OWN view of their listing's editable values — #2543.
+ *
+ * ## Why this is a second projection and not more fields on the first
+ *
+ * `ExchangePublicListing` answers "what does a buyer see". This answers "what
+ * would I send back to leave this unchanged". They disagree on one field and
+ * the disagreement is not cosmetic: `toPublicListing` resolves
+ * `sellerDisplayName` to the FARM's verified name when `publishAsFarm` is set,
+ * because a seller's own management screen is where they check what a buyer
+ * sees. Echo that resolved value into a full-replacement PUT and the farm's
+ * verified name is written back into the seller's typed-alias column as
+ * literal text — and then survives them unticking `publishAsFarm`, now
+ * unverified and indistinguishable from something they typed.
+ *
+ * So the display value stays where it is and the STORED value lives here. One
+ * field cannot mean both things, which is what the iOS session found when it
+ * asked how a client holding only the public element could send the editable
+ * set back.
+ *
+ * ## It is the request body, verbatim
+ *
+ * Every field here is one the PUT accepts, and the whole object is a valid
+ * body. "Send `edit` back unchanged" is therefore a complete instruction, with
+ * nothing for a client to assemble from two places and nothing to omit by
+ * accident — which matters because the PUT is a full replacement and an
+ * omitted nullable field is indistinguishable from a deliberate clearing.
+ *
+ * `sellerContact` IS here, and that is not a loosening of the rule on
+ * `ExchangeListingRow.sellerContact`. That rule is about the PUBLIC
+ * projection, which must never carry it however the listing was fetched; this
+ * object is only ever built for the tenant that owns the row. The rule was
+ * held by a comment until this projection existed to need it, and is now held
+ * by `tests/unit/exchange-public-listing.test.ts`.
+ */
+export interface ExchangeListingEdit {
+    side: 'SELL' | 'BUY';
+    kind: ExchangeKindValue;
+    commodity: string;
+    quantityTonnes: string;
+    pricePerTonne: string | null;
+    priceCurrency: string;
+    regionCode: string;
+    description: string | null;
+    /** The seller's TYPED alias as stored — never the resolved attribution. */
+    sellerDisplayName: string | null;
+    publishAsFarm: boolean;
+    /** The seller's own private contact. Their data, on their own read. */
+    sellerContact: string | null;
+    expiresAt: string | null;
+    /**
+     * A PRECONDITION, echoed back, not a value to change.
+     *
+     * The PUT refuses when this does not match the row's current `updatedAt`.
+     * Full replacement is what makes that worth having: a lost update here
+     * discards every field the other editor changed, not one, and the web and
+     * the phone can both be open on the same listing. Writing euro figures
+     * under a lev label is the kind of thing that happens when two clients
+     * disagree about which copy is current.
+     */
+    updatedAt: string;
+}
+
+/**
+ * Build the seller's editable view. Only ever called for a row the caller's
+ * tenant owns — the ownership check is the usecase's, not this projection's.
+ */
+export function toListingEdit(row: ExchangeListingRow): ExchangeListingEdit {
+    return {
+        side: row.side as 'SELL' | 'BUY',
+        kind: row.kind as ExchangeKindValue,
+        commodity: row.commodity,
+        quantityTonnes: row.quantityTonnes.toString(),
+        pricePerTonne: row.pricePerTonne != null ? row.pricePerTonne.toString() : null,
+        priceCurrency: row.priceCurrency,
+        regionCode: row.regionCode,
+        description: row.description,
+        sellerDisplayName: row.sellerDisplayName,
+        publishAsFarm: row.publishAsFarm ?? false,
+        sellerContact: row.sellerContact ?? null,
+        expiresAt: row.expiresAt != null ? iso(row.expiresAt) : null,
+        updatedAt: row.updatedAt != null ? iso(row.updatedAt) : '',
     };
 }

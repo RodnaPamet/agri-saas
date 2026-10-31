@@ -99,8 +99,16 @@ const CommodityField = z
         return canonical;
     });
 
-export const CreateListingSchema = z
-    .object({
+/**
+ * The listing's own fields, shared by the CREATE and the EDIT schemas (#2543).
+ *
+ * One definition rather than two, because the edit is a FULL REPLACEMENT of
+ * exactly what create accepts — and two copies of a twelve-field shape is how
+ * an edit silently stops accepting a field create added. `toListingEdit`'s
+ * key-set assertion pins the projection to the same set, so the response, the
+ * request and the create path move together or not at all.
+ */
+const LISTING_FIELDS = {
         side: z.nativeEnum(ExchangeSide),
         kind: z.nativeEnum(ExchangeKind),
         commodity: CommodityField,
@@ -142,9 +150,39 @@ export const CreateListingSchema = z
                 z.null(),
             ])
             .optional(),
+} as const;
+
+export const CreateListingSchema = z.object(LISTING_FIELDS).strip();
+export type CreateListingBody = z.infer<typeof CreateListingSchema>;
+
+/**
+ * Replace every editable field on one of your own listings — #2543.
+ *
+ * Owner ruling 2026-10-31: EVERY field is editable, including side, kind and
+ * commodity. The narrower option — "all but those three, so a started
+ * conversation stays about the same offer" — was offered and declined.
+ *
+ * A FULL REPLACEMENT rather than a partial patch, which is the whole reason it
+ * is a PUT. Five of these fields are nullable, and under a patch "leave the
+ * description alone" and "clear the description" are the same JSON unless a
+ * sentinel is invented. Replacement removes the ambiguity instead of encoding
+ * it.
+ *
+ * `updatedAt` is a PRECONDITION, not a value: the usecase refuses when it does
+ * not match the row. Required rather than optional, deliberately — an optional
+ * precondition is one a client can omit and silently lose the protection,
+ * which is worse than not having it, because the next reader assumes it is
+ * there. Full replacement is what makes it worth the field at all: a lost
+ * update discards every field the other editor changed, not one, and the web
+ * and the phone can both have this listing open.
+ */
+export const UpdateListingSchema = z
+    .object({
+        ...LISTING_FIELDS,
+        updatedAt: z.string().datetime(),
     })
     .strip();
-export type CreateListingBody = z.infer<typeof CreateListingSchema>;
+export type UpdateListingBody = z.infer<typeof UpdateListingSchema>;
 
 export const CreateInquirySchema = z
     .object({
