@@ -213,7 +213,45 @@ const POPULATION_FLOOR = 1200;
  * actively destructive. Raising the number and saying why is the honest
  * version, as that entry concluded.
  */
-const UNBLANKED_CAP = 464;
+/**
+ * 464 -> 465 for `no-duplicate-object-keys` (#2537), a THIRD detector false
+ * positive — same mechanism as the second, and the first one where the hazard
+ * is structurally impossible rather than merely absent.
+ *
+ * `readsSource`'s `aimsAtSrc` matches the bare `'src'` in that guard's ROOTS
+ * array (`['src', 'scripts', 'prisma']`), exactly as it did for
+ * `no-raw-nul-bytes`. It cannot satisfy `blanksComments`, and must not —
+ * measured on its own control fixture, duplicates reported:
+ *
+ *   raw                              AV_SCAN_MODE, DOCUMENT_STORAGE_LIMIT_BYTES, inner
+ *   blankNonCode(comments only)      AV_SCAN_MODE, DOCUMENT_STORAGE_LIMIT_BYTES, inner
+ *   blankNonCode({ strings: true })               DOCUMENT_STORAGE_LIMIT_BYTES, inner
+ *
+ * A string-literal property KEY is one of the duplicate shapes that guard
+ * exists to find — `{ AV_SCAN_MODE: 'a', 'AV_SCAN_MODE': 'b' }` is TS1117 —
+ * and blanking string CONTENTS erases it. That is the `no-raw-nul-bytes`
+ * argument verbatim: blanking turns the control into one that cannot express
+ * failure.
+ *
+ * And the comments-only form, which WOULD satisfy this file's predicate,
+ * changes nothing: the row above proves it reports the same three. That guard
+ * routes its read through `ts.createSourceFile`, so a comment is a token the
+ * parser classifies, never text that can be mistaken for a property. The
+ * hazard this cap exists for — prose counted as the code it polices — is not
+ * merely unrealised there, it is unreachable.
+ *
+ * So the compliant call would be a provable no-op, and
+ * `acquisition-probe-is-inert` already settled what to do with that: adding it
+ * "would mean importing the stripper without using it", and raising the number
+ * with a reason "is the honest version of the same outcome". A reader finding a
+ * `blankNonCode` call that demonstrably does nothing learns something false
+ * about why it is there.
+ *
+ * Raised on #1774: three of these are now AST- or byte-oriented reads, which
+ * suggests `readsSource` could exclude a read routed through the TypeScript
+ * parser rather than each one costing an entry here.
+ */
+const UNBLANKED_CAP = 465;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.
