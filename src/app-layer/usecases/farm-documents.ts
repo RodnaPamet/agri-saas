@@ -441,12 +441,16 @@ async function uploadFarmDocumentImpl(
     return runInTenantContext(ctx, async (db) => {
         const settings = await db.tenantDocumentSettings.findUnique({
             where: { tenantId: ctx.tenantId },
-            select: { retention: true },
+            select: { retention: true, driveSync: true },
         });
         // No settings row yet means nobody has opened the settings screen —
         // the schema default is the answer, not an error. Step 3 adds the
         // routes that create this row.
         const retention: DocumentRetention = settings?.retention ?? 'P1Y';
+        // `false` when there is no row, matching the column default. Reading an
+        // absent row as "copy to Drive" would start sending a farm's documents
+        // to a third party because nobody had opened a settings screen — the
+        // one direction this default must never fail in.
 
         const fileRecord = await FileRepository.createPending(db, ctx, {
             pathKey: ingested.pathKey,
@@ -491,12 +495,22 @@ async function uploadFarmDocumentImpl(
                 retention,
                 expiresOn: documentExpiryDayKey(retention, now),
                 idempotencyKey: idempotencyKey || null,
-                // Always OFF at this step. The Drive copy job is delivery
-                // step 4; setting PENDING before anything drains it would
-                // leave rows claiming a copy is on its way when nothing is
-                // enqueued — the state `OFF` vs `FAILED` split exists to keep
-                // "a setting" and "an error" distinguishable.
-                driveState: 'OFF',
+                // PENDING when the farm has Drive sync on, and the sweep
+                // drains it within two minutes (#2495 step 4). OFF otherwise.
+                //
+                // The comment this replaces was right to refuse PENDING while
+                // nothing drained it: a row claiming a copy is on its way with
+                // no job behind it is worse than an honest OFF, and the
+                // retention sweep DEFERS a PENDING row, so those documents
+                // would never have expired either.
+                //
+                // `driveState` is now the queue itself rather than a label on
+                // one, which is why there is no enqueue call here: a lost
+                // enqueue is a failure mode a column cannot have. The split
+                // between OFF and FAILED still means what it did — "a setting"
+                // versus "an error" — and PENDING is now a third thing, "on
+                // its way", with a bound on how long it may claim that.
+                driveState: settings?.driveSync ? 'PENDING' : 'OFF',
             },
             select: ROW_SELECT,
         })) as unknown as RowShape;

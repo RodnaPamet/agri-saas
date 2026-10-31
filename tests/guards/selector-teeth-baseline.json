@@ -152,9 +152,6 @@
     "    build telling whoever did it to delete this."
   ],
   "known": {
-    "tests/guardrails/rls-coverage.test.ts": [
-      "policiesFor"
-    ],
     "tests/guards/action-label-vocabulary.test.ts": [
       "walk"
     ],

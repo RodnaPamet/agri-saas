@@ -164,7 +164,14 @@ describe('Infrastructure Regression Guards', () => {
             // on — a retention promise with no enforcement, which for a
             // compliance register is worse than having no period at all.
             // Daily at 03:45 UTC, ahead of the two long transaction sweeps.
-            expect(SCHEDULED_JOBS).toHaveLength(31);
+            // 31 → 32 (#2495 step 4): `document-drive-copy-sweep`. Until it
+            // existed, `TenantDocumentSettings.driveSync` was a switch the
+            // settings screen offered and nothing acted on, and every upload
+            // stored `driveState: 'OFF'` whatever the farm had chosen — a
+            // promise with no enforcement, the same shape step 5 closed for
+            // `expiresOn`. Every two minutes, because a farmer who uploads a
+            // scan watches that row for «Копие в Google Drive».
+            expect(SCHEDULED_JOBS).toHaveLength(32);
         });
 
         test('scheduled job names match expected set', () => {
@@ -198,6 +205,11 @@ describe('Infrastructure Regression Guards', () => {
                 // retention period has run out. The row SURVIVES as an EXPIRED
                 // tombstone keeping its name, so "destroyed by policy on this
                 // date" and "never existed" are not the same observation.
+                // Copies PENDING documents into the farm's own Drive. One-way:
+                // this product writes a copy and never reads, updates or
+                // deletes it, which is what makes the «Само в Google Drive»
+                // tombstone honest.
+                'document-drive-copy-sweep',
                 'document-retention-sweep',
                 // Flips APPROVED evidence past its nextReviewDate to
                 // NEEDS_REVIEW. The usecase existed since 2026-05 with zero

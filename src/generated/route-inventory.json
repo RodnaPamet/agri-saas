@@ -1126,6 +1126,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/documents/{documentId}/drive-copy",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/equipment",
       "status": "live",
       "documented": false

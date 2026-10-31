@@ -7067,6 +7067,27 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentDeleteResult 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmDocumentDriveCopyQueued 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "documentId": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "PENDING"
+      ]
+    }
+  },
+  "required": [
+    "documentId",
+    "state"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmDocumentDriveState 1`] = `
 "{
   "type": "object",

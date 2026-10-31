@@ -516,3 +516,123 @@ const WATCH = [
         expect(WATCH.filter((f) => !known.has(f))).toEqual([]);
     });
 });
+
+/**
+ * #2544 — a selector the run could not audit is NOT a surviving selector.
+ *
+ * The defect: `cleanPass` asks for a jest summary with no failures and at least
+ * one pass. A DB-gated suite under a job with no postgres skips its assertions
+ * and keeps ONE always-running test — the execution-status banner that exists
+ * to make the skip visible — so the summary reads `Tests: N skipped, 1 passed`
+ * and that single pass satisfied `cleanPass`. Every gut of every DB-gated
+ * selector therefore scored SURVIVED, for every such selector, by construction.
+ * The guard that makes a skip visible was supplying the pass that hid it.
+ *
+ * These tests cover the READERS and the REPORT. The end-to-end proof is the
+ * `Control: a skipped suite is NOT AUDITED, never survived` step in `ci.yml`,
+ * which audits `tests/fixtures/selector-teeth-skipped-suite.test.ts` — a
+ * fixture whose selector has perfectly good teeth and whose assertion does not
+ * run. Measured before the fix, that fixture reported
+ * `pick() → return [] | '' | 0 | … SURVIVED` and listed it as a NEW dead
+ * selector; after, `NOT AUDITED - all 9 mutation(s) …`, exit 0.
+ */
+describe('a skipped suite is NOT AUDITED rather than survived (#2544)', () => {
+    /** Call a one-argument string reader of the tool in a real node process. */
+    function reader(name: string, out: string): string {
+        const script =
+            `import { ${name} } from ${JSON.stringify(pathToFileURL(TOOL).href)};` +
+            `const s = Buffer.from(process.argv[1], 'base64').toString('utf8');` +
+            `process.stdout.write(JSON.stringify(${name}(s)));`;
+        return execFileSync(
+            'node',
+            ['--input-type=module', '-e', script, Buffer.from(out, 'utf8').toString('base64')],
+            { cwd: ROOT, encoding: 'utf-8' },
+        );
+    }
+
+    it('reads the skipped count out of the summary jest actually prints', () => {
+        // The shape a DB-gated suite produces with no database: the gated
+        // assertions skipped, the execution-status test passing.
+        expect(reader('skippedTests', 'Test Suites: 1 passed, 1 total\nTests:       6 skipped, 1 passed, 7 total\n')).toBe('6');
+        // And the shape that means the audit is conclusive.
+        expect(reader('skippedTests', 'Test Suites: 1 passed, 1 total\nTests:       3 passed, 3 total\n')).toBe('0');
+        // No summary at all — a run that never got there. Zero, not a guess:
+        // `ranAtAll` is what rejects this case, and two readers disagreeing
+        // about it would be worse than one being conservative.
+        expect(reader('skippedTests', 'Cannot find module\n')).toBe('0');
+    });
+
+    it('names the CAUSE when the suite printed one, and stays quiet otherwise', () => {
+        // `rls-coverage.test.ts`'s banner. Reading it turns "could not tell"
+        // into "could not tell, because no database was reachable" — the
+        // difference between re-running hopefully and giving the job a service.
+        expect(reader('skipCause', '  RLS COVERAGE GUARDRAIL: NOT VERIFIED IN THIS RUN\n')).toContain('no database');
+        // The banner is ONE suite's explanation, never the detector. A detector
+        // keyed on it would report SURVIVED for every DB-gated suite that has
+        // not adopted it — the same defect with a smaller population.
+        expect(reader('skipCause', 'Tests: 6 skipped, 1 passed, 7 total\n')).toBe('null');
+    });
+
+    const inconclusive = {
+        results: [
+            {
+                file: 'gated.test.ts',
+                candidates: 1,
+                survivors: [],
+                untestable: [],
+                notAudited: [
+                    { selector: 'policiesFor', line: 41, skipped: 6, guts: 9, cause: 'no database was reachable' },
+                ],
+            },
+        ],
+        unexpected: [],
+        stale: [],
+    };
+
+    it('reports it as NOT AUDITED, with the count and the cause', () => {
+        const out = formatReport(inconclusive, false);
+        expect(out).toContain('NOT AUDITED');
+        expect(out).toContain('policiesFor()');
+        expect(out).toContain('SKIPPED 6 test(s)');
+        expect(out).toContain('no database was reachable');
+        // The verdict it REPLACES must be gone, not merely accompanied. A line
+        // carrying both would leave the old reading available to anyone
+        // grepping, which is how the baseline entry came to exist.
+        expect(out).not.toContain('SURVIVED');
+    });
+
+    it('does NOT claim the file is clean while a selector went unaudited', () => {
+        // The sentence that made the defect comfortable. With no survivors and
+        // nothing untestable, the file used to report `all 1 selector(s) have
+        // teeth` — a clean bill of health over an audit that proved nothing.
+        expect(formatReport(inconclusive, false)).not.toContain('have teeth');
+    });
+
+    it('counts unaudited selectors in the run summary, apart from empty files', () => {
+        // TWO reasons a selector goes unaudited and they are not the same
+        // finding: a file with nothing to mutate is a permanent property of
+        // that file, while a selector skipped for want of a service is a
+        // property of the JOB and is fixable by giving it one.
+        const first = formatReport(inconclusive, false).split('\n')[0];
+        expect(first).toContain('1 selector(s) NOT AUDITED because the suite skipped tests');
+        expect(first).toContain('0 with no module-level selectors');
+    });
+
+    it('stays valid JSON in --json mode, and carries the field', () => {
+        const parsed = JSON.parse(formatReport(inconclusive, true)) as {
+            results: { notAudited?: { selector: string }[] }[];
+        };
+        expect(parsed.results[0].notAudited?.[0].selector).toBe('policiesFor');
+    });
+
+    it('is absent from a report that has none — no empty heading', () => {
+        // The `formatSummary` lesson: a section with no rows reads as "nothing
+        // was found" when it means "nothing was collected". Older payloads
+        // carry no `notAudited` key at all, so this also pins that the field is
+        // optional rather than required.
+        const clean = { results: [{ file: 'a.test.ts', candidates: 2, survivors: [], untestable: [] }], unexpected: [], stale: [] };
+        const out = formatReport(clean, false);
+        expect(out).not.toContain('NOT AUDITED because the suite skipped');
+        expect(out).toContain('all 2 selector(s) have teeth');
+    });
+});

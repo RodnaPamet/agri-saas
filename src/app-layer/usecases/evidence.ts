@@ -853,7 +853,23 @@ export async function downloadEvidenceFile(ctx: RequestContext, fileId: string) 
         assertTenantKey(fileRecord.pathKey, ctx.tenantId);
 
         // ─── AV Scan Guard ───
-        const scanMode = env.AV_SCAN_MODE || 'permissive';
+        // `env.AV_SCAN_MODE` is `z.enum([...]).default("strict")`, so it is
+        // never absent in production. It WAS absent under jest until #2518,
+        // because `SKIP_ENV_VALIDATION=1` makes `@t3-oss/env` skip zod
+        // entirely — defaults included — and this `||` then resolved the gate
+        // to `permissive`, so a PENDING (unscanned) evidence file was
+        // downloadable in every unit test while the schema declared strict.
+        //
+        // `?? 'strict'` rather than `|| 'permissive'`: the fallback now agrees
+        // with the schema and fails CLOSED. It is unreachable on both paths,
+        // which is exactly why it mattered — a fail-OPEN fallback nothing can
+        // reach is still the sentence the next reader believes, and this one
+        // contradicted the schema two files away.
+        //
+        // Note this gate is NOT `isDownloadAllowed` from `@/lib/storage/av-scan`;
+        // it is a second, inline implementation for the evidence path. Both
+        // refuse INFECTED and both let SKIPPED through.
+        const scanMode = env.AV_SCAN_MODE ?? 'strict';
         const scanStatus = fileRecord.scanStatus || 'PENDING';
 
         if (scanStatus === 'INFECTED') {
