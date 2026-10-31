@@ -61,6 +61,18 @@ const SRC = fs.readFileSync(
 // This block is now a forward-guard on the removal so a re-add is a
 // conscious change.
 describe('R17-PR9 — chart-filter coordination removed from dashboard', () => {
+    // #2507. Every other assertion in this file is a NEGATION over `SRC`, so
+    // all of them pass if the read ever stops landing on the dashboard client
+    // — an emptied file, a rename, an extraction. A removal guard has no
+    // positive assertion by construction, which is exactly why it needs one
+    // written down.
+    it('reads the dashboard client it means to — the control the negations need', () => {
+        expect(SRC).toContain('export default function DashboardClient');
+        // 1,845 bytes today; a floor well under it separates "this file is
+        // small" from "this read returned nothing".
+        expect(SRC.length).toBeGreaterThan(600);
+    });
+
     it('no longer defines ChartFocusWrapper on the dashboard', () => {
         expect(SRC).not.toMatch(/function\s+ChartFocusWrapper\b/);
         expect(SRC).not.toContain('<ChartFocusWrapper');
