@@ -174,3 +174,11 @@ scripts/ai/eval/report.json
 
 # State file written by scripts/seed-load-streams.ts (#1999 load run)
 .load-streams-seed.json
+
+# Build artifacts that were tracked at the root by accident — #2567.
+# `nul` is the Windows null device, so a `2>nul` redirect on Linux creates a
+# FILE with this name; the producer was a `2>nul` in
+# tests/unit/storage-regression-guards.test.ts, fixed in the same change.
+nul
+next_error*.html
+playwright-results*.json
