@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "12.89.0",
+    "version": "12.89.1",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -67,6 +67,8 @@
         "page-routes:generate": "tsx scripts/generate-page-routes.ts",
         "page-routes:check": "tsx scripts/generate-page-routes.ts --check",
         "tokens:generate": "node scripts/generate-tokens.mjs",
+        "secret-patterns:generate": "node scripts/generate-secret-patterns.mjs",
+        "secret-patterns:check": "node scripts/generate-secret-patterns.mjs --check",
         "tokens:check": "node scripts/generate-tokens.mjs --check",
         "load:auth": "k6 run tests/load/auth.js",
         "load:lists": "k6 run tests/load/lists.js",
