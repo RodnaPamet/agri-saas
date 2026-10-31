@@ -265,4 +265,93 @@ describeFn('FarmDocument — the CHECK constraints refuse, not merely exist', ()
         expect(deleted.purgedByUserId).toBe(userId);
         expect(deleted.name).toBeNull();
     });
+    describe('the idempotency constraint (#2495 step 2)', () => {
+        /*
+         * `@@unique([tenantId, clientMutationId])` is what makes the
+         * `Idempotency-Key` honest under a RACE. The usecase checks for an
+         * existing row first, which handles the ordinary retry; two requests
+         * arriving together both pass that check, and only the database can
+         * refuse the second. So the constraint is the mechanism and the
+         * pre-check is the optimisation — asserted in that order here.
+         */
+        it('refuses a second document with the same key in the same farm', async () => {
+            const key = `idem-${randomUUID()}`;
+            const first = await globalPrisma.farmDocument.create({
+                data: { ...base(), clientMutationId: key } as never,
+            });
+            expect(first.clientMutationId).toBe(key);
+            await expect(
+                globalPrisma.farmDocument.create({
+                    data: { ...base(), clientMutationId: key } as never,
+                }),
+            ).rejects.toThrow();
+        });
+
+        it('NULLS DISTINCT — many keyless uploads coexist', async () => {
+            // The half that would break every ordinary upload if the index
+            // were declared NULLS NOT DISTINCT. Three, because two could pass
+            // on an off-by-one.
+            const made = [];
+            for (let i = 0; i < 3; i++) {
+                made.push(
+                    await globalPrisma.farmDocument.create({
+                        data: { ...base(), clientMutationId: null } as never,
+                    }),
+                );
+            }
+            expect(made).toHaveLength(3);
+            expect(new Set(made.map((m) => m.id)).size).toBe(3);
+        });
+
+        it('the same key in a DIFFERENT farm is allowed', async () => {
+            // The pair is (tenantId, clientMutationId) and not the key alone:
+            // it is a client's own id, unique within the farm that generated
+            // it, so a global constraint would let one farm's retry collide
+            // with another's.
+            //
+            // This describe owns ONE tenant, so the second farm is created and
+            // removed inside the test rather than left for an afterAll that
+            // does not know about it — a leaked tenant is the kind of residue
+            // that makes a later suite's counts wrong for a reason nobody can
+            // find.
+            const key = `idem-shared-${randomUUID()}`;
+            await globalPrisma.farmDocument.create({
+                data: { ...base(), clientMutationId: key } as never,
+            });
+
+            const other = await globalPrisma.tenant.create({
+                data: { name: `C2 ${run}`, slug: `c2-${run}` } as never,
+            });
+            try {
+                const frB = await globalPrisma.fileRecord.create({
+                    data: {
+                        tenantId: other.id,
+                        pathKey: `tenants/${other.id}/documents/${randomUUID()}.pdf`,
+                        originalName: 'b.pdf',
+                        mimeType: 'application/pdf',
+                        sizeBytes: 10,
+                        sha256: randomUUID().replace(/-/g, ''),
+                        uploadedByUserId: userId,
+                    } as never,
+                });
+
+                const inB = await globalPrisma.farmDocument.create({
+                    data: {
+                        tenantId: other.id,
+                        name: 'B copy',
+                        fileRecordId: frB.id,
+                        uploadedByUserId: userId,
+                        retention: 'P1Y',
+                        clientMutationId: key,
+                    } as never,
+                });
+                expect(inB.clientMutationId).toBe(key);
+            } finally {
+                await globalPrisma.farmDocument.deleteMany({ where: { tenantId: other.id } });
+                await globalPrisma.fileRecord.deleteMany({ where: { tenantId: other.id } });
+                await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: other.id } });
+                await globalPrisma.tenant.deleteMany({ where: { id: other.id } });
+            }
+        });
+    });
 });

@@ -1106,6 +1106,21 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/documents",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/documents/{id}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/documents/{id}/content",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/equipment",
       "status": "live",
       "documented": false

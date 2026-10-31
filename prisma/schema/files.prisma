@@ -253,6 +253,27 @@ model FarmDocument {
   /// Who, when a person did it. Null when `EXPIRED`.
   purgedByUserId   String?
 
+  /// Exactly-once handle for a client RETRY, not for an outbox replay.
+  ///
+  /// «Документи» is deliberately NOT an outbox surface (#2495): a multipart
+  /// body with bytes is the worst case for a queue that would have to hold and
+  /// replay it, and `OUTBOX_DB_VERSION` is a one-way door. So an upload fails
+  /// visibly and the person presses the button again — which is exactly when a
+  /// duplicate row appears, because the first attempt may have stored the
+  /// bytes before the response was lost.
+  ///
+  /// Nullable + NULLS-DISTINCT, so an upload with no key is unconstrained
+  /// (every NULL is unique to Postgres). Mirrors `LogEntry.clientMutationId`
+  /// and `Task.clientMutationId`, including the (tenantId, …) shape: the key
+  /// is a client's own id and only has to be unique within the farm.
+  ///
+  /// Owner ruling 2026-10-31: the column lands in step 2 WITH the routes,
+  /// rather than the routes shipping a header they cannot honour. Deduping on
+  /// the content hash was the alternative and was rejected — a farm
+  /// legitimately uploads the same scan twice (one lease, two parcels), so a
+  /// hash would merge two real documents to spare one retry.
+  clientMutationId String?
+
   driveState       DocumentDriveState    @default(OFF)
   /// The Drive file id, so a copy can be verified or re-pointed. Never a URL.
   driveFileId      String?
@@ -269,6 +290,9 @@ model FarmDocument {
   purgedBy         User?                 @relation("FarmDocumentPurger", fields: [purgedByUserId], references: [id])
 
   @@unique([id, tenantId])
+  /// Dedupe a retried upload within the farm. NULLS DISTINCT, so keyless
+  /// uploads are unconstrained.
+  @@unique([tenantId, clientMutationId])
   @@index([tenantId])
   @@index([tenantId, createdAt])
   /// The list: newest first within a tenant.

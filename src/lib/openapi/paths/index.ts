@@ -46,6 +46,7 @@ import { registerAdminMembersPaths } from './admin-members.paths';
 import { registerPppRegisterPaths } from './ppp-register.paths';
 import { registerFarmBrandPaths } from './farm-brand.paths';
 import { registerPublicFarmsPaths } from './public-farms.paths';
+import { registerDocumentPaths } from './documents.paths';
 import { registerPublicMediaPaths } from './public-media.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
@@ -92,5 +93,6 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerPppRegisterPaths(registry);
     registerFarmBrandPaths(registry);
     registerPublicFarmsPaths(registry);
+    registerDocumentPaths(registry);
     registerPublicMediaPaths(registry);
 }

@@ -63,6 +63,12 @@ const USECASE_SEAMS: ReadonlyArray<{ fn: string; file: string; reason: string }>
         reason:
             'Owns the STORED check, the AV status check, assertTenantKey on the RESOLVED pathKey, the soft-delete check and the READER/AUDITOR provenance rule.',
     },
+    {
+        fn: 'readFarmDocumentContent',
+        file: 'src/app-layer/usecases/farm-documents.ts',
+        reason:
+            'Owns the purged-tombstone 404, the STORED check, assertTenantKey on the RESOLVED pathKey, and the AV verdict through isDownloadAllowed with no default on the argument (#2495 step 2). It calls the shared helper rather than reimplementing the policy the way its evidence neighbour does — two answers to "may these bytes be served" is #2518.',
+    },
 ];
 
 /**

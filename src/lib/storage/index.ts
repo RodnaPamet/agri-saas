@@ -179,6 +179,11 @@ export const STORAGE_DOMAINS = [
     'spatial',
     'cost-invoice',
     'farm-media',
+    // «Документи» (#2495). Its own domain rather than `general` so the key
+    // prefix says which feature owns the bytes — which the retention sweep
+    // (step 5) needs in order to reconcile objects against tombstones, and
+    // `general` would make that a scan of everything.
+    'documents',
 ] as const;
 
 export type StorageDomain = (typeof STORAGE_DOMAINS)[number];

@@ -6941,6 +6941,137 @@ exports[`API contract — per-schema snapshots schema: FarmBrandSaveResult 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmDocument 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The display title. **Null on a DELETED tombstone**, where it is cleared deliberately: a manual delete is very often \\"this was the wrong file\\", and the name is the one field encrypted at rest precisely because a filename is routinely «Договор аренда <фамилия>.pdf». An EXPIRED tombstone KEEPS its name — expiry is policy, and the farm’s index of what it held is the point. Render the absence; do not substitute a placeholder, because the client owns that wording."
+    },
+    "contentType": {
+      "type": "string",
+      "description": "The RESOLVED type, from the stored bytes — not what the client declared at upload."
+    },
+    "sizeBytes": {
+      "type": "integer"
+    },
+    "uploadedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "uploadedBy": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "retention": {
+      "type": "string",
+      "enum": [
+        "P3M",
+        "P6M",
+        "P1Y",
+        "P2Y",
+        "P5Y",
+        "NONE"
+      ],
+      "description": "The retention period AS IT WAS AT UPLOAD, stored per document. A later settings change does not reach back — so two documents in one library can carry different periods, and that is the design rather than drift."
+    },
+    "expiresOn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "A CALENDAR DAY KEY, \`YYYY-MM-DD\`, or null for «Без срок». Not a timestamp: the concept is a date, so an instant would carry information the concept does not have and every reader would then decide which day it meant. Computed in Europe/Sofia with clamped calendar-month arithmetic, so «1 година» lands on the same date next year and 31 January + 3 months is 30 April. A document is kept THROUGH this day.",
+      "example": "2027-03-14"
+    },
+    "purgedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Set once the bytes are gone. ONE field for every tombstone whatever the reason — \`purgeReason\` carries the distinction, because two fields for one fact is how a client ends up reading whichever is populated."
+    },
+    "purgeReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "EXPIRED",
+        "DELETED",
+        null
+      ],
+      "description": "Why the bytes went. Explicit rather than inferred from which fields are null: «Само в Google Drive», «Изтекъл срок» and «Изтрит от …» read differently to a farmer and so ARE three states."
+    },
+    "purgedByUserId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Who deleted it. Null when \`purgeReason\` is \`EXPIRED\` — nobody did."
+    },
+    "mayDelete": {
+      "type": "boolean",
+      "description": "Whether THIS caller may delete this row: the uploader, or an admin. The same predicate decides the refusal the server makes, so a rendered button cannot disagree with the result of pressing it."
+    },
+    "drive": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "OFF",
+            "PENDING",
+            "COPIED",
+            "FAILED"
+          ],
+          "description": "\`OFF\` means sync was not on when this was uploaded — a SETTING, distinct from \`FAILED\`, which is an error an admin can retry. The copy itself is not implemented yet (step 4), so every row reads \`OFF\` today."
+        }
+      },
+      "required": [
+        "state"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "contentType",
+    "sizeBytes",
+    "uploadedAt",
+    "uploadedBy",
+    "retention",
+    "expiresOn",
+    "purgedAt",
+    "purgeReason",
+    "purgedByUserId",
+    "mayDelete",
+    "drive"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
 "{
   "type": "object",
