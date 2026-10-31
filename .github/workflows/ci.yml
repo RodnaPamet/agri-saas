@@ -566,6 +566,15 @@ jobs:
       - name: "Tokens: generated files match design/tokens.json"
         run: npm run tokens:check
 
+      # Same shape and the same reason as the tokens check above. `src/app` is
+      # NOT in the runtime image — the runner stage's only `src` path is the
+      # PDF fonts — so the assistant validates its page context against a
+      # GENERATED list. A stale one rejects a screen the client is really on,
+      # which surfaces as the assistant losing context rather than as an
+      # error. The guard covers it too, in a shard twenty minutes away. #2578.
+      - name: "Page routes: generated list matches src/app"
+        run: npm run page-routes:check
+
       # Same shape as the tokens check above, for the same reason and one more.
       #
       # `public/maplibre/*.mjs` are checked-in copies of files in

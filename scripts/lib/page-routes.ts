@@ -1,0 +1,130 @@
+/**
+ * The ONE derivation of this app's PAGE route templates — #2578.
+ *
+ * `scripts/lib/api-routes.ts` does this for `src/app/api`; nothing did it for
+ * pages, and twelve guards each walk `src/app` for `page.tsx` themselves. This
+ * is not a sweep of those — it is the shared derivation the assistant needs,
+ * placed where the house pattern puts one so the next consumer has somewhere
+ * to import from rather than a thirteenth walk.
+ *
+ * ## Why the result is GENERATED into a module rather than read at runtime
+ *
+ * The runner stage of the Dockerfile COPYs eleven paths, and the only one
+ * under `src` is `src/lib/pdf/fonts`. **`src/app` is not in the production
+ * image.** A `readdirSync` here would therefore pass every test and ENOENT in
+ * production — #929's shape, where what differs between test and prod is the
+ * filesystem rather than the code. Verified against the Dockerfile, and the
+ * sync guard asserts that premise still holds rather than trusting this
+ * paragraph.
+ *
+ * Same arrangement, and for the same measured reason, as
+ * `.secret-patterns` → `src/lib/security/generated/secret-patterns.ts`.
+ */
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+
+export const ROOT = path.resolve(__dirname, '..', '..');
+export const APP_REL = 'src/app';
+
+/**
+ * A route GROUP: organisational only, invisible in the URL, so its segment is
+ * dropped and the pages beneath it keep their own path.
+ */
+function isRouteGroup(segment: string): boolean {
+    return segment.startsWith('(') && segment.endsWith(')');
+}
+
+/**
+ * A parallel-route SLOT. Pages inside render into a slot of the layout above
+ * rather than at a path of their own, so the whole subtree is SKIPPED — not
+ * stripped.
+ *
+ * These two were one predicate until a fixture test caught it. Stripping `@`
+ * the way a route group is stripped turned `@modal/photo/page.tsx` into
+ * `/photo`, a template that addresses nothing — and the docblock above it said
+ * so in words while the code did the opposite. The real tree has no slot
+ * directories, so only a fixture could show it.
+ */
+function isParallelSlot(segment: string): boolean {
+    return segment.startsWith('@');
+}
+
+/**
+ * Every page template this app serves, as a URL template with Next's bracket
+ * parameters intact — `/t/[tenantSlug]/journal/[id]`.
+ *
+ * Templates, not concrete paths, and that is the contract with the client: the
+ * assistant's page context names the SCREEN, never an instance of it. So the
+ * route field cannot carry a tenant slug or a record id at all, and validating
+ * it is exact set membership rather than a parse. Ids travel in
+ * `selectedIds`, where they are counted and length-bounded.
+ */
+export function pageTemplates(appDir: string = path.join(ROOT, APP_REL)): string[] {
+    // `appDir` defaults to the real tree, which is what every caller uses and
+    // what the in-sync guard drives. It is a parameter only so a test can
+    // point the walker at a fixture.
+    const out = new Set<string>();
+    const walk = (abs: string, segments: string[]): void => {
+        let entries;
+        try {
+            entries = readdirSync(abs, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        if (entries.some((e) => e.isFile() && e.name === 'page.tsx')) {
+            out.add('/' + segments.join('/'));
+        }
+        for (const e of entries) {
+            if (!e.isDirectory()) continue;
+            // `api` holds route handlers, not pages; scripts/lib/api-routes.ts
+            // owns that population and the two must not overlap.
+            //
+            // UNREACHABLE on today's tree, and measured so rather than
+            // assumed: a route handler is `route.ts`, so walking into `api/`
+            // finds no `page.tsx` and contributes nothing — removing this line
+            // left all 13 tests green. It is kept because Next WOULD serve a
+            // page from `src/app/api/x/page.tsx` if anyone added one, and the
+            // assistant would then accept a route template naming an endpoint.
+            //
+            // Being unreachable is exactly why the test for it needs a
+            // FIXTURE: an assertion over the real tree passes whether this
+            // line is here or not, which is a control that cannot express
+            // failure. Hence the `appDir` parameter above — the seam exists so
+            // the exclusion can be exercised over a tree that triggers it.
+            if (segments.length === 0 && e.name === 'api') continue;
+            if (isParallelSlot(e.name)) continue;
+            walk(path.join(abs, e.name), isRouteGroup(e.name) ? segments : [...segments, e.name]);
+        }
+    };
+    walk(appDir, []);
+    return [...out].sort();
+}
+
+/** The committed module's text, so the generator and the guard cannot disagree. */
+export function renderPageRoutesModule(templates: readonly string[]): string {
+    const rows = templates.map((t) => `    ${JSON.stringify(t)},`).join('\n');
+    return `// GENERATED by scripts/generate-page-routes.ts — do not edit.
+//
+// Source of truth: the \`page.tsx\` files under \`src/app\`. Run
+// \`npm run page-routes:generate\` after adding or moving a page;
+// \`tests/guards/page-routes-generated-in-sync.test.ts\` fails CI on drift.
+//
+// ## Why this file exists at all
+//
+// \`src/app\` is NOT in the production image. The runner stage COPYs eleven
+// paths and the only one under \`src\` is \`src/lib/pdf/fonts\`, so a server-side
+// \`readdirSync('src/app')\` would throw ENOENT in production while passing
+// every test — #929's shape. Generated into a module instead, so it is bundled
+// and reaches the place it has to work.
+//
+// These are TEMPLATES, with Next's bracket parameters intact. The assistant's
+// page context names a SCREEN, never an instance of one, so a \`route\` cannot
+// carry a tenant slug or a record id and validating it is set membership.
+
+export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
+${rows}
+] as const;
+
+export const PAGE_ROUTE_TEMPLATE_SET: ReadonlySet<string> = new Set(PAGE_ROUTE_TEMPLATES);
+`;
+}

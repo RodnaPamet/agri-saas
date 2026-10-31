@@ -64,6 +64,8 @@
         "routes:inventory": "tsx scripts/generate-route-inventory.ts",
         "maplibre:check": "node scripts/sync-maplibre-worker.mjs --check",
         "maplibre:sync": "node scripts/sync-maplibre-worker.mjs",
+        "page-routes:generate": "tsx scripts/generate-page-routes.ts",
+        "page-routes:check": "tsx scripts/generate-page-routes.ts --check",
         "tokens:generate": "node scripts/generate-tokens.mjs",
         "tokens:check": "node scripts/generate-tokens.mjs --check",
         "load:auth": "k6 run tests/load/auth.js",
