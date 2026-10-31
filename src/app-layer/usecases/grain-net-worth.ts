@@ -437,7 +437,11 @@ export interface CommodityNetWorthRow {
     imputedLandChargeRefusalCode: ImputedLandChargeRefusalCode | null;
 
     /** `standingCropValue + grainOnHandValue - rentCostProduceValue`, all
-     *  in `priceCurrency`. Null when `pricePerTonne` is null. */
+     *  in `priceCurrency` — which is the CANONICAL code since #2546, so for a
+     *  farm whose market price is in lev these are euro figures and
+     *  `priceCurrency` reads `EUR`. The three terms are derived from one
+     *  normalised `pricePerTonne`, so they cannot disagree with each other.
+     *  Null when `pricePerTonne` is null. */
     /**
      * CONSUMPTION movements attributed to this commodity that could not be
      * valued, split by cause: the lot carried no `unitCostAmount`, or the
@@ -466,9 +470,19 @@ export interface CommodityNetWorthRow {
     unattributedCostEntries: number;
 
     netAssetPosition: number | null;
-    /** `netAssetPosition - cashCostTotal`, computed ONLY when the cash
-     *  costs are a single known currency equal to `priceCurrency` — no FX
-     *  is ever invented. Null otherwise; see `netWorthUnavailableReason`. */
+    /** `netAssetPosition - cashCostTotal`, computed ONLY when the cash costs
+     *  are a single known currency equal to `priceCurrency`.
+     *
+     *  Since #2546 that is no longer an equality between two RAW labels: both
+     *  sides are brought to euro first — the cost rows at their read site, the
+     *  price at its — and the comparison is between canonical codes. So a farm
+     *  recording euro three ways, or recording lev against a lev price, now
+     *  gets a figure where it previously got a refusal.
+     *
+     *  No FX is still ever invented. The lev is on a currency board at a fixed
+     *  statutory rate, which is why it converts; a genuinely foreign currency
+     *  has no rate here, keeps its own code, and still refuses. Null then; see
+     *  `netWorthUnavailableReason`. */
     netWorth: number | null;
     /**
      * The English sentence, authored here. It is the FALLBACK, not dead
@@ -1580,8 +1594,40 @@ function finalizeRow(
     exclusions: RawExclusions,
     imputedPerHa: number | null,
 ): CommodityNetWorthRow {
-    const pricePerTonne = reference?.pricePerTonne ?? null;
-    const priceCurrency = reference?.currency ?? null;
+    /*
+     * THE PRICE IS NORMALISED TO EURO HERE, for the same reason the cost rows
+     * are at the read site below — and canonicalising only the LABEL is the
+     * bug this replaces.
+     *
+     * The currency comparison further down used to read a RAW `priceCurrency`,
+     * so a лв price against лв costs matched and the figure was coherent in
+     * lev. Once the costs arrived canonicalised to EUR, comparing against a
+     * canonical price label made that same farm MATCH again — while
+     * `standingCropValue`, `grainOnHandValue` and `rentCostProduceValue` were
+     * still computed from a lev `pricePerTonne`. Net worth then subtracted
+     * euro costs from a lev crop value and reported the result as euro,
+     * overstating the crop side by the 1.95583 peg. The comparison had been
+     * the only thing preventing that blend, and relabelling removed it.
+     *
+     * So the AMOUNT moves with the label, which is the rule `isStoredAsEuro`
+     * states: relabelling without dividing by the peg overstates.
+     *
+     * A genuinely FOREIGN price keeps its RAW amount and its own code,
+     * deliberately. There is no FX table in this product, so a dollar price
+     * cannot be converted — and the existing comparison then refuses with a
+     * currency reason, which is the honest answer. Nulling `pricePerTonne`
+     * instead would push it down the `commoditiesWithNoPrice` path and tell
+     * the farmer there is no price for a crop that has one.
+     */
+    const priceNormalised = normaliseCostToEur(
+        reference?.pricePerTonne ?? null,
+        reference?.currency ?? null,
+    );
+    const pricePerTonne =
+        priceNormalised.refusal === 'FOREIGN'
+            ? (reference?.pricePerTonne ?? null)
+            : priceNormalised.eur;
+    const priceCurrency = reference ? canonicalCostCurrency(reference.currency) : null;
 
     // DEDUPED, because one entry can be pushed twice — a cost linked to a
     // planting with an unknown commodity lands in `plantingsUnknownCommodity`
