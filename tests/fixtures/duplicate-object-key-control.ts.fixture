@@ -1,5 +1,6 @@
 /**
- * The real-file positive control for `no-duplicate-object-keys` — #2537.
+ * The real-file positive control for the OBJECT-KEY half of
+ * `no-duplicate-declarations` — #2537.
  *
  * ## Why this is not a `.ts` file
  *
