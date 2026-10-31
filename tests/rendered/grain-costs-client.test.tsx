@@ -1,3 +1,4 @@
+import type { TriggerUndoToastInput } from '@/components/ui/hooks/use-toast-with-undo';
 /**
  * `/grain/costs` — the cost-ENTRY register, executed.
  *
@@ -15,6 +16,42 @@
  * pins `mobile` rather than inheriting it, so a future change to the
  * global stub cannot silently move which branch these tests exercise.
  */
+
+/**
+ * PARTIAL module doubles, both spread from the real thing (#481).
+ *
+ * `@/lib/api-client` is spread because the tests below drive the list through a
+ * stubbed `global.fetch` and the REAL client — replacing the module wholesale
+ * would leave `apiGet` undefined and break every one of them. The repo's
+ * partial-barrel-mock trap, used deliberately here rather than tripped over.
+ *
+ * `@/components/ui/hooks` is spread for the same reason — `CostsClient` also
+ * uses `useDebounce` from it — and overridden so the undo toast's DEFERRED
+ * commit can be driven by hand. The commit is what fires five seconds later,
+ * so a test that cannot invoke it can assert the optimistic removal and
+ * nothing about what the server was told.
+ */
+const apiDeleteMock = jest.fn();
+jest.mock('@/lib/api-client', () => {
+    const actual = jest.requireActual('@/lib/api-client');
+    return { ...actual, apiDelete: (...a: unknown[]) => apiDeleteMock(...a) };
+});
+
+// The real exported config type, not `any`: the capture below is the whole
+// point of the double, so its shape is worth the compiler checking. A
+// type-only import is erased, so it does not disturb `jest.mock` hoisting.
+let lastUndoToast: TriggerUndoToastInput | null = null;
+jest.mock('@/components/ui/hooks', () => {
+    const actual = jest.requireActual('@/components/ui/hooks');
+    return {
+        ...actual,
+        useToastWithUndo: () => (cfg: TriggerUndoToastInput) => { lastUndoToast = cfg; },
+        useToast: () => ({
+            error: jest.fn(), success: jest.fn(), info: jest.fn(),
+            warning: jest.fn(), dismiss: jest.fn(),
+        }),
+    };
+});
 
 import { readCatalogue } from '../helpers/catalogue';
 import * as React from 'react';
@@ -134,6 +171,8 @@ beforeEach(() => {
     global.fetch = jest.fn(() =>
         Promise.resolve({ ok: true, json: async () => ({ rows: [], totalCount: 0, truncated: false }) }),
     ) as unknown as typeof fetch;
+    apiDeleteMock.mockReset().mockResolvedValue(undefined);
+    lastUndoToast = null;
 });
 
 afterEach(restoreViewport);
@@ -319,5 +358,76 @@ describe('grain costs — the allocation basis (PHONE)', () => {
         // scope, not a place.
         expect(screen.getByText(COPY.form.linkKindLabel)).toBeVisible();
         expect(screen.getByText(COPY.form.allocationBasisHint.HOLDING)).toBeVisible();
+    });
+});
+
+/**
+ * Deleting an expense — agrent-ios#481.
+ *
+ * The owner ruled "Ask, then 5 s «Отмени»", web too, and the flow already
+ * existed. What it did NOT do was tell an already-deleted entry apart from a
+ * failure: a raw `fetch` with `!res.ok` sent a 404 down the error path, and the
+ * error path RESTORES the optimistic removal. So deleting something a second
+ * time — or something another tab had removed — put the row back and left it
+ * there until a refetch, which a farmer reads as the delete having failed.
+ *
+ * Both directions are asserted, and the second is what gives the first its
+ * teeth: "a 404 is tolerated" is satisfied completely by a change that
+ * swallows EVERY error, which would hide a real failure to delete a money
+ * record.
+ */
+describe('deleting a cost entry (agrent-ios#481)', () => {
+    /**
+     * `setViewport('desktop')` is load-bearing, not hygiene.
+     *
+     * Rendered tests run as a PHONE by default, and the `actions` column
+     * declares no `mobileCard` — so `MobileCardList` omits it and the delete
+     * control does not exist in the card branch at all. A test without this
+     * would fail looking for a button that is correctly absent, and one that
+     * "fixed" it by relaxing the query would assert nothing.
+     *
+     * That absence is a real gap rather than a test artefact, filed separately:
+     * the owner's ruling was "web too", and a farmer on a phone-sized BROWSER
+     * has no way to delete an expense from this list.
+     */
+    function deleteFirstRow() {
+        const trigger = screen.getByLabelText(COPY.deleteCost);
+        trigger.click();
+    }
+
+    it('treats a 404 COST_ENTRY_NOT_FOUND as already gone, and does NOT restore the row', async () => {
+        const { ApiClientError } = jest.requireActual('@/lib/api-client') as {
+            ApiClientError: new (m: string, c: string, s: number) => Error;
+        };
+        apiDeleteMock.mockRejectedValue(
+            new ApiClientError('That cost entry was not found.', 'COST_ENTRY_NOT_FOUND', 404),
+        );
+
+        setViewport('desktop');
+        renderPage([costRow()]);
+        deleteFirstRow();
+        expect(lastUndoToast).not.toBeNull();
+
+        // The deferred commit, driven by hand. `onError` is what would put the
+        // row back, so the assertion is that the action RESOLVES.
+        await expect(lastUndoToast!.action()).resolves.toBeUndefined();
+    });
+
+    it('still rethrows a REAL failure — the control that gives the above its teeth', async () => {
+        const { ApiClientError } = jest.requireActual('@/lib/api-client') as {
+            ApiClientError: new (m: string, c: string, s: number) => Error;
+        };
+        apiDeleteMock.mockRejectedValue(
+            new ApiClientError('Server exploded.', 'INTERNAL', 500),
+        );
+
+        setViewport('desktop');
+        renderPage([costRow()]);
+        deleteFirstRow();
+        expect(lastUndoToast).not.toBeNull();
+
+        // Rejects, so `onError` runs and the snapshot is restored. Without this
+        // test, tolerating the 404 and tolerating everything are the same pass.
+        await expect(lastUndoToast!.action()).rejects.toThrow('Server exploded.');
     });
 });
