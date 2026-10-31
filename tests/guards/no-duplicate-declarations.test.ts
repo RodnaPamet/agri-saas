@@ -333,7 +333,13 @@ function duplicateEnvKeys(source: string): string[] {
 const ENV_TEMPLATES = collectTrackedFiles({
     roots: ['.'],
     extensions: ['.example'],
-    floor: 8,
+    // 8 → 7: #2552 deleted `deploy/.env.prod.example`, which was the inherited
+    // inflect-compliance AWS template (Secrets Manager, RDS, and a
+    // `REDIS_SECRET_NAME` naming the sibling product) rather than an agrent
+    // one. Lowered to the measured count, never raised — and this is the floor
+    // whose own docblock records that "a floor of 5 happily passed over the
+    // miss", so leaving slack here is the documented failure mode.
+    floor: 7,
 }).map((abs) => path.relative(REPO_ROOT, abs).split(path.sep).join('/'));
 
 describe('no duplicate declarations — object keys and imports (#2537, #2554)', () => {
@@ -361,7 +367,13 @@ describe('no duplicate declarations — object keys and imports (#2537, #2554)',
         expect(COUNTS.importDecls).toBeGreaterThanOrEqual(9000);
         expect(COUNTS.importBindings).toBeGreaterThan(COUNTS.importDecls);
         // 8 tracked templates today; a walk reported 9 with repeats (see above).
-        expect(ENV_TEMPLATES.length).toBeGreaterThanOrEqual(8);
+        // 8 → 7 with the floor above, same change and same reason (#2552):
+        // `deploy/.env.prod.example` was the inherited inflect-compliance AWS
+        // template, not an agrent one. TWO numbers had to move, which is the
+        // thing to notice — the `floor` is enforced inside the collector and
+        // this is enforced here, so lowering only one leaves the suite failing
+        // at a line that looks unrelated to the deletion.
+        expect(ENV_TEMPLATES.length).toBeGreaterThanOrEqual(7);
         expect(new Set(ENV_TEMPLATES).size).toBe(ENV_TEMPLATES.length);
     });
 
