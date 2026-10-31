@@ -276,7 +276,18 @@ const CONTROL_TS = 'tests/fixtures/duplicate-object-key-control.ts.fixture';
 const CONTROL_ENV = 'tests/fixtures/duplicate-env-key-control.env.fixture';
 const CONTROL_IMPORTS = 'tests/fixtures/duplicate-import-control.ts.fixture';
 
-/** A throwaway counter for a control run, so the live denominator is untouched. */
+/**
+ * A throwaway counter for a control run, so the live denominator is untouched.
+ *
+ * The control tests ASSERT on what it counted, and that is not decoration:
+ * `selector-teeth` reported this selector SURVIVED its mutation
+ * (`return [] | new Set() | new Map() | {}`) because nothing read the result.
+ * Every one of those variants leaves `counts.x += 1` evaluating to NaN rather
+ * than throwing, so the fixture could have been parsed as empty and every
+ * control below would still have passed. Reading the counters is also the
+ * better test on its own terms: it proves the fixture was parsed, which is
+ * what the controls assume.
+ */
 const scratchCounts = (): Counts => ({
     literals: 0,
     properties: 0,
@@ -377,9 +388,16 @@ describe('no duplicate declarations — object keys and imports (#2537, #2554)',
         // so without this the assertion below passes for free the moment the
         // walker stops matching.
         const source = readFileSync(path.join(REPO_ROOT, CONTROL_TS), 'utf8');
-        const found = inspect(CONTROL_TS, source, scratchCounts()).keys;
+        const counts = scratchCounts();
+        const found = inspect(CONTROL_TS, source, counts).keys;
         const keys = found.map((f) => f.key).sort();
         expect(keys).toEqual(['AV_SCAN_MODE', 'DOCUMENT_STORAGE_LIMIT_BYTES', 'inner']);
+        // The fixture was really PARSED — 10 object literals / 22 properties
+        // measured. Without this, a counter object that stopped counting (or a
+        // parse that found nothing) leaves the assertion above passing over an
+        // empty result set.
+        expect(counts.literals).toBeGreaterThanOrEqual(10);
+        expect(counts.properties).toBeGreaterThanOrEqual(22);
         // And the file still CONTAINS them, so a tidy-up that removes the
         // control fails loudly instead of disarming it.
         expect(source).toContain('DOCUMENT_STORAGE_LIMIT_BYTES');
@@ -416,7 +434,14 @@ describe('no duplicate declarations — object keys and imports (#2537, #2554)',
         // Four shapes TypeScript refuses, each measured with `tsc --noEmit`
         // rather than reasoned — see the fixture's docblock for the table.
         const source = readFileSync(path.join(REPO_ROOT, CONTROL_IMPORTS), 'utf8');
-        const found = inspect(CONTROL_IMPORTS, source, scratchCounts()).imports;
+        const counts = scratchCounts();
+        const found = inspect(CONTROL_IMPORTS, source, counts).imports;
+        // 17 declarations / 17 local bindings measured. Equal here because
+        // every import in the fixture carries exactly one binding — which is
+        // why the live denominator's `bindings > declarations` assertion
+        // belongs there and not on this fixture.
+        expect(counts.importDecls).toBeGreaterThanOrEqual(17);
+        expect(counts.importBindings).toBeGreaterThanOrEqual(17);
         expect(found.map((f) => f.key).sort()).toEqual([
             'EXCHANGE_CURRENCY', // the #2554 instance: same binding, same module, twice
             'Tenant', //            `import type` buys no exemption — still TS2300
