@@ -104,6 +104,17 @@
     "  further dead selectors that nothing has looked for yet.",
     "",
     "UPDATED 2026-10-31 by #2525 (the node-forge advisory wave).",
+    "  · dependency-policy-claims:expectExamined REMOVED 2026-10-31 — a control",
+    "    now exercises it, so the entry has no cause. The note below is kept",
+    "    because its reasoning was half right and the half that was not is worth",
+    "    keeping visible: a mutation replacing a void helper's RETURN does remove",
+    "    the assertion, but 'nothing is left to notice' was a fact about the CALL",
+    "    SITES, not about the tool. All four passed populations already above the",
+    "    floor. A control calling it on both sides of the floor makes the same",
+    "    mutation fail — measured, 1 of 34 fails with it, 33 of 33 pass without.",
+    "    So the general claim that this shape is unreachable for ANY void",
+    "    assertion helper does not hold, and it would have licensed baselining",
+    "    every one of them. Original note follows.",
     "  · dependency-policy-claims:expectExamined ADDED — PRE-EXISTING, and the PR",
     "    that surfaced it changed only package.json, the lockfile and",
     "    docs/dependency-policy.md. It became visible because a dependency change",
@@ -153,9 +164,6 @@
       "isExempt",
       "walk",
       "findOffenders"
-    ],
-    "tests/guards/dependency-policy-claims.test.ts": [
-      "expectExamined"
     ],
     "tests/guards/generated-columns.test.ts": [
       "walk"
