@@ -566,6 +566,15 @@ jobs:
       - name: "Tokens: generated files match design/tokens.json"
         run: npm run tokens:check
 
+      # Same shape again, and here the fast answer matters more than usual:
+      # `.secret-patterns` is NOT copied into the runtime image, so the server
+      # reads a GENERATED module. A stale one means the egress control is
+      # scanning with yesterday's patterns — a control that is quietly weaker
+      # than the file everybody edits. The guard covers it too, in a shard
+      # twenty minutes away. #2578.
+      - name: "Secret patterns: generated module matches .secret-patterns"
+        run: npm run secret-patterns:check
+
       # Same shape as the tokens check above, for the same reason and one more.
       #
       # `public/maplibre/*.mjs` are checked-in copies of files in
