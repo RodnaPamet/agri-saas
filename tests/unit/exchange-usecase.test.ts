@@ -124,6 +124,7 @@ import {
     updateListingFields,
 } from '@/app-layer/usecases/exchange';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
+import type { UpdateListingBody } from '@/app-layer/schemas/exchange.schemas';
 import { forbidden } from '@/lib/errors/types';
 import { Prisma } from '@prisma/client';
 import { makeRequestContext } from '../helpers/make-context';
@@ -604,8 +605,7 @@ describe('updateListingFields', () => {
             expiresAt: FUTURE,
             updatedAt: NOW.toISOString(),
             ...over,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } as any;
+        } as unknown as UpdateListingBody;
     }
 
     function owned(over: Record<string, unknown> = {}) {
@@ -614,8 +614,7 @@ describe('updateListingFields', () => {
 
     beforeEach(() => {
         repo.updateListingFields.mockImplementation(async (_db, _id, data) =>
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ({ ...owned(), ...(data as any) }),
+            ({ ...owned(), ...data }),
         );
     });
 

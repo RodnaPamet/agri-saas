@@ -6114,15 +6114,11 @@
             ]
           },
           "expiresAt": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
           "updatedAt": {
             "type": "string",
@@ -43322,15 +43318,11 @@
                     ]
                   },
                   "expiresAt": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "date-time"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
                   },
                   "updatedAt": {
                     "type": "string",

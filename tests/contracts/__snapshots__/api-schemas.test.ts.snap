@@ -6391,15 +6391,11 @@ exports[`API contract — per-schema snapshots schema: ExchangeListingEdit 1`] =
       ]
     },
     "expiresAt": {
-      "anyOf": [
-        {
-          "type": "string",
-          "format": "date-time"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
     },
     "updatedAt": {
       "type": "string",

@@ -96,6 +96,12 @@ import { assertCrossTenantGuard } from '../helpers/cross-tenant-guard';
 
 const repo = ExchangeRepository as jest.Mocked<typeof ExchangeRepository>;
 
+/** The row shape `getListing` resolves, named so the fixtures below need no
+ *  `any`: they are deliberately PARTIAL rows, which is what the double step
+ *  through `unknown` says. `as any` would say something weaker and cost a
+ *  line of the shared suppression ceiling. */
+type ListingRow = NonNullable<Awaited<ReturnType<typeof ExchangeRepository.getListing>>>;
+
 function patchReq(body: unknown): NextRequest {
     return new NextRequest('http://localhost/api/t/tenant-b/exchange', {
         method: 'PATCH',
@@ -213,8 +219,7 @@ const OWNED = {
     expiresAt: null,
     createdAt: new Date('2026-10-01T00:00:00.000Z'),
     updatedAt: new Date('2026-10-31T12:00:00.000Z'),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any;
+} as unknown as ListingRow;
 
 assertCrossTenantGuard({
     name: 'PUT /exchange/listings/[listingId]',
@@ -230,8 +235,9 @@ assertCrossTenantGuard({
 describe('PUT /exchange/listings/[listingId] — the module gate, and the response', () => {
     beforeEach(() => {
         repo.getListing.mockResolvedValue(OWNED);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        repo.updateListingFields.mockImplementation(async (_db, _id, data: any) => ({ ...OWNED, ...data }));
+        repo.updateListingFields.mockImplementation(
+            async (_db, _id, data) => ({ ...OWNED, ...data }) as unknown as ListingRow,
+        );
     });
 
     it('200 for the owner, and the response carries `edit`', async () => {
@@ -271,8 +277,7 @@ describe('PUT /exchange/listings/[listingId] — the module gate, and the respon
         const editGated = assertModuleEnabledMock.mock.calls.length;
 
         assertModuleEnabledMock.mockClear();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        repo.updateListingStatus.mockResolvedValue({ id: 'lst-9', status: 'WITHDRAWN' } as any);
+        repo.updateListingStatus.mockResolvedValue({ id: 'lst-9', status: 'WITHDRAWN' } as unknown as ListingRow);
         await PATCH_LISTING(patchReq({ action: 'WITHDRAWN' }), {
             params: Promise.resolve({ tenantSlug: 'tenant-b', listingId: 'lst-9' }),
         });

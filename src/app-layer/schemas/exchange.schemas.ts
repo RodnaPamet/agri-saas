@@ -169,8 +169,20 @@ const ExpiresAtOnCreate = z
     ])
     .optional();
 
-/** Shape only — the future check moves to the usecase. See above. */
-const ExpiresAtOnEdit = z.union([z.string().datetime(), z.null()]).optional();
+/**
+ * Shape only — the future check moves to the usecase. See above.
+ *
+ * `.nullable()`, NOT `z.union([…, z.null()])`. The two parse identically, and
+ * the difference is entirely in what the OpenAPI generator emits: a union
+ * becomes `anyOf: [{string, format}, {null}]`, which puts the `format` on a
+ * BRANCH rather than on the property. Every one of the spec's other 178
+ * `…At` properties carries it on the property itself — including
+ * `ExchangeListing.expiresAt`, this same field on the public projection —
+ * so a client reading `ExchangeListingEdit.expiresAt` would have been the
+ * only one that had to descend a union to learn the encoding.
+ * `timestamps-declare-their-format` is what catches it.
+ */
+const ExpiresAtOnEdit = z.string().datetime().nullable().optional();
 
 export const CreateListingSchema = z
     .object({ ...LISTING_FIELDS, expiresAt: ExpiresAtOnCreate })
