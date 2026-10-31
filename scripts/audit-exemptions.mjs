@@ -62,27 +62,31 @@ import { pathToFileURL } from 'node:url';
  * @type {Array<{id: string, package: string, reason: string, review: string}>}
  */
 const REAL_EXEMPT = [
-    {
-        id: 'GHSA-86w9-cpqp-85rv',
-        package: 'node-forge',
-        reason:
-            'node-forge RSA PKCS#1 v1.5 signature VERIFICATION accepts extra nested ' +
-            'DigestAlgorithm elements. Range is `*` with `fixAvailable: false` — every ' +
-            'published version is affected, so no floor can fix this and the usual ' +
-            'override is unavailable. Removal is also unavailable: the only path to it ' +
-            'is `@google/earthengine` -> `googleapis` -> `google-auth-library` -> ' +
-            '`gtoken` -> `google-p12-pem` -> `node-forge`, and earthengine is live code ' +
-            '(`src/lib/agro/earth-engine.ts`, `gee-config.ts`, `index-recipes.ts`). ' +
-            'REACHABILITY: `google-p12-pem` calls exactly four forge functions — ' +
-            '`asn1.fromDer`, `pkcs12.pkcs12FromAsn1`, `pki.privateKeyToPem`, ' +
-            '`util.decode64` — all of which parse OUR OWN service-account P12 and export ' +
-            'its private key. None is signature verification. The JWT is then signed by ' +
-            '`jws.sign()` (gtoken/build/src/index.js:225), not by forge. So the vulnerable ' +
-            'predicate is never asked to judge a signature from anyone, let alone an ' +
-            'untrusted party. Verified by enumerating the call sites, not by assuming the ' +
-            'package is unused.',
-        review: '2026-11-03',
-    },
+    // The node-forge entry (GHSA-86w9-cpqp-85rv) that lived here was removed
+    // when node-forge 1.4.2 shipped, and its own rationale is why it had to
+    // go rather than be amended:
+    //
+    //   "Range is `*` with `fixAvailable: false` — every published version is
+    //    affected, so no floor can fix this and the usual override is
+    //    unavailable."
+    //
+    // That was TRUE when written and is now FALSE. 1.4.1 and 1.4.2 are
+    // published, every advisory in the family is bounded at `<=1.4.0`, and
+    // `overrides: { "node-forge": "^1.4.2" }` is therefore available — so the
+    // argument for exempting rather than fixing expired without anything
+    // saying so. The reachability analysis underneath it was sound and stayed
+    // sound; what rotted was the premise that no fix existed.
+    //
+    // It did not expire quietly in the end: on 2026-10-31 ELEVEN more HIGH
+    // advisories landed on the same package within one 12-minute window
+    // (#2524), none of them exempt, and rule 1 stopped the merge — a new
+    // advisory on an already-exempt package still blocks, which is the second
+    // time that rule has been what surfaced a stale premise rather than the
+    // review date. The review date here was 2026-11-03, three days out.
+    //
+    // Per rule 3 the deletion ships in the SAME PR as the upgrade: the stale
+    // check fails the build until it goes, which is exactly how this one was
+    // found.
     // Was intentionally empty until 2026-10-02.
     //
     // The adm-zip entry (GHSA-vwc7-r8mq-g2x9) that lived here was removed
