@@ -8,9 +8,19 @@
  *   • self-hosted / ENTERPRISE (null limit) never blocks.
  *
  * Two thresholds:
- *   • HARD-STOP — `used >= limit` → throws `forbidden('ai_budget_exceeded…')`
- *     (same 403 shape + upgrade-hint contract as `assertWithinLimit`), so
- *     `withApiErrorHandling` surfaces it without new plumbing.
+ *   • HARD-STOP — `used >= limit` → throws
+ *     `codedForbidden('AI_BUDGET_EXCEEDED', …, { plan, limit, used })`, so
+ *     `withApiErrorHandling` surfaces it without new plumbing and
+ *     `localizeErrorPayload` replaces the message from `errors.
+ *     AI_BUDGET_EXCEEDED` in the reader's own language.
+ *
+ *     This said `forbidden('ai_budget_exceeded…')` until 2026-10-31, which was
+ *     the shape before #1645 coded it and is the shape a client reading this
+ *     docblock would have built for: a `code` of `FORBIDDEN` with the real
+ *     code buried in a message. agrent-ios built exactly that and asked for
+ *     the coded form, which had already existed for weeks. A stale docblock
+ *     about an ERROR SHAPE costs a client a wrong branch, so the line is
+ *     corrected rather than deleted.
  *   • SOFT-WARN — `used >= 0.8 * limit` → does NOT block; returns
  *     `softWarn:true` so the caller can annotate the span / log / surface a
  *     "running low" hint.
@@ -65,8 +75,8 @@ export interface AiBudgetStatus {
 
 /**
  * Assert the tenant is within its monthly AI token budget. Throws a 403
- * `forbidden('ai_budget_exceeded…')` on hard stop; otherwise returns the
- * status (so the caller can react to `softWarn`). Call BEFORE the model
+ * `codedForbidden('AI_BUDGET_EXCEEDED', …)` on hard stop; otherwise returns
+ * the status (so the caller can react to `softWarn`). Call BEFORE the model
  * call in `completeWithRouting`.
  */
 /**
@@ -137,21 +147,29 @@ export async function assertAiBudget(ctx: RequestContext): Promise<AiBudgetStatu
     // outright on every self-hosted install, permanently, with no action the
     // operator could take.
     //
-    // The error is deliberately distinct from `ai_budget_exceeded`: the remedy
+    // The error is deliberately distinct from `AI_BUDGET_EXCEEDED`: the remedy
     // is "get your farm verified", not "upgrade", and a client that showed an
     // upgrade prompt here would send a farmer to buy capacity they already
     // have.
     if (mode === 'SAAS' && !(await isFarmVerified(ctx))) {
         // The code is the contract and the Bulgarian wording belongs to the
         // client, keyed on it. The remedy here is "get your farm verified",
-        // which is NOT what `ai_budget_exceeded` means — a client that showed
+        // which is NOT what `AI_BUDGET_EXCEEDED` means — a client that showed
         // an upgrade prompt would send a farmer to buy capacity they already
         // have, so the two must be separately keyable.
         //
-        // ALL-CAPS rather than matching the neighbouring lowercase
-        // `ai_budget_exceeded` deliberately: that older message carries prose
-        // and is one of the 502 the ratchet is draining. Draining it is a
-        // welcome separate change; adding a 503rd is not.
+        // This paragraph used to justify ALL-CAPS by CONTRAST: "rather than
+        // matching the neighbouring lowercase `ai_budget_exceeded`, which
+        // carries prose and is one of the 502 the ratchet is draining".
+        //
+        // That argument is spent, because the neighbour was drained. The hard
+        // stop below now throws `codedForbidden('AI_BUDGET_EXCEEDED', …)`, so
+        // the two refusals on this path are CONSISTENT rather than one being
+        // an exception to the other — and the reason for the shape is now
+        // simply that a code is what a client switches on. Kept rather than
+        // deleted because the history is the lesson: a justification by
+        // contrast goes false when the thing it contrasts with changes, and
+        // nothing fails when it does.
         //
         // This was `forbidden('AI_BUDGET_REQUIRES_VERIFIED_FARM')` until #1645,
         // under a comment that opened "a bare ALL-CAPS CODE, with no English

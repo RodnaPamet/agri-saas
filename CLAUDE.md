@@ -1219,7 +1219,8 @@ The codebase has two billing modes, decided by a single env var:
     `completeWithRouting` in `src/app-layer/ai/routing.ts`. It reads the
     SAME `PLAN_LIMITS` row via `getLimit` + `getAiTokensUsedThisMonth`
     (never a second limits table), but throws
-    `forbidden('ai_budget_exceeded: …')` — NOT `plan_limit_exceeded` —
+    `codedForbidden('AI_BUDGET_EXCEEDED', …, { plan, limit, used })` — NOT
+    `plan_limit_exceeded` —
     and returns a non-blocking `softWarn` at 80% of the cap. No call
     site passes `'ai_tokens'` to `assertWithinLimit`.
     SaaS tenants without a
