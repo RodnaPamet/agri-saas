@@ -154,14 +154,16 @@ describe('GET /api/readyz — capabilities.platformConsole is REPORTED, never GA
         // by operators and by `infra/alerts/external-uptime.yml`'s matcher.
         //
         // This is an exact-set assertion, so ADDING a capability lands here by
-        // design — `featureFlags` (#2291) is the first to do so. That is the
-        // ratchet working: a fifth reading on the endpoint the uptime check
-        // probes should cost a visible line, not arrive unnoticed.
+        // design — `featureFlags` (#2291) was the first to do so and
+        // `documentStorage` (#2495) the second. That is the ratchet working: a
+        // new reading on the endpoint the uptime check probes should cost a
+        // visible line, not arrive unnoticed.
         const { body } = await probe();
 
         expect(Object.keys(body.capabilities).sort())
             .toEqual([
                 'basemap',
+                'documentStorage',
                 'email',
                 'featureFlags',
                 'lookupKey',

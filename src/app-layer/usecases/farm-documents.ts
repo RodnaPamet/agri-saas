@@ -42,12 +42,13 @@ import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { assertTenantKey, getStorageProvider } from '@/lib/storage';
 import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { farmToday } from '@/lib/calendar-day-key';
-import {
-    documentStorageLimitBytes,
-    type DocumentStorageBand,
-} from '@/lib/documents/storage-limit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { isUniqueViolation } from '@/lib/errors/prisma';
+import {
+    assertDocumentStorageBudget,
+    documentStorageLimitBytes,
+    type DocumentStorageUsage,
+} from '../documents/budget';
 
 /**
  * One page of the library. The list is newest-first and the phone does not
@@ -222,63 +223,6 @@ export async function listFarmDocuments(
     });
 }
 
-/**
- * Bytes this farm currently holds in the library.
- *
- * Summed from `FileRecord`, not from `FarmDocument`: the size lives there, a
- * purge marks the record DELETED, and `@@index([tenantId, status])` serves
- * exactly this shape. So a tombstone stops counting the moment its bytes go,
- * which is the property that makes deleting a document actually free space —
- * if purged rows still counted, a full farm could never recover.
- *
- * `domain: 'documents'` keeps the library's own total separate from evidence,
- * invoices and farm media. Those share the disk and are NOT in this ceiling:
- * the ceiling exists because «Документи» is the first feature designed to
- * accumulate large files with a phone-side scanner behind it, and charging a
- * farm's document budget for its evidence photos would refuse uploads for a
- * reason nobody could act on.
- */
-export async function documentStorageUsedBytes(ctx: RequestContext): Promise<number> {
-    return runInTenantContext(ctx, async (db) => {
-        const agg = await db.fileRecord.aggregate({
-            where: { tenantId: ctx.tenantId, domain: 'documents', status: 'STORED' },
-            _sum: { sizeBytes: true },
-        });
-        return agg._sum.sizeBytes ?? 0;
-    });
-}
-
-/**
- * Refuse an upload that would take this farm past its ceiling.
- *
- * A SUM rather than a row count, so it follows `assertAiBudget` rather than
- * `assertWithinLimit` — the same reason `ai_tokens` is enforced at the
- * model-call boundary instead of through `PLAN_LIMITS`.
- *
- * Called BEFORE `ingestUploadedFile`, which is the half that matters: ingest
- * writes the bytes to disk and only then hands back a record for the caller
- * to store. Asserting afterwards would refuse the upload having already spent
- * the space it was refusing to spend, and on a full disk that is the one
- * thing the ceiling exists to prevent.
- */
-export async function assertDocumentStorageCapacity(
-    ctx: RequestContext,
-    incomingBytes: number,
-): Promise<void> {
-    const limit = documentStorageLimitBytes();
-    const used = await documentStorageUsedBytes(ctx);
-    if (used + incomingBytes <= limit) return;
-
-    // `params` carries only SIZES — no filename, no document id, no user.
-    // `error-params-carry-no-pii` is the guard, and a document title here
-    // would be the exact personal data `FarmDocument.name` is encrypted for.
-    throw codedForbidden(
-        'DOCUMENT_STORAGE_FULL',
-        'The farm has no room left for documents. Delete older documents to upload a new one.',
-        { usedBytes: used, limitBytes: limit, incomingBytes },
-    );
-}
-
 /** The settings row as a client reads it. */
 export interface FarmDocumentSettings {
     retention: string;
@@ -306,21 +250,26 @@ export async function getFarmDocumentSettings(
 ): Promise<FarmDocumentSettings> {
     assertCanRead(ctx);
 
-    const [row, usedBytes] = await Promise.all([
+    // Both numbers come from `readDocumentStorageUsage`, which is also what the
+    // upload refusal reads. Computing them separately here is the defect that
+    // tells a farmer they have room while the upload refuses them — and the
+    // usage query keys on `purgedAt`, so a deleted document stops counting
+    // inside the delete transaction rather than after a sweep.
+    const [row, usage] = await Promise.all([
         runInTenantContext(ctx, async (db) =>
             db.tenantDocumentSettings.findUnique({
                 where: { tenantId: ctx.tenantId },
                 select: { retention: true, driveSync: true },
             }),
         ),
-        documentStorageUsedBytes(ctx),
+        readDocumentStorageUsage(ctx),
     ]);
 
     return {
         retention: row?.retention ?? 'P1Y',
         driveSync: row?.driveSync ?? false,
-        usedBytes,
-        limitBytes: documentStorageLimitBytes(),
+        usedBytes: usage.usedBytes,
+        limitBytes: usage.limitBytes,
         mayEdit: ctx.permissions.canAdmin,
     };
 }
@@ -395,6 +344,41 @@ export async function updateFarmDocumentSettings(
  * a later settings change cannot move an existing document's expiry. That is
  * what makes `retention` a column rather than a lookup.
  */
+/**
+ * How many bytes of live documents this farm holds.
+ *
+ * Raw SQL and a single aggregate row on purpose. The alternative —
+ * `findMany` over the farm's documents and sum in memory — is an UNBOUNDED
+ * repository read, which is what the D2 budget exists to refuse, and it grows
+ * with exactly the thing this number is used to cap.
+ *
+ * PURGED documents are excluded: their bytes are gone, so charging a farm for
+ * its tombstones would make the only route back under the ceiling a thing the
+ * farm cannot do. `sizeBytes` lives on `FileRecord`, hence the join.
+ *
+ * Returned together with the limit so the settings GET and the refusal report
+ * the SAME two numbers. Two ways of computing "how full is this farm" is how a
+ * console tells a farmer they have room while the upload refuses them.
+ */
+export async function readDocumentStorageUsage(
+    ctx: RequestContext,
+): Promise<DocumentStorageUsage> {
+    const usedBytes = await runInTenantContext(ctx, async (db) => {
+        const rows = await db.$queryRaw<Array<{ total: bigint }>>`
+            SELECT COALESCE(SUM(fr."sizeBytes"), 0)::bigint AS total
+            FROM "FarmDocument" fd
+            JOIN "FileRecord" fr ON fr."id" = fd."fileRecordId"
+            WHERE fd."tenantId" = ${ctx.tenantId}
+              AND fd."purgedAt" IS NULL
+        `;
+        // `::bigint` so a farm past 2^31 bytes does not overflow in Postgres;
+        // Number() is safe on the way out because the ceiling is orders of
+        // magnitude below Number.MAX_SAFE_INTEGER.
+        return Number(rows[0]?.total ?? 0);
+    });
+    return { usedBytes, limitBytes: documentStorageLimitBytes() };
+}
+
 export async function uploadFarmDocument(
     ctx: RequestContext,
     file: File,
@@ -435,9 +419,18 @@ async function uploadFarmDocumentImpl(
         if (existing) return existing;
     }
 
-    // BEFORE ingest: see `assertDocumentStorageCapacity`. Refusing after the
-    // bytes are on disk would spend the space it is refusing to spend.
-    await assertDocumentStorageCapacity(ctx, file.size);
+    // The disk ceiling, BEFORE the bytes land (#2495 Decision 3). Checked here
+    // rather than after the write for the obvious reason: a ceiling enforced
+    // afterwards reports a state it has already permitted, and the thing being
+    // protected is a disk shared with two other products.
+    //
+    // `file.size` is the client's declared length and is used only to REFUSE.
+    // It cannot be used to admit something the real bytes would exceed, because
+    // `ingestUploadedFile` independently enforces `FILE_MAX_SIZE_BYTES` on what
+    // it actually read — so an understated size buys at most one file's worth
+    // of overshoot, bounded by that cap, and never an unbounded write.
+    const usage = await readDocumentStorageUsage(ctx);
+    assertDocumentStorageBudget(usage.usedBytes, file.size);
 
     const ingested = await ingestUploadedFile(ctx.tenantId, file, {
         domain: 'documents',

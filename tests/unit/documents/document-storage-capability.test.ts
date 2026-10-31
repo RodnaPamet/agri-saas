@@ -27,7 +27,7 @@ import {
     documentStorageCapability,
     type DocumentStorageReader,
 } from '@/lib/documents/storage-capability';
-import { documentStorageLimitBytes } from '@/lib/documents/storage-limit';
+import { documentStorageLimitBytes } from '@/app-layer/documents/budget';
 
 const GB = 1024 ** 3;
 

@@ -215,6 +215,26 @@ export const env = createEnv({
         UPLOAD_DIR: z.string().min(1, "UPLOAD_DIR must be specified"),
         FILE_STORAGE_ROOT: z.string().optional(),
         FILE_MAX_SIZE_BYTES: z.coerce.number().optional(),
+        /**
+         * Per-tenant ceiling on «Документи» bytes (#2495 Decision 3).
+         *
+         * `.optional()` with the default applied in code, NOT `.default()`.
+         * `jest.setup.js` sets `SKIP_ENV_VALIDATION=1` and `@t3-oss/env` then
+         * skips zod entirely — it neither validates nor applies defaults — so
+         * every `.default()` in this file is INERT under test and the variable
+         * reads `undefined` (#2518). A ceiling whose default exists only in
+         * production is a ceiling no test can exercise, and the one that
+         * matters here is the refusal. The code owns the number instead; this
+         * is the same shape `FILE_MAX_SIZE_BYTES` above already uses.
+         *
+         * It is an env var and not a plan limit because a plan-based cap would
+         * have been INERT for a different reason: `STRIPE_SECRET_KEY` is absent
+         * on the VM, so every tenant resolves to ENTERPRISE and every
+         * ENTERPRISE limit is null. What needs protecting is the disk, not
+         * revenue — `STORAGE_PROVIDER` is `local` and the volume sits on the
+         * boot disk, shared with two other products.
+         */
+        DOCUMENT_STORAGE_LIMIT_BYTES: z.coerce.number().int().positive().optional(),
         FILE_ALLOWED_MIME: z.string().optional(),
 
         // Cloud Storage (S3/R2/MinIO)
@@ -231,14 +251,6 @@ export const env = createEnv({
         // endpoint refuses rather than trusting an unsigned body.
         RESEND_WEBHOOK_SECRET: z.string().optional(),
         AV_SCAN_MODE: z.enum(["strict", "permissive", "disabled"]).default("strict"),
-        // «Документи» per-tenant byte ceiling (#2495 step 3). Deliberately
-        // OPTIONAL with NO `.default()`: `SKIP_ENV_VALIDATION=1` makes
-        // @t3-oss/env skip zod entirely, so a default here would read
-        // `undefined` in every test and the ceiling would differ between test
-        // and production (#2518 — `AV_SCAN_MODE` directly above is the
-        // measured instance of that). The number lives in
-        // `src/lib/documents/storage-limit.ts`; this only overrides it.
-        DOCUMENT_STORAGE_LIMIT_BYTES: z.coerce.number().int().positive().optional(),
         CLAMAV_HOST: z.string().optional(),                  // ClamAV daemon host (e.g. clamav:3310)
 
         // Data Protection (Epic 8) — GAP-03 enforcement.
@@ -855,6 +867,7 @@ export const env = createEnv({
         UPLOAD_DIR: process.env.UPLOAD_DIR,
         FILE_STORAGE_ROOT: process.env.FILE_STORAGE_ROOT,
         FILE_MAX_SIZE_BYTES: process.env.FILE_MAX_SIZE_BYTES,
+        DOCUMENT_STORAGE_LIMIT_BYTES: process.env.DOCUMENT_STORAGE_LIMIT_BYTES,
         FILE_ALLOWED_MIME: process.env.FILE_ALLOWED_MIME,
 
         STORAGE_PROVIDER: process.env.STORAGE_PROVIDER,
@@ -867,7 +880,6 @@ export const env = createEnv({
         AV_WEBHOOK_SECRET: process.env.AV_WEBHOOK_SECRET,
         RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
         AV_SCAN_MODE: process.env.AV_SCAN_MODE,
-        DOCUMENT_STORAGE_LIMIT_BYTES: process.env.DOCUMENT_STORAGE_LIMIT_BYTES,
         CLAMAV_HOST: process.env.CLAMAV_HOST,
 
         DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY,

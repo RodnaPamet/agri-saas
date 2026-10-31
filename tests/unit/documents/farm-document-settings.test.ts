@@ -26,7 +26,11 @@ import type { RequestContext } from '@/app-layer/types';
 
 const db = {
     tenantDocumentSettings: { findUnique: jest.fn(), upsert: jest.fn() },
-    fileRecord: { aggregate: jest.fn() },
+    // `readDocumentStorageUsage` is raw SQL — it sums `FileRecord.sizeBytes`
+    // joined through `FarmDocument` and filters on `purgedAt IS NULL`, which
+    // Prisma's aggregate cannot express. The double therefore stands in for a
+    // tagged template, and `::bigint` means the row carries a BigInt.
+    $queryRaw: jest.fn(),
 };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, fn: (d: unknown) => unknown) => fn(db),
@@ -41,17 +45,17 @@ import {
     getFarmDocumentSettings,
     updateFarmDocumentSettings,
 } from '@/app-layer/usecases/farm-documents';
-import { documentStorageLimitBytes } from '@/lib/documents/storage-limit';
+import { documentStorageLimitBytes } from '@/app-layer/documents/budget';
 import { makeRequestContext } from '../../helpers/make-context';
 
 /**
- * The one seam that moves when the ceiling lands as `documents/budget.ts`:
- * usage is read through the tenant client today and will be read through
- * that module's `readDocumentStorageUsage` instead. Isolated here so the
- * assertions below do not care which.
+ * Usage is read once, through `readDocumentStorageUsage`, which is also what
+ * the upload refusal reads — so this one stub drives both numbers the settings
+ * GET reports. Returns a BigInt because the query casts to `::bigint`, and a
+ * caller that forgot `Number()` would hand `NaN` to the client.
  */
 function setUsedBytes(bytes: number): void {
-    db.fileRecord.aggregate.mockResolvedValue({ _sum: { sizeBytes: bytes } });
+    db.$queryRaw.mockResolvedValue([{ total: BigInt(bytes) }]);
 }
 
 function ctx(role: 'ADMIN' | 'EDITOR' = 'ADMIN'): RequestContext {

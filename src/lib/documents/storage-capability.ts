@@ -28,7 +28,8 @@
  * correct client: `FileRecord.sizeBytes` is not encrypted, so the extension's
  * per-tenant DEK resolution would be work for nothing.
  */
-import { documentStorageBand, documentStorageLimitBytes, type DocumentStorageBand } from './storage-limit';
+import { documentStorageLimitBytes } from '@/app-layer/documents/budget';
+import { documentStorageBand, type DocumentStorageBand } from './storage-band';
 
 /** The narrow surface this needs — not `PrismaClient`, so a double needs no cast. */
 export interface DocumentStorageReader {
