@@ -95,7 +95,7 @@ else
 
     if ! RUNS="$(gh api "repos/${REPO}/actions/workflows/${WF_ID}/runs?per_page=${WINDOW}" \
         --jq '[.workflow_runs[] | select(.status == "completed")
-               | {created_at, conclusion, title: (.display_title // "")}]' 2>"$WF_ERR")"; then
+               | {created_at, conclusion}]' 2>"$WF_ERR")"; then
         die "could not read the run history for workflow ${WF_ID}: $(tr '\n' ' ' < "$WF_ERR" | cut -c1-200)"
     fi
 fi
@@ -123,23 +123,7 @@ UNANSWERED_N="$(printf '%s' "$UNANSWERED" | jq 'length')"
 SPAN_MIN="$(printf '%s' "$UNANSWERED" | jq -r \
     'if length < 2 then 0 else (((max | fromdateiso8601) - (min | fromdateiso8601)) / 60 | floor) end')"
 
-# Which GROUPS those failures belong to — #2600.
-#
-# Every Dependabot job carries the group it was attempting in `display_title`
-# ("npm_and_yarn in / for brace-expansion, …"). A genuine updater outage fails
-# across groups; ONE advisory that cannot be satisfied fails in one, for ever.
-#
-# The span test above cannot separate those. It exists to stop a transient
-# reading as an outage, and a permanent refusal crosses any threshold a real
-# outage must cross — #2598 sat at five failures over three hours, all the same
-# group, all `security_update_not_possible` because the only patch path was a
-# DOWNGRADE. Nothing was broken and the issue claimed bumps were not arriving.
-UNANSWERED_TITLES="$(printf '%s' "$RUNS" | jq -r --arg ok "$LAST_OK" \
-    '[.[] | select(.conclusion != "success") | select($ok == "" or .created_at > $ok)
-            | (.title // "")] | unique')"
-GROUPS_N="$(printf '%s' "$UNANSWERED_TITLES" | jq 'length')"
-
-echo "[dependabot-health] failures with no success after them: ${UNANSWERED_N}, spanning ${SPAN_MIN} min, across ${GROUPS_N} group(s)"
+echo "[dependabot-health] failures with no success after them: ${UNANSWERED_N}, spanning ${SPAN_MIN} min"
 
 # The span, not merely a count of two, is what separates a dead updater from one
 # batch with a bad leg: the concurrency noted at the top means two failures can
@@ -149,39 +133,15 @@ echo "[dependabot-health] failures with no success after them: ${UNANSWERED_N}, 
 SUSTAINED_MIN=20
 
 DOWN=0
-# A separate verdict, because it is a separate fact: the updater is RUNNING and
-# one advisory cannot be satisfied. Reported, but never as "bumps are not
-# arriving" — #2600.
-STUCK=0
 if [ -n "$LAST_BAD" ]; then
     if [ -z "$LAST_OK" ]; then
         # No success ANYWHERE in the window. The whole window is red, so the
-        # span test is not the right question to ask of it — and neither is the
-        # group test: a window with no success at all tells us nothing about
-        # whether other groups would have worked.
+        # span test is not the right question to ask of it.
         DOWN=1
     elif [[ "$LAST_BAD" > "$LAST_OK" ]]; then
         # ISO-8601 UTC strings compare lexicographically.
         if [ "$UNANSWERED_N" -ge 2 ] && [ "$SPAN_MIN" -ge "$SUSTAINED_MIN" ]; then
             DOWN=1
-            # An ANNOTATION on the same verdict, never an alternative to it.
-            #
-            # The first attempt at #2600 made `GROUPS_N = 1` suppress DOWN, on
-            # the reasoning that a real outage fails across groups. The repo's
-            # own positive control refused it: the REAL outage of 2026-10-27 —
-            # the one that prompted the 6-hourly move — has all its failures in
-            # one group, so that rule reported a genuine patching outage as a
-            # stuck advisory. Downgrading an outage is the dangerous direction,
-            # and there is no group data in that fixture to argue otherwise.
-            #
-            # So the group count changes only the WORDING. #2598's complaint
-            # was never that an issue was open; it was that the issue said
-            # "security and version bumps are not arriving" when they were, and
-            # promised to close itself when it could not. Both are text.
-            if [ "$GROUPS_N" = "1" ] && [ -n "$LAST_OK" ]; then
-                STUCK=1
-                echo "[dependabot-health] every unanswered failure is ONE group — possibly a stuck advisory rather than a dead updater. Still reported as down; the wording says which."
-            fi
         else
             echo "[dependabot-health] newest run is red, but NOT sustained (${UNANSWERED_N} failure(s) over ${SPAN_MIN} min; needs 2 over ${SUSTAINED_MIN} min) — a per-ecosystem hiccup rather than an outage."
         fi
@@ -204,7 +164,7 @@ fi
 # replace the real history with whatever it held and the probe would report on
 # data nobody fetched.
 if [ "${HEALTH_VERDICT_ONLY:-}" = "1" ]; then
-    echo "[dependabot-health] VERDICT down=${DOWN} stuck=${STUCK} unanswered=${UNANSWERED_N} span_min=${SPAN_MIN} groups=${GROUPS_N}"
+    echo "[dependabot-health] VERDICT down=${DOWN} unanswered=${UNANSWERED_N} span_min=${SPAN_MIN}"
     exit 0
 fi
 
@@ -224,21 +184,7 @@ Of the last ${TOTAL} completed runs, ${FAILED_N} were not successful, so this sa
     exit 0
 fi
 
-# The wording, not the verdict, is what the group count changes — #2600.
-if [ "$STUCK" = "1" ]; then
-    LEDE="Dependabot has failed repeatedly, and **every unanswered failure is the same group** (\`$(printf '%s' "$UNANSWERED_TITLES" | jq -r '.[0] // "unknown"')\`).
-
-That pattern has two causes and they want opposite responses, so **check which this is before acting**:
-
-- **One advisory it cannot satisfy** — the updater is running and declining. #2598 was this: \`security_update_not_possible\` for \`brace-expansion\`, because the only patch path was a DOWNGRADE from the copy vendored inside \`npm\` itself. Nothing was broken, and it will fail identically on every future attempt. Fix by pinning an override, marking the advisory ignored in \`dependabot.yml\`, or accepting the exposure with a written reason — then close this.
-- **A real outage that happens to be retrying one group** — bumps genuinely are not arriving.
-
-Open a failing run and read the error type: \`security_update_not_possible\` is the first, anything else is the second. This probe cannot tell them apart from run conclusions alone, and reading logs per run would break the verdict seam that makes it testable."
-else
-    LEDE="Dependabot's updater has failed and has not succeeded since, so security and version bumps are not arriving."
-fi
-
-BODY="${LEDE}
+BODY="Dependabot's updater has failed and has not succeeded since, so security and version bumps are not arriving.
 
 - newest failure: \`${LAST_BAD}\`
 - newest success: \`${LAST_OK:-none in the last ${WINDOW} completed runs}\`
@@ -248,7 +194,7 @@ Run history: https://github.com/${REPO}/actions/workflows/${WF_ID}
 
 **Why a scheduled probe reports this and not the CI-failure notifier.** A \`workflow_run\` triggered by a \`dependabot[bot]\`-actored run gets a READ-ONLY token whatever \`permissions:\` declares, so the notifier's issue-creation call answers 404 and the notifier goes red instead. Measured on 2026-10-23: the same workflow succeeded at 22:08 under a human actor, failed at 22:11 under \`dependabot[bot]\`, succeeded again at 22:15. See the comment in \`.github/workflows/ci-failure-issue.yml\` and #2230.
 
-This issue closes itself once a run succeeds — which for a stuck advisory means a run of a DIFFERENT group, so do not wait on it."
+This issue closes itself once a run succeeds."
 
 if [ -n "$EXISTING" ]; then
     echo "[dependabot-health] commenting on existing issue #${EXISTING}"

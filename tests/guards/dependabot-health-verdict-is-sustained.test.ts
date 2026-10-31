@@ -36,36 +36,13 @@ const SCRIPT = join(process.cwd(), '.github/scripts/dependabot-updater-health.sh
 interface Run {
     created_at: string;
     conclusion: string;
-    /**
-     * The dependency group, from `display_title` — #2600.
-     *
-     * Optional so every pre-existing case below keeps compiling unchanged. An
-     * absent title reads as one group, which is what those cases mean: they
-     * were written when the only question was "is it sustained", and a
-     * same-group default keeps their verdicts exactly as they were.
-     */
-    title?: string;
 }
 
-const fail = (created_at: string, title = 'npm_and_yarn in / for group-a'): Run => ({
-    created_at,
-    conclusion: 'failure',
-    title,
-});
-const ok = (created_at: string, title = 'npm_and_yarn in / for group-a'): Run => ({
-    created_at,
-    conclusion: 'success',
-    title,
-});
+const fail = (created_at: string): Run => ({ created_at, conclusion: 'failure' });
+const ok = (created_at: string): Run => ({ created_at, conclusion: 'success' });
 
 /** Runs the real script in verdict-only mode and returns what it decided. */
-function verdict(runs: Run[]): {
-    down: boolean;
-    stuck: boolean;
-    unanswered: number;
-    spanMin: number;
-    groups: number;
-} {
+function verdict(runs: Run[]): { down: boolean; unanswered: number; spanMin: number } {
     const out = execFileSync('bash', [SCRIPT], {
         encoding: 'utf8',
         env: {
@@ -74,23 +51,9 @@ function verdict(runs: Run[]): {
             HEALTH_RUNS_JSON: JSON.stringify(runs),
         },
     });
-    // The parser reads EVERY field by name rather than by position. #2600
-    // added `stuck=` and `groups=` between the existing ones, and a
-    // positional regex would have stopped matching and reported "no verdict
-    // line" for all eleven cases — a parser failure that reads as the script
-    // being broken.
-    const field = (name: string): string => {
-        const m = new RegExp(`VERDICT[^\n]*\\b${name}=(\\d+)`).exec(out);
-        if (!m) throw new Error(`no \`${name}\` in the verdict line:\n${out}`);
-        return m[1];
-    };
-    return {
-        down: field('down') === '1',
-        stuck: field('stuck') === '1',
-        unanswered: Number(field('unanswered')),
-        spanMin: Number(field('span_min')),
-        groups: Number(field('groups')),
-    };
+    const m = /VERDICT down=([01]) unanswered=(\d+) span_min=(\d+)/.exec(out);
+    if (!m) throw new Error(`no verdict line in output:\n${out}`);
+    return { down: m[1] === '1', unanswered: Number(m[2]), spanMin: Number(m[3]) };
 }
 
 describe('the probe exists and is reachable', () => {
@@ -110,20 +73,7 @@ describe('a SUSTAINED outage is reported', () => {
             fail('2026-10-27T11:07:59Z'),
             fail('2026-10-27T10:16:00Z'),
             ok('2026-10-26T18:00:04Z'),
-        // `stuck: true` beside `down: true` is the whole of #2600's correction.
-        //
-        // This is the REAL outage of 2026-10-27, and its failures are all one
-        // group. The first attempt at #2600 made a single group SUPPRESS the
-        // outage verdict, on the reasoning that a real outage fails across
-        // groups — and this case refused it, because a genuine patching outage
-        // would then have been reported as a harmless stuck advisory.
-        //
-        // So `stuck` annotates and never suppresses: `down` is unchanged from
-        // what it has always been here, and the flag only changes the ISSUE
-        // WORDING so a human is told to read the error type. Downgrading an
-        // outage is the dangerous direction; saying "check which of two things
-        // this is" costs nothing.
-        ])).toEqual({ down: true, stuck: true, unanswered: 2, spanMin: 51, groups: 1 });
+        ])).toEqual({ down: true, unanswered: 2, spanMin: 51 });
     });
 
     it('a window with NO success anywhere is down, span test or not', () => {
@@ -139,14 +89,14 @@ describe('a SUSTAINED outage is reported', () => {
             fail('2026-10-27T13:00:00Z'),
             fail('2026-10-27T10:00:00Z'),
             ok('2026-10-26T18:00:04Z'),
-        ])).toEqual({ down: true, stuck: true, unanswered: 3, spanMin: 300, groups: 1 });
+        ])).toEqual({ down: true, unanswered: 3, spanMin: 300 });
     });
 });
 
 describe('a FLAP is not reported — the half that is easy to lose', () => {
     it('a single failure after a success is not an outage', () => {
         expect(verdict([fail('2026-10-27T11:07:59Z'), ok('2026-10-26T18:00:04Z')]))
-            .toEqual({ down: false, stuck: false, unanswered: 1, spanMin: 0, groups: 1 });
+            .toEqual({ down: false, unanswered: 1, spanMin: 0 });
     });
 
     it('two failures four minutes apart are ONE concurrent batch', () => {
@@ -157,7 +107,7 @@ describe('a FLAP is not reported — the half that is easy to lose', () => {
             fail('2026-10-27T11:07:00Z'),
             fail('2026-10-27T11:03:00Z'),
             ok('2026-10-26T18:00:04Z'),
-        ])).toEqual({ down: false, stuck: false, unanswered: 2, spanMin: 4, groups: 1 });
+        ])).toEqual({ down: false, unanswered: 2, spanMin: 4 });
     });
 
     it('a success AFTER the failures clears it — this is what self-closes the issue', () => {
@@ -165,7 +115,7 @@ describe('a FLAP is not reported — the half that is easy to lose', () => {
             ok('2026-10-27T12:00:00Z'),
             fail('2026-10-27T11:07:59Z'),
             fail('2026-10-27T10:16:00Z'),
-        ])).toEqual({ down: false, stuck: false, unanswered: 0, spanMin: 0, groups: 0 });
+        ])).toEqual({ down: false, unanswered: 0, spanMin: 0 });
     });
 
     it('an all-green window is not down', () => {
@@ -221,66 +171,4 @@ describe('the test seam cannot be tripped by accident', () => {
         expect(out).toMatch(/GITHUB_REPOSITORY is required/);
         expect(out).not.toMatch(/VERDICT down=/);
     });
-});
-
-describe('a STUCK advisory is not an outage — #2600', () => {
-    /**
-     * #2598's real shape: five failures over three hours, every one the same
-     * group, every one `security_update_not_possible` because the only patch
-     * path for `brace-expansion` was a DOWNGRADE from the copy vendored inside
-     * `npm` itself. Nothing was broken, and the issue said "security and
-     * version bumps are not arriving".
-     *
-     * The span test cannot catch this — it exists to stop a TRANSIENT reading
-     * as an outage, and a permanent refusal crosses any threshold a real
-     * outage must cross. The group count is what separates them.
-     */
-    const BRACE = 'npm_and_yarn in /. for brace-expansion, brace-expansion';
-    const OTHER = 'github_actions in / for actions/checkout';
-
-    it('one group failing repeatedly is FLAGGED, and still reported down', () => {
-        const v = verdict([
-            fail('2026-10-31T16:56:00Z', BRACE),
-            fail('2026-10-31T13:27:00Z', BRACE),
-            ok('2026-10-29T19:18:00Z', 'npm_and_yarn in / for aws-sdk'),
-        ]);
-        // BOTH, and that is the design. `stuck` changes the wording so a
-        // reader is told to check the error type; it does not and must not
-        // clear the verdict, because the 2026-10-27 case above proves a real
-        // outage can look exactly like this from run conclusions alone.
-        expect(v).toMatchObject({ down: true, stuck: true, groups: 1 });
-        expect(v.unanswered).toBeGreaterThanOrEqual(2);
-        expect(v.spanMin).toBeGreaterThanOrEqual(20);
-    });
-
-    it('stuck is NEVER set without a success in the window to contrast against', () => {
-        // With nothing green at all there is no evidence the updater works, so
-        // the softer wording would be unearned.
-        expect(
-            verdict([fail('2026-10-31T16:56:00Z', BRACE), fail('2026-10-31T13:27:00Z', BRACE)]),
-        ).toMatchObject({ down: true, stuck: false });
-    });
-
-    it('TWO groups failing is still an outage — the #2230 case is unchanged', () => {
-        const v = verdict([
-            fail('2026-10-31T16:56:00Z', BRACE),
-            fail('2026-10-31T13:27:00Z', OTHER),
-            ok('2026-10-29T19:18:00Z', 'npm_and_yarn in / for aws-sdk'),
-        ]);
-        expect(v).toMatchObject({ down: true, stuck: false, groups: 2 });
-    });
-
-    it('a success newer than every failure is healthy, neither down nor stuck', () => {
-        const v = verdict([fail('2026-10-31T16:56:00Z', BRACE), ok('2026-10-31T20:00:00Z', BRACE)]);
-        expect(v).toMatchObject({ down: false, stuck: false, unanswered: 0, groups: 0 });
-    });
-
-    it('an unsustained single failure is neither — the hiccup path still wins', () => {
-        // One failure, so the span test refuses it before the group test is
-        // reached. Asserted because the two checks could otherwise be reordered
-        // into something that calls every single red run a stuck advisory.
-        const v = verdict([fail('2026-10-31T16:56:00Z', BRACE), ok('2026-10-31T16:00:00Z', BRACE)]);
-        expect(v).toMatchObject({ down: false, stuck: false, unanswered: 1 });
-    });
-
 });
