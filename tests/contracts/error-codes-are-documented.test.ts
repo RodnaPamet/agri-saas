@@ -603,6 +603,19 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // instead: `MFA_REQUIRED` already was, and `API_KEY_NOT_PERSON_SCOPED`,
     // `OPERATOR_SCOPE` and `FARM_PROFILE_EIK_NOT_EDITABLE` are now.
     'AI_BUDGET_REQUIRES_VERIFIED_FARM',
+    // «Асистент» (#2578), and for the SAME reason as the entry above rather
+    // than a new one: the route that emits them —
+    // `/api/t/{tenantSlug}/assistant/stream` — is itself on
+    // `openapi-undocumented-baseline.json`, and the spec carries no `/ai/`
+    // path at all. A code cannot be documented on a path the spec does not
+    // describe, so documenting these two would mean documenting the AI
+    // surface, which is larger than the change that introduced them.
+    //
+    // Both ARE entried in `errors.<CODE>` in both locales, so a Bulgarian
+    // farmer reads a sentence rather than a token — that is the half #1677
+    // governs, and it is independent of whether the spec names the code.
+    'ASSISTANT_CONTEXT_INVALID',
+    'ASSISTANT_QUESTION_INVALID',
     'API_KEY_FAMILY_NOT_ENABLED',
     'API_KEY_WRONG_SURFACE',
     'BLOCK_SELLER_ONLY',
