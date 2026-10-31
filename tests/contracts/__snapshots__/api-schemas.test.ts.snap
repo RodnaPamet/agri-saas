@@ -6319,26 +6319,12 @@ exports[`API contract — per-schema snapshots schema: ExchangeListingEdit 1`] =
       "maxLength": 120
     },
     "quantityTonnes": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ]
+      "type": "string"
     },
     "pricePerTonne": {
-      "anyOf": [
-        {
-          "type": "number"
-        },
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
+      "type": [
+        "string",
+        "null"
       ]
     },
     "priceCurrency": {
@@ -6407,6 +6393,7 @@ exports[`API contract — per-schema snapshots schema: ExchangeListingEdit 1`] =
     "kind",
     "commodity",
     "quantityTonnes",
+    "pricePerTonne",
     "regionCode",
     "updatedAt"
   ],

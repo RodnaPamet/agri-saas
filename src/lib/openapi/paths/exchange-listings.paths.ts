@@ -54,7 +54,7 @@ import {
     UpdateListingStatusSchema, UpdateListingSchema } from '@/app-layer/schemas/exchange.schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
@@ -159,12 +159,29 @@ const PublicInquirySchema = z
     });
 
 /**
- * The seller's own editable values — and it IS the PUT's request body, which
- * is why the same schema object serves both. "Send `edit` back unchanged" is
- * then a complete instruction rather than a convention a client has to be
- * told, and the two cannot drift.
+ * The seller's own editable values, derived from the PUT's request body so the
+ * two cannot drift: "send `edit` back unchanged" is a complete instruction
+ * rather than a convention a client has to be told.
+ *
+ * TWO fields are narrowed, and only in this direction. `boundedDecimal` is
+ * `z.union([z.number(), z.string()])` because a request may legitimately carry
+ * a JSON number — but `toListingEdit` serialises both decimals with
+ * `.toString()` unconditionally, so the RESPONSE is always a string. Left
+ * shared, the spec would tell a client to decode `number | string` for a field
+ * that is never a number, which is #1391's complaint exactly: a client that
+ * guessed `number` would crash on every listing. The round-trip still holds in
+ * the direction that matters, because the request's union ACCEPTS the
+ * response's string.
+ *
+ * The remaining nullable fields stay as the generator renders them — `anyOf:
+ * [{string}, {null}]` decodes as an optional string with no ambiguity about
+ * which arrives, so there is nothing for a client to guess. A UNION OF TWO
+ * PRIMITIVES is the case worth spending a narrowing on.
  */
-const ListingEditSchema = UpdateListingSchema.openapi('ExchangeListingEdit', {
+const ListingEditSchema = UpdateListingSchema.extend({
+    quantityTonnes: z.string(),
+    pricePerTonne: z.string().nullable(),
+}).openapi('ExchangeListingEdit', {
     description:
         "The listing's editable values AS STORED, and the exact body `PUT` accepts. `sellerDisplayName` here is the seller's TYPED alias — NOT the resolved attribution the sibling field carries, which is the farm's verified name when `publishAsFarm` is set. Echoing the resolved value into a full replacement would write a verified farm name into the alias column as literal text. `updatedAt` is a precondition, not a value: `PUT` refuses with LISTING_MODIFIED when it no longer matches.",
 });
@@ -324,6 +341,23 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         params: ListingParams,
         body: UpdateListingSchema,
         success: { status: 200, description: 'The updated listing.', schema: MyListingSchema },
+        extraResponses: codedErrorResponses({
+            409:
+                'An optimistic-lock refusal, and the one status a reader of the prose above ' +
+                'would not otherwise expect here.\n\n' +
+                '- `LISTING_MODIFIED` — the `updatedAt` you sent no longer matches the stored ' +
+                'row, so somebody edited this listing after you opened it. Re-read, re-apply ' +
+                'the change and send again; it IS a stale edit, which makes it the opposite of ' +
+                'this API\u2019s other exchange 409 (`LISTING_INTEREST_ALREADY_SENT`, where ' +
+                're-reading cannot clear the condition).\n\n' +
+                'Deliberately NOT `STALE_DATA`, the code the farm-profile, journal and ' +
+                'field-operation locks use. Those carry `details.currentVersion` / ' +
+                '`expectedVersion` off a version counter and are resolved by merging; this ' +
+                'precondition is a TIMESTAMP, carries no `details`, and the edit is a full ' +
+                'replacement, so the only remedy is to reload the form. A client keying on ' +
+                '`STALE_DATA` will not match it, which is intended — the two want different ' +
+                'sentences.',
+        }),
     });
 
     op(registry, {
