@@ -794,6 +794,40 @@ const MIN_SCOPED_ROWS = MIN_SECURITY_ROWS + MIN_CEILING_ROWS;
         expect({ ceiling: CEILING_ROWS.length >= MIN_CEILING_ROWS }).toEqual({ ceiling: true });
     });
 
+    // A CONTROL ON THE CONTROL — the baseline entry this replaces.
+    //
+    // `selector-teeth` reported `expectExamined` as a dead selector when a
+    // dependency change pulled this guard into its population (#2525), and it
+    // was baselined with the reasoning that a mutation replacing the RETURN of
+    // a void assertion helper "removes the assertion and nothing is left to
+    // notice", a shape "this tool's return-value model cannot reach for ANY
+    // void assertion helper".
+    //
+    // The first half is exactly right and the generalisation is not. Nothing
+    // was left to notice because nothing CALLED the helper in a way that could
+    // notice — every one of its four call sites passes a population already
+    // above its floor, which is the healthy state. A control that calls it
+    // directly, on both sides of the floor, makes the same mutation fail.
+    // Measured: with this test present, replacing the body with
+    // `return undefined` fails 1 of 34; without it, 33 of 33 still pass.
+    //
+    // So the tool's model does reach a void assertion helper, through the one
+    // thing its own error message asks for — "a control proving its selector
+    // can select". Worth saying precisely, because the general version of that
+    // claim would license baselining every void assertion helper in the repo.
+    //
+    // The floors are deliberately NOT raised to remove their slack: they exist
+    // to catch a table VANISHING, and tightening them until they bite would
+    // make the guard brittle against a table that shrinks for a good reason.
+    it('expectExamined itself can fail — a control on the floors below', () => {
+        expect(() => expectExamined('control', [], 1)).toThrow();
+        expect(() => expectExamined('control', [1, 2], 3)).toThrow();
+        expect(() => expectExamined('control', [1, 2, 3], 3)).not.toThrow();
+        // And that the failure names WHICH floor: the label is the only thing
+        // telling four otherwise-identical call sites apart in a failure.
+        expect(() => expectExamined('range rows', [], 1)).toThrow(/range rows/);
+    });
+
     describe('doc ↔ package-lock.json', () => {
         it('every Scope column agrees with the lockfile', () => {
             expectExamined('scope rows', SCOPED_ROWS, MIN_SCOPED_ROWS);
