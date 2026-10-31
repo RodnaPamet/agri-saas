@@ -63,4 +63,18 @@ if (process.argv.includes('--check')) {
 }
 
 writeFileSync(TARGET, rendered, 'utf8');
-console.log(`[secret-patterns] wrote ${patterns.length} pattern(s) to ${path.relative(ROOT, TARGET)}`);
+// The destination is NOT interpolated, and that is CodeQL's finding rather
+// than my taste: `TARGET` derives from `process.env.SECRET_PATTERNS_TARGET`,
+// so printing it is an environment value reaching a log — "clear-text logging
+// of sensitive information", high severity, raised against this exact line on
+// #2584. It is only ever a path, so nothing was leaked; the reason to fix it
+// rather than dismiss it is that this is the secret-pattern generator, and a
+// tool in that position should not be the one place that pipes an env var into
+// output. The default is a literal, and an override says only THAT it was
+// overridden — which is all a reader needs, since only a test sets it.
+console.log(
+    `[secret-patterns] wrote ${patterns.length} pattern(s) to `
+        + (process.env.SECRET_PATTERNS_TARGET
+            ? 'the SECRET_PATTERNS_TARGET override'
+            : 'src/lib/security/generated/secret-patterns.ts'),
+);

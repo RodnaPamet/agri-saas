@@ -15,10 +15,24 @@
  * lives in one place they both import.
  *
  * NOTE a second implementation of this translation still exists, inline in
- * `tests/guardrails/no-secrets.test.ts`. That is pre-existing and deliberately
- * untouched here: it is a C.2 guardrail, and rewiring it to read a GENERATED
- * file would make a stale generated file able to weaken it. Unifying the two
- * wants its own change.
+ * `tests/guardrails/no-secrets.test.ts` (`loadPatterns`), so this module is the
+ * THIRD copy of the rule and not the first. Left in place here, but the reason
+ * first written in this docblock was wrong and is worth not repeating: it said
+ * rewiring the guardrail "to read a GENERATED file would make a stale
+ * generated file able to weaken it". True, and not what sharing means — the
+ * guardrail would go on reading `.secret-patterns` itself and only borrow the
+ * PARSER. That is safe, and strictly better for it: `loadPatterns` handles a
+ * LEADING `(?i)` and silently leaves a mid-pattern one in the body, where
+ * `new RegExp` throws at module load with a message about an invalid group
+ * rather than about a widened secret pattern.
+ *
+ * What actually blocks the merge is mechanical, and the house pattern already
+ * solves it: a `.mjs` cannot be imported by a ts-jest suite (a dynamic
+ * `import()` is rewritten to `require()`), whereas `scripts/lib/api-routes.ts`
+ * is TypeScript, run by its generators through `tsx`, and imported directly by
+ * five guards. This module should be that. Tracked separately rather than
+ * folded into the PR that introduced it, because collapsing the copies edits a
+ * C.2 security guardrail and wants its own mutation proof.
  */
 
 /**
