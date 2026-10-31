@@ -70,6 +70,18 @@ describe('pptxgenjs stays out of the production tree', () => {
             .map((l) => l.trim())
             .filter(Boolean);
         expect(out).toEqual([]);
+        // #2507: `|| true` means a BROKEN grep — wrong path, missing binary,
+        // unreadable tree — also yields an empty list, which is byte-identical
+        // to the pass above. So run the same shape for a token that must be
+        // there, and require a hit.
+        const control = execSync(
+            `grep -rl "withApiErrorHandling" ${JSON.stringify(join(ROOT, 'src'))} || true`,
+            { encoding: 'utf8' },
+        )
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean);
+        expect(control.length).toBeGreaterThan(10);
     });
 
     it('the renderer that justified the exemption is gone', () => {
@@ -90,10 +102,33 @@ describe('pptxgenjs stays out of the production tree', () => {
             join(ROOT, 'scripts/audit-exemptions.mjs'),
             'utf8',
         );
-        const exemptBlock = src.slice(
-            src.indexOf('const EXEMPT = ['),
-            src.indexOf('];', src.indexOf('const EXEMPT = [')),
-        );
+        // #2507. This assertion was INERT for 82 days and reported the right
+        // answer for the wrong reason. The marker was `const EXEMPT = [`; that
+        // array was renamed to `REAL_EXEMPT` in #518 on 2026-08-10, one day
+        // after this test landed in #501. `indexOf` then returned -1,
+        // `src.slice(-1, <first "];">)` returned the EMPTY STRING, and all
+        // three negated assertions passed over nothing — while all three
+        // strings were present in the file.
+        //
+        // The conclusion happened to be true: they appear only in COMMENTS
+        // recording their removal, which is what the `//` filter below is for.
+        // But nothing was checking that, and `const EXEMPT =` still exists at
+        // line ~130 as a TERNARY rather than an array literal, so a reader
+        // grepping the name finds a live-looking match.
+        //
+        // So the anchor is asserted FOUND before it is used. An absence is a
+        // renamed constant, not a clean exemption list.
+        const ANCHOR = 'const REAL_EXEMPT = [';
+        const start = src.indexOf(ANCHOR);
+        expect({ anchor: ANCHOR, found: start !== -1 }).toEqual({
+            anchor: ANCHOR,
+            found: true,
+        });
+        const exemptBlock = src.slice(start, src.indexOf('];', start));
+        // And the block is the ARRAY, not a few characters of whatever
+        // followed. Both halves matter: a found anchor with an empty block is
+        // the same vacuity one step later.
+        expect(exemptBlock.length).toBeGreaterThan(200);
         const live = exemptBlock
             .split('\n')
             .filter((l) => !l.trim().startsWith('//'));

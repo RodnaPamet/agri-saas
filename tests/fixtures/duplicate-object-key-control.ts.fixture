@@ -1,0 +1,89 @@
+/**
+ * The real-file positive control for `no-duplicate-object-keys` — #2537.
+ *
+ * ## Why this is not a `.ts` file
+ *
+ * It contains deliberate TS1117 errors. `tsconfig.json` includes `**'/'*.ts`
+ * and excludes only `node_modules`, `scripts`, `prisma/seed.ts` and
+ * `dub-reference` — measured with `tsc --listFilesOnly`, all 2,466 `.ts`/`.tsx`
+ * files under `tests/` are in the program — so a real duplicate here would
+ * redden the required `Typecheck` job. The `.fixture` extension keeps tsc out
+ * while the guard parses it through the SAME `inspect()` the population goes
+ * through, with an explicit `ScriptKind.TS`.
+ *
+ * ## Why a file and not a string
+ *
+ * A guard asserting an ABSENCE over a healthy population — and `src` +
+ * `scripts` + `prisma` carry zero duplicates today — is satisfied perfectly by
+ * a predicate that has stopped being able to match. A synthetic string inside
+ * the test can drift from how the population is actually read; a file read off
+ * disk and parsed by the same function cannot.
+ *
+ * **Do not "fix" the duplicates below.** They are the control. The guard
+ * asserts both that they are REPORTED and that the shapes further down are
+ * NOT, so removing either half disarms it — and it asserts this file still
+ * contains them, so the failure is loud rather than silent.
+ */
+
+// ── MUST be reported ────────────────────────────────────────────────────────
+
+// The #2537 shape exactly: two branches each append the same variable to one
+// object literal, git takes both because the offsets differ, and the LATER
+// declaration silently wins — so which side's validation survives is decided
+// by merge offsets rather than by review.
+export const twoBranchesBothAppended = {
+    DATABASE_URL: 'required',
+    DOCUMENT_STORAGE_LIMIT_BYTES: 'positive',
+    REDIS_URL: 'optional',
+    SENTRY_DSN: 'optional',
+    DOCUMENT_STORAGE_LIMIT_BYTES: 'nonnegative',
+};
+
+// A string key and an identifier key naming the same property. TS1117 reports
+// it; a detector comparing raw node text would not.
+export const stringVersusIdentifier = {
+    AV_SCAN_MODE: 'enforce',
+    'AV_SCAN_MODE': 'permissive',
+};
+
+// Nested, because a walker that stops at the outermost literal misses this.
+export const nestedInsideAnother = {
+    outer: {
+        inner: 1,
+        other: 2,
+        inner: 3,
+    },
+};
+
+// ── MUST NOT be reported ────────────────────────────────────────────────────
+
+// The same key in two DIFFERENT literals is the normal case and is most of the
+// repo. A detector keyed on the FILE rather than on the literal reports this.
+export const firstLiteral = { plan: 'FREE' };
+export const secondLiteral = { plan: 'PRO' };
+
+// A spread may legitimately be overridden by a later explicit key — 918 spreads
+// in the live population, and this is the whole point of `{...defaults, x}`.
+const defaults = { retries: 3, timeout: 120 };
+export const overridesASpread = { ...defaults, timeout: 240 };
+
+// A get/set pair on one name is legal. There are zero of these in the live
+// population, so this control is the only thing exercising that branch.
+export const accessorPair = {
+    _value: 0,
+    get value() {
+        return this._value;
+    },
+    set value(next: number) {
+        this._value = next;
+    },
+};
+
+// Two computed keys can collide only at runtime, which a parser cannot know —
+// 97 computed keys in the live population, and reporting them would be noise.
+const keyA = 'EUR';
+const keyB = 'EUR';
+export const computedKeys = {
+    [keyA]: 1.0,
+    [keyB]: 1.95583,
+};

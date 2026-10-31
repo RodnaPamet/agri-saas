@@ -67,6 +67,16 @@ describe("ratchet precedence: visual > count", () => {
         // does NOT pattern-match button text or strip `+ X` buttons
         // before counting. This guarantees that `+ X` button
         // demotion can't sneak through a regex tweak.
+        // #2507. Both assertions below are negations over `src`, so both pass
+        // if this read ever stops landing on the budget ratchet — an emptied
+        // file, a rename, a move. The three sibling tests assert `existsSync`,
+        // which covers a MISSING file and says nothing about an empty one, and
+        // a bare `readFileSync` already throws on missing. So the control has
+        // to be about CONTENT: the ratchet's own per-file map, which is the
+        // thing these two negations are claims about.
+        expect(src).toContain('const PRIMARY_BUDGET: Record<string, number>');
+        // 19,274 bytes today.
+        expect(src.length).toBeGreaterThan(5000);
         expect(src).not.toMatch(/strip.*\+\s*[A-Z]/i);
         expect(src).not.toMatch(/skip.*create.*button/i);
     });

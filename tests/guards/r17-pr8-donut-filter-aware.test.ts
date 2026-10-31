@@ -25,6 +25,18 @@ const SRC = fs.readFileSync(
 );
 
 describe('R17-PR8 — Risk Distribution donut removed', () => {
+    // #2507. Every other assertion in this file is a NEGATION over `SRC`, so
+    // all of them pass if the read ever stops landing on the dashboard client
+    // — an emptied file, a rename, an extraction. A removal guard has no
+    // positive assertion by construction, which is exactly why it needs one
+    // written down.
+    it('reads the dashboard client it means to — the control the negations need', () => {
+        expect(SRC).toContain('export default function DashboardClient');
+        // 1,845 bytes today; a floor well under it separates "this file is
+        // small" from "this read returned nothing".
+        expect(SRC.length).toBeGreaterThan(600);
+    });
+
     it('the RiskDistributionSection no longer exists on the dashboard', () => {
         expect(SRC).not.toMatch(/function\s+RiskDistributionSection/);
         expect(SRC).not.toContain('id="risk-distribution"');

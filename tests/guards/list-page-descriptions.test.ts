@@ -50,6 +50,25 @@ const CLIENTS: ClientFile[] = [
 const ENTITIES = CLIENTS.map((c) => c.entity);
 
 describe('List-page editorial descriptions (Roadmap-2 PR-4)', () => {
+    // #2507. Both assertions below are `toEqual([])` over a loop, so both pass
+    // if `CLIENTS` is ever emptied — and this file's own docblock records the
+    // two lists drifting once already, when the GRC teardown trimmed one and
+    // not the other.
+    //
+    // A DENOMINATOR rather than a content control, and the distinction is the
+    // point: each loop body already fails on an empty READ (a missing section
+    // lands in `missing`; a file with none of the four shapes lands in
+    // `offenders`). What neither covers is an empty POPULATION, which is the
+    // one thing a floor can see.
+    it('ranges over the surviving list pages — the denominator both loops need', () => {
+        console.log(
+            `[list-page-descriptions] ${CLIENTS.length} list page(s): `
+                + CLIENTS.map((c) => c.entity).join(', '),
+        );
+        expect(CLIENTS.length).toBeGreaterThanOrEqual(2);
+        expect(ENTITIES).toEqual(CLIENTS.map((c) => c.entity));
+    });
+
     it('each entity section in messages/en.json carries a listDescription', () => {
         const messages = (readCatalogue('en') as unknown as Record<string, Record<string, string>>);
         const missing: string[] = [];

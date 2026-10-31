@@ -67,11 +67,13 @@ interface Hit {
 describe('Chart token discipline (Polish PR-7)', () => {
     it('zero hex / rgb literals in chart, heatmap, and dashboard files', () => {
         const offenders: Hit[] = [];
+        const perFile: Record<string, number> = {};
         for (const rel of SCAN_FILES) {
             const abs = path.resolve(ROOT, rel);
             if (!fs.existsSync(abs)) continue;
             const content = fs.readFileSync(abs, 'utf8');
             const lines = content.split('\n');
+            perFile[rel] = lines.length;
             lines.forEach((line, i) => {
                 const trimmed = line.trim();
                 if (
@@ -112,6 +114,34 @@ describe('Chart token discipline (Polish PR-7)', () => {
             );
         }
         expect(offenders).toHaveLength(0);
+        // #2507. The loop `continue`s past a missing file and `toHaveLength(0)`
+        // is satisfied by having scanned nothing, so the absence above needs a
+        // denominator. The sibling `every scanned file exists` covers a MISSING
+        // file; neither it nor a bare read covers an EMPTY one, and an empty
+        // file contributes one line and zero offenders.
+        //
+        // PER FILE, not a total — and that is not a detail. A total floor was
+        // written here first and the mutation proof passed: emptying
+        // CalendarMonth.tsx left 681 of 1,280 lines, comfortably over a floor
+        // of 200, so one gutted file was invisible. A total measures the wrong
+        // axis when the defect is one member of a small population.
+        console.log(
+            `[chart-token-discipline] scanned ${Object.keys(perFile).length} of `
+                + `${SCAN_FILES.length} file(s): `
+                + Object.entries(perFile)
+                    .map(([f, n]) => `${f.split('/').pop()}=${n}`)
+                    .join(', '),
+        );
+        expect(Object.keys(perFile).sort()).toEqual([...SCAN_FILES].sort());
+        // Smallest today is GanttTimeline.tsx at 264 lines; DonutChart.tsx is
+        // the largest at 679. The floor is set well under the smallest so an
+        // ordinary edit does not trip it, and well over 1 — which is what
+        // `''.split('\n')` yields for an emptied file.
+        // Two assertions, because each says something the other cannot: the
+        // first NAMES the starved file in the failure, the second states the
+        // floor as a comparison.
+        expect(Object.entries(perFile).filter(([, n]) => n <= 100)).toEqual([]);
+        expect(Math.min(...Object.values(perFile))).toBeGreaterThan(100);
     });
 
     it('every scanned file exists', () => {
