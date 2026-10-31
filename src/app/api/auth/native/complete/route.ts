@@ -32,19 +32,16 @@ import { logger } from '@/lib/observability/logger';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import {
-    issueAuthCode,
-    classifyRedirect,
     HANDOFF_COOKIE,
+    classifyRedirect,
+    issueAuthCode,
+    nativeRedirectAllowlist,
 } from '@/lib/auth/native/auth-codes';
 
 export const runtime = 'nodejs';
 
 
-function allowlist(): string[] {
-    return env.NATIVE_AUTH_REDIRECT_ALLOWLIST.split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-}
+
 
 async function handleComplete(req: NextRequest): Promise<NextResponse> {
     const raw = req.cookies.get(HANDOFF_COOKIE)?.value;
@@ -66,7 +63,7 @@ async function handleComplete(req: NextRequest): Promise<NextResponse> {
     // Re-validate on the way OUT as well as on the way in. The cookie is
     // HttpOnly, but a check that only runs at /start would be one tampering
     // primitive away from an open redirect carrying a live code.
-    const verdict = classifyRedirect(redirectUri, allowlist());
+    const verdict = classifyRedirect(redirectUri, nativeRedirectAllowlist());
     if (verdict !== 'allowed') {
         // The response is identical either way, deliberately — this route is
         // unauthenticated and must not tell an anonymous caller whether our

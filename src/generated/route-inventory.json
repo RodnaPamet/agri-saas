@@ -678,7 +678,7 @@
     {
       "path": "/api/t/{tenantSlug}/admin/integrations/google/connect",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/integrations/sharepoint",

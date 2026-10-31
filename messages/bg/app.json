@@ -6759,6 +6759,7 @@
         "GOOGLE_DRIVE_NOT_GRANTED": "Връзката с Google не включва достъп до Drive. Свържете я отново и разрешете Drive.",
         "GOOGLE_DRIVE_RATE_LIMITED": "Google ограничи заявките за момента. Опитайте отново след малко.",
         "GOOGLE_DRIVE_REFUSED": "Google отказа качването. Проверете свободното място в Drive и опитайте отново.",
+        "GOOGLE_NATIVE_RETURN_NOT_ALLOWED": "Това инсталиране не може да върне Google съгласие към приложението. Администратор задава списъка с разрешени адреси за връщане.",
         "GRAIN_BIN_NOT_FOUND": "Складът не беше намерен.",
         "IDEMPOTENCY_KEY_INVALID": "Този ключ на заявката е невалиден.",
         "IDENTIFIERS_REQUIRED": "Въведете поне един идентификатор.",

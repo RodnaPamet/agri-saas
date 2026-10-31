@@ -213,6 +213,7 @@ model Tenant {
   knowledgeChunks            KnowledgeChunk[]
   farmDocuments              FarmDocument[]
   documentSettings           TenantDocumentSettings?
+  googleOAuthStates          GoogleOAuthState[]
 
   @@index([organizationId])
 }
