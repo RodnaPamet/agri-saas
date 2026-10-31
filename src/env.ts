@@ -231,6 +231,14 @@ export const env = createEnv({
         // endpoint refuses rather than trusting an unsigned body.
         RESEND_WEBHOOK_SECRET: z.string().optional(),
         AV_SCAN_MODE: z.enum(["strict", "permissive", "disabled"]).default("strict"),
+        // «Документи» per-tenant byte ceiling (#2495 step 3). Deliberately
+        // OPTIONAL with NO `.default()`: `SKIP_ENV_VALIDATION=1` makes
+        // @t3-oss/env skip zod entirely, so a default here would read
+        // `undefined` in every test and the ceiling would differ between test
+        // and production (#2518 — `AV_SCAN_MODE` directly above is the
+        // measured instance of that). The number lives in
+        // `src/lib/documents/storage-limit.ts`; this only overrides it.
+        DOCUMENT_STORAGE_LIMIT_BYTES: z.coerce.number().int().positive().optional(),
         CLAMAV_HOST: z.string().optional(),                  // ClamAV daemon host (e.g. clamav:3310)
 
         // Data Protection (Epic 8) — GAP-03 enforcement.
@@ -859,6 +867,7 @@ export const env = createEnv({
         AV_WEBHOOK_SECRET: process.env.AV_WEBHOOK_SECRET,
         RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
         AV_SCAN_MODE: process.env.AV_SCAN_MODE,
+        DOCUMENT_STORAGE_LIMIT_BYTES: process.env.DOCUMENT_STORAGE_LIMIT_BYTES,
         CLAMAV_HOST: process.env.CLAMAV_HOST,
 
         DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY,

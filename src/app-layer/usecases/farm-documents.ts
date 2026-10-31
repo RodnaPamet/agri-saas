@@ -33,15 +33,19 @@
 import type { DocumentRetention } from '@prisma/client';
 
 import type { RequestContext } from '../types';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
 import { FileRepository } from '../repositories/FileRepository';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { assertTenantKey, getStorageProvider } from '@/lib/storage';
-import { codedForbidden, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { farmToday } from '@/lib/calendar-day-key';
+import {
+    documentStorageLimitBytes,
+    type DocumentStorageBand,
+} from '@/lib/documents/storage-limit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { isUniqueViolation } from '@/lib/errors/prisma';
 
@@ -219,6 +223,167 @@ export async function listFarmDocuments(
 }
 
 /**
+ * Bytes this farm currently holds in the library.
+ *
+ * Summed from `FileRecord`, not from `FarmDocument`: the size lives there, a
+ * purge marks the record DELETED, and `@@index([tenantId, status])` serves
+ * exactly this shape. So a tombstone stops counting the moment its bytes go,
+ * which is the property that makes deleting a document actually free space —
+ * if purged rows still counted, a full farm could never recover.
+ *
+ * `domain: 'documents'` keeps the library's own total separate from evidence,
+ * invoices and farm media. Those share the disk and are NOT in this ceiling:
+ * the ceiling exists because «Документи» is the first feature designed to
+ * accumulate large files with a phone-side scanner behind it, and charging a
+ * farm's document budget for its evidence photos would refuse uploads for a
+ * reason nobody could act on.
+ */
+export async function documentStorageUsedBytes(ctx: RequestContext): Promise<number> {
+    return runInTenantContext(ctx, async (db) => {
+        const agg = await db.fileRecord.aggregate({
+            where: { tenantId: ctx.tenantId, domain: 'documents', status: 'STORED' },
+            _sum: { sizeBytes: true },
+        });
+        return agg._sum.sizeBytes ?? 0;
+    });
+}
+
+/**
+ * Refuse an upload that would take this farm past its ceiling.
+ *
+ * A SUM rather than a row count, so it follows `assertAiBudget` rather than
+ * `assertWithinLimit` — the same reason `ai_tokens` is enforced at the
+ * model-call boundary instead of through `PLAN_LIMITS`.
+ *
+ * Called BEFORE `ingestUploadedFile`, which is the half that matters: ingest
+ * writes the bytes to disk and only then hands back a record for the caller
+ * to store. Asserting afterwards would refuse the upload having already spent
+ * the space it was refusing to spend, and on a full disk that is the one
+ * thing the ceiling exists to prevent.
+ */
+export async function assertDocumentStorageCapacity(
+    ctx: RequestContext,
+    incomingBytes: number,
+): Promise<void> {
+    const limit = documentStorageLimitBytes();
+    const used = await documentStorageUsedBytes(ctx);
+    if (used + incomingBytes <= limit) return;
+
+    // `params` carries only SIZES — no filename, no document id, no user.
+    // `error-params-carry-no-pii` is the guard, and a document title here
+    // would be the exact personal data `FarmDocument.name` is encrypted for.
+    throw codedForbidden(
+        'DOCUMENT_STORAGE_FULL',
+        'The farm has no room left for documents. Delete older documents to upload a new one.',
+        { usedBytes: used, limitBytes: limit, incomingBytes },
+    );
+}
+
+/** The settings row as a client reads it. */
+export interface FarmDocumentSettings {
+    retention: string;
+    driveSync: boolean;
+    usedBytes: number;
+    limitBytes: number;
+    mayEdit: boolean;
+}
+
+/**
+ * The farm's document settings, with its own usage.
+ *
+ * `limitBytes` is ALWAYS present — there is no absent-means-unlimited case
+ * for a client to handle, which the iOS session recorded on `agrent-ios`
+ * #468. And `usedBytes` is the exact figure here, not the band `/api/readyz`
+ * reports: this route is authenticated and scoped to the farm that owns the
+ * bytes, so a farm learning its own total discloses nothing.
+ *
+ * Returns the schema defaults when no row exists rather than creating one —
+ * a GET must not write, and "nobody has opened the settings screen" is not a
+ * different state from "the defaults are in force".
+ */
+export async function getFarmDocumentSettings(
+    ctx: RequestContext,
+): Promise<FarmDocumentSettings> {
+    assertCanRead(ctx);
+
+    const [row, usedBytes] = await Promise.all([
+        runInTenantContext(ctx, async (db) =>
+            db.tenantDocumentSettings.findUnique({
+                where: { tenantId: ctx.tenantId },
+                select: { retention: true, driveSync: true },
+            }),
+        ),
+        documentStorageUsedBytes(ctx),
+    ]);
+
+    return {
+        retention: row?.retention ?? 'P1Y',
+        driveSync: row?.driveSync ?? false,
+        usedBytes,
+        limitBytes: documentStorageLimitBytes(),
+        mayEdit: ctx.permissions.canAdmin,
+    };
+}
+
+const RETENTIONS = ['P3M', 'P6M', 'P1Y', 'P2Y', 'P5Y', 'NONE'] as const;
+
+/**
+ * Change the farm's document settings. Admin only.
+ *
+ * Upserts, because the row may not exist yet and the first PUT is the thing
+ * that creates it. A retention change applies to NEW uploads only — every
+ * document carries the period it was uploaded under, which is the decision
+ * that makes a settings change unable to move an existing expiry.
+ */
+export async function updateFarmDocumentSettings(
+    ctx: RequestContext,
+    input: { retention?: unknown; driveSync?: unknown },
+): Promise<FarmDocumentSettings> {
+    assertCanAdmin(ctx);
+
+    const patch: { retention?: DocumentRetention; driveSync?: boolean } = {};
+    if (input.retention !== undefined) {
+        if (typeof input.retention !== 'string' || !RETENTIONS.includes(input.retention as never)) {
+            throw codedBadRequest(
+                'DOCUMENT_RETENTION_INVALID',
+                'That retention period is not one of the available choices.',
+            );
+        }
+        patch.retention = input.retention as DocumentRetention;
+    }
+    if (input.driveSync !== undefined) {
+        if (typeof input.driveSync !== 'boolean') {
+            throw codedBadRequest(
+                'DOCUMENT_DRIVE_SYNC_INVALID',
+                'The Google Drive setting must be true or false.',
+            );
+        }
+        patch.driveSync = input.driveSync;
+    }
+
+    await runInTenantContext(ctx, async (db) => {
+        await db.tenantDocumentSettings.upsert({
+            where: { tenantId: ctx.tenantId },
+            update: patch,
+            create: {
+                tenantId: ctx.tenantId,
+                retention: patch.retention ?? 'P1Y',
+                driveSync: patch.driveSync ?? false,
+            },
+        });
+        await logEvent(db, ctx, {
+            action: 'FARM_DOCUMENT_SETTINGS_UPDATED',
+            entityType: 'TenantDocumentSettings',
+            entityId: ctx.tenantId,
+            details: 'Farm document settings updated',
+            detailsJson: { ...patch },
+        });
+    });
+
+    return getFarmDocumentSettings(ctx);
+}
+
+/**
  * Accept one uploaded file into the library.
  *
  * `ingestUploadedFile` runs OUTSIDE the transaction, on purpose: it writes
@@ -269,6 +434,10 @@ async function uploadFarmDocumentImpl(
         const existing = await findByIdempotencyKey(ctx, idempotencyKey);
         if (existing) return existing;
     }
+
+    // BEFORE ingest: see `assertDocumentStorageCapacity`. Refusing after the
+    // bytes are on disk would spend the space it is refusing to spend.
+    await assertDocumentStorageCapacity(ctx, file.size);
 
     const ingested = await ingestUploadedFile(ctx.tenantId, file, {
         domain: 'documents',

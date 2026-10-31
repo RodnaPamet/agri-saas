@@ -100,6 +100,45 @@ const UploadBodySchema = z
     })
     .openapi('FarmDocumentUpload');
 
+const DocumentSettingsSchema = z
+    .object({
+        retention: z.enum(['P3M', 'P6M', 'P1Y', 'P2Y', 'P5Y', 'NONE']).openapi({
+            description:
+                'The retention period applied to NEW uploads. Changing it never moves an existing document\'s expiry — every document carries the period it was uploaded under.',
+        }),
+        driveSync: z.boolean().openapi({
+            description:
+                'Whether new uploads are copied into the farm’s «Agrent» Drive folder. Turning it OFF stops new copies; it does not revoke the Google connection, which the ДНЕВНИК export still uses, and it does not remove copies already made.',
+        }),
+        usedBytes: z.number().int().openapi({
+            description:
+                'Bytes this farm currently holds in the library. The EXACT figure, unlike the bucketed band on `/api/readyz` — this route is authenticated and scoped to the farm that owns the bytes, so a farm learning its own total is not a disclosure. Purged documents stop counting as soon as their bytes go, which is what makes deleting a document free space.',
+        }),
+        limitBytes: z.number().int().openapi({
+            description:
+                'The per-tenant ceiling, ALWAYS present — there is no absent-means-unlimited case for a client to handle. Read from an env var rather than the plan: `STRIPE_SECRET_KEY` is absent on this deployment, so every tenant resolves to ENTERPRISE and every ENTERPRISE plan limit is null, meaning a plan-based cap would enforce nothing.',
+        }),
+        mayEdit: z.boolean().openapi({
+            description: 'Whether THIS caller may change these settings (admin). Readable by every member.',
+        }),
+        google: z
+            .object({
+                connected: z.boolean().openapi({
+                    description:
+                        'True only when an ENABLED Google connection exists whose granted products include Drive. A calendar-only grant reports false, because it cannot copy a document and offering the toggle would promise a copy that never happens. No account email is reported: the connection record carries granted products and scopes, not an address, and storing one would be a personal-data decision rather than a lookup.',
+                }),
+            })
+            .openapi('FarmDocumentGoogleState'),
+    })
+    .openapi('FarmDocumentSettings');
+
+const UpdateDocumentSettingsSchema = z
+    .object({
+        retention: z.enum(['P3M', 'P6M', 'P1Y', 'P2Y', 'P5Y', 'NONE']).optional(),
+        driveSync: z.boolean().optional(),
+    })
+    .openapi('UpdateFarmDocumentSettings');
+
 export function registerDocumentPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -119,7 +158,7 @@ export function registerDocumentPaths(registry: OpenAPIRegistry): void {
         operationId: 'uploadFarmDocument',
         summary: 'Upload a document',
         description:
-            'Multipart, through the shared upload pipeline and its scan and refusal codes. Writers and above. Send an `Idempotency-Key`: a retry under the same key answers from the document the first attempt created rather than creating a second one, which matters because a multipart body over a rural connection is the write most likely to be retried. This is deliberately NOT an offline-outbox surface — a queue cannot replay a body it is unable to hold — so a visible failure plus a retry is the whole recovery story.',
+            'Multipart, through the shared upload pipeline and its scan and refusal codes. Writers and above. Send an `Idempotency-Key`: a retry under the same key answers from the document the first attempt created rather than creating a second one, which matters because a multipart body over a rural connection is the write most likely to be retried. Refuses with 403 `DOCUMENT_STORAGE_FULL` when the farm has no room left, checked BEFORE the bytes are written so a refusal does not spend the space it is refusing. This is deliberately NOT an offline-outbox surface — a queue cannot replay a body it is unable to hold — so a visible failure plus a retry is the whole recovery story.',
         tags: ['Documents'],
         params: TenantParams,
         headers: z.object({
@@ -146,6 +185,31 @@ export function registerDocumentPaths(registry: OpenAPIRegistry): void {
             description: 'The document bytes.',
             content: { 'application/octet-stream': z.string().openapi({ type: 'string', format: 'binary' }) },
         },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/documents/settings',
+        operationId: 'getFarmDocumentSettings',
+        summary: 'Read the farm document settings and its storage usage',
+        description:
+            'Readable by every member of the farm — the page shows the retention period in force and how full the library is. `usedBytes` and `limitBytes` are both always present.',
+        tags: ['Documents'],
+        params: TenantParams,
+        success: { status: 200, description: 'The settings.', schema: DocumentSettingsSchema },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/t/{tenantSlug}/documents/settings',
+        operationId: 'updateFarmDocumentSettings',
+        summary: 'Change the farm document settings',
+        description:
+            'Administrators only; `mayEdit` on the GET reports whether this caller qualifies. Both fields are optional, so a client may send either alone. A retention change applies to NEW uploads only. Refuses with 400 `DOCUMENT_RETENTION_INVALID` or `DOCUMENT_DRIVE_SYNC_INVALID` on a value outside the contract, rather than coercing it.',
+        tags: ['Documents'],
+        params: TenantParams,
+        body: UpdateDocumentSettingsSchema,
+        success: { status: 200, description: 'The settings after the change.', schema: DocumentSettingsSchema },
     });
 
     op(registry, {

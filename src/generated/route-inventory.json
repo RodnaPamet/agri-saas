@@ -1111,6 +1111,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/documents/settings",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/documents/{documentId}",
       "status": "live",
       "documented": true

@@ -90,6 +90,7 @@ import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { platformConsoleCapability } from '@/lib/auth/platform-console-capability';
 import { featureFlagsCapability } from '@/lib/feature-flags-capability';
 import { mailCanaryCapability } from '@/lib/email/mail-canary-capability';
+import { documentStorageCapability } from '@/lib/documents/storage-capability';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
 import { logger } from '@/lib/observability/logger';
@@ -359,6 +360,18 @@ export async function GET() {
     // reports as `unknown` rather than inventing a mail problem.
     const mailCanary = await mailCanaryCapability(getRedis ? getRedis() : null);
 
+    // #2495 step 3 — WATCHED, not gated, and OUTSIDE `checks`/`failed` like
+    // every sibling here. A band rather than the byte total, because this
+    // endpoint is probed unauthenticated from six regions and roughly how
+    // much data the business stores does not need to be public to make a
+    // threshold crossing visible.
+    //
+    // Reuses the same raw client the database check builds, for the reason
+    // `platformConsole` does: importing `@/lib/prisma` here reads
+    // `Prisma.dmmf` at module load and breaks three readyz suites that mock
+    // `@prisma/client` with `PrismaClient` alone.
+    const documentStorage = await documentStorageCapability(prisma);
+
     if (!allOk) {
         // Log the failure for observability — operators want to see
         // readyz failures in the logs even though the probe response
@@ -391,6 +404,7 @@ export async function GET() {
                 platformConsole,
                 featureFlags,
                 mailCanary,
+                documentStorage,
             },
             latencyMs: Date.now() - start,
         },
