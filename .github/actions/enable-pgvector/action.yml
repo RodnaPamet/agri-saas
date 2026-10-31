@@ -91,5 +91,74 @@ runs:
         # its 16-3.5 is `FROM postgres:16-bullseye` and reproduces the same
         # exit 100. That is why the base is a plain postgres image now
         # rather than a newer postgis/postgis tag.
-        docker exec "$cid" sh -c 'apt-get update -qq && apt-get install -y -qq postgresql-16-postgis-3 postgresql-16-pgvector'
+        # ── RETRIED, because this is a third-party network fetch and it was
+        #    the one setup step without a retry (#2540) ──────────────────
+        #
+        # Measured: main went red on 2026-10-31 at 07:28 UTC (run
+        # 41180732206, head 8407582ba — a byte-ceiling change touching no
+        # infrastructure) because this step failed. `Test (shard 5/6)`,
+        # `Test` and `Coverage (>=60%)` all went red and the TESTS NEVER RAN;
+        # the next push to main passed untouched. So: transient, and
+        # attributed to the wrong commit by everyone reading it.
+        #
+        # One apt hiccup reddens TWO required checks. The shard uploads no
+        # coverage artifact, and `merge-coverage.mjs --expect N` correctly
+        # refuses a short set — istanbul's merge UNIONS file sets, so a
+        # missing shard would otherwise remove files from the DENOMINATOR and
+        # percentages would RISE. That refusal is right, and it means an
+        # `apt-get` failure presents as a coverage regression two steps from
+        # its cause.
+        #
+        # `npm ci` and `prisma generate` in the same jobs have had 3-attempt
+        # loops for exactly this reason, with comments that apply here
+        # verbatim. This step reaches a third-party apt repo and was the one
+        # that never got the treatment.
+        #
+        # WHY NOT BAKE THE EXTENSIONS INTO THE IMAGE INSTEAD. That was my
+        # first instinct and it is the wrong trade here. The pin is STOCK
+        # `postgres:16-trixie` by deliberate choice (#832): `postgis/postgis`
+        # publishes no Debian tag on a maintained suite for Postgres 16, and
+        # its only trixie tag forces a Postgres MAJOR bump. A baked image
+        # would have to be ours, published to a registry — service containers
+        # cannot be built in-workflow — and `.github/postgis-image` counts
+        # ELEVEN spellings of this pin that a new image name would have to
+        # move together, under a guard that checks all of them. A retry is
+        # three lines.
+        #
+        # `timeout` is per ATTEMPT and load-bearing: without it the loop only
+        # re-enters when `docker exec` RETURNS, so it defends against a fast
+        # failure and not against a hung mirror — which is the defect
+        # `ci-retry-loop-timeout` was written for after an 8-minute `npm ci`
+        # stall ate a whole job budget. 120s against a ~20-40s normal install.
+        #
+        # AND THE LOCK CLEANUP IS INSIDE THE CONTAINER, not on the runner.
+        # `timeout` kills the `docker exec` wrapper; the `apt-get` it started
+        # keeps running in the container and holds ITS dpkg lock, so the next
+        # attempt would fail instantly on a lock the runner's own `pkill`
+        # cannot see. The `ci.yml` playwright loop clears runner-side locks
+        # for the same reason — this is that idea across the container
+        # boundary.
+        installed=0
+        for attempt in 1 2 3; do
+          echo "::group::apt install postgis + pgvector (attempt $attempt/3)"
+          if timeout 120 docker exec "$cid" sh -c 'apt-get update -qq && apt-get install -y -qq postgresql-16-postgis-3 postgresql-16-pgvector'; then
+            echo "::endgroup::"
+            installed=1
+            break
+          fi
+          echo "::endgroup::"
+          echo "::warning::postgis/pgvector install attempt $attempt/3 failed; clearing the container's dpkg lock"
+          docker exec "$cid" sh -c 'pkill -9 apt-get || true; pkill -9 dpkg || true; rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock || true; dpkg --configure -a || true' || true
+          sleep 5
+        done
+
+        if [ "$installed" != "1" ]; then
+          # Still fail CLOSED after three attempts. The extensions are a real
+          # prerequisite — `CREATE EXTENSION postgis` is needed by the
+          # parcel-geometry migrations — so a skipped install produces a worse
+          # failure later, in `Apply Prisma migrations`, with an even less
+          # obvious cause.
+          echo "::error::postgis + pgvector could not be installed into container $cid after 3 attempts. This is a PGDG/apt fetch, so a sustained failure is usually upstream rather than this repo — check https://www.postgresql.org/support/ before changing the package list."
+          exit 1
+        fi
         echo "postgis + pgvector installed into container $cid"
