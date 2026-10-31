@@ -10,7 +10,7 @@ import { appendAuditEntry } from '@/lib/audit';
 // honest shape. Do not "tidy" it back to the barrel.
 import { shouldFailClosed } from '@/lib/audit/fail-closed-entities';
 import { reportLostAuditRow } from '@/lib/db/before-commit';
-import { validateAuditDetailsJson } from '../schemas/json-columns.schemas';
+import { validateAuditDetailsJson, type AuditDetailsJson } from '../schemas/json-columns.schemas';
 import { shadowParseAuditDetails } from './audit-details-shadow';
 
 export interface AuditEventPayload {
@@ -18,8 +18,24 @@ export interface AuditEventPayload {
     entityType: string;
     entityId: string;
     details?: string;
-    /** Structured event payload — source of truth for machine-readable audit */
-    detailsJson?: Record<string, unknown>;
+    /**
+     * Structured event payload — source of truth for machine-readable audit.
+     *
+     * Typed as `AuditDetailsJson` and NOT `Record<string, unknown>`, because
+     * `validateAuditDetailsJson` below REFUSES a payload with no `category`
+     * discriminator and `logEvent` is on the caller's transaction — so a
+     * missing `category` is not a lint nit, it is a 400 (or, for a
+     * fail-closed entity, an aborted business write). Ten live write paths
+     * shipped without one: «Документи» upload / settings / purge, the Drive
+     * copy and requeue, four automation-rule verbs and the SLA breach.
+     *
+     * The old type admitted every one of them. `.passthrough()` on the schema
+     * is what keeps this usable — a bespoke domain payload may still carry
+     * whatever fields it likes alongside the discriminator, so the narrowing
+     * costs call sites nothing except the field they were already required to
+     * send.
+     */
+    detailsJson?: AuditDetailsJson;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     metadata?: Record<string, any>; // Must be safe/non-secret
 }

@@ -325,7 +325,13 @@ export async function updateFarmDocumentSettings(
             entityType: 'TenantDocumentSettings',
             entityId: ctx.tenantId,
             details: 'Farm document settings updated',
-            detailsJson: { ...patch },
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'TenantDocumentSettings',
+                operation: 'updated',
+                changedFields: Object.keys(patch),
+                ...patch,
+            },
         });
     });
 
@@ -523,6 +529,9 @@ async function uploadFarmDocumentImpl(
             // name is third-party personal data. The row carries it.
             details: 'Document uploaded to the farm library',
             detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'FarmDocument',
+                operation: 'created',
                 retention,
                 expiresOn: created.expiresOn,
                 sizeBytes: ingested.sizeBytes,
@@ -676,7 +685,12 @@ export async function deleteFarmDocument(ctx: RequestContext, documentId: string
             entityType: 'FarmDocument',
             entityId: doc.id,
             details: 'Document deleted from the farm library',
-            detailsJson: { purgeReason: 'DELETED' },
+            detailsJson: {
+                category: 'data_lifecycle',
+                entityName: 'FarmDocument',
+                operation: 'purged',
+                purgeReason: 'DELETED',
+            },
         });
 
         return fileRecord?.pathKey ?? null;
