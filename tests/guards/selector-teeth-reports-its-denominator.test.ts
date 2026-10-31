@@ -458,7 +458,12 @@ describe('what the audit cannot reach, computed rather than quoted (#2423)', () 
                     + `new since the ceiling was set:\n`
                     + unreachable
                         .slice(0, 10)
-                        .map((f) => `  ${f}`)
+                        // `r.file`, not `r`. `ROWS` holds
+                        // `{ file, selectors }`, so interpolating the row gave
+                        // ten lines of `[object Object]` — a refusal that
+                        // cannot name what to fix, which is the one job this
+                        // message has. Cost a cycle on #2591 (#2578).
+                        .map((r) => `  ${r.file}`)
                         .join('\n'),
             );
         }

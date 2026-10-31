@@ -19,9 +19,38 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { pageTemplates, ROOT } from '../../scripts/lib/page-routes';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const TARGET = 'src/lib/assistant/generated/page-routes.ts';
 const GENERATOR = 'scripts/generate-page-routes.ts';
+
+/**
+ * The selections, at MODULE level rather than inline in `it()`.
+ *
+ * `selector-teeth-reports-its-denominator` is right about why: a guard whose
+ * selecting happens inside `it()` cannot be mutation-audited, so it passes
+ * whether or not it selects anything. Hoisting them is also what makes them
+ * readable — and it is what kept this file from being the 201st unauditable
+ * guard against a ceiling of 200.
+ */
+const DERIVED = pageTemplates();
+
+/**
+ * Rows in the committed module, with COMMENTS BLANKED first.
+ *
+ * Not `{ strings: true }` here, and that is the one case where blanking
+ * strings would be wrong: the rows ARE string literals, so blanking them
+ * leaves nothing to count and the guard would report 0 rows against 101
+ * derived — red for the opposite of the real reason. Comments alone is the
+ * correct depth, and it is load-bearing: a `/* *\/` block whose lines are
+ * indented four spaces would otherwise be counted as rows.
+ */
+function committedRows(): number {
+    const src = blankNonCode(readFileSync(path.join(ROOT, TARGET), 'utf8'));
+    return (src.match(/^ {4}"/gm) ?? []).length;
+}
+
+const COMMITTED_ROWS = committedRows();
 
 describe('generated page routes (#2578)', () => {
     it('is in sync with src/app — by running the generator, not a copy of it', () => {
@@ -34,9 +63,8 @@ describe('generated page routes (#2578)', () => {
     });
 
     it('ranges over a real population — an empty list would refuse every context', () => {
-        const derived = pageTemplates();
-        const committed = readFileSync(path.join(ROOT, TARGET), 'utf8');
-        const rows = (committed.match(/^ {4}"/gm) ?? []).length;
+        const derived = DERIVED;
+        const rows = COMMITTED_ROWS;
         const tenantScoped = derived.filter((t) => t.startsWith('/t/[tenantSlug]')).length;
         console.log(`[page-routes] ${rows} committed row(s) from ${derived.length} derived template(s)`);
         console.log(`[page-routes] ${tenantScoped} are tenant-scoped, ${derived.length - tenantScoped} are not`);
