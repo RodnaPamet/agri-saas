@@ -139,6 +139,41 @@ export function normaliseCostToEur(
 }
 
 /**
+ * The currency code to put in a SET, rather than the raw string a row stored.
+ *
+ * `normaliseCostToEur` converts AMOUNTS and has always been used for them.
+ * Nothing did the same for currency SETS, and that asymmetry was the whole of
+ * the owner-visible defect: `Калкулатор` refused a farm whose 14 cost rows
+ * read `10 x 'EUR'`, `3 x 'EURO'` and `1 x 'BGN'` — three spellings of two
+ * currencies, all of which this module already resolves to euro — because the
+ * sets carried the raw strings and `size > 1` called that mixed.
+ *
+ * So: every currency that RESOLVES to euro collapses to `'EUR'`, and anything
+ * foreign keeps its own uppercased code. A set built this way can be counted,
+ * which is what the callers were already doing and getting wrong.
+ *
+ * `cost-rollup.ts` has had an equivalent private helper (`resolvedCurrency`)
+ * since it was written, which is why ITS currency sets were always correct.
+ * `grain-net-worth.ts` reads the same `CostEntry.currency` column and had no
+ * counterpart — it normalised the amounts and added the raw strings. This is
+ * that missing counterpart, exported so there is one rule rather than a second
+ * private copy.
+ *
+ * Deliberately NOT `isStoredAsEuro`. That function answers a different and
+ * narrower question — "is this ALREADY euro, as opposed to merely convertible"
+ * — and says NO to lev, because the EUR-only save path must lock a BGN row
+ * rather than relabel it. For a rollup, lev is addable: `normaliseCostToEur`
+ * converts it at the fixed peg and refuses nothing. Using the save path's
+ * predicate here would keep BGN in the set and keep refusing the farm.
+ */
+export function canonicalCostCurrency(currency: string | null | undefined): string {
+    const code = currency?.trim().toUpperCase() ?? '';
+    if (code === '' || EURO_SPELLINGS.has(code)) return 'EUR';
+    if (code === 'BGN' || code === 'ЛВ' || code === 'ЛВ.' || code === 'BGL') return 'EUR';
+    return code;
+}
+
+/**
  * Is this currency ALREADY euro — as opposed to merely convertible to it?
  *
  * Distinct from `allResolveToEur`, and the distinction is load-bearing. That
