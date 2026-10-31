@@ -48,6 +48,23 @@ import prisma from '@/lib/prisma';
  */
 export const NATIVE_STATE_TTL_SECONDS = 600;
 
+/**
+ * Where the callback returns control for a native consent.
+ *
+ * A SERVER constant, never read from a request body: a client-supplied target
+ * would make the callback an open redirect gated only by an allowlist, where
+ * this way the flow carries no caller-controlled value at all.
+ *
+ * It lives HERE rather than in the connect route because App Router modules may
+ * export only the names Next permits — `app-router-module-exports` caught it
+ * there, and the useful part of that catch is WHY a typecheck could not:
+ * Next's generated types reject the extra export with TS2344 only AFTER a
+ * build, so the guard is the only thing in CI that can see it. It also belongs
+ * here on the merits: the return target is part of the state's contract, since
+ * the state is bound to it.
+ */
+export const NATIVE_RETURN_URI = 'bg.agrent.app://integrations/google';
+
 export function hashState(raw: string): string {
     return createHash('sha256').update(raw).digest('hex');
 }

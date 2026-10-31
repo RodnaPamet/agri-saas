@@ -7,20 +7,13 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { resolvePublicOrigin } from '@/lib/http/request-origin';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { buildGoogleAuthorizeUrl, GOOGLE_INTEGRATION_FLAG } from '@/app-layer/integrations/providers/google';
-import { issueNativeState } from '@/app-layer/integrations/providers/google/native-state';
+import {
+    issueNativeState,
+    NATIVE_RETURN_URI,
+} from '@/app-layer/integrations/providers/google/native-state';
 import { classifyRedirect, nativeRedirectAllowlist } from '@/lib/auth/native/auth-codes';
 import { codedBadRequest } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
-
-/**
- * Where the callback returns control for a native consent.
- *
- * A SERVER constant, never read from the body. See the docblock: a
- * client-supplied target would make the callback an open redirect gated only
- * by an allowlist, where this way no caller-controlled value exists in the
- * flow at all.
- */
-export const NATIVE_RETURN_URI = 'bg.agrent.app://integrations/google';
 
 /**
  * #2005 — start the Google consent flow for Drive + Calendar.
