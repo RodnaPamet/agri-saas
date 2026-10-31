@@ -48,9 +48,9 @@ import { z } from 'zod';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { completeWithRouting } from '@/app-layer/ai/routing';
+import { emitAnswer } from '@/app-layer/ai/assistant/emit-answer';
 import { endingEvent } from '@/app-layer/ai/assistant/endings';
 import { sseFormat, type AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
-import { scanEgress } from '@/app-layer/ai/safety/egress-scan';
 import { sanitizeUntrusted } from '@/app-layer/ai/safety/sanitize-untrusted';
 import { PageContextSchema } from '@/app-layer/schemas/assistant';
 import { withApiErrorHandling } from '@/lib/errors/api';
@@ -159,29 +159,12 @@ export const POST = withApiErrorHandling(
                             signal: controller.signal,
                         });
 
-                        const text = (completion.text ?? '').trim();
-                        if (text === '') {
-                            emit(await endingEvent('ASSISTANT_NO_GROUNDING'));
-                        } else {
-                            // BEFORE emitting. A verdict after the bytes have
-                            // gone is a record, not a control.
-                            const verdict = scanEgress(text);
-                            if (verdict.clean) {
-                                emit({ type: 'answer', text });
-                            } else {
-                                // The answer is DISCARDED, not redacted — a
-                                // partly-redacted credential is a credential
-                                // with a hint attached. `ruleIds` only; the
-                                // verdict never carries the matched text, so
-                                // this log cannot log the secret.
-                                logger.warn('assistant.egress_blocked', {
-                                    component: 'assistant',
-                                    tenantId: ctx.tenantId,
-                                    ruleIds: verdict.ruleIds.join(','),
-                                });
-                                emit(await endingEvent('ASSISTANT_EGRESS_BLOCKED'));
-                            }
-                        }
+                        // Through the choke point, which scans before it
+                        // sends and is the only construction of an `answer`
+                        // event in the codebase. The scan is not a step this
+                        // route remembers to take — it is the only way to
+                        // build the event.
+                        await emitAnswer(send, completion.text ?? '', { tenantId: ctx.tenantId });
                         emit({ type: 'done', truncatedAny: false });
                     } catch (err) {
                         // A throw here must never escape as a 500: the
