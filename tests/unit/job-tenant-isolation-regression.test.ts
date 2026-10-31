@@ -203,6 +203,13 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // key, and `@@index([expiresOn, purgedAt])` deliberately does not lead
         // with tenantId for that reason — retention is a platform duty. The
         // tenant axis is per ROW, not per payload.
+        // document-drive-copy-sweep (#2495 step 4) copies PENDING farm
+            // documents into each farm's own Google Drive in ONE cross-tenant
+            // pass. `driveState` IS the queue, and it is per DOCUMENT — so the
+            // tenant axis is per row, exactly like its sibling above. A payload
+            // tenantId would also need one schedule per farm to reach them all,
+            // on a two-minute beat.
+        'document-drive-copy-sweep',
         'document-retention-sweep',
         // account-erasure-sweep (P5.6b) erases a PERSON's account across every
         // tenant they ever dealt with. A tenantId would be contradictory, not
@@ -315,6 +322,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
         'NoticeScorePayload',
         // Cross-tenant sweep over a per-document deadline; the tenant axis is
         // per row. See 'document-retention-sweep' above.
+        // Cross-tenant drain over a per-document queue column; the tenant axis
+        // is per row. See 'document-drive-copy-sweep' above.
+        'DocumentDriveCopySweepPayload',
         'DocumentRetentionSweepPayload',
         // Person-scoped: an account belongs to a person, who may hold several
         // farms or none. See 'account-erasure-sweep' above.

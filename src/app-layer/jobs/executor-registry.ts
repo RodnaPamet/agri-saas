@@ -937,6 +937,14 @@ executorRegistry.register('notice-triage-alert', async (payload) => {
     return result;
 });
 
+// ── document-drive-copy-sweep («Документи», #2495 step 4) ────────────
+
+executorRegistry.register('document-drive-copy-sweep', async (payload) => {
+    const { runDocumentDriveCopySweep } = await import('./document-drive-copy-sweep');
+    const { result } = await runDocumentDriveCopySweep({ limit: payload.limit });
+    return result;
+});
+
 // ── document-retention-sweep («Документи», #2495 step 5) ─────────────
 
 executorRegistry.register('document-retention-sweep', async (payload) => {

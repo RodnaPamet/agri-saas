@@ -396,6 +396,19 @@ export interface AccountErasureSweepPayload {
     limit?: number;
 }
 
+/**
+ * The Drive-copy drain (#2495 step 4).
+ *
+ * No `documentId`. `driveState = PENDING` is the queue, so a payload naming one
+ * document would be a second, lossy way to say what a durable column already
+ * says — and an enqueue that went missing would leave the row PENDING for ever,
+ * which the retention sweep DEFERS, so the bytes would never expire either.
+ */
+export interface DocumentDriveCopySweepPayload {
+    /** Cap for this run. Defaults to 100. */
+    limit?: number;
+}
+
 export interface DocumentRetentionSweepPayload {
     /** Cap for this run. Defaults to 200. */
     limit?: number;
@@ -940,6 +953,7 @@ export interface JobPayloadMap {
     'notice-score': NoticeScorePayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
     'document-retention-sweep': DocumentRetentionSweepPayload;
+    'document-drive-copy-sweep': DocumentDriveCopySweepPayload;
     'notice-triage-alert': NoticeTriageAlertPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
@@ -1314,6 +1328,23 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 1,
         // Inert — the type requires it and `attempts: 1` leaves nothing to
         // delay.
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    // #2495 step 4 — ONE attempt, and here the retry MUST live per-row rather
+    // than per-run. A re-run would re-copy every document that already
+    // succeeded in the failed batch, and Drive is happy to hold two files with
+    // the same name, so nothing downstream would notice the duplicate. The
+    // queue IS `driveState = PENDING`, so the next two-minute run is the retry
+    // — and `driveFileId` is what makes even that idempotent.
+    //
+    // Same reasoning as `statement-dispatch`, which uses 1 because a retry
+    // would re-SEND. The sibling below uses 1 because a retry would re-PURGE.
+    // Three jobs, one shape, three different things that must not happen twice.
+    'document-drive-copy-sweep': {
+        attempts: 1,
+        // Inert — `attempts: 1` leaves nothing to delay.
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
         removeOnFail: 500,
