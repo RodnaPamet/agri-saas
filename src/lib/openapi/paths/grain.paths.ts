@@ -93,13 +93,45 @@ import {
 } from '@/lib/dto/grain.dto';
 import { CalculatorDataSchema } from '@/lib/dto/grain-calculator.dto';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { op } from './helpers';
+import { op, codedErrorResponses } from './helpers';
 
 // ZodObject, because that is what the generator reads to build inline
 // parameters — see the note on OperationInput.params.
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ param: { name: 'tenantSlug', in: 'path' }, example: 'acme' }),
 });
+
+/**
+ * The invoice-scan response (#482).
+ *
+ * `lines` is `CreateCostEntrySchema` ITSELF, not a copy of its fields. The
+ * contract's whole point is that a proposal posts back to `/grain/costs/batch`
+ * unchanged, so referencing the real schema makes that structural — if the
+ * batch's line shape moves, this moves with it, and a drifted copy cannot
+ * quietly promise a shape the batch no longer accepts.
+ */
+const InvoiceScanResultSchema = z
+    .object({
+        invoiceFileId: z
+            .string()
+            .openapi({ description: 'The stored invoice. Pre-filled on every proposed line.' }),
+        lines: z.array(CreateCostEntrySchema).openapi({
+            description:
+                'Proposed lines, in the batch endpoint\'s own body shape. At most 25; attribution fields are null by design.',
+        }),
+        warnings: z
+            .array(
+                z.object({
+                    code: z.string(),
+                    params: z.record(z.string(), z.number()).optional(),
+                }),
+            )
+            .openapi({
+                description:
+                    'Findings about the INVOICE rather than one line. A code and figures, never a sentence — the client writes the copy in the reader\'s language.',
+            }),
+    })
+    .openapi('CostInvoiceScanResult');
 
 const BinParams = TenantParams.extend({
     binId: z.string().openapi({ param: { name: 'binId', in: 'path' } }),
@@ -877,6 +909,63 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             description: 'The cost entry, now carrying its invoice.',
             schema: CostEntryDTOSchema,
         },
+    });
+
+    /**
+     * «Сканирай фактура» (#482). PROPOSES lines; writes no cost entry.
+     *
+     * The response's `lines` are `CreateCostEntry`'s shape VERBATIM, so a
+     * client posts them back to `/grain/costs/batch` unchanged. That is the
+     * contract's load-bearing property: a proposal that needed reshaping
+     * before saving would put the model's guess into the client's error.
+     */
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/grain/costs/invoice-scan',
+        operationId: 'scanCostInvoice',
+        summary: 'Read an invoice and propose cost lines',
+        description:
+            'Reads an invoice photo or PDF with a vision model and answers with proposed cost-sheet lines. ' +
+            '\n\n**It creates nothing.** The farmer checks the proposal and saves it with `POST /grain/costs/batch`; ' +
+            'a misread amount must never reach the calculator unseen.' +
+            '\n\nSend EXACTLY ONE of `file` (the bytes), `fileId` (a FileRecord already stored) or `documentId` ' +
+            '(a «Документи» row — the server resolves it to that document\'s FileRecord, because `fileRecordId` is ' +
+            'not on the document DTO). More than one, or none, is `INVOICE_SCAN_INPUT_AMBIGUOUS`. A `documentId` ' +
+            'naming a purged tombstone answers `DOCUMENT_PURGED`, and an unknown one `DOCUMENT_NOT_FOUND`.' +
+            '\n\nAmounts come back in **EUR** whatever the invoice says: лев is converted at the fixed peg ' +
+            '(1 EUR = 1.95583 BGN) and the original figure is prefixed to `description`, because the cost schema has ' +
+            'no column for an original amount and the save path refuses a non-EUR currency. A genuinely foreign ' +
+            'currency is refused per line rather than relabelled.' +
+            '\n\nEvery attribution field (`plantingId`, `seasonId`, `locationId`, `parcelId`, `leaseId`, `itemId`) and ' +
+            '`commodityCanonical` come back NULL by design — the model cannot know which planting a drum of diesel ' +
+            'belongs to, and a guess would put a wrong attribution into the calculator.' +
+            '\n\n`warnings` carry a CODE and figures, never a sentence: the client writes the copy in the reader\'s ' +
+            'language. `INVOICE_LINES_TRUNCATED` (the invoice has more than the batch\'s 25-line bound — reported, ' +
+            'never silently dropped), `INVOICE_LINES_UNREADABLE`, `INVOICE_LINE_FOREIGN_CURRENCY` and ' +
+            '`INVOICE_LINE_AMOUNT_UNREADABLE`.' +
+            '\n\nGated on the tenant AI budget and, for the `file` path, on the `upload` past-due capability; the ' +
+            'bytes are AV-scanned before a single token is spent.',
+        tags: ['Grain'],
+        params: TenantParams,
+        bodyContentType: 'multipart/form-data',
+        body: z
+            .object({
+                file: z.string().openapi({ format: 'binary' }).optional(),
+                fileId: z.string().optional(),
+                documentId: z.string().optional(),
+            })
+            .openapi('CostInvoiceScanRequest'),
+        success: {
+            status: 200,
+            description: 'Proposed cost lines, plus the stored invoice file id.',
+            schema: InvoiceScanResultSchema,
+        },
+        extraResponses: codedErrorResponses({
+            413: 'INVOICE_SCAN_TOO_LARGE — the document is larger than the reader will accept.',
+            415: 'INVOICE_SCAN_MEDIA_UNSUPPORTED — the RESOLVED type is neither a supported image nor a PDF. The shared upload allowlist is wider than what the model can read, so this is checked on what the bytes ARE, not what the client claimed.',
+            422: 'INVOICE_NOT_RECOGNISED — the document could not be read as an invoice, which is an ORDINARY outcome (a photo of a delivery note, or into the sun) and deliberately not a 500: the remedy is "take it again in better light", which a 500 cannot say. `INVOICE_NO_USABLE_LINES` is the separate case where the invoice WAS read but no line can be recorded as a cost. Both carry `invoiceFileId` so a retry needs no re-upload.',
+            503: 'INVOICE_SCAN_UNAVAILABLE — no vision model is configured on this installation. A statement about the deployment, not about the farmer\'s document.',
+        }),
     });
 
     op(registry, {
