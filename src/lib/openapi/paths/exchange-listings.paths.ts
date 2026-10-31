@@ -51,8 +51,7 @@ import {
     CreateListingSchema,
     CreateInquirySchema,
     RespondToInquirySchema,
-    UpdateListingStatusSchema,
-} from '@/app-layer/schemas/exchange.schemas';
+    UpdateListingStatusSchema, UpdateListingSchema } from '@/app-layer/schemas/exchange.schemas';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { op } from './helpers';
@@ -159,9 +158,22 @@ const PublicInquirySchema = z
             'An inquiry against a listing. No inquirer ids ever reach the wire. counterpartyContact and contactSharedAt are a two-sided consent gate rather than ordinary nullable fields: null means consent has not completed, and on a declined inquiry it never will. The listing key is present in the buyer’s outbox and omitted in the seller’s nest — absent, not null.',
     });
 
+/**
+ * The seller's own editable values — and it IS the PUT's request body, which
+ * is why the same schema object serves both. "Send `edit` back unchanged" is
+ * then a complete instruction rather than a convention a client has to be
+ * told, and the two cannot drift.
+ */
+const ListingEditSchema = UpdateListingSchema.openapi('ExchangeListingEdit', {
+    description:
+        "The listing's editable values AS STORED, and the exact body `PUT` accepts. `sellerDisplayName` here is the seller's TYPED alias — NOT the resolved attribution the sibling field carries, which is the farm's verified name when `publishAsFarm` is set. Echoing the resolved value into a full replacement would write a verified farm name into the alias column as literal text. `updatedAt` is a precondition, not a value: `PUT` refuses with LISTING_MODIFIED when it no longer matches.",
+});
+
 const MyListingSchema = PublicListingSchema.extend({
     /** The seller's own inbox for this listing, nested. Never paginated. */
     inquiries: z.array(PublicInquirySchema),
+    /** The editable values as stored — see `ExchangeListingEdit`. */
+    edit: ListingEditSchema,
 }).openapi('ExchangeMyListing', {
     description:
         'A listing the calling tenant owns, with its inquiries nested. The nested inquiries omit their `listing` key, because this row is it.',
@@ -294,11 +306,24 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         operationId: 'updateExchangeListingStatus',
         summary: 'Борса — withdraw or fulfil a listing',
         description:
-            'Moves a listing the caller OWNS to WITHDRAWN or FULFILLED. Answers with the id and the new status only — the caller already holds the rest, and the transition is what changed.',
+            'Moves a listing the caller OWNS to WITHDRAWN or FULFILLED. Answers with the id and the new status only — the caller already holds the rest, and the transition is what changed.\n\nRefusals carry a distinct `code`: LISTING_NOT_FOUND; LISTING_NOT_OWNED when the listing belongs to another tenant; LISTING_TERMINAL when it is already withdrawn or fulfilled, both of which are terminal; and LISTING_NOT_ACTIVE when an EXPIRED listing is marked FULFILLED — withdraw it instead, because fulfilling asserts a transaction the marketplace has no evidence for and feeds the sold statistics. These were passed as the MESSAGE field until #2541, so `code` read BAD_REQUEST for both and a client could not tell them apart.',
         tags: ['Exchange'],
         params: ListingParams,
         body: UpdateListingStatusSchema,
         success: { status: 200, description: 'The new status.', schema: StatusAckSchema },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/t/{tenantSlug}/exchange/listings/{listingId}',
+        operationId: 'replaceExchangeListing',
+        summary: 'Борса — edit your own listing',
+        description:
+            "Replaces EVERY editable field on a listing the caller owns. Owner ruling 2026-10-31: every field is editable, including side, kind and commodity.\n\nA full replacement rather than a partial patch, and the reason is the nullable fields: under a patch, \"leave the description alone\" and \"clear the description\" are the same JSON. The seller's own read carries `edit`, which is this body verbatim.\n\nA later `expiresAt` REACTIVATES an EXPIRED listing (EXPIRED → ACTIVE), keeping its conversations. `null` counts as later, because no expiry is later than any date. The plan's ACTIVE-listing limit is checked only on that transition, since an ordinary edit cannot change the count.\n\nUnlike withdraw, this REQUIRES the EXCHANGE module: that exemption exists because the toggle governs participation in the marketplace rather than custody of rows you already posted, and editing changes what is being offered.\n\nRefusals, each a distinct `code`: LISTING_NOT_FOUND; LISTING_NOT_OWNED when the listing belongs to another tenant; LISTING_TERMINAL for a withdrawn or fulfilled listing, which cannot be edited; LISTING_MODIFIED when `updatedAt` no longer matches, so a concurrent edit is refused rather than silently overwritten; LISTING_REGION_UNKNOWN for an unrecognised `regionCode`. A past `expiresAt` is a schema refusal, not a code of its own.\n\nAnswers with the listing AND its new `edit` object, so a client can render the result and repopulate the form without a second read.",
+        tags: ['Exchange'],
+        params: ListingParams,
+        body: UpdateListingSchema,
+        success: { status: 200, description: 'The updated listing.', schema: MyListingSchema },
     });
 
     op(registry, {
@@ -324,7 +349,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         operationId: 'createExchangeInquiry',
         summary: 'Борса — enquire about a listing',
         description:
-            'Sends an inquiry to a listing’s seller. Answers with the id and status ONLY — not the inquiry projection — because the buyer’s contact has not been shared yet and the reveal gate lives in that projection. ' +
+            'Sends an inquiry to a listing’s seller. Answers with the id and status ONLY — not the inquiry projection — because the buyer’s contact has not been shared yet and the reveal gate lives in that projection. \n\nRefusals, each a distinct `code`: LISTING_NOT_FOUND; LISTING_NOT_ACTIVE when the listing has left ACTIVE; LISTING_EXPIRED when its `expiresAt` has passed, which the browse feed already filters on; LISTING_IS_YOUR_OWN when the listing belongs to the calling tenant; and INQUIRY_ALREADY_SENT. Four of these were passed as the MESSAGE field until #2543 — LISTING_IS_YOUR_OWN was correct usage but reported the generic FORBIDDEN, so no client could name it either.' +
             '\n\nThe seller is notified; contact details are exchanged only if they ACCEPT.',
         tags: ['Exchange'],
         params: TenantParams,
@@ -349,7 +374,7 @@ export function registerExchangeListingPaths(registry: OpenAPIRegistry): void {
         operationId: 'respondToExchangeInquiry',
         summary: 'Борса — accept or decline an inquiry',
         description:
-            'The SELLER’s decision on an inquiry against their own listing. ACCEPTED completes the two-sided consent and is what populates `counterpartyContact` and `contactSharedAt` on both sides; DECLINED leaves both null permanently. ' +
+            'The SELLER’s decision on an inquiry against their own listing. ACCEPTED completes the two-sided consent and is what populates `counterpartyContact` and `contactSharedAt` on both sides; DECLINED leaves both null permanently. \n\nRefusals carry a distinct `code`: INQUIRY_NOT_FOUND; INQUIRY_NOT_PENDING when it has already been answered; and LISTING_NOT_ACTIVE when ACCEPT is attempted on a listing that has left ACTIVE — accepting would reveal contact details for a deal that can no longer happen.' +
             '\n\nAnswers with the id and new status only.' +
             '\n\nRefusal code: `INQUIRY_NOT_FOUND` (404). ONE oracle for “not yours” and “not there”: a caller who is not the seller gets the same 404 as for a missing inquiry, so an outsider cannot confirm another tenant’s private buyer↔seller conversation by enumerating ids. Do not branch on it as “missing”.',
         tags: ['Exchange'],

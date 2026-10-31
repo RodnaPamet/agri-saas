@@ -75,6 +75,7 @@ jest.mock('@/app-layer/repositories/exchange', () => ({
         updateInquiryStatus: jest.fn(),
         declinePendingInquiries: jest.fn(),
         listListingsBySeller: jest.fn(),
+        updateListingFields: jest.fn(),
     },
 }));
 
@@ -84,6 +85,12 @@ jest.mock('@/app-layer/events/audit', () => ({ logEvent: jest.fn() }));
 // only care that free text flows through it (identity is enough).
 jest.mock('@/lib/security/sanitize', () => ({
     sanitizePlainText: (s: string | null | undefined) => (s == null ? '' : s),
+    // `sanitizeOptional` arrived in this mock with #2543's edit path, which
+    // calls both. The note on the entitlements mock below says why that
+    // matters: a PARTIAL mock of a shared barrel leaves an unlisted function
+    // undefined, so the call site throws "is not a function" rather than
+    // falling through to the real module.
+    sanitizeOptional: (s: string | null | undefined) => (s == null ? null : s),
 }));
 
 const sendInquiryEmail = jest.fn();
@@ -114,6 +121,7 @@ import {
     fulfillListing,
     createInquiry,
     respondToInquiry,
+    updateListingFields,
 } from '@/app-layer/usecases/exchange';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { forbidden } from '@/lib/errors/types';
@@ -154,13 +162,13 @@ beforeEach(() => {
 describe('cross-tenant write guard', () => {
     it('withdrawListing on ANOTHER tenant’s listing throws forbidden', async () => {
         repo.getListing.mockResolvedValue(listing({ sellerTenantId: otherTenantId }));
-        await expect(withdrawListing(meCtx, 'lst-1')).rejects.toThrow(/your own listings/i);
+        await expect(withdrawListing(meCtx, 'lst-1')).rejects.toMatchObject({ code: 'LISTING_NOT_OWNED' });
         expect(repo.updateListingStatus).not.toHaveBeenCalled();
     });
 
     it('fulfillListing on ANOTHER tenant’s listing throws forbidden', async () => {
         repo.getListing.mockResolvedValue(listing({ sellerTenantId: otherTenantId }));
-        await expect(fulfillListing(meCtx, 'lst-1')).rejects.toThrow(/your own listings/i);
+        await expect(fulfillListing(meCtx, 'lst-1')).rejects.toMatchObject({ code: 'LISTING_NOT_OWNED' });
         expect(repo.updateListingStatus).not.toHaveBeenCalled();
     });
 
@@ -182,7 +190,7 @@ describe('createInquiry guards', () => {
         repo.getListing.mockResolvedValue(listing({ sellerTenantId: 'tenant-1', status: 'ACTIVE' }));
         await expect(
             createInquiry(meCtx, { listingId: 'lst-1', message: 'interested' }),
-        ).rejects.toThrow(/your own listing/i);
+        ).rejects.toMatchObject({ code: 'LISTING_IS_YOUR_OWN' });
         expect(repo.createInquiry).not.toHaveBeenCalled();
     });
 
@@ -190,7 +198,7 @@ describe('createInquiry guards', () => {
         repo.getListing.mockResolvedValue(listing({ sellerTenantId: otherTenantId, status: 'FULFILLED' }));
         await expect(
             createInquiry(meCtx, { listingId: 'lst-1', message: 'interested' }),
-        ).rejects.toThrow(/listing_not_active/i);
+        ).rejects.toMatchObject({ code: 'LISTING_NOT_ACTIVE' });
         expect(repo.createInquiry).not.toHaveBeenCalled();
     });
 
@@ -400,7 +408,7 @@ describe('respondToInquiry (seller-only)', () => {
 
     it('an already-answered inquiry → badRequest', async () => {
         repo.getInquiry.mockResolvedValue(inq({ status: 'ACCEPTED' }) as never);
-        await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toThrow(/not_pending/i);
+        await expect(respondToInquiry(meCtx, 'inq-1', 'DECLINED')).rejects.toMatchObject({ code: 'INQUIRY_NOT_PENDING' });
     });
 
     // ── Accepting is gated on the LISTING, not just the inquiry ──────────
@@ -412,7 +420,7 @@ describe('respondToInquiry (seller-only)', () => {
         'refuses ACCEPT on a %s listing (no contact may be revealed)',
         async (status) => {
             repo.getInquiry.mockResolvedValue(inq({ listing: { ...inq().listing, status } }) as never);
-            await expect(respondToInquiry(meCtx, 'inq-1', 'ACCEPTED')).rejects.toThrow(/listing_not_active/i);
+            await expect(respondToInquiry(meCtx, 'inq-1', 'ACCEPTED')).rejects.toMatchObject({ code: 'LISTING_NOT_ACTIVE' });
             expect(repo.updateInquiryStatus).not.toHaveBeenCalled();
         },
     );
@@ -460,12 +468,21 @@ describe('respondToInquiry (seller-only)', () => {
     });
 });
 
+/*
+ * These assertions moved from the MESSAGE to the `code` in #2543, and the move
+ * is the point rather than a mechanical update. They read
+ * `rejects.toThrow(/listing_terminal/i)` — which passed because
+ * `badRequest(code, prose)` put the code string in the field a client RENDERS,
+ * leaving `code` as a generic BAD_REQUEST for every refusal on the route. So
+ * the tests were pinning the defect as the contract, and a farmer was shown
+ * the literal string `listing_terminal`. See #2541.
+ */
 describe('listing state machine (FULFILLED / WITHDRAWN are terminal)', () => {
     it.each(['FULFILLED', 'WITHDRAWN'])(
         'refuses to withdraw an already-%s listing',
         async (status) => {
             repo.getListing.mockResolvedValue(listing({ status }));
-            await expect(withdrawListing(meCtx, 'lst-1')).rejects.toThrow(/listing_terminal/i);
+            await expect(withdrawListing(meCtx, 'lst-1')).rejects.toMatchObject({ code: 'LISTING_TERMINAL' });
             expect(repo.updateListingStatus).not.toHaveBeenCalled();
         },
     );
@@ -474,14 +491,14 @@ describe('listing state machine (FULFILLED / WITHDRAWN are terminal)', () => {
         'refuses to fulfil an already-%s listing (closes the FULFILLED→WITHDRAWN→FULFILLED loop)',
         async (status) => {
             repo.getListing.mockResolvedValue(listing({ status }));
-            await expect(fulfillListing(meCtx, 'lst-1')).rejects.toThrow(/listing_terminal/i);
+            await expect(fulfillListing(meCtx, 'lst-1')).rejects.toMatchObject({ code: 'LISTING_TERMINAL' });
             expect(repo.updateListingStatus).not.toHaveBeenCalled();
         },
     );
 
     it('refuses EXPIRED → FULFILLED — a lapsed listing is no evidence of a sale', async () => {
         repo.getListing.mockResolvedValue(listing({ status: 'EXPIRED' }));
-        await expect(fulfillListing(meCtx, 'lst-1')).rejects.toThrow(/listing_not_active/i);
+        await expect(fulfillListing(meCtx, 'lst-1')).rejects.toMatchObject({ code: 'LISTING_NOT_ACTIVE' });
         expect(repo.updateListingStatus).not.toHaveBeenCalled();
     });
 
@@ -559,5 +576,176 @@ describe('listActiveListings is a GLOBAL read', () => {
             expect.objectContaining({ excludeSellerTenantIds: ['tenant-2'] }),
             {},
         );
+    });
+});
+
+/**
+ * The listing EDIT — #2543. Owner ruling 2026-10-31: every field editable,
+ * and a later `expiresAt` reactivates an EXPIRED listing.
+ */
+describe('updateListingFields', () => {
+    const NOW = new Date('2026-10-31T12:00:00.000Z');
+    const FUTURE = '2027-06-01T00:00:00.000Z';
+
+    /** A complete body — the edit is a FULL replacement, so nothing is partial. */
+    function body(over: Record<string, unknown> = {}) {
+        return {
+            side: 'SELL',
+            kind: 'CULTURE',
+            commodity: 'Barley',
+            quantityTonnes: 25,
+            pricePerTonne: 180,
+            priceCurrency: 'EUR',
+            regionCode: 'BG-16',
+            description: 'Clean, 12% protein',
+            sellerDisplayName: 'Иван, лично',
+            publishAsFarm: false,
+            sellerContact: '+359 888 123456',
+            expiresAt: FUTURE,
+            updatedAt: NOW.toISOString(),
+            ...over,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any;
+    }
+
+    function owned(over: Record<string, unknown> = {}) {
+        return listing({ sellerTenantId: 'tenant-1', updatedAt: NOW, ...over });
+    }
+
+    beforeEach(() => {
+        repo.updateListingFields.mockImplementation(async (_db, _id, data) =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ({ ...owned(), ...(data as any) }),
+        );
+    });
+
+    it('replaces every editable field, and FORCES the price currency', async () => {
+        repo.getListing.mockResolvedValue(owned());
+
+        await updateListingFields(meCtx, 'lst-1', body({ priceCurrency: 'USD' }));
+
+        const data = repo.updateListingFields.mock.calls[0][2];
+        expect(data).toMatchObject({
+            side: 'SELL',
+            kind: 'CULTURE',
+            commodity: 'Barley',
+            quantityTonnes: 25,
+            sellerContact: '+359 888 123456',
+        });
+        // The body carries `priceCurrency` so the seller's `edit` object
+        // round-trips, NOT so a client can pick a currency. The create path
+        // forces it the same way.
+        expect(data.priceCurrency).toBe('EUR');
+    });
+
+    it('refuses ANOTHER tenant’s listing with LISTING_NOT_OWNED', async () => {
+        repo.getListing.mockResolvedValue(owned({ sellerTenantId: otherTenantId }));
+
+        await expect(updateListingFields(meCtx, 'lst-1', body())).rejects.toMatchObject({
+            code: 'LISTING_NOT_OWNED',
+        });
+        expect(repo.updateListingFields).not.toHaveBeenCalled();
+    });
+
+    it.each(['WITHDRAWN', 'FULFILLED'])('refuses a %s listing with LISTING_TERMINAL', async (status) => {
+        repo.getListing.mockResolvedValue(owned({ status }));
+
+        await expect(updateListingFields(meCtx, 'lst-1', body())).rejects.toMatchObject({
+            code: 'LISTING_TERMINAL',
+        });
+        expect(repo.updateListingFields).not.toHaveBeenCalled();
+    });
+
+    it('refuses a STALE precondition with LISTING_MODIFIED', async () => {
+        // Somebody else saved in between. Under a full replacement this is the
+        // difference between losing one field and losing all of them.
+        repo.getListing.mockResolvedValue(owned({ updatedAt: new Date('2026-10-31T12:05:00.000Z') }));
+
+        await expect(updateListingFields(meCtx, 'lst-1', body())).rejects.toMatchObject({
+            code: 'LISTING_MODIFIED',
+        });
+        expect(repo.updateListingFields).not.toHaveBeenCalled();
+    });
+
+    it('refuses an UNPARSEABLE precondition rather than treating it as a match', async () => {
+        // Fails CLOSED: a client that cannot echo the precondition has not
+        // satisfied it, and `new Date('nonsense').getTime()` is NaN — which
+        // `!==` would have let through if the comparison were the only check.
+        repo.getListing.mockResolvedValue(owned());
+
+        await expect(
+            updateListingFields(meCtx, 'lst-1', body({ updatedAt: 'not-a-date' })),
+        ).rejects.toMatchObject({ code: 'LISTING_MODIFIED' });
+    });
+
+    it('accepts a precondition that is the same INSTANT spelled differently', async () => {
+        // `updatedAt` round-trips through `toISOString()`; two spellings of one
+        // moment must not read as a conflict.
+        repo.getListing.mockResolvedValue(owned({ updatedAt: NOW }));
+
+        await updateListingFields(meCtx, 'lst-1', body({ updatedAt: '2026-10-31T12:00:00Z' }));
+
+        expect(repo.updateListingFields).toHaveBeenCalledTimes(1);
+    });
+
+    it('REACTIVATES an expired listing, and checks the plan limit when it does', async () => {
+        repo.getListing.mockResolvedValue(owned({ status: 'EXPIRED' }));
+
+        await updateListingFields(meCtx, 'lst-1', body());
+
+        expect(repo.updateListingFields.mock.calls[0][2]).toMatchObject({ status: 'ACTIVE' });
+        // EXPIRED → ACTIVE raises the ACTIVE count, so the quota applies. A
+        // tenant at its cap could otherwise walk past it by reactivating
+        // lapsed rows one at a time.
+        expect(assertWithinLimitMock).toHaveBeenCalledWith(meCtx, 'exchange_listing', expect.anything());
+    });
+
+    it('treats NO expiry as later than any date, and reactivates too', async () => {
+        // "No expiry" is later than every instant, so the owner's ruling that a
+        // later expiry reactivates covers it.
+        repo.getListing.mockResolvedValue(owned({ status: 'EXPIRED' }));
+
+        await updateListingFields(meCtx, 'lst-1', body({ expiresAt: null }));
+
+        expect(repo.updateListingFields.mock.calls[0][2]).toMatchObject({
+            status: 'ACTIVE',
+            expiresAt: null,
+        });
+    });
+
+    it('leaves an ACTIVE listing ACTIVE and does NOT spend the quota on it', async () => {
+        repo.getListing.mockResolvedValue(owned({ status: 'ACTIVE' }));
+
+        await updateListingFields(meCtx, 'lst-1', body());
+
+        expect(repo.updateListingFields.mock.calls[0][2]).toMatchObject({ status: 'ACTIVE' });
+        // An ordinary edit cannot change the ACTIVE count, so a quota it
+        // cannot affect must not be able to refuse it.
+        expect(assertWithinLimitMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown region BEFORE opening a transaction', async () => {
+        repo.getListing.mockResolvedValue(owned());
+
+        await expect(
+            updateListingFields(meCtx, 'lst-1', body({ regionCode: 'BG-99' })),
+        ).rejects.toMatchObject({ code: 'LISTING_REGION_UNKNOWN' });
+        // Resolved before the read, so an unknown code costs no transaction.
+        expect(repo.getListing).not.toHaveBeenCalled();
+    });
+
+    it('derives region NAME and coordinates from the code, never from the body', async () => {
+        repo.getListing.mockResolvedValue(owned());
+
+        await updateListingFields(meCtx, 'lst-1', body());
+
+        const data = repo.updateListingFields.mock.calls[0][2];
+        expect(data.regionCode).toBe('BG-16');
+        // A client cannot name an oblast something else: the English name and
+        // the coordinates come from the region table, as on the create path.
+        expect(typeof data.regionName).toBe('string');
+        expect(data.regionName.length).toBeGreaterThan(0);
+        expect(typeof data.lat).toBe('number');
+        expect(typeof data.lon).toBe('number');
     });
 });
