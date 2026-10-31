@@ -6652,6 +6652,7 @@
         "DOCUMENT_NOT_DOWNLOADABLE": "That document is not available yet.",
         "DOCUMENT_NOT_FOUND": "That document was not found.",
         "DOCUMENT_PURGED": "That document has been deleted.",
+        "DOCUMENT_STORAGE_FULL": "This farm has used all of its document storage.",
         "DOSE_UNIT_HAS_NO_BASE": "That dose unit has no stock unit to create a product against. Create the product from the catalogue instead.",
         "DOSE_UNIT_NOT_FOUND": "That dose unit was not found.",
         "DUPLICATE_COMMODITY": "The commodity \"{commodity}\" appears twice in one day.",

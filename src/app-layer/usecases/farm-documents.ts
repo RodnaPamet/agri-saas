@@ -44,6 +44,11 @@ import { codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { farmToday } from '@/lib/calendar-day-key';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { isUniqueViolation } from '@/lib/errors/prisma';
+import {
+    assertDocumentStorageBudget,
+    documentStorageLimitBytes,
+    type DocumentStorageUsage,
+} from '../documents/budget';
 
 /**
  * One page of the library. The list is newest-first and the phone does not
@@ -230,6 +235,41 @@ export async function listFarmDocuments(
  * a later settings change cannot move an existing document's expiry. That is
  * what makes `retention` a column rather than a lookup.
  */
+/**
+ * How many bytes of live documents this farm holds.
+ *
+ * Raw SQL and a single aggregate row on purpose. The alternative —
+ * `findMany` over the farm's documents and sum in memory — is an UNBOUNDED
+ * repository read, which is what the D2 budget exists to refuse, and it grows
+ * with exactly the thing this number is used to cap.
+ *
+ * PURGED documents are excluded: their bytes are gone, so charging a farm for
+ * its tombstones would make the only route back under the ceiling a thing the
+ * farm cannot do. `sizeBytes` lives on `FileRecord`, hence the join.
+ *
+ * Returned together with the limit so the settings GET and the refusal report
+ * the SAME two numbers. Two ways of computing "how full is this farm" is how a
+ * console tells a farmer they have room while the upload refuses them.
+ */
+export async function readDocumentStorageUsage(
+    ctx: RequestContext,
+): Promise<DocumentStorageUsage> {
+    const usedBytes = await runInTenantContext(ctx, async (db) => {
+        const rows = await db.$queryRaw<Array<{ total: bigint }>>`
+            SELECT COALESCE(SUM(fr."sizeBytes"), 0)::bigint AS total
+            FROM "FarmDocument" fd
+            JOIN "FileRecord" fr ON fr."id" = fd."fileRecordId"
+            WHERE fd."tenantId" = ${ctx.tenantId}
+              AND fd."purgedAt" IS NULL
+        `;
+        // `::bigint` so a farm past 2^31 bytes does not overflow in Postgres;
+        // Number() is safe on the way out because the ceiling is orders of
+        // magnitude below Number.MAX_SAFE_INTEGER.
+        return Number(rows[0]?.total ?? 0);
+    });
+    return { usedBytes, limitBytes: documentStorageLimitBytes() };
+}
+
 export async function uploadFarmDocument(
     ctx: RequestContext,
     file: File,
@@ -269,6 +309,19 @@ async function uploadFarmDocumentImpl(
         const existing = await findByIdempotencyKey(ctx, idempotencyKey);
         if (existing) return existing;
     }
+
+    // The disk ceiling, BEFORE the bytes land (#2495 Decision 3). Checked here
+    // rather than after the write for the obvious reason: a ceiling enforced
+    // afterwards reports a state it has already permitted, and the thing being
+    // protected is a disk shared with two other products.
+    //
+    // `file.size` is the client's declared length and is used only to REFUSE.
+    // It cannot be used to admit something the real bytes would exceed, because
+    // `ingestUploadedFile` independently enforces `FILE_MAX_SIZE_BYTES` on what
+    // it actually read — so an understated size buys at most one file's worth
+    // of overshoot, bounded by that cap, and never an unbounded write.
+    const usage = await readDocumentStorageUsage(ctx);
+    assertDocumentStorageBudget(usage.usedBytes, file.size);
 
     const ingested = await ingestUploadedFile(ctx.tenantId, file, {
         domain: 'documents',

@@ -25,6 +25,8 @@
  * schema defect this test would catch.
  */
 import { randomUUID } from 'crypto';
+import { readDocumentStorageUsage } from '@/app-layer/usecases/farm-documents';
+import { makeRequestContext } from '../helpers/make-context';
 
 import { runInTenantContext } from '@/lib/db-context';
 import type { RequestContext } from '@/app-layer/types';
@@ -370,5 +372,107 @@ describeFn('FarmDocument — the CHECK constraints refuse, not merely exist', ()
                 await globalPrisma.tenant.deleteMany({ where: { id: other.id } });
             }
         });
+    });
+});
+
+describeFn('the byte ceiling frees space when a document is deleted (#2495)', () => {
+    /*
+     * The refusal names its own remedy — `DOCUMENT_STORAGE_FULL` tells an
+     * operator to delete documents — so "deleting frees space" is part of the
+     * contract rather than an implementation detail. Nothing asserted it.
+     *
+     * Raised by the other session on the premise that summing `FarmDocument`
+     * cannot recover, because a purge marks the `FileRecord` DELETED rather
+     * than removing the document row. The premise is the wrong way round for
+     * this query — it filters `fd."purgedAt" IS NULL`, so a tombstone drops
+     * out the moment it is stamped — but the property was untested either way,
+     * which is the part worth fixing. Asserted through the REAL
+     * `readDocumentStorageUsage` rather than a copy of its SQL: a cross-check
+     * written in the same method as the thing it checks proves only that the
+     * method is self-consistent.
+     */
+    let tenantId: string;
+    let userId: string;
+    let fileRecordId: string;
+    let docId: string;
+    const SIZE = 4096;
+
+    const ctx = () =>
+        makeRequestContext('ADMIN', { tenantId, userId, tenantSlug: `b-${run}` });
+
+    beforeAll(async () => {
+        const t = await globalPrisma.tenant.create({
+            data: { name: `B ${run}`, slug: `b-${run}` } as never,
+        });
+        const u = await globalPrisma.user.create({
+            data: { email: `b-${run}@example.test`, name: `B ${run}` } as never,
+        });
+        tenantId = t.id;
+        userId = u.id;
+        await globalPrisma.tenantMembership.create({
+            data: { tenantId, userId, role: 'ADMIN' } as never,
+        });
+        const fr = await globalPrisma.fileRecord.create({
+            data: {
+                tenantId,
+                pathKey: `tenants/${tenantId}/documents/${randomUUID()}.pdf`,
+                originalName: 'big.pdf',
+                mimeType: 'application/pdf',
+                sizeBytes: SIZE,
+                sha256: randomUUID().replace(/-/g, ''),
+                status: 'STORED',
+                uploadedByUserId: userId,
+            } as never,
+        });
+        fileRecordId = fr.id;
+        const doc = await globalPrisma.farmDocument.create({
+            data: {
+                tenantId,
+                name: 'Голям документ',
+                fileRecordId,
+                uploadedByUserId: userId,
+                retention: 'P1Y',
+            } as never,
+        });
+        docId = doc.id;
+    });
+
+    afterAll(async () => {
+        if (!tenantId) return;
+        await globalPrisma.farmDocument.deleteMany({ where: { tenantId } });
+        await globalPrisma.fileRecord.deleteMany({ where: { tenantId } });
+        await globalPrisma.tenantMembership.deleteMany({ where: { tenantId } });
+        await globalPrisma.tenant.deleteMany({ where: { id: tenantId } });
+        await globalPrisma.user.deleteMany({ where: { id: userId } });
+    });
+
+    it('a live document counts toward the farm usage', async () => {
+        // The positive control. An assertion that usage DROPS to zero passes
+        // just as well when it was zero all along, which is the shape that
+        // makes a recovery test meaningless.
+        const { usedBytes, limitBytes } = await readDocumentStorageUsage(ctx());
+        expect(usedBytes).toBe(SIZE);
+        expect(limitBytes).toBeGreaterThan(SIZE);
+    });
+
+    it('stamping the tombstone frees the space, so the remedy the refusal names works', async () => {
+        await globalPrisma.farmDocument.update({
+            where: { id: docId },
+            data: { purgedAt: new Date(), purgeReason: 'DELETED', purgedByUserId: userId, name: null } as never,
+        });
+        const after = await readDocumentStorageUsage(ctx());
+        expect(after.usedBytes).toBe(0);
+    });
+
+    it('and it is the TOMBSTONE that frees it, not the FileRecord status', async () => {
+        // The two signals can disagree: the row is stamped inside the delete
+        // transaction, while the bytes and the FileRecord are dealt with
+        // afterwards and best-effort. Keying usage off `purgedAt` means a
+        // farm recovers its space even when the object store is briefly
+        // unreachable — the case where the opposite choice would leave it
+        // full with nothing it could do about it.
+        const fr = await globalPrisma.fileRecord.findUnique({ where: { id: fileRecordId } });
+        expect(fr?.status).toBe('STORED');
+        expect((await readDocumentStorageUsage(ctx())).usedBytes).toBe(0);
     });
 });

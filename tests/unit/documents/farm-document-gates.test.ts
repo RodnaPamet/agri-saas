@@ -38,6 +38,11 @@ const db = {
     farmDocument: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
     tenantDocumentSettings: { findUnique: jest.fn() },
     fileRecord: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+    // The byte-ceiling SUM (#2495 Decision 3). Raw rather than a `findMany`
+    // because summing in memory over a farm's documents is an unbounded read
+    // of exactly the thing the ceiling caps. Defaults to an EMPTY farm here;
+    // tests that care set it.
+    $queryRaw: jest.fn(),
 };
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, fn: (d: unknown) => unknown) => fn(db),
@@ -99,6 +104,8 @@ function docRow(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    // An empty farm unless a test says otherwise.
+    db.$queryRaw.mockResolvedValue([{ total: BigInt(0) }]);
     assertTenantKeyMock.mockReset();
     readStream.mockReturnValue({ on: jest.fn(), destroy: jest.fn() } as never);
     storageDelete.mockResolvedValue(undefined);
@@ -362,5 +369,62 @@ describe('uploadFarmDocument — idempotency', () => {
         expect(markStored).toHaveBeenCalledWith(db, expect.anything(), 'file-1', 'CLEAN');
         // Step 2 always writes OFF; the Drive job is step 4.
         expect(db.farmDocument.create.mock.calls[0][0].data.driveState).toBe('OFF');
+    });
+});
+
+describe('uploadFarmDocument — the byte ceiling (#2495 Decision 3)', () => {
+    const GIB = 1024 * 1024 * 1024;
+
+    /** A file of a declared SIZE — the ceiling compares against `file.size`. */
+    const fileOf = (name: string, bytes: number) =>
+        new File([new Uint8Array(bytes)], name, { type: 'application/pdf' });
+
+    it('refuses BEFORE the bytes are ingested', async () => {
+        /*
+         * The ordering is the feature. A ceiling checked after
+         * `ingestUploadedFile` reports a state it has already permitted — the
+         * file that broke the limit is on the disk the limit exists to
+         * protect, and on this host that disk is shared with two other
+         * products.
+         *
+         * So the assertion is not merely "it threw": it is that `ingestMock`
+         * was never called.
+         */
+        db.$queryRaw.mockResolvedValue([{ total: BigInt(2 * GIB) }]);
+        await expect(
+            uploadFarmDocument(ctxFor('EDITOR', UPLOADER), fileOf('d.pdf', 10)),
+        ).rejects.toMatchObject({ code: 'DOCUMENT_STORAGE_FULL' });
+        expect(ingestMock).not.toHaveBeenCalled();
+        expect(createPending).not.toHaveBeenCalled();
+    });
+
+    it('admits an upload that fits', async () => {
+        db.$queryRaw.mockResolvedValue([{ total: BigInt(1024) }]);
+        await uploadFarmDocument(ctxFor('EDITOR', UPLOADER), fileOf('d.pdf', 10));
+        expect(ingestMock).toHaveBeenCalled();
+    });
+
+    it('a PURGED farm is not charged for its tombstones', async () => {
+        /*
+         * The SUM excludes purged rows, so a farm that deleted everything is
+         * empty again. Asserted through the query's own shape rather than its
+         * result, because a SUM that counted tombstones would make the only
+         * route back under the ceiling a thing the farm cannot do — it has
+         * already deleted the documents.
+         */
+        db.$queryRaw.mockResolvedValue([{ total: BigInt(0) }]);
+        await uploadFarmDocument(ctxFor('EDITOR', UPLOADER), fileOf('d.pdf', 10));
+        const sql = String(db.$queryRaw.mock.calls[0][0]);
+        expect(sql).toMatch(/purgedAt/);
+        expect(sql).toMatch(/IS NULL/);
+    });
+
+    it('an empty result set reads as an empty farm, not as NaN', async () => {
+        // `rows[0]?.total ?? 0`. A missing row must not become `Number(undefined)`,
+        // which is NaN — and NaN compares false against the limit, so every
+        // upload would pass. The failure direction matters more than the case.
+        db.$queryRaw.mockResolvedValue([]);
+        await uploadFarmDocument(ctxFor('EDITOR', UPLOADER), fileOf('d.pdf', 10));
+        expect(ingestMock).toHaveBeenCalled();
     });
 });
