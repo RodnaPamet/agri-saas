@@ -538,3 +538,39 @@ describe('the cost rate carries its own currency (#1512)', () => {
         }
     });
 });
+
+describe('cost refusal — rent no longer poisons a euro-only farm (#2397 follow-up)', () => {
+    /*
+     * This module did not change. What changed is what reaches it.
+     *
+     * `grain-net-worth` used to tag EVERY non-zero money rent with
+     * `UNKNOWN_RENT_CURRENCY`, regardless of the lease's unit, so any farm with
+     * cash rent arrived here as `['EUR', 'UNKNOWN']` and was refused
+     * `COST_CURRENCY_MIXED` — which is what withheld cost and margin per дка on
+     * the owner's own Калкулатор. A `лв/дка` lease now converts at the peg and
+     * arrives labelled EUR.
+     *
+     * Both halves are asserted: that the new input passes, and that the old
+     * input would STILL be refused. The second is not redundant — the refusal
+     * is the right answer for a genuinely unlabelled rent, and a fix that
+     * removed it would be a worse bug than the one being fixed.
+     */
+    it('EUR costs plus EUR-labelled rent produce a cost rate', () => {
+        const r = computePerArea({ ...base, costCurrencies: ['EUR', 'EUR'] });
+        expect(r.costRefusalCode).toBeNull();
+        expect(r.attributableCostPerDca).not.toBeNull();
+    });
+
+    it('a sentinel-labelled rent is STILL refused, if one ever arrives', () => {
+        const r = computePerArea({ ...base, costCurrencies: ['EUR', 'UNKNOWN'] });
+        expect(r.costRefusalCode).toBe('COST_CURRENCY_MIXED');
+        expect(r.attributableCostPerDca).toBeNull();
+    });
+
+    it('and a genuinely mixed pair is refused for the same reason', () => {
+        // The control: the refusal is about more than the sentinel, so
+        // removing the sentinel does not disarm it.
+        const r = computePerArea({ ...base, costCurrencies: ['EUR', 'USD'] });
+        expect(r.costRefusalCode).toBe('COST_CURRENCY_MIXED');
+    });
+});

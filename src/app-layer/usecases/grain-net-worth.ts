@@ -176,12 +176,27 @@ const ALLOCATION_TAKE = 20_000;
 const TONNES_UNIT_KEY = 't';
 const KG_PER_TONNE = 1000;
 
-// Sentinel for money rent's currency (`UNKNOWN_RENT_CURRENCY`) is imported at
-// the top of this file from `@/lib/grain/cost-metrics`, where its docblock
-// lives. It moved out of here when the calculator page needed to recognise
-// it: the value travels to a client component inside `cashCostCurrencies`,
-// and a page that cannot name the sentinel cannot avoid printing
-// `Costs in UNKNOWN` at a farmer.
+// `UNKNOWN_RENT_CURRENCY` is still READ here and no longer PRODUCED, which is
+// a distinction worth stating where the old comment stood.
+//
+// `ParcelLease` still has no currency column — that part has not changed. What
+// changed is that the UNIT now answers the question: `MONEY_RENT_UNIT_CURRENCY`
+// maps `€/дка` to EUR and `лв/дка` to BGN, and `resolveRentBasis` converts the
+// second at the fixed peg before returning. So a money rent arrives here
+// already labelled, and the sentinel has no producer on this path.
+//
+// The CONSUMER remains and is deliberately untouched: the
+// `RENT_CURRENCY_UNRECORDED` branch below still withholds net worth if a
+// money rent ever arrives unlabelled. So this is a guard with no current
+// producer rather than dead code, and one change would give it one again —
+// adding a foreign money unit to `MONEY_RENT_UNIT_CURRENCY` with no
+// conversion for it, which is exactly what `normaliseCostToEur` refuses with
+// `FOREIGN` on the cost side.
+//
+// The DTO's `rentCurrencyUnknown` is therefore always false today. Confirmed
+// with the iOS session before changing it: the phone reads that flag per crop
+// and per response (`CalculatorView.swift:423`) and caches nothing, so a
+// field that stops being true simply stops rendering its line.
 
 /** Prisma `Decimal | number | null | undefined` → plain number (0 for nullish). */
 function dec(v: unknown): number {
@@ -356,7 +371,7 @@ export interface CommodityNetWorthRow {
     typedCropCostCurrencies: string[];
 
     /** Money-denominated (лв/дка) rent attributed to this commodity's
-     *  plantings. Currency is UNKNOWN — see `UNKNOWN_RENT_CURRENCY`. */
+     *  plantings. EURO — converted at the peg when the lease is in лв/дка. */
     rentCostMoneyAmount: number;
     /** Produce-denominated (кг/дка) rent attributed to this commodity's
      *  plantings, in kilograms — a MASS, never added to money directly. */
@@ -576,7 +591,7 @@ export interface GrainUnallocatedToCrop {
     /** The land that absorbed it — DISTINCT parcels, counted once. */
     areaHa: number;
     parcelIds: string[];
-    /** May contain `UNKNOWN_RENT_CURRENCY`, for the rent half. */
+    /** The rent half contributes EUR, never a sentinel (#2397 follow-up). */
     currencies: string[];
 }
 
@@ -680,6 +695,16 @@ interface CommodityAcc {
     attributedCropCostCurrencies: Set<string>;
     attributedCropCostCurrencyMixed: boolean;
     rentCostMoneyAmount: number;
+    /**
+     * The currencies the money rent arrived in — EUR for every recognised
+     * money unit since the peg conversion landed in `resolveRentBasis`.
+     *
+     * Carried rather than assumed. This used to be the sentinel
+     * `UNKNOWN_RENT_CURRENCY`, applied to any non-zero money rent regardless
+     * of unit, which is why every farm with cash rent read as mixed-currency
+     * and was refused a blended cost total.
+     */
+    rentCostMoneyCurrencies: Set<string>;
     rentCostProduceKg: number;
     produceRentLeaseIds: Set<string>;
     payrollCost: number;
@@ -759,6 +784,7 @@ function newAcc(): CommodityAcc {
         attributedCropCostCurrencies: new Set(),
         attributedCropCostCurrencyMixed: false,
         rentCostMoneyAmount: 0,
+        rentCostMoneyCurrencies: new Set(),
         rentCostProduceKg: 0,
         produceRentLeaseIds: new Set(),
         payrollCost: 0,
@@ -1152,7 +1178,7 @@ function computeRent(
                     round2(basis.perHa * parcelAreaHa),
                     [lease.parcelId],
                     () => parcelAreaHa,
-                    UNKNOWN_RENT_CURRENCY,
+                    basis.currency,
                 );
             }
             continue;
@@ -1168,7 +1194,10 @@ function computeRent(
             const moneyShares = allocateByWeights(totalForParcel, weights);
             for (const p of known) {
                 const share = moneyShares.get(p.id) ?? 0;
-                ensureAcc(acc, p.commodity).rentCostMoneyAmount += share;
+                const a = ensureAcc(acc, p.commodity);
+                a.rentCostMoneyAmount += share;
+                // The currency the resolver RESOLVED, not one inferred here.
+                a.rentCostMoneyCurrencies.add(basis.currency);
             }
         } else {
             const totalKgForParcel = basis.kgPerHa * parcelAreaHa;
@@ -1596,7 +1625,13 @@ function finalizeRow(
         // Included, or a farm whose ONLY non-BGN cost is a typed one reads as
         // single-currency and gets a confident blended total.
         ...a.typedCropCostCurrencies,
-        ...(a.rentCostMoneyAmount > 0 ? [UNKNOWN_RENT_CURRENCY] : []),
+        // The currencies the rent actually resolved to. Was
+        // `rentCostMoneyAmount > 0 ? [UNKNOWN_RENT_CURRENCY] : []` —
+        // unconditional on the unit, so a farm with any cash rent read as
+        // mixed-currency and `Калкулатор` withheld its cost and margin per
+        // дка. The set is normally `{EUR}` and empty when there is no money
+        // rent, so it no longer widens `cashCostCurrencies` at all.
+        ...a.rentCostMoneyCurrencies,
     ]);
     const cashCostCurrencyMixed =
         a.attributedCropCostCurrencyMixed || cashCostCurrencies.size > 1;

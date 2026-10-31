@@ -77,7 +77,15 @@
  * to call from a usecase, a report, or a future UI comparison view alike.
  */
 
-import { canonicalRentUnit, RENT_UNIT_KG, RENT_UNIT_LEVA } from '@/lib/agro/rent-units';
+import {
+    canonicalRentUnit,
+    isMoneyRentUnit,
+    MONEY_RENT_UNIT_CURRENCY,
+    RENT_UNIT_EUR,
+    RENT_UNIT_KG,
+    RENT_UNIT_LEVA,
+} from '@/lib/agro/rent-units';
+import { BGN_PER_EUR } from '@/lib/exchange/currency';
 import { DCA_PER_HA } from '@/lib/agro/rate-calc';
 
 /** The `ParcelLease` fields this module needs — a subset, not the full row. */
@@ -101,7 +109,15 @@ export interface RentBasisLease {
  * : …` fails to compile — there is no accidental cross-dimension read.
  */
 export type RentBasisResult =
-    | { resolved: true; kind: 'money'; perHa: number }
+    /**
+     * `perHa` is ALWAYS EURO, whatever unit the lease is quoted in, and
+     * `currency` says so rather than leaving the caller to assume it. Before
+     * #2397's follow-up this arm carried an unlabelled figure that happened to
+     * be leva, and the caller tagged every money rent with a sentinel meaning
+     * "currency unknown" — which made every farm with cash rent unable to
+     * total its costs.
+     */
+    | { resolved: true; kind: 'money'; perHa: number; currency: 'EUR' }
     | { resolved: true; kind: 'produce'; kgPerHa: number }
     | { resolved: false; raw: string | null; reason: string };
 
@@ -138,14 +154,14 @@ export function resolveRentBasis(lease: RentBasisLease, areaHa: number | null | 
         };
     }
 
-    if (canonical !== RENT_UNIT_LEVA && canonical !== RENT_UNIT_KG) {
+    if (!isMoneyRentUnit(canonical) && canonical !== RENT_UNIT_KG) {
         return {
             resolved: false,
             raw: rawUnit,
             reason:
                 `Rent unit "${rawUnit}" is not a canonical per-decare rate ` +
-                `(${RENT_UNIT_LEVA} or ${RENT_UNIT_KG}) — it may be a per-hectare or ` +
-                'absolute-per-parcel figure, which this module does not convert.',
+                `(${RENT_UNIT_EUR}, ${RENT_UNIT_LEVA} or ${RENT_UNIT_KG}) — it may be a ` +
+                'per-hectare or absolute-per-parcel figure, which this module does not convert.',
         };
     }
 
@@ -172,8 +188,23 @@ export function resolveRentBasis(lease: RentBasisLease, areaHa: number | null | 
     // why `areaHa` is still a required, validated precondition above).
     const perHectare = lease.rentAmount * DCA_PER_HA;
 
-    if (canonical === RENT_UNIT_LEVA) {
-        return { resolved: true, kind: 'money', perHa: perHectare };
+    if (isMoneyRentUnit(canonical)) {
+        // Owner ruling 2026-10-31: money rent is reported in EURO. A `€/дка`
+        // lease passes through; a `лв/дка` lease — every lease recorded before
+        // that date — converts at the legally fixed peg.
+        //
+        // The DIVISION is done here rather than through `normaliseCostToEur`,
+        // and the reason is that this is a RATE and not an amount. That helper
+        // rounds to 2 dp because it mirrors a `Decimal(12,2)` column, which is
+        // right for money and wrong for a per-hectare rate that is then
+        // MULTIPLIED by an area: rounding 500 лв/ha to 255.65 €/ha instead of
+        // 255.6465… overstates a 100 ha holding by 35 cents, and the error
+        // grows with the farm. Rounding happens downstream, on the money, where
+        // `allocateByWeights` is already cent-exact. Same peg constant either
+        // way, so there is still one source for the rate.
+        const currency = MONEY_RENT_UNIT_CURRENCY[canonical];
+        const perHaEur = currency === 'BGN' ? perHectare / BGN_PER_EUR : perHectare;
+        return { resolved: true, kind: 'money', perHa: perHaEur, currency: 'EUR' };
     }
     return { resolved: true, kind: 'produce', kgPerHa: perHectare };
 }
