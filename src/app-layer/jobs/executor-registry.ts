@@ -937,6 +937,14 @@ executorRegistry.register('notice-triage-alert', async (payload) => {
     return result;
 });
 
+// ── document-retention-sweep («Документи», #2495 step 5) ─────────────
+
+executorRegistry.register('document-retention-sweep', async (payload) => {
+    const { runDocumentRetentionSweep } = await import('./document-retention-sweep');
+    const { result } = await runDocumentRetentionSweep({ limit: payload.limit });
+    return result;
+});
+
 // ── account-erasure-sweep ────────────────────────────────────────────
 
 executorRegistry.register('account-erasure-sweep', async (payload) => {
