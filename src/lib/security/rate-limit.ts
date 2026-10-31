@@ -624,6 +624,19 @@ export const INSURANCE_LEAD_LIMIT: RateLimitConfig = {
  * EXCHANGE_INQUIRY_LIMIT is tighter than the listing limit: this
  * specific action is materially more expensive than an ordinary write.
  */
+/**
+ * The assistant's answer stream — #2578.
+ *
+ * 10/min, the same as `KNOWLEDGE_ASK_LIMIT`, and for the same reason: each
+ * request is a model call the tenant pays for. The monthly ceiling is
+ * `assertAiBudget`; this bounds the RATE so a loop cannot spend a month's
+ * budget in a minute, which a monthly cap alone permits.
+ */
+export const ASSISTANT_ASK_LIMIT: RateLimitConfig = {
+    maxAttempts: 10,
+    windowMs: 60 * 1000,
+};
+
 export const KNOWLEDGE_ASK_LIMIT: RateLimitConfig = {
     maxAttempts: 10,
     windowMs: 60 * 1000,

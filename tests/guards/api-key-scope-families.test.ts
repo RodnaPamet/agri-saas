@@ -34,6 +34,24 @@ const TENANT_API_DIR = path.join(REPO_ROOT, 'src/app/api/t/[tenantSlug]');
  * whose IMAGERY is being redistributed.
  */
 const DELIBERATELY_EXCLUDED: readonly string[] = [
+    // «Асистент» (#2578). Excluded, and for a reason the other two do not
+    // cover: this surface SPENDS. Every request is a model call charged against
+    // the tenant's monthly AI budget, so a key that could reach it could drain
+    // a farm's whole allowance without a person ever asking a question —
+    // `ASSISTANT_ASK_LIMIT` bounds the rate, not the total, and the monthly cap
+    // is the thing being consumed rather than a defence against this.
+    //
+    // There is also no machine use case to withhold. The assistant answers
+    // about the SCREEN a person is on: its page context names a route, its
+    // phase-2 path hands somebody a prefilled form to confirm, and #1677's
+    // ruling resolves its sentences from the caller's `uiLanguage` — which an
+    // `iflk_` context deliberately does not carry, because a key is not a
+    // person. A machine client asking "what is on my screen" is incoherent.
+    //
+    // The refusal is already the behaviour (fail-closed); this records that it
+    // is a decision. Revisit only with an answer for what a machine would ask
+    // it and who pays for the answer.
+    'assistant',
     // «Документи» (#2495 Decision 4). The library holds the farm's own
     // contracts and, by design, lease agreements naming third parties —
     // `ParcelLease.lessorName` is in `ENCRYPTED_FIELDS` for exactly that

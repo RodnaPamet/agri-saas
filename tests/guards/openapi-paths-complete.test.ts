@@ -172,7 +172,14 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // So it is re-derived: 215 entries in the merged
 // `openapi-undocumented-baseline.json`. Anyone editing this again after a
 // merge should count the file rather than subtract from memory.
-const UNDOCUMENTED_CEILING = 215;
+// 215 → 216: `/api/t/{tenantSlug}/assistant/stream` is a new LIVE
+// path and no `/ai/`-family route is in the spec at all, so it joins the
+// baseline rather than being documented alone — documenting one SSE route
+// while its four siblings stay undocumented would describe the surface
+// less honestly than the baseline does. Re-derived from the file, not
+// incremented: two branches each lowering this by one is how it ended up
+// one too high before (#2578).
+const UNDOCUMENTED_CEILING = 216;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

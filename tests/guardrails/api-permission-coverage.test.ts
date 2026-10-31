@@ -119,6 +119,23 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
  * uses), e.g. `api/t/[tenantSlug]/admin/foo/route.ts`.
  */
 const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
+    // ── The assistant's answer stream (#2578) ───────────────────────
+    {
+        relPath: 'api/t/[tenantSlug]/assistant/stream/route.ts',
+        reason:
+            'A single route-level permission would have to be the UNION of '
+            + 'every tool the assistant will read through — tasks, Дневник, '
+            + 'expenses, prices — which is too WIDE rather than too narrow: it '
+            + 'would grant through one gate what four gates refuse separately. '
+            + 'The enforcement point is per TOOL, and each tool reads its '
+            + 'subject through the usecase that already guards it. Today the '
+            + 'route reads NO farm data at all (there is no tool loop yet), so '
+            + 'tenant membership via `getTenantCtx` plus the '
+            + '`assistant.enabled` flag is the whole gate, and the owner ruled '
+            + 'the surface is for every role. Revisit this entry in the PR that '
+            + 'adds the first tool — if that PR does not touch this line, the '
+            + 'per-tool claim above has not been kept.',
+    },
     // ── Catalogue READS (#P1) ───────────────────────────────────────
     // The frameworks + schemes roots are in scope because their WRITES reach
     // the global catalogue. These three are read-only: browsing a standard's

@@ -134,6 +134,21 @@ const DERIVED = [
 ].sort();
 
 describe('every gated flag key is enumerable and listed (#2009)', () => {
+    it('the list is SORTED, which its own docblock asserts and nothing checked', () => {
+        // `feature-flag-keys.ts` says "Sorted, so a diff adding one is a
+        // one-line change rather than a reflow" — and the invariant was held
+        // only INDIRECTLY, by `featureFlagsCapability` returning source order
+        // while two unit tests compared against a sorted copy.
+        //
+        // So inserting a key out of order failed in
+        // `feature-flags-capability.test.ts` and
+        // `readyz-feature-flags-capability.test.ts` — two files away from the
+        // mistake, with a diff that looked like a membership change and was an
+        // ordering one. #2578 did exactly that. Asserted here, where the list
+        // lives, so the next insertion fails at its cause.
+        expect([...REFERENCED_FLAG_KEYS]).toEqual([...REFERENCED_FLAG_KEYS].sort());
+    });
+
     it('[flag-keys] ranges over a real population', () => {
         const viaConstant = RESOLVED.filter((r) => r.kind === 'constant').length;
         console.log(
