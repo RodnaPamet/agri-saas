@@ -47,6 +47,7 @@ import path from 'node:path';
 
 import ts from 'typescript';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectTrackedFiles } from '../helpers/collect-files';
 
 import { DECLARED_DEFAULTS, env } from '../mocks/env';
@@ -214,7 +215,21 @@ describe('env defaults reach the tests (#2518)', () => {
         let identifierFallbacks = 0;
         for (const abs of files) {
             const rel = path.relative(REPO_ROOT, abs).split(path.sep).join('/');
-            const source = readFileSync(abs, 'utf8');
+            // Comments blanked, and here that is NECESSARY rather than
+            // ceremony: this check is a REGEX over source, so a comment
+            // DISCUSSING a fallback would be counted as one. `evidence.ts` now
+            // carries a docblock about the very expression this scans for, and
+            // a file explaining why `|| 'permissive'` was wrong would be
+            // reported as still doing it. That is the hazard
+            // `guards-blank-comments-before-matching` exists for, and it
+            // caught this guard at 466 against a cap of 465.
+            //
+            // Comments only — NOT `strings: true`. The fallback VALUE is a
+            // string literal and is the thing being compared, so blanking
+            // strings would erase the subject. The AST walk above needs no
+            // blanking at all: `ts.createSourceFile` classifies a comment as a
+            // token, so prose cannot be mistaken for a default.
+            const source = blankNonCode(readFileSync(abs, 'utf8'));
             for (const key of DECLARED.keys()) {
                 // The VALIDATED env only — `process.env.X` is the raw
                 // environment and deliberately carries no default, which is
