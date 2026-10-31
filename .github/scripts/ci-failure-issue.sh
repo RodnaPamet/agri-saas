@@ -273,29 +273,92 @@ case "$CONCLUSION" in
         # same answer as a genuine zero — byte-identical stdout, exit 0, and
         # no issue filed for a real timeout. A control that cannot fail
         # cannot discriminate.
-        if ! PROBE="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-            --jq '[ (.jobs | length), ([.jobs[] | select((.steps // []) | map(select(.started_at != null)) | length > 0)] | length) ] | @tsv')"; then
+        # -- #2508: SKIPPED jobs are not "never started", and the payload settles --
+        #
+        # Two corrections, and the first is the one that was actually wrong.
+        #
+        # `NEVER_STARTED = CREATED - EXECUTED` counted a SKIPPED job as one
+        # that never started. A path filter skips jobs on most runs, so the
+        # queue-drop branch fired on a SETTLED payload. Measured on run
+        # 41100129873, the budget kill #2508 was filed about, read long after
+        # it concluded:
+        #
+        #   total 25 - executed 23 -> never_started 2  => "queue drop"   WRONG
+        #
+        # Both of those two are `conclusion: skipped` matrix placeholders,
+        # which carry ZERO steps and so cannot execute one in either reading.
+        # Excluding skipped from eligibility:
+        #
+        #   eligible 23 - executed 23 -> never_started 0 => "budget kill" RIGHT
+        #
+        # and the known queue drop is unaffected: run 35754149459 reads
+        # eligible 21 - executed 2 -> never_started 19.
+        #
+        # The second correction is the one #2508 names: the read happens ~25s
+        # after the run concludes, while GitHub is still writing step records,
+        # so "not yet populated" is byte-identical to "never ran". A job that
+        # has CONCLUDED, HAS steps, and reports none of them started is a
+        # self-inconsistent payload - still settling. It is counted
+        # separately, re-read a bounded number of times, and reported as
+        # `unknown` if it does not settle. An unknown stated as unknown beats
+        # a confident wrong class - `classifyProbe`'s third outcome in
+        # `tests/integration/db-probe.ts`, and the same rule.
+        #
+        # A placeholder is told from a settling job by whether it has steps at
+        # ALL: zero steps is a job that was never going to run one.
+        PROBE_JQ='[ (.jobs | length),
+                    ([.jobs[] | select(.conclusion != "skipped")] | length),
+                    ([.jobs[] | select(.conclusion != "skipped" and ((.steps // []) | map(select(.started_at != null)) | length > 0))] | length),
+                    ([.jobs[] | select(.conclusion != "skipped" and (((.steps // []) | length) > 0) and (((.steps // []) | map(select(.started_at != null)) | length) == 0))] | length) ] | @tsv'
+        # `SETTLE_SLEEP` is a test seam: the suite drives this script with a
+        # stubbed `gh` and must not pay three real sleeps to reach the unknown
+        # branch. Defaulted, so production pays the wait.
+        SETTLE_SLEEP="${SETTLE_SLEEP:-5}"
+        PROBE=""
+        for settle_attempt in 1 2 3; do
+            # `timeout` per ATTEMPT, so one hung request cannot eat the budget
+            # and leave attempts 2 and 3 unrun - `ci-retry-loop-timeout`
+            # enumerates this loop and requires the cap.
+            if ! PROBE="$(timeout 30 "$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+                --jq "$PROBE_JQ")"; then
+                PROBE=""
+                break
+            fi
+            _settling="$(printf '%s' "$PROBE" | cut -f4)"
+            case "$_settling" in
+                0) break ;;
+            esac
+            echo "::notice::job payload still settling (${_settling} concluded job(s) report no started step) - attempt ${settle_attempt}/3"
+            [ "$settle_attempt" = "3" ] || sleep "$SETTLE_SLEEP"
+        done
+        if [ -z "$PROBE" ]; then
             echo "::error::could not read the job list for run ${RUN_ID} — cannot tell a superseded cancel from a timeout, so refusing to stay silent"
             PROBE=""
         fi
-        CREATED="${PROBE%%$'\t'*}"
-        EXECUTED="${PROBE##*$'\t'}"
+        CREATED="$(printf '%s' "$PROBE" | cut -f1)"
+        ELIGIBLE="$(printf '%s' "$PROBE" | cut -f2)"
+        EXECUTED="$(printf '%s' "$PROBE" | cut -f3)"
+        SETTLING="$(printf '%s' "$PROBE" | cut -f4)"
         # Both halves are validated, not just the first. A probe that returns
         # one number, or prose, must not be read as "0 created" — that is the
         # suppression branch, and a failed probe landing there is silence.
         if [ -z "$PROBE" ] \
             || ! [ "${CREATED}" -eq "${CREATED}" ] 2>/dev/null \
+            || ! [ "${ELIGIBLE}" -eq "${ELIGIBLE}" ] 2>/dev/null \
+            || ! [ "${SETTLING}" -eq "${SETTLING}" ] 2>/dev/null \
             || ! [ "${EXECUTED}" -eq "${EXECUTED}" ] 2>/dev/null; then
             echo "::error::job-list probe returned no usable answer: '${PROBE}'"
             echo "job-list probe failed; treating this cancellation as a real failure"
             CREATED=-1
+            ELIGIBLE=-1
             EXECUTED=-1
+            SETTLING=0
         fi
         if [ "${CREATED}" -eq 0 ]; then  # a genuine zero, never a failed probe
             echo "cancelled with no job record at all — superseded while pending, not a failure"
             exit 0
         fi
-        NEVER_STARTED=$(( CREATED - EXECUTED ))
+        NEVER_STARTED=$(( ELIGIBLE - EXECUTED ))
         if [ "${CREATED}" -lt 0 ]; then
             # No counts in the body: `-1 created` reads as data and is not.
             # An unknown shape, stated as unknown, is the honest report.
@@ -303,12 +366,24 @@ case "$CONCLUSION" in
 | cancel shape | unknown — the job-list probe failed, so neither a queue drop nor a budget kill can be ruled out. Read the run (#748). |"
             echo "cancelled, probe unavailable — treating as a real failure"
             SHAPE=""
+        elif [ "${SETTLING}" -gt 0 ]; then
+            # #2508: the payload is self-inconsistent — a job has CONCLUDED,
+            # carries steps, and reports none of them started. That is GitHub
+            # still writing step records, and it survived three re-reads. The
+            # count would be "jobs not yet populated", which is
+            # byte-identical to "jobs that never ran" — so neither class can
+            # be asserted, and asserting one rules out the other BY NAME in a
+            # body a human acts on.
+            CANCEL_ROW="
+| cancel shape | unknown — ${SETTLING} of ${ELIGIBLE} eligible jobs had concluded while reporting no started step, so the job payload was still settling after three reads. Neither a queue drop nor a budget kill can be ruled out; re-read the run and check the longest job against its \`timeout-minutes\`. |"
+            echo "cancelled: payload still settling (${SETTLING} of ${ELIGIBLE}) — shape unknown"
+            SHAPE=""
         elif [ "${NEVER_STARTED}" -gt 0 ]; then
-            SHAPE="**queue drop** — ${NEVER_STARTED} of ${CREATED} jobs never executed a step, so this is a runner-availability cancellation, NOT a \`timeout-minutes\` kill. Those jobs produced no log and no verdict (#748)."
-            echo "cancelled: ${EXECUTED}/${CREATED} jobs executed a step — ${NEVER_STARTED} never started (queue drop)"
+            SHAPE="**queue drop** — ${NEVER_STARTED} of ${ELIGIBLE} eligible jobs never executed a step, so this is a runner-availability cancellation, NOT a \`timeout-minutes\` kill. Those jobs produced no log and no verdict (#748)."
+            echo "cancelled: ${EXECUTED}/${ELIGIBLE} eligible jobs executed a step — ${NEVER_STARTED} never started (queue drop)"
         else
-            SHAPE="**budget kill** — all ${CREATED} jobs executed, so a step or job budget ran out. The killed job's own log names it."
-            echo "cancelled: all ${CREATED} jobs executed a step — budget kill"
+            SHAPE="**budget kill** — all ${ELIGIBLE} eligible jobs executed, so a step or job budget ran out. The killed job's own log names it."
+            echo "cancelled: all ${ELIGIBLE} eligible jobs executed a step — budget kill"
         fi
         if [ -n "$SHAPE" ]; then
             CANCEL_ROW="
