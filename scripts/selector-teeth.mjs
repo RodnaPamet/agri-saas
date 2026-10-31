@@ -342,6 +342,46 @@ function ranAtAll(out) {
     return /Tests:\s+[^\n]*\d+ (passed|failed)/.test(out);
 }
 
+/**
+ * How many tests the run SKIPPED (#2544).
+ *
+ * This is the number that separates "the mutation survived" from "the tests
+ * that would have killed it did not run", and nothing read it until now.
+ *
+ * The case it exists for: a DB-gated suite under a job with no postgres. Its
+ * assertions are `describe.skip`ped, but `rls-coverage.test.ts` deliberately
+ * keeps ONE always-running test — the execution-status banner that makes the
+ * non-execution visible. So the run reports `Tests: N skipped, 1 passed`, and
+ * `cleanPass` is satisfied by that single passing test: every gut of a
+ * DB-gated selector was scored SURVIVED, for every such selector, by
+ * construction. The guard that exists to make a skip visible was supplying
+ * the pass that hid it.
+ *
+ * Exported so the parse is testable without paying for an audit.
+ */
+export function skippedTests(out) {
+    const tests = /Tests:\s+([^\n]*)/.exec(out)?.[1] ?? '';
+    const m = /(\d+) skipped/.exec(tests);
+    return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Did the suite SAY why it skipped?
+ *
+ * `rls-coverage.test.ts` prints `NOT_VERIFIED_BANNER` from its always-running
+ * execution-status test. Reading it turns "could not tell" into "could not
+ * tell, because no database was reachable" — the difference between a reader
+ * re-running hopefully and a reader knowing the job needs a service.
+ *
+ * NOT the detector. The detector is the skipped COUNT, which is universal; the
+ * banner is one suite's explanation of it and is absent from the others. A
+ * detector keyed on the banner would report SURVIVED for every DB-gated suite
+ * that has not adopted it, which is the defect with a smaller population.
+ */
+export function skipCause(out) {
+    return /NOT VERIFIED IN THIS RUN/.test(out) ? 'no database was reachable' : null;
+}
+
 export function auditFile(file, opts = {}) {
     restoreIfStray(file);
     const original = readFileSync(file, 'utf8');
@@ -350,6 +390,8 @@ export function auditFile(file, opts = {}) {
     ACTIVE = file;
     const survivors = [];
     const untestable = [];
+    /** Selectors whose mutations ran against a suite that SKIPPED tests (#2544). */
+    const notAudited = [];
     /**
      * `--selector` narrows which module-level functions this run mutates.
      *
@@ -377,7 +419,20 @@ export function auditFile(file, opts = {}) {
             // wide open. The success criterion was satisfied by an observation
             // that had nothing to do with the question.
             const survivedGuts = [];
+            /**
+             * Guts that PASSED against a run with skipped tests (#2544).
+             *
+             * Not survivors: the assertion that would have killed this one may
+             * simply not have run. Not teeth either. A third outcome, because
+             * collapsing it into either direction is a lie — into SURVIVED it
+             * reports a dead selector nobody measured, and into "has teeth" it
+             * certifies a selector nobody measured.
+             */
+            const inconclusiveGuts = [];
             let anyCompiled = false;
+            let anyKilled = false;
+            let skipped = 0;
+            let cause = null;
             for (const gut of GUTS) {
                 // Parenthesised for the expression case: `() => {}` parses as
                 // an empty BLOCK, not an object literal, so a bare `{}` gut
@@ -394,11 +449,38 @@ export function auditFile(file, opts = {}) {
                 // is not a mutation of this program at all — skip, do not score.
                 if (!ranAtAll(out)) continue;
                 anyCompiled = true;
-                if (cleanPass(out)) survivedGuts.push(gut);
+                if (!cleanPass(out)) {
+                    // Killed. POSITIVE proof this gut is caught, and it is not
+                    // downgraded by skips elsewhere in the suite: a failing
+                    // assertion ran, whatever else did not.
+                    anyKilled = true;
+                    continue;
+                }
+                const n = skippedTests(out);
+                if (n > 0) {
+                    inconclusiveGuts.push(gut);
+                    skipped = Math.max(skipped, n);
+                    cause = cause ?? skipCause(out);
+                } else {
+                    survivedGuts.push(gut);
+                }
             }
             if (!anyCompiled) untestable.push(sel.name);
             else if (survivedGuts.length) {
+                // A gut that passed with NOTHING skipped is a survivor on its
+                // own evidence, so this still wins over the inconclusive ones.
                 survivors.push({ selector: sel.name, gut: survivedGuts.join(' | '), line: sel.line });
+            } else if (!anyKilled && inconclusiveGuts.length) {
+                // Nothing survived cleanly, nothing was killed, and every gut
+                // that ran did so against a suite whose tests were skipped. The
+                // honest verdict is that this selector was not audited.
+                notAudited.push({
+                    selector: sel.name,
+                    line: sel.line,
+                    skipped,
+                    guts: inconclusiveGuts.length,
+                    cause,
+                });
             }
         }
     } finally {
@@ -434,6 +516,7 @@ export function auditFile(file, opts = {}) {
         candidates: selectors.length,
         survivors,
         untestable,
+        notAudited,
         /** Names actually mutated this run — what the stale check may judge. */
         auditedSelectors: selectors.map((s) => s.name),
         /** Every module-level selector the file HAS, narrowed or not. */
@@ -478,10 +561,18 @@ export function formatReport({ results, unexpected, stale }, asJson) {
     const reachable = results.filter((r) => r.candidates > 0);
     const unreachable = results.length - reachable.length;
     const selectorCount = reachable.reduce((a, r) => a + r.candidates, 0);
+    // TWO reasons a selector goes unaudited, and a reader has to be able to
+    // tell them apart (#2544): a file with nothing to mutate is a permanent
+    // property of that file, while a selector skipped for want of a service is
+    // a property of the JOB and is fixable by giving it one.
+    const inconclusive = results.reduce((a, r) => a + (r.notAudited?.length ?? 0), 0);
     out.push(
         `[selector-teeth] ${results.length} file(s): ${reachable.length} audited `
             + `(${selectorCount} selector(s)); ${unreachable} with no module-level `
-            + `selectors and therefore NOT audited`,
+            + `selectors and therefore NOT audited`
+            + (inconclusive
+                ? `; ${inconclusive} selector(s) NOT AUDITED because the suite skipped tests`
+                : ''),
     );
 
     for (const r of results) {
@@ -492,13 +583,21 @@ export function formatReport({ results, unexpected, stale }, asJson) {
             );
         }
         for (const s of r.survivors) out.push(`  ${r.file}:${s.line}  ${s.selector}() \u2192 return ${s.gut}  SURVIVED`);
+        for (const n of r.notAudited ?? []) {
+            out.push(
+                `  ${r.file}:${n.line}  ${n.selector}()  NOT AUDITED - all ${n.guts} mutation(s) `
+                    + `passed against a run that SKIPPED ${n.skipped} test(s)`
+                    + `${n.cause ? ` (${n.cause})` : ''}. Neither a surviving selector nor a `
+                    + `clean one: the assertions that would have killed it did not run.`,
+            );
+        }
         for (const u of r.untestable) out.push(`  ${r.file}  ${u}()  no gut typechecked \u2014 not tested`);
         if (r.candidates === 0) {
             out.push(
                 `  ${r.file}  NOT AUDITED - no module-level selectors. Its selecting ` +
                     `happens inline inside it(), which this tool does not mutate.`,
             );
-        } else if (!r.survivors.length && !r.untestable.length) {
+        } else if (!r.survivors.length && !r.untestable.length && !(r.notAudited?.length)) {
             out.push(`  ${r.file}  all ${r.candidates} selector(s) have teeth`);
         }
     }
