@@ -118,3 +118,44 @@ export function isHaltCode(code: string): code is HaltCode {
 export function isRefusalCode(code: string): code is RefusalCode {
     return (REFUSAL_CODES as readonly string[]).includes(code);
 }
+
+/**
+ * The English sentence to use when the CATALOGUE LOOKUP FAILS — #2578.
+ *
+ * Not a second catalogue, and not displayed copy in the normal case. This is
+ * the same arrangement `coded*()` already has: its English second argument is
+ * the FALLBACK for an unentried code, and `localizeErrorPayload` replaces it
+ * from `errors.<CODE>` before anyone sees it.
+ *
+ * Every code here IS entried in both locales, and
+ * `assistant-refusal-codes-are-entried` fails CI if one stops being. So this
+ * map only fires when the catalogue cannot be LOADED at all — and in that
+ * situation the alternative is worse: an SSE event has no prior `message` to
+ * leave in place, so the choice is an English sentence or the code itself, and
+ * `a-coded-message-is-not-its-own-code` is right that a token on screen tells
+ * a farmer nothing and a support agent almost nothing.
+ *
+ * A Bulgarian reader seeing English here is the same degradation the HTTP path
+ * already has, not a new one — and the iOS client's own rule (never show
+ * English) covers it there.
+ */
+export const ENDING_FALLBACK_EN: Record<string, string> = {
+    ASSISTANT_NO_GROUNDING:
+        "I could not find anything in this farm's records to answer that, so I will not guess.",
+    ASSISTANT_OUT_OF_SCOPE: "That is outside what I can answer from this farm's records.",
+    ASSISTANT_HIGH_STAKES_NEEDS_SOURCE:
+        'That needs an exact figure from a registered product label, and I do not have one. Check the label or ask an agronomist.',
+    ASSISTANT_EGRESS_BLOCKED:
+        'I stopped that answer because it looked like it contained a credential. Nothing was sent.',
+    ASSISTANT_INPUT_REJECTED: 'I could not read that question safely. Try putting it another way.',
+    ASSISTANT_TOOL_BUDGET:
+        'The answer above is real but incomplete — I reached the limit on how much I may look up for one question.',
+    ASSISTANT_SPEND_CEILING:
+        'The answer above is incomplete because this farm has reached its monthly limit for the assistant.',
+    ASSISTANT_TIME_BUDGET:
+        'The answer above is incomplete — it was taking too long, so I stopped rather than leave you waiting.',
+    ASSISTANT_PROVIDER_UNAVAILABLE:
+        "I could not reach the model. This farm's records were not read and nothing was created.",
+    ASSISTANT_TRUNCATED_RESULT:
+        'The answer above uses part of the data — one of the lists I read was too long to use whole.',
+};

@@ -144,6 +144,7 @@
     "/api/t/{tenantSlug}/assets/{id}/maintenance/{maintenanceId}",
     "/api/t/{tenantSlug}/assets/{id}/purge",
     "/api/t/{tenantSlug}/assets/{id}/restore",
+    "/api/t/{tenantSlug}/assistant/stream",
     "/api/t/{tenantSlug}/audit-log",
     "/api/t/{tenantSlug}/audit-log/verify",
     "/api/t/{tenantSlug}/automation/analytics",

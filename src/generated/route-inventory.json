@@ -982,6 +982,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/assistant/stream",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/t/{tenantSlug}/audit-log",
       "status": "live",
       "documented": false

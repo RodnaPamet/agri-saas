@@ -91,9 +91,10 @@
  */
 import { createTranslator } from 'next-intl';
 
-import type { ApiErrorResponse } from './types';
+import type { ApiErrorResponse, ErrorParams } from './types';
 import { loadMessagesFor } from '@/lib/i18n/server-messages';
 import { resolveRequestLocale } from '@/lib/i18n/request-locale';
+import type { Locale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
 
 /** The catalogue namespace. `errors.PLAN_LIMIT_EXCEEDED`, and so on. */
@@ -124,62 +125,66 @@ interface DynamicTranslator {
  * in the request's locale, when there is one. Mutates in place and resolves to
  * nothing — the caller already holds the payload.
  */
+/**
+ * The catalogue sentence for a code, or `null` when there is none.
+ *
+ * Extracted from `localizeErrorPayload` so a SECOND consumer can reuse it
+ * rather than reimplement it — the assistant's SSE stream resolves refusal and
+ * halt sentences the same way, and an SSE event is not an `ApiErrorResponse`
+ * so it cannot go through the mutator (#2578).
+ *
+ * The part that must not be reimplemented is the double check below. A
+ * `has`-only detector returns TRUE for a code whose entry is a variant TABLE
+ * and then puts the literal KEY in front of a farmer; that was measured
+ * against next-intl rather than reasoned about. One copy, both callers.
+ *
+ * Returns `null` rather than throwing or falling back, so each caller decides:
+ * `localizeErrorPayload` leaves the existing English message in place, while a
+ * stream has no prior message and must supply its own last resort.
+ */
+export async function sentenceForCode(
+    code: string,
+    params?: ErrorParams,
+    localeOverride?: Locale,
+): Promise<string | null> {
+    const locale = localeOverride ?? resolveRequestLocale();
+    const messages = await loadMessagesFor(locale);
+    if (!messages) return null;
+
+    // `onError` swallowed: a missing key is how absence is DETECTED here, not
+    // a fault, and next-intl's default handler logs every miss at error level.
+    const t = createTranslator({
+        locale,
+        messages: messages as Record<string, unknown>,
+        onError: () => {},
+    }) as unknown as DynamicTranslator;
+
+    const keys = [
+        ...DISCRIMINATORS.flatMap((name) => {
+            const v = params?.[name];
+            return typeof v === 'string' && v ? [`${NS}.${code}.${v}`] : [];
+        }),
+        `${NS}.${code}.default`,
+        `${NS}.${code}`,
+    ];
+
+    for (const key of keys) {
+        // BOTH checks, and the second is not redundant — see the docblock.
+        if (!t.has(key)) continue;
+        const text = t(key, params);
+        if (text === key) continue;
+        return text;
+    }
+    return null;
+}
+
 export async function localizeErrorPayload(payload: ApiErrorResponse): Promise<void> {
     try {
         const { code, params } = payload.error;
         if (!code) return;
 
-        const locale = resolveRequestLocale();
-        const messages = await loadMessagesFor(locale);
-        if (!messages) return;
-
-        // `onError` swallowed: a missing key is how absence is DETECTED here,
-        // not a fault, and next-intl's default handler logs every miss at
-        // error level. `t.has` is the signal instead.
-        // Cast to a dynamic-key signature. `createTranslator` types `t`
-        // against the SHAPE of the messages it was given, so a key that is
-        // only known at runtime — an error code — resolves to `never`. That
-        // typing is right for a component with literal keys and cannot
-        // express this caller, so the cast is the narrow, honest escape rather
-        // than widening the catalogue's type everywhere.
-        const t = createTranslator({
-            locale,
-            messages: messages as Record<string, unknown>,
-            onError: () => {},
-        }) as unknown as DynamicTranslator;
-
-        // Most specific first. A variant that does not exist falls through to
-        // the plain code, so adding a discriminator param to an error never
-        // breaks its message.
-        const keys = [
-            ...DISCRIMINATORS.flatMap((name) => {
-                const v = params?.[name];
-                return typeof v === 'string' && v ? [`${NS}.${code}.${v}`] : [];
-            }),
-            // The variant table's own fallback, for a discriminator value with
-            // no sentence — an unknown `GatedResource`, say. Named rather than
-            // positional so a translator editing the file can see what it is.
-            `${NS}.${code}.default`,
-            // A code whose entry is a flat string.
-            `${NS}.${code}`,
-        ];
-
-        for (const key of keys) {
-            // BOTH checks, and the second is not redundant.
-            //
-            // `t.has('errors.PLAN_LIMIT_EXCEEDED')` returns TRUE for that
-            // code, because its entry is a variant TABLE and `has` answers for
-            // a namespace node. `t()` on a namespace then returns the KEY
-            // itself — so a `has`-only detector would put the literal string
-            // `errors.PLAN_LIMIT_EXCEEDED` in front of a farmer, which is the
-            // exact failure `never leaves a KEY where a sentence belongs`
-            // exists to catch. Measured against next-intl, not assumed.
-            if (!t.has(key)) continue;
-            const text = t(key, params);
-            if (text === key) continue;
-            payload.error.message = text;
-            return;
-        }
+        const text = await sentenceForCode(code, params);
+        if (text !== null) payload.error.message = text;
     } catch (err) {
         // The log is itself in a try/catch, and that is NOT belt-and-braces.
         // `logger` enriches every line from `getRequestContext()` — the very
