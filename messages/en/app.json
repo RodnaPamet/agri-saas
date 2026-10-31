@@ -6756,6 +6756,7 @@
         "GOOGLE_DRIVE_NOT_GRANTED": "The Google connection does not include Drive access. Reconnect it and grant Drive.",
         "GOOGLE_DRIVE_RATE_LIMITED": "Google is rate-limiting requests. Try again shortly.",
         "GOOGLE_DRIVE_REFUSED": "Google refused the upload. Check the account’s Drive storage and try again.",
+        "GOOGLE_NATIVE_RETURN_NOT_ALLOWED": "This deployment cannot return a Google consent to the app. An administrator sets the native redirect allowlist.",
         "GRAIN_BIN_NOT_FOUND": "That grain bin was not found.",
         "IDEMPOTENCY_KEY_INVALID": "That request key is not valid.",
         "IDENTIFIERS_REQUIRED": "Provide at least one identifier.",

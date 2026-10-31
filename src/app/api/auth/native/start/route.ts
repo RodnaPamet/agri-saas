@@ -16,20 +16,15 @@ import { logger } from '@/lib/observability/logger';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import {
-    classifyRedirect,
     HANDOFF_COOKIE,
     HANDOFF_COOKIE_MAX_AGE_SECONDS,
+    classifyRedirect,
+    nativeRedirectAllowlist,
 } from '@/lib/auth/native/auth-codes';
 
 export const runtime = 'nodejs';
 
-/** Short — this only has to survive one Google round trip. */
 
-function allowlist(): string[] {
-    return env.NATIVE_AUTH_REDIRECT_ALLOWLIST.split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-}
 
 async function handleStart(req: NextRequest): Promise<NextResponse> {
     const url = new URL(req.url);
@@ -51,7 +46,7 @@ async function handleStart(req: NextRequest): Promise<NextResponse> {
     }
 
     // The open-redirect gate. Fails closed on an unconfigured allowlist.
-    const verdict = classifyRedirect(redirectUri, allowlist());
+    const verdict = classifyRedirect(redirectUri, nativeRedirectAllowlist());
     if (verdict !== 'allowed') {
         // The response is identical either way, deliberately — this route is
         // unauthenticated and must not tell an anonymous caller whether our
