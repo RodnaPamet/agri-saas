@@ -14,7 +14,7 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ description: 'The farm whose library this is.' }),
@@ -210,6 +210,31 @@ export function registerDocumentPaths(registry: OpenAPIRegistry): void {
         params: TenantParams,
         body: UpdateDocumentSettingsSchema,
         success: { status: 200, description: 'The settings after the change.', schema: DocumentSettingsSchema },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/documents/{documentId}/drive-copy',
+        operationId: 'retryFarmDocumentDriveCopy',
+        summary: 'Retry a failed Google Drive copy',
+        description:
+            'Queues another attempt at copying a document into the farm’s own Google Drive. It does NOT copy: it sets `drive.state` to PENDING and answers immediately, and a sweep running every two minutes performs the copy. So a 200 here means "queued", never "copied" — poll `drive.state` on the row, which becomes COPIED or FAILED.\n\nADMIN only. The route sits behind `documents.upload` because that is the floor for this prefix, and the usecase requires admin — the copy resolves the farm’s Google credential, and resolving it decrypts and rotates a tenant-wide secret.\n\nRefusals, each a distinct `code`, because the three states a caller can be in want three different next actions:\n\n- 409 `DOCUMENT_DRIVE_ALREADY_COPIED` — a copy exists. Decided on `driveFileId` rather than on the state: the id is the EVIDENCE a file is in Drive, and re-queueing would make a second one that nothing downstream would notice.\n- 409 `DOCUMENT_DRIVE_COPY_IN_PROGRESS` — a fresh PENDING row. Wait; the sweep has it. A PENDING row older than fifteen minutes is accepted instead, because a worker that died leaves a row indistinguishable from one in flight, and refusing for ever would strand the document: the retention sweep DEFERS a PENDING row, so its bytes would never expire either.\n- 409 `DOCUMENT_DRIVE_SYNC_OFF` — nothing was ever attempted, so there is nothing to retry. The remedy is the SETTING, not this route.\n\nAlso 404 `DOCUMENT_NOT_FOUND` and 404 `DOCUMENT_PURGED` — a tombstone has no bytes to copy.',
+        tags: ['Documents'],
+        params: DocumentParams,
+        success: {
+            status: 200,
+            description: 'Queued. `state` is PENDING; the sweep decides the outcome.',
+            schema: z
+                .object({ documentId: z.string(), state: z.literal('PENDING') })
+                .openapi('FarmDocumentDriveCopyQueued'),
+        },
+        extraResponses: codedErrorResponses({
+            409:
+                'Nothing to retry, and WHICH of the three it is decides what the caller should do next. '
+                + '`DOCUMENT_DRIVE_ALREADY_COPIED` — a copy exists; show it rather than offering a retry. '
+                + '`DOCUMENT_DRIVE_COPY_IN_PROGRESS` — a copy is on its way; wait. '
+                + '`DOCUMENT_DRIVE_SYNC_OFF` — copying is off for this farm; the remedy is the setting.',
+        }),
     });
 
     op(registry, {

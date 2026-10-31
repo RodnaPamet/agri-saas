@@ -140,6 +140,26 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
+         * #2495 step 4 — drain the documents waiting for a Drive copy.
+         *
+         * Every two minutes, matching `health-check`, and the cadence is a UX
+         * decision rather than a throughput one. A farmer who uploads a scan
+         * watches the row for «Копие в Google Drive»; its sibling's daily beat
+         * would read as broken. The query is `driveState = PENDING`, indexed
+         * and empty almost always, which is what makes a tight beat cheap.
+         *
+         * Not an on-upload enqueue. `driveState` is the durable queue, so a
+         * lost enqueue cannot leave a row claiming a copy is on its way with
+         * nothing to drain it — and that row would ALSO never expire, because
+         * the retention sweep defers PENDING.
+         */
+        name: 'document-drive-copy-sweep',
+        pattern: '*/2 * * * *',
+        description: 'Copy PENDING farm documents into the farm’s Google Drive (#2495)',
+        defaultPayload: {},
+    },
+    {
+        /**
          * P5.6b — erase the accounts whose 30-day grace period has run out.
          *
          * Daily, which only decides how long past day 30 an erasure waits — up
