@@ -77,6 +77,25 @@ export const REFERENCED_FLAG_KEYS = [
     // the cohorts is what distinguishes "deliberately limited" from
     // "nobody ever inserted it" — the `social.public-profile` failure that
     // capability exists to report.
+    // «Асистент» (#2578). Dark by default and expected to STAY dark until the
+    // assistant can answer from the farm's own data: the owner was asked when
+    // to switch it on and chose "after it reads farm data" (2026-10-31,
+    // confirmed in session). #2599 ships the stream with no tool loop, so
+    // there is nothing for it to read yet.
+    //
+    // So `feature-flags-capability` will report this key in `missingRows`
+    // until an operator inserts the row, and — exactly as for
+    // `agro.orthophoto` above — that is the correct reading rather than noise.
+    // A key gating a route with no row is what the capability exists to
+    // surface; the difference here is that the absence is the DECISION, and
+    // this comment is what tells the next reader so rather than leaving them
+    // to insert a row to quiet a report.
+    //
+    // No cohorts were specified, so when it goes on it goes on for the
+    // deployment. Note cohorts compose as AND — an enabled flag with cohorts
+    // set is on for that cohort ONLY — which is the thing to get right if a
+    // narrower rollout is ever wanted.
+    'assistant.enabled',
     'agro.orthophoto',
     'integrations.google',
     'notifications.sse',
