@@ -32,6 +32,7 @@
 import { endingEvent } from './endings';
 import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import { scanEgress } from '../safety/egress-scan';
+import type { AssistantLink } from './links';
 import { logger } from '@/lib/observability';
 
 /** What `emitAnswer` decided, so a caller can report it without re-deciding. */
@@ -52,7 +53,7 @@ export interface AnswerOutcome {
 export async function emitAnswer(
     send: (chunk: string) => void,
     text: string,
-    meta: { tenantId: string },
+    meta: { tenantId: string; links?: readonly AssistantLink[] },
 ): Promise<AnswerOutcome> {
     const trimmed = text.trim();
     if (trimmed === '') {
@@ -62,7 +63,17 @@ export async function emitAnswer(
         return { sent: false, ruleIds: [] };
     }
 
-    const verdict = scanEgress(trimmed);
+    // The LABELS are scanned too, and that is not belt-and-braces: a label
+    // comes from a farm record's own field (a task title), so it is outgoing
+    // text by exactly the same route the answer is. Scanning the answer alone
+    // would leave a door the choke point was built to close.
+    //
+    // A dirty label discards the WHOLE answer rather than dropping the link:
+    // if one field of the data is secret-shaped, the prose written from that
+    // data is not trustworthy either, and "DISCARD, never redact" is the one
+    // decision this module makes.
+    const links = meta.links ?? [];
+    const verdict = scanEgress([trimmed, ...links.map((l) => l.label)].join('\n'));
     if (!verdict.clean) {
         logger.warn('assistant.egress_blocked', {
             component: 'assistant',
@@ -77,7 +88,10 @@ export async function emitAnswer(
 
     // The ONLY construction of this event in the codebase. Moving or copying
     // it is what the guard refuses.
-    const event: AssistantStreamEvent = { type: 'answer', text: trimmed };
+    // Absent rather than empty when there are none, so a client need not
+    // distinguish "no links" from "links omitted".
+    const event: AssistantStreamEvent =
+        links.length > 0 ? { type: 'answer', text: trimmed, links } : { type: 'answer', text: trimmed };
     send(sseFormat(event));
     return { sent: true, ruleIds: [] };
 }

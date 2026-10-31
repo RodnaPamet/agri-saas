@@ -40,6 +40,7 @@ import { z } from 'zod';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
+import { linksFromRows, type AssistantLink, type LinkShape } from './links';
 
 /** How much of one tool result may reach the model. */
 export const TOOL_RESULT_MAX_CHARS = 4000;
@@ -49,12 +50,28 @@ export interface ToolOutcome {
     /** Serialised for the model. Already truncated if it had to be. */
     readonly content: string;
     readonly truncated: boolean;
+    /**
+     * The links this result supports, built HERE from the rows rather than
+     * parsed back out of `content` — which would have to survive truncation
+     * and would reintroduce the fabrication risk the server-built design
+     * removes.
+     */
+    readonly links: readonly AssistantLink[];
 }
 
 interface AssistantTool {
     readonly def: AiToolDef;
     readonly args: z.ZodType<unknown>;
     readonly run: (ctx: RequestContext, args: unknown) => Promise<unknown>;
+    /**
+     * How this tool's rows become links the answer can offer.
+     *
+     * Declared here rather than inferred, and checked against the generated
+     * page-template set by `assistant-tools-go-through-usecases` — a tool
+     * whose template is not a real screen would produce links that 404 on a
+     * phone rather than failing in CI.
+     */
+    readonly link?: LinkShape;
 }
 
 /**
@@ -106,6 +123,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             },
         },
         args: ListFarmTasksArgs,
+        link: { template: '/farm-tasks/[taskId]', idField: 'id', labelField: 'title' },
         run: async (ctx, args) => {
             const a = ListFarmTasksArgs.parse(args);
             // The USECASE, which opens with `assertCanReadTasks(ctx)`. A
@@ -146,13 +164,13 @@ export async function runTool(
 ): Promise<ToolOutcome> {
     const tool = ASSISTANT_TOOLS[name];
     if (!tool) {
-        return { ok: false, content: `No such tool: ${name}`, truncated: false };
+        return { ok: false, content: `No such tool: ${name}`, truncated: false, links: [] };
     }
     let parsed: unknown;
     try {
         parsed = JSON.parse(rawArgs === '' ? '{}' : rawArgs);
     } catch {
-        return { ok: false, content: 'Arguments were not valid JSON.', truncated: false };
+        return { ok: false, content: 'Arguments were not valid JSON.', truncated: false, links: [] };
     }
     const check = tool.args.safeParse(parsed);
     if (!check.success) {
@@ -160,13 +178,17 @@ export async function runTool(
             ok: false,
             content: `Arguments rejected: ${check.error.issues[0]?.message ?? 'invalid'}`,
             truncated: false,
+            links: [],
         };
     }
     try {
         const result = await tool.run(ctx, check.data);
+        // Built from the ROWS, before serialising — so truncation below cannot
+        // silently drop the links for records the model was still shown.
+        const links = tool.link ? linksFromRows(tool.link, result) : [];
         const full = JSON.stringify(result);
         if (full.length <= TOOL_RESULT_MAX_CHARS) {
-            return { ok: true, content: full, truncated: false };
+            return { ok: true, content: full, truncated: false, links };
         }
         // Truncated rather than dropped: a partial list is useful and the
         // `truncated` flag is what makes the answer's incompleteness
@@ -175,6 +197,7 @@ export async function runTool(
             ok: true,
             content: full.slice(0, TOOL_RESULT_MAX_CHARS),
             truncated: true,
+            links,
         };
     } catch (err) {
         // Includes the usecase's own policy refusal. Reported to the model as
@@ -184,6 +207,7 @@ export async function runTool(
             ok: false,
             content: err instanceof Error ? err.message.slice(0, 200) : 'Tool failed.',
             truncated: false,
+            links: [],
         };
     }
 }

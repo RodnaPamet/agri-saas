@@ -28,6 +28,7 @@
  * `runTool` never throws.
  */
 import { endingEvent } from './endings';
+import { mergeLinks, type AssistantLink } from './links';
 import { runTool, toolDefs } from './tools';
 import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import type { HaltCode } from '../safety/refusal-codes';
@@ -42,6 +43,11 @@ export const TOOL_PHASE_BUDGET_MS = 25_000;
 export interface ToolLoopResult {
     /** The model's final text, for the caller to put through the choke point. */
     readonly text: string;
+    /**
+     * Links built by the SERVER from the rows the tools returned — see
+     * `links.ts` for why the model does not author these.
+     */
+    readonly links: readonly AssistantLink[];
     readonly truncatedAny: boolean;
     /** The halt to report after the answer, if the tool phase was cut short. */
     readonly halt: HaltCode | null;
@@ -70,6 +76,7 @@ export async function runToolLoop(
     const messages: AiMessage[] = [...initial];
     let truncatedAny = false;
     let toolCallsMade = 0;
+    const linkGroups: AssistantLink[][] = [];
     let halt: HaltCode | null = null;
     let text: string | null = null;
 
@@ -95,6 +102,7 @@ export async function runToolLoop(
             emit({ type: 'tool_call', name: call.name });
             const outcome = await runTool(deps.ctx, call.name, call.arguments ?? '');
             if (outcome.truncated) truncatedAny = true;
+            if (outcome.links.length > 0) linkGroups.push([...outcome.links]);
             emit({
                 type: 'tool_result',
                 name: call.name,
@@ -127,7 +135,7 @@ export async function runToolLoop(
     // weakest and is reported on `done` regardless, so it is never silent.
     if (halt === null && truncatedAny) halt = 'ASSISTANT_TRUNCATED_RESULT';
 
-    return { text, truncatedAny, halt, toolCallsMade };
+    return { text, links: mergeLinks(linkGroups), truncatedAny, halt, toolCallsMade };
 }
 
 /** Emit the halt, if there is one. Separate so the caller controls ordering. */
