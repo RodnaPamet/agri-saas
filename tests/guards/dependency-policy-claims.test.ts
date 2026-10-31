@@ -794,6 +794,31 @@ const MIN_SCOPED_ROWS = MIN_SECURITY_ROWS + MIN_CEILING_ROWS;
         expect({ ceiling: CEILING_ROWS.length >= MIN_CEILING_ROWS }).toEqual({ ceiling: true });
     });
 
+    // A CONTROL ON THE CONTROL — #2526.
+    //
+    // Every real floor below has SLACK: the document carries more security
+    // rows than `MIN_SECURITY_ROWS` and more scoped rows than
+    // `MIN_SCOPED_ROWS`, which is the healthy state. The consequence is that
+    // mutating `expectExamined` into a no-op changes no outcome, so
+    // `scripts/selector-teeth.mjs` reports it as a DEAD selector — and it is
+    // right to: nothing distinguished "the floor held" from "the floor was
+    // never asked". That is the same reading error this whole file exists to
+    // prevent, one level up.
+    //
+    // It is not dead, it is UNEXERCISED, and the two are indistinguishable
+    // until something exercises it. This does, so the mutation now fails here
+    // instead of surviving — without weakening any floor, which is the point:
+    // raising `MIN_*` to remove the slack would make the guard brittle against
+    // a legitimately shrinking table.
+    it('expectExamined itself can fail — a control on the floors below', () => {
+        expect(() => expectExamined('control', [], 1)).toThrow();
+        expect(() => expectExamined('control', [1, 2], 3)).toThrow();
+        expect(() => expectExamined('control', [1, 2, 3], 3)).not.toThrow();
+        // And that it reports WHICH floor failed: the label is the only thing
+        // telling four otherwise-identical call sites apart in a failure.
+        expect(() => expectExamined('range rows', [], 1)).toThrow(/range rows/);
+    });
+
     describe('doc ↔ package-lock.json', () => {
         it('every Scope column agrees with the lockfile', () => {
             expectExamined('scope rows', SCOPED_ROWS, MIN_SCOPED_ROWS);
