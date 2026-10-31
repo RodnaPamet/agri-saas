@@ -137,6 +137,50 @@
                 "tests/guardrails"
             ],
             "why": "Several guards quote CLAUDE.md or assert that a claim in it is true, so editing it can fail a test with no code change at all."
+        },
+        {
+            "when": "^tests\\/(setup|mocks|reporters)\\/",
+            "run": [
+                "tests"
+            ],
+            "why": "These files are reached by jest.config.js rather than by `import`, so an import-derived blast radius scores every one of them at ZERO while they are the widest in the repo: globalSetup, globalTeardown, the `default` reporter's sibling, the `^@/env$` moduleNameMapper in BOTH projects, and the node project's two setupFilesAfterEnv entries. `tests` rather than a root list because the reach genuinely IS the whole run — and these six files change rarely, so the cost is paid almost never. #2531."
+        },
+        {
+            "when": "^tests\\/helpers\\/(?!.*\\.(test|spec)\\.tsx?$)",
+            "run": [
+                "tests/unit",
+                "tests/integration",
+                "tests/rendered",
+                "tests/contracts",
+                "tests/helpers",
+                "tests/drills",
+                "tests/regression"
+            ],
+            "why": "The shared-helper directory, and the measured reach is wide: blank-non-code.ts 266 importing suites across 5 roots, make-context.ts 212 (128 unit + 83 integration), db.ts 200, collect-files.ts 154, catalogue.ts 87. The `^tests/` rule selects only the META-guard roots, so editing the helper CLAUDE.md names as the canonical way to build a RequestContext ran NONE of its 211 importers. The list is the union over the DIRECTORY, so a two-importer helper pays for its neighbours — accepted deliberately, because the alternative is a rule per file and 27 rules go stale one at a time. Held true by tests/guards/verify-changed-covers-shared-test-helpers.test.ts, which re-derives the importers."
+        },
+        {
+            "when": "^tests\\/integration\\/(?!.*\\.(test|spec)\\.tsx?$)",
+            "run": [
+                "tests/integration",
+                "tests/unit",
+                "tests/drills"
+            ],
+            "why": "db-helper.ts has 197 importers, 193 of them in tests/integration, and db-probe.ts 198 — every integration suite reaches one or both. This is the miss that filed #2531: #2545 rewrote two steps of db-helper.ts into a `refuse(): never` and the derived population contained zero integration suites."
+        },
+        {
+            "when": "^tests\\/rendered\\/(?!.*\\.(test|spec)\\.tsx?$)",
+            "run": [
+                "tests/rendered"
+            ],
+            "why": "viewport.ts is imported by 30 suites, and setup.ts plus five component mocks are wired into the jsdom project by jest.config.js — setup.ts is the file CLAUDE.md names as the reason every rendered test runs as a PHONE, so changing its matchMedia stub changes which branch 271 suites execute."
+        },
+        {
+            "when": "^tests\\/(unit|contracts|e2e)\\/(?!.*\\.(test|spec)\\.tsx?$)",
+            "run": [
+                "tests/unit",
+                "tests/contracts"
+            ],
+            "why": "The small tail of the same class: acknowledged-breaking-changes.ts is read by a contracts suite, __bearer-parity-helpers.ts by a unit suite, and tests/e2e/detail-paint-state.ts by a unit suite rather than by a spec. tests/e2e is deliberately NOT a run target here and must never become one — all 65 files there are `*.spec.ts` and jest's node project matches `*.test.ts` only, so the entry would name a real directory, satisfy verify-changed-rules-resolve, and contribute zero tests."
         }
     ],
     "contentRules": [
