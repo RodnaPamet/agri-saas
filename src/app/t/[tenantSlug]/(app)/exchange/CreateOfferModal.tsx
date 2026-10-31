@@ -14,6 +14,26 @@
  * so a seller can route different offers to different people, and it leaves
  * the server only through `toPublicInquiry`'s reveal gate — to the single
  * buyer whose inquiry this seller accepts.
+ *
+ * ── It CREATES and it EDITS, from one form — #2543 ───────────────────────
+ *
+ * `OfferModal` takes a discriminated `mode`; `CreateOfferModal` is a thin
+ * wrapper over the create arm. The PUT's body is the POST's body plus
+ * `updatedAt`, so a second form would be eleven fields duplicated with
+ * nothing keeping them in step — and the field this form is most careful
+ * about (`sellerContact`, private; `publishAsFarm`, flag-gated and
+ * consent-bearing) are exactly the ones a drifting copy would get wrong.
+ *
+ * It stays in THIS FILE rather than being extracted to a shared
+ * `OfferFormFields`, and that is deliberate: three guards read this path as a
+ * hardcoded string — `input-commodity-invariants` (the commodity Combobox is
+ * derived, never free text), `oblast-comes-from-the-region-list` (regionCode
+ * comes from the oblast list) and `p6-controls-are-flag-gated` (the
+ * `publishAsFarm` switch is gated on `social.public-profile`). Moving the
+ * fields out would point all three at a file that no longer contains what
+ * they assert. They would fail loudly rather than pass vacuously, which is
+ * the better direction — but the form being one file is what makes create and
+ * edit unable to disagree, so the extraction has no upside to pay for it.
  */
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useTranslations } from 'next-intl';
@@ -26,12 +46,16 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { apiPost } from '@/lib/api-client';
+import { apiPost, apiPut } from '@/lib/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import { BULGARIA_REGION_OPTIONS } from '@/lib/geo/bulgaria-regions';
 import { CANONICAL_COMMODITIES } from '@/lib/market/commodity-vocabulary';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
-import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
+import type {
+    ExchangeKindValue,
+    ExchangeListingEdit,
+    ExchangePublicListing,
+} from '@/lib/exchange/public-listing';
 import { commodityLabel, type CommodityTranslator } from '@/lib/market/commodity-label';
 
 /**
@@ -58,10 +82,37 @@ function buildCommodityOptions(tCommodity: CommodityTranslator): ComboboxOption[
     })).sort((a, b) => a.label.localeCompare(b.label));
 }
 
-interface CreateOfferModalProps {
+/**
+ * Create a listing, or replace one that exists.
+ *
+ * A DISCRIMINATED union rather than an optional `listingId` beside an optional
+ * `onSaved`: each mode needs a different callback and a different request, and
+ * optional props would let a call site ask for an edit with no row to edit.
+ * This makes that combination unrepresentable.
+ */
+export type OfferModalMode =
+    | { kind: 'create'; onCreated: (listing: ExchangePublicListing) => void }
+    | {
+          kind: 'edit';
+          listingId: string;
+          /**
+           * The row's editable values AS STORED — the `edit` object from
+           * `GET /exchange/my-listings`, which is this form's body verbatim.
+           *
+           * Read ONCE, in the `useState` initialisers below, so the caller
+           * must mount a fresh modal per listing (`key={listing.id}`). That is
+           * why there is no `useEffect` re-seeding form state from props: an
+           * effect that calls setState is both a lint finding here and a race
+           * with whatever the operator has already typed.
+           */
+          initial: ExchangeListingEdit;
+          onSaved: (listing: ExchangePublicListing) => void;
+      };
+
+interface OfferModalProps {
     open: boolean;
     setOpen: Dispatch<SetStateAction<boolean>>;
-    onCreated: (listing: ExchangePublicListing) => void;
+    mode: OfferModalMode;
     /**
      * Whether `social.public-profile` is on FOR THIS VIEWER — P6.7 (#1929).
      *
@@ -78,26 +129,31 @@ interface CreateOfferModalProps {
 // blank field would publish the farm's own name — behaviour nothing
 // implemented, and no caller ever passed the prop, so the promise was made to
 // every seller and kept for none.
-export function CreateOfferModal({
+export function OfferModal({
     open,
     setOpen,
-    onCreated,
+    mode,
     publicProfileEnabled,
-}: CreateOfferModalProps) {
+}: OfferModalProps) {
     const t = useTranslations('exchange.offer');
     const buildUrl = useTenantApiUrl();
 
-    const [side, setSide] = useState<'SELL' | 'BUY'>('SELL');
-    const [kind, setKind] = useState<'CULTURE' | 'FERTILIZER' | 'SEEDS' | 'PRODUCT'>('CULTURE');
-    const [commodity, setCommodity] = useState('');
-    const [quantity, setQuantity] = useState('');
-    const [price, setPrice] = useState('');
-    const [regionCode, setRegionCode] = useState('');
-    const [description, setDescription] = useState('');
-    const [expiresAt, setExpiresAt] = useState<Date | null>(null);
-    const [displayName, setDisplayName] = useState('');
-    const [publishAsFarm, setPublishAsFarm] = useState(false);
-    const [sellerContact, setSellerContact] = useState('');
+    const editing = mode.kind === 'edit' ? mode : null;
+    const initial = editing?.initial ?? null;
+
+    const [side, setSide] = useState<'SELL' | 'BUY'>(initial?.side ?? 'SELL');
+    const [kind, setKind] = useState<ExchangeKindValue>(initial?.kind ?? 'CULTURE');
+    const [commodity, setCommodity] = useState(initial?.commodity ?? '');
+    const [quantity, setQuantity] = useState(initial?.quantityTonnes ?? '');
+    const [price, setPrice] = useState(initial?.pricePerTonne ?? '');
+    const [regionCode, setRegionCode] = useState(initial?.regionCode ?? '');
+    const [description, setDescription] = useState(initial?.description ?? '');
+    const [expiresAt, setExpiresAt] = useState<Date | null>(
+        initial?.expiresAt ? new Date(initial.expiresAt) : null,
+    );
+    const [displayName, setDisplayName] = useState(initial?.sellerDisplayName ?? '');
+    const [publishAsFarm, setPublishAsFarm] = useState(initial?.publishAsFarm ?? false);
+    const [sellerContact, setSellerContact] = useState(initial?.sellerContact ?? '');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -117,9 +173,97 @@ export function CreateOfferModal({
         qtyNum > 0 &&
         !submitting;
 
-    const isDirty =
-        commodity !== '' || regionCode !== '' || quantity !== '' || price !== '' ||
-        description !== '' || displayName !== '' || sellerContact !== '' || expiresAt !== null || publishAsFarm;
+    /**
+     * What to send for `expiresAt`.
+     *
+     * UNCHANGED means the STORED STRING, byte for byte. The server accepts an
+     * unchanged expiry whatever the clock says and refuses only a CHANGED one
+     * that is in the past — otherwise editing a listing on its last day would
+     * be refused over a field nobody touched. It compares instants, so a
+     * re-serialised equal date would also pass; sending the original is what
+     * the operation's own description says a client does, and it keeps this
+     * form and the iOS one literally identical on the one field where
+     * "identical" is load-bearing.
+     */
+    function expiryToSend(): string | null {
+        if (!expiresAt) return null;
+        if (initial?.expiresAt && new Date(initial.expiresAt).getTime() === expiresAt.getTime()) {
+            return initial.expiresAt;
+        }
+        return expiresAt.toISOString();
+    }
+
+    /**
+     * The request body — the SAME eleven fields for both modes, because the
+     * PUT's shape is the POST's plus `updatedAt`. Built in one place so a mode
+     * cannot acquire a field the other lacks.
+     */
+    function payload() {
+        return {
+            side,
+            kind,
+            commodity: commodity.trim(),
+            quantityTonnes: quantity.trim(),
+            pricePerTonne: price.trim() === '' ? null : price.trim(),
+            // No currency field: the marketplace is euro-denominated, so
+            // there is nothing to choose. Sending it explicitly keeps the
+            // request self-describing for anyone reading the network tab.
+            priceCurrency: EXCHANGE_CURRENCY,
+            regionCode,
+            description: description.trim() === '' ? null : description.trim(),
+            sellerDisplayName: displayName.trim() === '' ? null : displayName.trim(),
+            publishAsFarm,
+            // PRIVATE, unlike every other field on this form. It is not in
+            // `ExchangePublicListing`, so the response we get back never
+            // echoes it — it surfaces once, to one buyer, on accept.
+            sellerContact: sellerContact.trim() === '' ? null : sellerContact.trim(),
+            expiresAt: expiryToSend(),
+        };
+    }
+
+    /**
+     * The stored values put through `payload()`'s own normalisation, so
+     * "dirty" compares like with like. Without the round-trip a stored `null`
+     * description and an empty input would read as a change, and the modal
+     * would warn about unsaved work on a form nobody edited.
+     */
+    const storedPayload = useMemo(
+        () =>
+            initial
+                ? JSON.stringify({
+                      side: initial.side,
+                      kind: initial.kind,
+                      commodity: initial.commodity.trim(),
+                      quantityTonnes: initial.quantityTonnes.trim(),
+                      pricePerTonne:
+                          (initial.pricePerTonne ?? '').trim() === ''
+                              ? null
+                              : (initial.pricePerTonne ?? '').trim(),
+                      priceCurrency: EXCHANGE_CURRENCY,
+                      regionCode: initial.regionCode,
+                      description:
+                          (initial.description ?? '').trim() === ''
+                              ? null
+                              : (initial.description ?? '').trim(),
+                      sellerDisplayName:
+                          (initial.sellerDisplayName ?? '').trim() === ''
+                              ? null
+                              : (initial.sellerDisplayName ?? '').trim(),
+                      publishAsFarm: initial.publishAsFarm,
+                      sellerContact:
+                          (initial.sellerContact ?? '').trim() === ''
+                              ? null
+                              : (initial.sellerContact ?? '').trim(),
+                      expiresAt: initial.expiresAt,
+                  })
+                : null,
+        [initial],
+    );
+
+    const isDirty = editing
+        ? JSON.stringify(payload()) !== storedPayload
+        : commodity !== '' || regionCode !== '' || quantity !== '' || price !== '' ||
+          description !== '' || displayName !== '' || sellerContact !== '' || expiresAt !== null || publishAsFarm;
 
     function reset() {
         setSide('SELL'); setKind('CULTURE'); setCommodity(''); setQuantity('');
@@ -131,31 +275,37 @@ export function CreateOfferModal({
         setSubmitting(true);
         setError(null);
         try {
-            const created = await apiPost<ExchangePublicListing>(buildUrl('/exchange/listings'), {
-                side,
-                kind,
-                commodity: commodity.trim(),
-                quantityTonnes: quantity.trim(),
-                pricePerTonne: price.trim() === '' ? null : price.trim(),
-                // No currency field: the marketplace is euro-denominated, so
-                // there is nothing to choose. Sending it explicitly keeps the
-                // request self-describing for anyone reading the network tab.
-                priceCurrency: EXCHANGE_CURRENCY,
-                regionCode,
-                description: description.trim() === '' ? null : description.trim(),
-                sellerDisplayName: displayName.trim() === '' ? null : displayName.trim(),
-                publishAsFarm,
-                // PRIVATE, unlike every other field on this form. It is not in
-                // `ExchangePublicListing`, so the response we get back never
-                // echoes it — it surfaces once, to one buyer, on accept.
-                sellerContact: sellerContact.trim() === '' ? null : sellerContact.trim(),
-                expiresAt: expiresAt ? expiresAt.toISOString() : null,
-            });
-            onCreated(created);
+            // Narrowed on `mode.kind`, NOT on the derived `editing` above.
+            // TypeScript narrows the union through a check on the union's own
+            // discriminant; `editing` is a separate binding, so a check on it
+            // leaves `mode` wide and `mode.onCreated` below does not typecheck.
+            if (mode.kind === 'edit') {
+                const saved = await apiPut<ExchangePublicListing>(
+                    buildUrl(`/exchange/listings/${mode.listingId}`),
+                    {
+                        ...payload(),
+                        // A PRECONDITION, not a value. The server refuses with
+                        // 409 LISTING_MODIFIED when it no longer matches, so a
+                        // concurrent edit is rejected rather than silently
+                        // overwritten — which is the whole reason this is a
+                        // replacement the operator can be trusted with.
+                        updatedAt: mode.initial.updatedAt,
+                    },
+                );
+                mode.onSaved(saved);
+                setOpen(false);
+                // NOT reset(). The modal is mounted per listing and unmounts
+                // on close, so there is no stale state to clear — and
+                // blanking the form before the close animation finishes shows
+                // the operator an empty version of what they just saved.
+                return;
+            }
+            const created = await apiPost<ExchangePublicListing>(buildUrl('/exchange/listings'), payload());
+            mode.onCreated(created);
             setOpen(false);
             reset();
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create offer');
+            setError(err instanceof Error ? err.message : 'Failed to save offer');
         } finally {
             setSubmitting(false);
         }
@@ -166,12 +316,15 @@ export function CreateOfferModal({
             showModal={open}
             setShowModal={setOpen}
             size="lg"
-            title={t('title')}
+            title={editing ? t('editTitle') : t('title')}
             description={t('description')}
             preventDefaultClose={submitting}
             isDirty={isDirty}
         >
-            <Modal.Header title={t('title')} description={t('headerDescription')} />
+            <Modal.Header
+                title={editing ? t('editTitle') : t('title')}
+                description={editing ? t('editHeaderDescription') : t('headerDescription')}
+            />
             <Modal.Form id="exchange-offer-form" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
                 <Modal.Body>
                     {error && (
@@ -353,10 +506,38 @@ export function CreateOfferModal({
                         {t('cancel')}
                     </Button>
                     <Button variant="primary" size="sm" type="submit" loading={submitting} disabled={!canSubmit}>
-                        {t('submit')}
+                        {editing ? t('editSubmit') : t('submit')}
                     </Button>
                 </Modal.Actions>
             </Modal.Form>
         </Modal>
+    );
+}
+
+interface CreateOfferModalProps {
+    open: boolean;
+    setOpen: Dispatch<SetStateAction<boolean>>;
+    onCreated: (listing: ExchangePublicListing) => void;
+    publicProfileEnabled: boolean;
+}
+
+/**
+ * The create entry point, kept as its own export so `ExchangeClient` reads the
+ * same as it did and nothing about publishing a new offer changed. The edit
+ * arm is reached through `OfferModal` directly.
+ */
+export function CreateOfferModal({
+    open,
+    setOpen,
+    onCreated,
+    publicProfileEnabled,
+}: CreateOfferModalProps) {
+    return (
+        <OfferModal
+            open={open}
+            setOpen={setOpen}
+            mode={{ kind: 'create', onCreated }}
+            publicProfileEnabled={publicProfileEnabled}
+        />
     );
 }

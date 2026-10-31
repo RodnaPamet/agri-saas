@@ -1,5 +1,6 @@
 import { getTenantCtx } from '@/app-layer/context';
 import { isModuleAvailable } from '@/app-layer/usecases/modules';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { MyListingsClient } from './MyListingsClient';
 
 /**
@@ -23,5 +24,22 @@ export default async function MyListingsPage({
     const { tenantSlug } = await params;
     const ctx = await getTenantCtx({ tenantSlug });
     const exchangeEnabled = await isModuleAvailable(ctx, 'EXCHANGE');
-    return <MyListingsClient exchangeEnabled={exchangeEnabled} />;
+
+    // P6.7 (#1929), resolved HERE for the reason the exchange page gives: there
+    // is no client-side flags hook, and adding one would be a second source of
+    // truth for a kill switch. Scoped to the VIEWER rather than resolved
+    // globally, because a cohort-limited flag is a limited rollout and the
+    // control should appear for the people in it.
+    //
+    // NOT `notFound()` — this page is custody of the tenant's own rows and must
+    // stay reachable however the flag is set. Only the attribution switch inside
+    // the edit form is P6, so only it is gated.
+    const publicProfileEnabled = await isFeatureEnabled('social.public-profile', ctx.userId);
+
+    return (
+        <MyListingsClient
+            exchangeEnabled={exchangeEnabled}
+            publicProfileEnabled={publicProfileEnabled}
+        />
+    );
 }

@@ -288,6 +288,37 @@ export async function apiPatch<T>(
 }
 
 /**
+ * Typed PUT request.
+ *
+ * A full REPLACEMENT, where `apiPatch` is a partial update — and the exchange
+ * listing edit is why this exists (#2543). Under a patch, "leave the
+ * description alone" and "clear the description" are the same JSON, so a form
+ * whose fields are nullable has to send them all.
+ *
+ * The `headers` merge is the one in `apiPost` above, for the reason given
+ * there: `...withTimeout(init)` would otherwise replace the key wholesale and
+ * a caller passing one header would silently drop `Content-Type`.
+ */
+export async function apiPut<T>(
+    url: string,
+    body: unknown,
+    schema?: ZodSchema<T>,
+    init?: RequestInit,
+): Promise<T> {
+    const res = await fetchOrThrow(url, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+        ...withTimeout(init),
+        headers: { 'Content-Type': 'application/json', ...(init?.headers as Record<string, string> | undefined) },
+    });
+
+    if (!res.ok) await handleErrorResponse(res);
+
+    const data = await res.json();
+    return validateIfDev<T>(data, schema);
+}
+
+/**
  * DELETE request — returns void on success.
  */
 export async function apiDelete(

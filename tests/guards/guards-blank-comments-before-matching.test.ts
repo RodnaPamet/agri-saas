@@ -214,7 +214,7 @@ const POPULATION_FLOOR = 1200;
  * version, as that entry concluded.
  */
 /**
- * 464 -> 465 for `no-duplicate-object-keys` (#2537), a THIRD detector false
+ * 464 -> 465 for `no-duplicate-declarations` (#2537, #2554), a THIRD detector false
  * positive — same mechanism as the second, and the first one where the hazard
  * is structurally impossible rather than merely absent.
  *

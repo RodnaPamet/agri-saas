@@ -52,20 +52,57 @@ jobs:
               env:
                   PROBE_BASE_URL: ${{ vars.PROBE_BASE_URL || 'https://app.agrent.bg' }}
               run: |
+                  # Three attempts, 40s apart, first OK wins — #2561.
+                  #
+                  # A single sample cannot tell a DEPLOY RESTART from an
+                  # outage, and this file's own header says watchtower polls
+                  # `:latest` every 60 seconds. Measured on run 41202376983:
+                  # ghcr-publish for f94788ee2 finished 12:36:40, this probe
+                  # failed at 12:43:48 with `/robots.txt` answering 502, and on
+                  # the VM `caddy` was up 7 days while `app` and `worker` had
+                  # restarted minutes earlier. Caddy staying up in front of a
+                  # restarting app is exactly how an ungated control returns
+                  # 502 rather than failing to connect.
+                  #
+                  # CLAUDE.md's "a deploy's restart window CANNOT trip this
+                  # alert" is TRUE of the GCP uptime check and does not
+                  # transfer: that one needs >1 region sustained over 300s,
+                  # this one had no sustain requirement at all.
+                  #
+                  # `timeout 45` is per ATTEMPT, so a hung fetch cannot eat the
+                  # whole budget and leave attempts 2 and 3 unrun. Worst case
+                  # 3*45 + 2*40 = 215s, inside the job's 5 minutes.
                   set -uo pipefail
-                  out="$(npx -y tsx scripts/public-surface-probe.ts 2>&1 || true)"
-                  echo "$out"
-                  line="$(printf '%s\n' "$out" | grep -o 'PROBE_RESULT=.*' | tail -1 || true)"
-                  if [ -z "$line" ]; then
-                      # The probe did not reach its own verdict. Reported as
-                      # BROKEN rather than passing, because a probe that fails
-                      # to speak is indistinguishable from one nobody ran.
-                      line="PROBE_RESULT=BROKEN the probe produced no verdict line"
-                  fi
-                  state="$(printf '%s' "$line" | sed 's/^PROBE_RESULT=//' | cut -d' ' -f1)"
-                  detail="$(printf '%s' "$line" | sed 's/^PROBE_RESULT=[A-Z]* //')"
+                  state=""
+                  detail=""
+                  for attempt in 1 2 3; do
+                      out="$(timeout 45 npx -y tsx scripts/public-surface-probe.ts 2>&1 || true)"
+                      echo "$out"
+                      line="$(printf '%s\n' "$out" | grep -o 'PROBE_RESULT=.*' | tail -1 || true)"
+                      if [ -z "$line" ]; then
+                          # The probe did not reach its own verdict. Reported
+                          # as BROKEN rather than passing, because a probe that
+                          # fails to speak is indistinguishable from one nobody
+                          # ran.
+                          line="PROBE_RESULT=BROKEN the probe produced no verdict line"
+                      fi
+                      state="$(printf '%s' "$line" | sed 's/^PROBE_RESULT=//' | cut -d' ' -f1)"
+                      detail="$(printf '%s' "$line" | sed 's/^PROBE_RESULT=[A-Z]* //')"
+                      if [ "$state" = "OK" ]; then
+                          if [ "$attempt" != "1" ]; then
+                              echo "::notice::recovered on attempt $attempt/3 — transient, which is what a deploy restart looks like"
+                          fi
+                          break
+                      fi
+                      echo "::warning::attempt $attempt/3: $state — $detail"
+                      if [ "$attempt" != "3" ]; then sleep 40; fi
+                  done
                   echo "verdict=$state" >> "$GITHUB_OUTPUT"
                   echo "detail=$detail" >> "$GITHUB_OUTPUT"
+                  # Still fails CLOSED after three samples a minute apart: an
+                  # outage that survives that is worth knowing even though the
+                  # GCP uptime check also sees it. A probe that goes quiet
+                  # during an outage is the absence-reads-as-success shape.
                   [ "$state" = "OK" ] || exit 1
 
             - name: Raise it
@@ -81,17 +118,35 @@ jobs:
                   # One issue per verdict kind, reopened and commented rather
                   # than a new issue every six hours — a probe that files
                   # duplicates gets muted, and a muted probe is worse than none.
-                  existing="$(gh issue list --state all --search "\"$title\" in:title" \
-                      --json number,state --jq '.[0] | "\(.number) \(.state)"' || true)"
+                  # `.[0].number // empty` — #2561. This was
+                  # `.[0] | "\(.number) \(.state)"`, and for an EMPTY result
+                  # `.[0]` is null, so the interpolation produced the literal
+                  # string "null null". That is non-empty, so the branch below
+                  # took the reopen-and-comment path with num="null",
+                  # `gh issue reopen null` was swallowed by its own `|| true`,
+                  # and `gh issue comment null` exited 1 with
+                  # `invalid issue format: "null"`.
+                  #
+                  # So the CREATE branch was unreachable and this step had
+                  # never once filed an issue: it could only work where one
+                  # already existed under the same title. Measured on run
+                  # 41202376983 — verdict OUTAGE computed, logged, and then
+                  # lost, leaving only the generic `CI failure:` notifier,
+                  # which does not carry the DARK/OUTAGE distinction this probe
+                  # exists to make.
+                  #
+                  # `// empty` rather than `// ""` because it yields no output
+                  # at all, and the numeric test below is the second half: a
+                  # non-numeric value must reach `create`, never `comment`.
+                  num="$(gh issue list --state all --search "\"$title\" in:title" \
+                      --json number --jq '.[0].number // empty' || true)"
                   body="$(printf '%s\n\n%s\n\n%s' \
                       "\`${VERDICT:-BROKEN}\` — ${DETAIL:-no detail}" \
                       "DARK means a gated surface 404s while the ungated control is fine, which is what a missing FeatureFlag row looks like (#2009 instance 3). OUTAGE means the control itself is down, so this says nothing about any flag." \
                       "Run: ${RUN_URL}")"
-                  if [ -n "$existing" ]; then
-                      num="${existing%% *}"
+                  if printf '%s' "$num" | grep -qE '^[0-9]+$'; then
                       gh issue reopen "$num" 2>/dev/null || true
                       gh issue comment "$num" --body "$body"
                   else
-                      gh issue create --title "$title" --body "$body" --label "" || \
-                          gh issue create --title "$title" --body "$body"
+                      gh issue create --title "$title" --body "$body"
                   fi
