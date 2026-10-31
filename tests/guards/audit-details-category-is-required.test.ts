@@ -37,10 +37,28 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { validateAuditDetailsJson } from '@/app-layer/schemas/json-columns.schemas';
 import type { AuditEventPayload } from '@/app-layer/events/audit';
 
 const ROOT = process.cwd();
+
+/**
+ * The selection, at MODULE level and named, so `selector-teeth` can
+ * mutation-audit it (#2423). Inline inside `it()` it would pass whether or not
+ * it selected anything — which is exactly the failure mode this whole file is
+ * about one level down.
+ *
+ * `{ strings: true }` (#1774): the subject is a DECLARATION, and this file's
+ * own docblocks quote both the narrow and the wide spelling, so an unblanked
+ * read would match its own prose and pass whatever `audit.ts` says.
+ */
+export function auditPayloadDeclaration(): string {
+    return blankNonCode(
+        readFileSync(join(ROOT, 'src/app-layer/events/audit.ts'), 'utf8'),
+        { strings: true },
+    );
+}
 
 describe('§1 the schema still refuses a payload with no category', () => {
     /**
@@ -96,7 +114,6 @@ describe('§1 the schema still refuses a payload with no category', () => {
         for (const category of members) {
             expect(() => validateAuditDetailsJson({ category })).not.toThrow();
         }
-        // eslint-disable-next-line no-console
         console.log(`[audit-details-category] enum members accepted: ${members.length}`);
     });
 });
@@ -158,7 +175,7 @@ describe('§2 the TYPE is the enforcement, and stays narrow', () => {
      * site unchecked, so the declaration is pinned as text too.
      */
     it('audit.ts declares detailsJson as AuditDetailsJson', () => {
-        const src = readFileSync(join(ROOT, 'src/app-layer/events/audit.ts'), 'utf8');
+        const src = auditPayloadDeclaration();
         expect(src).toMatch(/detailsJson\?:\s*AuditDetailsJson;/);
         expect(src).not.toMatch(/detailsJson\?:\s*Record<string,\s*unknown>;/);
     });
