@@ -117,6 +117,29 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
+         * #2495 step 5 — purge the documents whose retention period has run out.
+         *
+         * Daily, which only decides how long past its expiry day a document
+         * waits — up to 24 hours. `expiresOn` is a calendar DAY KEY rather than
+         * an instant, so a daily beat is the SAME granularity as the deadline
+         * it enforces rather than an approximation of it. A tighter cadence
+         * would buy nothing: nothing expires between two points on one day.
+         *
+         * 03:45 UTC, deliberately BEFORE `data-lifecycle` (04:00) and
+         * `account-erasure-sweep` (04:15). Each purge is a short transaction
+         * plus one object-store delete, so the cost is the object store rather
+         * than the 12-connection pool — but putting it ahead of the two long
+         * transaction sweeps keeps it from queueing behind them, and a
+         * retention deadline is the one thing in this table that a regulator
+         * can ask about by date.
+         */
+        name: 'document-retention-sweep',
+        pattern: '45 3 * * *',
+        description: 'Purge expired farm documents, leaving an EXPIRED tombstone (#2495)',
+        defaultPayload: {},
+    },
+    {
+        /**
          * P5.6b — erase the accounts whose 30-day grace period has run out.
          *
          * Daily, which only decides how long past day 30 an erasure waits — up
