@@ -537,6 +537,10 @@
             "title": "Ниска наличност",
             "body": "{name}: наличност {onHand}, минимум {reorderLevel}."
         },
+        "leaseExpiring": {
+            "title": "Изтичащ договор за наем",
+            "body": "Договорът за „{parcel}“ с {lessor} изтича на {date} (остават дни: {days})."
+        },
         "markRead": "Маркирай като прочетено",
         "noNotifications": "Няма известия",
         "slaBreach": {

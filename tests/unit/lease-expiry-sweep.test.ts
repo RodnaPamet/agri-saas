@@ -158,3 +158,82 @@ describe('runLeaseExpirySweep — linkUrl', () => {
         expect(createdRow().dedupeKey).toBe('lease-expiry:t1:l3:u1:2026-07-01');
     });
 });
+
+/**
+ * The copy is the RECIPIENT's language — #2511.
+ *
+ * Written as a COMPARISON of two recipients rather than as an assertion about
+ * one string, because every other shape of this test passes on the defect. The
+ * sweep hardcoded «Изтичащ договор за наем», and:
+ *
+ *   · asserting the Bulgarian title passes on the hardcoded version — that IS
+ *     the hardcoded version;
+ *   · asserting "a title exists" passes on anything;
+ *   · asserting the English title for an `en` user passes, but only until
+ *     somebody hardcodes English instead, which is the mirror defect and the
+ *     one the English-prose guard is already looking for.
+ *
+ * Two recipients of ONE event, differing only in `uiLanguage`, getting
+ * DIFFERENT strings is the property. A producer that hardcodes in either
+ * language gives them the same one.
+ *
+ * Note what the existing tests in this file could not catch: they pass on both
+ * the old and new code, because they assert `linkUrl` and `dedupeKey` and
+ * never the copy. The real `translateFor` runs here, so these read the
+ * catalogue rather than a double — a double would let the test pass while the
+ * key was missing from `bg.json`.
+ */
+describe('runLeaseExpirySweep — the copy follows the recipient (#2511)', () => {
+    async function rowsForTwoRecipients() {
+        mockLeaseFindMany.mockResolvedValue([
+            {
+                id: 'l1',
+                tenantId: 't1',
+                endDate: new Date('2026-07-01T00:00:00Z'),
+                lessorName: 'Иван Петров',
+                parcel: { name: 'Нива 3', locationId: null },
+            },
+        ]);
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 't1', userId: 'u-bg', tenant: { slug: 'acme' }, user: { uiLanguage: 'bg' } },
+            { tenantId: 't1', userId: 'u-en', tenant: { slug: 'acme' }, user: { uiLanguage: 'en' } },
+        ]);
+        mockNotifCreateMany.mockResolvedValue({ count: 2 });
+        await run();
+        const rows = mockNotifCreateMany.mock.calls[0][0].data as {
+            userId: string;
+            title: string;
+            message: string;
+        }[];
+        return {
+            bg: rows.find((r) => r.userId === 'u-bg')!,
+            en: rows.find((r) => r.userId === 'u-en')!,
+        };
+    }
+
+    test('two recipients of ONE expiry get copy in their OWN languages', async () => {
+        const { bg, en } = await rowsForTwoRecipients();
+
+        // The comparison. Equal titles mean the copy is hardcoded, whichever
+        // language it happens to be in.
+        expect(bg.title).not.toBe(en.title);
+        expect(bg.message).not.toBe(en.message);
+        // And each is actually in its own language, so "different" cannot be
+        // satisfied by two wrong strings.
+        expect(bg.title).toMatch(/[Ѐ-ӿ]/);
+        expect(en.title).not.toMatch(/[Ѐ-ӿ]/);
+    });
+
+    test('the interpolated values survive into both', async () => {
+        const { bg, en } = await rowsForTwoRecipients();
+        // The parcel name and lessor are DATA, not copy — they are the
+        // farmer's own words and are not translated. Asserted in both so a
+        // key whose placeholders do not match the call site is caught: a
+        // missing `{parcel}` would leave the name out silently.
+        for (const row of [bg, en]) {
+            expect(row.message).toContain('Нива 3');
+            expect(row.message).toContain('Иван Петров');
+            expect(row.message).toContain('2026-07-01');
+        }
+    });
+});

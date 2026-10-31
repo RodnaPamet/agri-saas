@@ -20,6 +20,9 @@ import prisma from '@/lib/prisma';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
 import { ALERT_DAYS } from '@/lib/agro/lease-expiry';
 import type { JobRunResult } from './types';
 
@@ -87,36 +90,82 @@ export async function runLeaseExpirySweep(
                 const tenantIds = [...new Set(leases.map((l) => l.tenantId))];
                 const memberships = await prisma.tenantMembership.findMany({
                     where: { tenantId: { in: tenantIds }, status: 'ACTIVE', role: { in: ['OWNER', 'ADMIN'] } },
-                    select: { tenantId: true, userId: true, tenant: { select: { slug: true } } },
+                    select: {
+                        tenantId: true,
+                        userId: true,
+                        tenant: { select: { slug: true } },
+                        // The locale comes off a relation this query ALREADY
+                        // walks, rather than a second lookup per recipient —
+                        // the D1 N+1 the `sla-monitor` half of #2542 had to
+                        // undo. `include` returns every scalar, so this costs
+                        // nothing extra.
+                        user: { select: { uiLanguage: true } },
+                    },
                     take: 5000,
                 });
-                const recipientsByTenant = new Map<string, { userId: string; slug: string }[]>();
+                const recipientsByTenant = new Map<
+                    string,
+                    { userId: string; slug: string; locale: Locale }[]
+                >();
                 for (const m of memberships) {
                     const list = recipientsByTenant.get(m.tenantId) ?? [];
-                    list.push({ userId: m.userId, slug: m.tenant.slug });
+                    list.push({
+                        userId: m.userId,
+                        slug: m.tenant.slug,
+                        // `bg` when the column is null — `resolveRecipientLocale`'s
+                        // fallback, deliberately NOT `DEFAULT_LOCALE`, which is
+                        // `en` and documented for UNAUTHENTICATED surfaces. A
+                        // lease notification goes to a known user whose column
+                        // default is `bg`.
+                        locale: resolveRecipientLocale(m.user?.uiLanguage ?? null),
+                    });
                     recipientsByTenant.set(m.tenantId, list);
                 }
 
                 // 3 — candidate rows, drop ones already sent for this contract.
-                const candidates = leases.flatMap((lease) => {
+                // A `for` loop rather than `flatMap`, because `translateFor` is
+                // async and a `.map` of promises would put unresolved promises
+                // in `data` — the trap the low-stock half of #2542 records.
+                const candidates: {
+                    tenantId: string;
+                    userId: string;
+                    type: 'LEASE_EXPIRING';
+                    title: string;
+                    message: string;
+                    linkUrl: string;
+                    dedupeKey: string;
+                }[] = [];
+                for (const lease of leases) {
                     const endYmd = lease.endDate!.toISOString().slice(0, 10);
                     const daysLeft = Math.max(
                         0,
                         Math.ceil((lease.endDate!.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)),
                     );
-                    return (recipientsByTenant.get(lease.tenantId) ?? []).map((r) => ({
-                        tenantId: lease.tenantId,
-                        userId: r.userId,
-                        type: 'LEASE_EXPIRING' as const,
-                        title: 'Изтичащ договор за наем',
-                        message: `Договорът за „${lease.parcel.name}" с ${lease.lessorName} изтича на ${endYmd} (след ${daysLeft} дни).`,
-                        // Deep-link to the Rent register — scoped to the parcel's
-                        // location when it has one (the location page deep-links
-                        // the same way).
-                        linkUrl: `/t/${r.slug}/rent${lease.parcel.locationId ? `?locationId=${lease.parcel.locationId}` : ''}`,
-                        dedupeKey: leaseExpiryDedupeKey(lease.tenantId, lease.id, r.userId, endYmd),
-                    }));
-                });
+                    for (const r of recipientsByTenant.get(lease.tenantId) ?? []) {
+                        candidates.push({
+                            tenantId: lease.tenantId,
+                            userId: r.userId,
+                            type: 'LEASE_EXPIRING' as const,
+                            title: await translateFor(r.locale, 'notifications.leaseExpiring.title'),
+                            message: await translateFor(r.locale, 'notifications.leaseExpiring.body', {
+                                parcel: lease.parcel.name,
+                                lessor: lease.lessorName,
+                                date: endYmd,
+                                // AFTER a label in the copy, never before a noun.
+                                // `translateFor` is a simple interpolate with NO
+                                // ICU, so a plural that needs grammatical
+                                // agreement cannot be expressed — «дни: 5» is
+                                // correct at any count in both languages.
+                                days: String(daysLeft),
+                            }),
+                            // Deep-link to the Rent register — scoped to the parcel's
+                            // location when it has one (the location page deep-links
+                            // the same way).
+                            linkUrl: `/t/${r.slug}/rent${lease.parcel.locationId ? `?locationId=${lease.parcel.locationId}` : ''}`,
+                            dedupeKey: leaseExpiryDedupeKey(lease.tenantId, lease.id, r.userId, endYmd),
+                        });
+                    }
+                }
 
                 if (candidates.length > 0) {
                     const keys = candidates.map((c) => c.dedupeKey);

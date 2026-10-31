@@ -105,6 +105,57 @@ const WRITES_NOTIFICATION = /\bnotification\s*\.\s*create(?:Many)?\s*\(/;
  * diff as the fix — the test below fails if a listed file has no English prose
  * left.
  */
+/**
+ * Producers that resolve NO recipient locale, on purpose (#2511).
+ *
+ * Distinct from `STILL_ENGLISH`, which stages a FIX. An entry here is a
+ * decision that there is nothing to translate, so it carries no issue number
+ * and is not expected to leave.
+ */
+const DELIBERATELY_UNLOCALISED: Record<string, string> = {
+    'src/app-layer/automation/action-executor.ts':
+        'Writes `rule.name` and `cfg.title ?? rule.name` — strings the TENANT authored in '
+        + 'their own rule builder. A tenant\'s rule name must not be run through a catalogue, '
+        + 'and there is nothing to translate it TO: no catalogue has a key for a sentence a '
+        + 'farmer typed yesterday. The one producer here whose copy is correctly untranslated, '
+        + 'and recorded rather than swept so the distinction survives.',
+};
+
+/**
+ * Producers that resolve no recipient locale YET, each with the issue that
+ * tracks it (#2511).
+ *
+ * Separate from `DELIBERATELY_UNLOCALISED` above, and the distinction is the
+ * point: that map is a decision that there is nothing to translate, this one is
+ * a debt. An entry here is expected to leave, and the no-stale test below is
+ * what makes it leave — the moment a listed producer gains a `translateFor`,
+ * this guard goes red until the entry goes with it, in that same diff.
+ *
+ * Same forcing function `STILL_ENGLISH` uses, for the reason its own docblock
+ * gives: the exemption is what makes the fix impossible to forget and
+ * impossible to half-do.
+ */
+const STAGED_UNLOCALISED: Record<string, string> = {
+    'src/app-layer/jobs/classify-photo.ts':
+        '#2511. Its TITLE is a Bulgarian frame around `stored.identifiedPest`, which a key '
+        + 'could carry — but its MESSAGE is `${recommendation} ${disclaimer}`, entirely MODEL '
+        + 'output with no frame at all. Keying the title alone would give an `en` recipient an '
+        + 'English heading over Bulgarian advice, and whether the model\'s own prose should be '
+        + 'localised is a question about the AI path rather than about this producer. The '
+        + 'precedent to follow is `generateCopilotExplanation`\'s locale pinning, and that is a '
+        + 'decision rather than a port.',
+    'src/app-layer/jobs/contract-delivery-window-sweep.ts':
+        '#2511. Two hardcoded Bulgarian titles (overdue / approaching) and a message. '
+        + 'Mechanical, and the same shape as the lease sweep fixed in this diff — the recipient '
+        + 'query already walks the membership, so the locale costs no extra read.',
+    'src/app-layer/usecases/field-operation.ts':
+        '#2511. FOUR hardcoded ENGLISH strings on the review notification — two titles and two '
+        + 'messages, as `action === \'APPROVE\'` ternaries. Worth noting that #2511 listed this '
+        + 'file as ALREADY CORRECT: it carries `titleKey`, but on a `LogEntry` written through '
+        + '`createLogEntryWithAudit`, not on the Notification. A per-file classification found '
+        + 'the key and not the site.',
+};
+
 const STILL_ENGLISH: Record<string, string> = {
     // Empty since #2490 discharged the `agro.ts` entry. See the docblock —
     // the map and its no-stale test stay for the next staged fix.
@@ -184,20 +235,95 @@ describe('notification copy is written in the recipient language', () => {
     const files = modules();
 
     it('reports the population it graded', () => {
-        const localising = files.filter((f) =>
-            fs.readFileSync(path.join(REPO, f), 'utf8').includes('translateFor'),
-        );
         const producers = files.filter((f) =>
             WRITES_NOTIFICATION.test(fs.readFileSync(path.join(REPO, f), 'utf8')),
         );
+        // The INTERSECTION, not two independent counts (#2511).
+        //
+        // This read `${producers.length} write a Notification row,
+        // ${localising.length} call translateFor`, where `localising` ranged
+        // over all 27 GRADED modules rather than over the writers. The two
+        // numbers therefore measured different sets while reading as a subset
+        // relation — "16 write a row, 13 call translateFor" invites "so 3 do
+        // not", and the real figure was 5: the 13 included modules that
+        // resolve a locale WITHOUT writing a row (the digest templates, the
+        // enqueue) and excluded writers that do not resolve one at all.
+        //
+        // `a-coverage-number-names-its-axis`, in a line I wrote myself. The
+        // question this guard exists to answer is "how many producers of
+        // recipient-addressed copy resolve the recipient's language", and only
+        // the intersection answers it.
+        const localisingProducers = producers.filter((f) =>
+            fs.readFileSync(path.join(REPO, f), 'utf8').includes('translateFor'),
+        );
+        const unlocalised = producers.filter((f) => !localisingProducers.includes(f));
         console.log(
-            `[notification-copy-localised] graded ${files.length} module(s): ` +
-                `${producers.length} write a Notification row, ${localising.length} call ` +
-                `translateFor; ${Object.keys(STILL_ENGLISH).length} exempt ` +
-                `(${Object.keys(STILL_ENGLISH).join(', ') || 'none'})`,
+            `[notification-copy-localised] graded ${files.length} module(s): `
+                + `${producers.length} write a Notification row, of which `
+                + `${localisingProducers.length} resolve a recipient locale and `
+                + `${unlocalised.length} do not`,
+        );
+        for (const f of unlocalised) {
+            console.log(
+                `[notification-copy-localised] no recipient locale: ${f}`
+                    + `${f in DELIBERATELY_UNLOCALISED ? ' (deliberate)' : ''}`,
+            );
+        }
+        console.log(
+            `[notification-copy-localised] ${Object.keys(STILL_ENGLISH).length} exempt `
+                + `(${Object.keys(STILL_ENGLISH).join(', ') || 'none'}); `
+                + `${Object.keys(DELIBERATELY_UNLOCALISED).length} deliberately unlocalised; `
+                + `${Object.keys(STAGED_UNLOCALISED).length} staged (#2511)`,
         );
         // A detector over an empty population would pass every assertion below.
         expect(files.length).toBeGreaterThanOrEqual(16);
+        // And a FLOOR on the intersection, which the two independent counts
+        // could not express: a writer losing its `translateFor` would have
+        // moved one number and not the other, so neither had a floor that
+        // meant anything.
+        expect(producers.length).toBeGreaterThanOrEqual(16);
+        // At the MEASURED value, so it ratchets: localising one more producer
+        // raises this line in the same diff, and losing one goes red. 11 → 12
+        // with the lease sweep in this change.
+        expect(localisingProducers.length).toBeGreaterThanOrEqual(12);
+    });
+
+    it.each(Object.keys({ ...DELIBERATELY_UNLOCALISED, ...STAGED_UNLOCALISED }))(
+        '%s is still unlocalised — the entry has not gone stale',
+        (file) => {
+            // Without this, a producer that GAINED a `translateFor` would keep
+            // its exemption, and the map would rot into a permanent allowlist
+            // — which is the one thing an exemption map must not become. Same
+            // assertion `STILL_ENGLISH` carries, for the same reason.
+            const src = fs.readFileSync(path.join(REPO, file), 'utf8');
+            expect(src.includes('translateFor')).toBe(false);
+        },
+    );
+
+    it('every unlocalised producer is a DELIBERATE one', () => {
+        const producers = files.filter((f) =>
+            WRITES_NOTIFICATION.test(fs.readFileSync(path.join(REPO, f), 'utf8')),
+        );
+        const unlocalised = producers
+            .filter((f) => !fs.readFileSync(path.join(REPO, f), 'utf8').includes('translateFor'))
+            .filter((f) => !(f in DELIBERATELY_UNLOCALISED) && !(f in STAGED_UNLOCALISED));
+
+        if (unlocalised.length) {
+            throw new Error(
+                `${unlocalised.length} producer(s) of recipient-addressed copy resolve NO `
+                    + `recipient locale:\n\n`
+                    + unlocalised.map((f) => `    ${f}`).join('\n')
+                    + `\n\nA notification is addressed to a PERSON, and four of five users on `
+                    + `this deployment carry \`uiLanguage: 'bg'\`. Resolve the recipient's locale `
+                    + `with \`translateFor(resolveRecipientLocale(user.uiLanguage), key)\` and put `
+                    + `the copy in both catalogues.\n\n`
+                    + `If the string genuinely must not be translated — a tenant-authored rule `
+                    + `name, say — add it to DELIBERATELY_UNLOCALISED with the reason. The `
+                    + `English-prose check above cannot see this: it only catches copy in the `
+                    + `WRONG language, and a producer hardcoding BULGARIAN passes it while being `
+                    + `just as wrong for an \`en\` recipient.`,
+            );
+        }
     });
 
     it.each(modules().filter((f) => !(f in STILL_ENGLISH)))(
