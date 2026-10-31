@@ -34,8 +34,12 @@ import { apiPatch } from '@/lib/api-client';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { localizedRegionName } from '@/lib/geo/bulgaria-regions';
 import { formatPricePerTonne } from '@/lib/exchange/currency';
-import type { ExchangePublicListing } from '@/lib/exchange/public-listing';
+import type {
+    ExchangeListingEdit,
+    ExchangePublicListing,
+} from '@/lib/exchange/public-listing';
 import { ExchangeNav } from '../ExchangeNav';
+import { OfferModal } from '../CreateOfferModal';
 
 interface MyInquiry {
     id: string;
@@ -51,7 +55,18 @@ interface MyInquiry {
     counterpartyContact: string | null;
     contactSharedAt: string | null;
 }
-type MyListing = ExchangePublicListing & { inquiries: MyInquiry[] };
+/**
+ * `edit` is the seller's own editable values AS STORED — a SECOND projection
+ * alongside the public one, and the two disagree about `sellerDisplayName` on
+ * purpose: the public field is resolved to the farm's verified name when
+ * `publishAsFarm` is set, and feeding that into a full-replacement PUT would
+ * write a verified name into the seller's typed-alias column as literal text.
+ * So the form reads `edit`, never the row.
+ */
+type MyListing = ExchangePublicListing & {
+    inquiries: MyInquiry[];
+    edit: ExchangeListingEdit;
+};
 
 function statusVariant(status: string): 'success' | 'neutral' | 'info' | 'warning' {
     if (status === 'ACTIVE' || status === 'ACCEPTED') return 'success';
@@ -87,9 +102,24 @@ interface MyListingsClientProps {
      * offer on it is hidden from buyers.
      */
     exchangeEnabled?: boolean;
+    /**
+     * Whether `social.public-profile` is on FOR THIS VIEWER — P6.7 (#1929).
+     *
+     * REQUIRED, and forwarded unchanged to the edit form, whose own prop is
+     * required for a reason that applies transitively: the switch it gates asks
+     * for CONSENT to attribute a listing to the farm's public page, so a
+     * default here would decide that for the form. `false` hides the control
+     * from a farm entitled to it; `true` offers consent to a thing that cannot
+     * happen. A default would also mean the edit form and the create form could
+     * answer differently about the same farm on the same visit.
+     */
+    publicProfileEnabled: boolean;
 }
 
-export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientProps = {}) {
+export function MyListingsClient({
+    exchangeEnabled = true,
+    publicProfileEnabled,
+}: MyListingsClientProps) {
     const { formatDateTime } = useDateFormat();
     const t = useTranslations('exchange.myListings');
     const locale = useLocale();
@@ -107,6 +137,13 @@ export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientPro
     const [busy, setBusy] = useState<string | null>(null);
     const isBusy = (key: string) => busy === key;
     // A single confirm surface driven by the pending destructive action.
+    /**
+     * The listing whose edit form is open, or null. The ROW, not just an id,
+     * because the form is seeded from `editing.edit` and a lookup by id would
+     * go stale against the very refetch a save triggers.
+     */
+    const [editing, setEditing] = useState<MyListing | null>(null);
+
     const [confirm, setConfirm] = useState<
         { title: string; description: string; tone: ConfirmTone; confirmLabel: string; action: () => Promise<void> } | null
     >(null);
@@ -241,13 +278,36 @@ export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientPro
                                     {' · '}
                                     {localizedRegionName(l.regionCode, locale, l.regionName)}
                                 </span>
-                                {l.status === 'ACTIVE' && (
+                                {(l.status === 'ACTIVE' || l.status === 'EXPIRED') && (
                                     <span className="ml-auto flex gap-compact">
+                                        {/* EXPIRED is not TERMINAL, and this row
+                                            used to act as though it were.
+                                            `TERMINAL_LISTING_STATUSES` is
+                                            `[FULFILLED, WITHDRAWN]`, and the
+                                            usecase says EXPIRED → WITHDRAWN is
+                                            allowed on purpose — tidying up a
+                                            lapsed listing. The controls were
+                                            gated on ACTIVE alone, so a lapsed
+                                            listing offered nothing at all and
+                                            could not be tidied up from the one
+                                            screen that exists for it. The phone
+                                            has offered «Оттегли» on EXPIRED
+                                            since its build 55.1; this is the web
+                                            catching up, not a new affordance. */}
                                         {/* Fulfil needs the module: it is a claim
                                             about a sale in a market this tenant
                                             has left. Withdraw does not — it is
-                                            how they clean up. */}
-                                        {exchangeEnabled && (
+                                            how they clean up.
+
+                                            It needs ACTIVE as well, and that is
+                                            the half the widening above would
+                                            otherwise have broken: the server
+                                            refuses FULFILLED from any other
+                                            status, so on an EXPIRED row this
+                                            would be a button whose only possible
+                                            outcome is a refusal telling the
+                                            seller to withdraw instead. */}
+                                        {exchangeEnabled && l.status === 'ACTIVE' && (
                                         <Button
                                             variant="secondary"
                                             size="sm"
@@ -262,6 +322,27 @@ export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientPro
                                         >
                                             {t('markFulfilled')}
                                         </Button>
+                                        )}
+                                        {/* Edit needs the module for fulfil's
+                                            reason, and the server agrees: PUT
+                                            asserts EXCHANGE where withdraw is
+                                            exempt, because the toggle governs
+                                            participation in the marketplace
+                                            rather than custody of rows already
+                                            posted — and editing changes what is
+                                            being offered.
+
+                                            Absent rather than disabled. The page
+                                            banner already says the Exchange is
+                                            off and that withdrawing is what
+                                            remains, so a greyed-out pencil would
+                                            add a second explanation of the same
+                                            state and invite a click that cannot
+                                            succeed. */}
+                                        {exchangeEnabled && (
+                                            <Button variant="secondary" size="sm" onClick={() => setEditing(l)}>
+                                                {t('edit')}
+                                            </Button>
                                         )}
                                         <Button variant="secondary" size="sm" onClick={() => withdrawListing(l)}>
                                             {t('withdraw')}
@@ -352,6 +433,34 @@ export function MyListingsClient({ exchangeEnabled = true }: MyListingsClientPro
                 </div>
             </ListPageShell.Body>
         </ListPageShell>
+        {/* Keyed on the listing id, which is load-bearing rather than hygiene:
+            `OfferModal` seeds its form state in `useState` initialisers, so a
+            mounted-once modal reused for a second listing would show the
+            first one's values. The key makes every open a fresh mount. */}
+        {editing && (
+            <OfferModal
+                key={editing.id}
+                open
+                setOpen={() => setEditing(null)}
+                publicProfileEnabled={publicProfileEnabled}
+                mode={{
+                    kind: 'edit',
+                    listingId: editing.id,
+                    initial: editing.edit,
+                    onSaved: () => {
+                        setEditing(null);
+                        toast.success(t('editedToast'));
+                        // REFETCH rather than patch the row in place. The
+                        // response carries the listing, but a reactivation
+                        // (EXPIRED → ACTIVE via a later expiresAt) changes
+                        // `status`, and the server is the only thing that knows
+                        // whether it fired — so splicing the response in would
+                        // be re-deriving a decision it already made.
+                        void mutate();
+                    },
+                }}
+            />
+        )}
         {confirm && (
             <ConfirmDialog
                 showModal

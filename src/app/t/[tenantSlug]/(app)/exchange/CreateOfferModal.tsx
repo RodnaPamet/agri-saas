@@ -275,9 +275,13 @@ export function OfferModal({
         setSubmitting(true);
         setError(null);
         try {
-            if (editing) {
+            // Narrowed on `mode.kind`, NOT on the derived `editing` above.
+            // TypeScript narrows the union through a check on the union's own
+            // discriminant; `editing` is a separate binding, so a check on it
+            // leaves `mode` wide and `mode.onCreated` below does not typecheck.
+            if (mode.kind === 'edit') {
                 const saved = await apiPut<ExchangePublicListing>(
-                    buildUrl(`/exchange/listings/${editing.listingId}`),
+                    buildUrl(`/exchange/listings/${mode.listingId}`),
                     {
                         ...payload(),
                         // A PRECONDITION, not a value. The server refuses with
@@ -285,10 +289,10 @@ export function OfferModal({
                         // concurrent edit is rejected rather than silently
                         // overwritten — which is the whole reason this is a
                         // replacement the operator can be trusted with.
-                        updatedAt: editing.initial.updatedAt,
+                        updatedAt: mode.initial.updatedAt,
                     },
                 );
-                editing.onSaved(saved);
+                mode.onSaved(saved);
                 setOpen(false);
                 // NOT reset(). The modal is mounted per listing and unmounts
                 // on close, so there is no stale state to clear — and

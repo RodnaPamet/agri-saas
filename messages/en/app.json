@@ -3879,7 +3879,6 @@
             "withdraw": "Withdraw",
             "edit": "Edit",
             "editedToast": "Offer updated.",
-            "editModuleOff": "Editing is unavailable while the Exchange is switched off. You can still withdraw an offer.",
             "rejectTitle": "Reject this inquiry?",
             "rejectDescription": "The buyer will be notified their inquiry was declined.",
             "reject": "Reject",
