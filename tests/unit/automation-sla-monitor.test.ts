@@ -148,6 +148,73 @@ describe('sla-monitor sweepTenant', () => {
         expect(rows[0].title).not.toContain('notifications.');
     });
 
+    it('reads the member languages ONCE per sweep, however many rules breached', async () => {
+        // Layer D1 caught the first draft of this: the membership read sat
+        // inside the per-execution loop, so N breached rules meant N queries.
+        // Several rules breaching in one window is the normal shape here —
+        // they share a tenant and usually a cause.
+        //
+        // The guardrail only sees LEXICAL nesting, so it would be satisfied by
+        // moving the read back inside under a `guardrail-allow` comment. This
+        // asserts the property the guard cannot: one query, two breaches.
+        mockDb.automationExecution.findMany.mockResolvedValue([
+            {
+                id: 'exec-a',
+                ruleId: 'rule-a',
+                startedAt: twoHoursAgo,
+                createdAt: twoHoursAgo,
+                rule: {
+                    slaWindowMinutes: 30,
+                    slaBreachActionType: 'NOTIFY_USER',
+                    slaBreachConfigJson: { userIds: ['u1'] },
+                },
+            },
+            {
+                id: 'exec-b',
+                ruleId: 'rule-b',
+                startedAt: twoHoursAgo,
+                createdAt: twoHoursAgo,
+                rule: {
+                    slaWindowMinutes: 30,
+                    slaBreachActionType: 'NOTIFY_USER',
+                    slaBreachConfigJson: { userIds: ['u2'] },
+                },
+            },
+        ]);
+
+        await sweepTenant('tenant-1', NOW);
+
+        // Both breaches notified…
+        expect(mockDb.notification.createMany).toHaveBeenCalledTimes(2);
+        // …off ONE membership read.
+        expect(mockDb.tenantMembership.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not read member languages at all when nothing breached', async () => {
+        // Lazily, not eagerly. A breach needs a RUNNING execution already past
+        // its window, so the queue is empty on almost every run — an
+        // unconditional read would be a query per tenant every two minutes for
+        // nothing.
+        mockDb.automationExecution.findMany.mockResolvedValue([
+            {
+                id: 'exec-fresh',
+                ruleId: 'rule-fresh',
+                startedAt: tenMinAgo,
+                createdAt: tenMinAgo,
+                rule: {
+                    slaWindowMinutes: 30,
+                    slaBreachActionType: 'NOTIFY_USER',
+                    slaBreachConfigJson: { userIds: ['u1'] },
+                },
+            },
+        ]);
+
+        await sweepTenant('tenant-1', NOW);
+
+        expect(mockDb.notification.createMany).not.toHaveBeenCalled();
+        expect(mockDb.tenantMembership.findMany).not.toHaveBeenCalled();
+    });
+
     it('localises the fallback body per recipient when no message is configured', async () => {
         mockDb.tenantMembership.findMany.mockResolvedValue([
             { userId: 'u1', user: { uiLanguage: 'bg' } },
