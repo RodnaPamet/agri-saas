@@ -39,30 +39,95 @@ function parseEnvKey(filePath: string, key: string): string | undefined {
  * clone — the cross-DB data-race that broke parallel integration runs.)
  * `parseEnvKey` + the chain below remain only as a non-jest fallback.
  */
-function resolveDbUrl(): string {
-    const fromHelper = getTestDatabaseUrl();
+/**
+ * The four places a test database URL can come from, injectable so the
+ * REFUSAL below can be tested.
+ *
+ * Without injection the refusal is unreachable on any machine that has a
+ * `.env.test` — which, after `db:test:up` started writing one, is every
+ * machine. A branch that cannot be reached in a test is a branch that will
+ * rot, and this one exists precisely to fire on a machine the author does not
+ * have.
+ */
+export interface DbUrlSources {
+    /** The per-worker slot `jest.setup.js` assigns. */
+    fromHelper: () => string | undefined;
+    /** `$DATABASE_URL_TEST` — what CI sets. */
+    envTestVar: string | undefined;
+    /** `.env.test`, read for `DATABASE_URL_TEST` then `DATABASE_URL`. */
+    envTestFile: () => string | undefined;
+    /** `$DATABASE_URL` — what `jest.setup.js` exports from the worker marker. */
+    envVar: string | undefined;
+}
+
+export function resolveDbUrlFrom(src: DbUrlSources): string {
+    const fromHelper = src.fromHelper();
     if (fromHelper) return fromHelper;
-
-    // ── Fallback chain (non-jest contexts) ──
-    // 1. Explicit test env var (highest priority — set by CI scripts)
-    if (process.env.DATABASE_URL_TEST) return process.env.DATABASE_URL_TEST;
-
-    // 2. .env.test file
-    const envTestPath = path.join(ROOT, '.env.test');
-    const fromEnvTest = parseEnvKey(envTestPath, 'DATABASE_URL_TEST')
-        || parseEnvKey(envTestPath, 'DATABASE_URL');
+    if (src.envTestVar) return src.envTestVar;
+    const fromEnvTest = src.envTestFile();
     if (fromEnvTest) return fromEnvTest;
+    if (src.envVar) return src.envVar;
+    return refuse();
+}
 
-    // 3. Process env DATABASE_URL
-    if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+function resolveDbUrl(): string {
+    return resolveDbUrlFrom({
+        fromHelper: () => getTestDatabaseUrl(),
+        envTestVar: process.env.DATABASE_URL_TEST,
+        envTestFile: () => {
+            const envTestPath = path.join(ROOT, '.env.test');
+            return parseEnvKey(envTestPath, 'DATABASE_URL_TEST')
+                || parseEnvKey(envTestPath, 'DATABASE_URL');
+        },
+        envVar: process.env.DATABASE_URL,
+    });
+}
 
-    // 4. .env file (dev database — standard local dev, no jest.setup)
-    const envPath = path.join(ROOT, '.env');
-    const fromEnv = parseEnvKey(envPath, 'DATABASE_URL');
-    if (fromEnv) return fromEnv;
-
-    // 5. Hard-coded fallback
-    return 'postgresql://user:password@localhost:5432/testdb';
+/**
+ * Refuse, rather than resolve a TEST run to a development database.
+ *
+ * TWO MORE STEPS USED TO FOLLOW, and both were silent wrong answers. Step 4
+ * read `.env`'s `DATABASE_URL` — the DEV database — and step 5 returned a
+ * hard-coded `localhost:5432/testdb` guess. Neither is ever right for a TEST
+ * run, and between them they turned a configuration gap into a wall of
+ * unrelated failures (#2531): 51 suites reporting
+ * `P1001: Can't reach database server at 127.0.0.1:5436` on one local
+ * full-root run, 440 occurrences, every one of them passing when run alone.
+ * The diagnosis cost far more than the gap did.
+ *
+ * Worse than noisy, it was dangerous in the direction that does not announce
+ * itself. `jest.setup.js` already warns that this fall-through once resolved
+ * to "`127.0.0.1:5436/agri_saas` — a real DEV database, which is the hazard
+ * this file's own header warns about". A test run that reaches a developer's
+ * dev database does not fail: it passes, having migrated, truncated and
+ * written rows in the wrong place.
+ *
+ * So it refuses, naming the remedy. `.env.test.example` is checked in and
+ * carries the correct `localhost:5435` URLs; `.env.test` is gitignored and
+ * nothing created it, which is the whole reason a fresh clone behaved
+ * differently from a checkout that happened to have one — measured across
+ * two, where the one holding a `.env.test` from 2026-10-01 was immune without
+ * being correct, because with that file present step 3 wins and step 4 never
+ * runs. `npm run db:test:up` writes it from the example now.
+ *
+ * CI never reaches here: it sets `DATABASE_URL_TEST`, which is step 2.
+ */
+function refuse(): never {
+    throw new Error(
+        'No TEST database is configured, and this helper will not fall back to a '
+        + 'development one.\n\n'
+        + 'Tried, in order:\n'
+        + '  1. getTestDatabaseUrl() — the per-worker slot jest.setup.js assigns\n'
+        + '  2. $DATABASE_URL_TEST — what CI sets\n'
+        + '  3. .env.test (DATABASE_URL_TEST or DATABASE_URL)\n'
+        + '  4. $DATABASE_URL — what jest.setup.js exports from the worker marker\n\n'
+        + 'Fix: `npm run db:test:up`, which brings up the test database AND writes '
+        + '.env.test from .env.test.example.\n\n'
+        + 'This used to fall through to .env (your DEV database) and then to a '
+        + 'hard-coded localhost:5432 guess. Both produced a connection error far '
+        + 'from its cause — or, worse, a passing run against the wrong database '
+        + '(#2531).',
+    );
 }
 
 /**
