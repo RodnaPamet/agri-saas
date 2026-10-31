@@ -7021,7 +7021,8 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
     },
     "uploadedAt": {
       "type": "string",
-      "description": "ISO 8601."
+      "format": "date-time",
+      "description": "ISO 8601 instant."
     },
     "uploadedBy": {
       "$ref": "#/components/schemas/FarmDocumentUploader"
@@ -7031,6 +7032,7 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
         "string",
         "null"
       ],
+      "format": "date",
       "description": "The expiry as a calendar DAY KEY (\`YYYY-MM-DD\`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Computed in Europe/Sofia and fixed at upload from the retention period in force then, so a later settings change never moves it. Named \`expiresOn\`, not \`expiresAt\`, because \`uploadedAt\` and \`purgedAt\` beside it are INSTANTS and this is a day — one \`…At\` meaning something different is an exception every client has to remember."
     },
     "retention": {
@@ -7050,6 +7052,7 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
         "string",
         "null"
       ],
+      "format": "date-time",
       "description": "Set when the bytes were deleted, by expiry or by a person. The ROW SURVIVES: dropping it would make \\"destroyed by policy on 14 March\\" and \\"this never existed\\" the same observation, which for a compliance register is the worse failure. \`/content\` answers 404 once this is set."
     },
     "purgeReason": {

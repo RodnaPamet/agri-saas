@@ -70,7 +70,11 @@ describe('getPermissionsForRole', () => {
             // frameworks and audits: 11 → 5. Still exhaustive — an added
             // or dropped domain fails here.
             expect(Object.keys(perms).sort()).toEqual([
-                'admin', 'evidence', 'knowledge', 'reports', 'tasks',
+                // `documents` joined the set with «Документи» (#2495). This
+                // list is exhaustive on purpose — an added or dropped domain
+                // must fail here rather than pass silently, which is why it
+                // is written out instead of derived from the value.
+                'admin', 'documents', 'evidence', 'knowledge', 'reports', 'tasks',
             ]);
         }
     });

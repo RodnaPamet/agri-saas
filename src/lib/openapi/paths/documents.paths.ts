@@ -42,9 +42,10 @@ const FarmDocumentRowSchema = z
             description: 'The RESOLVED media type — what the bytes are, not what the upload claimed.',
         }),
         sizeBytes: z.number().int(),
-        uploadedAt: z.string().openapi({ description: 'ISO 8601.' }),
+        uploadedAt: z.string().datetime().openapi({ description: 'ISO 8601 instant.' }),
         uploadedBy: UserRefSchema,
         expiresOn: z.string().nullable().openapi({
+            format: 'date',
             description:
                 'The expiry as a calendar DAY KEY (`YYYY-MM-DD`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Computed in Europe/Sofia and fixed at upload from the retention period in force then, so a later settings change never moves it. Named `expiresOn`, not `expiresAt`, because `uploadedAt` and `purgedAt` beside it are INSTANTS and this is a day — one `…At` meaning something different is an exception every client has to remember.',
         }),
@@ -52,7 +53,7 @@ const FarmDocumentRowSchema = z
             description:
                 'The retention period AS IT WAS AT UPLOAD, so a client can say «Пази се 1 година, до …». `expiresOn` alone loses WHY that date was given, and cannot tell a 1-year document from a 2-year one uploaded a year earlier.',
         }),
-        purgedAt: z.string().nullable().openapi({
+        purgedAt: z.string().datetime().nullable().openapi({
             description:
                 'Set when the bytes were deleted, by expiry or by a person. The ROW SURVIVES: dropping it would make "destroyed by policy on 14 March" and "this never existed" the same observation, which for a compliance register is the worse failure. `/content` answers 404 once this is set.',
         }),
@@ -137,7 +138,7 @@ export function registerDocumentPaths(registry: OpenAPIRegistry): void {
         operationId: 'readFarmDocumentContent',
         summary: 'Open a document for preview',
         description:
-            'The bytes, with their resolved `Content-Type` and `Content-Disposition: inline`. THIS IS THE ANTIVIRUS EGRESS GATE: bytes are written before the scan resolves, so this route is what stops an unscanned or infected file being served, and its 403 is part of the contract rather than an edge case.\n\nTWO distinct 403 codes, because they mean opposite things to the person reading the screen: `FILE_SCAN_PENDING` is "wait and try again" (the scan has not finished, under a strict scan mode), and `FILE_SCAN_REJECTED` is "this file is not coming" (antivirus flagged it). One code for both would leave a client unable to say which happened, so it would have to say neither.\n\nA 404 is `DOCUMENT_NOT_FOUND` for no such document, or `DOCUMENT_PURGED` for a tombstone whose bytes are gone — the row is still in the list.',
+            'The bytes, with their resolved `Content-Type` and `Content-Disposition: inline`. THIS IS THE ANTIVIRUS EGRESS GATE: bytes are written before the scan resolves, so this route is what stops an unscanned or infected file being served, and its 403 is part of the contract rather than an edge case.\n\nTWO distinct 403 codes, because they mean opposite things to the person reading the screen: `FILE_SCAN_PENDING` is "wait and try again" (the scan has not finished, under a strict scan mode), and `FILE_SCAN_REJECTED` is "this file is not coming" (antivirus flagged it). One code for both would leave a client unable to say which happened, so it would have to say neither.\n\nA 404 is `DOCUMENT_NOT_FOUND` for no such document, `DOCUMENT_PURGED` for a tombstone whose bytes are gone (the row is still in the list), or `DOCUMENT_NOT_DOWNLOADABLE` when the upload never reached a stored state — a `FileRecord` left PENDING or FAILED, which is a different thing from a document that has been deleted.',
         tags: ['Documents'],
         params: DocumentParams,
         success: {
