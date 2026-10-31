@@ -9,8 +9,7 @@
  */
 import {
     CreateListingSchema,
-    CreateInquirySchema,
-} from '@/app-layer/schemas/exchange.schemas';
+    CreateInquirySchema, UpdateListingSchema } from '@/app-layer/schemas/exchange.schemas';
 
 const baseListing = {
     side: 'SELL',
@@ -106,5 +105,60 @@ describe('CreateInquirySchema — quantityTonnes', () => {
         expect(() => CreateInquirySchema.parse({ ...baseInquiry, quantityTonnes: 'lots' })).toThrow();
         expect(() => CreateInquirySchema.parse({ ...baseInquiry, quantityTonnes: -1 })).toThrow();
         expect(() => CreateInquirySchema.parse({ ...baseInquiry, quantityTonnes: 5_000_000 })).toThrow();
+    });
+});
+
+describe('expiresAt is validated DIFFERENTLY on create and on edit (#2543)', () => {
+    /*
+     * This describe exists because a mutation proof found the hole: the
+     * usecase tests call `updateListingFields` directly, so they bypass the
+     * schema entirely — `withValidatedBody` applies it at the ROUTE. Putting
+     * the create-time refine back on the edit schema therefore broke nothing
+     * that was being watched, which is the two-halves-one-test shape.
+     */
+    const PAST = '2026-10-30T00:00:00.000Z';
+    const FUTURE = '2099-01-01T00:00:00.000Z';
+
+    function fields(over: Record<string, unknown> = {}) {
+        return {
+            side: 'SELL',
+            kind: 'CULTURE',
+            commodity: 'Barley',
+            quantityTonnes: 25,
+            regionCode: 'BG-16',
+            ...over,
+        };
+    }
+
+    it('CREATE refuses a past expiry — a listing born expired is dead on arrival', () => {
+        const r = CreateListingSchema.safeParse(fields({ expiresAt: PAST }));
+        expect(r.success).toBe(false);
+    });
+
+    it('CREATE accepts a future expiry, and no expiry at all', () => {
+        expect(CreateListingSchema.safeParse(fields({ expiresAt: FUTURE })).success).toBe(true);
+        expect(CreateListingSchema.safeParse(fields({ expiresAt: null })).success).toBe(true);
+    });
+
+    it('EDIT ACCEPTS a past expiry, because it cannot know whether it CHANGED', () => {
+        // The iOS session's case: `edit` round-trips the date as a string, so a
+        // client that does not touch it sends it back verbatim. A listing
+        // edited on its last day must not be refused for a field nobody
+        // changed — and only the usecase, which holds the stored value, can
+        // tell an unchanged past date from a newly-chosen one.
+        const r = UpdateListingSchema.safeParse(fields({ expiresAt: PAST, updatedAt: FUTURE }));
+        expect(r.success).toBe(true);
+    });
+
+    it('EDIT still refuses a MALFORMED expiry — the shape check stays', () => {
+        // Dropping the refine must not drop the datetime check with it.
+        const r = UpdateListingSchema.safeParse(fields({ expiresAt: 'tomorrow', updatedAt: FUTURE }));
+        expect(r.success).toBe(false);
+    });
+
+    it('EDIT requires `updatedAt`, so the precondition cannot be omitted', () => {
+        // An optional precondition is one a client can skip and silently lose
+        // the protection, which is worse than not having it.
+        expect(UpdateListingSchema.safeParse(fields({ expiresAt: null })).success).toBe(false);
     });
 });

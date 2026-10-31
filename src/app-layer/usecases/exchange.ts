@@ -520,6 +520,29 @@ export async function updateListingFields(
             );
         }
 
+        /*
+         * A CHANGED expiry must be in the future; an UNCHANGED one is always
+         * acceptable, whatever the clock says.
+         *
+         * The create schema refuses a past `expiresAt` outright, and
+         * inheriting that on the edit was a defect the iOS session caught
+         * before it shipped: the seller's `edit` object round-trips the date
+         * as a string, so a client that does not touch it sends it back
+         * verbatim — and a listing edited ON ITS LAST DAY would be refused
+         * for a field nobody changed.
+         *
+         * Compared as INSTANTS so two spellings of one moment are not a
+         * change, and `null` on both sides counts as unchanged.
+         */
+        const storedExpiry = listing.expiresAt ? new Date(listing.expiresAt).getTime() : null;
+        const wantedExpiry = input.expiresAt ? new Date(input.expiresAt).getTime() : null;
+        if (wantedExpiry !== storedExpiry && wantedExpiry != null && wantedExpiry <= Date.now()) {
+            throw codedBadRequest(
+                'LISTING_EXPIRES_AT_IN_PAST',
+                'Choose an expiry date in the future, or remove it.',
+            );
+        }
+
         // Owner ruling: a later expiry brings a lapsed listing back, keeping
         // its conversations. Only a reactivation touches the ACTIVE count.
         const reactivating = from === ExchangeListingStatus.EXPIRED;

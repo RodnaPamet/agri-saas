@@ -139,20 +139,42 @@ const LISTING_FIELDS = {
         sellerContact: z.union([z.string().max(200), z.null()]).optional(),
         // If present, an expiry MUST be in the future — a past expiresAt would
         // create a listing that is dead-on-arrival (hidden by the read filter).
-        expiresAt: z
-            .union([
-                z
-                    .string()
-                    .datetime()
-                    .refine((s) => new Date(s).getTime() > Date.now(), {
-                        message: 'expiresAt must be in the future',
-                    }),
-                z.null(),
-            ])
-            .optional(),
 } as const;
 
-export const CreateListingSchema = z.object(LISTING_FIELDS).strip();
+/**
+ * `expiresAt` is the ONE field create and edit validate differently, so it
+ * sits outside `LISTING_FIELDS` rather than being shared and then overridden.
+ *
+ * On CREATE it must be in the future: a listing born already past its expiry
+ * is dead on arrival, hidden by the read filter the moment it is written.
+ *
+ * On EDIT that same rule is wrong, and the iOS session found it before it
+ * shipped. The seller's `edit` object round-trips `expiresAt` as a string, and
+ * a client that does not touch the date sends it back verbatim — so a listing
+ * edited ON ITS LAST DAY would be refused for a field nobody changed, and the
+ * refusal would be a schema error naming a field the seller never saw. The
+ * rule that is actually wanted is "a CHANGED expiry must be in the future",
+ * and only the usecase can know whether it changed, because only it has the
+ * stored value. See `updateListingFields`.
+ */
+const ExpiresAtOnCreate = z
+    .union([
+        z
+            .string()
+            .datetime()
+            .refine((s) => new Date(s).getTime() > Date.now(), {
+                message: 'expiresAt must be in the future',
+            }),
+        z.null(),
+    ])
+    .optional();
+
+/** Shape only — the future check moves to the usecase. See above. */
+const ExpiresAtOnEdit = z.union([z.string().datetime(), z.null()]).optional();
+
+export const CreateListingSchema = z
+    .object({ ...LISTING_FIELDS, expiresAt: ExpiresAtOnCreate })
+    .strip();
 export type CreateListingBody = z.infer<typeof CreateListingSchema>;
 
 /**
@@ -179,6 +201,7 @@ export type CreateListingBody = z.infer<typeof CreateListingSchema>;
 export const UpdateListingSchema = z
     .object({
         ...LISTING_FIELDS,
+        expiresAt: ExpiresAtOnEdit,
         updatedAt: z.string().datetime(),
     })
     .strip();

@@ -6734,6 +6734,7 @@
         "GOOGLE_SCOPES_MISSING": "Google granted no usable permissions. Connect again and allow Drive or Calendar access.",
         "INQUIRY_NOT_PENDING": "This inquiry has already been answered.",
         "LISTING_EXPIRED": "This listing has expired.",
+        "LISTING_EXPIRES_AT_IN_PAST": "Choose an expiry date in the future, or remove it.",
         "LISTING_IS_YOUR_OWN": "This is your own listing — you cannot send an inquiry to it.",
         "LISTING_MODIFIED": "This listing changed since you opened it. Reload it and make the change again.",
         "LISTING_NOT_ACTIVE": "This listing has expired — withdraw it instead of marking it fulfilled.",

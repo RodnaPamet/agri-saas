@@ -724,6 +724,54 @@ describe('updateListingFields', () => {
         expect(assertWithinLimitMock).not.toHaveBeenCalled();
     });
 
+    it('accepts an UNCHANGED expiry even when it has already passed', async () => {
+        /*
+         * The iOS session found this before it shipped. `edit` round-trips
+         * `expiresAt` as a string, so a client that does not touch the date
+         * sends it back verbatim — and the create schema's "must be in the
+         * future" rule, inherited by the edit, would refuse an edit to a
+         * listing ON ITS LAST DAY for a field nobody changed. The refusal
+         * would also name a field the seller never saw.
+         */
+        const PAST = '2026-10-30T00:00:00.000Z';
+        repo.getListing.mockResolvedValue(owned({ expiresAt: new Date(PAST) }));
+
+        await updateListingFields(meCtx, 'lst-1', body({ expiresAt: PAST }));
+
+        expect(repo.updateListingFields).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts an unchanged NULL expiry, which is not a change either', async () => {
+        repo.getListing.mockResolvedValue(owned({ expiresAt: null }));
+
+        await updateListingFields(meCtx, 'lst-1', body({ expiresAt: null }));
+
+        expect(repo.updateListingFields.mock.calls[0][2]).toMatchObject({ expiresAt: null });
+    });
+
+    it('refuses a CHANGED expiry that is in the past', async () => {
+        // The rule the create schema was reaching for, applied where the
+        // stored value is known: changing the date to a past one would hide
+        // the listing the moment it saved.
+        repo.getListing.mockResolvedValue(owned({ expiresAt: new Date('2027-01-01T00:00:00.000Z') }));
+
+        await expect(
+            updateListingFields(meCtx, 'lst-1', body({ expiresAt: '2026-10-30T00:00:00.000Z' })),
+        ).rejects.toMatchObject({ code: 'LISTING_EXPIRES_AT_IN_PAST' });
+        expect(repo.updateListingFields).not.toHaveBeenCalled();
+    });
+
+    it('treats two spellings of the same expiry instant as unchanged', async () => {
+        // Same moment, different string. A client echoing the value it was
+        // given must not trip the changed-expiry rule on formatting alone.
+        const PAST = '2026-10-30T00:00:00.000Z';
+        repo.getListing.mockResolvedValue(owned({ expiresAt: new Date(PAST) }));
+
+        await updateListingFields(meCtx, 'lst-1', body({ expiresAt: '2026-10-30T00:00:00Z' }));
+
+        expect(repo.updateListingFields).toHaveBeenCalledTimes(1);
+    });
+
     it('refuses an unknown region BEFORE opening a transaction', async () => {
         repo.getListing.mockResolvedValue(owned());
 
