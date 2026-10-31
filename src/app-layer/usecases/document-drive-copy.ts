@@ -51,7 +51,12 @@ import { runInTenantContext } from '@/lib/db-context';
 import { assertCanAdmin } from '../policies/common';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import { logEvent } from '../events/audit';
-import { codedBadRequest, codedConflict, codedNotFound } from '@/lib/errors/types';
+import {
+    codedBadRequest,
+    codedConflict,
+    codedNotFound,
+    InternalError,
+} from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import {
     GOOGLE_INTEGRATION_FLAG,
@@ -164,17 +169,32 @@ export async function copyDocumentToDrive(
         // row is already refused by the `purgedAt` check above — so this is
         // unreachable rather than defended.
         //
-        // INSIDE the try, and a plain `Error` rather than a coded one, and both
-        // halves are deliberate. Inside, because an untitled document is a
-        // PER-ROW condition: thrown above, where the tenant-wide refusals live,
-        // it would make the sweep mark every one of that farm's PENDING rows
-        // FAILED because one document had no title. Uncoded, because a coded
-        // refusal is a promise to a client, and no client can ever receive this
-        // one — the sweep is the only caller and it records FAILED. Minting a
-        // documented code for an unreachable state adds a refusal nobody can
-        // be shown, which `error-codes-are-documented` is right to refuse.
+        // INSIDE the try, and an `InternalError` rather than a coded refusal
+        // or a raw `Error`. All three choices were forced, by three different
+        // guards, and the combination is the only one that satisfies them.
+        //
+        // INSIDE, because an untitled document is a PER-ROW condition: thrown
+        // above, where the tenant-wide refusals live, it would make the sweep
+        // mark every one of that farm's PENDING rows FAILED because one
+        // document had no title.
+        //
+        // NOT a coded refusal, because a `coded*` code is a promise to a
+        // client and no client can receive this one — the sweep is the only
+        // caller and it records FAILED. `error-codes-are-documented` caught
+        // the first attempt and was right to: a documented refusal nobody can
+        // be shown is debt, not documentation.
+        //
+        // NOT a raw `Error` either: `regression-scanner` bans those in
+        // usecases, and caught the second attempt. `InternalError` is the
+        // answer the two constraints leave — a TYPED error carrying the
+        // generic `INTERNAL` code with `expose: false`, so its message reaches
+        // the log and never a person. Which is also what it IS: a row with a
+        // cleared name and no purge timestamp is an internal inconsistency,
+        // not something a farmer did.
         if (!doc.name) {
-            throw new Error('document has no title, so it cannot be named in Drive');
+            throw new InternalError(
+                `document ${documentId} has no title, so it cannot be named in Drive`,
+            );
         }
         // THE GATE. Every refusal `/content` makes, this inherits.
         const gated = await downloadFarmDocument(ctx, documentId);
