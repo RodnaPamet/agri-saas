@@ -77,6 +77,7 @@ export const REFERENCED_FLAG_KEYS = [
     // the cohorts is what distinguishes "deliberately limited" from
     // "nobody ever inserted it" — the `social.public-profile` failure that
     // capability exists to report.
+    'agro.orthophoto',
     // «Асистент» (#2578). Dark by default and expected to STAY dark until the
     // assistant can answer from the farm's own data: the owner was asked when
     // to switch it on and chose "after it reads farm data" (2026-10-31,
@@ -96,7 +97,6 @@ export const REFERENCED_FLAG_KEYS = [
     // set is on for that cohort ONLY — which is the thing to get right if a
     // narrower rollout is ever wanted.
     'assistant.enabled',
-    'agro.orthophoto',
     'integrations.google',
     'notifications.sse',
     'social.farm-media',
