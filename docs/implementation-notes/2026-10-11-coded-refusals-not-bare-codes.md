@@ -63,7 +63,7 @@ satisfy them by moving the token back.
 | `API_KEY_NOT_PERSON_SCOPED` | shared 403 description | from `getUserCtx`, the choke point 11 person-scoped route files reach; 3 of their paths are not in the spec, so a per-operation list would be wrong by omission |
 | `OPERATOR_SCOPE` | shared 403 description | same reasoning |
 | `FARM_PROFILE_EIK_NOT_EDITABLE` | the PUT operation's 400 | one route, and it IS in the spec |
-| `AI_BUDGET_REQUIRES_VERIFIED_FARM` | undocumented baseline | its only route is `/api/t/{slug}/ai/copilot` and **no `/ai/` path is in the spec at all** — the `COMPANY_NAME_TAKEN` case verbatim |
+| `AI_BUDGET_REQUIRES_VERIFIED_FARM` | undocumented baseline | **no route that reaches it is in the spec** — the `COMPANY_NAME_TAKEN` case verbatim. Corrected 2026-10-31 (#2578): this row said "its only route is `/api/t/{slug}/ai/copilot`", which was wrong even in October — `knowledge/ask` reaches `completeWithRouting` through `safety/advisor.ts` — and that route has since been retired for having no caller. Both routes sit in the undocumented baseline, so the exemption holds; it is a property of the population, not of one path |
 
 The two shared-403 entries say explicitly that their scope is **narrower** than
 the four middleware codes above them: person-scoped routes only, and no tenant

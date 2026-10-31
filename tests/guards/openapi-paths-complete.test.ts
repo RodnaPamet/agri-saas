@@ -161,7 +161,9 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // the gap, which is how an upward ratchet quietly becomes a denylist. I
 // shortened the baseline and left the ceiling, which is exactly the drift
 // the `toBe` is there to refuse.
-const UNDOCUMENTED_CEILING = 217;
+// 217 → 216: `/api/t/{tenantSlug}/ai/copilot` was retired (#2578), so its
+// baseline row went with it. Lowering, never raising.
+const UNDOCUMENTED_CEILING = 216;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with
