@@ -173,24 +173,36 @@ describe('GAP-03 ratchet — env templates', () => {
         expect(src).toMatch(/^DATA_ENCRYPTION_KEY=/m);
     });
 
-    it('deploy/.env.prod.example signals DATA_ENCRYPTION_KEY lives in AWS Secrets Manager (post-OI-1 model)', () => {
-        const src = readRepoFile('deploy/.env.prod.example');
-        // Epic OI-1 migrated DATA_ENCRYPTION_KEY (and 4 other runtime
-        // secrets) out of plaintext deploy/.env.prod into AWS Secrets
-        // Manager. The pre-OI-1 contract was an uncommented
-        // `DATA_ENCRYPTION_KEY=` placeholder in this file; the new
-        // contract is a deprecation banner that tells operators where
-        // the value lives now and which tooling resolves it. Either
-        // shape gives the same operator-visible signal that the var
-        // is required, which is the original GAP-03 intent.
-        const hasUncommentedPlaceholder = /^DATA_ENCRYPTION_KEY=/m.test(src);
-        const hasSecretsManagerPointer =
-            /AWS Secrets Manager/i.test(src) &&
-            /bootstrap-env-from-secrets\.sh/.test(src) &&
-            /DEPRECATED/i.test(src);
-
-        expect(hasUncommentedPlaceholder || hasSecretsManagerPointer).toBe(true);
-    });
+    // RETIRED by #2552. This asserted that `deploy/.env.prod.example` either
+    // carried an uncommented `DATA_ENCRYPTION_KEY=` placeholder or pointed at
+    // AWS Secrets Manager, "post-OI-1".
+    //
+    // The file is deleted, and the reason is that its premise describes
+    // infrastructure this product never had. It was the inherited
+    // inflect-compliance AWS template: Secrets Manager, RDS, and a line
+    // reading `REDIS_SECRET_NAME=inflect-compliance-production-redis-auth`,
+    // naming the SIBLING PRODUCT. There is no AWS Secrets Manager in the
+    // agrent deployment and no `bootstrap-env-from-secrets.sh` run against it.
+    //
+    // The key it was protecting is not left unguarded, which is the only
+    // reason deleting a security assertion is defensible here:
+    //
+    //   - `deploy-env-parity` lists DATA_ENCRYPTION_KEY in
+    //     `ALSO_REQUIRED_IN_PROD`, so `deploy/env.prod.example` must declare
+    //     it or CI fails;
+    //   - the two sibling assertions above still pin
+    //     `.env.production.example` and `.env.staging.example`;
+    //   - three runtime checks refuse to start a prod process without it
+    //     (src/env.ts, src/instrumentation.ts, scripts/worker.ts,
+    //     scripts/scheduler.ts), which is the GAP-03 intent this test was a
+    //     documentation-layer echo of;
+    //   - and it is PRESENT in the running container, measured 2026-10-31 by
+    //     name, not value.
+    //
+    // What is genuinely gone is a check on a file that no longer exists. Had
+    // it been left pointing at the deleted path it would have thrown; had it
+    // been pointed at `deploy/env.prod.example` it would have asserted an AWS
+    // model that file correctly does not describe.
 });
 
 describe('GAP-03 ratchet — CI workflow', () => {

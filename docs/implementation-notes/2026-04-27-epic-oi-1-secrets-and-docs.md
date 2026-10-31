@@ -1,5 +1,25 @@
 # 2026-04-27 — Epic OI-1: Secrets migration + ops docs (closes OI-1)
 
+> **Superseded, and one claim below was never true of this product — #2552.**
+>
+> `deploy/.env.prod.example`, the file this note rewrote, was **deleted on
+> 2026-10-31**. It described AWS Secrets Manager, RDS and EKS, and its own
+> `REDIS_SECRET_NAME` line named `inflect-compliance` — the SIBLING product. It
+> was inherited, and CLAUDE.md records that the AWS/EKS stack "was never
+> provisioned" for agrent.
+>
+> So read the exit-criteria table at the end with that in mind. "No plaintext
+> secrets remain on disk as the primary production operating model" is **not**
+> the agrent posture: the master KEK lives in `/opt/agrent/.env` on the VM, and
+> CLAUDE.md says so deliberately — it sits on the same disk as the data it
+> protects, which is what makes a whole-disk restore recover key and ciphertext
+> together. There is no `bootstrap-env-from-secrets.sh` run against this
+> deployment.
+>
+> The note is kept because it is the origin story of the file and of the
+> guardrails that read it. It is not a description of how agrent handles
+> secrets.
+
 **Commit:** _(uncommitted at note authoring; squash-merge target tbd)_
 
 Closes Epic OI-1. Builds on the prior four notes (foundation,

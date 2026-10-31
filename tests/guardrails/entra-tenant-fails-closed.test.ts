@@ -47,7 +47,16 @@ const MULTI_TENANT = ['common', 'organizations', 'consumers'];
 const DEPLOYED_EXAMPLES = [
     '.env.production.example',
     '.env.staging.example',
-    'deploy/.env.prod.example',
+    // Was `deploy/.env.prod.example` until #2552 deleted it: that file was the
+    // inherited inflect-compliance AWS template (Secrets Manager, RDS, and a
+    // `REDIS_SECRET_NAME` naming the sibling product), not an agrent one.
+    //
+    // These three tests read the file with a bare `readFileSync`, so a path
+    // that stops existing THROWS here rather than being skipped — which is why
+    // this guard went red on the deletion while `av-scan-mode-coherence`, whose
+    // reader returns null for a missing file and early-returns, went silently
+    // vacuous. Loud is right for a list of files an operator copies.
+    'deploy/env.prod.example',
 ];
 
 function readCode(rel: string): string {
