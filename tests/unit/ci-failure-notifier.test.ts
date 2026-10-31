@@ -59,8 +59,23 @@ interface Scenario {
     jobsCreated?: number;
     jobsExecuted?: number;
     /**
-     * Overrides the two numbers with a verbatim probe answer, so a malformed
-     * one can be driven. Exists because the branch that reads a bad answer as
+     * Jobs ELIGIBLE to run — `.jobs | length` minus the SKIPPED ones — #2508.
+     *
+     * Defaults to `jobsCreated`, so every pre-existing case keeps the shape it
+     * was written for. A scenario that wants a skipped placeholder in the
+     * payload sets this LOWER than `jobsCreated`, which is the real shape of
+     * every run with a path filter.
+     */
+    jobsEligible?: number;
+    /**
+     * Jobs that have CONCLUDED, carry steps, and report none of them started —
+     * a self-inconsistent payload that is still settling (#2508). Defaults to
+     * 0, i.e. a settled read.
+     */
+    jobsSettling?: number;
+    /**
+     * Overrides the probe numbers with a verbatim answer, so a malformed one
+     * can be driven. Exists because the branch that reads a bad answer as
      * "0 jobs" is the SILENT branch.
      */
     rawProbe?: string;
@@ -98,7 +113,9 @@ function run(s: Scenario): { out: string; calls: string[] } {
     try {
         const callLog = path.join(dir, 'calls.txt');
         const jobsCreated = s.jobsCreated ?? 0;
-        const jobsExecuted = s.jobsExecuted ?? jobsCreated;
+        const jobsEligible = s.jobsEligible ?? jobsCreated;
+        const jobsExecuted = s.jobsExecuted ?? jobsEligible;
+        const jobsSettling = s.jobsSettling ?? 0;
         const failedJobs = s.failedJobs ?? ['Build'];
         // Newlines are squashed to spaces so one gh invocation stays one log
         // line — the issue body is multi-line and would otherwise be split
@@ -127,7 +144,7 @@ case "$1 $2" in
       *)
         ${
             s.rawProbe === undefined
-                ? `printf '%s\\t%s' '${jobsCreated}' '${jobsExecuted}'`
+                ? `printf '%s\\t%s\\t%s\\t%s' '${jobsCreated}' '${jobsEligible}' '${jobsExecuted}' '${jobsSettling}'`
                 : `printf '%s' ${JSON.stringify(s.rawProbe)}`
         }
         ;;
@@ -149,6 +166,10 @@ exit 0
                 RUN_URL: `https://example.invalid/${s.runId}`,
                 RUN_ID: s.runId,
                 EVENT: 'push',
+                // The settle loop sleeps between re-reads; the stub answers
+                // instantly, so the suite must not pay three real waits to
+                // reach the `unknown` branch.
+                SETTLE_SLEEP: '0',
                 BRANCH: 'main',
                 SHA: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
                 REPO: 'RodnaPamet/agri-saas',
@@ -301,11 +322,117 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         //
         //   run 35754149459  queue drop   executed a step:  2
         //   run 35246281669  budget kill  executed a step: 21
+        //
+        // #2508 added two clauses and they are pinned here for the same
+        // reason: each is a REVERT nothing else would catch.
         const src = fs.readFileSync(SCRIPT, 'utf8');
         expect(src).toContain('(.jobs | length)');
-        expect(src).toContain('select((.steps // []) | map(select(.started_at != null)) | length > 0)');
+        // Reads STEPS. Nested inside the eligibility clause since #2508, so
+        // the substring is the step expression rather than the whole select.
+        expect(src).toContain('(.steps // []) | map(select(.started_at != null)) | length > 0');
         // And the field that was wrong must not be the whole of the count.
         expect(src).not.toContain('[.jobs[] | select(.started_at != null)] | length');
+        // ELIGIBILITY excludes skipped jobs — #2508. Without this a path
+        // filter's skipped job counts as "never started" and a settled budget
+        // kill reads as a queue drop, which is what run 41100129873 did.
+        expect(src).toContain('select(.conclusion != "skipped")');
+        // And the SETTLING clause: concluded, has steps, none started.
+        expect(src).toContain('(((.steps // []) | length) > 0)');
+    });
+
+    it('a SKIPPED job is not a job that never started — #2508', () => {
+        // The primary defect, and it did not need an early read to happen.
+        // Run 41100129873 was a budget kill: `Load Smoke (k6)` ran all 27
+        // steps to success over 13m29s against its own `timeout-minutes: 12`.
+        // Read long AFTER it concluded, the payload is 25 jobs / 23 executed,
+        // and the two that did not are `conclusion: skipped` matrix
+        // placeholders carrying ZERO steps. The old arithmetic made that
+        // `never_started = 2` and reported a queue drop — ruling out
+        // `timeout-minutes` BY NAME, in bold, in the body a human then acts on.
+        const { out, calls } = run({
+            conclusion: 'cancelled',
+            runId: '2508a',
+            jobsCreated: 25,
+            jobsEligible: 23,
+            jobsExecuted: 23,
+        });
+        const body = calls.find((l) => l.startsWith('issue create')) ?? '';
+        expect(out).toContain('budget kill');
+        expect(body).toContain('budget kill');
+        expect(body).not.toContain('queue drop');
+        // The row still reports what was measured, including the skipped two,
+        // so a reader can see why eligible and created differ.
+        expect(body).toContain('0 never started');
+    });
+
+    it('a genuine queue drop is still reported as one', () => {
+        // The control for the test above: excluding skipped must not blunt the
+        // discriminator. Run 35754149459 — 21 jobs, none skipped, 2 executed.
+        const { out } = run({
+            conclusion: 'cancelled',
+            runId: '2508b',
+            jobsCreated: 21,
+            jobsEligible: 21,
+            jobsExecuted: 2,
+        });
+        expect(out).toContain('queue drop');
+        expect(out).not.toContain('budget kill');
+    });
+
+    it('a payload still SETTLING is reported as unknown, not as either class', () => {
+        // #2508's named cause: the script reads ~25s after the run concludes,
+        // while GitHub is still writing step records, so "not yet populated"
+        // is byte-identical to "never ran". A job that has CONCLUDED, HAS
+        // steps, and reports none started is self-inconsistent. Three re-reads
+        // and then an honest unknown — `classifyProbe`'s third outcome.
+        const { out, calls } = run({
+            conclusion: 'cancelled',
+            runId: '2508c',
+            jobsCreated: 25,
+            jobsEligible: 23,
+            jobsExecuted: 11,
+            jobsSettling: 12,
+        });
+        const body = calls.find((l) => l.startsWith('issue create')) ?? '';
+        expect(out).toContain('still settling');
+        expect(body).toContain('unknown');
+        // Neither class may be ASSERTED. The bolded form is the assertion;
+        // the message names both in prose precisely to say neither is ruled
+        // out, so the plain substring is the wrong thing to forbid — my first
+        // version of this test forbade it and failed on the disclaimer.
+        expect(body).not.toContain('**queue drop**');
+        expect(body).not.toContain('**budget kill**');
+        expect(body).toContain('Neither a queue drop nor a budget kill can be ruled out');
+        // And it points at the thing the wrong class ruled out by name.
+        expect(body).toContain('timeout-minutes');
+        // The partial counts are deliberately NOT in the body: "11 executed"
+        // on an unsettled payload is an unpopulated reading presented as fact,
+        // which is the same mistake one level down. The probe-failed branch
+        // omits its counts for the same reason.
+        expect(body).not.toContain('executed a step ·');
+        // And it is still filed — an unreadable shape is not a reason to go
+        // quiet about a cancelled run.
+        expect(created(calls)).toBe(true);
+    });
+
+    it('the settle loop caps each ATTEMPT — nothing else polices this one', () => {
+        // #2508 added a bounded re-read, and `ci-retry-loop-timeout` does NOT
+        // cover it: that guardrail scans `.github/workflows` and
+        // `.github/actions`, and this loop lives in `.github/scripts`.
+        // Measured — removing the cap left it 19/19 green. So the cap is
+        // pinned here, and the population gap is filed separately.
+        //
+        // Why a per-ATTEMPT cap matters: without it the loop only re-enters
+        // when `gh api` RETURNS, so it defends against a fast failure and not
+        // against a hung request — which would eat the budget and leave
+        // attempts 2 and 3 unrun. That is the defect `ci-retry-loop-timeout`
+        // exists for, after an 8-minute `npm ci` stall.
+        const src = fs.readFileSync(SCRIPT, 'utf8');
+        expect(src).toMatch(/for settle_attempt in 1 2 3; do/);
+        expect(src).toMatch(/timeout\s+\d+\s+"\$GH"\s+api/);
+        // And it must still terminate: a bounded loop with no break on the
+        // settled case would re-read three times on every cancellation.
+        expect(src).toMatch(/0\)\s*break\s*;;/);
     });
 
     it('a probe that answers with ONE number is a failed probe, not "0 created"', () => {
