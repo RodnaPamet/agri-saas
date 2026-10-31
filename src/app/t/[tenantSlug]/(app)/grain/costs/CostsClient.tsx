@@ -52,6 +52,7 @@ import { GrainSectionNav } from '../GrainSectionNav';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip } from '@/components/ui/tooltip';
+import { apiDelete, ApiClientError } from '@/lib/api-client';
 import { useDebounce, useToastWithUndo } from '@/components/ui/hooks';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { formatDecimal } from '@/lib/number-format';
@@ -225,10 +226,32 @@ function CostsPageInner({
                 message: t('deletedToast'),
                 undoMessage: t('undo'),
                 action: async () => {
-                    const res = await fetch(apiUrl(`/grain/costs/${row.id}`), {
-                        method: 'DELETE',
-                    });
-                    if (!res.ok) throw new Error('Delete cost entry failed');
+                    try {
+                        await apiDelete(apiUrl(`/grain/costs/${row.id}`));
+                    } catch (err) {
+                        // A 404 `COST_ENTRY_NOT_FOUND` is the outcome this
+                        // action wanted, not a failure: the entry is already
+                        // gone. Treating it as an error would RESTORE the row
+                        // — `onError` puts the snapshot back — so a second
+                        // delete, or a delete of something another tab removed,
+                        // would make a deleted expense reappear and then stay
+                        // until a refetch. The farmer would reasonably read
+                        // that as the delete having failed.
+                        //
+                        // Keyed on the CODE, not the status. A bare 404 can
+                        // come from a wrong tenant slug or a retired path,
+                        // neither of which is evidence about this entry;
+                        // `COST_ENTRY_NOT_FOUND` is the server saying it looked
+                        // for this one and it was not there. Raised by
+                        // agrent-ios, whose phone half reached the same
+                        // conclusion from the other side.
+                        if (
+                            !(err instanceof ApiClientError)
+                            || err.code !== 'COST_ENTRY_NOT_FOUND'
+                        ) {
+                            throw err;
+                        }
+                    }
                 },
                 undoAction: () => {
                     if (previous) queryClient.setQueryData(listKey, previous);
