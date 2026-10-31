@@ -255,6 +255,50 @@ model UserNotificationPreference {
   @@index([tenantId])
 }
 
+/// Server-held state for a NATIVE Google consent flow (#2495 step 6).
+///
+/// The web flow carries its state in an HttpOnly `google_oauth_state` cookie,
+/// and that cannot work for the phone: the consent runs in an EPHEMERAL
+/// `ASWebAuthenticationSession`, a different cookie jar from the one
+/// URLSession put the API response's cookie in, so the callback would never see
+/// it and every attempt would answer `state_invalid`. Owner ruling: the
+/// sign-in sheet is ephemeral, so the state has to live on the server.
+///
+/// Single-use via `consumedAt` and short-lived via `expiresAt`, because the
+/// state travels in a redirect the OS may log — the same reasoning
+/// `NativeAuthCode` gives for measuring its TTL in seconds.
+///
+/// A table of its own rather than a `purpose` on `NativeAuthCode`, whose
+/// fields fit this almost perfectly. Almost: `codeChallenge` is REQUIRED there
+/// and PKCE-specific, so this would have to write a placeholder into a column
+/// whose own comment says `plain` is refused "because it offers no proof of
+/// possession at all" — a dummy credential in a credential table. And that
+/// table is the SIGN-IN store; an integration's consent state is a different
+/// security domain that happens to have the same shape.
+model GoogleOAuthState {
+  id          String    @id @default(cuid())
+  /// SHA-256 of the state nonce, never the nonce. Unique, so the callback is
+  /// one indexed read and a replay cannot create a second row.
+  stateHash   String    @unique
+  tenantId    String
+  /// The admin who started the consent. Bound so a nonce issued for one
+  /// administrator cannot complete a connection as another.
+  userId      String
+  /// Where the callback hands control back — an app scheme. Validated against
+  /// `NATIVE_AUTH_REDIRECT_ALLOWLIST` AT ISSUE, so this column can never
+  /// become an open redirect even if the callback trusted it blindly.
+  redirectUri String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  /// Set on first use. A second arrival with the same state is refused.
+  consumedAt  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([expiresAt])
+}
+
 model IntegrationConnection {
   id              String                   @id @default(cuid())
   tenantId        String
