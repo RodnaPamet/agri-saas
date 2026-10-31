@@ -402,8 +402,19 @@ function assertListingTransition(
         );
     }
     if (to === ExchangeListingStatus.FULFILLED && from !== ExchangeListingStatus.ACTIVE) {
+        // #2564: its OWN code, not the shared `LISTING_NOT_ACTIVE`.
+        //
+        // Three sites threw that one — this, `createInquiry` and
+        // `respondToInquiry` — with three different readers and three
+        // different remedies. While each site's own prose reached the reader
+        // that was a cosmetic sin; once `localizeErrorPayload` began replacing
+        // `message` from `errors.<CODE>`, all three showed the sentence written
+        // for THIS one, and a BUYER enquiring on an expired listing was told to
+        // withdraw it — an action they cannot perform on a listing they do not
+        // own. The advice below is correct here and nowhere else, which is what
+        // makes it a code of its own.
         throw codedBadRequest(
-            'LISTING_NOT_ACTIVE',
+            'LISTING_FULFIL_REQUIRES_ACTIVE',
             `"${commodity}" has expired — withdraw it instead of marking it fulfilled`,
         );
     }
@@ -683,6 +694,12 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
         // asked to delete their account.
         if (!listing || listing.suppressedForDeletionAt) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
         if (listing.status !== ExchangeListingStatus.ACTIVE) {
+            // KEEPS `LISTING_NOT_ACTIVE` (#2564), rather than minting a third
+            // new code: this is the reader with NOTHING to do about it, so the
+            // neutral sentence belongs to this site. It is also the safest code
+            // for a client with no entry for the two new ones to fall back on —
+            // a buyer told "this listing is no longer active" is never told
+            // something false.
             throw codedBadRequest('LISTING_NOT_ACTIVE', 'This listing is no longer active');
         }
         // The SAME predicate the browse feed filters on
@@ -916,8 +933,12 @@ export async function respondToInquiry(
             action === 'ACCEPTED' &&
             inquiry.listing.status !== ExchangeListingStatus.ACTIVE
         ) {
+            // Its own code (#2564). The remedy IS the value of this refusal —
+            // a seller can still decline — and the shared sentence replaced
+            // that with advice to withdraw the listing, which is not what they
+            // were doing.
             throw codedBadRequest(
-                'LISTING_NOT_ACTIVE',
+                'INQUIRY_ACCEPT_REQUIRES_ACTIVE_LISTING',
                 'This listing is no longer active — you can decline, but not accept',
             );
         }
