@@ -131,9 +131,30 @@
     "    which is NEW debt and is blocked. Fixed in place instead — the file now",
     "    carries a live half asserting the override that replaced the exemption,",
     "    read through that same helper. Verified with `--selector readOrThrow`:",
-    "    all 1 selector(s) have teeth."
+    "    all 1 selector(s) have teeth.",
+    "  · rls-coverage:policiesFor ADDED — a FALSE POSITIVE rather than debt, and",
+    "    the distinction is the whole reason this entry needs a paragraph. The",
+    "    selector HAS teeth: stub it to `[]` and every `names.includes(...)`",
+    "    check reports a missing policy, and ten tests throw. It survives only",
+    "    because the `selector-teeth` JOB declares no services and no postgres —",
+    "    so this suite's DB probe fails, `describeFn` resolves to",
+    "    `describe.skip`, and NOTHING RAN. A skipped suite is indistinguishable",
+    "    from a passing one, and CLAUDE.md names this very file as that lesson's",
+    "    example.",
+    "    Surfaced by a PR whose only schema change was an additive nullable",
+    "    column on `Item` — that pulls tests/guardrails into the audit",
+    "    population, exactly as a dependency change did for the entry above.",
+    "    The fix is about which files the auditor is POINTED AT, not about this",
+    "    selector: an auditor that cannot execute its subject cannot judge the",
+    "    subject's teeth, and reporting SURVIVED there teaches people to",
+    "    baseline true findings. This entry is SELF-HEALING — give the job a",
+    "    database and it stops surviving, and the no-rot rule above fails the",
+    "    build telling whoever did it to delete this."
   ],
   "known": {
+    "tests/guardrails/rls-coverage.test.ts": [
+      "policiesFor"
+    ],
     "tests/guards/action-label-vocabulary.test.ts": [
       "walk"
     ],

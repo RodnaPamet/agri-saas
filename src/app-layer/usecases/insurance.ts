@@ -29,6 +29,7 @@ import type { Locale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
 import { Prisma } from '@prisma/client';
 import type { CreateInsuranceLeadBody } from '@/app-layer/schemas/insurance.schemas';
+import { recipientLocaleForUser } from '@/lib/email/recipient-locale';
 
 /**
  * Parcel ids this tenant has already requested a quote for.
@@ -500,14 +501,19 @@ async function notifyOperator(
 
 async function notifyRequester(ctx: RequestContext) {
     try {
+        // The recipient is the person who just asked for the quote, so their
+        // own stored preference is the right language — not the request's
+        // cookie, which is the same thing today and would stop being so the
+        // moment anything else enqueues this (#2511).
+        const locale = await recipientLocaleForUser(ctx.userId);
         await runInTenantContext(ctx, async (db) => {
             await db.notification.create({
                 data: {
                     tenantId: ctx.tenantId,
                     userId: ctx.userId,
                     type: 'GENERAL',
-                    title: 'Insurance quote request sent',
-                    message: 'An insurer will get back to you about this parcel.',
+                    title: await translateFor(locale, 'notifications.insuranceQuote.title'),
+                    message: await translateFor(locale, 'notifications.insuranceQuote.body'),
                     linkUrl: ctx.tenantSlug ? `/t/${ctx.tenantSlug}/farm-risk` : null,
                 },
             });
