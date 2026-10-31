@@ -39,6 +39,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const NAV_BAR_SRC = fs.readFileSync(
@@ -49,6 +50,54 @@ const TOP_CHROME_SRC = fs.readFileSync(
     path.join(ROOT, 'src/components/layout/TopChrome.tsx'),
     'utf8',
 );
+
+/**
+ * Every file in `layout/` except the one that legitimately owns the banner.
+ *
+ * Was a NON-RECURSIVE `readdirSync` inside the `it()` below, so
+ * `selector-teeth` had nothing at module scope to mutate while
+ * `expect(offenders).toEqual([])` is satisfied for free by an empty read
+ * (#2483 class A).
+ *
+ * This migration WIDENS the population from flat to recursive, which is a
+ * judgement rather than a translation — so, the reasoning: the `describe` is
+ * "no parallel `<header>` chrome ELSEWHERE IN layout/", and a subdirectory of
+ * `layout/` is in `layout/`. A nested layout component rendering a second
+ * `<header role="banner">` is exactly what this guard exists to forbid, and the
+ * flat read could not see it. Measured 2026-10-31: 29 files either way, and
+ * `layout/` has 0 subdirectories — so the widening changes nothing today and
+ * closes the hole for the first one added.
+ *
+ * `skipDirs` is explicit because the extensions include `.ts`:
+ * `DEFAULT_SKIP_DIRS` excludes any directory named `coverage` or `dist` BY
+ * NAME, which cost a real API route its place in the inventory once (#2421,
+ * #2517).
+ */
+/**
+ * Does this source render a `<header role="banner">` shell?
+ *
+ * Extracted from the `it()` below so the detector can be aimed at a file
+ * KNOWN to satisfy it — see the positive control at the bottom of this file.
+ * Comments are blanked first, so a docblock mentioning `<header
+ * role="banner">` does not count as rendering one.
+ */
+function rendersBanner(source: string): boolean {
+    const stripped = blankNonCode(source);
+    return (
+        /<header\b[^>]*role="banner"/.test(stripped) ||
+        /<header[\s\S]{0,80}role="banner"/.test(stripped)
+    );
+}
+
+const LAYOUT_FILES = collectSourceFiles({
+    roots: ['src/components/layout'],
+    extensions: ['.ts', '.tsx'],
+    skipDirs: ['node_modules', '.next'],
+    exclude: (rel) => path.basename(rel) === 'nav-bar.tsx',
+    // 29 today. The helper throws below this, so an emptied population fails
+    // instead of reporting no parallel chrome having read nothing.
+    floor: 15,
+});
 
 describe('Roadmap-14 PR-1 — NavBar primitive extraction discipline', () => {
     describe('primitive file', () => {
@@ -145,30 +194,36 @@ describe('Roadmap-14 PR-1 — NavBar primitive extraction discipline', () => {
 
     describe('no parallel `<header>` chrome elsewhere in layout/', () => {
         it('no other file in src/components/layout renders <header role="banner">', () => {
-            const layoutDir = path.join(ROOT, 'src/components/layout');
-            const offenders: string[] = [];
-            for (const entry of fs.readdirSync(layoutDir, {
-                withFileTypes: true,
-            })) {
-                if (!entry.isFile()) continue;
-                if (entry.name === 'nav-bar.tsx') continue;
-                if (!/\.tsx?$/.test(entry.name)) continue;
-                const content = fs.readFileSync(
-                    path.join(layoutDir, entry.name),
-                    'utf8',
-                );
-                // Strip comments before scanning so doc-comments
-                // mentioning `<header role="banner">` don't trip
-                // the structural detector.
-                const stripped = blankNonCode(content);
-                if (
-                    /<header\b[^>]*role="banner"/.test(stripped) ||
-                    /<header[\s\S]{0,80}role="banner"/.test(stripped)
-                ) {
-                    offenders.push(entry.name);
-                }
-            }
+            const offenders = LAYOUT_FILES.filter((abs) =>
+                rendersBanner(fs.readFileSync(abs, 'utf8')),
+            ).map((abs) => path.basename(abs));
+            console.log(
+                `[r14-nav-bar] scanned ${LAYOUT_FILES.length} file(s) in layout/ (excluding nav-bar.tsx); ${offenders.length} render a parallel banner`,
+            );
             expect(offenders).toEqual([]);
+        });
+
+        /**
+         * The positive control, and the reason `nav-bar.tsx` is the right
+         * subject for it rather than a synthetic string.
+         *
+         * The assertion above is an ABSENCE over a population that is healthy
+         * today, so a detector that can no longer match anything satisfies it
+         * perfectly — measured, by replacing both patterns with one that
+         * cannot match: 8 of 8 still green (#2483 class B / #2507). The floor
+         * on `LAYOUT_FILES` catches an empty POPULATION; nothing in the file
+         * caught an empty DETECTOR.
+         *
+         * `nav-bar.tsx` is excluded from the population precisely because it
+         * is the one file that legitimately renders the banner, which makes it
+         * a control that cannot drift out of agreement with the thing it
+         * controls: a markup change there fails this test rather than silently
+         * disarming the one above it.
+         */
+        it('the detector matches the file that DOES render the banner', () => {
+            const navBar = path.join(ROOT, 'src/components/layout/nav-bar.tsx');
+            expect(fs.existsSync(navBar)).toBe(true);
+            expect(rendersBanner(fs.readFileSync(navBar, 'utf8'))).toBe(true);
         });
     });
 });
