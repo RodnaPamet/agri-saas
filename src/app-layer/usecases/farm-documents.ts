@@ -33,14 +33,14 @@
 import type { DocumentRetention } from '@prisma/client';
 
 import type { RequestContext } from '../types';
-import { assertCanRead, assertCanWrite } from '../policies/common';
+import { assertCanAdmin, assertCanRead, assertCanWrite } from '../policies/common';
 import { FileRepository } from '../repositories/FileRepository';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
 import { isDownloadAllowed } from '@/lib/storage/av-scan';
 import { assertTenantKey, getStorageProvider } from '@/lib/storage';
-import { codedForbidden, codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { farmToday } from '@/lib/calendar-day-key';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { isUniqueViolation } from '@/lib/errors/prisma';
@@ -221,6 +221,115 @@ export async function listFarmDocuments(
         const page = truncated ? found.slice(0, DOCUMENT_PAGE_SIZE) : found;
         return { rows: page.map((r) => toRow(ctx, r)), truncated };
     });
+}
+
+/** The settings row as a client reads it. */
+export interface FarmDocumentSettings {
+    retention: string;
+    driveSync: boolean;
+    usedBytes: number;
+    limitBytes: number;
+    mayEdit: boolean;
+}
+
+/**
+ * The farm's document settings, with its own usage.
+ *
+ * `limitBytes` is ALWAYS present — there is no absent-means-unlimited case
+ * for a client to handle, which the iOS session recorded on `agrent-ios`
+ * #468. And `usedBytes` is the exact figure here, not the band `/api/readyz`
+ * reports: this route is authenticated and scoped to the farm that owns the
+ * bytes, so a farm learning its own total discloses nothing.
+ *
+ * Returns the schema defaults when no row exists rather than creating one —
+ * a GET must not write, and "nobody has opened the settings screen" is not a
+ * different state from "the defaults are in force".
+ */
+export async function getFarmDocumentSettings(
+    ctx: RequestContext,
+): Promise<FarmDocumentSettings> {
+    assertCanRead(ctx);
+
+    // Both numbers come from `readDocumentStorageUsage`, which is also what the
+    // upload refusal reads. Computing them separately here is the defect that
+    // tells a farmer they have room while the upload refuses them — and the
+    // usage query keys on `purgedAt`, so a deleted document stops counting
+    // inside the delete transaction rather than after a sweep.
+    const [row, usage] = await Promise.all([
+        runInTenantContext(ctx, async (db) =>
+            db.tenantDocumentSettings.findUnique({
+                where: { tenantId: ctx.tenantId },
+                select: { retention: true, driveSync: true },
+            }),
+        ),
+        readDocumentStorageUsage(ctx),
+    ]);
+
+    return {
+        retention: row?.retention ?? 'P1Y',
+        driveSync: row?.driveSync ?? false,
+        usedBytes: usage.usedBytes,
+        limitBytes: usage.limitBytes,
+        mayEdit: ctx.permissions.canAdmin,
+    };
+}
+
+const RETENTIONS = ['P3M', 'P6M', 'P1Y', 'P2Y', 'P5Y', 'NONE'] as const;
+
+/**
+ * Change the farm's document settings. Admin only.
+ *
+ * Upserts, because the row may not exist yet and the first PUT is the thing
+ * that creates it. A retention change applies to NEW uploads only — every
+ * document carries the period it was uploaded under, which is the decision
+ * that makes a settings change unable to move an existing expiry.
+ */
+export async function updateFarmDocumentSettings(
+    ctx: RequestContext,
+    input: { retention?: unknown; driveSync?: unknown },
+): Promise<FarmDocumentSettings> {
+    assertCanAdmin(ctx);
+
+    const patch: { retention?: DocumentRetention; driveSync?: boolean } = {};
+    if (input.retention !== undefined) {
+        if (typeof input.retention !== 'string' || !RETENTIONS.includes(input.retention as never)) {
+            throw codedBadRequest(
+                'DOCUMENT_RETENTION_INVALID',
+                'That retention period is not one of the available choices.',
+            );
+        }
+        patch.retention = input.retention as DocumentRetention;
+    }
+    if (input.driveSync !== undefined) {
+        if (typeof input.driveSync !== 'boolean') {
+            throw codedBadRequest(
+                'DOCUMENT_DRIVE_SYNC_INVALID',
+                'The Google Drive setting must be true or false.',
+            );
+        }
+        patch.driveSync = input.driveSync;
+    }
+
+    await runInTenantContext(ctx, async (db) => {
+        await db.tenantDocumentSettings.upsert({
+            where: { tenantId: ctx.tenantId },
+            update: patch,
+            create: {
+                tenantId: ctx.tenantId,
+                retention: patch.retention ?? 'P1Y',
+                driveSync: patch.driveSync ?? false,
+            },
+        });
+        await logEvent(db, ctx, {
+            action: 'FARM_DOCUMENT_SETTINGS_UPDATED',
+            entityType: 'TenantDocumentSettings',
+            entityId: ctx.tenantId,
+            details: 'Farm document settings updated',
+            detailsJson: { ...patch },
+        });
+    });
+
+    return getFarmDocumentSettings(ctx);
 }
 
 /**

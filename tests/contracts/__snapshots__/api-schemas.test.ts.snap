@@ -6976,6 +6976,21 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentDriveState 1`
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmDocumentGoogleState 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "connected": {
+      "type": "boolean",
+      "description": "True only when an ENABLED Google connection exists whose granted products include Drive. A calendar-only grant reports false, because it cannot copy a document and offering the toggle would promise a copy that never happens. No account email is reported: the connection record carries granted products and scopes, not an address, and storing one would be a personal-data decision rather than a lookup."
+    }
+  },
+  "required": [
+    "connected"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmDocumentList 1`] = `
 "{
   "type": "object",
@@ -7103,6 +7118,53 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
     "purgedBy",
     "mayDelete",
     "drive"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentSettings 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "retention": {
+      "type": "string",
+      "enum": [
+        "P3M",
+        "P6M",
+        "P1Y",
+        "P2Y",
+        "P5Y",
+        "NONE"
+      ],
+      "description": "The retention period applied to NEW uploads. Changing it never moves an existing document's expiry — every document carries the period it was uploaded under."
+    },
+    "driveSync": {
+      "type": "boolean",
+      "description": "Whether new uploads are copied into the farm’s «Agrent» Drive folder. Turning it OFF stops new copies; it does not revoke the Google connection, which the ДНЕВНИК export still uses, and it does not remove copies already made."
+    },
+    "usedBytes": {
+      "type": "integer",
+      "description": "Bytes this farm currently holds in the library. The EXACT figure, unlike the bucketed band on \`/api/readyz\` — this route is authenticated and scoped to the farm that owns the bytes, so a farm learning its own total is not a disclosure. Purged documents stop counting as soon as their bytes go, which is what makes deleting a document free space."
+    },
+    "limitBytes": {
+      "type": "integer",
+      "description": "The per-tenant ceiling, ALWAYS present — there is no absent-means-unlimited case for a client to handle. Read from an env var rather than the plan: \`STRIPE_SECRET_KEY\` is absent on this deployment, so every tenant resolves to ENTERPRISE and every ENTERPRISE plan limit is null, meaning a plan-based cap would enforce nothing."
+    },
+    "mayEdit": {
+      "type": "boolean",
+      "description": "Whether THIS caller may change these settings (admin). Readable by every member."
+    },
+    "google": {
+      "$ref": "#/components/schemas/FarmDocumentGoogleState"
+    }
+  },
+  "required": [
+    "retention",
+    "driveSync",
+    "usedBytes",
+    "limitBytes",
+    "mayEdit",
+    "google"
   ]
 }"
 `;
@@ -18023,6 +18085,28 @@ exports[`API contract — per-schema snapshots schema: UpdateAdminMemberRequest 
         "null"
       ],
       "description": "\`null\` UNASSIGNS the custom role. Omitting the field leaves it unchanged — the two are different."
+    }
+  }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdateFarmDocumentSettings 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "retention": {
+      "type": "string",
+      "enum": [
+        "P3M",
+        "P6M",
+        "P1Y",
+        "P2Y",
+        "P5Y",
+        "NONE"
+      ]
+    },
+    "driveSync": {
+      "type": "boolean"
     }
   }
 }"
