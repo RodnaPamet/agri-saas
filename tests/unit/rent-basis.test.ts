@@ -8,18 +8,50 @@
  * shape (`resolved: false` + a reason naming the raw unit text).
  */
 import { resolveRentBasis, type RentBasisResult } from '@/lib/grain/rent-basis';
+import { BGN_PER_EUR } from '@/lib/exchange/currency';
 import { RENT_UNIT_KG, RENT_UNIT_LEVA } from '@/lib/agro/rent-units';
 import { DCA_PER_HA } from '@/lib/agro/rate-calc';
 
-describe('resolveRentBasis — money per decare (лв/дка)', () => {
+describe('resolveRentBasis — money per decare, reported in EURO', () => {
+    /*
+     * Owner ruling 2026-10-31: money rent is reported in euro whatever unit
+     * the lease is quoted in. `€/дка` passes through; `лв/дка` — every lease
+     * recorded before that date — converts at the legally fixed peg.
+     *
+     * These expectations CHANGED with that ruling, and deliberately: they
+     * asserted the un-converted lev figure before. The division is written out
+     * rather than pre-computed so the intent survives a reader who does not
+     * know the rate by sight.
+     */
+    it('a €/дка lease passes through unconverted', () => {
+        const result = resolveRentBasis({ rentAmount: 40, rentUnit: '€/дка' }, 3);
+        expect(result).toEqual({ resolved: true, kind: 'money', perHa: 40 * DCA_PER_HA, currency: 'EUR' });
+    });
+
+    it('a €/дка alias (eur/dka) resolves the same way', () => {
+        const result = resolveRentBasis({ rentAmount: 40, rentUnitRaw: 'eur/dka' }, 3);
+        expect(result).toEqual({ resolved: true, kind: 'money', perHa: 400, currency: 'EUR' });
+    });
+
     it('resolves a canonical rentUnit to a money per-hectare figure', () => {
         const result = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_LEVA }, 5);
-        expect(result).toEqual({ resolved: true, kind: 'money', perHa: 80 * DCA_PER_HA });
+        // 80 лв/дка = 800 лв/ha, converted at the peg.
+        expect(result).toEqual({
+            resolved: true,
+            kind: 'money',
+            perHa: (80 * DCA_PER_HA) / BGN_PER_EUR,
+            currency: 'EUR',
+        });
     });
 
     it('resolves a raw alias (lv/dka) via rentUnitRaw when rentUnit is absent', () => {
         const result = resolveRentBasis({ rentAmount: 50, rentUnitRaw: 'lv/dka' }, 3.2);
-        expect(result).toEqual({ resolved: true, kind: 'money', perHa: 500 });
+        expect(result).toEqual({
+            resolved: true,
+            kind: 'money',
+            perHa: 500 / BGN_PER_EUR,
+            currency: 'EUR',
+        });
     });
 
     it('is area-INDEPENDENT once resolved — a per-decare rate scales, it does not accumulate', () => {
@@ -86,14 +118,20 @@ describe('resolveRentBasis — money and produce are NOT interchangeable', () =>
         expect(() => combineSameKind(money, produce)).toThrow(/cannot combine/);
 
         const moneyToo = resolveRentBasis({ rentAmount: 20, rentUnit: RENT_UNIT_LEVA }, 1);
-        expect(combineSameKind(money, moneyToo)).toBe(10 * DCA_PER_HA + 20 * DCA_PER_HA);
+        // Both sides are now EURO, so the sum is of converted figures. The
+        // point of the test is the TYPE narrowing, not the rate — but the
+        // numbers have to be right or it would pass for the wrong reason.
+        expect(combineSameKind(money, moneyToo)).toBeCloseTo(
+            (10 * DCA_PER_HA) / BGN_PER_EUR + (20 * DCA_PER_HA) / BGN_PER_EUR,
+            10,
+        );
     });
 });
 
 describe('resolveRentBasis — zero rent is a real value, not an unresolved unit', () => {
     it('resolves a genuine zero rentAmount to perHa: 0, distinct from resolved: false', () => {
         const result = resolveRentBasis({ rentAmount: 0, rentUnit: RENT_UNIT_LEVA }, 2);
-        expect(result).toEqual({ resolved: true, kind: 'money', perHa: 0 });
+        expect(result).toEqual({ resolved: true, kind: 'money', perHa: 0, currency: 'EUR' });
         expect(result.resolved).toBe(true);
     });
 
@@ -195,6 +233,11 @@ describe('resolveRentBasis — rentUnit takes precedence over rentUnitRaw', () =
         // (see src/app-layer/usecases/parcel-lease.ts) so in real data they
         // never disagree on DIMENSION — but rentUnit is authoritative.
         const result = resolveRentBasis({ rentAmount: 40, rentUnit: RENT_UNIT_LEVA, rentUnitRaw: 'лв./дка' }, 2);
-        expect(result).toEqual({ resolved: true, kind: 'money', perHa: 400 });
+        expect(result).toEqual({
+            resolved: true,
+            kind: 'money',
+            perHa: 400 / BGN_PER_EUR,
+            currency: 'EUR',
+        });
     });
 });

@@ -40,6 +40,7 @@ jest.mock('@/app-layer/usecases/trends', () => ({
 }));
 
 import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
+import { BGN_PER_EUR } from '@/lib/exchange/currency';
 import { toCalculatorRow } from '@/lib/grain/calculator-payload';
 import { makeRequestContext } from '../helpers/make-context';
 import { assertNetWorthInvariants } from '../helpers/grain-net-worth-invariants';
@@ -93,6 +94,18 @@ function resetMocks() {
 }
 
 beforeEach(resetMocks);
+
+/**
+ * A lev figure as the euro the rent now resolves to.
+ *
+ * Owner ruling 2026-10-31: money rent is reported in EURO, and a `лв/дка`
+ * lease — which is every lease recorded before that date, and every fixture
+ * in this file — converts at the legally fixed peg. These expectations CHANGED
+ * with that ruling, and are written as a conversion rather than as the
+ * resulting constant so a reader can see which figure is the fixture's and
+ * which is the rate's.
+ */
+const eur = (lev: number): number => Math.round((lev / BGN_PER_EUR) * 100) / 100;
 
 describe('getGrainNetWorth — standing crop', () => {
     it('computes expected kg end to end from plannedYieldKgPerHa × area, and excludes a planting with no estimate', async () => {
@@ -309,7 +322,7 @@ describe('getGrainNetWorth — rent attribution', () => {
         // perHa = 50 × 10 = 500 leva/ha; total for the 3 ha parcel = 1500;
         // split 1 ha / 2 ha ⇒ entirely attributed to the SAME commodity
         // here, so the row total is the full 1500.
-        expect(wheat.rentCostMoneyAmount).toBe(1500);
+        expect(wheat.rentCostMoneyAmount).toBe(eur(1500));
     });
 
     it('values produce rent (кг/дка) via the commodity price rather than adding kg to money', async () => {
@@ -459,6 +472,100 @@ describe('getGrainNetWorth — payroll allocation', () => {
 });
 
 describe('getGrainNetWorth — currency handling and net worth', () => {
+    it('a лв/дка rent contributes EUR to cashCostCurrencies, not a sentinel', async () => {
+        /*
+         * THE BUG, asserted on the path it actually took.
+         *
+         * The per-crop rent total feeds `cashCostCurrencies`, and that tag used
+         * to be `UNKNOWN_RENT_CURRENCY` for any non-zero money rent whatever
+         * the unit — so a farm whose costs were otherwise euro read as
+         * mixed-currency and `Калкулатор` withheld its cost and margin per дка.
+         *
+         * Found by mutation: re-tagging the sentinel here left every other test
+         * in this file green, because the only assertion that caught it went
+         * through the UNALLOCATED path. The attributed path — the one a farm
+         * with plantings actually uses — had no currency assertion at all,
+         * which is precisely the gap the original defect lived in.
+         */
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.costEntry.findMany.mockResolvedValue([]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-1',
+                parcelId: 'parcel-1',
+                rentAmount: 50,
+                rentUnit: 'лв/дка',
+                rentUnitRaw: 'лв/дка',
+                parcel: { areaHa: 1 },
+            },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.rentCostMoneyAmount).toBe(eur(500));
+        expect(wheat.cashCostCurrencies).toEqual(['EUR']);
+        expect(wheat.cashCostCurrencies).not.toContain('UNKNOWN');
+        // And the consequence the owner sees: nothing is mixed, so no refusal.
+        expect(wheat.cashCostCurrencyMixed).toBe(false);
+    });
+
+    it('a €/дка rent does the same without any conversion', async () => {
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.costEntry.findMany.mockResolvedValue([]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-1',
+                parcelId: 'parcel-1',
+                rentAmount: 25,
+                rentUnit: '€/дка',
+                rentUnitRaw: '€/дка',
+                parcel: { areaHa: 1 },
+            },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        // 25 €/дка over 1 ha = 250 €, straight through.
+        expect(wheat.rentCostMoneyAmount).toBe(250);
+        expect(wheat.cashCostCurrencies).toEqual(['EUR']);
+    });
+
+    it('produce rent contributes NO currency at all', async () => {
+        // The control for the two above: `кг/дка` is a mass, so it must not
+        // acquire a currency on its way through. A fix that labelled every
+        // rent EUR would pass both tests above and break this one.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.costEntry.findMany.mockResolvedValue([]);
+        mockDb.parcelLease.findMany.mockResolvedValue([
+            {
+                id: 'lease-1',
+                parcelId: 'parcel-1',
+                rentAmount: 25,
+                rentUnit: 'кг/дка',
+                rentUnitRaw: 'кг/дка',
+                parcel: { areaHa: 1 },
+            },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.rentCostMoneyAmount).toBe(0);
+        expect(wheat.cashCostCurrencies).not.toContain('EUR');
+        expect(wheat.cashCostCurrencies).not.toContain('UNKNOWN');
+    });
+
     it('computes a real net worth figure when cash costs share a single currency matching the price currency', async () => {
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', areaM2: 10_000, plannedYieldKgPerHa: 3000 })]);
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
@@ -594,8 +701,11 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
         const netWorthTotal = result.rows.reduce((sum, r) => sum + r.cashCostTotal, 0);
 
         expect(rollupTotal).toBe(100);
-        // rent (500) + payroll (40) on top of the reused attributed cost (100).
-        expect(netWorthTotal).toBe(640);
+        // rent + payroll (40) on top of the reused attributed cost (100). Only
+        // the RENT converts: the payroll row is a BGN-labelled cost amount and
+        // `cashCostTotal` sums amounts, so this is a composite and a blanket
+        // conversion of 640 would be wrong.
+        expect(netWorthTotal).toBeCloseTo(100 + 40 + eur(500), 10);
         expect(netWorthTotal).not.toBe(rollupTotal);
         expect(mockGetCostRollupByPlanting).toHaveBeenCalledWith(ctx, { seasonId: 's-1', take: 2000 });
     });
@@ -1283,8 +1393,13 @@ describe('allocation basis — land with no crop', () => {
         const result = await netWorthResult(ctx);
 
         // 5 лв/дка × 10 дка/ха × 10 ха = 500.
-        expect(result.unallocatedToCrop.amount).toBe(500);
-        expect(result.unallocatedToCrop.currencies).toEqual(['UNKNOWN']);
+        expect(result.unallocatedToCrop.amount).toBe(eur(500));
+        // THE FIX (#2397 follow-up). This asserted `['UNKNOWN']` — the
+        // sentinel was applied to any money rent regardless of unit, which is
+        // what made every farm with cash rent read as mixed-currency and had
+        // `Калкулатор` withhold cost and margin per дка. A `лв/дка` lease now
+        // resolves to EUR at the peg and says so.
+        expect(result.unallocatedToCrop.currencies).toEqual(['EUR']);
         expect(result.exclusions.leasesUnattributed.map((e) => e.id)).toEqual(['lease-1']);
     });
 });
@@ -1459,15 +1574,24 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
         const result = await netWorthResult(ctx);
         const wheat = result.rows[0];
 
-        expect(result.imputedLandCharge).toEqual({
-            perHa: 50,
+        // The shape is still pinned exactly — an extra field would be a new
+        // claim nobody reviewed — but `perHa` is compared with a tolerance.
+        // It is a RATE, and the code divides by the peg in a different order
+        // from this expression, so the two differ in the last binary digit.
+        // Writing the code's exact order here would make the test a copy of
+        // the implementation rather than a statement about it.
+        expect(Object.keys(result.imputedLandCharge ?? {}).sort()).toEqual([
+            'areaHa', 'perHa', 'refusalCode', 'totalAmount',
+        ]);
+        expect(result.imputedLandCharge).toMatchObject({
             areaHa: 10,
-            totalAmount: 500,
+            totalAmount: eur(500),
             refusalCode: null,
         });
-        expect(wheat.imputedLandCharge).toBe(500);
+        expect(result.imputedLandCharge?.perHa).toBeCloseTo(500 / BGN_PER_EUR / 10, 9);
+        expect(wheat.imputedLandCharge).toBe(eur(500));
         expect(wheat.imputedLandChargeAreaHa).toBe(10);
-        expect(wheat.imputedLandChargePerHa).toBe(50);
+        expect(wheat.imputedLandChargePerHa).toBeCloseTo(500 / BGN_PER_EUR / 10, 10);
     });
 
     it('does NOT enter cashCostTotal, and does not move net worth', async () => {
@@ -1483,9 +1607,9 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
         // Only the real lease is cash: 50 лв/ха × 10 ха = 500. The farm
         // also owns 10 ha worth another 500 in opportunity cost, and the
         // total stays 500 — not 1000.
-        expect(wheat.rentCostMoneyAmount).toBe(500);
-        expect(wheat.cashCostTotal).toBe(500);
-        expect(wheat.imputedLandCharge).toBe(500);
+        expect(wheat.rentCostMoneyAmount).toBe(eur(500));
+        expect(wheat.cashCostTotal).toBe(eur(500));
+        expect(wheat.imputedLandCharge).toBe(eur(500));
         expect(wheat.cashCostTotal).toBe(
             Math.round((wheat.attributedCropCost + wheat.rentCostMoneyAmount + wheat.payrollCost) * 100) / 100,
         );
@@ -1515,7 +1639,7 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
         const result = await netWorthResult(ctx);
         const wheat = result.rows[0];
 
-        expect(wheat.imputedLandCharge).toBe(500);
+        expect(wheat.imputedLandCharge).toBe(eur(500));
         expect(wheat.cashCostTotal).toBe(0);
         expect(wheat.netWorth).toBe(wheat.netAssetPosition);
     });

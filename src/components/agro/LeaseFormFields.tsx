@@ -31,13 +31,22 @@ export interface LeaseFormState {
     notes: string;
 }
 
-/** Shared defaults — rent is quoted per decare in leva by convention. */
+/**
+ * Shared defaults — rent is quoted per decare in EURO.
+ *
+ * Owner ruling 2026-10-31: new leases are entered in `€/дка` only. The field
+ * stays free text, so a lease already recorded in `лв/дка` still edits and
+ * saves as it was typed, and `canonicalRentUnit` recognises both — what
+ * changes is which one a NEW lease starts in. Existing lev leases are read as
+ * euro at the fixed peg by `resolveRentBasis`, so nothing has to be migrated
+ * for the figures to add up.
+ */
 export const EMPTY_LEASE_FORM: LeaseFormState = {
     lessorName: '',
     lessorEik: '',
     kind: 'ARENDA',
     rentAmount: '',
-    rentUnit: 'лв/дка',
+    rentUnit: '€/дка',
     startDate: null,
     endDate: null,
     documentRef: '',
