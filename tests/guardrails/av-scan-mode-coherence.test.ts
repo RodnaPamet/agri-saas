@@ -76,9 +76,22 @@ describe('AV_SCAN_MODE coherence', () => {
     });
 
     it('the prod example env agrees with the live stack it documents', () => {
-        // deploy/.env.prod.example describes the agrent VM, whose compose file
+        // deploy/env.prod.example describes the agrent VM, whose compose file
         // is deploy/docker-compose.vm.yml. Two files, one host, one answer.
-        const example = read('deploy/.env.prod.example');
+        //
+        // This named `deploy/.env.prod.example` until #2552 deleted it. That
+        // file was the inherited inflect-compliance AWS template — Secrets
+        // Manager, RDS, and a `REDIS_SECRET_NAME` naming the sibling product —
+        // so this check was comparing the VM's compose file against a template
+        // for a stack nobody runs.
+        //
+        // Worth knowing for the next rename: `read()` returns null for a
+        // missing file and the guard below early-returns, so deleting or
+        // renaming the subject DISARMS this test silently rather than
+        // reddening it. The tolerance is deliberate (several subjects here are
+        // genuinely optional) and the cost is that a repoint has to be done by
+        // hand, in the diff that moves the file.
+        const example = read('deploy/env.prod.example');
         const vm = read('deploy/docker-compose.vm.yml');
         if (example === null || vm === null) return;
 
