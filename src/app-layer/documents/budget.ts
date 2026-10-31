@@ -32,10 +32,27 @@ import { codedForbidden } from '@/lib/errors/types';
 /**
  * 2 GiB per tenant. Owner ruling 2026-10-31.
  *
- * Drafted against "36 GB free" and KEPT after a re-measurement found 130 GB
- * free of 366 GB (63% used) on 2026-10-31 — so it is deliberately
- * conservative rather than sized to current headroom. At ~3 tenants the worst
- * case is ~6 GiB.
+ * The disk, measured on the VM on 2026-10-31:
+ *
+ *     /dev/sda1   79G total   41G used   35G available   54%
+ *
+ * That single root is agrent's ONLY real filesystem, `/var/lib/docker` is 12G
+ * of it, and it is shared with playerz production and playerz-staging. So at
+ * ~3 tenants the worst case is ~6 GiB against 35 GB available.
+ *
+ * CORRECTION, recorded because the wrong figure is the one a future raise
+ * would be sized against: this comment first read "130 GB free of 366 GB
+ * (63% used)", which is THIS DEV WORKSTATION and not the VM — I ran `df -h /`
+ * in the local checkout and credited the answer to production. No 366 GB disk
+ * exists in the project at all (`gcloud compute disks list`: agrent 80,
+ * inflect-compliance 100, openshell-gateway 20). The original "36 GB free" in
+ * #2495 was right, and the "re-measurement" that superseded it inverted the
+ * headroom by ~4x in the direction that matters. Caught by the other session,
+ * which had hit the same bad note earlier the same night.
+ *
+ * The ceiling itself does not change — 2 GiB was the owner's answer and
+ * ~6 GiB against 35 GB is still comfortable — but read `df` ON THE VM before
+ * raising it.
  *
  * Raising it is an env change and a restart, not a migration. Lowering it is
  * free; raising it past the disk is the direction that costs something, which
