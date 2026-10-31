@@ -52,6 +52,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const ROOT = path.resolve(__dirname, '../..');
 /**
@@ -111,8 +112,68 @@ const REGISTER_CEILING = 213;
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
 
-/** The shared helper. A file importing this is migrated. */
-const HELPER = /helpers\/collect-files/;
+/**
+ * Migrated: the shared collector is CALLED. Not `helpers/collect-files` the
+ * module PATH, which is what this matched until #2489.
+ *
+ * The path form answers the wrong question twice.
+ *
+ * It matched any import from the module, a CONSTANT included.
+ * `public-operations-need-no-credential` imported only `REPO_ROOT` — which
+ * collects nothing — and was therefore scored migrated while its walk was
+ * entirely hand-rolled (#2520 fixed that file; this fixes the predicate that
+ * hid it).
+ *
+ * And it was matched against RAW text, so a docblock merely MENTIONING the
+ * helper counted as importing it. #2489 called that latent. It was live:
+ * `skip-dir-names-do-not-collide-with-source` — written in #2517, by me —
+ * names the helper in its own docblock while hand-rolling a directory walk,
+ * and was invisible to this register on that alone. Both patterns now run
+ * over `blankNonCode` output.
+ *
+ * What this still cannot do is count COLLECTORS rather than FILES: a file that
+ * migrates one walk and calls the helper drops out while a second hand-rolled
+ * walk beside it stays unaudited. That is a function-level question a text
+ * match cannot answer, it is #2489's actual thesis, and six files are in
+ * exactly that state today — see CANNOT_USE_THE_HELPER.
+ */
+const MIGRATED = /collect(Source|Tracked)Files\s*\(/;
+
+/**
+ * Files that collect by hand and CANNOT use the shared helper, with the reason
+ * each one cannot. This is not a second register and not an allowlist for
+ * debt: `collectSourceFiles` / `collectTrackedFiles` collect FILES BY
+ * EXTENSION UNDER A REPO ROOT, and every entry here needs something else —
+ * a directory listing, a read outside the tree, or a result that may be empty.
+ *
+ * It exists because "off the register" meant two different things (#2489 item
+ * 2): migrated, or structurally unable to migrate. A reader could not tell
+ * them apart, and the next person to work this register would have tried to
+ * port a directory listing onto a file collector.
+ *
+ * Two of these are SELECTED by the predicate above and excluded here; the
+ * other six are invisible to it because they call the helper for one walk
+ * while hand-rolling another. They are recorded anyway — being unreachable by
+ * today's predicate is not a reason to stop knowing about them.
+ */
+const CANNOT_USE_THE_HELPER: Readonly<Record<string, string>> = {
+    'tests/guards/file-collection-is-not-silently-empty.test.ts':
+        'walks the guard tree to FIND collectors — its own subject. A collector that refused an empty result would refuse to report that there are none.',
+    'tests/guards/skip-dir-names-do-not-collide-with-source.test.ts':
+        'lists DIRECTORIES whose names collide with DEFAULT_SKIP_DIRS. The helper returns files, so it cannot answer a question about directory names.',
+    'tests/guards/account-sections-are-reachable.test.ts':
+        'lists SUBDIRECTORIES that contain a page.tsx — the directory is the unit, not the file.',
+    'tests/guards/anthropic-sampling-params-are-gone.test.ts':
+        'walks the Anthropic SDK for .d.ts files INSIDE node_modules, which every collector root deliberately excludes.',
+    'tests/guards/audit-immutability-guardrails.test.ts':
+        'lists prisma MIGRATION DIRECTORIES by name; the .sql inside is found from the directory, not collected.',
+    'tests/guards/no-tracked-node-modules.test.ts':
+        'its SUBJECT is an `ls-files node_modules` read whose pass condition is ZERO results. A floor would invert the guard.',
+    'tests/guards/scan-roots-resolve.test.ts':
+        'tracked() must tolerate zero, because detecting zero IS the point. The helper throws there.',
+    'tests/unit/collect-files.test.ts':
+        'tests the helper; hand-rolls deliberately as the control it is measured against.',
+};
 
 /**
  * Files that still collect their own. MAY ONLY SHRINK — delete a line in the
@@ -366,8 +427,14 @@ function collectorsOnDisk(): string[] {
                 }
                 if (!entry.name.endsWith('.test.ts')) continue;
                 const rel = path.relative(ROOT, full);
-                const src = fs.readFileSync(full, 'utf8');
-                if (COLLECTS.test(src) && !HELPER.test(src)) found.push(rel);
+                // Both patterns run over CODE, never raw text — a docblock
+                // naming either one is prose, not a collector and not an
+                // import (#2489).
+                const code = blankNonCode(fs.readFileSync(full, 'utf8'));
+                if (!COLLECTS.test(code)) continue;
+                if (MIGRATED.test(code)) continue;
+                if (rel in CANNOT_USE_THE_HELPER) continue;
+                found.push(rel);
             }
         };
         walk(abs);
@@ -442,6 +509,37 @@ describe('no NEW guard collects files by hand', () => {
         const count = HAND_ROLLED_COLLECTORS.length;
         expect(count).toBeLessThanOrEqual(REGISTER_CEILING);
         expect({ count, ceiling: REGISTER_CEILING }).toEqual({ count, ceiling: count });
+    });
+
+    it('no entry in CANNOT_USE_THE_HELPER is dead', () => {
+        /*
+         * An exemption can go dead three ways, and #2414 is the issue about
+         * exactly this: its file is renamed, its file stopped collecting by
+         * hand, or it was never collecting in the first place. All three leave
+         * a line that reads as a live carve-out and covers nothing — so each
+         * entry is asserted to still exist AND to still hand-roll a walk.
+         *
+         * Note this does NOT assert the exemption is still NEEDED, because for
+         * six of the eight the predicate does not select them anyway (they
+         * call the helper for a different walk). "Needed" is not observable
+         * from a text match; "still collecting" is, and it is what rots.
+         */
+        const dead: string[] = [];
+        for (const [rel, reason] of Object.entries(CANNOT_USE_THE_HELPER)) {
+            const abs = path.join(ROOT, rel);
+            if (!fs.existsSync(abs)) {
+                dead.push(`${rel} — no such file`);
+                continue;
+            }
+            if (!COLLECTS.test(blankNonCode(fs.readFileSync(abs, 'utf8')))) {
+                dead.push(`${rel} — no longer collects by hand`);
+            }
+            if (reason.trim().length < 20) dead.push(`${rel} — reason too thin to be a reason`);
+        }
+        expect(dead).toEqual([]);
+        console.log(
+            `[collector-register] ${HAND_ROLLED_COLLECTORS.length} recorded as debt; ${Object.keys(CANNOT_USE_THE_HELPER).length} recorded as unable to use the helper`,
+        );
     });
 
     it('the list only shrinks — a migrated file must lose its line', () => {
