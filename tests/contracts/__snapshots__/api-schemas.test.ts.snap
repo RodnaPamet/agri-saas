@@ -8409,6 +8409,35 @@ exports[`API contract — per-schema snapshots schema: GoogleCalendarSync 1`] = 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: GoogleConnectRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "client": {
+      "type": "string",
+      "enum": [
+        "ios"
+      ],
+      "description": "Omit for the web flow. \`\\"ios\\"\` selects the native branch: no cookie, a server-held nonce, and an app-scheme return."
+    }
+  }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: GoogleConnectStart 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "authorizeUrl": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "authorizeUrl"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: GrainBin 1`] = `
 "{
   "type": "object",

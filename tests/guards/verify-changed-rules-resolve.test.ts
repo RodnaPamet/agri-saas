@@ -145,9 +145,12 @@ describe('verify:changed rules (#2018)', () => {
      * Through `collectTrackedFiles` rather than a hand-rolled `git ls-files`,
      * which `file-collection-is-not-silently-empty` correctly refused when I
      * wrote it by hand. `extensions` is omitted on purpose: the helper then
-     * returns EVERY tracked file, which is what this needs — `Dockerfile` and
-     * `nul` have no extension, so an extension filter cannot express this
-     * population at all. The helper's floor is what makes the filter below
+     * returns EVERY tracked file, which is what this needs — `Dockerfile` has
+     * no extension, so an extension filter cannot express this population at
+     * all. (This read "`Dockerfile` and `nul`" until #2567 removed `nul`,
+     * which was a tracked build artifact rather than a file this repo ships.
+     * The point stands on `Dockerfile` alone.) The helper's floor is what
+     * makes the filter below
      * safe: an emptied index throws there rather than passing here.
      */
     const ROOT_FILES = collectTrackedFiles({ roots: ['.'], floor: 1000 })

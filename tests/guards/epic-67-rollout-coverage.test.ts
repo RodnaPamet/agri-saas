@@ -58,6 +58,16 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['handleDeleteAsset'],
     },
     {
+        // agrent-ios#481 — the web half of the owner's expense swipe-to-delete
+        // ruling (2026-10-31: "Ask, then 5 s «Отмени»", anyone who may write,
+        // web too). The flow ALREADY existed and was ungraded, which is how it
+        // kept a raw `fetch` whose `!res.ok` treated an already-deleted entry
+        // as a failure and restored the row.
+        file: 'src/app/t/[tenantSlug]/(app)/grain/costs/CostsClient.tsx',
+        name: 'Cost entry delete (grain costs list)',
+        handlers: ['handleDelete'],
+    },
+    {
         // #2175 — swiping a journal row left. The swipe COMMITS nothing on its
         // own: `<SwipeRow>` fires `onAction` and the undo window is the
         // caller's, which is this site. A gesture that deleted on release

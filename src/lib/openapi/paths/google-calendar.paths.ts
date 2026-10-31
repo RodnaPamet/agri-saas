@@ -1,10 +1,12 @@
 /**
- * The Google Calendar sync (#2020).
+ * The documented `/admin/integrations/google` routes — the calendar sync
+ * (#2020) and the consent start (#2495 step 6).
  *
- * Its own file rather than an entry appended to an existing one: every other
- * `/admin/integrations/google` route is on the undocumented baseline, and that
- * baseline only shrinks — so this is the first documented route of the family
- * and the place a future Drive-sync entry belongs.
+ * It began as the calendar sync alone, when every other route of the family
+ * sat on the undocumented baseline and this was the first documented one. The
+ * connect route joined it rather than getting a file of its own, because that
+ * baseline only shrinks and a reader looking for "what can I call on the Google
+ * integration" should find one place.
  *
  * The response is documented in detail because two of its fields are
  * CONTRACTS rather than statistics: `partial` says the sync declined to
@@ -64,6 +66,75 @@ const CalendarSync = z
     .openapi('GoogleCalendarSync');
 
 export function registerGoogleCalendarPaths(registry: OpenAPIRegistry): void {
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/admin/integrations/google/connect',
+        operationId: 'startGoogleConnect',
+        summary: 'Start the Google consent flow for Drive and Calendar',
+        description:
+            'Answers with the Google authorize URL to open. TWO branches, chosen by `client`, '
+            + 'and they differ in where the consent is RETURNED rather than in what is granted.\n\n'
+            + '**Web — no body, or any `client` but `ios`.** Also sets a short-lived HttpOnly '
+            + '`google_oauth_state` cookie; the browser navigates to the URL and Google returns to '
+            + 'the callback, which verifies the state against that cookie and lands the person back '
+            + 'on the admin integrations page.\n\n'
+            + '**Native — `{"client":"ios"}`.** Sets NO cookie. The state is a server-held '
+            + 'single-use nonce bound to this farm and this administrator, and the callback returns '
+            + 'control to the app rather than to a web page.\n\n'
+            + 'The cookie cannot serve a native client and that is a fact about the platform rather '
+            + 'than a preference: the consent runs in an EPHEMERAL `ASWebAuthenticationSession`, a '
+            + 'different cookie jar from the one the app’s HTTP client put this response’s cookie '
+            + 'in. The callback would never see it, so every attempt would fail the state check — '
+            + 'and even a success would land on a web page instead of back in the app.\n\n'
+            + '**A native caller does not choose where it is returned to.** The target is a server '
+            + 'constant, validated against the deployment’s native redirect allowlist when the '
+            + 'state is issued. A caller-supplied target would make the callback an open redirect '
+            + 'gated only by an allowlist; this way the flow carries no caller-controlled value at '
+            + 'all. A deployment whose allowlist does not carry the app scheme refuses with 400 '
+            + '`GOOGLE_NATIVE_RETURN_NOT_ALLOWED` at this call rather than minting a state whose '
+            + 'return the device would silently drop.\n\n'
+            + '**The native callback answers on the app scheme**, `?result=connected` or '
+            + '`?error=<code>` from a CLOSED set: `access_denied`, `insufficient_scope`, '
+            + '`state_expired`, `state_invalid`, `token_exchange_failed`, `not_admin`, '
+            + '`internal_error`. Closed because a client treats an unlisted value as an internal '
+            + 'error, so an unmapped string is not a message but a value it discards.\n\n'
+            + '`insufficient_scope` means DRIVE specifically was not granted, not that nothing '
+            + 'was. Google’s consent screen lets the scopes be ticked individually, so a '
+            + 'calendar-only grant is an ordinary outcome — and reporting it as connected would '
+            + 'contradict `GET /documents/settings`, which reports `google.connected: false` for '
+            + 'exactly that case.\n\n'
+            + 'Administrator only, and behind the `integrations.google` flag — both branches.',
+        tags: ['Integrations'],
+        params: TenantParams,
+        body: z
+            .object({
+                client: z
+                    .literal('ios')
+                    .optional()
+                    .openapi({
+                        description:
+                            'Omit for the web flow. `"ios"` selects the native branch: no cookie, '
+                            + 'a server-held nonce, and an app-scheme return.',
+                    }),
+            })
+            .openapi('GoogleConnectRequest'),
+        success: {
+            status: 200,
+            description: 'The URL to open for consent.',
+            schema: z
+                .object({ authorizeUrl: z.string() })
+                .openapi('GoogleConnectStart'),
+        },
+        extraResponses: codedErrorResponses({
+            400:
+                '`GOOGLE_NATIVE_RETURN_NOT_ALLOWED` — a native consent was requested on a '
+                + 'deployment whose native redirect allowlist does not carry the app scheme. '
+                + 'Refused HERE rather than at the callback, because a state minted against an '
+                + 'unreachable return would leave the person watching a consent that completed and '
+                + 'went nowhere. Configuration, not a bad client: the operator sets the allowlist.',
+        }),
+    });
+
     op(registry, {
         method: 'post',
         path: '/api/t/{tenantSlug}/admin/integrations/google/calendar/sync',
