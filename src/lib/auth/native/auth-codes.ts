@@ -15,6 +15,7 @@
  * verifier can spend the code.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { env } from '@/env';
 import type { NativeAuthCodePurpose } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
@@ -270,6 +271,25 @@ export function isAllowedRedirect(uri: string, allowlist: string[]): boolean {
  * unauthenticated, and telling an anonymous caller "our allowlist is empty"
  * hands them a fact about our configuration they have no business having.
  */
+/**
+ * The configured allowlist, parsed.
+ *
+ * Extracted because there were TWO identical copies — `auth/native/start` and
+ * `auth/native/complete` — and #2495 step 6 needed a third. Two copies of a
+ * security-relevant parser is a thing that eventually disagrees; three is
+ * asking for it. The parse is trivial, which is exactly why it gets copied and
+ * exactly why it should not be.
+ *
+ * Returns `[]` for an unset or empty variable, which `classifyRedirect` reads
+ * as `allowlist_unconfigured` rather than as "nothing is allowed" — that
+ * distinction is the whole reason the verdict has three values.
+ */
+export function nativeRedirectAllowlist(): string[] {
+    return env.NATIVE_AUTH_REDIRECT_ALLOWLIST.split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+}
+
 export type RedirectVerdict = 'allowed' | 'not_on_allowlist' | 'allowlist_unconfigured';
 
 export function classifyRedirect(uri: string, allowlist: string[]): RedirectVerdict {
