@@ -47,6 +47,9 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
 import { CLOSING_SOON_DAYS, daysUntil } from '@/lib/grain/contract-window';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
+import type { Locale } from '@/lib/i18n/locales';
 import type { JobRunResult } from './types';
 
 export interface ContractDeliveryWindowSweepOptions {
@@ -157,19 +160,51 @@ export async function runContractDeliveryWindowSweep(
                         status: 'ACTIVE',
                         role: { in: ['OWNER', 'ADMIN'] },
                     },
-                    select: { tenantId: true, userId: true, tenant: { select: { slug: true } } },
+                    select: {
+                        tenantId: true,
+                        userId: true,
+                        tenant: { select: { slug: true } },
+                        // The locale comes off a relation this query ALREADY
+                        // walks, so it costs no extra read — the same reason
+                        // `lease-expiry-sweep` resolves it here.
+                        user: { select: { uiLanguage: true } },
+                    },
                     take: 5000,
                 });
-                const recipientsByTenant = new Map<string, { userId: string; slug: string }[]>();
+                const recipientsByTenant = new Map<
+                    string,
+                    { userId: string; slug: string; locale: Locale }[]
+                >();
                 for (const m of memberships) {
                     const list = recipientsByTenant.get(m.tenantId) ?? [];
-                    list.push({ userId: m.userId, slug: m.tenant.slug });
+                    list.push({
+                        userId: m.userId,
+                        slug: m.tenant.slug,
+                        // `bg` on a failed lookup, NOT `DEFAULT_LOCALE` — a
+                        // notification recipient is a known user whose column
+                        // defaults to `bg`; `en` is for unauthenticated surfaces.
+                        locale: resolveRecipientLocale(m.user?.uiLanguage ?? null),
+                    });
                     recipientsByTenant.set(m.tenantId, list);
                 }
 
                 // 4 — candidate rows, dropping ones already sent for
                 // this contract + phase.
-                const candidates = contracts.flatMap((contract) => {
+                // A `for` loop rather than `flatMap`, because `translateFor`
+                // is async and one row's copy is resolved per RECIPIENT — two
+                // OWNERs of one farm with different `uiLanguage` must get two
+                // languages, which a synchronous map over contracts cannot do.
+                const candidates: {
+                    tenantId: string;
+                    userId: string;
+                    type: 'CONTRACT_DELIVERY_DUE';
+                    title: string;
+                    message: string;
+                    linkUrl: string;
+                    dedupeKey: string;
+                }[] = [];
+
+                for (const contract of contracts) {
                     const end = contract.deliveryEnd!;
                     const endYmd = end.toISOString().slice(0, 10);
                     const days = daysUntil(end, now);
@@ -189,38 +224,65 @@ export async function runContractDeliveryWindowSweep(
                     // grain moved, so there is nothing to chase. The
                     // operator still needs to advance the status, but
                     // that is a nudge this alert should not impersonate.
-                    if (outstanding != null && outstanding.isZero()) return [];
+                    if (outstanding != null && outstanding.isZero()) continue;
 
                     const what = contract.commodity
                         ? `${contract.commodity} (${contract.counterparty})`
                         : contract.counterparty;
-                    const outstandingText =
-                        outstanding != null
-                            ? ` Остават ${outstanding.toFixed()} т за доставка.`
-                            : '';
 
-                    return (recipientsByTenant.get(contract.tenantId) ?? []).map((r) => ({
-                        tenantId: contract.tenantId,
-                        userId: r.userId,
-                        type: 'CONTRACT_DELIVERY_DUE' as const,
-                        title:
-                            phase === 'overdue'
-                                ? 'Просрочен срок за доставка'
-                                : 'Наближаващ срок за доставка',
-                        message:
-                            phase === 'overdue'
-                                ? `Срокът за доставка по договора за ${what} изтече на ${endYmd} (преди ${Math.abs(days)} дни).${outstandingText}`
-                                : `Срокът за доставка по договора за ${what} изтича на ${endYmd} (след ${days} дни).${outstandingText}`,
-                        linkUrl: `/t/${r.slug}/grain/contracts`,
-                        dedupeKey: deliveryWindowDedupeKey(
-                            contract.tenantId,
-                            contract.id,
-                            r.userId,
-                            endYmd,
-                            phase,
-                        ),
-                    }));
-                });
+                    for (const r of recipientsByTenant.get(contract.tenantId) ?? []) {
+                        /**
+                         * The outstanding tonnage is its OWN key, resolved
+                         * first and passed in as a parameter.
+                         *
+                         * `translateFor` is a plain interpolate with no ICU, so
+                         * there is no plural form to reach for — and every
+                         * figure here is written as «label: number» for that
+                         * reason: it is grammatical at any count in both
+                         * languages, which «преди {n} дни» is not at n = 1.
+                         */
+                        const outstandingText =
+                            outstanding != null
+                                ? await translateFor(
+                                      r.locale,
+                                      'notifications.contractDeliveryWindow.outstanding',
+                                      { tonnes: outstanding.toFixed() },
+                                  )
+                                : '';
+
+                        candidates.push({
+                            tenantId: contract.tenantId,
+                            userId: r.userId,
+                            type: 'CONTRACT_DELIVERY_DUE' as const,
+                            title: await translateFor(
+                                r.locale,
+                                phase === 'overdue'
+                                    ? 'notifications.contractDeliveryWindow.overdueTitle'
+                                    : 'notifications.contractDeliveryWindow.closingTitle',
+                            ),
+                            message: await translateFor(
+                                r.locale,
+                                phase === 'overdue'
+                                    ? 'notifications.contractDeliveryWindow.overdueBody'
+                                    : 'notifications.contractDeliveryWindow.closingBody',
+                                {
+                                    what,
+                                    date: endYmd,
+                                    days: String(Math.abs(days)),
+                                    outstanding: outstandingText,
+                                },
+                            ),
+                            linkUrl: `/t/${r.slug}/grain/contracts`,
+                            dedupeKey: deliveryWindowDedupeKey(
+                                contract.tenantId,
+                                contract.id,
+                                r.userId,
+                                endYmd,
+                                phase,
+                            ),
+                        });
+                    }
+                }
 
                 if (candidates.length > 0) {
                     const keys = candidates.map((c) => c.dedupeKey);

@@ -144,16 +144,6 @@ const STAGED_UNLOCALISED: Record<string, string> = {
         + 'localised is a question about the AI path rather than about this producer. The '
         + 'precedent to follow is `generateCopilotExplanation`\'s locale pinning, and that is a '
         + 'decision rather than a port.',
-    'src/app-layer/jobs/contract-delivery-window-sweep.ts':
-        '#2511. Two hardcoded Bulgarian titles (overdue / approaching) and a message. '
-        + 'Mechanical, and the same shape as the lease sweep fixed in this diff — the recipient '
-        + 'query already walks the membership, so the locale costs no extra read.',
-    'src/app-layer/usecases/field-operation.ts':
-        '#2511. FOUR hardcoded ENGLISH strings on the review notification — two titles and two '
-        + 'messages, as `action === \'APPROVE\'` ternaries. Worth noting that #2511 listed this '
-        + 'file as ALREADY CORRECT: it carries `titleKey`, but on a `LogEntry` written through '
-        + '`createLogEntryWithAudit`, not on the Notification. A per-file classification found '
-        + 'the key and not the site.',
 };
 
 const STILL_ENGLISH: Record<string, string> = {
@@ -284,8 +274,9 @@ describe('notification copy is written in the recipient language', () => {
         expect(producers.length).toBeGreaterThanOrEqual(16);
         // At the MEASURED value, so it ratchets: localising one more producer
         // raises this line in the same diff, and losing one goes red. 11 → 12
-        // with the lease sweep in this change.
-        expect(localisingProducers.length).toBeGreaterThanOrEqual(12);
+        // with the lease sweep (#2592), 12 → 14 with the contract-delivery
+        // sweep and the field-operation review (the rest of #2511).
+        expect(localisingProducers.length).toBeGreaterThanOrEqual(14);
     });
 
     it.each(Object.keys({ ...DELIBERATELY_UNLOCALISED, ...STAGED_UNLOCALISED }))(
