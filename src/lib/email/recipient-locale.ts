@@ -42,3 +42,38 @@ export const RECIPIENT_FALLBACK_LOCALE: Locale = 'bg';
 export function resolveRecipientLocale(uiLanguage: unknown): Locale {
     return isLocale(uiLanguage) ? uiLanguage : RECIPIENT_FALLBACK_LOCALE;
 }
+
+/**
+ * The recipient's own language, looked up by user id.
+ *
+ * For a notification whose recipient is known only as an id — a bell row whose
+ * producer never loaded the user. Where the producer ALREADY selects
+ * `user.uiLanguage` (the exchange inquiry fan-out does, for its email), use
+ * that instead: this costs a query and that one does not.
+ *
+ * This is deliberately NOT `inviterLocale`, which runs the same query for an
+ * unrelated reason — that one picks the INVITER as a PROXY because an invitee
+ * has no `User` row at all, and its choice of proxy is the decision #722
+ * argued. Here the recipient is the recipient, so there is nothing to choose.
+ *
+ * Fail-soft for the same reason every locale lookup in this module is: a
+ * notification in the fallback language is read and understood, while one that
+ * never writes because a lookup threw is a farmer not being told. The caller is
+ * usually a best-effort notify path whose subject row is already committed.
+ *
+ * Uses the GLOBAL client: `User` carries no `tenantId`, so a tenant-scoped read
+ * of it returns nothing under RLS.
+ */
+export async function recipientLocaleForUser(userId: string | undefined): Promise<Locale> {
+    if (!userId) return RECIPIENT_FALLBACK_LOCALE;
+    try {
+        const { default: prisma } = await import('@/lib/prisma');
+        const row = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { uiLanguage: true },
+        });
+        return resolveRecipientLocale(row?.uiLanguage);
+    } catch {
+        return RECIPIENT_FALLBACK_LOCALE;
+    }
+}

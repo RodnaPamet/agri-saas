@@ -50,14 +50,31 @@
  * needs a staged fix gets an entry with its issue number, and the assertion
  * below is what collects it again.
  *
- * ## What this guard does NOT cover — #2511
+ * ## The population is DERIVED from who writes a row — #2511
  *
- * `ROOT` is `src/app-layer/notifications` alone, so the population is the
- * modules under that one directory. Eight more producers write a
- * `Notification` row from `src/app-layer/jobs` and `src/app-layer/usecases`
- * and are OUTSIDE this scan entirely — five hardcode English, three hardcode
- * Bulgarian. Widening `ROOT` is the fix tracked on #2511; do not build a
- * second guard for it.
+ * It used to be `src/app-layer/notifications` alone, and that is how a guard
+ * called "notification copy is localised" stayed green while the owner opened
+ * «Известия» on a Bulgarian phone and read English. Eight producers write a
+ * `Notification` row from `src/app-layer/jobs` and `src/app-layer/usecases`,
+ * outside that directory and so outside the scan: five hardcoded English,
+ * three hardcoded Bulgarian. The guard was correctly named and its population
+ * was a fraction of what the name implied — `count-the-routes-a-gate-covers`.
+ *
+ * So the population is now the union of two sets: every module under the
+ * notifications directory (they exist to produce copy), and every file under
+ * `src/app-layer` that WRITES a notification row. The second half is derived
+ * from the call, the way `past-due-capability-coverage` derives its upload
+ * population from `FileRepository.markStored` callers — so a ninth producer
+ * is covered the moment it writes its first row, rather than when somebody
+ * remembers to list it.
+ *
+ * ## The detector had to grow a second shape too
+ *
+ * The English title that reached production was a TEMPLATE literal —
+ * `` title: `New interest in your ${listing.commodity} listing` `` — and the
+ * pattern only matched single-quoted strings. A detector blind to the exact
+ * form the defect took is the `an-empty-window-passes-a-negated-assertion`
+ * shape: it reported clean over a file that was not.
  */
 
 import * as fs from 'node:fs';
@@ -66,8 +83,22 @@ import * as path from 'node:path';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles } from '../helpers/collect-files';
 
-const ROOT = 'src/app-layer/notifications';
-const DIR = path.resolve(__dirname, '../..', ROOT);
+const COPY_ROOT = 'src/app-layer/notifications';
+const PRODUCER_ROOT = 'src/app-layer';
+const REPO = path.resolve(__dirname, '../..');
+
+/**
+ * Writes a notification ROW. `create(` and `createMany(` on a `notification`
+ * delegate, however the client is spelled (`db`, `prisma`, `sellerDb`, `tx`).
+ *
+ * `create(?:Many)?` and NOT `createMany?` — the second reads as "create or
+ * createMany" and means `createMan` plus an optional `y`, so it matches
+ * `createMany` and misses every plain `create(`. Shipped that way for one run
+ * of this guard, which silently dropped `usecases/insurance.ts` from the
+ * population while reporting 22 modules graded. A population regex needs its
+ * own positive control, which is what the detector describe below provides.
+ */
+const WRITES_NOTIFICATION = /\bnotification\s*\.\s*create(?:Many)?\s*\(/;
 
 /**
  * Still English, with the issue that tracks it. Delete the entry in the same
@@ -99,11 +130,23 @@ const STILL_ENGLISH: Record<string, string> = {
  * capitalised, ASCII letters only — so a Bulgarian string never matches, and
  * neither does an identifier, a key path (`notifications.taskDue.week.title`)
  * or a single word like a status.
+ *
+ * The `(?<![.\w])` is load-bearing and arrived with the widened population. A
+ * TERNARY reads exactly like a property:
+ *
+ *     codedBadRequest('X', err instanceof Error ? err.message : 'File upload failed')
+ *
+ * `.message : 'File upload failed'` matched `message\s*:\s*'…'` and reported
+ * error copy as notification copy. The lookbehind requires the key to start a
+ * token rather than follow a dot. Error prose is a DIFFERENT mechanism with
+ * its own guard — `errors.<CODE>` in both catalogues — so the fix is for this
+ * detector not to claim it, never to exempt the file.
  */
-const PROSE = /\b(?:title|phrase|body|message|subject)\s*:\s*'([A-Z][a-z]+(?: [A-Za-z’']+){1,})'/g;
+const PROSE =
+    /(?<![.\w])(?:title|phrase|body|message|subject)\s*:\s*(?:'([A-Z][a-z]+(?: [A-Za-z’']+){1,})'|`([A-Z][a-z]+(?:[ ]+(?:\$\{[^}]*\}|[A-Za-z’']+))+)`)/g;
 
 function proseIn(src: string): string[] {
-    return [...blankNonCode(src).matchAll(PROSE)].map((m) => m[1]);
+    return [...blankNonCode(src).matchAll(PROSE)].map((m) => m[1] ?? m[2]);
 }
 
 /**
@@ -115,13 +158,25 @@ function proseIn(src: string): string[] {
  * "no module holds English prose" from "no module was read".
  */
 function modules(): string[] {
-    return collectSourceFiles({
-        roots: [ROOT],
+    const copy = collectSourceFiles({
+        roots: [COPY_ROOT],
         extensions: ['.ts'],
         exclude: (rel) => rel.endsWith('.test.ts'),
         floor: 10,
-    })
-        .map((abs) => path.basename(abs))
+    });
+    // Each half is floored SEPARATELY. A combined floor would let the derived
+    // half collapse to zero while the directory half kept the total above it —
+    // which is exactly the silent shrink the floor exists to catch.
+    const producers = collectSourceFiles({
+        roots: [PRODUCER_ROOT],
+        extensions: ['.ts'],
+        exclude: (rel) => rel.endsWith('.test.ts'),
+        floor: 100,
+    }).filter((abs) => WRITES_NOTIFICATION.test(fs.readFileSync(abs, 'utf8')));
+    expect(producers.length).toBeGreaterThanOrEqual(6);
+
+    return [...new Set([...copy, ...producers])]
+        .map((abs) => path.relative(REPO, abs))
         .sort();
 }
 
@@ -130,21 +185,25 @@ describe('notification copy is written in the recipient language', () => {
 
     it('reports the population it graded', () => {
         const localising = files.filter((f) =>
-            fs.readFileSync(path.join(DIR, f), 'utf8').includes('translateFor'),
+            fs.readFileSync(path.join(REPO, f), 'utf8').includes('translateFor'),
+        );
+        const producers = files.filter((f) =>
+            WRITES_NOTIFICATION.test(fs.readFileSync(path.join(REPO, f), 'utf8')),
         );
         console.log(
-            `[notification-copy-localised] graded ${files.length} module(s) in ` +
-                `src/app-layer/notifications; ${localising.length} call translateFor; ` +
-                `${Object.keys(STILL_ENGLISH).length} exempt (${Object.keys(STILL_ENGLISH).join(', ')})`,
+            `[notification-copy-localised] graded ${files.length} module(s): ` +
+                `${producers.length} write a Notification row, ${localising.length} call ` +
+                `translateFor; ${Object.keys(STILL_ENGLISH).length} exempt ` +
+                `(${Object.keys(STILL_ENGLISH).join(', ') || 'none'})`,
         );
-        // A detector over an empty directory would pass every assertion below.
-        expect(files.length).toBeGreaterThanOrEqual(10);
+        // A detector over an empty population would pass every assertion below.
+        expect(files.length).toBeGreaterThanOrEqual(16);
     });
 
     it.each(modules().filter((f) => !(f in STILL_ENGLISH)))(
         '%s holds no English copy prose',
         (file) => {
-            const found = proseIn(fs.readFileSync(path.join(DIR, file), 'utf8'));
+            const found = proseIn(fs.readFileSync(path.join(REPO, file), 'utf8'));
             expect(found).toEqual([]);
         },
     );
@@ -166,7 +225,7 @@ describe('notification copy is written in the recipient language', () => {
         );
         for (const [file, reason] of entries) {
             expect(reason.length).toBeGreaterThan(40);
-            const found = proseIn(fs.readFileSync(path.join(DIR, file), 'utf8'));
+            const found = proseIn(fs.readFileSync(path.join(REPO, file), 'utf8'));
             // If this fails, the file was FIXED — delete its STILL_ENGLISH
             // entry in the same diff. The exemption must not outlive its cause.
             expect(found.length).toBeGreaterThan(0);
@@ -194,6 +253,24 @@ describe('the detector can express each failure', () => {
         expect(
             proseIn(`/** was title: 'Task due tomorrow' before #2490 */\nconst C = {};`),
         ).toEqual([]);
+    });
+
+    it('does not flag a ternary whose left side ENDS in a copy field name', () => {
+        // `err.message : 'File upload failed'` is error copy reached through a
+        // ternary, and it matched before the lookbehind landed.
+        expect(
+            proseIn(
+                `codedBadRequest('X', err instanceof Error ? err.message : 'File upload failed');`,
+            ),
+        ).toEqual([]);
+    });
+
+    it('flags an English TEMPLATE literal title, interpolation and all', () => {
+        // The shape that actually reached production, and that a single-quote
+        // pattern could never see.
+        expect(
+            proseIn('const n = { title: `New interest in your ${listing.commodity} listing` };'),
+        ).toEqual(['New interest in your ${listing.commodity} listing']);
     });
 
     it('does not flag a single word', () => {

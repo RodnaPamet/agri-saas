@@ -18,6 +18,8 @@ import { sendInquiryEmail } from '@/lib/email/inquiry-email';
 import { assertWithinLimit } from '@/lib/billing/entitlements';
 import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { isLocale } from '@/lib/i18n/locales';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 import {
     Prisma,
     ExchangeSide,
@@ -616,16 +618,31 @@ async function notifySellerOfInquiry(
                 // the row they can Accept/Decline — not the top of the list.
                 const inquiriesUrl = `/t/${admins[0].tenant.slug}/exchange/my-listings#listing-${listing.id}`;
 
-                // In-app Notification for each seller admin/owner.
-                await sellerDb.notification.createMany({
-                    data: admins.map((a) => ({
+                // In-app Notification for each seller admin/owner, each in
+                // THEIR language. `uiLanguage` is already selected above for
+                // the email, so this costs no extra query — the title was
+                // simply never using it (#2511).
+                //
+                // `message` stays a passthrough: it is `sanitizedMessage`, the
+                // BUYER's own words. Translating it would rewrite what one
+                // farmer said to another.
+                const rows = [];
+                for (const a of admins) {
+                    rows.push({
                         tenantId: listing.sellerTenantId,
                         userId: a.userId,
                         type: 'GENERAL' as const,
-                        title: `New interest in your ${listing.commodity} listing`,
+                        title: await translateFor(
+                            resolveRecipientLocale(a.user?.uiLanguage),
+                            'notifications.exchangeInterest.title',
+                            { commodity: listing.commodity },
+                        ),
                         message,
                         linkUrl: inquiriesUrl,
-                    })),
+                    });
+                }
+                await sellerDb.notification.createMany({
+                    data: rows,
                     skipDuplicates: true,
                 });
                 return { admins, inquiriesUrl };

@@ -539,8 +539,29 @@
         },
         "markRead": "Mark read",
         "noNotifications": "No notifications",
+        "slaBreach": {
+            "title": "Automation SLA breached",
+            "body": "An automation rule's {minutes}-minute SLA window was breached."
+        },
         "crumbDashboard": "Dashboard",
         "description": "Recent activity across your farm",
+        "evidenceReview": {
+            "approved": {
+                "title": "Evidence approved: {title}",
+                "body": "Your evidence “{title}” was approved."
+            },
+            "rejected": {
+                "title": "Evidence rejected: {title}",
+                "body": "Your evidence “{title}” was rejected."
+            }
+        },
+        "exchangeInterest": {
+            "title": "New interest in your {commodity} listing"
+        },
+        "insuranceQuote": {
+            "title": "Insurance quote request sent",
+            "body": "An insurer will get back to you about this parcel."
+        },
         "bulkTask": {
             "assigned": {
                 "title": "Tasks assigned to you",

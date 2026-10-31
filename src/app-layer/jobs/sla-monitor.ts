@@ -20,6 +20,8 @@ import { AutomationExecutionRepository } from '../automation';
 import { logEvent } from '../events/audit';
 import type { RequestContext } from '../types';
 import type { JobRunResult } from './types';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 
 function makeSystemCtx(tenantId: string): RequestContext {
     return {
@@ -123,17 +125,41 @@ export async function sweepTenant(tenantId: string, now: Date): Promise<number> 
                 const cfg = exec.rule.slaBreachConfigJson as { userIds?: string[]; message?: string };
                 const userIds = Array.isArray(cfg.userIds) ? cfg.userIds : [];
                 if (userIds.length > 0) {
-                    await db.notification.createMany({
-                        data: userIds.map((userId) => ({
+                    // Recipients' languages, read through the membership rather
+                    // than `User` directly: this runs in a tenant context, and
+                    // `User` carries no `tenantId` so RLS returns nothing from
+                    // here. The configured ids are tenant members by
+                    // construction — the rule builder picks them from this list.
+                    const members = await db.tenantMembership.findMany({
+                        where: { tenantId, userId: { in: userIds } },
+                        select: { userId: true, user: { select: { uiLanguage: true } } },
+                        take: userIds.length,
+                    });
+                    const localeByUser = new Map(
+                        members.map((m) => [m.userId, resolveRecipientLocale(m.user?.uiLanguage)]),
+                    );
+
+                    // `cfg.message` stays a PASSTHROUGH when set: it is the
+                    // operator's own wording, typed into the rule builder, and
+                    // translating a tenant's own copy would be rewriting it.
+                    // Only the fallback is ours to localise (#2511).
+                    const rows = [];
+                    for (const userId of userIds) {
+                        const locale =
+                            localeByUser.get(userId) ?? resolveRecipientLocale(undefined);
+                        rows.push({
                             tenantId,
                             userId,
                             type: 'GENERAL' as const,
-                            title: 'Automation SLA breached',
+                            title: await translateFor(locale, 'notifications.slaBreach.title'),
                             message:
                                 cfg.message ??
-                                `An automation rule's ${windowMin}m SLA window was breached.`,
-                        })),
-                    });
+                                (await translateFor(locale, 'notifications.slaBreach.body', {
+                                    minutes: String(windowMin),
+                                })),
+                        });
+                    }
+                    await db.notification.createMany({ data: rows });
                 }
             }
             count++;
