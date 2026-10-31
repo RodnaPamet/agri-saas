@@ -141,7 +141,6 @@ const JEST_COLLECTIBLE = new Set(TEST_FILES.map(rootOf));
  * (`setupFiles` → `setupFilesAfterEnv`, a project gaining a mapper entry)
  * would silently stop matching a regex while still changing what runs.
  */
-// eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
 const JEST_CONFIG = require('../../jest.config.js') as {
     globalSetup?: string;
     globalTeardown?: string;
