@@ -1,9 +1,17 @@
 import type { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
-import { withdrawListing, fulfillListing, getListing } from '@/app-layer/usecases/exchange';
-import { UpdateListingStatusSchema } from '@/app-layer/schemas/exchange.schemas';
-import { toPublicListing } from '@/lib/exchange/public-listing';
+import {
+    withdrawListing,
+    fulfillListing,
+    getListing,
+    updateListingFields,
+} from '@/app-layer/usecases/exchange';
+import {
+    UpdateListingStatusSchema,
+    UpdateListingSchema,
+} from '@/app-layer/schemas/exchange.schemas';
+import { toPublicListing, toListingEdit } from '@/lib/exchange/public-listing';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { withValidatedBody } from '@/lib/validation/route';
 import { jsonResponse } from '@/lib/api-response';
@@ -75,3 +83,56 @@ async function statusOf(p: Promise<{ id: string; status: string }>) {
     const updated = await p;
     return { id: updated.id, status: updated.status };
 }
+
+/**
+ * Replace every editable field on one of the caller-tenant's OWN listings —
+ * #2543. Owner ruling 2026-10-31.
+ *
+ *   PUT { …every editable field, updatedAt } → the listing, with `edit`.
+ *
+ * ## PUT, not a second body shape on PATCH
+ *
+ * `PATCH` flips lifecycle state (`{ action }`); this replaces content. Folding
+ * both into one method would mean a body that is either `{ action }` or a
+ * field set, and a caller sending both would be asking two questions in one
+ * request with no defined answer.
+ *
+ * ## MODULE-GATED, unlike the withdraw above
+ *
+ * That exemption is argued at length on `PATCH`: the EXCHANGE toggle governs
+ * PARTICIPATION in the marketplace, not CUSTODY of rows you already posted,
+ * and gating withdraw once left a tenant with public listings and no endpoint
+ * that could take them down. Editing is participation — it changes what is
+ * being offered, to buyers, in a market — so it gates like `FULFILLED` does.
+ *
+ * The consequence is deliberate and worth stating: a tenant that switches
+ * EXCHANGE off can still SEE its listings and still withdraw them, and cannot
+ * edit them. Seeing and removing your own rows is custody; changing the offer
+ * is not.
+ *
+ * ## The response carries `edit`
+ *
+ * So a client can render the result and populate the form again without a
+ * second read — and `edit` is this endpoint's own request shape, so a
+ * round-trip is a no-op by construction rather than by a client assembling
+ * the body from two places.
+ */
+export const PUT = withApiErrorHandling(
+    withValidatedBody(
+        UpdateListingSchema,
+        async (
+            req,
+            { params: paramsPromise }: { params: Promise<{ tenantSlug: string; listingId: string }> },
+            body,
+        ) => {
+            const params = await paramsPromise;
+            const ctx = await getTenantCtx(params, req);
+            await assertModuleEnabled(ctx, 'EXCHANGE');
+            const updated = await updateListingFields(ctx, params.listingId, body);
+            return jsonResponse({
+                ...toPublicListing(updated, ctx.tenantId),
+                edit: toListingEdit(updated),
+            });
+        },
+    ),
+);

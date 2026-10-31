@@ -1,6 +1,6 @@
 import { getTenantCtx } from '@/app-layer/context';
 import { listMyListings } from '@/app-layer/usecases/exchange';
-import { toPublicListing, toPublicInquiry } from '@/lib/exchange/public-listing';
+import { toPublicListing, toPublicInquiry, toListingEdit } from '@/lib/exchange/public-listing';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import type { NextRequest } from 'next/server';
@@ -37,6 +37,18 @@ export const GET = withApiErrorHandling(
         return jsonResponse(
             listings.map((l) => ({
                 ...toPublicListing(l, ctx.tenantId),
+                // The seller's own editable values — #2543. A SECOND
+                // projection, because this one disagrees with the public one
+                // about `sellerDisplayName`: the public field is resolved to
+                // the farm's verified name when `publishAsFarm` is set (which
+                // is deliberate — this screen is where a seller checks what a
+                // buyer sees), and echoing that into a full-replacement PUT
+                // would write the verified name into their typed-alias column
+                // as literal text.
+                //
+                // It is the PUT's request shape verbatim, so "send `edit`
+                // back unchanged" is a complete instruction.
+                edit: toListingEdit(l),
                 inquiries: l.inquiries.map((i) =>
                     toPublicInquiry({ ...i, listing: l }, ctx.tenantId, false),
                 ),

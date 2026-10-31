@@ -635,7 +635,13 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'JOURNAL_ENTRY_NOT_FOUND',
     'JOURNAL_FILE_LINK_NOT_FOUND',
     'JOURNAL_TITLE_REQUIRED',
-    'LISTING_NOT_FOUND',
+    // LISTING_NOT_FOUND left this baseline in #2543: the listing PUT and PATCH
+    // descriptions now both NAME it, alongside the four other refusals that
+    // route can answer with. Deleted rather than commented out, per the note
+    // above — and it only became documentable because #2541 turned those
+    // refusals into real codes: three of them were passed as the MESSAGE
+    // field, so `code` read BAD_REQUEST and there was nothing coherent to
+    // document.
     'MESSAGE_NOT_FOUND',
     'NOTES_TOO_LONG',
     'NOT_A_FIELD_OPERATION_TASK',

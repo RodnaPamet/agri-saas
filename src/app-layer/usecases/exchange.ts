@@ -9,7 +9,7 @@ import { logEvent } from '../events/audit';
 import { runInTenantContext, withTenantDb, PrismaTx } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
-import { badRequest, codedConflict, codedNotFound, forbidden } from '@/lib/errors/types';
+import { codedBadRequest, codedConflict, codedForbidden, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { regionByCode } from '@/lib/geo/bulgaria-regions';
 import { logger } from '@/lib/observability/logger';
@@ -20,6 +20,7 @@ import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { isLocale } from '@/lib/i18n/locales';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
 import { translateFor } from '@/lib/i18n/server-messages';
+import type { UpdateListingBody } from '@/app-layer/schemas/exchange.schemas';
 import {
     Prisma,
     ExchangeSide,
@@ -240,7 +241,15 @@ async function createListingRow(ctx: RequestContext, input: CreateListingInput) 
     assertCanWrite(ctx);
 
     const region = regionByCode(input.regionCode);
-    if (!region) throw badRequest('invalid_region', `Unknown region code: ${input.regionCode}`);
+    if (!region) {
+        // Was `badRequest('invalid_region', …)`, which put the code in the
+        // MESSAGE field (#2541) — and used a different spelling from the
+        // edit path's refusal for the same cause. One refusal, one code.
+        throw codedBadRequest(
+            'LISTING_REGION_UNKNOWN',
+            `Unknown region code: ${input.regionCode}`,
+        );
+    }
 
     return runInTenantContext(ctx, async (db) => {
         // Per-tenant ACTIVE-listing quota — the real spam control, since the
@@ -343,7 +352,11 @@ async function loadOwnedListing(db: PrismaTx, ctx: RequestContext, id: string) {
     const listing = await ExchangeRepository.getListing(db, id);
     if (!listing) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
     if (listing.sellerTenantId !== ctx.tenantId) {
-        throw forbidden('You can only modify your own listings');
+        // Coded for the same reason, and because a bare `forbidden()` reports
+        // `code: 'FORBIDDEN'` — indistinguishable from every other refusal on
+        // the route. The line directly above has been coded since it was
+        // written, which is how one function came to answer two ways.
+        throw codedForbidden('LISTING_NOT_OWNED', 'You can only modify your own listings');
     }
     return listing;
 }
@@ -377,14 +390,20 @@ function assertListingTransition(
     commodity: string,
 ) {
     if (TERMINAL_LISTING_STATUSES.includes(from)) {
-        throw badRequest(
-            'listing_terminal',
+        // #2541: `badRequest` is `(message, details)`, so passing a code as
+        // the first argument put `listing_terminal` in the field a client
+        // RENDERS and left `code` as the generic `BAD_REQUEST` — identical for
+        // both refusals below, so a client could not tell them apart, and a
+        // farmer was shown the literal string. `errors.<CODE>` in both
+        // catalogues is what the client reads now.
+        throw codedBadRequest(
+            'LISTING_TERMINAL',
             `"${commodity}" is already ${from.toLowerCase()} and cannot be changed`,
         );
     }
     if (to === ExchangeListingStatus.FULFILLED && from !== ExchangeListingStatus.ACTIVE) {
-        throw badRequest(
-            'listing_not_active',
+        throw codedBadRequest(
+            'LISTING_NOT_ACTIVE',
             `"${commodity}" has expired — withdraw it instead of marking it fulfilled`,
         );
     }
@@ -422,6 +441,172 @@ export async function withdrawListing(ctx: RequestContext, id: string) {
     // should see. Coalesced, so three withdrawals in a burst are one tick.
     publishListingChange();
     return result;
+}
+
+/**
+ * Replace every editable field on one of the caller-tenant's own listings —
+ * #2543. Owner ruling 2026-10-31: every field is editable, and a later
+ * `expiresAt` reactivates an EXPIRED listing.
+ *
+ * ## Why a full replacement
+ *
+ * Five of these fields are nullable, and under a partial patch "leave the
+ * description alone" and "clear the description" are the same JSON unless a
+ * sentinel is invented. The seller's own read carries `edit`, which is this
+ * body verbatim, so "send it back unchanged" is a complete instruction.
+ *
+ * ## Module-gated, unlike withdraw
+ *
+ * `withdrawListing` is deliberately exempt: the EXCHANGE toggle governs
+ * PARTICIPATION in the marketplace, not CUSTODY of rows you already posted,
+ * and gating withdraw once left a tenant with public listings and no endpoint
+ * to remove them. Editing changes what is being OFFERED, to buyers, in a
+ * market — so it gates like `fulfillListing` rather than being exempt like
+ * withdraw. The gate is applied at the route, where the other two are.
+ *
+ * ## The plan limit is checked ONLY when this reactivates
+ *
+ * `assertWithinLimit('exchange_listing')` counts ACTIVE listings. An ordinary
+ * edit does not change that count and must not be refused by a quota it
+ * cannot affect. But EXPIRED → ACTIVE does increase it, so a tenant at its cap
+ * could otherwise walk past the cap by reactivating lapsed rows one at a time.
+ * Checked inside the transaction, like the create path, because as a
+ * standalone call it commits and releases before the write begins — two
+ * concurrent reactivations at cap-1 would both count cap-1 and both pass.
+ */
+export async function updateListingFields(
+    ctx: RequestContext,
+    id: string,
+    input: UpdateListingBody,
+) {
+    assertCanWrite(ctx);
+
+    const region = regionByCode(input.regionCode);
+    if (!region) {
+        throw codedBadRequest(
+            'LISTING_REGION_UNKNOWN',
+            `Unknown region code: ${input.regionCode}`,
+        );
+    }
+
+    const result = await runInTenantContext(ctx, async (db) => {
+        const listing = await loadOwnedListing(db, ctx, id);
+        const from = listing.status as ExchangeListingStatus;
+
+        if (TERMINAL_LISTING_STATUSES.includes(from)) {
+            throw codedBadRequest(
+                'LISTING_TERMINAL',
+                `"${listing.commodity}" is already ${from.toLowerCase()} and cannot be edited`,
+            );
+        }
+
+        /*
+         * The edit PRECONDITION. Full replacement is what makes it worth
+         * having: a lost update here discards every field the other editor
+         * changed, not one, and «Моите обяви» is on the web and the phone at
+         * the same time.
+         *
+         * Compared as an INSTANT, not as a string: `updatedAt` round-trips
+         * through `toISOString()` and back, and two spellings of one moment
+         * must not read as a conflict. An unparseable value is a conflict
+         * rather than a pass — a client that cannot echo the precondition has
+         * not satisfied it.
+         */
+        const seen = new Date(input.updatedAt).getTime();
+        if (!Number.isFinite(seen) || seen !== listing.updatedAt.getTime()) {
+            throw codedConflict(
+                'LISTING_MODIFIED',
+                'This listing changed since you opened it. Reload it and make the change again.',
+            );
+        }
+
+        /*
+         * A CHANGED expiry must be in the future; an UNCHANGED one is always
+         * acceptable, whatever the clock says.
+         *
+         * The create schema refuses a past `expiresAt` outright, and
+         * inheriting that on the edit was a defect the iOS session caught
+         * before it shipped: the seller's `edit` object round-trips the date
+         * as a string, so a client that does not touch it sends it back
+         * verbatim — and a listing edited ON ITS LAST DAY would be refused
+         * for a field nobody changed.
+         *
+         * Compared as INSTANTS so two spellings of one moment are not a
+         * change, and `null` on both sides counts as unchanged.
+         */
+        const storedExpiry = listing.expiresAt ? new Date(listing.expiresAt).getTime() : null;
+        const wantedExpiry = input.expiresAt ? new Date(input.expiresAt).getTime() : null;
+        if (wantedExpiry !== storedExpiry && wantedExpiry != null && wantedExpiry <= Date.now()) {
+            throw codedBadRequest(
+                'LISTING_EXPIRES_AT_IN_PAST',
+                'Choose an expiry date in the future, or remove it.',
+            );
+        }
+
+        // Owner ruling: a later expiry brings a lapsed listing back, keeping
+        // its conversations. Only a reactivation touches the ACTIVE count.
+        const reactivating = from === ExchangeListingStatus.EXPIRED;
+        if (reactivating) {
+            await assertNotPastDueRestricted(ctx, 'exchange', db);
+            await assertWithinLimit(ctx, 'exchange_listing', db);
+        }
+        const status = reactivating ? ExchangeListingStatus.ACTIVE : from;
+
+        const updated = await ExchangeRepository.updateListingFields(db, id, {
+            side: input.side,
+            kind: input.kind,
+            // commodity + description + sellerDisplayName are PUBLIC free text
+            // (every tenant reads them) → sanitize before persisting, exactly
+            // as the create path does. An edit that skipped this would be a
+            // second way in for the same content.
+            commodity: sanitizePlainText(input.commodity),
+            quantityTonnes: input.quantityTonnes,
+            pricePerTonne: input.pricePerTonne ?? null,
+            // FORCED, not taken from the body — the create path does the same.
+            // The field is in the request shape so the seller's `edit` object
+            // round-trips, not so a client can choose a currency.
+            priceCurrency: EXCHANGE_CURRENCY,
+            regionCode: region.code,
+            regionName: region.nameEn,
+            lat: region.lat,
+            lon: region.lon,
+            description: sanitizeOptional(input.description) ?? null,
+            sellerDisplayName: sanitizeOptional(input.sellerDisplayName) ?? null,
+            publishAsFarm: input.publishAsFarm ?? false,
+            sellerContact: sanitizeOptional(input.sellerContact) ?? null,
+            expiresAt: input.expiresAt ?? null,
+            status,
+        });
+
+        await logEvent(db, ctx, {
+            action: 'UPDATE',
+            entityType: 'ExchangeListing',
+            entityId: id,
+            details: `Edited listing: ${updated.commodity}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'ExchangeListing',
+                operation: 'updated',
+                // The STATUS transition is recorded because it is the one
+                // change a reader would not expect from an edit.
+                ...(reactivating ? { fromStatus: from, toStatus: status } : {}),
+                after: {
+                    side: updated.side,
+                    kind: updated.kind,
+                    commodity: updated.commodity,
+                    regionCode: updated.regionCode,
+                },
+                summary: `Edited listing: ${updated.commodity}`,
+            },
+        });
+        return updated;
+    });
+
+    // The market moved: an edited listing shows different terms to every
+    // browsing client. Coalesced, and after the transaction like every other
+    // side effect here.
+    publishListingChange();
+    return (await withFarmAttribution([result]))[0];
 }
 
 /** Mark one of the caller-tenant's own listings as fulfilled. */
@@ -498,7 +683,7 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
         // asked to delete their account.
         if (!listing || listing.suppressedForDeletionAt) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
         if (listing.status !== ExchangeListingStatus.ACTIVE) {
-            throw badRequest('listing_not_active', 'This listing is no longer active');
+            throw codedBadRequest('LISTING_NOT_ACTIVE', 'This listing is no longer active');
         }
         // The SAME predicate the browse feed filters on
         // (`ExchangeRepository.listActiveListings`). Status alone was not
@@ -508,11 +693,19 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
         // take inquiries through a deep link — and the seller got notified
         // about an offer they had already let lapse.
         if (listing.expiresAt != null && listing.expiresAt <= new Date()) {
-            throw badRequest('listing_expired', 'This listing has expired');
+            throw codedBadRequest('LISTING_EXPIRED', 'This listing has expired');
         }
         // You cannot inquire on your OWN listing.
         if (listing.sellerTenantId === ctx.tenantId) {
-            throw forbidden('You cannot inquire on your own listing');
+            // Correct usage of `forbidden` — prose first, not a code in the
+            // message. Coded anyway, because `code: 'FORBIDDEN'` is
+            // indistinguishable from every other refusal on this route and the
+            // client renders from the code. Unlike the five #2541 sites, nothing
+            // was WRONG with this line; it was simply unnameable.
+            throw codedForbidden(
+                'LISTING_IS_YOUR_OWN',
+                'You cannot inquire on your own listing',
+            );
         }
 
         let inquiry;
@@ -710,7 +903,10 @@ export async function respondToInquiry(
             throw codedNotFound('INQUIRY_NOT_FOUND', 'That inquiry was not found.');
         }
         if (inquiry.status !== ExchangeInquiryStatus.PENDING) {
-            throw badRequest('inquiry_not_pending', 'This inquiry has already been answered');
+            throw codedBadRequest(
+                'INQUIRY_NOT_PENDING',
+                'This inquiry has already been answered',
+            );
         }
         // A listing that has left ACTIVE can no longer be transacted, so
         // accepting on it would reveal contacts for a deal that cannot happen.
@@ -720,8 +916,8 @@ export async function respondToInquiry(
             action === 'ACCEPTED' &&
             inquiry.listing.status !== ExchangeListingStatus.ACTIVE
         ) {
-            throw badRequest(
-                'listing_not_active',
+            throw codedBadRequest(
+                'LISTING_NOT_ACTIVE',
                 'This listing is no longer active — you can decline, but not accept',
             );
         }

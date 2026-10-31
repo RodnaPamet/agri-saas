@@ -6293,6 +6293,114 @@ exports[`API contract — per-schema snapshots schema: ExchangeListing 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ExchangeListingEdit 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "side": {
+      "type": "string",
+      "enum": [
+        "SELL",
+        "BUY"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "CULTURE",
+        "FERTILIZER",
+        "SEEDS",
+        "PRODUCT"
+      ]
+    },
+    "commodity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "quantityTonnes": {
+      "type": "string"
+    },
+    "pricePerTonne": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "priceCurrency": {
+      "type": "string",
+      "enum": [
+        "EUR"
+      ],
+      "default": "EUR"
+    },
+    "regionCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 2000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sellerDisplayName": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 120
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "publishAsFarm": {
+      "type": "boolean",
+      "default": false
+    },
+    "sellerContact": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "expiresAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "side",
+    "kind",
+    "commodity",
+    "quantityTonnes",
+    "pricePerTonne",
+    "regionCode",
+    "updatedAt"
+  ],
+  "description": "The listing's editable values AS STORED, and the exact body \`PUT\` accepts. \`sellerDisplayName\` here is the seller's TYPED alias — NOT the resolved attribution the sibling field carries, which is the farm's verified name when \`publishAsFarm\` is set. Echoing the resolved value into a full replacement would write a verified farm name into the alias column as literal text. \`updatedAt\` is a precondition, not a value: \`PUT\` refuses with LISTING_MODIFIED when it no longer matches."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ExchangeMessage 1`] = `
 "{
   "type": "object",
@@ -6362,10 +6470,14 @@ exports[`API contract — per-schema snapshots schema: ExchangeMyListing 1`] = `
           "items": {
             "$ref": "#/components/schemas/ExchangeInquiry"
           }
+        },
+        "edit": {
+          "$ref": "#/components/schemas/ExchangeListingEdit"
         }
       },
       "required": [
-        "inquiries"
+        "inquiries",
+        "edit"
       ]
     }
   ],

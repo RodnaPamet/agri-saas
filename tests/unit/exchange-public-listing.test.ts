@@ -11,6 +11,7 @@ import {
     toPublicInquiry,
     type ExchangeListingRow,
     type ExchangeInquiryRow,
+    toListingEdit,
 } from '@/lib/exchange/public-listing';
 import { buildExchangeFilters } from '@/app/t/[tenantSlug]/(app)/exchange/filter-defs';
 
@@ -263,5 +264,81 @@ describe('buildExchangeFilters', () => {
         // Side stays a 2-option static filter.
         const side = defs.find((f) => f.key === 'side');
         expect(side?.options?.map((o) => o.value)).toEqual(['SELL', 'BUY']);
+    });
+});
+
+describe('the two projections disagree on purpose', () => {
+    /*
+     * `toPublicListing` answers "what does a buyer see"; `toListingEdit`
+     * answers "what would I send back to leave this unchanged". One field
+     * differs, and the iOS session found it by asking how a client holding
+     * only the public element could perform a full-replacement edit.
+     */
+
+    it('the PUBLIC projection never carries sellerContact, however the row was fetched', () => {
+        // Held by a docblock until this test existed. It became worth holding
+        // the moment a sibling projection legitimately carried the field: a
+        // rule with an exception needs enforcing, where a rule with none
+        // merely needs stating.
+        const projected = toPublicListing(
+            row({ sellerContact: '+359 888 123456', publishAsFarm: false, farm: null }),
+            'viewer-tenant',
+        );
+
+        expect(Object.keys(projected)).not.toContain('sellerContact');
+        expect(JSON.stringify(projected)).not.toContain('359 888');
+    });
+
+    it('the EDIT projection carries the STORED display name, not the resolved one', () => {
+        // The trap. With `publishAsFarm` set, the public projection shows the
+        // farm's VERIFIED name in `sellerDisplayName` — so a client echoing
+        // that into a full replacement writes the verified name into the
+        // seller's typed-alias column as literal text, where it then survives
+        // them unticking `publishAsFarm` and is indistinguishable from
+        // something they typed.
+        const r = row({
+            sellerDisplayName: 'Иван, лично',
+            publishAsFarm: true,
+            farm: { handle: 'dobrudzha', displayName: 'ЗП Добруджа ЕООД' },
+        });
+
+        expect(toPublicListing(r, 'other').sellerDisplayName).toBe('ЗП Добруджа ЕООД');
+        expect(toListingEdit(r).sellerDisplayName).toBe('Иван, лично');
+    });
+
+    it('the EDIT projection carries the seller their own contact and attribution flag', () => {
+        const e = toListingEdit(row({ sellerContact: '+359 888 123456', publishAsFarm: true }));
+        expect(e.sellerContact).toBe('+359 888 123456');
+        expect(e.publishAsFarm).toBe(true);
+    });
+
+    it('a missing attribution flag reads as false, not undefined', () => {
+        // The field is optional on the row because the feed selects a narrower
+        // one. `undefined` in a full-replacement body would fail validation on
+        // a boolean, turning a read of an older row into an unsendable edit.
+        const e = toListingEdit(row({}));
+        expect(e.publishAsFarm).toBe(false);
+    });
+
+    it('is the request body verbatim — exactly the editable set plus the precondition', () => {
+        // "Send `edit` back unchanged" has to be a COMPLETE instruction. If
+        // this set drifts from what the PUT accepts, a client assembling a
+        // body from two places is the next defect, and an omitted nullable
+        // field is indistinguishable from a deliberate clearing.
+        expect(Object.keys(toListingEdit(row({}))).sort()).toEqual([
+            'commodity',
+            'description',
+            'expiresAt',
+            'kind',
+            'priceCurrency',
+            'pricePerTonne',
+            'publishAsFarm',
+            'quantityTonnes',
+            'regionCode',
+            'sellerContact',
+            'sellerDisplayName',
+            'side',
+            'updatedAt',
+        ]);
     });
 });

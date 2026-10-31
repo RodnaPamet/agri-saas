@@ -326,6 +326,49 @@ export class ExchangeRepository {
         });
     }
 
+    /**
+     * Replace a listing's editable fields — #2543.
+     *
+     * One `update`, so the row's `updatedAt` advances once and the edit
+     * precondition in `updateListingFields` has a single new value to compare
+     * against next time. Split writes would leave a window where a second
+     * editor's precondition matched a half-applied row.
+     *
+     * `status` is included because a reactivation (EXPIRED → ACTIVE) is part
+     * of the same edit by owner ruling, and sending it separately would make
+     * a listing briefly editable-but-expired or active-with-old-terms.
+     */
+    static async updateListingFields(
+        db: PrismaTx,
+        id: string,
+        data: {
+            side: ExchangeSide;
+            kind: ExchangeKind;
+            commodity: string;
+            quantityTonnes: number;
+            pricePerTonne: number | null;
+            priceCurrency: string;
+            regionCode: string;
+            regionName: string;
+            lat: number;
+            lon: number;
+            description: string | null;
+            sellerDisplayName: string | null;
+            publishAsFarm: boolean;
+            sellerContact: string | null;
+            expiresAt: Date | string | null;
+            status: ExchangeListingStatus;
+        },
+    ) {
+        return db.exchangeListing.update({
+            where: { id },
+            data: {
+                ...data,
+                expiresAt: data.expiresAt != null ? new Date(data.expiresAt) : null,
+            },
+        });
+    }
+
     /** Single inquiry by id, with its listing (for the seller ownership guard). */
     static async getInquiry(db: PrismaTx, id: string) {
         return db.exchangeInquiry.findUnique({
