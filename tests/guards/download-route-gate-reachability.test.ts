@@ -58,6 +58,12 @@ const BYTE_PRIMITIVES = ['readStream', 'createSignedDownloadUrl', 'getSignedUrl'
  */
 const USECASE_SEAMS: ReadonlyArray<{ fn: string; file: string; reason: string }> = [
     {
+        fn: 'downloadFarmDocument',
+        file: 'src/app-layer/usecases/farm-documents.ts',
+        reason:
+            'Owns the purge-tombstone 404, the STORED check, the INFECTED refusal ahead of the gate, `isDownloadAllowed(scanStatus)` with NO default, and assertTenantKey on the RESOLVED pathKey. #2495 step 2.',
+    },
+    {
         fn: 'downloadEvidenceFile',
         file: 'src/app-layer/usecases/evidence.ts',
         reason:

@@ -258,6 +258,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             "listFarmClaims is the platform review queue: `WHERE status = 'PENDING' ORDER BY createdAt ASC`, and CROSS-tenant — a reviewer looks at every farm, and a collision is by definition two tenants. So `tenantId` does NOT lead here, unlike every other entry in this list: it is a column the query never mentions. `status` is the equality predicate, `createdAt` the sort key.",
     },
+    // ── FarmDocument («Документи», #2495) ──────────────────────────
+    {
+        model: 'FarmDocument',
+        fields: ['tenantId', 'createdAt'],
+        justification:
+            "listFarmDocuments is the whole library read: `WHERE tenantId = ? ORDER BY createdAt DESC`, capped at DOCUMENT_PAGE_SIZE + 1. `createdAt` is the sort key, so it leads the non-tenant half. Tombstones are deliberately NOT filtered out — a purged row is the only record the document existed — so there is no status predicate for the index to carry, and `@@index([tenantId, purgedAt])` beside it serves the retention sweep rather than this list.",
+    },
     // ── CostEntry (the /grain/costs entry surface) ──────────────────
     {
         model: 'CostEntry',

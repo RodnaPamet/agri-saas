@@ -6941,6 +6941,212 @@ exports[`API contract — per-schema snapshots schema: FarmBrandSaveResult 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmDocumentDeleteResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentDriveState 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "OFF",
+        "PENDING",
+        "COPIED",
+        "FAILED"
+      ],
+      "description": "The one-way copy into the farm’s «Agrent» Drive folder. \`OFF\` means sync was not on when this was uploaded — a SETTING — which is deliberately distinct from \`FAILED\`, an error an admin can retry. Always \`OFF\` until the copy job ships."
+    }
+  },
+  "required": [
+    "state"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/FarmDocumentRow"
+      }
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when the library holds more than one page. The list is newest-first and capped rather than cursor-paginated, and this flag is derived by taking one row more than the cap — not from a separate count, which could disagree with the page it describes."
+    }
+  },
+  "required": [
+    "rows",
+    "truncated"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The document title. NULL on a tombstone whose bytes were deleted by a person — the name is dropped on a manual delete and KEPT on expiry, because an expiry is the platform acting on a policy and the title is what makes that tombstone readable. Encrypted at rest: a title is routinely «Договор аренда <фамилия>.pdf»."
+    },
+    "contentType": {
+      "type": "string",
+      "description": "The RESOLVED media type — what the bytes are, not what the upload claimed."
+    },
+    "sizeBytes": {
+      "type": "integer"
+    },
+    "uploadedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 instant."
+    },
+    "uploadedBy": {
+      "$ref": "#/components/schemas/FarmDocumentUploader"
+    },
+    "expiresOn": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date",
+      "description": "The expiry as a calendar DAY KEY (\`YYYY-MM-DD\`), or null for «Без срок». A day key rather than a timestamp because the concept is a calendar date: lexicographic order is calendar order, and there is no timezone for a reader to get wrong. Computed in Europe/Sofia and fixed at upload from the retention period in force then, so a later settings change never moves it. Named \`expiresOn\`, not \`expiresAt\`, because \`uploadedAt\` and \`purgedAt\` beside it are INSTANTS and this is a day — one \`…At\` meaning something different is an exception every client has to remember."
+    },
+    "retention": {
+      "type": "string",
+      "enum": [
+        "P3M",
+        "P6M",
+        "P1Y",
+        "P2Y",
+        "P5Y",
+        "NONE"
+      ],
+      "description": "The retention period AS IT WAS AT UPLOAD, so a client can say «Пази се 1 година, до …». \`expiresOn\` alone loses WHY that date was given, and cannot tell a 1-year document from a 2-year one uploaded a year earlier."
+    },
+    "purgedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Set when the bytes were deleted, by expiry or by a person. The ROW SURVIVES: dropping it would make \\"destroyed by policy on 14 March\\" and \\"this never existed\\" the same observation, which for a compliance register is the worse failure. \`/content\` answers 404 once this is set."
+    },
+    "purgeReason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "EXPIRED",
+        "DELETED",
+        null
+      ],
+      "description": "Why the bytes went. EXPLICIT rather than inferable: a client should not have to work out which state a tombstone is in from which fields happen to be null. \`name\` is dropped on a DELETED tombstone and kept on an EXPIRED one, so null-ness nearly works — and would fail on any row that ever has a null name for another reason."
+    },
+    "purgedBy": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/FarmDocumentUploader"
+        },
+        {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Who deleted it, for «Изтрит на … от <име>». Null when nobody did: an expiry has no actor, which is the other half of telling the two tombstones apart."
+        }
+      ]
+    },
+    "mayDelete": {
+      "type": "boolean",
+      "description": "Whether THIS caller may delete this document — the uploader, or an administrator. Computed per row and per caller, because a role flag cannot express \\"may delete their own\\"."
+    },
+    "drive": {
+      "$ref": "#/components/schemas/FarmDocumentDriveState"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "contentType",
+    "sizeBytes",
+    "uploadedAt",
+    "uploadedBy",
+    "expiresOn",
+    "retention",
+    "purgedAt",
+    "purgeReason",
+    "purgedBy",
+    "mayDelete",
+    "drive"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentUpload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary"
+    },
+    "name": {
+      "type": "string",
+      "description": "The farmer's own title for the document. Send this rather than relying on the file part's filename: a Cyrillic name in a multipart part header depends on every parser agreeing about the encoding, while a text field does not. Falls back to the filename when absent or blank, so a web form that sends only \`file\` keeps working."
+    }
+  },
+  "required": [
+    "file"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FarmDocumentUploader 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
 "{
   "type": "object",

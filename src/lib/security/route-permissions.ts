@@ -80,6 +80,35 @@ const T = String.raw`\/api\/t\/[^/]+`;
 // ─── The map ────────────────────────────────────────────────────────
 
 export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
+    // ── «Документи» — the farm document library (#2495) ─────────────
+    //
+    // TWO rules, because reading and writing are different tiers and the
+    // first match wins: everyone in the farm previews, writers upload and
+    // delete. The uploader-or-admin narrowing on DELETE is enforced in the
+    // usecase, not here — a path regex cannot know who uploaded a row.
+    //
+    // MECHANISATOR never reaches either: `isOperatorAllowedPath` admits no
+    // `documents` prefix, and that role also holds `documents.view: false`.
+    {
+        path: new RegExp(`^${T}\\/documents(\\/.*)?$`),
+        methods: ['GET'],
+        permission: 'documents.view',
+        note:
+            'Listing and previewing the farm document library. Every member ' +
+            'of the farm sees it; the library is expected to hold lease ' +
+            'contracts, so the confinement that matters is the operator ' +
+            'persona being kept out entirely.',
+    },
+    {
+        path: new RegExp(`^${T}\\/documents(\\/.*)?$`),
+        methods: ['POST', 'PUT', 'DELETE'],
+        permission: 'documents.upload',
+        note:
+            'Uploading and deleting documents. DELETE additionally requires ' +
+            'being the uploader or an admin, checked in the usecase against ' +
+            'the row — which is what `mayDelete` reports on the list.',
+    },
+
     // ── Member management ───────────────────────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/members(\\/.*)?$`),

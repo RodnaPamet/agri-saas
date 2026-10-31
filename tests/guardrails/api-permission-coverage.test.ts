@@ -63,6 +63,19 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/billing',
         why: 'Stripe checkout/portal/events — admin-only commercial actions.',
     },
+    // «Документи» (#2495). NOT an admin-only surface — every member of the
+    // farm reads the library — so it is in scope for a different reason than
+    // its neighbours: the rules in `ROUTE_PERMISSIONS` only mean something if
+    // this guard can see the routes they name, and the library is the one
+    // surface designed to hold LEASE CONTRACTS, which name third parties.
+    // `ParcelLease.lessorName` is in `ENCRYPTED_FIELDS` for exactly that
+    // reason, and the persistent-SWR allowlist excludes `/leases` on the same
+    // grounds. A silently-unmatched rule here would weaken the coverage
+    // signal over that.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/documents',
+        why: 'Farm document library — reads for every member, writes for writers, and the surface that holds lease contracts naming third parties.',
+    },
     {
         relPath: 'src/app/api/t/[tenantSlug]/sso',
         why: 'Tenant SSO configuration — admin-only.',

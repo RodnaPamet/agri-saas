@@ -47,6 +47,7 @@ import { registerPppRegisterPaths } from './ppp-register.paths';
 import { registerFarmBrandPaths } from './farm-brand.paths';
 import { registerPublicFarmsPaths } from './public-farms.paths';
 import { registerPublicMediaPaths } from './public-media.paths';
+import { registerDocumentPaths } from './documents.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -93,4 +94,20 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerFarmBrandPaths(registry);
     registerPublicFarmsPaths(registry);
     registerPublicMediaPaths(registry);
+    // «Документи» (#2495). APPENDED rather than filed beside the farm
+    // profile, and the reason is measured rather than stylistic.
+    //
+    // `components.schemas` is emitted SORTED, so a module's position cannot
+    // move it. `paths` is emitted in REGISTRATION order, so inserting
+    // mid-list pushes every later path entry down: 3,880 changed lines in
+    // `src/generated/openapi.json` from the middle versus 3,538 from here.
+    //
+    // Both numbers are mostly a git artifact, not churn — a structured
+    // comparison of the two specs shows 3 paths and 6 schemas ADDED, none
+    // removed, and every shared schema identical in content. Git's LCS
+    // simply aligns repetitive pretty-printed JSON badly. But that file is
+    // one ~1 MB document two PRs touching different endpoints already
+    // conflict on (see `npm run merge:main`), so the 342 lines are worth
+    // not spending.
+    registerDocumentPaths(registry);
 }

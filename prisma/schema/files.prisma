@@ -253,6 +253,19 @@ model FarmDocument {
   /// Who, when a person did it. Null when `EXPIRED`.
   purgedByUserId   String?
 
+  /// Caller-supplied dedup key, so a retried upload cannot create a second
+  /// document. Enforced by a PARTIAL unique index
+  /// `(tenantId, idempotencyKey) WHERE idempotencyKey IS NOT NULL` — raw SQL
+  /// in the migration, because Prisma cannot express the WHERE. NULL for an
+  /// upload whose client sent no `Idempotency-Key`, and those are never
+  /// deduplicated: two deliberate uploads of the same PDF are two documents.
+  ///
+  /// Added in step 2 rather than step 1 (#2503) because step 1 shipped the
+  /// table without it while the step-2 contract specifies the header. An
+  /// accepted-but-ignored `Idempotency-Key` is worse than none: it tells the
+  /// client a retry is safe when it is not.
+  idempotencyKey   String?
+
   driveState       DocumentDriveState    @default(OFF)
   /// The Drive file id, so a copy can be verified or re-pointed. Never a URL.
   driveFileId      String?
