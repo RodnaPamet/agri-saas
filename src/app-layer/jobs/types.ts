@@ -396,6 +396,20 @@ export interface AccountErasureSweepPayload {
     limit?: number;
 }
 
+export interface DocumentRetentionSweepPayload {
+    /** Cap for this run. Defaults to 200. */
+    limit?: number;
+    /**
+     * Treat this day key as today. TESTS ONLY.
+     *
+     * The sweep's whole correctness is a comparison against the farm's
+     * calendar day, so a test that cannot move that day can assert the shape
+     * of the query and nothing about its verdict. Not reachable from the
+     * schedule, whose `defaultPayload` is `{}`.
+     */
+    today?: string;
+}
+
 export interface NoticeScorePayload {
     /** Cap for this run. Defaults to 20. */
     limit?: number;
@@ -925,6 +939,7 @@ export interface JobPayloadMap {
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
+    'document-retention-sweep': DocumentRetentionSweepPayload;
     'notice-triage-alert': NoticeTriageAlertPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
@@ -1296,6 +1311,24 @@ export const JOB_DEFAULTS: Record<JobName, {
     // queue IS the absence of that marker, so the next DAILY run is the retry
     // and it has the right granularity.
     'account-erasure-sweep': {
+        attempts: 1,
+        // Inert — the type requires it and `attempts: 1` leaves nothing to
+        // delay.
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    // #2495 step 5 — ONE attempt, and the reason is the retention register
+    // rather than cost. A retry would re-attempt documents the run already
+    // purged; `purgedAt` makes that a no-op rather than damage, but the queue
+    // IS the absence of that marker, so the next DAILY run is the retry and it
+    // has exactly the right granularity — `expiresOn` is a day key, so nothing
+    // becomes due between two points on one day.
+    //
+    // It also keeps the deferral count honest: a retried run would report
+    // `deferredForDriveCopy` twice for the same documents, and that number is
+    // the only signal that something is stuck past its retention.
+    'document-retention-sweep': {
         attempts: 1,
         // Inert — the type requires it and `attempts: 1` leaves nothing to
         // delay.

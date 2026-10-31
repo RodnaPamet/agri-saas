@@ -545,6 +545,87 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         expect(wheat.cashCostCurrencyMixed).toBe(false);
     });
 
+    it('a cost row with NO currency does not take down the whole calculator', async () => {
+        /*
+         * #2547, kept through the #2546 merge. `computeCashOut` keyed its Map
+         * on `row.currency` and sorted with `a.currency.localeCompare(...)`.
+         * `CostEntry.currency` is nullable, so a null key threw a TypeError —
+         * and this runs inside `buildCalculatorPayload`, so the cost is not one
+         * missing section: `/grain/calculator` answers 500 and the phone shows
+         * its failure state for EVERY crop on the farm.
+         */
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-null', category: 'OTHER', amount: 40, currency: null, plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        // It returns at all — that is the assertion. Before the fix this threw.
+        expect(result.cashOut).toEqual([
+            { currency: 'EUR', amount: 40, categories: ['OTHER'] },
+        ]);
+    });
+
+    it('a blank-string currency buckets with the unrecorded ones, not as its own line', async () => {
+        // #2547. `''` is the other shape the column takes. Two lines for "no
+        // currency recorded" would be a breakdown that double-counts a farm's
+        // own categories.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-null', category: 'OTHER', amount: 40, currency: null, plantingId: 'p-1', seasonId: null },
+            { id: 'c-blank', category: 'FUEL', amount: 10, currency: '   ', plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        expect(result.cashOut).toEqual([
+            { currency: 'EUR', amount: 50, categories: ['FUEL', 'OTHER'] },
+        ]);
+    });
+
+    it('DOES fold BGN into EUR now, because the amount converts in the same change', async () => {
+        /*
+         * THIS TEST IS THE INVERSE OF THE ONE IT REPLACES, and the reversal is
+         * the whole content of #2546.
+         *
+         * #2547 shipped `does NOT fold BGN into EUR — that needs the amounts
+         * converted (#2546)`, as the deliberate boundary of a crash fix: at
+         * that point collapsing `'BGN'` here would have relabelled a lev
+         * amount as euro without dividing by the peg, overstating it by
+         * 1.95583x. That reasoning was exactly right and is why the control
+         * existed.
+         *
+         * #2546 converts the amounts at the read site, so the condition the
+         * control was waiting for is met and the assertion flips rather than
+         * being deleted. Keeping its position and its history is the point: a
+         * reader who finds only the new assertion cannot tell whether folding
+         * was always safe, and it was not.
+         */
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-eur', category: 'OTHER', amount: 40, currency: 'EUR', plantingId: 'p-1', seasonId: null },
+            { id: 'c-bgn', category: 'FUEL', amount: 100, currency: 'BGN', plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+
+        // ONE line, and the lev amount divided by the peg — not 140.
+        expect(result.cashOut.map((l) => l.currency)).toEqual(['EUR']);
+        expect(result.cashOut[0].amount).toBeCloseTo(40 + eur(100), 2);
+    });
+
     it('a genuinely FOREIGN currency is still mixed, and keeps its own code', async () => {
         // The control. Collapsing every code to EUR would pass the test above
         // and silently add dollars to euros — which is the error this change

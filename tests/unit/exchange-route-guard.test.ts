@@ -49,7 +49,14 @@ jest.mock('@/lib/db/rls-middleware', () => ({
     runWithoutRls: jest.fn(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         async (opts: { reason: string }, fn: (db: any) => any) => {
-            expect(opts.reason).toBe('module-availability');
+            // An ALLOWLIST rather than one value, which is what the sibling
+            // suite already moved to for the same cause. TWO legitimate
+            // bypasses reach this route now: the edit's RESPONSE runs
+            // `withFarmAttribution`, so a second reason appears on a path
+            // that previously only needed module availability. A bypass
+            // that silently changed its stated justification must still
+            // fail, which is the whole reason the mock asserts it.
+            expect(['module-availability', 'exchange-farm-attribution']).toContain(opts.reason);
             return fn(mockDb);
         },
     ),
@@ -59,14 +66,30 @@ jest.mock('@/app-layer/repositories/exchange', () => ({
     ExchangeRepository: {
         getListing: jest.fn(),
         updateListingStatus: jest.fn(),
+        updateListingFields: jest.fn(),
         getInquiry: jest.fn(),
         updateInquiryStatus: jest.fn(),
+        // `withFarmAttribution` runs on the edit's RESPONSE, and a partial
+        // barrel mock leaves an unlisted method undefined rather than falling
+        // through — the trap this file's own notes describe twice.
+        listPublishedFarmBrands: jest.fn().mockResolvedValue([]),
     },
+}));
+
+// Only consulted on a REACTIVATION, but a partial mock has to carry both or
+// the call site throws instead of being skipped.
+jest.mock('@/lib/billing/entitlements', () => ({
+    assertWithinLimit: jest.fn().mockResolvedValue(undefined),
+    assertNotPastDueRestricted: jest.fn().mockResolvedValue(undefined),
 }));
 
 import { NextRequest } from 'next/server';
 import { ExchangeRepository } from '@/app-layer/repositories/exchange';
-import { PATCH as PATCH_LISTING } from '@/app/api/t/[tenantSlug]/exchange/listings/[listingId]/route';
+import {
+    PATCH as PATCH_LISTING,
+    PUT as PUT_LISTING,
+} from '@/app/api/t/[tenantSlug]/exchange/listings/[listingId]/route';
+import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { PATCH as PATCH_INQUIRY } from '@/app/api/t/[tenantSlug]/exchange/inquiries/[inquiryId]/route';
 import { makeRequestContext } from '../helpers/make-context';
 import { assertCrossTenantGuard } from '../helpers/cross-tenant-guard';
@@ -134,5 +157,140 @@ describe('PATCH /exchange/listings/[listingId] — owner allowed', () => {
         });
         expect(res.status).toBe(200);
         expect(repo.updateListingStatus).toHaveBeenCalledWith(mockDb, 'lst-9', 'WITHDRAWN');
+    });
+});
+
+// ── The EDIT route — #2543 ───────────────────────────────────────────────
+
+const assertModuleEnabledMock = assertModuleEnabled as jest.MockedFunction<typeof assertModuleEnabled>;
+
+/** A complete body: the edit is a FULL replacement, so nothing is partial. */
+function editBody(over: Record<string, unknown> = {}) {
+    return {
+        side: 'SELL',
+        kind: 'CULTURE',
+        commodity: 'Barley',
+        quantityTonnes: 25,
+        pricePerTonne: 180,
+        priceCurrency: 'EUR',
+        regionCode: 'BG-16',
+        description: null,
+        sellerDisplayName: null,
+        publishAsFarm: false,
+        sellerContact: null,
+        expiresAt: null,
+        updatedAt: '2026-10-31T12:00:00.000Z',
+        ...over,
+    };
+}
+
+function putReq(body: unknown): NextRequest {
+    return new NextRequest('http://localhost/api/t/tenant-b/exchange', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
+
+const OWNED = {
+    id: 'lst-9',
+    sellerTenantId: 'tenant-b',
+    status: 'ACTIVE',
+    commodity: 'Barley',
+    side: 'SELL',
+    kind: 'CULTURE',
+    quantityTonnes: 25,
+    pricePerTonne: 180,
+    priceCurrency: 'EUR',
+    regionCode: 'BG-16',
+    regionName: 'Plovdiv',
+    lat: 42,
+    lon: 24.7,
+    description: null,
+    sellerDisplayName: null,
+    publishAsFarm: false,
+    sellerContact: null,
+    expiresAt: null,
+    createdAt: new Date('2026-10-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-10-31T12:00:00.000Z'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+} as any;
+
+assertCrossTenantGuard({
+    name: 'PUT /exchange/listings/[listingId]',
+    handler: PUT_LISTING,
+    makeReq: () => putReq(editBody()),
+    params: { tenantSlug: 'tenant-b', listingId: 'lst-1' },
+    arrangeForeignRow: () =>
+        repo.getListing.mockResolvedValue({ ...OWNED, id: 'lst-1', sellerTenantId: 'tenant-a' }),
+    arrangeMissing: () => repo.getListing.mockResolvedValue(null),
+    mutationSpy: () => repo.updateListingFields,
+});
+
+describe('PUT /exchange/listings/[listingId] — the module gate, and the response', () => {
+    beforeEach(() => {
+        repo.getListing.mockResolvedValue(OWNED);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        repo.updateListingFields.mockImplementation(async (_db, _id, data: any) => ({ ...OWNED, ...data }));
+    });
+
+    it('200 for the owner, and the response carries `edit`', async () => {
+        const res = await PUT_LISTING(putReq(editBody()), {
+            params: Promise.resolve({ tenantSlug: 'tenant-b', listingId: 'lst-9' }),
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        // `edit` is this endpoint's own request shape, so a client can
+        // repopulate the form from the answer without a second read — and a
+        // round-trip is a no-op by construction rather than by convention.
+        expect(json.edit).toBeDefined();
+        expect(json.edit.updatedAt).toBeDefined();
+        expect(Object.keys(json.edit).sort()).toEqual(
+            Object.keys(editBody()).sort(),
+        );
+    });
+
+    it('REQUIRES the EXCHANGE module — unlike withdraw, which is exempt', async () => {
+        /*
+         * The asymmetry is the design, not an oversight. `withdrawListing` is
+         * deliberately exempt because the module toggle governs PARTICIPATION
+         * in the marketplace rather than CUSTODY of rows you already posted —
+         * gating withdraw once left a tenant with public listings and no
+         * endpoint that could take them down. Editing changes what is being
+         * OFFERED to buyers, so it gates like fulfil.
+         *
+         * Asserted as a COMPARISON, because "the edit calls the gate" alone
+         * would still pass if somebody later gated withdraw too, and that
+         * would be the regression the exemption exists to prevent.
+         */
+        assertModuleEnabledMock.mockClear();
+        await PUT_LISTING(putReq(editBody()), {
+            params: Promise.resolve({ tenantSlug: 'tenant-b', listingId: 'lst-9' }),
+        });
+        const editGated = assertModuleEnabledMock.mock.calls.length;
+
+        assertModuleEnabledMock.mockClear();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        repo.updateListingStatus.mockResolvedValue({ id: 'lst-9', status: 'WITHDRAWN' } as any);
+        await PATCH_LISTING(patchReq({ action: 'WITHDRAWN' }), {
+            params: Promise.resolve({ tenantSlug: 'tenant-b', listingId: 'lst-9' }),
+        });
+        const withdrawGated = assertModuleEnabledMock.mock.calls.length;
+
+        expect(editGated).toBeGreaterThan(0);
+        expect(withdrawGated).toBe(0);
+    });
+
+    it('refuses a body missing the precondition, before touching the row', async () => {
+        const body = editBody();
+        delete (body as Record<string, unknown>).updatedAt;
+
+        const res = await PUT_LISTING(putReq(body), {
+            params: Promise.resolve({ tenantSlug: 'tenant-b', listingId: 'lst-9' }),
+        });
+
+        expect(res.status).toBe(400);
+        expect(repo.updateListingFields).not.toHaveBeenCalled();
     });
 });
