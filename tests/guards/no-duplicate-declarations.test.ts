@@ -1,5 +1,11 @@
 /**
- * No object literal declares the same key twice — #2537.
+ * No declaration appears twice in one file — object keys (#2537) and import
+ * bindings (#2554).
+ *
+ * Renamed from `no-duplicate-object-keys` when the import half landed: the two
+ * shapes have the same cause, the same blindness and the same population, and
+ * splitting them would mean two parses of the same 2,350 files for one
+ * question. The old name described half of what this does.
  *
  * ## The defect, which a merge produces and no merge tool reports
  *
@@ -74,6 +80,35 @@
  * reported AND the three legal shapes not. It is `.fixture` rather than `.ts`
  * because all 2,466 `.ts`/`.tsx` files under `tests/` are in the tsc program,
  * so a real TS1117 there would redden the required `Typecheck` job.
+ *
+ * ## The import half — #2554, and the rule is simpler than it looks
+ *
+ * Merging #2547 into the currency-conversion branch duplicated
+ * `import { EXCHANGE_CURRENCY }`: both sides added it at different offsets, git
+ * took both, not a conflict, `merge:main` silent by construction, and only the
+ * cold typecheck noticed. Same cause as the object-key half, different
+ * declaration.
+ *
+ * The obvious framing — "two imports from the same module" — is wrong in BOTH
+ * directions, and the six probes that settle it are in the control fixture:
+ *
+ *   - two imports from one module are LEGAL when the bindings differ, and
+ *     flagging that is how this guard would get itself baselined;
+ *   - `import type` buys no exemption — the same local name imported twice is
+ *     TS2300 whether or not one is type-only;
+ *   - a collision does NOT require the same module, so a specifier-keyed
+ *     detector misses `import { a } from './x'` beside `import { a } from
+ *     './y'` entirely.
+ *
+ * One predicate covers every row: the LOCAL BINDING NAME. Every shape
+ * TypeScript accepts, this accepts, for the same reason TypeScript does.
+ *
+ * Measured on main before the assertion was written: **11,082 import
+ * declarations, 15,302 local bindings, 0 duplicates** — so it is a
+ * `toEqual([])` and not a cap, and this guard would have gone red on the #2546
+ * merge rather than waiting for a `tsc` nobody had time to run. The two counts
+ * belong side by side because a declaration-keyed detector ranges over the
+ * smaller one and over the wrong thing.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -83,14 +118,22 @@ import ts from 'typescript';
 import { collectSourceFiles, collectTrackedFiles, REPO_ROOT } from '../helpers/collect-files';
 
 type Finding = { file: string; line: number; key: string };
-type Counts = { literals: number; properties: number; computed: number; spreads: number };
+type Inspection = { keys: Finding[]; imports: Finding[] };
+type Counts = {
+    literals: number;
+    properties: number;
+    computed: number;
+    spreads: number;
+    importDecls: number;
+    importBindings: number;
+};
 
 /**
  * Duplicate property names per OBJECT LITERAL, with the shapes TS1117 itself
  * permits left alone. `setParentNodes` is on because the position lookup needs
  * it.
  */
-function inspect(relPath: string, source: string, counts: Counts): Finding[] {
+function inspect(relPath: string, source: string, counts: Counts): Inspection {
     const sourceFile = ts.createSourceFile(
         relPath,
         source,
@@ -99,6 +142,52 @@ function inspect(relPath: string, source: string, counts: Counts): Finding[] {
         relPath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
     const findings: Finding[] = [];
+    const importFindings: Finding[] = [];
+
+    /**
+     * Duplicate LOCAL BINDING names across the file's import declarations —
+     * #2554, the sibling shape, from the same parse because two walks of the
+     * same 2,350 files would be two parses for one question.
+     *
+     * The rule is the local binding name and nothing else. Measured with six
+     * `tsc --noEmit` probes: `import type` buys no exemption (the same name
+     * imported twice is TS2300 whether or not one is type-only), two imports
+     * from ONE module are legal when the bindings differ, and a collision does
+     * not require the same module — so keying on the specifier would be wrong
+     * in both directions. `el.name` is the LOCAL name (the alias when `as` is
+     * present); `el.propertyName` is what was imported, and is not the subject.
+     *
+     * Top-level statements only. An import inside an ambient `declare module`
+     * block is a different scope, and `export … from` introduces no local
+     * binding at all — a re-export collision is a separate question.
+     */
+    const seenImports = new Map<string, number>();
+    for (const statement of sourceFile.statements) {
+        if (!ts.isImportDeclaration(statement)) continue;
+        counts.importDecls += 1;
+        const clause = statement.importClause;
+        if (!clause) continue; // `import './side-effect'` binds nothing
+        const locals: string[] = [];
+        if (clause.name) locals.push(clause.name.text); // default import
+        if (clause.namedBindings) {
+            if (ts.isNamespaceImport(clause.namedBindings)) {
+                locals.push(clause.namedBindings.name.text);
+            } else {
+                for (const element of clause.namedBindings.elements) {
+                    locals.push(element.name.text);
+                }
+            }
+        }
+        const { line } = sourceFile.getLineAndCharacterOfPosition(statement.getStart(sourceFile));
+        for (const local of locals) {
+            counts.importBindings += 1;
+            if (seenImports.has(local)) {
+                importFindings.push({ file: relPath, line: line + 1, key: local });
+            } else {
+                seenImports.set(local, line + 1);
+            }
+        }
+    }
 
     const visit = (node: ts.Node): void => {
         if (ts.isObjectLiteralExpression(node)) {
@@ -150,7 +239,7 @@ function inspect(relPath: string, source: string, counts: Counts): Finding[] {
         ts.forEachChild(node, visit);
     };
     visit(sourceFile);
-    return findings;
+    return { keys: findings, imports: importFindings };
 }
 
 /**
@@ -168,14 +257,34 @@ const POPULATION = collectSourceFiles({
     floor: 2000,
 });
 
-const COUNTS: Counts = { literals: 0, properties: 0, computed: 0, spreads: 0 };
-const FINDINGS = POPULATION.flatMap((abs) => {
+const COUNTS: Counts = {
+    literals: 0,
+    properties: 0,
+    computed: 0,
+    spreads: 0,
+    importDecls: 0,
+    importBindings: 0,
+};
+const INSPECTED = POPULATION.map((abs) => {
     const rel = path.relative(REPO_ROOT, abs).split(path.sep).join('/');
     return inspect(rel, readFileSync(abs, 'utf8'), COUNTS);
 });
+const FINDINGS = INSPECTED.flatMap((i) => i.keys);
+const IMPORT_FINDINGS = INSPECTED.flatMap((i) => i.imports);
 
 const CONTROL_TS = 'tests/fixtures/duplicate-object-key-control.ts.fixture';
 const CONTROL_ENV = 'tests/fixtures/duplicate-env-key-control.env.fixture';
+const CONTROL_IMPORTS = 'tests/fixtures/duplicate-import-control.ts.fixture';
+
+/** A throwaway counter for a control run, so the live denominator is untouched. */
+const scratchCounts = (): Counts => ({
+    literals: 0,
+    properties: 0,
+    computed: 0,
+    spreads: 0,
+    importDecls: 0,
+    importBindings: 0,
+});
 
 /** `KEY=`, `export KEY=`, never a comment and never a value containing `=`. */
 const ENV_ASSIGNMENT = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/;
@@ -216,7 +325,7 @@ const ENV_TEMPLATES = collectTrackedFiles({
     floor: 8,
 }).map((abs) => path.relative(REPO_ROOT, abs).split(path.sep).join('/'));
 
-describe('no duplicate object keys (#2537)', () => {
+describe('no duplicate declarations — object keys and imports (#2537, #2554)', () => {
     it('ranges over a real population — not vacuously passing', () => {
         console.log(
             `[no-duplicate-keys] ${POPULATION.length} file(s) across ${ROOTS.join(', ')}; `
@@ -226,10 +335,20 @@ describe('no duplicate object keys (#2537)', () => {
             `[no-duplicate-keys] deliberately not reported: ${COUNTS.spreads} spread(s), `
                 + `${COUNTS.computed} computed key(s)`,
         );
+        console.log(
+            `[no-duplicate-keys] ${COUNTS.importDecls} import declaration(s), `
+                + `${COUNTS.importBindings} local binding(s)`,
+        );
         console.log(`[no-duplicate-keys] ${ENV_TEMPLATES.length} env template(s): ${ENV_TEMPLATES.join(', ')}`);
         expect(POPULATION.length).toBeGreaterThanOrEqual(2000);
         expect(COUNTS.literals).toBeGreaterThanOrEqual(15000);
         expect(COUNTS.properties).toBeGreaterThanOrEqual(40000);
+        // 11,082 declarations / 15,302 local bindings measured on main. The
+        // two numbers belong side by side: a detector keyed on the
+        // DECLARATION — "two imports from the same module" — ranges over the
+        // smaller one and over the wrong thing.
+        expect(COUNTS.importDecls).toBeGreaterThanOrEqual(9000);
+        expect(COUNTS.importBindings).toBeGreaterThan(COUNTS.importDecls);
         // 8 tracked templates today; a walk reported 9 with repeats (see above).
         expect(ENV_TEMPLATES.length).toBeGreaterThanOrEqual(8);
         expect(new Set(ENV_TEMPLATES).size).toBe(ENV_TEMPLATES.length);
@@ -258,7 +377,7 @@ describe('no duplicate object keys (#2537)', () => {
         // so without this the assertion below passes for free the moment the
         // walker stops matching.
         const source = readFileSync(path.join(REPO_ROOT, CONTROL_TS), 'utf8');
-        const found = inspect(CONTROL_TS, source, { literals: 0, properties: 0, computed: 0, spreads: 0 });
+        const found = inspect(CONTROL_TS, source, scratchCounts()).keys;
         const keys = found.map((f) => f.key).sort();
         expect(keys).toEqual(['AV_SCAN_MODE', 'DOCUMENT_STORAGE_LIMIT_BYTES', 'inner']);
         // And the file still CONTAINS them, so a tidy-up that removes the
@@ -273,7 +392,7 @@ describe('no duplicate object keys (#2537)', () => {
         // `firstLiteral`/`secondLiteral`, and one ignoring property KIND
         // reports the accessor pair. Both are in the fixture.
         const source = readFileSync(path.join(REPO_ROOT, CONTROL_TS), 'utf8');
-        const found = inspect(CONTROL_TS, source, { literals: 0, properties: 0, computed: 0, spreads: 0 });
+        const found = inspect(CONTROL_TS, source, scratchCounts()).keys;
         const keys = found.map((f) => f.key);
         expect(keys).not.toContain('plan'); // same key, two different literals
         expect(keys).not.toContain('timeout'); // explicit key overriding a spread
@@ -291,6 +410,41 @@ describe('no duplicate object keys (#2537)', () => {
             return dupes.map((key) => `${rel}  duplicate key \`${key}\``);
         });
         expect(offenders).toEqual([]);
+    });
+
+    it('REPORTS every duplicate local binding in the import control, parsed the same way', () => {
+        // Four shapes TypeScript refuses, each measured with `tsc --noEmit`
+        // rather than reasoned — see the fixture's docblock for the table.
+        const source = readFileSync(path.join(REPO_ROOT, CONTROL_IMPORTS), 'utf8');
+        const found = inspect(CONTROL_IMPORTS, source, scratchCounts()).imports;
+        expect(found.map((f) => f.key).sort()).toEqual([
+            'EXCHANGE_CURRENCY', // the #2554 instance: same binding, same module, twice
+            'Tenant', //            `import type` buys no exemption — still TS2300
+            'logger', //            a default colliding with a named binding
+            'shared', //            two aliases onto one local, from DIFFERENT modules
+        ]);
+        // And the fixture still carries them, so a tidy-up fails loudly
+        // instead of disarming the control.
+        expect(source.match(/EXCHANGE_CURRENCY/g)?.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('does NOT report the legal import shapes — the other boundary', () => {
+        // A control proving only that the detector FIRES can be aimed one
+        // level off. Flagging any of these would get the guard baselined
+        // rather than the defect fixed, because all four are ordinary.
+        const source = readFileSync(path.join(REPO_ROOT, CONTROL_IMPORTS), 'utf8');
+        const keys = inspect(CONTROL_IMPORTS, source, scratchCounts()).imports.map((f) => f.key);
+        expect(keys).not.toContain('writeFile'); // two bindings, one module
+        expect(keys).not.toContain('parcelArea'); // type-only beside a value
+        expect(keys).not.toContain('second'); // aliased APART — locals differ
+        expect(keys).not.toContain('join'); // namespace beside a named import
+        expect(keys).not.toContain('CURRENCY'); // `export … from` binds nothing
+    });
+
+    it('no file in src/, scripts/ or prisma/ imports the same binding twice', () => {
+        expect(
+            IMPORT_FINDINGS.map((f) => `${f.file}:${f.line}  duplicate import binding \`${f.key}\``),
+        ).toEqual([]);
     });
 
     it('REPORTS a duplicate in the env control file, and reads the awkward lines right', () => {
