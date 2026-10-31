@@ -158,7 +158,13 @@ describe('Infrastructure Regression Guards', () => {
             // unauthenticated and a per-notice mail would be an amplifier
             // pointed at the mailbox that must stay readable during an
             // incident.
-            expect(SCHEDULED_JOBS).toHaveLength(30);
+            // 30 → 31 (#2495 step 5): `document-retention-sweep`. «Документи»
+            // stores a per-document retention period, and until this job
+            // existed `expiresOn` was a date the UI showed and nothing acted
+            // on — a retention promise with no enforcement, which for a
+            // compliance register is worse than having no period at all.
+            // Daily at 03:45 UTC, ahead of the two long transaction sweeps.
+            expect(SCHEDULED_JOBS).toHaveLength(31);
         });
 
         test('scheduled job names match expected set', () => {
@@ -188,6 +194,11 @@ describe('Infrastructure Regression Guards', () => {
                 // PracticeTestPlan and enqueuing runner jobs.
                 'daily-evidence-expiry',
                 'data-lifecycle',
+                // #2495 step 5 — daily 03:45 UTC purge of farm documents whose
+                // retention period has run out. The row SURVIVES as an EXPIRED
+                // tombstone keeping its name, so "destroyed by policy on this
+                // date" and "never existed" are not the same observation.
+                'document-retention-sweep',
                 // Flips APPROVED evidence past its nextReviewDate to
                 // NEEDS_REVIEW. The usecase existed since 2026-05 with zero
                 // callers; registering it closes the review-cadence loop
