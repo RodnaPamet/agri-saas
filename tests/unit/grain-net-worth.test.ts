@@ -472,6 +472,81 @@ describe('getGrainNetWorth — payroll allocation', () => {
 });
 
 describe('getGrainNetWorth — currency handling and net worth', () => {
+    it('three spellings of two currencies that both resolve to EUR are NOT mixed', async () => {
+        /*
+         * The owner's own farm, reproduced (#2397). Measured in production on
+         * 2026-10-31: 14 cost rows — 10 `'EUR'` on wheat, and four farm-wide
+         * TARGET rows with no target carrying 3 x `'EURO'` and 1 x `'BGN'`.
+         *
+         * `normaliseCostToEur` resolves all three spellings to euro and has
+         * always been used for the AMOUNTS. The currency SETS were built from
+         * the raw strings, so `cashCostCurrencies.size > 1` read one currency
+         * as three and `Калкулатор` withheld cost and margin per дка with
+         * COST_CURRENCY_MIXED. The farm has no leases at all, so the rent fix
+         * in #2539 could not have been its cause.
+         *
+         * `cost-rollup.ts` was never affected: its private `resolvedCurrency`
+         * has always collapsed non-foreign codes to EUR. This usecase reads
+         * the same column and had no counterpart.
+         */
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-eur', category: 'OTHER', amount: 100, currency: 'EUR', plantingId: 'p-1', seasonId: null },
+            { id: 'c-euro', category: 'PAYROLL', amount: 10, currency: 'EURO', plantingId: 'p-1', seasonId: null },
+            { id: 'c-bgn', category: 'OTHER', amount: 20, currency: 'BGN', plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.cashCostCurrencies).toEqual(['EUR']);
+        expect(wheat.cashCostCurrencyMixed).toBe(false);
+    });
+
+    it('a genuinely FOREIGN currency is still mixed, and keeps its own code', async () => {
+        // The control. Collapsing every code to EUR would pass the test above
+        // and silently add dollars to euros — which is the error this change
+        // is the opposite of. `normaliseCostToEur` refuses USD with FOREIGN
+        // and withholds the amount; the set must keep saying so.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-eur', category: 'PAYROLL', amount: 100, currency: 'EUR', plantingId: 'p-1', seasonId: null },
+            { id: 'c-usd', category: 'PAYROLL', amount: 50, currency: 'USD', plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        const wheat = result.rows[0];
+
+        expect(wheat.cashCostCurrencies.sort()).toEqual(['EUR', 'USD']);
+        expect(wheat.cashCostCurrencyMixed).toBe(true);
+    });
+
+    it('an UNRECORDED currency counts as euro, by owner ruling', async () => {
+        // 2026-10-26, EUR-only: a blank currency on a farm that can only
+        // record euro is a missing LABEL, not an unknown unit.
+        mockDb.planting.findMany.mockResolvedValue([
+            planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
+        ]);
+        mockGetCostRollupByPlanting.mockResolvedValue({ rows: [], truncated: false, unvalued: { noUnitCost: 0, unitMismatch: 0 } });
+        mockDb.parcelLease.findMany.mockResolvedValue([]);
+        mockDb.costEntry.findMany.mockResolvedValue([
+            { id: 'c-eur', category: 'PAYROLL', amount: 100, currency: 'EUR', plantingId: 'p-1', seasonId: null },
+            { id: 'c-blank', category: 'PAYROLL', amount: 5, currency: null, plantingId: 'p-1', seasonId: null },
+        ]);
+
+        const result = await netWorthResult(ctx);
+        expect(result.rows[0].cashCostCurrencies).toEqual(['EUR']);
+        expect(result.rows[0].cashCostCurrencyMixed).toBe(false);
+    });
+
     it('a лв/дка rent contributes EUR to cashCostCurrencies, not a sentinel', async () => {
         /*
          * THE BUG, asserted on the path it actually took.

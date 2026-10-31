@@ -30,6 +30,8 @@ import {
 import { summarizePlannedYield, type PlannedYieldInputRow } from '@/lib/planning/planned-yield';
 import { resolveRentBasis, type RentBasisLease } from '@/lib/grain/rent-basis';
 import { UNKNOWN_RENT_CURRENCY } from '@/lib/grain/cost-metrics';
+import { canonicalCostCurrency, normaliseCostToEur } from '@/lib/grain/currencies';
+import { EXCHANGE_CURRENCY } from '@/lib/exchange/currency';
 import { canConvert, convert } from '@/lib/units/unit-conversion';
 import type { CostAllocationBasis, Prisma } from '@prisma/client';
 import {
@@ -1472,10 +1474,19 @@ function computePayroll(
 function computeCashOut(rows: readonly CostEntryRow[]): GrainCashOutLine[] {
     const byCurrency = new Map<string, { amount: number; categories: Set<string> }>();
     for (const row of rows) {
-        let bucket = byCurrency.get(row.currency);
+        // CANONICAL key, for two reasons. It stops 'EUR' / 'EURO' / 'BGN'
+        // becoming three cash-out lines for one currency — and it fixes a
+        // CRASH: `CostEntry.currency` is nullable, a null key reached the
+        // `localeCompare` below, and `GRAIN_CASH_OUT` threw a TypeError for
+        // any farm with an unrecorded cost currency. Found by a test written
+        // for the set bug next door; the owner ruling that an unrecorded
+        // currency counts as euro is what makes 'EUR' the right key rather
+        // than a placeholder.
+        const key = canonicalCostCurrency(row.currency);
+        let bucket = byCurrency.get(key);
         if (!bucket) {
             bucket = { amount: 0, categories: new Set<string>() };
-            byCurrency.set(row.currency, bucket);
+            byCurrency.set(key, bucket);
         }
         bucket.amount += dec(row.amount);
         bucket.categories.add(row.category);
@@ -1690,7 +1701,15 @@ function finalizeRow(
             netWorthUnavailableCode = 'RENT_CURRENCY_UNRECORDED';
             netWorthUnavailableReason =
                 'Rent cost currency is not recorded on the lease (ParcelLease has no currency column); it cannot be combined with market-priced assets without inventing one.';
-        } else if (onlyCurrency !== priceCurrency) {
+        } else if (onlyCurrency !== canonicalCostCurrency(priceCurrency)) {
+            // BOTH sides canonicalised, or this check breaks the farms it is
+            // meant to serve. The question it asks is "are these two figures
+            // ADDABLE", and the fixed peg makes lev and euro addable — so a
+            // BGN price against BGN costs must still compute, even though the
+            // costs now arrive canonicalised to EUR. Comparing a canonical
+            // cost currency against a RAW price currency would refuse exactly
+            // that farm, turning one refusal (mixed) into another (mismatch)
+            // and looking like the fix had done nothing.
             netWorthUnavailableCode = 'COST_PRICE_CURRENCY_MISMATCH';
             netWorthUnavailableParams = {
                 costCurrency: onlyCurrency,
@@ -1936,9 +1955,39 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
         take: PAYROLL_TAKE + 1,
     });
     const costEntriesTruncated = costEntryRows.length > PAYROLL_TAKE;
-    const costEntries = costEntriesTruncated
+    const costEntriesRaw = costEntriesTruncated
         ? costEntryRows.slice(0, PAYROLL_TAKE)
         : costEntryRows;
+
+    /*
+     * NORMALISE TO EURO ONCE, HERE — completing #2397 in the module it missed.
+     *
+     * `cost-rollup.ts` has converted amounts through `normaliseCostToEur`
+     * since it was written and collapses non-foreign codes to EUR with its
+     * private `resolvedCurrency`. This usecase reads the SAME
+     * `CostEntry.currency` column and did neither: it summed RAW amounts and
+     * refused whenever the labels differed. That refusal was not a bug — it is
+     * what stopped 100 BGN and 100 EUR being added to 200 of something — but
+     * it fires on a SPELLING difference too, and `'EUR'` vs `'EURO'` is not a
+     * currency difference. Measured on the owner's own farm (2026-10-31): 10
+     * rows `'EUR'`, 3 `'EURO'`, 1 `'BGN'`, no leases at all, and `Калкулатор`
+     * withheld cost and margin per дка on every crop.
+     *
+     * Converting the AMOUNT is the half that makes canonicalising the LABEL
+     * safe. Relabelling a lev row EUR without dividing by the peg overstates
+     * it by 1.95583x — exactly what `isStoredAsEuro`'s docblock warns about —
+     * so the two must happen together or neither.
+     *
+     * A FOREIGN row keeps its raw code AND its raw amount, deliberately. It
+     * then trips `cashCostCurrencyMixed` and the figure is withheld, which is
+     * today's behaviour and the right one: dropping the row instead would
+     * remove real money from a total nobody was told was incomplete.
+     */
+    const costEntries = costEntriesRaw.map((row) => {
+        const n = normaliseCostToEur(dec(row.amount), row.currency);
+        if (n.refusal === 'FOREIGN' || n.eur == null) return row;
+        return { ...row, amount: n.eur, currency: EXCHANGE_CURRENCY };
+    });
 
     // The chosen parcels of every PARCEL_SUBSET entry, in ONE read.
     //
