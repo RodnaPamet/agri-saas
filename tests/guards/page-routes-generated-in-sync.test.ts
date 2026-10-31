@@ -93,6 +93,32 @@ describe('generated page routes (#2578)', () => {
         }
     });
 
+    it('the two client-facing claims in the generated header are TRUE', () => {
+        // The header tells a client the prefix is not uniform and that
+        // parameters must be matched positionally. Both are claims about this
+        // data, so both are checked here — a header that goes false is worse
+        // than no header, because a client reads it and believes it.
+        const derived = pageTemplates();
+        const bare = derived.filter((t) => !t.startsWith('/t/[tenantSlug]'));
+        const set = new Set(derived);
+        // Claim 1: prefixing a bare template does NOT generally yield a valid
+        // one. If this ever became empty, `"/t/[slug]" + surface` would be safe
+        // and the warning would be misleading.
+        const prefixingBreaks = bare.filter((b) => b !== '/' && !set.has(`/t/[tenantSlug]${b}`));
+        console.log(`[page-routes] ${bare.length} bare template(s); prefixing breaks for ${prefixingBreaks.length}`);
+        expect(prefixingBreaks).toContain('/account');
+        expect(prefixingBreaks.length).toBeGreaterThanOrEqual(10);
+        // Claim 2: parameter names are many, so name-keyed matching is fragile.
+        const names = new Set(
+            derived.flatMap((t) => [...t.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1])),
+        );
+        names.delete('tenantSlug');
+        console.log(`[page-routes] ${names.size} distinct param name(s) besides tenantSlug`);
+        expect(names.size).toBeGreaterThanOrEqual(8);
+        expect(names).toContain('locationId');
+        expect(names).toContain('id');
+    });
+
     it('the PREMISE still holds: src/app is not in the runtime image', () => {
         // Hash comments stripped by hand, NOT via blankNonCode — that is a
         // JS/TS stripper, so on a Dockerfile it would be a call that

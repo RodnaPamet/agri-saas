@@ -15,6 +15,27 @@
 // These are TEMPLATES, with Next's bracket parameters intact. The assistant's
 // page context names a SCREEN, never an instance of one, so a `route` cannot
 // carry a tenant slug or a record id and validating it is set membership.
+//
+// ## Two things a CLIENT gets wrong here, both measured
+//
+// **The `/t/[tenantSlug]` prefix is NOT uniform.** 75 of these are
+// tenant-scoped and 26 are not — `/account`, `/account/profile`,
+// `/account/security`, `/dashboard`, `/login`, `/no-tenant`,
+// `/f/[handle]`, the `/org/[orgSlug]/…` family, the invite pair. Building a
+// route as `"/t/[tenantSlug]" + surface` therefore produces something this
+// schema REJECTS for any of those, and the rejection surfaces as the assistant
+// losing context rather than as an error next to its cause. Look the surface up
+// in this list; treat the prefix as a fallback, not an assumption. `/` is the
+// one bare entry that is genuinely a screen.
+//
+// **Match parameters POSITIONALLY, never by name.** Besides `tenantSlug` there
+// are twelve distinct parameter names across this set — `[orgSlug]`, `[id]`,
+// `[token]`, `[taskId]`, `[handle]`, `[reviewId]`, `[threadId]`,
+// `[binId]`, `[issueId]`, `[locationId]`, `[parcelId]`, `[cropPlanId]`.
+// Anything keyed on the name has to know all twelve and goes stale when a route
+// is added. Position is stable; the name is not. This matters for the `links`
+// field, whose routes are CONCRETE and tenant-RELATIVE (`/locations/abc123`)
+// and are validated by substituting id-bearing segments back to brackets.
 
 export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/",
