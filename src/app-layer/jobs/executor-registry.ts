@@ -710,14 +710,6 @@ executorRegistry.register('promotion-lead-retention', async (payload) => {
     );
 });
 
-// ── low-stock-monitor ────────────────────────────────────────────────
-
-executorRegistry.register('low-stock-monitor', async (payload) => {
-    const { runLowStockMonitor } = await import('./low-stock-monitor');
-    const { result } = await runLowStockMonitor({ tenantId: payload.tenantId });
-    return result;
-});
-
 // ── lease-expiry-sweep (land administration) ─────────────────────────
 
 executorRegistry.register('lease-expiry-sweep', async (payload) => {

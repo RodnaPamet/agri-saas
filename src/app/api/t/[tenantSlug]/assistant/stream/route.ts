@@ -183,7 +183,11 @@ export const POST = withApiErrorHandling(
                         // answer was actually sent. A halt following a refusal
                         // would claim a partial answer the person never saw.
                         if (answered.sent) await emitHalt(send, loop.halt);
-                        emit({ type: 'done', truncatedAny: loop.truncatedAny });
+                        emit({
+                            type: 'done',
+                            truncatedAny: loop.truncatedAny,
+                            partialAny: loop.partialAny,
+                        });
                     } catch (err) {
                         // A throw here must never escape as a 500: the
                         // response is already a 200 with bytes sent, so the
@@ -199,7 +203,7 @@ export const POST = withApiErrorHandling(
                             error: msg,
                         });
                         emit(await endingEvent(code));
-                        emit({ type: 'done', truncatedAny: false });
+                        emit({ type: 'done', truncatedAny: false, partialAny: false });
                     } finally {
                         release();
                     }

@@ -373,7 +373,6 @@ export const env = createEnv({
         APP_URL: z.string().url().optional(),
 
         // AI Risk Assessment
-        AI_RISK_PROVIDER: z.string().default('stub'),
         OPENROUTER_API_KEY: z.string().optional(),
         OPENROUTER_MODEL: z.string().optional(),
 
@@ -566,10 +565,6 @@ export const env = createEnv({
         VISION_MODEL_PATH: z.string().optional(),
         VISION_LABELS_PATH: z.string().optional(),
 
-        AI_RISK_DAILY_QUOTA: z.string().optional(),
-        AI_RISK_USER_RPM: z.string().optional(),
-        AI_RISK_ENABLED: z.string().default('true'),
-        AI_RISK_PLAN_REQUIRED: z.string().default(''),
 
         // ── AI eval harness (feat/ai-evals-safety) ──
         // Opt-in flag for the LLM-judge rubric scorer in the offline eval
@@ -904,7 +899,6 @@ export const env = createEnv({
         STRIPE_PRICE_ID_ENTERPRISE: process.env.STRIPE_PRICE_ID_ENTERPRISE,
         APP_URL: process.env.APP_URL,
 
-        AI_RISK_PROVIDER: process.env.AI_RISK_PROVIDER,
         OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
         OPENROUTER_MODEL: process.env.OPENROUTER_MODEL,
         SOIL_PROVIDER: process.env.SOIL_PROVIDER,
@@ -936,15 +930,11 @@ export const env = createEnv({
         VISION_BACKEND: process.env.VISION_BACKEND,
         VISION_MODEL_PATH: process.env.VISION_MODEL_PATH,
         VISION_LABELS_PATH: process.env.VISION_LABELS_PATH,
-        AI_RISK_DAILY_QUOTA: process.env.AI_RISK_DAILY_QUOTA,
-        AI_RISK_USER_RPM: process.env.AI_RISK_USER_RPM,
-        AI_RISK_ENABLED: process.env.AI_RISK_ENABLED,
         AI_EVAL_LLM_JUDGE: process.env.AI_EVAL_LLM_JUDGE,
         AI_CACHE_TTL_SECONDS: process.env.AI_CACHE_TTL_SECONDS,
         AI_EMBED_CACHE_TTL_SECONDS: process.env.AI_EMBED_CACHE_TTL_SECONDS,
         AI_RATE_LIMIT_PER_MIN: process.env.AI_RATE_LIMIT_PER_MIN,
         AI_EVAL_AB_BACKEND: process.env.AI_EVAL_AB_BACKEND,
-        AI_RISK_PLAN_REQUIRED: process.env.AI_RISK_PLAN_REQUIRED,
         AGRO_DATASTREAMS_ENABLED: process.env.AGRO_DATASTREAMS_ENABLED,
         GEE_PROJECT_ID: process.env.GEE_PROJECT_ID,
         GEE_SERVICE_ACCOUNT_KEY: process.env.GEE_SERVICE_ACCOUNT_KEY,

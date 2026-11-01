@@ -29,9 +29,21 @@ const API_DIR = path.join(ROOT, 'src/app/api');
 const CREDENTIAL_HEADERS =
     /get\(\s*['"](stripe-signature|x-av-signature|x-hub-signature[^'"]*|x-signature|x-webhook-signature|x-seed-token|x-platform-admin-key|authorization)['"]\s*\)/i;
 
-/** Calls that mean "this route verifies that credential". */
+/**
+ * Calls that mean "this route verifies that credential".
+ *
+ * `claimNativeState` joined the list with the Google consent return (#2495,
+ * fixed 2026-11-01). It is a credential check and not a lookup: the call
+ * ATOMICALLY claims a single-use, expiring, hashed state row in one
+ * `updateMany`, so a replay finds it consumed and is refused. The route then
+ * re-checks that the person who started the flow is still an active admin.
+ *
+ * Widened rather than exempted, which is this file's standing preference — see
+ * the NOTE beside EXEMPT about `/api/staging/seed`. An exemption would have
+ * hidden the next genuinely-anonymous route added under the same prefix.
+ */
 const VERIFIES =
-    /constructWebhookEvent|verifySignature|verifyResendSignature|timingSafeEqual|authenticateScimRequest|verifyPlatformApiKey|processIncomingWebhook|verifyApiKey|STAGING_SEED_TOKEN/;
+    /constructWebhookEvent|verifySignature|verifyResendSignature|timingSafeEqual|authenticateScimRequest|verifyPlatformApiKey|processIncomingWebhook|verifyApiKey|STAGING_SEED_TOKEN|claimNativeState/;
 
 function routeFiles(dir: string, acc: string[] = []): string[] {
     if (!fs.existsSync(dir)) {
@@ -251,12 +263,40 @@ describe('credential-verifying routes are reachable, and public routes verify', 
         }
     });
 
+    it('the Google consent return is Edge-reachable, and ONLY it', () => {
+        // #2495, fixed 2026-11-01. The handler was complete — state claim,
+        // closed error set, admin re-check — and the Edge refused Google's
+        // return before any of it ran, so consenting produced a bare
+        // `{"error":"Unauthorized"}` page. The handler being right is exactly
+        // what made it invisible: nothing in this repo reads the two lists
+        // together, which is the failure this assertion exists to pin.
+        expect(isPublic('/api/integrations/google/callback')).toBe(true);
+
+        // Google appends `?code=…&state=…`. `isPublicPath` strips the query
+        // before the Set lookup, so the real request shape must match too — an
+        // exact entry that only worked bare would fix nothing in production.
+        expect(isPublic('/api/integrations/google/callback?code=abc&state=xyz')).toBe(true);
+
+        // ...and the widening stopped there. `/connect` is the admin-gated
+        // route that STARTS the flow; opening it would hand an anonymous
+        // caller the ability to mint consent URLs for any farm. A prefix entry
+        // would have done exactly that, which is why the entry is EXACT.
+        expect(isPublic('/api/t/agrent/admin/integrations/google/connect')).toBe(false);
+        expect(isPublic('/api/integrations/google/callbacksomething')).toBe(false);
+        expect(isPublic('/api/integrations/google/')).toBe(false);
+    });
+
     it('the detector discriminates — it is not matching everything', () => {
         // Mutation proof for the regexes themselves.
         expect(CREDENTIAL_HEADERS.test("req.headers.get('stripe-signature')")).toBe(true);
         expect(CREDENTIAL_HEADERS.test("req.headers.get('content-type')")).toBe(false);
         expect(VERIFIES.test('constructWebhookEvent(body, sig)')).toBe(true);
         expect(VERIFIES.test('processIncomingWebhook({provider, rawBody})')).toBe(true);
+            // #2495 — the Google consent return. Positive: the real call site.
+            // Negative: a bare mention of the state table must NOT read as a
+            // credential check, or any route touching it would excuse itself.
+            expect(VERIFIES.test('await claimNativeState(rawState)')).toBe(true);
+            expect(VERIFIES.test('prisma.googleOAuthState.findMany()')).toBe(false);
         // Added with the Resend bounce feed (#1753). `verifyResendSignature`
         // does NOT contain `verifySignature` as a substring, so the route read
         // as anonymous under assertion B until the name was listed — the guard

@@ -104,6 +104,12 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(res.status).toBe(200);
         const { events } = await drain(res);
         expect(events.map((e) => e.type)).toEqual(['thinking', 'halt', 'done']);
+        // `done` carries BOTH turn-level incompleteness flags — #2639. The
+        // tool loop's rule is that such a fact must not be lost to halt
+        // precedence, and the route is where it reaches the client.
+        const done = events[events.length - 1] as Record<string, unknown>;
+        expect(done).toMatchObject({ type: 'done' });
+        expect(Object.keys(done).sort()).toEqual(['partialAny', 'truncatedAny', 'type']);
         expect(events[1].code).toBe('ASSISTANT_PROVIDER_UNAVAILABLE');
         // `error` is not a member of the union; nothing may emit one.
         expect(events.some((e) => e.type === 'error')).toBe(false);

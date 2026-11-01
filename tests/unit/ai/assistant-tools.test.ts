@@ -44,7 +44,38 @@ const assertModuleEnabled = jest.fn<Promise<void>, unknown[]>();
 jest.mock('@/app-layer/usecases/modules', () => ({
     assertModuleEnabled: (...a: unknown[]) => assertModuleEnabled(...a),
 }));
+// `{ items, pageInfo: { nextCursor, hasNextPage } }` — the usecase's REAL
+// shape, and a FOURTH distinct pagination shape in this codebase. A double
+// returning `{ rows }` would agree with the tool and tell us nothing about the
+// dependency, which is what `listCostEntries` already cost.
+const listLocationsPaginated = jest.fn<
+    Promise<{ items: unknown[]; pageInfo: { nextCursor: string | null; hasNextPage: boolean } }>,
+    unknown[]
+>();
+jest.mock('@/app-layer/usecases/location', () => ({
+    listLocationsPaginated: (...a: unknown[]) => listLocationsPaginated(...a),
+}));
+const analyzeBlockRisk = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+jest.mock('@/app-layer/usecases/parcel-risk', () => ({
+    analyzeBlockRisk: (...a: unknown[]) => analyzeBlockRisk(...a),
+}));
+const getPriceTrends = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+jest.mock('@/app-layer/usecases/trends', () => ({
+    getPriceTrends: (...a: unknown[]) => getPriceTrends(...a),
+}));
+const getGrainNetWorth = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+jest.mock('@/app-layer/usecases/grain-net-worth', () => ({
+    getGrainNetWorth: (...a: unknown[]) => getGrainNetWorth(...a),
+}));
+// `buildCalculatorPayload` is deliberately NOT mocked: it is the projection the
+// ROUTE serves, and a double would verify the tool calls something while
+// saying nothing about the shape it produces.
+const assertNotPastDueRestricted = jest.fn<Promise<void>, unknown[]>();
+jest.mock('@/lib/billing/entitlements', () => ({
+    assertNotPastDueRestricted: (...a: unknown[]) => assertNotPastDueRestricted(...a),
+}));
 
+import { makeRequestContext } from '../../helpers/make-context';
 import {
     ASSISTANT_TOOLS,
     runTool,
@@ -52,15 +83,58 @@ import {
     TOOL_RESULT_MAX_CHARS,
 } from '@/app-layer/ai/assistant/tools';
 
-const ctx = {
-    userId: 'u1',
-    tenantId: 't1',
-    role: 'EDITOR',
-    permissions: {},
-    appPermissions: {},
-} as never;
+/**
+ * A REAL context, not a hand-rolled stub — changed when `runTool` began
+ * asserting the read policy centrally.
+ *
+ * The stub was `{ userId, tenantId, role, permissions: {}, appPermissions: {} }
+ * as never`, and `assertCanRead` reads `ctx.permissions.canRead`. So every
+ * tool test was passing a context that CANNOT read, and passing only because
+ * each usecase was mocked and its own assert never ran. The central assert
+ * reddened seven of them immediately, which is the assert being real rather
+ * than a problem with it.
+ */
+const ctx = makeRequestContext('EDITOR', { userId: 'u1', tenantId: 't1' });
 
 describe('assistant tools (#2578)', () => {
+    /** A GrainNetWorthResult as `buildCalculatorPayload` really consumes it. */
+    const grainResult = (over: Record<string, unknown> = {}) => ({
+        generatedAt: '2026-11-01T06:00:00.000Z',
+        seasonId: 's-2026',
+        rows: [
+            {
+                commodity: 'wheat',
+                pricePerTonne: 210,
+                priceCurrency: 'EUR',
+                priceObservedAt: '2026-08-04',
+                priceSource: 'SAPI',
+                standingCropAreaHa: 120,
+                grainOnHandTonnes: 480,
+                grainOnHandValue: 100_800,
+                standingCropValue: 50_000,
+                cashCostTotal: 61_000,
+                breakEven: 127,
+                netWorth: 89_800,
+                netWorthUnavailableCode: null,
+                // `buildCalculatorPayload` does
+                // `row.cashCostCurrencies.filter(...)`, so this array is
+                // REQUIRED. Omitting it threw "Cannot read properties of
+                // undefined (reading 'filter')" — the real projection telling
+                // me my double's shape was wrong, which is exactly what a
+                // double that is NOT mocked is for.
+                cashCostCurrencies: ['EUR'],
+            },
+        ],
+        farm: { totals: [{ currency: 'EUR', netWorth: 89_800 }], perArea: {} },
+        exclusions: { commoditiesWithNoPrice: [{ id: 'maize' }], lotsUnresolvedUnit: [] },
+        unvalued: { noUnitCost: 0, unitMismatch: 0 },
+        cashOut: 0,
+        unallocatedToCrop: 0,
+        imputedLandCharge: 0,
+        truncated: false,
+        ...over,
+    });
+
     beforeEach(() => {
         jest.clearAllMocks();
         listTasks.mockResolvedValue([]);
@@ -68,6 +142,28 @@ describe('assistant tools (#2578)', () => {
         listCostEntries.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
         listActiveListings.mockResolvedValue({ rows: [], nextCursor: null });
         assertModuleEnabled.mockResolvedValue(undefined);
+        assertNotPastDueRestricted.mockResolvedValue(undefined);
+        getPriceTrends.mockResolvedValue({
+            commodity: 'wheat',
+            range: '3m',
+            generatedAt: '2026-11-01T06:00:00.000Z',
+            series: [],
+        });
+        getGrainNetWorth.mockResolvedValue(grainResult());
+        listLocationsPaginated.mockResolvedValue({
+            items: [],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        });
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле',
+            analysed: 0,
+            total: 0,
+            worst: 'unknown',
+            counts: { unknown: 0, good: 0, watch: 0, stress: 0 },
+            configured: true,
+            parcels: [],
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
     });
 
     it('the set is closed and every def matches its key', () => {
@@ -345,15 +441,16 @@ describe('assistant tools (#2578)', () => {
         list_journal_entries: 'JOURNAL',
         list_cost_entries: 'GRAIN',
         list_exchange_listings: 'EXCHANGE',
-        propose_journal_entry: 'JOURNAL',
+        propose_treatment: 'JOURNAL',
+        propose_activity: 'JOURNAL',
     };
 
     it.each(Object.entries(TOOL_MODULE))(
         '%s asserts the %s module BEFORE reading anything (#2629)',
         async (tool, moduleKey) => {
             const args =
-                tool === 'propose_journal_entry'
-                    ? JSON.stringify({ type: 'OBSERVATION', title: 'x' })
+                tool.startsWith('propose_')
+                    ? JSON.stringify({ kind: tool === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
                     : '{}';
 
             // Refuse the module, then require that the USECASE was never
@@ -375,6 +472,18 @@ describe('assistant tools (#2578)', () => {
         },
     );
 
+    it.each(['list_blocks', 'analyze_block_risk'])(
+        '%s asserts NO module — its route gates none, measured',
+        async (tool) => {
+            // `/locations/route.ts` and `/agro/parcels/[parcelId]/analysis/route.ts`
+            // call no `assertModuleEnabled`. Inventing one would refuse a
+            // surface the product leaves open — #2629's defect inverted.
+            const args = tool === 'analyze_block_risk' ? '{"locationId":"loc-1"}' : '{}';
+            await runTool(ctx, tool, args);
+            expect(assertModuleEnabled).not.toHaveBeenCalled();
+        },
+    );
+
     it('list_farm_tasks asserts NO module, because its route gates none', async () => {
         // The negative half, and it is a MEASUREMENT rather than an omission:
         // `/api/t/[tenantSlug]/farm-tasks/route.ts` calls no
@@ -392,6 +501,202 @@ describe('assistant tools (#2578)', () => {
         await expect(runTool(ctx, 'list_cost_entries', '{}')).resolves.toMatchObject({
             ok: false,
         });
+    });
+
+    it('list_blocks reads .items, is bounded, and withholds the owner', async () => {
+        listLocationsPaginated.mockResolvedValue({
+            items: [
+                {
+                    id: 'loc-1',
+                    name: 'Голямо поле',
+                    key: 'GP',
+                    kind: 'FIELD',
+                    status: 'ACTIVE',
+                    _count: { parcels: 7 },
+                    owner: { id: 'u-9', name: 'Иван Петров' },
+                    boundsJson: { type: 'Polygon' },
+                },
+            ],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        });
+        const res = await runTool(ctx, 'list_blocks', '{}');
+        expect(res.ok).toBe(true);
+        const [, params] = listLocationsPaginated.mock.calls[0] as [unknown, Record<string, unknown>];
+        expect(params).toMatchObject({ limit: 20 });
+        // Read off `.items`. A tool reading `.rows` here gets undefined and
+        // the test would fail on the projection rather than silently pass.
+        expect(res.content).toContain('Голямо поле');
+        expect(res.content).toContain('"parcelCount":7');
+        // The owner is a person's NAME, and an answer about land has no use
+        // for it. Geometry likewise.
+        expect(res.content).not.toContain('Иван Петров');
+        expect(res.content).not.toContain('boundsJson');
+        // And a link to the real block screen.
+        expect(res.links).toEqual([{ route: '/locations/loc-1', label: 'Голямо поле' }]);
+    });
+
+    it('list_blocks refuses free text and an unknown kind', async () => {
+        for (const bad of [{ q: 'поле' }, { kinds: ['PADDOCK'] }, { search: 'x' }]) {
+            const out = await runTool(ctx, 'list_blocks', JSON.stringify(bad));
+            expect({ bad: Object.keys(bad)[0], ok: out.ok }).toEqual({
+                bad: Object.keys(bad)[0],
+                ok: false,
+            });
+        }
+        // Control: the real enum values are accepted.
+        expect((await runTool(ctx, 'list_blocks', '{"kinds":["FIELD","BIN"]}')).ok).toBe(true);
+    });
+
+    it('analyze_block_risk reports analysed OUT OF total, and whether it is complete', async () => {
+        // The property the batch usecase exists for. Without it a model
+        // counting levels scores the un-analysed parcels as merely `unknown`
+        // and answers "nothing stressed" about a farm it did not finish.
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле',
+            analysed: 24,
+            total: 30,
+            worst: 'stress',
+            counts: { unknown: 0, good: 22, watch: 1, stress: 1 },
+            configured: true,
+            parcels: [
+                { name: 'П-1', overall: 'stress', vegetation: 'stress', moisture: 'good', acquiredDate: '2026-10-28' },
+                { name: 'П-2', overall: 'watch', vegetation: 'watch', moisture: 'good', acquiredDate: '2026-10-28' },
+                { name: 'П-3', overall: 'good', vegetation: 'good', moisture: 'good', acquiredDate: '2026-10-28' },
+            ],
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const res = await runTool(ctx, 'analyze_block_risk', '{"locationId":"loc-1"}');
+        expect(res.ok).toBe(true);
+        expect(res.content).toContain('"analysed":24');
+        expect(res.content).toContain('"total":30');
+        expect(res.content).toContain('"complete":false');
+        // Parcels needing attention are NAMED, and the fine one is not listed.
+        expect(res.content).toContain('П-1');
+        expect(res.content).toContain('П-2');
+        expect(res.content).not.toContain('П-3');
+    });
+
+    it('analyze_block_risk takes a DERIVED id but refuses a malformed one', async () => {
+        // The first tool that accepts a record id, and the distinction is
+        // provenance: a `locationId` comes from a prior `list_blocks` result,
+        // which the model READ rather than composed. The charset bound is the
+        // same one `links.ts` applies, so junk is refused here rather than
+        // reaching Prisma.
+        expect((await runTool(ctx, 'analyze_block_risk', '{"locationId":"loc-1"}')).ok).toBe(true);
+        for (const bad of ['', 'a'.repeat(65), "'; DROP TABLE", '../../etc/passwd']) {
+            const out = await runTool(ctx, 'analyze_block_risk', JSON.stringify({ locationId: bad }));
+            expect(out.ok).toBe(false);
+        }
+        // And the id is required — a block-risk question about no block is
+        // not a question this tool can answer.
+        expect((await runTool(ctx, 'analyze_block_risk', '{}')).ok).toBe(false);
+    });
+
+    it('EVERY tool asserts the read policy, even where the usecase cannot', async () => {
+        // `assertCanRead` is called centrally by `runTool`. Most usecases
+        // assert it too, but `getPriceTrends` takes no RequestContext and can
+        // assert nothing — "the one tool whose usecase cannot must remember
+        // to" is a rule with no enforcement.
+        const denied = makeRequestContext('READER', {
+            permissions: { canRead: false } as never,
+        });
+        for (const name of Object.keys(ASSISTANT_TOOLS)) {
+            const args =
+                name === 'analyze_block_risk'
+                    ? '{"locationId":"loc-1"}'
+                    : name === 'price_trends'
+                      ? '{"commodity":"wheat"}'
+                      : name.startsWith('propose_')
+                        ? JSON.stringify({ kind: name === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
+                        : '{}';
+            const out = await runTool(denied, name, args);
+            expect({ name, ok: out.ok }).toEqual({ name, ok: false });
+        }
+    });
+
+    it('grain_calculator reports what the totals LEFT OUT, not just the totals', async () => {
+        const res = await runTool(ctx, 'grain_calculator', '{}');
+        expect(res.ok).toBe(true);
+        expect(res.content).toContain('"complete":false');
+        expect(res.content).toContain('"rowsLeftOut":1');
+        expect(res.content).toContain('commoditiesWithNoPrice');
+        // An EMPTY exclusion list is not reported as a reason.
+        expect(res.content).not.toContain('lotsUnresolvedUnit');
+        // Real field names, through the route's own projection. The first
+        // version of this projection guessed `tonnes`/`value`/`cost` — none of
+        // which exist on a calculator row.
+        expect(res.content).toContain('"grainOnHandTonnes":480');
+        expect(res.content).toContain('"netWorth":89800');
+        // The price's age travels with the money it produced.
+        expect(res.content).toContain('2026-08-04');
+    });
+
+    it('grain_calculator reports truncation SEPARATELY from exclusions', async () => {
+        // Different causes: a bounded read hitting its cap is ours, a missing
+        // price is ours too but a missing yield estimate is the farmer's.
+        // Collapsing them would point them at the wrong thing.
+        getGrainNetWorth.mockResolvedValue(
+            grainResult({ truncated: true, exclusions: { lotsUnresolvedUnit: [] } }),
+        );
+        const res = await runTool(ctx, 'grain_calculator', '{}');
+        expect(res.content).toContain('"truncated":true');
+        expect(res.content).toContain('"rowsLeftOut":0');
+        expect(res.content).toContain('"complete":false');
+    });
+
+    it('price_trends gates on `trends` — the usecase cannot', async () => {
+        await runTool(ctx, 'price_trends', '{"commodity":"wheat"}');
+        expect(assertNotPastDueRestricted).toHaveBeenCalledWith(ctx, 'trends');
+        assertNotPastDueRestricted.mockRejectedValue(new Error('PAST_DUE_RESTRICTED'));
+        await expect(
+            runTool(ctx, 'price_trends', '{"commodity":"wheat"}'),
+        ).resolves.toMatchObject({ ok: false });
+    });
+
+    it('price_trends ages each series against generatedAt, not the wall clock', async () => {
+        // The payload is Redis-cached for 6h and this process's clock is not
+        // the observation's. The openapi description is explicit that a dead
+        // series' last point "looks equally current" as a live one's.
+        getPriceTrends.mockResolvedValue({
+            commodity: 'wheat',
+            range: '3m',
+            // `generatedAt` is deliberately WEEKS OLD, and that is what gives
+            // this test its teeth. The first fixture used today's date, so
+            // `generatedAt` and `Date.now()` agreed and a mutation computing
+            // staleness from the wall clock PASSED — a fixture with no
+            // discriminating power. A payload this old is also the realistic
+            // case: it is Redis-cached and shared across tenants.
+            generatedAt: '2026-09-01T00:00:00.000Z',
+            series: [
+                {
+                    source: 'SAPI', region: 'BG', stage: 'DELIVERED', unit: 't',
+                    currency: 'EUR', label: null, lastObservedAt: '2026-08-30',
+                    points: [{ date: '2026-08-30', price: 212 }],
+                },
+                {
+                    source: 'OLD', region: 'BG', unit: 'kg', currency: 'BGN',
+                    label: null, lastObservedAt: '2026-06-01',
+                    points: [{ date: '2026-06-01', price: 0.41 }],
+                },
+            ],
+        });
+        const res = await runTool(ctx, 'price_trends', '{"commodity":"wheat"}');
+        expect(res.ok).toBe(true);
+        expect(res.content).toContain('"staleDays":2');
+        expect(res.content).toContain('"staleDays":92');
+        // Unit and currency travel WITH each price: these two are not
+        // comparable, and a bare number invites an average.
+        expect(res.content).toContain('"unit":"kg"');
+        expect(res.content).toContain('"currency":"BGN"');
+        expect(res.content).toContain('"stage":"DELIVERED"');
+    });
+
+    it('price_trends refuses a commodity the usecase does not chart', async () => {
+        expect((await runTool(ctx, 'price_trends', '{"commodity":"wheat"}')).ok).toBe(true);
+        for (const bad of ['WHEAT', 'rapeseed', '']) {
+            const out = await runTool(ctx, 'price_trends', JSON.stringify({ commodity: bad }));
+            expect({ bad, ok: out.ok }).toEqual({ bad, ok: false });
+        }
     });
 
     it('refuses a hallucinated tool name without throwing', async () => {

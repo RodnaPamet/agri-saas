@@ -299,7 +299,62 @@ export class ClaudeProvider implements AiProvider {
                     tool_use_id: m.toolCallId ?? '',
                     content: m.content,
                 };
-                out.push({ role: 'user', content: [block] });
+                // MERGED into the preceding user message when that message is
+                // already a tool_result carrier.
+                //
+                // One message per result looks equivalent and is not: a round
+                // with TWO tool calls produced
+                //
+                //   [assistant: tool_use a, tool_use b]
+                //   [user: tool_result a]
+                //   [user: tool_result b]      <- its tool_use is 2 back
+                //
+                // and the rule is that a `tool_result` needs its `tool_use` in
+                // the IMMEDIATELY PREVIOUS message. So every result for one
+                // assistant turn belongs in one user message.
+                //
+                // This is the second half of the #2654 outage. The first fix —
+                // pushing the assistant turn — made single-tool rounds work
+                // and left multi-tool rounds broken, which would have read as
+                // "fixed, but still flaky on some questions". Found by
+                // `assistant-history-is-well-formed`, not by review.
+                const prev = out[out.length - 1];
+                const prevIsToolResults =
+                    prev !== undefined
+                    && prev.role === 'user'
+                    && Array.isArray(prev.content)
+                    && (prev.content as ContentBlockParam[]).every((b) => b.type === 'tool_result');
+                if (prevIsToolResults) {
+                    (prev.content as ContentBlockParam[]).push(block);
+                } else {
+                    out.push({ role: 'user', content: [block] });
+                }
+                continue;
+            }
+            // An ASSISTANT turn that made tool calls must carry them as
+            // `tool_use` blocks, or the `tool_result` that follows has nothing
+            // to correspond to and the API refuses the whole request.
+            //
+            // `input` is an OBJECT here while `AiToolCall.arguments` is the
+            // model's raw JSON STRING, so it is parsed. A string the model
+            // emitted malformed becomes `{}` rather than throwing: the history
+            // has to stay well-formed, and the tool already refused that call
+            // on the way out — losing the arguments from the transcript is
+            // better than losing the turn.
+            if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+                const blocks: ContentBlockParam[] = [];
+                if (m.content.trim() !== '') blocks.push({ type: 'text', text: m.content });
+                for (const c of m.toolCalls) {
+                    let input: unknown = {};
+                    try {
+                        const parsed: unknown = JSON.parse(c.arguments === '' ? '{}' : c.arguments);
+                        if (typeof parsed === 'object' && parsed !== null) input = parsed;
+                    } catch {
+                        /* keep `{}` — see above */
+                    }
+                    blocks.push({ type: 'tool_use', id: c.id, name: c.name, input });
+                }
+                out.push({ role: 'assistant', content: blocks });
                 continue;
             }
             // 'user' | 'assistant'

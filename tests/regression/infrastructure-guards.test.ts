@@ -171,11 +171,12 @@ describe('Infrastructure Regression Guards', () => {
             // promise with no enforcement, the same shape step 5 closed for
             // `expiresOn`. Every two minutes, because a farmer who uploads a
             // scan watches that row for «Копие в Google Drive».
-            // 33: 32 as it stood, plus `usage-event-retention` (#493).
-            // NOTE the collision with fix/remove-low-stock-notifications, which
-            // takes this the other way — whichever lands second must RE-MEASURE
-            // rather than do arithmetic on the other branch's number.
-            expect(SCHEDULED_JOBS).toHaveLength(33);
+            // 32, MEASURED after merging rather than computed: main removed
+            // `low-stock-monitor` (33 -> 31 there) while this branch adds
+            // `usage-event-retention`. Both of those were mine, both moved this
+            // line, and arithmetic on either branch's number gives the wrong
+            // answer — which is exactly why the pin exists.
+            expect(SCHEDULED_JOBS).toHaveLength(32);
         });
 
         test('scheduled job names match expected set', () => {
@@ -235,9 +236,6 @@ describe('Infrastructure Regression Guards', () => {
                 // sweep firing LEASE_EXPIRING alerts for parcel leases
                 // (аренда/наем) ending within 30 days.
                 'lease-expiry-sweep',
-                // Inventory Phase 1 — daily cross-tenant low-stock sweep
-                // firing LOW_STOCK alerts for items below reorderLevel.
-                'low-stock-monitor',
                 // P3.10 — every 6h, one message to MAIL_CANARY_TO. Proves the
                 // provider ACCEPTED it, NOT that it was delivered: nothing
                 // reads an inbox, so an accepted-then-bounced message looks

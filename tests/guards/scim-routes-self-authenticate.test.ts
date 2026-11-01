@@ -103,6 +103,68 @@ describe('SCIM routes authenticate themselves (the Edge does not)', () => {
         expect(files.length).toBeGreaterThanOrEqual(5);
     });
 
+    it('the handler parser SELECTS on the real SCIM tree — it is not returning nothing', () => {
+        // The control `exportedHandlers` lacked, found by `selector-teeth` on
+        // 2026-11-01 and fixed here.
+        //
+        // The per-file consumer below already refuses an empty result — but it
+        // asks `handlers.length === 0`, which is an ARRAY question. A selector
+        // that returned a Set or a Map would answer `undefined === 0`, i.e.
+        // false, and the `for…of` beneath it would then iterate nothing: every
+        // SCIM route would pass without a single `authenticateScimRequest`
+        // check having run. That is the shape the mutation reproduced, and it
+        // points toward green, which is why it is worth a control rather than a
+        // baseline entry.
+        //
+        // Summing is what makes this bite: `0 + undefined` is NaN, and NaN
+        // fails BOTH assertions below, so a wrong-typed selector can no longer
+        // pass by being empty.
+        const total = files.reduce(
+            (n, f) => n + exportedHandlers(fs.readFileSync(f, 'utf8')).length,
+            0,
+        );
+        expect(Number.isFinite(total)).toBe(true);
+        // 13 today across 5 files (Users and Groups each expose a collection
+        // and an item route; ServiceProviderConfig is GET-only). Floored at 10
+        // rather than 13 so legitimately retiring one method is not a failure,
+        // and far enough above zero that a parser which stopped recognising the
+        // `export async function GET` form cannot slip through.
+        expect(total).toBeGreaterThanOrEqual(10);
+    });
+
+    it('the parser finds the handlers in a REAL SCIM route, by name', () => {
+        // Derived from the production tree, not a synthetic string: a control
+        // fed its own source keeps passing with the real files gutted, which is
+        // the failure this pair exists to catch (same reasoning as
+        // no-legacy-peer-deps.test.ts).
+        const itemRoute = files.find((f) => /Users\/\[id\]\/route\.ts$/.test(f));
+        expect(itemRoute).toBeDefined();
+
+        const methods = exportedHandlers(fs.readFileSync(itemRoute as string, 'utf8')).map(
+            (h) => h.method,
+        );
+        expect(methods).toContain('GET');
+        expect(methods.length).toBeGreaterThanOrEqual(2);
+
+        // ...and each selected body is the handler's OWN slice, not the whole
+        // file. If the slicing collapsed, every body would be identical and the
+        // per-handler `authenticateScimRequest` check would grade the file
+        // rather than the handler — green for a route where only the first
+        // handler authenticates.
+        const bodies = exportedHandlers(fs.readFileSync(itemRoute as string, 'utf8')).map(
+            (h) => h.body,
+        );
+        expect(new Set(bodies).size).toBe(bodies.length);
+    });
+
+    it('the parser selects NOTHING from a file with no exported handlers', () => {
+        // The other half: a detector that matched everything would satisfy the
+        // floor above while telling us nothing.
+        expect(exportedHandlers('const GET = 1;\nexport default function handler() {}')).toEqual(
+            [],
+        );
+    });
+
     it('the Edge carve-out this guard protects is actually in place', () => {
         // If the carve-out is reverted, these routes are unreachable again and
         // this guard is protecting nothing — which is worth knowing loudly,

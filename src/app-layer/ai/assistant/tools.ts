@@ -34,18 +34,42 @@
  *   longest and most sensitive free text to answer a list-level question. A
  *   later single-task tool can fetch one deliberately.
  */
-import { ExchangeKind, ExchangeSide, type ModuleKey, WorkItemStatus } from '@prisma/client';
+import {
+    ExchangeKind,
+    ExchangeSide,
+    LocationKind,
+    LocationStatus,
+    type ModuleKey,
+    WorkItemStatus,
+} from '@prisma/client';
 import { z } from 'zod';
 
 import { listCostEntries } from '@/app-layer/usecases/cost-entry';
 import { listActiveListings } from '@/app-layer/usecases/exchange';
+import { listLocationsPaginated } from '@/app-layer/usecases/location';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
+import { analyzeBlockRisk } from '@/app-layer/usecases/parcel-risk';
+import { getPriceTrends } from '@/app-layer/usecases/trends';
+import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
+import { assertCanRead } from '@/app-layer/policies/common';
+import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
+import { buildCalculatorPayload } from '@/lib/grain/calculator-payload';
+import { resolveRequestLocale } from '@/lib/i18n/request-locale';
+import { TREND_CHARTABLE, TrendRange } from '@/app-layer/schemas/trends.schemas';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
 import { linksFromRows, type AssistantLink, type LinkShape } from './links';
-import { proposeJournalEntry, ProposeJournalEntryArgs, type AssistantProposal } from './propose';
+import {
+    ACTIVITY_KIND_VALUES,
+    proposeDraft,
+    ProposeActivityArgs,
+    ProposeTreatmentArgs,
+    TREATMENT_KIND_VALUES,
+    type AssistantProposal,
+    type ProposalKind,
+} from './propose';
 import { toPublicListing } from '@/lib/exchange/public-listing';
 import { LOG_ENTRY_TYPE_VALUES } from '@/lib/schemas';
 
@@ -57,6 +81,23 @@ export interface ToolOutcome {
     /** Serialised for the model. Already truncated if it had to be. */
     readonly content: string;
     readonly truncated: boolean;
+    /**
+     * The tool's own answer is INCOMPLETE — it did not gather everything that
+     * exists — #2639.
+     *
+     * Set by a tool that KNOWS its result is partial, and collected by the
+     * loop into a coded halt, exactly as `truncated` is. The point is that the
+     * disclosure stops depending on the model: `analyze_block_risk` returns
+     * `analysed`/`total` and its description asks for them, but a description
+     * is a request and the prose is the model's. agrent-ios made the
+     * observation that settles it — the phone renders nothing from the
+     * payload, so the answer prose is the ONLY place the pair can be lost.
+     *
+     * Not inferred from `content`: a flag the tool sets is checkable, where
+     * re-parsing a serialised projection is the `a-detector-reads-the-
+     * serialised-form` problem.
+     */
+    readonly partial?: boolean;
     /**
      * The links this result supports, built HERE from the rows rather than
      * parsed back out of `content` — which would have to survive truncation
@@ -100,7 +141,26 @@ interface AssistantTool {
      * CONSUMER of a route-level gate, and carries it the way a route does.
      */
     readonly module?: ModuleKey;
-    readonly proposes?: boolean;
+
+    /**
+     * Whether this tool's result is INCOMPLETE, read off the projection it
+     * just built — #2639.
+     *
+     * Declared on the registry rather than returned from `run`, so the
+     * completeness question is answered beside the projection that knows it
+     * and a guard can see which tools claim to answer it at all.
+     */
+    readonly isPartial?: (result: unknown) => boolean;
+
+    /**
+     * The proposal KIND this tool prepares, read by `runTool` — #2632.
+     *
+     * The kind rather than a boolean, so the kind is declared once on the
+     * registry instead of hard-wired into `runTool`. It was `proposes: true`
+     * with `proposeJournalEntry` named at the call site, which is why adding a
+     * second kind meant editing the loop.
+     */
+    readonly proposes?: ProposalKind;
 }
 
 /**
@@ -200,6 +260,53 @@ const ListExchangeArgs = z.object({
     minTonnes: z.number().nonnegative().max(1_000_000).optional(),
     maxTonnes: z.number().nonnegative().max(1_000_000).optional(),
 }).strict();
+
+/**
+ * Блокове facets. `q` is omitted for the reason it is omitted everywhere —
+ * free text into a query — and `kind`/`status` come from Prisma so the
+ * JSON-Schema cannot offer a value the database does not have.
+ *
+ * A Location is a «блок» when its kind is FIELD; BIN and STORAGE are grain
+ * stores. The filter is exposed rather than hard-coded to FIELD because a
+ * question about where grain sits is as legitimate as one about land.
+ */
+const ListBlocksArgs = z.object({
+    kinds: z.array(z.nativeEnum(LocationKind)).max(3).optional(),
+    statuses: z.array(z.nativeEnum(LocationStatus)).max(2).optional(),
+}).strict();
+
+/**
+ * Block risk takes a RECORD ID, and it is the first tool that does.
+ *
+ * Every other tool refuses ids, because an id a model invents references a
+ * record nobody chose — `links.ts`'s provenance problem. This one is
+ * different in kind: a `locationId` here comes from a PRIOR `list_blocks`
+ * result, which returns ids the model read rather than composed. A derived id
+ * is not a fabricated one.
+ *
+ * It is also unavoidable: `analyzeBlockRisk` analyses ONE block, and the
+ * alternative — analysing every block on the farm per question — is the
+ * satellite cost `MAX_BATCH_PARCELS` exists to bound.
+ *
+ * The id is bounded to the same charset `links.ts` uses for exactly this
+ * reason, so a malformed one is refused here rather than reaching Prisma.
+ */
+const AnalyzeBlockRiskArgs = z.object({
+    locationId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+}).strict();
+
+/**
+ * Price-trend args. Both vocabularies come from `trends.schemas.ts` — the same
+ * `z.enum`s the routes validate against — so a JSON-Schema handed to the model
+ * cannot offer a commodity or range the usecase refuses.
+ */
+const ListPriceTrendsArgs = z.object({
+    commodity: z.enum(TREND_CHARTABLE),
+    range: TrendRange.optional(),
+}).strict();
+
+/** The grain calculator takes no arguments: it is the whole farm's position. */
+const GrainCalculatorArgs = z.object({}).strict();
 
 const parseDay = (v: string | undefined): Date | undefined => {
     if (v === undefined) return undefined;
@@ -462,42 +569,389 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             });
         },
     },
-    propose_journal_entry: {
+    list_blocks: {
         def: {
-            name: 'propose_journal_entry',
+            name: 'list_blocks',
             description:
-                'PREPARE a Дневник entry for the person to confirm. Writes NOTHING — it returns a '
-                + 'draft the app prefills into the real form, which the person submits themselves. '
-                + 'Use it when asked to record something. Do not include any ids; the person picks '
-                + 'the block and equipment in the form.',
+                "The farm's блокове — its fields, and its grain bins and stores. Use it to find "
+                + 'out what land or storage the farm has, and to get a block id for '
+                + 'analyze_block_risk. Returns at most 20.',
             parameters: {
                 type: 'object',
                 properties: {
-                    type: {
-                        type: 'string',
-                        enum: [...LOG_ENTRY_TYPE_VALUES],
-                        description: 'The kind of journal entry.',
+                    kinds: {
+                        type: 'array',
+                        items: { type: 'string', enum: Object.values(LocationKind) },
+                        description: 'FIELD is a блок of land; BIN and STORAGE hold grain.',
                     },
-                    title: { type: 'string', description: 'A short title, in the farmer\'s language.' },
-                    notes: { type: 'string', description: 'Optional detail.' },
-                    status: { type: 'string', enum: ['PLANNED', 'DONE'] },
-                    occurredAt: { type: 'string', description: 'ISO timestamp, if the person said when.' },
+                    statuses: {
+                        type: 'array',
+                        items: { type: 'string', enum: Object.values(LocationStatus) },
+                    },
                 },
-                required: ['type', 'title'],
+                additionalProperties: false,
+            },
+        },
+        args: ListBlocksArgs,
+        run: async (ctx, args) => {
+            const a = ListBlocksArgs.parse(args);
+            // `{ items, pageInfo: { nextCursor, hasNextPage } }` — a FOURTH
+            // pagination shape in this codebase, and NOT `{ rows }`. The
+            // others: `listLogEntriesPaginated` gives `{ rows }`,
+            // `listCostEntries` `{ rows, totalCount, truncated }`,
+            // `listActiveListings` `{ rows, nextCursor }`. Read off the
+            // source each time; treating one as another is the mistake
+            // `listCostEntries` already cost me, and my own mock agreed with
+            // me rather than with the dependency.
+            const page = await listLocationsPaginated(ctx, {
+                limit: 20,
+                filters: {
+                    ...(a.kinds ? { kind: a.kinds } : {}),
+                    // `status` is singular on the filter — a string, not an
+                    // array — so a single selection is passed and anything
+                    // wider is left to the caller rather than silently
+                    // collapsed to its first element.
+                    ...(a.statuses?.length === 1 ? { status: a.statuses[0] } : {}),
+                },
+            });
+            return (page.items as Array<Record<string, unknown>>).map((l) => ({
+                id: l.id,
+                name: l.name,
+                key: l.key,
+                kind: l.kind,
+                status: l.status,
+                // The farm's own count, which is what makes a risk answer's
+                // denominator checkable against the block.
+                parcelCount: (l._count as { parcels?: number } | undefined)?.parcels ?? null,
+                // `owner` is NOT projected. The repository includes it
+                // (`{ id, name }`), and it is a person's name that an answer
+                // about land has no use for.
+            }));
+        },
+        link: { template: '/locations/[locationId]', idField: 'id', labelField: 'name' },
+    },
+    analyze_block_risk: {
+        def: {
+            name: 'analyze_block_risk',
+            description:
+                "Satellite vegetation and moisture risk for every parcel in ONE block. Call "
+                + 'list_blocks first to get the block id. Say how many parcels were analysed out '
+                + 'of how many the block has — the answer is INCOMPLETE when those differ.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    locationId: {
+                        type: 'string',
+                        description: 'A block id from list_blocks. Never invent one.',
+                    },
+                },
+                required: ['locationId'],
+                additionalProperties: false,
+            },
+        },
+        args: AnalyzeBlockRiskArgs,
+        // `analysed < total` means parcels were never looked at. Reported as a
+        // halt so the person is TOLD, rather than relying on the model having
+        // obeyed the description above.
+        isPartial: (r) => {
+            const x = r as { analysed?: number; total?: number };
+            return typeof x.analysed === 'number' && typeof x.total === 'number'
+                && x.analysed < x.total;
+        },
+        run: async (ctx, args) => {
+            const a = AnalyzeBlockRiskArgs.parse(args);
+            const r = await analyzeBlockRisk(ctx, a.locationId);
+            // `analysed` and `total` are both returned, and the description
+            // tells the model to report them. `RiskLevel` carries an
+            // `unknown` member, so a model counting levels would otherwise
+            // score the un-analysed parcels as merely unknown and answer "0
+            // stressed" about a farm it had not finished looking at.
+            return {
+                block: r.locationName,
+                analysed: r.analysed,
+                total: r.total,
+                complete: r.analysed === r.total,
+                worst: r.worst,
+                counts: r.counts,
+                satelliteConfigured: r.configured,
+                // Named, not counted: a farmer wants to know WHICH parcel is
+                // stressed. Bounded, and only the ones that are not fine —
+                // the whole list would be mostly noise.
+                attention: r.parcels
+                    .filter((p) => p.overall === 'stress' || p.overall === 'watch')
+                    .slice(0, 12)
+                    .map((p) => ({
+                        parcel: p.name,
+                        level: p.overall,
+                        vegetation: p.vegetation,
+                        moisture: p.moisture,
+                        acquiredDate: p.acquiredDate,
+                    })),
+            };
+        },
+    },
+    grain_calculator: {
+        def: {
+            name: 'grain_calculator',
+            description:
+                "Калкулатор — the farm's grain position: what each commodity is worth against "
+                + 'what it cost. Takes no arguments. If `complete` is false, say so: figures were '
+                + 'left out and the totals are partial.',
+            parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        module: 'GRAIN',
+        args: GrainCalculatorArgs,
+        // `complete` already folds in both causes — a bounded read hitting its
+        // cap, and rows that could not be valued.
+        isPartial: (r) => (r as { complete?: boolean }).complete === false,
+        run: async (ctx) => {
+            // Through `buildCalculatorPayload`, which is what the route serves
+            // — not a second projection of `getGrainNetWorth`. Two shapings of
+            // one payload is how two answers diverge.
+            const payload = buildCalculatorPayload(await getGrainNetWorth(ctx));
+            // Every exclusion list is a set of rows the figures DO NOT
+            // include: a planting with no yield estimate, a lot whose unit did
+            // not resolve, a commodity with no price. A total computed over
+            // the rest is not wrong, but it is not the farm either, and a
+            // model given only the total would present it as the farm.
+            const excluded = Object.entries(payload.exclusions as Record<string, unknown[]>)
+                .filter(([, rows]) => Array.isArray(rows) && rows.length > 0)
+                .map(([reason, rows]) => ({ reason, count: rows.length }));
+            const left = excluded.reduce((n, e) => n + e.count, 0);
+            return {
+                generatedAt: payload.generatedAt,
+                seasonId: payload.seasonId,
+                farm: payload.farm,
+                // `truncated` is the usecase's own word for "a bounded read hit
+                // its cap", and `excluded` is "rows we could not value". Both
+                // make the totals partial, and they are reported SEPARATELY
+                // because the causes differ and only one of them is fixable by
+                // the farmer (a missing price is ours; a missing yield
+                // estimate is theirs).
+                // The 12-row slice counts too. `truncated` and `excluded`
+                // are about what the USECASE could not value; this is about
+                // what the TOOL did not pass on, and a farmer asking "what is
+                // my grain worth" cannot tell the three apart from a total.
+                complete:
+                    payload.truncated !== true
+                    && left === 0
+                    && (payload.rows as unknown[]).length <= 12,
+                commoditiesTotal: (payload.rows as unknown[]).length,
+                truncated: payload.truncated === true,
+                rowsLeftOut: left,
+                leftOutBecause: excluded.slice(0, 8),
+                // Field names READ OFF `toCalculatorRow`, not guessed. The
+                // first version of this projection used `r.tonnes ??
+                // r.quantityTonnes` and `r.value ?? r.grossValue` — none of
+                // which exist on a calculator row. Every one would have been
+                // `undefined`, and because the row is cast to
+                // `Record<string, unknown>` nothing would have said so.
+                commodities: (payload.rows as Array<Record<string, unknown>>)
+                    .slice(0, 12)
+                    .map((r) => ({
+                        commodity: r.commodity,
+                        netWorth: r.netWorth,
+                        // Why a net worth is ABSENT, per commodity. Without
+                        // this a null reads as zero, or as a commodity worth
+                        // nothing, when it means "we could not compute it".
+                        netWorthUnavailable: r.netWorthUnavailableCode ?? null,
+                        grainOnHandTonnes: r.grainOnHandTonnes,
+                        grainOnHandValue: r.grainOnHandValue,
+                        standingCropValue: r.standingCropValue,
+                        cashCostTotal: r.cashCostTotal,
+                        breakEven: r.breakEven,
+                        priceCurrency: r.priceCurrency,
+                        // The price's own age and provenance. A net worth is a
+                        // price times a quantity, so a figure computed from a
+                        // months-old observation is as misleading here as a
+                        // stale series is in `price_trends` — and the number
+                        // alone carries no hint of it.
+                        priceObservedAt: r.priceObservedAt,
+                        priceSource: r.priceSource,
+                    })),
+            };
+        },
+    },
+    price_trends: {
+        def: {
+            name: 'price_trends',
+            description:
+                'Борса price series for ONE commodity. Each series is a different source, region '
+                + 'and delivery stage and they are NOT comparable — never average them. Always say '
+                + 'how old a price is: `staleDays` is how long ago that series last reported, and '
+                + 'a series silent for months looks exactly as current as one reporting this week.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    commodity: {
+                        type: 'string',
+                        enum: [...TREND_CHARTABLE],
+                        description: 'The commodity to chart.',
+                    },
+                    range: {
+                        type: 'string',
+                        enum: [...TrendRange.options],
+                        description: 'Defaults to 3m.',
+                    },
+                },
+                required: ['commodity'],
+                additionalProperties: false,
+            },
+        },
+        args: ListPriceTrendsArgs,
+        // More series than the 8 kept. Found while writing the guard below:
+        // the projection ALREADY returns `seriesTotal`, so the slice was
+        // detectable and silently undisclosed.
+        isPartial: (r) => {
+            const x = r as { series?: unknown[]; seriesTotal?: number };
+            return Array.isArray(x.series) && typeof x.seriesTotal === 'number'
+                && x.seriesTotal > x.series.length;
+        },
+        run: async (ctx, args) => {
+            const a = ListPriceTrendsArgs.parse(args);
+            // The entitlement gate, with a LITERAL capability — #2626.
+            //
+            // `getPriceTrends` takes no `RequestContext`, so unlike every
+            // other tool here nothing downstream can assert this: the gate
+            // lives in the three trends ROUTES and this tool is a fourth
+            // consumer of it. Without this line a PAST_DUE tenant whose trends
+            // surface is closed would be answered by the assistant.
+            //
+            // A LITERAL rather than a declarative registry field, deliberately.
+            // §6 of `past-due-capability-coverage` builds its gated set from
+            // `assertNotPastDueRestricted(ctx, '<literal>')`, so a capability
+            // assembled at runtime is a gate no reader and no guard can find —
+            // the same reason `social-routes-flag-gated` requires a literal
+            // flag key. And §6 IS the enforcement: a future tool importing a
+            // tenant-independent trends usecase without this line fails it.
+            await assertNotPastDueRestricted(ctx, 'trends');
+            // The READER's language, required and not defaulted: the payload is
+            // Redis-cached across tenants, so a forgotten locale would poison
+            // the cache for every later reader of that commodity.
+            // `resolveRequestLocale` reads `uiLanguage` off the request context
+            // and falls back to `bg` — NOT a cookie, which a bearer client does
+            // not send.
+            const payload = await getPriceTrends(a.commodity, a.range ?? '3m', resolveRequestLocale());
+            const generated = new Date(payload.generatedAt).getTime();
+            return {
+                commodity: payload.commodity,
+                range: payload.range,
+                generatedAt: payload.generatedAt,
+                series: payload.series.slice(0, 8).map((sx) => {
+                    const points = sx.points ?? [];
+                    const latest = points[points.length - 1];
+                    // Staleness against `generatedAt`, never a wall clock: the
+                    // payload is cached for 6h and this process's clock is not
+                    // the observation's. The openapi description is explicit
+                    // that `lastObservedAt` is the newest observation ANYWHERE
+                    // and that a dead series' last point "looks equally
+                    // current" — so a model handed only `points` would quote a
+                    // price from months ago as today's.
+                    const staleDays =
+                        sx.lastObservedAt != null && Number.isFinite(generated)
+                            ? Math.max(
+                                0,
+                                Math.round(
+                                    (generated - new Date(sx.lastObservedAt).getTime())
+                                        / 86_400_000,
+                                ),
+                            )
+                            : null;
+                    return {
+                        source: sx.source,
+                        region: sx.region,
+                        stage: sx.stage ?? null,
+                        // Unit and currency travel WITH the price. Two series
+                        // of the same commodity routinely differ in both, and
+                        // a bare number invites a comparison the data does not
+                        // support.
+                        unit: sx.unit,
+                        currency: sx.currency,
+                        latestPrice: latest?.price ?? null,
+                        latestDate: latest?.date ?? null,
+                        lastObservedAt: sx.lastObservedAt,
+                        staleDays,
+                        pointCount: points.length,
+                    };
+                }),
+                seriesTotal: payload.series.length,
+            };
+        },
+    },
+    propose_treatment: {
+        def: {
+            name: 'propose_treatment',
+            description:
+                'PREPARE a ДНЕВНИК treatment record — spraying, fertilising or sowing — for the '
+                + 'person to confirm. Writes NOTHING: it returns a draft the app prefills into the '
+                + 'real form, which the person submits themselves. Use it when asked to record a '
+                + 'treatment. Send only what was said; every field is optional. Do NOT include '
+                + 'parcels, products as ids, or a dose unit — the person picks those in the form.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    kind: {
+                        type: 'string',
+                        enum: [...TREATMENT_KIND_VALUES],
+                        description: 'SPRAY fills химични обработки, FERTILIZE fills торове, SEED is сеитба.',
+                    },
+                    occurredOn: { type: 'string', description: 'The calendar day, YYYY-MM-DD.' },
+                    productName: { type: 'string', description: 'The product as NAMED. Never an id.' },
+                    fertilizerName: { type: 'string', description: 'The fertiliser as named.' },
+                    doseValue: { type: 'number', description: 'The dose as a number. The person picks the unit.' },
+                    targetNote: { type: 'string', description: 'The pest or target treated.' },
+                    phenophase: { type: 'string', description: 'BBCH phenophase, if stated.' },
+                    pppRegistrationNo: { type: 'string', description: 'Registration number, if stated.' },
+                    quarantinePeriodDays: {
+                        type: 'integer',
+                        description: 'Quarantine in DAYS, 0-365 — a number, not text.',
+                    },
+                    applicationTechnique: { type: 'string', description: 'The rig used.' },
+                },
                 additionalProperties: false,
             },
         },
         module: 'JOURNAL',
-        args: ProposeJournalEntryArgs,
+        args: ProposeTreatmentArgs,
         run: async (_ctx, args) => {
-            // No ctx use, and no write: this validates and echoes. The policy
-            // that matters here is the one on the route the PERSON will post
-            // to, which is unchanged.
-            const outcome = proposeJournalEntry(args);
+            // No ctx use and no write: this validates and echoes. The policy
+            // that matters is the one on the route the PERSON posts to, which
+            // is unchanged.
+            const outcome = proposeDraft('treatment', args);
             if (!outcome.ok) throw new Error(outcome.message);
             return { prepared: true, kind: outcome.proposal?.kind, draft: outcome.proposal?.draft };
         },
-        proposes: true,
+        proposes: 'treatment',
+    },
+    propose_activity: {
+        def: {
+            name: 'propose_activity',
+            description:
+                'PREPARE a farm activity record — pruning, cultivation or harvest — for the person '
+                + 'to confirm. Writes NOTHING. Сеитба is NOT an activity: use propose_treatment '
+                + 'with kind SEED. Do NOT include parcels; the person picks them in the form.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    kind: {
+                        type: 'string',
+                        enum: [...ACTIVITY_KIND_VALUES],
+                        description: 'Pruning, cultivation or harvest.',
+                    },
+                    occurredOn: { type: 'string', description: 'The calendar day, YYYY-MM-DD.' },
+                    harvestKg: { type: 'number', description: 'Harvested kilograms, for a HARVEST.' },
+                },
+                additionalProperties: false,
+            },
+        },
+        module: 'JOURNAL',
+        args: ProposeActivityArgs,
+        run: async (_ctx, args) => {
+            const outcome = proposeDraft('activity', args);
+            if (!outcome.ok) throw new Error(outcome.message);
+            return { prepared: true, kind: outcome.proposal?.kind, draft: outcome.proposal?.draft };
+        },
+        proposes: 'activity',
     },
 };
 
@@ -541,6 +995,20 @@ export async function runTool(
         };
     }
     try {
+        // The READ policy, for EVERY tool and before anything else.
+        //
+        // Most tools inherit it from their usecase — `listLogEntriesPaginated`,
+        // `listCostEntries`, `listActiveListings`, `listLocationsPaginated` and
+        // `analyzeParcelRisk` all open with `assertCanRead(ctx)`. Two do NOT:
+        // `getPriceTrends` takes no `RequestContext`, so it can assert nothing,
+        // and a propose tool reads no data at all.
+        //
+        // Asserted centrally rather than in the one run body that needs it,
+        // because "the tool whose usecase cannot assert must remember to" is a
+        // rule with one instance today and no enforcement. For the tools whose
+        // usecase also asserts, this is defence in depth and costs a read of
+        // `ctx.permissions`.
+        assertCanRead(ctx);
         // The module gate, BEFORE the usecase — #2629. The gate for every
         // surface these tools read lives in the ROUTE, not the usecase
         // (measured: 52 route files call it, 2 usecases do), so a tool
@@ -557,13 +1025,19 @@ export async function runTool(
         // A propose tool's validated draft, lifted onto the outcome so the
         // loop can attach it to the answer. Re-validated rather than trusted
         // from `result`: one source of truth for what a draft may contain.
-        const proposal = tool.proposes ? (proposeJournalEntry(check.data).proposal ?? null) : null;
+        const proposal = tool.proposes
+            ? (proposeDraft(tool.proposes, check.data).proposal ?? null)
+            : null;
         // Built from the ROWS, before serialising — so truncation below cannot
         // silently drop the links for records the model was still shown.
         const links = tool.link ? linksFromRows(tool.link, result) : [];
+        // Computed from the RESULT OBJECT, before serialising. Re-reading it
+        // out of `content` would be the `a-detector-reads-the-serialised-form`
+        // problem, and would additionally have to survive truncation.
+        const partial = tool.isPartial?.(result) === true;
         const full = JSON.stringify(result);
         if (full.length <= TOOL_RESULT_MAX_CHARS) {
-            return { ok: true, content: full, truncated: false, links, proposal };
+            return { ok: true, content: full, truncated: false, links, proposal, partial };
         }
         // Truncated rather than dropped: a partial list is useful and the
         // `truncated` flag is what makes the answer's incompleteness
@@ -572,6 +1046,7 @@ export async function runTool(
             ok: true,
             content: full.slice(0, TOOL_RESULT_MAX_CHARS),
             truncated: true,
+            partial,
             links,
             proposal,
         };
