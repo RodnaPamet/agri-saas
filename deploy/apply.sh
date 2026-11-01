@@ -77,6 +77,32 @@ fi
 
 [ -f "$LOCAL_COMPOSE" ] || { err "missing $LOCAL_COMPOSE"; exit 1; }
 
+# Helper: one HTTP probe, answering a CLEAN status code or the sentinel 000.
+#
+# NO `-f`. That flag makes curl exit non-zero on an HTTP error WHILE `-w` still
+# writes the code and without a trailing newline, so the old
+# `… || echo 000` concatenated the two: a 503 was captured as `503000` and the
+# rollback message read `FAIL /api/readyz → 503000`. The comparison still
+# failed closed, so the check was right and only its REPORT was wrong — but the
+# report is the whole interface of a step whose next line is a destructive
+# command, and a garbled code is the kind of thing an operator stops reading.
+#
+# Measured 2026-11-01 against a known 404: capture `404000`, curl exit 22.
+#
+# Without `-f`, curl exits 0 for any completed request and `%{http_code}` is
+# the true code; an unfinished request (DNS, refused, timeout) writes nothing,
+# which the empty check below turns into 000. Nothing compares against
+# anything but `200`, so dropping `-f` narrows nothing.
+probe() {
+    local code
+    code="$(curl -sS -o /dev/null -w '%{http_code}' "$1" 2>/dev/null)" || code=""
+    # shell-check-ok: 000 is a sentinel OUTSIDE the healthy range and every
+    # comparison fails closed on it — unlike `|| echo 0`, it cannot be
+    # mistaken for a healthy answer.
+    [ -n "$code" ] || code="000"
+    printf '%s' "$code"
+}
+
 # Helper: run a command on the VM.
 ssh_vm() { gcloud compute ssh "$VM_NAME" --zone "$VM_ZONE" --command "$1"; }
 
@@ -123,20 +149,68 @@ fi
 log "docker compose up -d"
 ssh_vm "cd '${REMOTE_DIR}' && sudo docker compose -f '${COMPOSE_BASENAME}' up -d"
 
-# ── 5. Health-verify (readyz + PWA lifelines) ────────────────────────────
-log "health-verifying ${HEALTH_ORIGIN}"
+# ── 5. Health-verify (readyz, THEN the PWA lifelines) ────────────────────
+#
+# READINESS FIRST, WITH THE CONTAINER'S OWN GRACE (#2692). This step reported
+# FAIL on a healthy deploy and printed the rollback command directly
+# underneath: six attempts five seconds apart is ~30s, while
+# `docker-compose.vm.yml` gives the app `start_period: 60s` precisely because
+# `next start` takes tens of seconds to answer `readyz`. The compose
+# healthcheck knew; this script did not, and the obvious response to "health
+# checks FAILED" at 9pm is to paste the rollback — undoing a working deploy and
+# re-opening whatever it fixed.
+#
+# THE DEADLINE IS DERIVED FROM THE COMPOSE FILE rather than written here, so
+# the two cannot drift apart again. That drift IS the defect; a second
+# hardcoded number would be the same bug with a bigger constant. `+30` is grace
+# ABOVE the container's own grace: the container is allowed to be unhealthy for
+# `start_period`, so failing at exactly that moment would still be a race.
+#
+# THE ORDER IS WHAT MAKES THE SINGLE-SHOT CHECKS SAFE, and #2692's own
+# suggestion to "keep the single-shot behaviour for /manifest.webmanifest and
+# /sw.js" is only correct once they run AFTER readyz. All three paths are served
+# by the same Next process behind the same Caddy, so during boot they fail
+# together — a single-shot manifest check would have been the identical race
+# with a different name. Run once readyz has answered, a 404 there is a REAL
+# 404, which is the case that strands offline-installed mobile clients and the
+# one worth failing on immediately.
+READY_GRACE="$(sed -n '/^  app:/,/^  [a-z]/p' "${LOCAL_COMPOSE}" | sed -n 's/^[[:space:]]*start_period:[[:space:]]*\([0-9]\+\)s[[:space:]]*$/\1/p' | head -1)"
+if [ -z "${READY_GRACE}" ]; then
+    # Fail LOUD rather than silently substituting a default. An empty
+    # substitution here would mean the deadline became `0 + 30`, which is
+    # tighter than the behaviour this change replaces — the failure mode would
+    # be a stricter check wearing the comment of a laxer one.
+    err "could not read the app service's start_period from ${LOCAL_COMPOSE}"
+    err "the readyz deadline is derived from it; fix the compose file or this parser"
+    exit 1
+fi
+READY_DEADLINE=$(( READY_GRACE + 30 ))
+log "health-verifying ${HEALTH_ORIGIN} (readyz deadline ${READY_DEADLINE}s, from start_period ${READY_GRACE}s)"
+
 HEALTH_FAILED=0
-for path in /api/readyz /manifest.webmanifest /sw.js; do
-    # Retry a few times — containers may still be settling.
-    code=""
-    for attempt in 1 2 3 4 5 6; do
-        # shell-check-ok: 000 is a sentinel OUTSIDE the healthy range and the
-        # comparison below fails closed on it — unlike `|| echo 0`, it cannot
-        # be mistaken for a healthy answer.
-        code="$(curl -fsS -o /dev/null -w '%{http_code}' "${HEALTH_ORIGIN}${path}" 2>/dev/null || echo 000)"
-        [ "$code" = "200" ] && break
-        sleep 5
-    done
+READY_CODE=""
+READY_WAITED=0
+while [ "${READY_WAITED}" -le "${READY_DEADLINE}" ]; do
+    READY_CODE="$(probe "${HEALTH_ORIGIN}/api/readyz")"
+    [ "${READY_CODE}" = "200" ] && break
+    sleep 5
+    READY_WAITED=$(( READY_WAITED + 5 ))
+done
+
+if [ "${READY_CODE}" = "200" ]; then
+    # The elapsed time is REPORTED, not just tolerated. A deploy that needed
+    # 75s is working and worth knowing about — it is the signal that the
+    # derived deadline is close to binding, which a bare OK would hide until
+    # the day it failed.
+    log "  OK   /api/readyz → 200 after ${READY_WAITED}s"
+else
+    err "  FAIL /api/readyz → ${READY_CODE} after ${READY_DEADLINE}s"
+    HEALTH_FAILED=1
+fi
+
+# Single-shot, and only meaningful because readyz has answered above.
+for path in /manifest.webmanifest /sw.js; do
+    code="$(probe "${HEALTH_ORIGIN}${path}")"
     if [ "$code" = "200" ]; then
         log "  OK   ${path} → 200"
     else
