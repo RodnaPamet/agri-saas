@@ -80,7 +80,12 @@ function toPoint(row: { id: string; text: string; sourceAt: Date }): RememberedP
 export async function listRememberedPoints(userId: string): Promise<RememberedPoint[]> {
     const rows = await runInUserContext({ userId } as never, (db) =>
         (db as PrismaClient).assistantMemoryFact.findMany({
-            where: { userId, deletedAt: null },
+            // `supersededAt` as well as `deletedAt` (#2671 extraction): both
+            // hide a point, and they are separate columns because they are
+            // separate facts — the person deleted it, versus a later statement
+            // replaced it. A list filtering only one shows points the
+            // extractor has already retired.
+            where: { userId, deletedAt: null, supersededAt: null },
             select: { id: true, text: true, sourceAt: true },
             orderBy: { sourceAt: 'desc' },
             take: REMEMBERED_POINT_LIMIT,
@@ -97,7 +102,9 @@ export async function listRememberedPoints(userId: string): Promise<RememberedPo
 export async function forgetRememberedPoint(userId: string, id: string): Promise<void> {
     const { count } = await prisma.assistantMemoryFact.updateMany({
         // `userId` in the WHERE is the authorisation, not a filter.
-        where: { id, userId, deletedAt: null },
+        // A superseded point is not addressable: the person cannot see it, so
+        // it answers the same NOT FOUND as an unknown id.
+        where: { id, userId, deletedAt: null, supersededAt: null },
         data: { deletedAt: new Date() },
     });
     if (count === 0) throw codedNotFound('MEMORY_POINT_NOT_FOUND', 'That remembered point was not found.');
@@ -106,7 +113,17 @@ export async function forgetRememberedPoint(userId: string, id: string): Promise
 /** «Изтрий всичко». Returns how many were forgotten, so the UI can say. */
 export async function forgetAllRememberedPoints(userId: string): Promise<number> {
     const { count } = await prisma.assistantMemoryFact.updateMany({
-        where: { userId, deletedAt: null },
+        /*
+         * VISIBLE rows only, so the count returned matches what the person was
+         * looking at. Including superseded rows would report «Изтрих 7» to
+         * somebody who could see four.
+         *
+         * A superseded row therefore survives «Изтрий всичко» un-tombstoned,
+         * which is safe for the reason rule 5 exists to cover: it is still
+         * passed to the extractor as an existing point, so the evidence that
+         * produced it cannot produce another one.
+         */
+        where: { userId, deletedAt: null, supersededAt: null },
         data: { deletedAt: new Date() },
     });
     return count;
@@ -145,7 +162,7 @@ export async function editRememberedPoint(
         throw codedBadRequest('MEMORY_POINT_EMPTY', 'A remembered point cannot be empty.');
     }
     const { count } = await prisma.assistantMemoryFact.updateMany({
-        where: { id, userId, deletedAt: null },
+        where: { id, userId, deletedAt: null, supersededAt: null },
         data: {
             text: clean.slice(0, REMEMBERED_POINT_MAX_CHARS),
             editedByPerson: true,

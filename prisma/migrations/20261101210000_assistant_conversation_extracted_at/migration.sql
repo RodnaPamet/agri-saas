@@ -14,3 +14,12 @@ ALTER TABLE "AssistantConversation" ADD COLUMN "extractedAt" TIMESTAMP(3);
 
 CREATE INDEX "AssistantConversation_extractedAt_lastTurnAt_idx"
     ON "AssistantConversation" ("extractedAt", "lastTurnAt");
+
+-- Rule 4's bookkeeping, kept OFF rule 5's column.
+--
+-- `AssistantMemoryFact.deletedAt` means "the person said «Изтрий»" and carries
+-- rule 5's promise that the extractor will not re-learn the point. A supersede
+-- is a different fact — a later statement replaced it — and writing both
+-- through one column would make one field carry two meanings from two
+-- producers, so neither reader could tell what it had been told.
+ALTER TABLE "AssistantMemoryFact" ADD COLUMN "supersededAt" TIMESTAMP(3);

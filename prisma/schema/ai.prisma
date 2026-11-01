@@ -247,6 +247,15 @@ model AssistantMemoryFact {
   sourceAt    DateTime
   /// Set when the person edits the point. Rule 6.
   editedByPerson Boolean @default(false)
+  /// Set when the EXTRACTOR replaces this point with a newer one — rule 4.
+  ///
+  /// A SEPARATE column from `deletedAt` on purpose. That one means "the person
+  /// said «Изтрий»" and carries rule 5's promise; this one means "a later
+  /// statement superseded it". Both hide the row from the person's list, and
+  /// writing both through one column would make one field carry two meanings
+  /// from two producers — at which point neither reader can tell what it was
+  /// told. Rule 5 is a promise to a person; a supersede is bookkeeping.
+  supersededAt DateTime?
   /// Set by «Изтрий». The row SURVIVES — rule 5.
   deletedAt DateTime?
   createdAt DateTime  @default(now())

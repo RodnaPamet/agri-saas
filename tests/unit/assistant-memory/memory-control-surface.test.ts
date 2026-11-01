@@ -67,11 +67,15 @@ describe('listRememberedPoints', () => {
     it('asks only for LIVE points, newest first, bounded', async () => {
         const out = await listRememberedPoints(ME);
         const args = findMany.mock.calls[0][0] as {
-            where: { userId: string; deletedAt: null };
+            where: { userId: string; deletedAt: null; supersededAt: null };
             orderBy: { sourceAt: string };
             take: number;
         };
-        expect(args.where).toEqual({ userId: ME, deletedAt: null });
+        // BOTH columns. `deletedAt` is the person's «Изтрий» (rule 5);
+        // `supersededAt` is the extractor retiring a point under rule 4. They
+        // are separate facts and separate columns, and a filter naming only
+        // one shows points that have already been replaced.
+        expect(args.where).toEqual({ userId: ME, deletedAt: null, supersededAt: null });
         expect(args.orderBy).toEqual({ sourceAt: 'desc' });
         expect(args.take).toBe(REMEMBERED_POINT_LIMIT);
         // The client shape: no evidence, and an unformatted ISO date.
@@ -98,7 +102,7 @@ describe('forget — rule 5, a tombstone and not a delete', () => {
             where: Record<string, unknown>;
             data: { deletedAt: Date };
         };
-        expect(args.where).toEqual({ id: 'f1', userId: ME, deletedAt: null });
+        expect(args.where).toEqual({ id: 'f1', userId: ME, deletedAt: null, supersededAt: null });
         expect(args.data.deletedAt).toBeInstanceOf(Date);
         // THE rule-5 assertion. Both doubles exist, so this can fail.
         expect(deleteOne).not.toHaveBeenCalled();
@@ -117,7 +121,11 @@ describe('forget — rule 5, a tombstone and not a delete', () => {
         updateMany.mockResolvedValue({ count: 4 });
         expect(await forgetAllRememberedPoints(ME)).toBe(4);
         const args = updateMany.mock.calls[0][0] as { where: Record<string, unknown> };
-        expect(args.where).toEqual({ userId: ME, deletedAt: null });
+        // BOTH columns. `deletedAt` is the person's «Изтрий» (rule 5);
+        // `supersededAt` is the extractor retiring a point under rule 4. They
+        // are separate facts and separate columns, and a filter naming only
+        // one shows points that have already been replaced.
+        expect(args.where).toEqual({ userId: ME, deletedAt: null, supersededAt: null });
         expect(deleteMany).not.toHaveBeenCalled();
     });
 });
@@ -129,7 +137,7 @@ describe('edit — rule 6, the point becomes the person’s', () => {
             where: Record<string, unknown>;
             data: { text: string; editedByPerson: boolean };
         };
-        expect(args.where).toEqual({ id: 'f1', userId: ME, deletedAt: null });
+        expect(args.where).toEqual({ id: 'f1', userId: ME, deletedAt: null, supersededAt: null });
         expect(args.data.editedByPerson).toBe(true);
         expect(args.data.text).toBe('отглежда слънчоглед');
     });
