@@ -9,7 +9,8 @@
  * Dedupe is one notification per (lease, recipient, endDate) — the endDate
  * bucket means a lease alerts once per contract, not daily. Reads/writes use the
  * privileged worker prisma connection (cross-tenant, same pattern as
- * `low-stock-monitor`). The `[tenantId, endDate]` index on ParcelLease backs the
+ * `reconcile-inventory-ledgers`; `low-stock-monitor` carried this
+ * shape too until it was removed in 2026-11). The `[tenantId, endDate]` index on ParcelLease backs the
  * window scan.
  *
  * Schedule: daily at 07:00 UTC (see schedules.ts)

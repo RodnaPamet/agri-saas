@@ -671,11 +671,6 @@ export interface SharePointSubscriptionRenewPayload {
     requestId?: string;
 }
 
-/** Inventory Phase 1 — daily cross-tenant low-stock sweep + LOW_STOCK alerts. */
-export interface LowStockMonitorPayload {
-    tenantId?: string;
-}
-
 /** Land admin — daily cross-tenant lease-expiry sweep + LEASE_EXPIRING alerts. */
 export interface LeaseExpirySweepPayload {
     tenantId?: string;
@@ -970,7 +965,6 @@ export interface JobPayloadMap {
     'task-due-notification': TaskDueNotificationPayload;
     'sharepoint-delta-sync': SharePointDeltaSyncPayload;
     'sharepoint-delta-sync-dispatch': SharePointDeltaSyncDispatchPayload;
-    'low-stock-monitor': LowStockMonitorPayload;
     'lease-expiry-sweep': LeaseExpirySweepPayload;
     'contract-delivery-window-sweep': ContractDeliveryWindowSweepPayload;
     'reconcile-inventory-ledgers': ReconcileInventoryLedgersPayload;
@@ -1154,12 +1148,6 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,
-        removeOnFail: 200,
-    },
-    'low-stock-monitor': {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10000 },
-        removeOnComplete: 100,
         removeOnFail: 200,
     },
     'lease-expiry-sweep': {
