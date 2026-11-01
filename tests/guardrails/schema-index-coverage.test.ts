@@ -251,6 +251,13 @@ interface CompositeIndex {
 }
 
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    // ── AssistantTurn (the conversation window, #2671a) ─────────────
+    {
+        model: 'AssistantTurn',
+        fields: ['tenantId', 'conversationId', 'createdAt'],
+        justification:
+            "loadWindow is the only findMany on this model: `WHERE tenantId = ? AND conversationId = ? ORDER BY createdAt DESC` capped at MAX_WINDOW_TURNS (6). All three columns are in the index in query order — equality, equality, then the sort key — so the window is an index scan of six rows however long the conversation gets, which is the property that matters: turns accumulate for the life of the account (nothing prunes them, by the owner's 2026-11-01 ruling that every exchange is kept) while the read stays bounded. The composite was already in the schema from #2683, written for this query before it existed; this entry is the triage it was waiting for. The sibling @@index([tenantId, conversationId]) is Layer B's FK cover and is a prefix of this one, so it costs nothing extra to keep. Recall over the whole history (#2695) will be a DIFFERENT shape — text or date search across conversations rather than one conversation's tail — and wants its own entry rather than a claim that this index serves it.",
+    },
     // ── FarmIdentityClaim (the P3.9 staff review queue) ─────────────
     {
         model: 'FarmIdentityClaim',

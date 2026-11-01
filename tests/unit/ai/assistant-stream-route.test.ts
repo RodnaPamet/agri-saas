@@ -30,6 +30,36 @@ jest.mock('@/app-layer/context', () => ({
         appPermissions: {},
     })),
 }));
+// ── The conversation window (#2671a) ───────────────────────────────
+//
+// MOCKED, and it has to be: the route now resolves a conversation and records
+// each turn, and both go through `runInTenantContext` to a real database. From
+// a unit suite that reaches real Prisma, every test in this file failed —
+// which is the trap `treatment-farm-record-route.test.ts` already records
+// ("the handler reached real Prisma from a unit test and answered 500 where
+// the suite expected 404").
+//
+// The doubles are deliberately boring: a fixed id, an EMPTY window, and a
+// `recordTurn` that does nothing. This file is about the STREAM's event shape,
+// and `tests/integration/assistant-conversation-window.test.ts` is where the
+// window's content, its bounds and its fencing are proved against real rows.
+// An empty window keeps the prompt here identical to what it was before the
+// window existed, so these assertions still grade what they were written for.
+//
+// `recordTurn` is asserted on in one test below rather than left as scenery:
+// a double nobody checks cannot tell "the route stopped recording turns" from
+// "the mock worked".
+const resolveConversation = jest.fn<Promise<string>, unknown[]>(async () => 'conv-1');
+const loadWindow = jest.fn<Promise<unknown[]>, unknown[]>(async () => []);
+const renderWindow = jest.fn<string, unknown[]>(() => '');
+const recordTurn = jest.fn<Promise<void>, unknown[]>(async () => undefined);
+
+jest.mock('@/app-layer/usecases/assistant-conversation', () => ({
+    resolveConversation: (...a: unknown[]) => resolveConversation(...a),
+    loadWindow: (...a: unknown[]) => loadWindow(...a),
+    renderWindow: (...a: unknown[]) => renderWindow(...a),
+    recordTurn: (...a: unknown[]) => recordTurn(...a),
+}));
 
 // The constant below is AWS's own published example key — a valid SHAPE that
 // is not a credential.
@@ -64,6 +94,22 @@ async function drain(res: Response): Promise<{ raw: string; events: Record<strin
     return { raw, events };
 }
 
+/**
+ * The PAYLOAD event — the one immediately after `thinking`.
+ *
+ * This was `payload(events)` at ten call sites until #2671a emitted a
+ * `conversation` event FIRST, which shifted every index by one. Derived from
+ * the position of `thinking` rather than bumped to `events[2]`, because the
+ * next event added to the front would silently re-point all ten at the wrong
+ * row — and an assertion reading the wrong event is the kind that keeps
+ * passing for a while, which is worse than one that breaks.
+ */
+function payload(events: Record<string, unknown>[]): Record<string, unknown> {
+    const at = events.findIndex((e) => e.type === 'thinking');
+    expect(at).toBeGreaterThanOrEqual(0);
+    return events[at + 1];
+}
+
 describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
@@ -77,8 +123,30 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(res.status).toBe(200);
         expect(res.headers.get('Content-Type')).toContain('text/event-stream');
         const { events } = await drain(res);
-        expect(events.map((e) => e.type)).toEqual(['thinking', 'answer', 'done']);
-        expect(events[1].text).toBe('Поливайте рано сутрин.');
+        expect(events.map((e) => e.type)).toEqual(['conversation', 'thinking', 'answer', 'done']);
+        expect(payload(events).text).toBe('Поливайте рано сутрин.');
+    });
+
+    it('emits the conversation id FIRST, and records both halves of the turn', async () => {
+        // The mocks above are only worth having if something reads them:
+        // without this, "the route stopped resolving a conversation" and "the
+        // double returned a value nobody looked at" are the same green.
+        completeWithRouting.mockResolvedValue({ text: 'Поливайте рано сутрин.' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const res = await POST(...ask({ question: 'кога да поливам' }));
+        const { events } = await drain(res);
+
+        // FIRST, before `thinking` and before any provider call — a client
+        // that loses the stream mid-answer still holds the id.
+        expect(events[0]).toMatchObject({ type: 'conversation', conversationId: 'conv-1' });
+
+        // Both halves recorded, in order, and the ANSWER only because it was
+        // sent. The question is recorded before the model is called, so a
+        // provider failure still leaves the question in the history.
+        expect(recordTurn.mock.calls.map((c) => [c[2], c[3]])).toEqual([
+            ['user', 'кога да поливам'],
+            ['assistant', 'Поливайте рано сутрин.'],
+        ]);
     });
 
     it('NEVER lets a secret-shaped answer reach the stream', async () => {
@@ -89,12 +157,12 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
 
         // The decisive assertions: no `answer` event at all, and the key — or
         // any recognisable prefix of it — nowhere in the bytes sent.
-        expect(events.map((e) => e.type)).toEqual(['thinking', 'refusal', 'done']);
-        expect(events[1].code).toBe('ASSISTANT_EGRESS_BLOCKED');
+        expect(events.map((e) => e.type)).toEqual(['conversation', 'thinking', 'refusal', 'done']);
+        expect(payload(events).code).toBe('ASSISTANT_EGRESS_BLOCKED');
         expect(raw).not.toContain(AWS_EXAMPLE);
         expect(raw).not.toContain(AWS_EXAMPLE.slice(0, 8));
         // The refusal still reads as a sentence, in Bulgarian.
-        expect(events[1].message).toMatch(/[Ѐ-ӿ]/);
+        expect(payload(events).message).toMatch(/[Ѐ-ӿ]/);
     });
 
     it('a provider failure ends as a HALT, not a 500 and not an error event', async () => {
@@ -103,14 +171,14 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         const res = await POST(...ask({ question: 'нещо' }));
         expect(res.status).toBe(200);
         const { events } = await drain(res);
-        expect(events.map((e) => e.type)).toEqual(['thinking', 'halt', 'done']);
+        expect(events.map((e) => e.type)).toEqual(['conversation', 'thinking', 'halt', 'done']);
         // `done` carries BOTH turn-level incompleteness flags — #2639. The
         // tool loop's rule is that such a fact must not be lost to halt
         // precedence, and the route is where it reaches the client.
         const done = events[events.length - 1] as Record<string, unknown>;
         expect(done).toMatchObject({ type: 'done' });
         expect(Object.keys(done).sort()).toEqual(['partialAny', 'truncatedAny', 'type']);
-        expect(events[1].code).toBe('ASSISTANT_PROVIDER_UNAVAILABLE');
+        expect(payload(events).code).toBe('ASSISTANT_PROVIDER_UNAVAILABLE');
         // `error` is not a member of the union; nothing may emit one.
         expect(events.some((e) => e.type === 'error')).toBe(false);
     });
@@ -120,8 +188,8 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
         const res = await POST(...ask({ question: 'нещо' }));
         const { events } = await drain(res);
-        expect(events[1].code).toBe('ASSISTANT_SPEND_CEILING');
-        expect(events[1].type).toBe('halt');
+        expect(payload(events).code).toBe('ASSISTANT_SPEND_CEILING');
+        expect(payload(events).type).toBe('halt');
     });
 
     /**
@@ -142,7 +210,7 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
             const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
             const res = await POST(...ask({ question: 'нещо' }));
             const { events } = await drain(res);
-            return String(events[1].code);
+            return String(payload(events).code);
         };
 
         it.each([
@@ -203,7 +271,7 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
         const res = await POST(...ask({ question: 'нещо' }));
         const { events } = await drain(res);
-        expect(events[1].code).toBe('ASSISTANT_NO_GROUNDING');
+        expect(payload(events).code).toBe('ASSISTANT_NO_GROUNDING');
     });
 
     // These three assert on the RESPONSE, not on a rejection.
