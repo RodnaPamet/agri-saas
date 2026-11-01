@@ -171,7 +171,12 @@ describe('Infrastructure Regression Guards', () => {
             // promise with no enforcement, the same shape step 5 closed for
             // `expiresOn`. Every two minutes, because a farmer who uploads a
             // scan watches that row for «Копие в Google Drive».
-            expect(SCHEDULED_JOBS).toHaveLength(32);
+            // 31 since the LOW_STOCK sweep was removed (owner ruling
+            // 2026-11-01). The pin is what makes adding or removing a schedule
+            // a visible line in a diff rather than a silent change to what the
+            // deployment runs, so update it deliberately — never to make a red
+            // run green.
+            expect(SCHEDULED_JOBS).toHaveLength(31);
         });
 
         test('scheduled job names match expected set', () => {
@@ -231,9 +236,6 @@ describe('Infrastructure Regression Guards', () => {
                 // sweep firing LEASE_EXPIRING alerts for parcel leases
                 // (аренда/наем) ending within 30 days.
                 'lease-expiry-sweep',
-                // Inventory Phase 1 — daily cross-tenant low-stock sweep
-                // firing LOW_STOCK alerts for items below reorderLevel.
-                'low-stock-monitor',
                 // P3.10 — every 6h, one message to MAIL_CANARY_TO. Proves the
                 // provider ACCEPTED it, NOT that it was delivered: nothing
                 // reads an inbox, so an accepted-then-bounced message looks

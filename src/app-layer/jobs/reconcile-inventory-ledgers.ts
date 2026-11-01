@@ -18,7 +18,7 @@
  * share one alert. The job itself never throws on drift (the report is the
  * deliverable); it only fails on an infrastructure error.
  *
- * Cross-tenant pattern mirrors `low-stock-monitor.ts` — the privileged
+ * Cross-tenant pattern mirrors `lease-expiry-sweep.ts` — the privileged
  * worker prisma connection (superuser_bypass on RLS), bounded reads.
  *
  * Schedule: daily at 04:00 UTC (see schedules.ts).

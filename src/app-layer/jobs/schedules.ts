@@ -232,12 +232,6 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
-        name: 'low-stock-monitor',
-        pattern: '0 9 * * *',     // daily at 09:00 UTC
-        description: 'Scan inventory items below reorderLevel and fire LOW_STOCK notifications to tenant OWNER/ADMIN members',
-        defaultPayload: {},
-    },
-    {
         name: 'lease-expiry-sweep',
         pattern: '0 7 * * *',     // daily at 07:00 UTC
         description: 'Scan parcel leases (аренда/наем) ending within 30 days and fire LEASE_EXPIRING notifications to tenant OWNER/ADMIN members',

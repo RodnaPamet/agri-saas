@@ -279,12 +279,19 @@ describe('notification copy is written in the recipient language', () => {
         // could not express: a writer losing its `translateFor` would have
         // moved one number and not the other, so neither had a floor that
         // meant anything.
-        expect(producers.length).toBeGreaterThanOrEqual(16);
+        // 15 since `low-stock-monitor` was removed (owner ruling 2026-11-01).
+        // It was one producer and it DID resolve a recipient locale, so both
+        // this floor and the localising one below drop by exactly one. Measured
+        // on this branch, not derived from the other number.
+        expect(producers.length).toBeGreaterThanOrEqual(15);
         // At the MEASURED value, so it ratchets: localising one more producer
         // raises this line in the same diff, and losing one goes red. 11 → 12
         // with the lease sweep (#2592), 12 → 14 with the contract-delivery
         // sweep and the field-operation review (the rest of #2511).
-        expect(localisingProducers.length).toBeGreaterThanOrEqual(14);
+        // 13, the other half of the same removal — see above. The RATIO is
+        // what this guard is really about (13 of 15 localise, 2 deliberately
+        // do not), and the removal did not change it.
+        expect(localisingProducers.length).toBeGreaterThanOrEqual(13);
     });
 
     it.each(Object.keys({ ...DELIBERATELY_UNLOCALISED, ...STAGED_UNLOCALISED }))(

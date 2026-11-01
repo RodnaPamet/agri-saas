@@ -156,7 +156,12 @@ describe('§1 the population this covers', () => {
         expect(all.length).toBeGreaterThanOrEqual(12);
         // And a floor on what is actually JUDGED — the number that would fall
         // silently if a producer stopped using a literal.
-        expect(literals.length).toBeGreaterThanOrEqual(9);
+        // 8 since `low-stock-monitor` was removed (owner ruling 2026-11-01).
+        // It wrote exactly one graded literal `linkUrl`, so the population
+        // shrank by one for a reason, not because the detector stopped seeing
+        // things — which is the failure a floor exists to catch, and why this
+        // moves only on a measured, explained change.
+        expect(literals.length).toBeGreaterThanOrEqual(8);
     });
 });
 
