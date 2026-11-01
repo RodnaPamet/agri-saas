@@ -34,12 +34,21 @@
  *   longest and most sensitive free text to answer a list-level question. A
  *   later single-task tool can fetch one deliberately.
  */
-import { ExchangeKind, ExchangeSide, type ModuleKey, WorkItemStatus } from '@prisma/client';
+import {
+    ExchangeKind,
+    ExchangeSide,
+    LocationKind,
+    LocationStatus,
+    type ModuleKey,
+    WorkItemStatus,
+} from '@prisma/client';
 import { z } from 'zod';
 
 import { listCostEntries } from '@/app-layer/usecases/cost-entry';
 import { listActiveListings } from '@/app-layer/usecases/exchange';
+import { listLocationsPaginated } from '@/app-layer/usecases/location';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
+import { analyzeBlockRisk } from '@/app-layer/usecases/parcel-risk';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
@@ -215,6 +224,40 @@ const ListExchangeArgs = z.object({
     regionCodes: z.array(z.string().min(1).max(16)).max(28).optional(),
     minTonnes: z.number().nonnegative().max(1_000_000).optional(),
     maxTonnes: z.number().nonnegative().max(1_000_000).optional(),
+}).strict();
+
+/**
+ * Блокове facets. `q` is omitted for the reason it is omitted everywhere —
+ * free text into a query — and `kind`/`status` come from Prisma so the
+ * JSON-Schema cannot offer a value the database does not have.
+ *
+ * A Location is a «блок» when its kind is FIELD; BIN and STORAGE are grain
+ * stores. The filter is exposed rather than hard-coded to FIELD because a
+ * question about where grain sits is as legitimate as one about land.
+ */
+const ListBlocksArgs = z.object({
+    kinds: z.array(z.nativeEnum(LocationKind)).max(3).optional(),
+    statuses: z.array(z.nativeEnum(LocationStatus)).max(2).optional(),
+}).strict();
+
+/**
+ * Block risk takes a RECORD ID, and it is the first tool that does.
+ *
+ * Every other tool refuses ids, because an id a model invents references a
+ * record nobody chose — `links.ts`'s provenance problem. This one is
+ * different in kind: a `locationId` here comes from a PRIOR `list_blocks`
+ * result, which returns ids the model read rather than composed. A derived id
+ * is not a fabricated one.
+ *
+ * It is also unavoidable: `analyzeBlockRisk` analyses ONE block, and the
+ * alternative — analysing every block on the farm per question — is the
+ * satellite cost `MAX_BATCH_PARCELS` exists to bound.
+ *
+ * The id is bounded to the same charset `links.ts` uses for exactly this
+ * reason, so a malformed one is refused here rather than reaching Prisma.
+ */
+const AnalyzeBlockRiskArgs = z.object({
+    locationId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
 }).strict();
 
 const parseDay = (v: string | undefined): Date | undefined => {
@@ -478,6 +521,119 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             });
         },
     },
+    list_blocks: {
+        def: {
+            name: 'list_blocks',
+            description:
+                "The farm's блокове — its fields, and its grain bins and stores. Use it to find "
+                + 'out what land or storage the farm has, and to get a block id for '
+                + 'analyze_block_risk. Returns at most 20.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    kinds: {
+                        type: 'array',
+                        items: { type: 'string', enum: Object.values(LocationKind) },
+                        description: 'FIELD is a блок of land; BIN and STORAGE hold grain.',
+                    },
+                    statuses: {
+                        type: 'array',
+                        items: { type: 'string', enum: Object.values(LocationStatus) },
+                    },
+                },
+                additionalProperties: false,
+            },
+        },
+        args: ListBlocksArgs,
+        run: async (ctx, args) => {
+            const a = ListBlocksArgs.parse(args);
+            // `{ items, pageInfo: { nextCursor, hasNextPage } }` — a FOURTH
+            // pagination shape in this codebase, and NOT `{ rows }`. The
+            // others: `listLogEntriesPaginated` gives `{ rows }`,
+            // `listCostEntries` `{ rows, totalCount, truncated }`,
+            // `listActiveListings` `{ rows, nextCursor }`. Read off the
+            // source each time; treating one as another is the mistake
+            // `listCostEntries` already cost me, and my own mock agreed with
+            // me rather than with the dependency.
+            const page = await listLocationsPaginated(ctx, {
+                limit: 20,
+                filters: {
+                    ...(a.kinds ? { kind: a.kinds } : {}),
+                    // `status` is singular on the filter — a string, not an
+                    // array — so a single selection is passed and anything
+                    // wider is left to the caller rather than silently
+                    // collapsed to its first element.
+                    ...(a.statuses?.length === 1 ? { status: a.statuses[0] } : {}),
+                },
+            });
+            return (page.items as Array<Record<string, unknown>>).map((l) => ({
+                id: l.id,
+                name: l.name,
+                key: l.key,
+                kind: l.kind,
+                status: l.status,
+                // The farm's own count, which is what makes a risk answer's
+                // denominator checkable against the block.
+                parcelCount: (l._count as { parcels?: number } | undefined)?.parcels ?? null,
+                // `owner` is NOT projected. The repository includes it
+                // (`{ id, name }`), and it is a person's name that an answer
+                // about land has no use for.
+            }));
+        },
+        link: { template: '/locations/[locationId]', idField: 'id', labelField: 'name' },
+    },
+    analyze_block_risk: {
+        def: {
+            name: 'analyze_block_risk',
+            description:
+                "Satellite vegetation and moisture risk for every parcel in ONE block. Call "
+                + 'list_blocks first to get the block id. Say how many parcels were analysed out '
+                + 'of how many the block has — the answer is INCOMPLETE when those differ.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    locationId: {
+                        type: 'string',
+                        description: 'A block id from list_blocks. Never invent one.',
+                    },
+                },
+                required: ['locationId'],
+                additionalProperties: false,
+            },
+        },
+        args: AnalyzeBlockRiskArgs,
+        run: async (ctx, args) => {
+            const a = AnalyzeBlockRiskArgs.parse(args);
+            const r = await analyzeBlockRisk(ctx, a.locationId);
+            // `analysed` and `total` are both returned, and the description
+            // tells the model to report them. `RiskLevel` carries an
+            // `unknown` member, so a model counting levels would otherwise
+            // score the un-analysed parcels as merely unknown and answer "0
+            // stressed" about a farm it had not finished looking at.
+            return {
+                block: r.locationName,
+                analysed: r.analysed,
+                total: r.total,
+                complete: r.analysed === r.total,
+                worst: r.worst,
+                counts: r.counts,
+                satelliteConfigured: r.configured,
+                // Named, not counted: a farmer wants to know WHICH parcel is
+                // stressed. Bounded, and only the ones that are not fine —
+                // the whole list would be mostly noise.
+                attention: r.parcels
+                    .filter((p) => p.overall === 'stress' || p.overall === 'watch')
+                    .slice(0, 12)
+                    .map((p) => ({
+                        parcel: p.name,
+                        level: p.overall,
+                        vegetation: p.vegetation,
+                        moisture: p.moisture,
+                        acquiredDate: p.acquiredDate,
+                    })),
+            };
+        },
+    },
     propose_treatment: {
         def: {
             name: 'propose_treatment',
@@ -507,7 +663,6 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                         description: 'Quarantine in DAYS, 0-365 — a number, not text.',
                     },
                     applicationTechnique: { type: 'string', description: 'The rig used.' },
-                    title: { type: 'string' },
                 },
                 additionalProperties: false,
             },
@@ -541,7 +696,6 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                     },
                     occurredOn: { type: 'string', description: 'The calendar day, YYYY-MM-DD.' },
                     harvestKg: { type: 'number', description: 'Harvested kilograms, for a HARVEST.' },
-                    title: { type: 'string' },
                 },
                 additionalProperties: false,
             },

@@ -102,6 +102,32 @@ describe('proposeDraft — activity (#2632)', () => {
         expect(proposeDraft('activity', { kind: 'HARVEST', parcelIds: ['p1'] }).ok).toBe(false);
     });
 
+    it('re-applies the cross-field rule the shape-pick DROPPED', () => {
+        // Reading `.shape` lifts the fields and loses the schema's
+        // `.superRefine`. Losing most of it is the point — it also enforces
+        // `parcelIds`, which the person supplies — but one rule is about two
+        // DRAFT fields: the real body refuses `harvestKg` on anything but a
+        // HARVEST. Without re-applying it, a draft would open a form the
+        // route then rejects.
+        expect(proposeDraft('activity', { kind: 'HARVEST', harvestKg: 1000 }).ok).toBe(true);
+        expect(proposeDraft('activity', { kind: 'PRUNE', harvestKg: 1000 }).ok).toBe(false);
+        // Only when BOTH are present — the draft is partial by design, so a
+        // harvest weight with no kind yet is still a usable prefill.
+        expect(proposeDraft('activity', { harvestKg: 1000 }).ok).toBe(true);
+        expect(proposeDraft('activity', { kind: 'PRUNE' }).ok).toBe(true);
+    });
+
+    it('does NOT draft a title — the server composes it', () => {
+        // Both routes compose the title ("Defaults to the activity name and
+        // the block, as the treatments route does"), neither client has a
+        // title field, and `TreatmentEntryModal` says the same at its
+        // optimistic row. A drafted title is a field no form consumes, and a
+        // client that forwarded it would override a consistent scheme with a
+        // model's prose. Raised by agrent-ios asking where to show it.
+        expect(proposeDraft('treatment', { title: 'Пръскане' }).ok).toBe(false);
+        expect(proposeDraft('activity', { title: 'Коситба' }).ok).toBe(false);
+    });
+
     it('SOWING is not an activity — it is a SEED treatment', () => {
         // The treatment schema says why: сеитба applies a seed product at a
         // rate, so it belongs on the treatments route and its row is excluded

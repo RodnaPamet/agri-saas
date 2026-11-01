@@ -102,11 +102,18 @@ const TREATMENT_DRAFT_FIELDS = [
     'pppRegistrationNo',
     'quarantinePeriodDays',
     'applicationTechnique',
-    'title',
+    // `title` is NOT drafted. Both routes COMPOSE it — the activity schema
+    // says "Defaults to the activity name and the block, as the treatments
+    // route does", and `TreatmentEntryModal` records the same at its
+    // optimistic row: "the server composes the real title". Neither client has
+    // a title field, so a drafted one is a field no form consumes — #2632's
+    // defect one field down — and a client that DID forward it would override
+    // a consistent server-side scheme with a model's prose. Reported by
+    // agrent-ios, who asked where to put it; the answer is nowhere.
 ] as const;
 
 /** The activity fields. `harvestKg` only means anything for a HARVEST. */
-const ACTIVITY_DRAFT_FIELDS = ['kind', 'occurredOn', 'harvestKg', 'title'] as const;
+const ACTIVITY_DRAFT_FIELDS = ['kind', 'occurredOn', 'harvestKg'] as const;
 
 /**
  * Lift named fields off a production schema's shape, refusing an unknown one.
@@ -165,7 +172,21 @@ export const ProposeActivityArgs = z
         ),
     )
     .partial()
-    .strict();
+    .strict()
+    // Reading `.shape` lifts the FIELDS and drops the schema's
+    // `.superRefine`, which is what lets this draft exist at all — the
+    // refinement also enforces `parcelIds`, which the person supplies. But one
+    // of its rules is about two DRAFT fields and is re-applied here: the real
+    // body refuses `harvestKg` on anything but a HARVEST, so a draft carrying
+    // both would open a form the route then rejects. Only checked when both
+    // are present, because the draft is partial by design.
+    .refine(
+        (v) => {
+            const d = v as { harvestKg?: number; kind?: string };
+            return d.harvestKg === undefined || d.kind === undefined || d.kind === 'HARVEST';
+        },
+        { message: 'harvestKg belongs to a HARVEST' },
+    );
 
 /** Kind → its draft schema. The registry the guard and `runTool` both read. */
 export const PROPOSAL_SCHEMAS: Readonly<Record<ProposalKind, z.ZodType<unknown>>> = {
