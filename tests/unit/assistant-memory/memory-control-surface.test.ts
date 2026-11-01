@@ -134,6 +134,34 @@ describe('edit — rule 6, the point becomes the person’s', () => {
         expect(args.data.text).toBe('отглежда слънчоглед');
     });
 
+    it('replaces the EVIDENCE with the correction — rules 3, 4 and 6 meeting', async () => {
+        // Not a detail. `sourceQuote` is what rules 4 and 5 are read from, so
+        // an edited point still carrying the SUPERSEDED sentence would be
+        // misleading evidence: "the latest statement wins" means the latest
+        // statement IS the evidence, and rule 3 says a point may only be
+        // learned from the person's own words — a correction they typed is the
+        // purest case of that.
+        //
+        // It also gives rule 5 a property for free: the extractor cannot later
+        // re-derive the OLD point, because the evidence it would have matched
+        // is gone.
+        //
+        // This is also what makes the model honestly coverable by the
+        // sanitiser guard — both encrypted free-text columns now go through
+        // `sanitizePlainText` at the one path a person writes them, rather
+        // than one being covered and the other having no writer at all.
+        const before = new Date('2026-10-01T00:00:00.000Z');
+        await editRememberedPoint(ME, 'f1', '  отглежда слънчоглед  ');
+        const data = (updateMany.mock.calls[0][0] as {
+            data: { text: string; sourceQuote: string; sourceAt: Date };
+        }).data;
+        expect(data.sourceQuote).toBe('отглежда слънчоглед');
+        expect(data.sourceQuote).toBe(data.text);
+        // And the evidence is re-dated, or rule 4's "latest wins" would read
+        // the correction as older than the point it replaced.
+        expect(data.sourceAt.getTime()).toBeGreaterThan(before.getTime());
+    });
+
     it('SANITISES and BOUNDS the text — it re-enters the prompt on every answer', async () => {
         await editRememberedPoint(ME, 'f1', `  ${'я'.repeat(REMEMBERED_POINT_MAX_CHARS + 50)}  `);
         const args = updateMany.mock.calls[0][0] as { data: { text: string } };

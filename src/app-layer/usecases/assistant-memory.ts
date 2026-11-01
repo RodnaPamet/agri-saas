@@ -130,7 +130,30 @@ export async function editRememberedPoint(
     }
     const { count } = await prisma.assistantMemoryFact.updateMany({
         where: { id, userId, deletedAt: null },
-        data: { text: clean.slice(0, REMEMBERED_POINT_MAX_CHARS), editedByPerson: true },
+        data: {
+            text: clean.slice(0, REMEMBERED_POINT_MAX_CHARS),
+            editedByPerson: true,
+            /*
+             * The EVIDENCE becomes their correction — rules 3, 4 and 6 meeting.
+             *
+             * Not a detail: an edited point whose `sourceQuote` still held the
+             * superseded sentence would be MISLEADING evidence, and rules 4
+             * and 5 are built on reading it. "The latest statement wins" means
+             * the latest statement IS the evidence, and rule 3 says a point
+             * may only be learned from the person's own words — a correction
+             * they typed is the purest case of that.
+             *
+             * It also means the extractor cannot later re-derive the OLD point
+             * from the old quote, which is rule 5's property arriving for
+             * free: the evidence it would have matched is gone.
+             *
+             * Sanitised by the same `clean` value as `text`, so both encrypted
+             * free-text columns on this row go through `sanitizePlainText` at
+             * the one path a person writes them.
+             */
+            sourceQuote: clean.slice(0, REMEMBERED_POINT_MAX_CHARS),
+            sourceAt: new Date(),
+        },
     });
     if (count === 0) throw codedNotFound('MEMORY_POINT_NOT_FOUND', 'That remembered point was not found.');
 

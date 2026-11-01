@@ -238,6 +238,7 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
             ExchangeMessage: out.exchangeMessages,
             InsuranceLead: out.insuranceLeads,
             PromotionLead: out.promotionLeads,
+            AssistantMemoryFact: out.assistantMemory,
             OrgMembership: out.organisationMemberships,
             FeatureFlagCohortMember: out.featureCohorts,
         };

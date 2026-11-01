@@ -145,27 +145,15 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
     {
         model: 'AssistantMemoryFact',
         columns: ['userId'],
-        // ERASE_ONLY for THIS release only, and the reason is staging rather
-        // than policy. #2683 ships the table with NO writer (P5's rule), so an
-        // export could only ever return an empty array — and wiring one would
-        // make `AssistantMemoryFact` referenced in `src/`, which the
-        // rich-text coverage guard reads as a live write path needing a named
-        // sanitiser that does not exist yet either. Two guards, both right,
-        // and the honest way through is to let each PR be internally
-        // consistent.
-        //
-        // The memory API PR flips this to ERASE_AND_EXPORT, wires the export,
-        // and registers `editRememberedPoint` as the sanitiser — all three in
-        // one diff, because they are one fact about the system.
-        disposition: 'ERASE_ONLY',
+        disposition: 'ERASE_AND_EXPORT',
         action: 'DELETE_ROW',
         reason:
             'The assistant\'s per-person memory profile (#2671) — what it remembers '
-            + 'about someone across all their farms. NOT YET EXPORTED — the table has no '
-            + 'writer in this release, so an export would return an empty array; the '
-            + 'memory API PR flips this to ERASE_AND_EXPORT, where "what does it know '
-            + 'about me" is the clearest possible Art 15 case and is also what the '
-            + 'in-product «Какво помни асистентът» screen shows. DELETED rather than '
+            + 'about someone across all their farms. EXPORTED because "what does it know '
+            + 'about me" is the clearest possible Art 15 case: a person is entitled to '
+            + 'read back the points themselves, which is also what the in-product '
+            + '«Какво помни асистентът» screen shows — and the two must not disagree. '
+            + 'DELETED rather than '
             + 'pseudonymised because the row has no meaning without the person — it '
             + 'is a statement ABOUT them, not somebody else\'s record that merely '
             + 'names them, so there is no second party whose history would lose its '

@@ -73,6 +73,20 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/statement-queue.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // #2671. Promoted out of KNOWN_UNCOVERED by the live-writer assertion, on
+    // schedule — #2683 put it there with the note that the memory API PR
+    // "should move this to RICH_TEXT_COVERAGE rather than linger", and this
+    // is that PR. Third time the mechanism has fired as designed.
+    //
+    // `editRememberedPoint` is the only path a PERSON writes this text, and it
+    // sanitises before the update. The extraction path writes `text` too and
+    // is model-generated into a constrained shape — but it will arrive in a
+    // later PR, and when it does it owes this list its own entry rather than
+    // inheriting this one.
+    AssistantMemoryFact: {
+        usecases: ['src/app-layer/usecases/assistant-memory.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // P5.4a (#1595). `ModerationAction.rationale` is moderator-authored free
     // text about a person, and it is the SOURCE of the Art 17 statement sent
     // to them — so an unsanitised value propagates into a delivered message
@@ -316,14 +330,6 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
         + 'matters is prompt FENCING rather than sanitisation — a sanitiser '
         + 'protects a renderer, and a turn re-enters a model. Both are needed; '
         + 'this registry only tracks the first.',
-    AssistantMemoryFact:
-        'AssistantMemoryFact.text and .sourceQuote, encrypted under the GLOBAL '
-        + 'KEK. No writer in #2683. Ratchet target: the memory API PR, whose '
-        + '`editRememberedPoint` already calls sanitizePlainText — so this '
-        + 'entry should move to RICH_TEXT_COVERAGE in that PR rather than '
-        + 'linger. The live-writer assertion below is what will force it, '
-        + 'which is the same mechanism that moved ContentReport one PR after '
-        + 'it was written.',
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -548,13 +554,16 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // kind rather than the `EvidenceReview` kind, and the live-writer
         // assertion below is what keeps that honest rather than this number.
         //
-        // One of the two is already SHORT-LIVED by construction: the memory
-        // API PR's `editRememberedPoint` calls `sanitizePlainText`, so the
-        // live-writer assertion will force `AssistantMemoryFact` into
-        // RICH_TEXT_COVERAGE in that PR and this should come back to 2. If it
-        // does not, that is the regression and not a reason to leave the cap
-        // high.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(3);
+        // Back to 2, as that note promised: the memory API PR's
+        // `editRememberedPoint` tripped the live-writer assertion and
+        // `AssistantMemoryFact` moved into RICH_TEXT_COVERAGE. Lowered in the
+        // same diff rather than left at 3, because slack a later regression
+        // can spend is the thing a ratchet exists to refuse.
+        //
+        // `AssistantTurn` stays: nothing writes a turn yet. The PR that does
+        // owes this list an entry, and the live-writer assertion is what will
+        // say so.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(2);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {
