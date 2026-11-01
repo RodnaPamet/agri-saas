@@ -339,11 +339,34 @@ describe('the three-step treatment form', () => {
         // formatted date. Substring is the right granularity: it asserts WHICH
         // control, which is all this line ever meant.
         await u.click(screen.getByRole('button', { name: /Date carried out/ }));
-        // The 1st — a day that is never in the future, unlike a fixed 15th.
+        /**
+         * The 1st of the PREVIOUS month, and the month step is load-bearing.
+         *
+         * "The 1st — a day that is never in the future" was the right
+         * instinct and the wrong day: react-day-picker in single mode TOGGLES,
+         * so clicking a day that is already selected clears it. The field
+         * defaults to today, so on the 1st of any month this test clicked
+         * today, deselected the date, left step one incomplete, and failed at
+         * `pickFrom('Crop', …)` — because `Next` never advanced and the Crop
+         * combobox does not exist on step one. Once a month, in every
+         * timezone, with an error naming neither the date nor the picker.
+         *
+         * Stepping back a month makes the day unambiguously in the past AND
+         * never the already-selected one, so the click can only ever SET a
+         * date. It keeps the `-01$` assertion the test was written around.
+         */
+        await u.click(screen.getByTestId('calendar-prev-month'));
         const first = () =>
             screen.getAllByRole('button').find((b) => b.textContent?.trim() === '1');
         await waitFor(() => expect(first()).toBeDefined());
         await u.click(first() as HTMLElement);
+        // The popover must have CLOSED, which is what a successful selection
+        // does. If the click toggled the date off instead, the calendar stays
+        // open and every later query below lands on it rather than the form —
+        // which is exactly how the original failure presented.
+        await waitFor(() =>
+            expect(screen.queryByTestId('calendar-prev-month')).not.toBeInTheDocument(),
+        );
 
         await fillStepOne();
         await u.click(screen.getByRole('button', { name: 'Next' }));
