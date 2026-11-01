@@ -113,6 +113,17 @@ const WRITES_NOTIFICATION = /\bnotification\s*\.\s*create(?:Many)?\s*\(/;
  * and is not expected to leave.
  */
 const DELIBERATELY_UNLOCALISED: Record<string, string> = {
+    'src/app-layer/jobs/classify-photo.ts':
+        'OWNER RULING 2026-11-01: the pest notification stays Bulgarian for every recipient. '
+        + 'Its TITLE is a Bulgarian frame around `stored.identifiedPest`, which a key could '
+        + 'carry — but its MESSAGE is `${recommendation} ${disclaimer}`, entirely MODEL output '
+        + 'with no frame at all, so the only way to localise the body is to pin the vision '
+        + 'prompt\'s output language (the `generateCopilotExplanation` precedent). The owner was '
+        + 'offered that and chose not to: the advice is explicitly PROVISIONAL pending an '
+        + 'agronomist, and four of five users read Bulgarian. Keying the title alone was offered '
+        + 'and refused for the right reason — it gives an `en` recipient an English heading over '
+        + 'Bulgarian advice, which reads as a defect rather than a limitation. So this is a '
+        + 'decision, not debt: do NOT "finish" it by keying the title.',
     'src/app-layer/automation/action-executor.ts':
         'Writes `rule.name` and `cfg.title ?? rule.name` — strings the TENANT authored in '
         + 'their own rule builder. A tenant\'s rule name must not be run through a catalogue, '
@@ -135,16 +146,13 @@ const DELIBERATELY_UNLOCALISED: Record<string, string> = {
  * gives: the exemption is what makes the fix impossible to forget and
  * impossible to half-do.
  */
-const STAGED_UNLOCALISED: Record<string, string> = {
-    'src/app-layer/jobs/classify-photo.ts':
-        '#2511. Its TITLE is a Bulgarian frame around `stored.identifiedPest`, which a key '
-        + 'could carry — but its MESSAGE is `${recommendation} ${disclaimer}`, entirely MODEL '
-        + 'output with no frame at all. Keying the title alone would give an `en` recipient an '
-        + 'English heading over Bulgarian advice, and whether the model\'s own prose should be '
-        + 'localised is a question about the AI path rather than about this producer. The '
-        + 'precedent to follow is `generateCopilotExplanation`\'s locale pinning, and that is a '
-        + 'decision rather than a port.',
-};
+/**
+ * Empty since the owner's 2026-11-01 ruling discharged the last entry. The map
+ * and its no-stale test stay for the next staged fix — a producer localised in
+ * two steps needs somewhere to sit between them, and deleting the mechanism
+ * because it is momentarily empty is how the next one ends up with no home.
+ */
+const STAGED_UNLOCALISED: Record<string, string> = {};
 
 const STILL_ENGLISH: Record<string, string> = {
     // Empty since #2490 discharged the `agro.ts` entry. See the docblock —
