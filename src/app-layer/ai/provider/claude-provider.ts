@@ -299,7 +299,36 @@ export class ClaudeProvider implements AiProvider {
                     tool_use_id: m.toolCallId ?? '',
                     content: m.content,
                 };
-                out.push({ role: 'user', content: [block] });
+                // MERGED into the preceding user message when that message is
+                // already a tool_result carrier.
+                //
+                // One message per result looks equivalent and is not: a round
+                // with TWO tool calls produced
+                //
+                //   [assistant: tool_use a, tool_use b]
+                //   [user: tool_result a]
+                //   [user: tool_result b]      <- its tool_use is 2 back
+                //
+                // and the rule is that a `tool_result` needs its `tool_use` in
+                // the IMMEDIATELY PREVIOUS message. So every result for one
+                // assistant turn belongs in one user message.
+                //
+                // This is the second half of the #2654 outage. The first fix —
+                // pushing the assistant turn — made single-tool rounds work
+                // and left multi-tool rounds broken, which would have read as
+                // "fixed, but still flaky on some questions". Found by
+                // `assistant-history-is-well-formed`, not by review.
+                const prev = out[out.length - 1];
+                const prevIsToolResults =
+                    prev !== undefined
+                    && prev.role === 'user'
+                    && Array.isArray(prev.content)
+                    && (prev.content as ContentBlockParam[]).every((b) => b.type === 'tool_result');
+                if (prevIsToolResults) {
+                    (prev.content as ContentBlockParam[]).push(block);
+                } else {
+                    out.push({ role: 'user', content: [block] });
+                }
                 continue;
             }
             // An ASSISTANT turn that made tool calls must carry them as
