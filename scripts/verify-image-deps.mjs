@@ -94,4 +94,36 @@ if (existsSync(scope) && readdirSync(scope).length > 0) {
     process.exit(1);
 }
 
+/**
+ * #2582 — the unusable `onnxruntime-node` platform binaries are gone, and the
+ * linux one is still here.
+ *
+ * Both halves are required. A check for the absence alone passes perfectly on
+ * an image where the whole package failed to install, or where a path moved —
+ * which is the failure that points TOWARD green, so the linux directory is the
+ * positive control. If onnxruntime-node is absent entirely this is skipped
+ * rather than failed: the package is an optional on-device accelerator, and a
+ * build that legitimately omits it must not be reported as a prune failure.
+ */
+const onnxBin = join(modules, 'onnxruntime-node', 'bin', 'napi-v6');
+if (existsSync(onnxBin)) {
+    const unusable = ['darwin', 'win32'].filter((p) => existsSync(join(onnxBin, p)));
+    if (unusable.length > 0) {
+        fail(
+            `onnxruntime-node still carries [${unusable.join(', ')}] — ~220 MB that cannot ` +
+                'execute in a linux container, and what exhausted the publish runner in #2582.',
+        );
+        process.exit(1);
+    }
+    if (!existsSync(join(onnxBin, 'linux'))) {
+        fail(
+            'onnxruntime-node/bin/napi-v6 exists but its `linux` directory does not — the ' +
+                'prune removed the wrong thing, or the layout moved. This is the positive ' +
+                'control: without it, an absent package reads as a successful prune.',
+        );
+        process.exit(1);
+    }
+    console.log('[verify-image-deps] OK — onnxruntime-node carries linux only');
+}
+
 console.log(`[verify-image-deps] OK — none of [${BANNED.join(', ')}] present`);
