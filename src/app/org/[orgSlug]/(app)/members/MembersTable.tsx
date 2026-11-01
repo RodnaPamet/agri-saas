@@ -171,6 +171,7 @@ export function MembersTable({ orgSlug, currentUserId, rows, invites }: Props) {
                             </div>
                         );
                     },
+                    meta: { mobileCard: { slot: 'actions' } },
                 },
             ]),
         [currentUserId, t, formatDate],
@@ -1175,6 +1176,7 @@ function PendingInvitesSection({ orgSlug, invites, onMutate }: PendingInvitesSec
                             </Tooltip>
                         </div>
                     ),
+                    meta: { mobileCard: { slot: 'actions' } },
                 },
             ]),
         [revokingId, revoke, t, formatDate],

@@ -527,6 +527,7 @@ function ContractsPageInner({
                                 </Tooltip>
                             </div>
                         ) : null,
+                    meta: { mobileCard: { slot: 'actions' } },
                 },
             ]),
         [permissions.canWrite, handleDelete, t, formatDateRange],
