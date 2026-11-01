@@ -131,6 +131,9 @@ describeFn('#2671 — assistant memory RLS', () => {
     let owner = ''; let outsider = '';
     let ownerTenant = ''; let outsiderTenant = '';
     let factId = '';
+    /** The conversation §5 is about. Scoped so a later test adding a turn to
+     *  this tenant cannot change §5's number — which is exactly what §6 did. */
+    let baseConversation = '';
 
     beforeAll(async () => {
         await globalPrisma.$connect();
@@ -139,7 +142,7 @@ describeFn('#2671 — assistant memory RLS', () => {
         ownerTenant = await makeTenantWith(owner);
         outsiderTenant = await makeTenantWith(outsider);
         factId = await makeFact(owner);
-        await makeConversationWithTurn(ownerTenant, owner);
+        baseConversation = await makeConversationWithTurn(ownerTenant, owner);
     });
 
     afterAll(async () => {
@@ -261,21 +264,123 @@ describeFn('#2671 — assistant memory RLS', () => {
         expect(back).toBe(1);
     });
 
-    it('§5 a turn is TENANT-isolated, and its own tenant can read it', async () => {
-        const mine = await runInTenantContext(tenantCtx(owner, ownerTenant), async (db) => {
-            const r = await (db as PrismaClient).$queryRawUnsafe<Array<{ n: bigint }>>(
-                `SELECT count(*)::bigint AS n FROM "AssistantTurn"`,
-            );
-            return Number(r[0].n);
+    /*
+     * §6 — the extraction sweep's read, executed.
+     *
+     * Every other turn assertion in this file inserts via `$executeRawUnsafe`,
+     * which stores PLAINTEXT and never touches the encryption extension. So
+     * nothing here — and nothing in the unit suites, which mock Prisma
+     * wholesale — proves that a Prisma read of `AssistantTurn.content`
+     * actually decrypts.
+     *
+     * That is the one failure `memory-extract`'s docblock names and cannot
+     * self-check: "read them raw and the model extracts from CIPHERTEXT,
+     * returning a confident nothing with nothing failing." A broken DEK
+     * resolution leaves every mocked test green and feeds `v2:…` to the model.
+     *
+     * The middle assertion is what makes the last one mean anything. Without
+     * proving the stored bytes are ciphertext, "plaintext came back" is
+     * equally satisfied by "it was never encrypted" — the same reading, two
+     * opposite worlds.
+     */
+    it('§6 a turn written through PRISMA is ciphertext at rest and decrypts for its own tenant', async () => {
+        /*
+         * A DEDICATED user and tenant, NOT registered for teardown, and that
+         * is forced rather than untidy.
+         *
+         * A Prisma write goes through the audit extension, which appends an
+         * `AuditLog` row referencing the tenant. `AuditLog_tenantId_fkey` then
+         * pins that tenant, and the row cannot be removed to free it: the
+         * `audit_log_immutable` trigger (#) fires BEFORE UPDATE OR DELETE and
+         * raises `IMMUTABLE_AUDIT_LOG`. Append-only is the point, so deleting
+         * audit rows in teardown would be subverting the control this codebase
+         * exists to keep.
+         *
+         * So: any tenant a Prisma write touches is undeletable afterwards. The
+         * rest of this file is cleanable only because it inserts via raw SQL,
+         * which bypasses the extension — which is ALSO why nothing else here
+         * proves encryption. The two facts have one cause.
+         *
+         * Found by agrent backend-1 hitting the same wall from the other side,
+         * where it surfaced as "Foreign key constraint violated on the (not
+         * available)" from the trigger rather than a named FK.
+         */
+        const audited = await makeUser('audited');
+        const auditedTenant = await makeTenantWith(audited);
+        // Un-register both: teardown must not attempt them.
+        users.splice(users.indexOf(audited), 1);
+        tenants.splice(tenants.indexOf(auditedTenant), 1);
+        memberships.pop();
+
+        const cid = `ac-2671-${randomUUID()}`;
+        await globalPrisma.$executeRawUnsafe(
+            `INSERT INTO "AssistantConversation"("id","tenantId","userId") VALUES ($1,$2,$3)`,
+            cid, auditedTenant, audited,
+        );
+        // NOT pushed either: the conversation's tenant survives, so deleting
+        // the conversation would leave the audit row pointing at a tenant with
+        // no conversation — harmless, but the suite should not half-clean.
+
+        const PLAINTEXT = 'Отглеждам слънчоглед на 300 декара.';
+
+        // WRITE through Prisma, inside the tenant context the sweep uses.
+        await runInTenantContext(tenantCtx(audited, auditedTenant), async (db) => {
+            await (db as PrismaClient).assistantTurn.create({
+                data: {
+                    id: `at-2671-${randomUUID()}`,
+                    tenantId: auditedTenant,
+                    conversationId: cid,
+                    role: 'user',
+                    content: PLAINTEXT,
+                },
+            });
         });
-        const theirs = await runInTenantContext(
-            tenantCtx(outsider, outsiderTenant), async (db) => {
+
+        // POSITIVE CONTROL: at rest it is NOT the plaintext, and it carries an
+        // envelope. `v2:` is the per-tenant DEK, which is what this model must
+        // be on — `v1:` would mean it had fallen back to the global KEK.
+        const atRest = await globalPrisma.$queryRawUnsafe<Array<{ content: string }>>(
+            `SELECT "content" FROM "AssistantTurn" WHERE "conversationId" = $1`, cid,
+        );
+        expect(atRest).toHaveLength(1);
+        expect(atRest[0].content).not.toBe(PLAINTEXT);
+        expect(atRest[0].content).toMatch(/^v2:/);
+
+        // READ the way `runMemoryExtract` does.
+        const read = await runInTenantContext(tenantCtx(audited, auditedTenant), (db) =>
+            (db as PrismaClient).assistantTurn.findMany({
+                where: { conversationId: cid, role: 'user' },
+                select: { content: true },
+            }),
+        );
+        expect(read.map((r) => r.content)).toEqual([PLAINTEXT]);
+    });
+
+    it('§5 a turn is TENANT-isolated, and its own tenant can read it', async () => {
+        /*
+         * Scoped to ONE conversation rather than counting every turn the
+         * policy admits.
+         *
+         * The unscoped version read `count(*) FROM "AssistantTurn"` and
+         * asserted 1, so it was really asserting "this tenant has exactly one
+         * turn in the whole database" — a fact about the FIXTURE, not about
+         * the policy. §6 added a second turn to the same tenant and this went
+         * red, which is the coupling surfacing rather than a new bug.
+         *
+         * The isolation property is unchanged and is still what fails if the
+         * policy breaks: the owning farm sees its conversation's turn, the
+         * other farm sees none of it.
+         */
+        const countTurns = async (uid: string, tid: string): Promise<number> =>
+            runInTenantContext(tenantCtx(uid, tid), async (db) => {
                 const r = await (db as PrismaClient).$queryRawUnsafe<Array<{ n: bigint }>>(
-                    `SELECT count(*)::bigint AS n FROM "AssistantTurn"`,
+                    `SELECT count(*)::bigint AS n FROM "AssistantTurn" WHERE "conversationId" = $1`,
+                    baseConversation,
                 );
                 return Number(r[0].n);
-            },
-        );
+            });
+        const mine = await countTurns(owner, ownerTenant);
+        const theirs = await countTurns(outsider, outsiderTenant);
         // Both directions: 1 proves the policy admits the owning farm, 0
         // proves it refuses the other. A pair of zeros would mean the tenant
         // variable was never set and the test proved nothing.
