@@ -295,6 +295,35 @@ const PlantingSoilSchema = z
                 reason: z.string(),
                 /** Structured drivers — what the agronomy copilot consumes. */
                 reasons: z.array(z.string()),
+                /**
+                 * The same drivers as CODES, for a client that renders them in
+                 * the reader's language (#2509).
+                 *
+                 * `reasons` stays English because its consumer is the copilot
+                 * prompt and the audit row; `reasonCodes` is the parallel a
+                 * person-facing renderer needs. One entry per `reasons` entry.
+                 *
+                 * `params` values are `string | number`: a pH band is rendered
+                 * «pH 6–7», which is symbolic and reads the same in both
+                 * languages, and a texture is a USDA class name.
+                 */
+                reasonCodes: z
+                    .array(
+                        z.object({
+                            code: z.enum([
+                                'noPreferences',
+                                'phTooAcidicHard',
+                                'phTooAcidicSoft',
+                                'phTooAlkalineHard',
+                                'phTooAlkalineSoft',
+                                'textureNotPreferred',
+                                'drainageMismatch',
+                                'matchesPreferences',
+                            ]),
+                            params: z.record(z.string(), z.union([z.string(), z.number()])),
+                        }),
+                    )
+                    .openapi('SoilReason'),
             })
             .openapi('SoilSuitability', {
                 description:

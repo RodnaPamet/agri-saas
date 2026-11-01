@@ -16276,6 +16276,47 @@ exports[`API contract — per-schema snapshots schema: SoilProfile 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: SoilReason 1`] = `
+"{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "code": {
+        "type": "string",
+        "enum": [
+          "noPreferences",
+          "phTooAcidicHard",
+          "phTooAcidicSoft",
+          "phTooAlkalineHard",
+          "phTooAlkalineSoft",
+          "textureNotPreferred",
+          "drainageMismatch",
+          "matchesPreferences"
+        ]
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    "required": [
+      "code",
+      "params"
+    ]
+  }
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: SoilSuitability 1`] = `
 "{
   "type": "object",
@@ -16297,12 +16338,16 @@ exports[`API contract — per-schema snapshots schema: SoilSuitability 1`] = `
       "items": {
         "type": "string"
       }
+    },
+    "reasonCodes": {
+      "$ref": "#/components/schemas/SoilReason"
     }
   },
   "required": [
     "flag",
     "reason",
-    "reasons"
+    "reasons",
+    "reasonCodes"
   ],
   "description": "An ADVISORY verdict. \`unknown\` is returned whenever the variety has no curated preferences or the parcel has no soil yet — never a fabricated verdict, so a client must render unknown as unknown rather than as a neutral pass."
 }"

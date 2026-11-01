@@ -35,12 +35,53 @@ export interface VarietySoilDefaults {
     drainagePreference?: DrainageTendency | null;
 }
 
+/**
+ * Structured reasons, beside the English prose (#2509).
+ *
+ * The shape mirrors `SprayReasonCode` / `DiseaseReason` in `@/lib/agro/rules`
+ * exactly, so there is ONE pattern and not two — #2490 established the split
+ * (English for the copilot prompt and the audit row, codes for anything a
+ * person reads) and deliberately carved this file out of it.
+ *
+ * **The pH direction and severity are in the CODE, not in a param.** A
+ * `{direction}` param would carry the literal word "acidic" into a Bulgarian
+ * sentence — an untranslated English word inside translated copy, which is a
+ * half-measure rather than a fix. Four codes cost nothing and translate
+ * cleanly.
+ */
+export type SoilReasonCode =
+    | 'noPreferences'
+    | 'phTooAcidicHard'
+    | 'phTooAcidicSoft'
+    | 'phTooAlkalineHard'
+    | 'phTooAlkalineSoft'
+    | 'textureNotPreferred'
+    | 'drainageMismatch'
+    | 'matchesPreferences';
+
+export interface SoilReason {
+    code: SoilReasonCode;
+    /**
+     * Interpolation values. `string | number`, unlike spray's number-only
+     * params: a pH BAND is rendered «pH 6–7» / «pH ≥ 6», which is symbolic and
+     * reads the same in both languages, and a texture class is a USDA name.
+     *
+     * `drainage` values are the raw enum (`well` | `moderate` | `poor`) and
+     * are resolved to words by `renderSoilReason` before interpolation — the
+     * repo's rule that a translated string is resolved to a local const BEFORE
+     * being interpolated into another.
+     */
+    params: Record<string, string | number>;
+}
+
 export interface SuitabilityResult {
     flag: SuitabilityFlag;
     /** Plain-language explanation, advisory in tone. */
     reason: string;
     /** Structured drivers for the agronomy copilot (the "why"). */
     reasons: string[];
+    /** Structured codes+params — for i18n at the render layer (#2509). */
+    reasonCodes: SoilReason[];
 }
 
 /** pH more than this far outside the preferred band is a hard mismatch. */
@@ -92,10 +133,12 @@ export function computeSuitability(
             flag: 'unknown',
             reason: 'No soil preferences on file for this crop, or soil is still pending for this field.',
             reasons: [],
+            reasonCodes: [{ code: 'noPreferences', params: {} }],
         };
     }
 
     const reasons: string[] = [];
+    const reasonCodes: SoilReason[] = [];
     let worst: Exclude<SuitabilityFlag, 'unknown'> = 'good';
     const escalate = (to: 'caution' | 'poor') => {
         if (to === 'poor') worst = 'poor';
@@ -119,9 +162,17 @@ export function computeSuitability(
             if (deviation >= PH_HARD_MARGIN) {
                 escalate('poor');
                 reasons.push(`Soil pH ${soil.phH2o} is well outside the preferred ${bandText} (too ${dir}).`);
+                reasonCodes.push({
+                    code: dir === 'acidic' ? 'phTooAcidicHard' : 'phTooAlkalineHard',
+                    params: { ph: soil.phH2o, band: bandText },
+                });
             } else {
                 escalate('caution');
                 reasons.push(`Soil pH ${soil.phH2o} is slightly outside the preferred ${bandText} (a little too ${dir}).`);
+                reasonCodes.push({
+                    code: dir === 'acidic' ? 'phTooAcidicSoft' : 'phTooAlkalineSoft',
+                    params: { ph: soil.phH2o, band: bandText },
+                });
             }
         }
     }
@@ -133,6 +184,13 @@ export function computeSuitability(
             reasons.push(
                 `Soil texture (${soil.textureClass}) is not among this crop's preferred textures (${defaults.texturePreference.join(', ')}).`,
             );
+            reasonCodes.push({
+                code: 'textureNotPreferred',
+                params: {
+                    texture: soil.textureClass,
+                    preferred: defaults.texturePreference.join(', '),
+                },
+            });
         }
     }
 
@@ -146,6 +204,11 @@ export function computeSuitability(
             reasons.push(
                 `Texture implies ${tendency}-draining soil, but this crop prefers ${defaults.drainagePreference}-draining ground.`,
             );
+            // The raw enum, resolved to words by `renderSoilReason`.
+            reasonCodes.push({
+                code: 'drainageMismatch',
+                params: { actual: tendency, preferred: defaults.drainagePreference },
+            });
         }
     }
 
@@ -154,6 +217,7 @@ export function computeSuitability(
             flag: 'good',
             reason: `This field's soil matches the crop's preferences. ${ADVISORY}`,
             reasons,
+            reasonCodes: [{ code: 'matchesPreferences', params: {} }],
         };
     }
 
@@ -161,6 +225,7 @@ export function computeSuitability(
         flag: worst,
         reason: `${reasons.join(' ')} ${ADVISORY}`,
         reasons,
+        reasonCodes,
     };
 }
 
