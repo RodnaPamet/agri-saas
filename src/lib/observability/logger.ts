@@ -26,6 +26,9 @@
  *   - Sensitive fields are redacted by Pino before serialization.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 import pino from 'pino';
 import { getRequestContext } from './context';
 
@@ -72,10 +75,86 @@ function buildTransport(): pino.TransportSingleOptions | undefined {
 const transport = buildTransport();
 
 /**
- * Base Pino instance — singleton for the process.
- * Child loggers can be created from this for subsystem-specific bindings.
+ * A SECOND destination that outlives the container (#2682).
+ *
+ * `docker logs` is the only copy of this output today, and it lives inside the
+ * container. Watchtower REPLACES the container on every image publish and
+ * removes the predecessor, so the retention window is "until the next merge" —
+ * hours, and not a schedule anybody controls. Two production incidents were
+ * lost that way in one week, and the incentive is backwards: fixing an incident
+ * publishes an image, which destroys the evidence for the next one.
+ *
+ * Writing to a bind-mounted path survives the container. Nothing else changes:
+ * stdout keeps receiving exactly what it receives now, so `docker logs`,
+ * `check-e2e-audit-writes.mjs` and every operator habit are untouched.
+ *
+ * OPT-IN, and unset is the default. With no `LOG_FILE_PATH` this function
+ * returns undefined and the logger is byte-identical to before — a logging
+ * change that could break a deployment it was meant to help diagnose is not a
+ * trade worth making.
+ *
+ * Failure is SWALLOWED and reported to stderr once. A log destination that
+ * throws takes down the process it was observing, which is the worst possible
+ * direction for this particular feature.
  */
-export const pinoInstance: pino.Logger = pino({
+function buildFileDestination(): pino.DestinationStream | undefined {
+    // Same defensive shape as `isDev` and `logLevel` above: this module is
+    // pre-env-validation infrastructure and may be imported where `process`
+    // does not exist (the Edge runtime).
+    const target =
+        typeof process !== 'undefined' ? process.env?.LOG_FILE_PATH?.trim() : undefined;
+    if (!target) return undefined;
+    try {
+        // PROVE THE PATH IS WRITABLE FIRST, synchronously, before pino ever
+        // sees it. This ordering is the entire safety property.
+        //
+        // Two earlier versions got this wrong and the second looked correct:
+        //
+        //   1. try/catch around `pino.destination` alone. It does NOT throw
+        //      synchronously on a bad path, so the catch never ran.
+        //   2. ...plus a `dest.on('error')` handler. Also insufficient — the
+        //      failure surfaces at PROCESS EXIT through pino's flush, not as a
+        //      stream `error` event, so the handler never fired either.
+        //
+        // Both were measured, and both CRASHED Node at exit: a log destination
+        // taking down the process it was observing, which is the one outcome
+        // worse than losing the logs. `mkdirSync` + an empty `appendFileSync`
+        // answer "can this process write here" now, on this tick, where a
+        // failure is an ordinary catchable exception.
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.appendFileSync(target, '');
+
+        // `sync: false` — buffered, because a synchronous write per log line
+        // on a shared disk is a latency tax on every request. `mkdir` is no
+        // longer needed: the directory exists by the line above.
+        const dest = pino.destination({ dest: target, sync: false });
+        // Belt and braces for a path that becomes unwritable LATER — a full
+        // disk, a removed volume. Cannot catch the construction case above,
+        // which is why the check comes first.
+        dest.on('error', (err: unknown) => {
+            const reason = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`[logger] log file write failed: ${reason}\n`);
+        });
+        return dest;
+    } catch (err) {
+        // `process.stderr.write`, not `console.error`. Two reasons, and the
+        // guard is only the first: `logging-import-hygiene` bans `console.*`
+        // in server code and its carve-out list is SHRINK-ONLY, so adding this
+        // file would be the wrong direction. The better reason is that THIS IS
+        // THE LOGGER FAILING — routing that through anything that might itself
+        // be the logger risks recursion at exactly the worst moment. The raw
+        // stream is the one thing still known to work.
+        const reason = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+            `[logger] LOG_FILE_PATH is set but unusable; continuing on stdout only: ${reason}\n`,
+        );
+        return undefined;
+    }
+}
+
+const fileDestination = buildFileDestination();
+
+const baseOptions: pino.LoggerOptions = {
     level: logLevel,
     redact: {
         paths: REDACT_PATHS,
@@ -85,8 +164,28 @@ export const pinoInstance: pino.Logger = pino({
     serializers: {
         err: pino.stdSerializers.err,
     },
-    ...(transport ? { transport } : {}),
-});
+};
+
+/**
+ * Base Pino instance — singleton for the process.
+ * Child loggers can be created from this for subsystem-specific bindings.
+ *
+ * Three shapes, and the ORDER of the checks matters: a dev `transport` and a
+ * multistream cannot both be passed, so the file destination is only consulted
+ * when no transport is in play. In development pino-pretty wins, which is
+ * correct — nobody is diagnosing a production incident from a dev machine.
+ */
+export const pinoInstance: pino.Logger = transport
+    ? pino({ ...baseOptions, transport })
+    : fileDestination
+      ? pino(
+            baseOptions,
+            pino.multistream([
+                { stream: process.stdout },
+                { stream: fileDestination },
+            ]),
+        )
+      : pino(baseOptions);
 
 // ── Public API ──
 
