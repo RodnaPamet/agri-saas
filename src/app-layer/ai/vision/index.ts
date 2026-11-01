@@ -57,17 +57,51 @@ async function tryIdentify(
     }
 }
 
+export interface IdentifyPhotoOptions {
+    /**
+     * When `false`, the PAID backend is never reached (#2596).
+     *
+     * The caller holds the `RequestContext` and is therefore the only place
+     * that can know whether this tenant has budget left — which is exactly
+     * what `ai-spend-gate-covers-embeddings` exempts the providers on. This
+     * is the lever that lets it act on the answer.
+     *
+     * Defaults to `true`, so every existing caller behaves as before and the
+     * refusal is opt-IN. A default of `false` would silently disable the
+     * cloud fallback for any future caller that forgot the flag, which is a
+     * quality regression disguised as a cost control.
+     */
+    allowCloud?: boolean;
+}
+
 /**
  * Classify a leaf/crop photo. Returns the structured identification, or
  * `null` when no backend produced one (fail-safe).
  */
-export async function identifyPhoto(image: VisionImage): Promise<PestIdentification | null> {
+export async function identifyPhoto(
+    image: VisionImage,
+    opts: IdentifyPhotoOptions = {},
+): Promise<PestIdentification | null> {
     const policy = env.VISION_BACKEND;
+    const allowCloud = opts.allowCloud ?? true;
 
     if (policy === 'onnx') {
         return tryIdentify(new OnnxVisionProvider(), image);
     }
     if (policy === 'claude') {
+        /**
+         * The only configured backend is the paid one, and the caller says it
+         * cannot be paid for. `null` — the honest "no identification" the
+         * contract already has for every other unavailable-backend case,
+         * which the job renders as inconclusive.
+         */
+        if (!allowCloud) {
+            logger.info('vision cloud withheld — no budget', {
+                component: 'vision',
+                policy,
+            });
+            return null;
+        }
         return tryIdentify(new ClaudeVisionProvider(), image);
     }
 
@@ -76,6 +110,25 @@ export async function identifyPhoto(image: VisionImage): Promise<PestIdentificat
     const onnx = new OnnxVisionProvider();
     const onDevice = await tryIdentify(onnx, image);
     if (onDevice && onDevice.confidence >= FALLBACK_CONFIDENCE) {
+        return onDevice;
+    }
+
+    /**
+     * Budget exhausted: KEEP the low-confidence on-device result rather than
+     * failing the job.
+     *
+     * This is the same branch the code already takes when Claude is
+     * unavailable or errors, and for the same reason — the job gates low
+     * confidence anyway and renders it as "inconclusive, verify with an
+     * agronomist". So an out-of-budget farm loses the second opinion, not the
+     * whole classification.
+     */
+    if (!allowCloud) {
+        logger.info('vision cloud fallback withheld — no budget', {
+            component: 'vision',
+            policy,
+            hadOnDevice: onDevice != null,
+        });
         return onDevice;
     }
 

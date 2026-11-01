@@ -147,11 +147,21 @@ export class ClaudeVisionProvider implements VisionProvider {
         }
 
         const result: ClaudePestResult = parsed.data;
+        // #2596 — what this call cost, for the CALLER to record. Read off the
+        // response rather than estimated: an estimate in a spend ledger is a
+        // number nobody can reconcile against a bill.
+        const usage = {
+            model: this.model,
+            promptTokens: response.usage?.input_tokens ?? 0,
+            completionTokens: response.usage?.output_tokens ?? 0,
+            totalTokens: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
+        };
         logger.info('claude vision identify', {
             component: 'vision',
             backend: 'claude',
             identifiedPest: result.identifiedPest,
             confidence: result.confidence,
+            totalTokens: usage.totalTokens,
         });
         return {
             identifiedPest: result.identifiedPest,
@@ -159,6 +169,7 @@ export class ClaudeVisionProvider implements VisionProvider {
             recommendation: result.recommendation,
             modelVersion: this.model,
             backend: 'claude',
+            usage,
         };
     }
 }
