@@ -18,8 +18,15 @@ import {
     runToolLoop,
     TOOL_PHASE_BUDGET_MS,
 } from '@/app-layer/ai/assistant/tool-loop';
+import { makeRequestContext } from '../../helpers/make-context';
 
-const ctx = { userId: 'u1', tenantId: 't1', role: 'EDITOR', permissions: {}, appPermissions: {} } as never;
+/**
+ * A REAL context — `runTool` asserts the read policy centrally now, and
+ * `assertCanRead` reads `ctx.permissions.canRead`. The stub here had
+ * `permissions: {}`, so four of these tests were exercising a context that
+ * CANNOT read and passing only because every usecase was mocked.
+ */
+const ctx = makeRequestContext('EDITOR', { userId: 'u1', tenantId: 't1' });
 
 const harness = () => {
     const sent: string[] = [];

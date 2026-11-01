@@ -49,6 +49,13 @@ import { listActiveListings } from '@/app-layer/usecases/exchange';
 import { listLocationsPaginated } from '@/app-layer/usecases/location';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { analyzeBlockRisk } from '@/app-layer/usecases/parcel-risk';
+import { getPriceTrends } from '@/app-layer/usecases/trends';
+import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
+import { assertCanRead } from '@/app-layer/policies/common';
+import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
+import { buildCalculatorPayload } from '@/lib/grain/calculator-payload';
+import { resolveRequestLocale } from '@/lib/i18n/request-locale';
+import { TREND_CHARTABLE, TrendRange } from '@/app-layer/schemas/trends.schemas';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
@@ -117,6 +124,7 @@ interface AssistantTool {
      * CONSUMER of a route-level gate, and carries it the way a route does.
      */
     readonly module?: ModuleKey;
+
     /**
      * The proposal KIND this tool prepares, read by `runTool` — #2632.
      *
@@ -259,6 +267,19 @@ const ListBlocksArgs = z.object({
 const AnalyzeBlockRiskArgs = z.object({
     locationId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
 }).strict();
+
+/**
+ * Price-trend args. Both vocabularies come from `trends.schemas.ts` — the same
+ * `z.enum`s the routes validate against — so a JSON-Schema handed to the model
+ * cannot offer a commodity or range the usecase refuses.
+ */
+const ListPriceTrendsArgs = z.object({
+    commodity: z.enum(TREND_CHARTABLE),
+    range: TrendRange.optional(),
+}).strict();
+
+/** The grain calculator takes no arguments: it is the whole farm's position. */
+const GrainCalculatorArgs = z.object({}).strict();
 
 const parseDay = (v: string | undefined): Date | undefined => {
     if (v === undefined) return undefined;
@@ -634,6 +655,175 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             };
         },
     },
+    grain_calculator: {
+        def: {
+            name: 'grain_calculator',
+            description:
+                "Калкулатор — the farm's grain position: what each commodity is worth against "
+                + 'what it cost. Takes no arguments. If `complete` is false, say so: figures were '
+                + 'left out and the totals are partial.',
+            parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        module: 'GRAIN',
+        args: GrainCalculatorArgs,
+        run: async (ctx) => {
+            // Through `buildCalculatorPayload`, which is what the route serves
+            // — not a second projection of `getGrainNetWorth`. Two shapings of
+            // one payload is how two answers diverge.
+            const payload = buildCalculatorPayload(await getGrainNetWorth(ctx));
+            // Every exclusion list is a set of rows the figures DO NOT
+            // include: a planting with no yield estimate, a lot whose unit did
+            // not resolve, a commodity with no price. A total computed over
+            // the rest is not wrong, but it is not the farm either, and a
+            // model given only the total would present it as the farm.
+            const excluded = Object.entries(payload.exclusions as Record<string, unknown[]>)
+                .filter(([, rows]) => Array.isArray(rows) && rows.length > 0)
+                .map(([reason, rows]) => ({ reason, count: rows.length }));
+            const left = excluded.reduce((n, e) => n + e.count, 0);
+            return {
+                generatedAt: payload.generatedAt,
+                seasonId: payload.seasonId,
+                farm: payload.farm,
+                // `truncated` is the usecase's own word for "a bounded read hit
+                // its cap", and `excluded` is "rows we could not value". Both
+                // make the totals partial, and they are reported SEPARATELY
+                // because the causes differ and only one of them is fixable by
+                // the farmer (a missing price is ours; a missing yield
+                // estimate is theirs).
+                complete: payload.truncated !== true && left === 0,
+                truncated: payload.truncated === true,
+                rowsLeftOut: left,
+                leftOutBecause: excluded.slice(0, 8),
+                // Field names READ OFF `toCalculatorRow`, not guessed. The
+                // first version of this projection used `r.tonnes ??
+                // r.quantityTonnes` and `r.value ?? r.grossValue` — none of
+                // which exist on a calculator row. Every one would have been
+                // `undefined`, and because the row is cast to
+                // `Record<string, unknown>` nothing would have said so.
+                commodities: (payload.rows as Array<Record<string, unknown>>)
+                    .slice(0, 12)
+                    .map((r) => ({
+                        commodity: r.commodity,
+                        netWorth: r.netWorth,
+                        // Why a net worth is ABSENT, per commodity. Without
+                        // this a null reads as zero, or as a commodity worth
+                        // nothing, when it means "we could not compute it".
+                        netWorthUnavailable: r.netWorthUnavailableCode ?? null,
+                        grainOnHandTonnes: r.grainOnHandTonnes,
+                        grainOnHandValue: r.grainOnHandValue,
+                        standingCropValue: r.standingCropValue,
+                        cashCostTotal: r.cashCostTotal,
+                        breakEven: r.breakEven,
+                        priceCurrency: r.priceCurrency,
+                        // The price's own age and provenance. A net worth is a
+                        // price times a quantity, so a figure computed from a
+                        // months-old observation is as misleading here as a
+                        // stale series is in `price_trends` — and the number
+                        // alone carries no hint of it.
+                        priceObservedAt: r.priceObservedAt,
+                        priceSource: r.priceSource,
+                    })),
+            };
+        },
+    },
+    price_trends: {
+        def: {
+            name: 'price_trends',
+            description:
+                'Борса price series for ONE commodity. Each series is a different source, region '
+                + 'and delivery stage and they are NOT comparable — never average them. Always say '
+                + 'how old a price is: `staleDays` is how long ago that series last reported, and '
+                + 'a series silent for months looks exactly as current as one reporting this week.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    commodity: {
+                        type: 'string',
+                        enum: [...TREND_CHARTABLE],
+                        description: 'The commodity to chart.',
+                    },
+                    range: {
+                        type: 'string',
+                        enum: [...TrendRange.options],
+                        description: 'Defaults to 3m.',
+                    },
+                },
+                required: ['commodity'],
+                additionalProperties: false,
+            },
+        },
+        args: ListPriceTrendsArgs,
+        run: async (ctx, args) => {
+            const a = ListPriceTrendsArgs.parse(args);
+            // The entitlement gate, with a LITERAL capability — #2626.
+            //
+            // `getPriceTrends` takes no `RequestContext`, so unlike every
+            // other tool here nothing downstream can assert this: the gate
+            // lives in the three trends ROUTES and this tool is a fourth
+            // consumer of it. Without this line a PAST_DUE tenant whose trends
+            // surface is closed would be answered by the assistant.
+            //
+            // A LITERAL rather than a declarative registry field, deliberately.
+            // §6 of `past-due-capability-coverage` builds its gated set from
+            // `assertNotPastDueRestricted(ctx, '<literal>')`, so a capability
+            // assembled at runtime is a gate no reader and no guard can find —
+            // the same reason `social-routes-flag-gated` requires a literal
+            // flag key. And §6 IS the enforcement: a future tool importing a
+            // tenant-independent trends usecase without this line fails it.
+            await assertNotPastDueRestricted(ctx, 'trends');
+            // The READER's language, required and not defaulted: the payload is
+            // Redis-cached across tenants, so a forgotten locale would poison
+            // the cache for every later reader of that commodity.
+            // `resolveRequestLocale` reads `uiLanguage` off the request context
+            // and falls back to `bg` — NOT a cookie, which a bearer client does
+            // not send.
+            const payload = await getPriceTrends(a.commodity, a.range ?? '3m', resolveRequestLocale());
+            const generated = new Date(payload.generatedAt).getTime();
+            return {
+                commodity: payload.commodity,
+                range: payload.range,
+                generatedAt: payload.generatedAt,
+                series: payload.series.slice(0, 8).map((sx) => {
+                    const points = sx.points ?? [];
+                    const latest = points[points.length - 1];
+                    // Staleness against `generatedAt`, never a wall clock: the
+                    // payload is cached for 6h and this process's clock is not
+                    // the observation's. The openapi description is explicit
+                    // that `lastObservedAt` is the newest observation ANYWHERE
+                    // and that a dead series' last point "looks equally
+                    // current" — so a model handed only `points` would quote a
+                    // price from months ago as today's.
+                    const staleDays =
+                        sx.lastObservedAt != null && Number.isFinite(generated)
+                            ? Math.max(
+                                0,
+                                Math.round(
+                                    (generated - new Date(sx.lastObservedAt).getTime())
+                                        / 86_400_000,
+                                ),
+                            )
+                            : null;
+                    return {
+                        source: sx.source,
+                        region: sx.region,
+                        stage: sx.stage ?? null,
+                        // Unit and currency travel WITH the price. Two series
+                        // of the same commodity routinely differ in both, and
+                        // a bare number invites a comparison the data does not
+                        // support.
+                        unit: sx.unit,
+                        currency: sx.currency,
+                        latestPrice: latest?.price ?? null,
+                        latestDate: latest?.date ?? null,
+                        lastObservedAt: sx.lastObservedAt,
+                        staleDays,
+                        pointCount: points.length,
+                    };
+                }),
+                seriesTotal: payload.series.length,
+            };
+        },
+    },
     propose_treatment: {
         def: {
             name: 'propose_treatment',
@@ -751,6 +941,20 @@ export async function runTool(
         };
     }
     try {
+        // The READ policy, for EVERY tool and before anything else.
+        //
+        // Most tools inherit it from their usecase — `listLogEntriesPaginated`,
+        // `listCostEntries`, `listActiveListings`, `listLocationsPaginated` and
+        // `analyzeParcelRisk` all open with `assertCanRead(ctx)`. Two do NOT:
+        // `getPriceTrends` takes no `RequestContext`, so it can assert nothing,
+        // and a propose tool reads no data at all.
+        //
+        // Asserted centrally rather than in the one run body that needs it,
+        // because "the tool whose usecase cannot assert must remember to" is a
+        // rule with one instance today and no enforcement. For the tools whose
+        // usecase also asserts, this is defence in depth and costs a read of
+        // `ctx.permissions`.
+        assertCanRead(ctx);
         // The module gate, BEFORE the usecase — #2629. The gate for every
         // surface these tools read lives in the ROUTE, not the usecase
         // (measured: 52 route files call it, 2 usecases do), so a tool
