@@ -146,6 +146,18 @@ model AssistantConversation {
   /// Touched on every turn, so an idle timeout can decide a conversation ENDED
   /// without a client telling us. "Ended" is what triggers extraction.
   lastTurnAt DateTime @default(now())
+  /// Stamped once the extraction sweep has read this conversation (#2671).
+  ///
+  /// The QUEUE is `extractedAt IS NULL AND lastTurnAt < cutoff`, which is why
+  /// this is a marker column rather than a boolean: a timestamp says WHEN, so a
+  /// conversation extracted before a prompt change can be found and re-run,
+  /// which a `true` cannot express.
+  ///
+  /// Set AFTER the facts are written, in the same transaction. Stamping first
+  /// would lose a conversation permanently on any failure in between —
+  /// `statement-dispatch`'s rule, for its reason: the queue IS the unstamped
+  /// set, so leaving it unstamped is the retry.
+  extractedAt DateTime?
 
   turns  AssistantTurn[]
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -153,6 +165,12 @@ model AssistantConversation {
   // Layer A (tenantId-leading). `userId` second because the only list query is
   // "this person's recent conversations in this farm".
   @@index([tenantId, userId, lastTurnAt])
+  // The extraction queue, and deliberately NOT tenant-leading: the sweep runs
+  // ACROSS tenants (it has to find every idle conversation, not one farm's), so
+  // a tenantId-leading index cannot serve it. `extractedAt` first because
+  // `IS NULL` is the selective term — the unextracted set drains, the table
+  // does not.
+  @@index([extractedAt, lastTurnAt])
 }
 
 /// One turn — the person's question or the assistant's answer.
