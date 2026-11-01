@@ -214,6 +214,8 @@ model Tenant {
   farmDocuments              FarmDocument[]
   documentSettings           TenantDocumentSettings?
   googleOAuthStates          GoogleOAuthState[]
+  /// #493 — product-usage telemetry. 90-day retention, swept daily.
+  usageEvents                UsageEvent[]
 
   @@index([organizationId])
 }
@@ -901,6 +903,8 @@ model User {
   featureFlagCohorts            FeatureFlagCohortMember[]    @relation("FeatureFlagCohortMemberships")
   farmDocumentsUploaded         FarmDocument[]               @relation("FarmDocumentUploader")
   farmDocumentsPurged           FarmDocument[]               @relation("FarmDocumentPurger")
+  /// #493 — this person's own usage events, within a farm.
+  usageEvents                   UsageEvent[]
   // P6.1 — the person's own public identity. One per USER, not per
   // membership: a person exists once across every farm they belong to,
   // which is what TenantMembership is for.

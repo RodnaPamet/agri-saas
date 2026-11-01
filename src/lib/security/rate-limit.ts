@@ -520,6 +520,27 @@ export const EXCHANGE_LISTING_CREATE_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * Product-usage telemetry: 30 batched requests per minute per (IP, user). #493.
+ *
+ * The number is not the interesting part — the SCOPE is. This route passes
+ * `scope: 'usage-events'`, so it gets its OWN bucket rather than sharing
+ * `api-mutation` with every other POST the phone makes. Sharing would mean a
+ * chatty or looping telemetry client consuming the same 60/min a farmer's
+ * journal write draws on, and the failure would land on the field record
+ * rather than on the measurement — exactly backwards. Telemetry must degrade
+ * before the product does.
+ *
+ * 30/min is generous for a BATCHING client: at 50 events a batch that is 1,500
+ * events a minute from one person, where a normal session produces a handful.
+ * It is low enough that a client stuck in a retry loop is bounded, and a
+ * refusal here costs a dropped measurement and nothing else.
+ */
+export const USAGE_EVENTS_LIMIT: RateLimitConfig = {
+    maxAttempts: 30,
+    windowMs: 60 * 1000,
+};
+
+/**
  * Exchange inquiry creation: 10 per minute per (IP, userId).
  *
  * Threat model: repeat-inquiry spam AND amplification — each inquiry triggers

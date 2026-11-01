@@ -1,0 +1,42 @@
+/// Product-usage telemetry — #493 (owner, 2026-11-01: "our server, per account").
+///
+/// Deliberately NOT in `audit.prisma`: that file holds the PLATFORM hash-chained
+/// trail, which is tamper-evident and retained for compliance. This is ordinary
+/// product analytics with a 90-day life, and mixing the two would lend it a
+/// permanence and an evidentiary weight it must not have.
+model UsageEvent {
+  id String @id @default(cuid())
+
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// Who. From the SESSION, never the request body — see the route.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// A value from the server-side `USAGE_EVENT_NAMES` union. Never free text:
+  /// a fixed enum is what stops a record id, a crop or typed content reaching
+  /// this table by way of a client that means well.
+  name String
+
+  /// The screen, for `screen_opened`. Null for every action.
+  surface String?
+
+  /// The CLIENT's clock, advisory only. A phone left in a vehicle overnight
+  /// lies confidently, so this is clamped on the way in and nothing aggregates
+  /// on it.
+  at DateTime
+
+  /// The SERVER's clock. This is what any count groups by.
+  receivedAt DateTime @default(now())
+
+  /// `[tenantId, receivedAt]` serves the superuser page's per-farm window and
+  /// the retention sweep; `[tenantId, name, receivedAt]` serves per-screen and
+  /// per-action counts without a second pass.
+  @@index([tenantId, receivedAt])
+  @@index([tenantId, name, receivedAt])
+  /// Layer B: every FK scalar is indexed. `userId` is second here because no
+  /// query asks about a user across farms — "per account" means per account
+  /// WITHIN a farm.
+  @@index([tenantId, userId])
+}
