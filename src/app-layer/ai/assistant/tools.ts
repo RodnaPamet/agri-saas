@@ -419,7 +419,23 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                     ...(a.occurredTo ? { occurredTo: a.occurredTo } : {}),
                 },
             });
-            const rows = (page as { rows?: unknown[] }).rows ?? [];
+            // `.items`, and NO CAST — the cast is what broke this.
+            //
+            // Every repository `listPaginated` in this codebase returns
+            // `{ items, pageInfo }`, journal included, and `GET /journal`
+            // reads `result.items`. This tool read `.rows`, which does not
+            // exist, and `?? []` turned the miss into an EMPTY JOURNAL for
+            // every farm and every question: the owner asked what was in
+            // their Дневник and was told it was empty while the app showed 8
+            // entries.
+            //
+            // The four sibling list tools read `page.rows` / `page.items`
+            // DIRECTLY and tsc checks each against its usecase's real return,
+            // so a wrong field name there is a compile error. This one carried
+            // `as { rows?: unknown[] }`, which defeated exactly that check —
+            // the cast is the defect, not the field name. A shape this tool
+            // does not own should be read, not asserted.
+            const rows = page.items;
             // `notes` omitted: sanitised rich-text HTML, by far the largest
             // field, and a list-level question does not need it. A later
             // single-entry tool can fetch one deliberately — the same line the
