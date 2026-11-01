@@ -29,6 +29,7 @@ import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { codedNotFound } from '@/lib/errors/types';
 import { getRedis } from '@/lib/redis';
+import { LocationRepository } from '../repositories/LocationRepository';
 import { ParcelRepository } from '../repositories/ParcelRepository';
 import { isGeeConfigured, getIndexMeansForPolygon } from '@/lib/agro/earth-engine';
 
@@ -176,4 +177,135 @@ export async function analyzeParcelRisk(
         }
     }
     return result;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Batch: a whole block's parcels — #2631
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parcels analysed in ONE batch call.
+ *
+ * A bound is required because `getIndexMeansForPolygon` takes one geometry and
+ * `src/lib/agro/earth-engine.ts` has no FeatureCollection variant, so a cold
+ * cache costs one Earth Engine round trip per parcel. 24 covers the great
+ * majority of blocks on this product while keeping a cold call bounded; a
+ * block with more reports a PARTIAL answer rather than a slow one.
+ */
+export const MAX_BATCH_PARCELS = 24;
+
+/** Parcels analysed concurrently. Bounded so a cold block is not 24 simultaneous EE calls. */
+const BATCH_CONCURRENCY = 4;
+
+export interface BlockRiskResult {
+    locationId: string;
+    locationName: string;
+    /** Parcels analysed in THIS call. */
+    analysed: number;
+    /**
+     * Parcels the block HAS. `analysed < total` means the answer is PARTIAL,
+     * and every caller must say so.
+     *
+     * This field is the whole reason the batch exists. `RiskLevel` already has
+     * an `unknown` member, so a caller counting levels would score an
+     * un-analysed parcel as merely unknown — and a reader counting "0 stressed"
+     * across 3 of 30 parcels gets a confident answer about a farm nobody
+     * looked at. A result that cannot express its own incompleteness is read
+     * as complete.
+     */
+    total: number;
+    /** Worst `overall` across the analysed parcels. */
+    worst: RiskLevel;
+    /** How many ANALYSED parcels sit at each level. Sums to `analysed`. */
+    counts: Record<RiskLevel, number>;
+    /** Per parcel, so a caller can name the stressed ones rather than count them. */
+    parcels: ParcelRiskResult[];
+    /** Whether Earth Engine is configured at all. */
+    configured: boolean;
+    generatedAt: string;
+}
+
+/**
+ * Analyse every parcel in a block, bounded, reusing the per-parcel day cache.
+ *
+ * ## Why it calls `analyzeParcelRisk` rather than reimplementing
+ *
+ * The thresholds (`vegetationLevel`, `moistureLevel`, `worst`) are the product
+ * decision here, and two copies of them would drift — the same rule that keeps
+ * `scripts/lib/api-routes.ts` single. Reusing the per-parcel function also
+ * reuses its Redis key, so a block whose parcels the operator already opened
+ * one-by-one on the farm-risk page costs nothing, and the page warms this.
+ *
+ * ## The transaction CLOSES before the satellite calls
+ *
+ * Both reads happen in ONE `runInTenantContext` which then returns. The
+ * analyses run after it, deliberately:
+ *
+ *   - `runInTenantContext` IS a `$transaction`, and `analyzeParcelRisk` opens
+ *     its own, so running them inside would nest — a second pool connection
+ *     while the first is held, which is #1191's P0.8 deadlock at
+ *     `PG_POOL_MAX`.
+ *   - Holding a connection across up to 24 Earth Engine round trips would tie
+ *     a pool slot to a remote compute service for the duration.
+ *
+ * ## A failing parcel is EXCLUDED, never substituted
+ *
+ * `analyzeParcelRisk` degrades an EE failure to null readings by design, so a
+ * throw here means something structural — a parcel deleted between the id
+ * query and the analysis. That parcel is dropped from `parcels` and therefore
+ * from `analysed`, which keeps the denominator honest. Inserting a synthetic
+ * `unknown` row would inflate `analysed` and claim a parcel was looked at.
+ */
+export async function analyzeBlockRisk(
+    ctx: RequestContext,
+    locationId: string,
+    opts: { now?: Date } = {},
+): Promise<BlockRiskResult> {
+    assertCanRead(ctx);
+    const now = opts.now ?? new Date();
+
+    // ONE transaction for both reads, closed before any analysis begins.
+    const { locationName, ids, total } = await runInTenantContext(ctx, async (db) => {
+        const location = await LocationRepository.getById(db, ctx, locationId);
+        // A block that does not exist must NOT read as a block with no
+        // parcels: the second answer is "nothing to worry about" about a farm
+        // we never found.
+        if (!location) throw codedNotFound('LOCATION_NOT_FOUND', 'Location not found');
+        return {
+            locationName: location.name,
+            total: await ParcelRepository.countForLocation(db, ctx, locationId),
+            ids: await ParcelRepository.listIdsForLocation(db, ctx, locationId, MAX_BATCH_PARCELS),
+        };
+    });
+
+    const parcels: ParcelRiskResult[] = [];
+    for (let i = 0; i < ids.length; i += BATCH_CONCURRENCY) {
+        const slice = ids.slice(i, i + BATCH_CONCURRENCY);
+        const settled = await Promise.allSettled(
+            slice.map((p) => analyzeParcelRisk(ctx, p.id, { now })),
+        );
+        for (const r of settled) {
+            if (r.status === 'fulfilled') parcels.push(r.value);
+        }
+    }
+
+    const counts: Record<RiskLevel, number> = { unknown: 0, good: 0, watch: 0, stress: 0 };
+    let worstLevel: RiskLevel = 'unknown';
+    for (const p of parcels) {
+        counts[p.overall] += 1;
+        worstLevel = worst(worstLevel, p.overall);
+    }
+
+    return {
+        locationId,
+        locationName,
+        analysed: parcels.length,
+        total,
+        worst: worstLevel,
+        counts,
+        configured: isGeeConfigured(),
+        parcels,
+        generatedAt: now.toISOString(),
+    };
 }

@@ -826,6 +826,40 @@ export class ParcelRepository {
     }
 
     /** Count a location's (non-deleted) parcels. */
+    /**
+     * Parcel ids + names for a location, BOUNDED — #2631.
+     *
+     * Deliberately not `listForLocation`, which returns `ParcelGeo` with
+     * geometry GeoJSON, owners and soil per row. The batch risk aggregate
+     * needs an id and a name to label a result, and pulling geometry for
+     * every parcel to discard it would be the expensive half of the query it
+     * is trying to avoid.
+     *
+     * `take` is required rather than defaulted: the caller bounds how many
+     * parcels it will analyse, and a silent default here would decide that
+     * for it. Pair it with `countForLocation` so a partial answer can report
+     * its own denominator.
+     */
+    static async listIdsForLocation(
+        db: PrismaTx,
+        ctx: RequestContext,
+        locationId: string,
+        take: number,
+    ): Promise<Array<{ id: string; name: string }>> {
+        return db.parcel.findMany({
+            where: { tenantId: ctx.tenantId, locationId, deletedAt: null },
+            select: { id: true, name: true },
+            // `[name, id]`, never `name` alone — #1742's rule, and this read
+            // is the shape its guard exists for. Parcel names are NOT unique
+            // and Postgres gives no stability guarantee for rows that tie, so
+            // with a non-total order WHICH parcels come back under `take` is
+            // unstable: a farmer asking the same question twice would get a
+            // different subset analysed, with nothing having changed.
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take,
+        });
+    }
+
     static async countForLocation(db: PrismaTx, ctx: RequestContext, locationId: string): Promise<number> {
         return db.parcel.count({ where: { locationId, tenantId: ctx.tenantId, deletedAt: null } });
     }
