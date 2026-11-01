@@ -849,7 +849,13 @@ export class ParcelRepository {
         return db.parcel.findMany({
             where: { tenantId: ctx.tenantId, locationId, deletedAt: null },
             select: { id: true, name: true },
-            orderBy: { name: 'asc' },
+            // `[name, id]`, never `name` alone — #1742's rule, and this read
+            // is the shape its guard exists for. Parcel names are NOT unique
+            // and Postgres gives no stability guarantee for rows that tie, so
+            // with a non-total order WHICH parcels come back under `take` is
+            // unstable: a farmer asking the same question twice would get a
+            // different subset analysed, with nothing having changed.
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take,
         });
     }
