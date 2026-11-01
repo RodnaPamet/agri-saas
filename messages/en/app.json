@@ -541,6 +541,19 @@
             "title": "Lease expiring",
             "body": "The lease for “{parcel}” with {lessor} expires on {date} (days remaining: {days})."
         },
+        "contractDeliveryWindow": {
+            "overdueTitle": "Overdue delivery window",
+            "closingTitle": "Delivery window approaching",
+            "overdueBody": "The delivery window for the {what} contract ended on {date} (days overdue: {days}).{outstanding}",
+            "closingBody": "The delivery window for the {what} contract ends on {date} (days remaining: {days}).{outstanding}",
+            "outstanding": " Outstanding for delivery (t): {tonnes}."
+        },
+        "fieldOperationReview": {
+            "approvedTitle": "Field operation approved: {task}",
+            "changesTitle": "Changes requested: {task}",
+            "approvedBody": "Your field operation “{task}” was approved.",
+            "changesBody": "Your field operation “{task}” needs changes."
+        },
         "markRead": "Mark read",
         "noNotifications": "No notifications",
         "slaBreach": {

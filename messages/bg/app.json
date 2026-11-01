@@ -541,6 +541,19 @@
             "title": "Изтичащ договор за наем",
             "body": "Договорът за „{parcel}“ с {lessor} изтича на {date} (остават дни: {days})."
         },
+        "contractDeliveryWindow": {
+            "overdueTitle": "Просрочен срок за доставка",
+            "closingTitle": "Наближаващ срок за доставка",
+            "overdueBody": "Срокът за доставка по договора за {what} изтече на {date} (просрочие в дни: {days}).{outstanding}",
+            "closingBody": "Срокът за доставка по договора за {what} изтича на {date} (остават дни: {days}).{outstanding}",
+            "outstanding": " Остават за доставка (т): {tonnes}."
+        },
+        "fieldOperationReview": {
+            "approvedTitle": "Одобрена дейност: {task}",
+            "changesTitle": "Поискани промени: {task}",
+            "approvedBody": "Вашата дейност „{task}“ беше одобрена.",
+            "changesBody": "Вашата дейност „{task}“ се нуждае от промени."
+        },
         "markRead": "Маркирай като прочетено",
         "noNotifications": "Няма известия",
         "slaBreach": {
