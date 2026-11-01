@@ -300,6 +300,30 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
     // red on exactly that, and it is now in RICH_TEXT_COVERAGE. The mechanism
     // worked one PR after it was written, which is the only evidence that
     // kind of design ever gets.
+    // ── Assistant memory (#2671) ──
+    //
+    // Here for exactly the reason the P5.1 note above gives, and that
+    // precedent is why this entry is cheap to justify: #2683 ships these
+    // tables one release BEFORE any writer, so there is no usecase to name in
+    // RICH_TEXT_COVERAGE. Claiming coverage would be false and claiming "not
+    // user rich text" would be worse, because both columns ARE user-authored
+    // free text and the exemption would outlive the gap.
+    AssistantTurn:
+        'AssistantTurn.content is the person\'s verbatim question (or the '
+        + 'assistant\'s answer), encrypted under the tenant DEK. No writer '
+        + 'exists yet. Ratchet target: the PR that writes turns registers the '
+        + 'usecase here, and note that for a REPLAYED turn the protection that '
+        + 'matters is prompt FENCING rather than sanitisation — a sanitiser '
+        + 'protects a renderer, and a turn re-enters a model. Both are needed; '
+        + 'this registry only tracks the first.',
+    AssistantMemoryFact:
+        'AssistantMemoryFact.text and .sourceQuote, encrypted under the GLOBAL '
+        + 'KEK. No writer in #2683. Ratchet target: the memory API PR, whose '
+        + '`editRememberedPoint` already calls sanitizePlainText — so this '
+        + 'entry should move to RICH_TEXT_COVERAGE in that PR rather than '
+        + 'linger. The live-writer assertion below is what will force it, '
+        + 'which is the same mechanism that moved ContentReport one PR after '
+        + 'it was written.',
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -516,7 +540,21 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // StatementOfReasons — back to where it stood before P5.1. Lowered
         // each time rather than left high, because slack a later regression
         // can spend is the thing a ratchet exists to refuse.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
+        //
+        // 3 since #2683, and this is the conversation the comment above asks
+        // for. Assistant memory adds `AssistantTurn` and
+        // `AssistantMemoryFact` for exactly the P5.1 reason — tables one
+        // release before any writer — so both are the "nothing writes it"
+        // kind rather than the `EvidenceReview` kind, and the live-writer
+        // assertion below is what keeps that honest rather than this number.
+        //
+        // One of the two is already SHORT-LIVED by construction: the memory
+        // API PR's `editRememberedPoint` calls `sanitizePlainText`, so the
+        // live-writer assertion will force `AssistantMemoryFact` into
+        // RICH_TEXT_COVERAGE in that PR and this should come back to 2. If it
+        // does not, that is the regression and not a reason to leave the cap
+        // high.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(3);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {

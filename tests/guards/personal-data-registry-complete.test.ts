@@ -240,7 +240,21 @@ describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () =
             .map((e) => e.model)
             .sort();
         expect(deleted).toEqual([
-            'Account', 'AuthSession', 'FeatureFlagCohortMember',
+            'Account',
+            // #2671 — the assistant's per-person memory profile. It passes this
+            // test's criterion on its face: a remembered point is a statement
+            // ABOUT the person, not somebody else's record that happens to name
+            // them, so deleting it destroys no second owner's history. There is
+            // no tenant column for the same reason.
+            //
+            // Pseudonymising would be worse than useless here, as with
+            // PersonProfile: the row also stores the person's VERBATIM sentence
+            // as evidence, so a pseudonymised `userId` would leave their own
+            // words attached to a random id — still identifying, and now
+            // unreachable by the «Какво помни асистентът» screen that exists to
+            // let them delete it.
+            'AssistantMemoryFact',
+            'AuthSession', 'FeatureFlagCohortMember',
             'OrgMembership', 'PasswordResetToken',
             // P6.1 — a person's own public identity. It passes this test's own
             // criterion exactly: nobody else owns it, so deleting it destroys
