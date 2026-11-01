@@ -33,36 +33,51 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 /** A label no copy string could contain by accident. */
 const PLANTED = 'Пръскане на блок 3 срещу мана ZZQX';
 
+/**
+ * The population, as a NAMED module-level helper rather than inline in `it()`.
+ *
+ * `selector-teeth-reports-its-denominator` caps the number of guard files
+ * whose selecting happens inside `it()` — such a guard cannot be
+ * mutation-audited, so it passes whether or not it selects anything. This file
+ * was the 201st against a ceiling of 200, and extracting the selector is the
+ * fix the ceiling exists to prompt; raising a SHARED ceiling to admit one new
+ * file would spend everyone's slack on my convenience.
+ */
+export function pushEnqueueSites(): Array<{ file: string; body: string }> {
+    // `skipDirs` is passed explicitly: the default excludes `dist` and
+    // `coverage` BY NAME, which would hide a real source directory called
+    // either — the trap `collect-files` documents at the option.
+    const files = collectSourceFiles({
+        roots: ['src'],
+        extensions: ['.ts'],
+        skipDirs: ['node_modules', '.next', '.git'],
+        floor: 500,
+    });
+    const sites: Array<{ file: string; body: string }> = [];
+
+    for (const file of files) {
+        const src = readFileSync(file, 'utf8');
+        if (!src.includes("enqueue('push-send'")) continue;
+        // The object literal of each call, up to its closing brace.
+        const re = /enqueue\(\s*'push-send'\s*,\s*\{([\s\S]*?)\n\s*\}\s*\)/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(src)) !== null) {
+            const bodyLine = m[1]
+                .split('\n')
+                .map((l) => l.replace(/\/\/.*$/, '').trim())
+                .find((l) => l.startsWith('body:'));
+            sites.push({
+                file: file.slice(REPO_ROOT.length + 1),
+                body: bodyLine ?? '<no body: key>',
+            });
+        }
+    }
+    return sites;
+}
+
 describe('push payloads carry no farmer-written text (#1999)', () => {
     it('§1 every enqueue("push-send") site feeds `body` from a pushBody', () => {
-        // `skipDirs` is passed explicitly: the default excludes `dist` and
-        // `coverage` BY NAME, which would hide a real source directory called
-        // either — the trap `collect-files` documents at the option.
-        const files = collectSourceFiles({
-            roots: ['src'],
-            extensions: ['.ts'],
-            skipDirs: ['node_modules', '.next', '.git'],
-            floor: 500,
-        });
-        const sites: Array<{ file: string; body: string }> = [];
-
-        for (const file of files) {
-            const src = readFileSync(file, 'utf8');
-            if (!src.includes("enqueue('push-send'")) continue;
-            // The object literal of each call, up to its closing brace.
-            const re = /enqueue\(\s*'push-send'\s*,\s*\{([\s\S]*?)\n\s*\}\s*\)/g;
-            let m: RegExpExecArray | null;
-            while ((m = re.exec(src)) !== null) {
-                const bodyLine = m[1]
-                    .split('\n')
-                    .map((l) => l.replace(/\/\/.*$/, '').trim())
-                    .find((l) => l.startsWith('body:'));
-                sites.push({
-                    file: file.slice(REPO_ROOT.length + 1),
-                    body: bodyLine ?? '<no body: key>',
-                });
-            }
-        }
+        const sites = pushEnqueueSites();
 
         console.log(`[push-payload] ${sites.length} enqueue('push-send') site(s) across src/`);
         for (const s of sites) console.log(`[push-payload]   ${s.file} → ${s.body}`);
