@@ -415,23 +415,31 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         expect(created(calls)).toBe(true);
     });
 
-    it('the settle loop caps each ATTEMPT — nothing else polices this one', () => {
-        // #2508 added a bounded re-read, and `ci-retry-loop-timeout` does NOT
-        // cover it: that guardrail scans `.github/workflows` and
-        // `.github/actions`, and this loop lives in `.github/scripts`.
-        // Measured — removing the cap left it 19/19 green. So the cap is
-        // pinned here, and the population gap is filed separately.
+    it('the settle loop caps each attempt AND still terminates', () => {
+        // Renamed and rewritten by #2576. It was called "nothing else polices
+        // this one", and its docblock recorded that `ci-retry-loop-timeout`
+        // scanned only `.github/workflows` and `.github/actions` so this loop
+        // was invisible to it — "removing the cap left it 19/19 green".
         //
-        // Why a per-ATTEMPT cap matters: without it the loop only re-enters
-        // when `gh api` RETURNS, so it defends against a fast failure and not
-        // against a hung request — which would eat the budget and leave
-        // attempts 2 and 3 unrun. That is the defect `ci-retry-loop-timeout`
-        // exists for, after an 8-minute `npm ci` stall.
+        // Both claims are now FALSE. That guardrail scans `.github/scripts`
+        // too, and its loop pattern accepts a `*_attempt` counter rather than
+        // only `attempt`, which was the second half of the gap: widening the
+        // root alone would still have missed `settle_attempt`. Removing the
+        // cap now reddens it (2 failed).
+        //
+        // A test name that asserts a CAUSE outlives the cause, and this one
+        // would have gone on telling a reader the population gap was open.
+        //
+        // The test SURVIVES rather than being deleted, because the two checks
+        // are not the same: the guardrail polices the POPULATION — any retry
+        // loop in those roots carries a per-attempt cap below its job budget —
+        // while the last assertion here is behavioural and unique to this
+        // loop. A bounded loop with no break on the settled case would re-read
+        // three times on every cancellation, and no population guard would
+        // notice.
         const src = fs.readFileSync(SCRIPT, 'utf8');
         expect(src).toMatch(/for settle_attempt in 1 2 3; do/);
         expect(src).toMatch(/timeout\s+\d+\s+"\$GH"\s+api/);
-        // And it must still terminate: a bounded loop with no break on the
-        // settled case would re-read three times on every cancellation.
         expect(src).toMatch(/0\)\s*break\s*;;/);
     });
 

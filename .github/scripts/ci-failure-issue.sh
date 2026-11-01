@@ -319,6 +319,14 @@ case "$CONCLUSION" in
             # `timeout` per ATTEMPT, so one hung request cannot eat the budget
             # and leave attempts 2 and 3 unrun - `ci-retry-loop-timeout`
             # enumerates this loop and requires the cap.
+            #
+            # That claim was FALSE when written and is true since #2576: the
+            # guardrail scanned only workflows and actions, and its pattern
+            # wanted a counter named exactly `attempt`, so `settle_attempt` in
+            # a script missed on both counts. Removing this `timeout` left it
+            # 19/19 green. Both are fixed; the cap is now policed by
+            # population, and `ci-failure-notifier` pins the break-on-settled
+            # behaviour the population guard cannot see.
             if ! PROBE="$(timeout 30 "$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
                 --jq "$PROBE_JQ")"; then
                 PROBE=""
