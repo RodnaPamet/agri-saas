@@ -199,6 +199,40 @@ export const PUBLIC_PATH_PREFIXES = [
 ];
 
 export const PUBLIC_PATH_EXACT = new Set([
+    // The Google consent RETURN (#2495). EXACT, not a prefix: it is one path,
+    // and a prefix would open everything added under `/api/integrations/google/`
+    // later — `/connect` among them, which is the admin-gated route that STARTS
+    // the flow.
+    //
+    // It has to be here because the request arrives from GOOGLE, not from a
+    // browsing session. The native branch runs its consent in an EPHEMERAL
+    // browser that holds no cookie at all — that is the whole design, and the
+    // reason `GoogleOAuthState` exists as a server-held row instead of a
+    // cookie. So the Edge calls `getToken()`, finds nothing, and
+    // `unauthorizedJson()` refuses the request before the handler ever runs.
+    //
+    // Measured in production 2026-11-01: the owner reached Google, consented,
+    // and got a bare `{"error":"Unauthorized"}` page at app.agrent.bg. Two
+    // `GoogleOAuthState` rows had been minted by `/connect` seconds earlier and
+    // were still UNCONSUMED, which is the tell — the claim never ran, so the
+    // refusal was upstream of `claimNativeState` rather than inside it.
+    //
+    // Note the near miss: `/api/auth` IS a public prefix, so Google SIGN-IN
+    // (`/api/auth/callback/google`) has always worked. Only the INTEGRATION
+    // callback lives outside it, which is why this looked like a Google
+    // configuration fault for as long as it did.
+    //
+    // Opening it is safe because the handler authenticates itself, in both
+    // branches and without reference to the Edge:
+    //   · native — `claimNativeState` ATOMICALLY claims a single-use,
+    //     expiring, hashed state row, then `contextForStarter` re-checks that
+    //     the person who started the flow is STILL an active admin of that
+    //     farm. A replay finds the row consumed and is refused.
+    //   · web — `getTenantCtx` + `assertCanAdmin`, reading the caller's cookie
+    //     exactly as before.
+    // A request carrying no valid state and no session reaches neither.
+    '/api/integrations/google/callback',
+
     // P6.8 (#1817) — the public farm directory. EXACT and not a prefix: it is
     // one path, so the narrower claim is the right one, and a prefix would
     // open anything added beneath it later. It carries no credential to
