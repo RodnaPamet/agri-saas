@@ -6,6 +6,7 @@ import { isPlatformTenant } from '@/lib/auth/platform-support';
 import { getUsageInsights } from '@/app-layer/usecases/usage-insights';
 import { USAGE_EVENT_RETENTION_DAYS } from '@/app-layer/telemetry/usage-events';
 import { Heading } from '@/components/ui/typography';
+import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { UsageConsoleClient } from './UsageConsoleClient';
 
 /**
@@ -51,6 +52,13 @@ export default async function UsageAdminPage({
 
     return (
         <div className="space-y-section">
+            <PageBreadcrumbs
+                items={[
+                    { label: t('breadcrumbDashboard'), href: `/t/${tenantSlug}/dashboard` },
+                    { label: t('breadcrumbAdmin'), href: `/t/${tenantSlug}/admin` },
+                    { label: t('breadcrumbUsage') },
+                ]}
+            />
             <header className="space-y-tight">
                 <Heading level={1}>{t('title')}</Heading>
                 <p className="text-sm text-content-muted">{t('subtitle', { days: insights.days })}</p>
