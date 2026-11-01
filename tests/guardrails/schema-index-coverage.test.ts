@@ -256,7 +256,7 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         model: 'AssistantTurn',
         fields: ['tenantId', 'conversationId', 'createdAt'],
         justification:
-            "loadWindow is the only findMany on this model: `WHERE tenantId = ? AND conversationId = ? ORDER BY createdAt DESC` capped at MAX_WINDOW_TURNS (6). All three columns are in the index in query order — equality, equality, then the sort key — so the window is an index scan of six rows however long the conversation gets, which is the property that matters: turns accumulate for the life of the account (nothing prunes them, by the owner's 2026-11-01 ruling that every exchange is kept) while the read stays bounded. The composite was already in the schema from #2683, written for this query before it existed; this entry is the triage it was waiting for. The sibling @@index([tenantId, conversationId]) is Layer B's FK cover and is a prefix of this one, so it costs nothing extra to keep. Recall over the whole history (#2695) will be a DIFFERENT shape — text or date search across conversations rather than one conversation's tail — and wants its own entry rather than a claim that this index serves it.",
+            "TWO findMany queries share this composite, and the second arrived in #2671 after this entry was written — so 'loadWindow is the only findMany on this model' is no longer true and is corrected here rather than left standing. (a) `loadWindow`: `WHERE tenantId = ? AND conversationId = ? ORDER BY createdAt DESC` capped at MAX_WINDOW_TURNS (6). (b) the extraction sweep: the same two equality predicates plus `role = 'user'`, ORDER BY createdAt ASC, capped at MAX_TURNS — `role` is deliberately NOT in the index, because with two values it eliminates about half a conversation's rows after an already-bounded seek and would widen every write for no useful selectivity. All three columns are in the index in query order — equality, equality, then the sort key — so the window is an index scan of six rows however long the conversation gets, which is the property that matters: turns accumulate for the life of the account (nothing prunes them, by the owner's 2026-11-01 ruling that every exchange is kept) while the read stays bounded. The composite was already in the schema from #2683, written for this query before it existed; this entry is the triage it was waiting for. The sibling @@index([tenantId, conversationId]) is Layer B's FK cover and is a prefix of this one, so it costs nothing extra to keep. The sweep also cannot batch its read across farms, which is a KEY problem rather than a query-shape one: `content` is encrypted under the per-tenant DEK, so the read must happen inside that tenant's context. Recall over the whole history (#2695) will be a DIFFERENT shape — text or date search across conversations rather than one conversation's tail — and wants its own entry rather than a claim that this index serves it.",
     },
     // ── FarmIdentityClaim (the P3.9 staff review queue) ─────────────
     {
@@ -264,13 +264,6 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         fields: ['status', 'createdAt'],
         justification:
             "listFarmClaims is the platform review queue: `WHERE status = 'PENDING' ORDER BY createdAt ASC`, and CROSS-tenant — a reviewer looks at every farm, and a collision is by definition two tenants. So `tenantId` does NOT lead here, unlike every other entry in this list: it is a column the query never mentions. `status` is the equality predicate, `createdAt` the sort key.",
-    },
-    // ── AssistantTurn (the memory extraction sweep, #2671) ─────────
-    {
-        model: 'AssistantTurn',
-        fields: ['tenantId', 'conversationId', 'createdAt'],
-        justification:
-            "The extraction sweep reads one conversation's questions: `WHERE tenantId = ? AND conversationId = ? AND role = 'user' ORDER BY createdAt ASC`, capped at MAX_TURNS. The composite carries the two equality predicates and the sort key in that order. `role` is deliberately NOT in the index: it has two values, so it eliminates roughly half a conversation's rows after an already-bounded seek, and adding it would widen every write for no useful selectivity. `tenantId` leads because the read runs under RLS inside `runInTenantContext` — the key is per-tenant, which is also why the sweep cannot batch this read across farms.",
     },
     // ── FarmDocument («Документи», #2495) ──────────────────────────
     {
