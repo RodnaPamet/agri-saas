@@ -30,6 +30,16 @@
   ],
   "routes": [
     {
+      "path": "/api/account/assistant-memory",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/account/assistant-memory/{id}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/account/avatar",
       "status": "live",
       "documented": true

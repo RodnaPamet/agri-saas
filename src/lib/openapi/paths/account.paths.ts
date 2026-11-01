@@ -26,6 +26,7 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { MAX_BOTTOM_TABS } from '@/lib/account/bottom-tabs';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
+import { REMEMBERED_POINT_MAX_CHARS } from '@/app-layer/usecases/assistant-memory';
 import { codedErrorResponses, op, rawErrorResponses } from './helpers';
 
 /**
@@ -343,6 +344,33 @@ const AvatarUploadResultSchema = z
         }),
     })
     .openapi('AvatarUploadResult');
+
+/**
+ * One remembered point, as «Какво помни асистентът» lists it (#2671).
+ *
+ * NO `sourceQuote` and no conversation id, deliberately. The evidence for a
+ * point is kept SERVER-side — it is what makes "the latest statement wins" and
+ * "a deleted point is never re-learned" checkable — and showing a person the
+ * sentence a point was derived from invites "where did you get that" without
+ * helping them decide whether to delete it.
+ */
+const RememberedPointSchema = z
+    .object({
+        id: z.string(),
+        text: z.string().openapi({
+            description:
+                'The remembered point: ONE short sentence in the person\u2019s own language. '
+                + 'Model-extracted into a constrained shape and sanitised \u2014 never a span '
+                + 'copied out of what they typed, because the extraction is a narrowing and '
+                + 'that narrowing is what bounds what can reach the profile.',
+        }),
+        rememberedAt: z.string().openapi({
+            description:
+                'ISO-8601, the date the person SAID the thing \u2014 not when the row was '
+                + 'written. The client formats it; the server never pre-formats a date.',
+        }),
+    })
+    .openapi('RememberedPoint');
 
 export function registerAccountPaths(registry: OpenAPIRegistry): void {
     op(registry, {
@@ -810,6 +838,121 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'Removed, or already absent.',
             schema: z.object({ success: z.literal(true) }).openapi('AvatarRemoveResult'),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/account/assistant-memory',
+        operationId: 'listRememberedPoints',
+        summary: 'What the assistant remembers about the caller',
+        description:
+            'The per-PERSON memory profile behind \u00ab\u041a\u0430\u043a\u0432\u043e \u043f\u043e\u043c\u043d\u0438 \u0430\u0441\u0438\u0441\u0442\u0435\u043d\u0442\u044a\u0442\u00bb (#2671).\n\n'
+            + '**ONE memory per person, across every farm they belong to** \u2014 which is why this '
+            + 'is an `/api/account/**` route and not `/api/t/{tenantSlug}/**`. A tenant-scoped '
+            + 'path would imply per-farm memory, and it would run the wrong database context: '
+            + 'the row\u2019s read policy matches `app.user_id`, which only the person-scoped '
+            + 'runner sets.\n\n'
+            + 'The profile holds the PERSON\u2019s preferences \u2014 crops they grow, recurring '
+            + 'problems, products they prefer, how they like answers. It never holds a farm\u2019s '
+            + 'RECORDS: a point can only be learned from something the person themselves wrote, '
+            + 'so an observation that came from a tool (\u00ab\u0411\u043b\u043e\u043a 3 has mana\u00bb) '
+            + 'cannot become one. That is enforced by the schema rather than by instruction.\n\n'
+            + 'Bounded, newest first. A list longer than the bound would mean the extractor is '
+            + 'accumulating rather than superseding, which is a defect rather than a page to '
+            + 'scroll \u2014 so there is no cursor.\n\n'
+            + 'FLAG-GATED and 404s when off, like every other dark-launched surface. The flag is '
+            + 'separate from the assistant\u2019s own, so memory can be turned off without taking '
+            + 'the assistant down.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description: 'The caller\u2019s live profile. An empty array means nothing is remembered yet.',
+            schema: z
+                .object({ facts: z.array(RememberedPointSchema) })
+                .openapi('RememberedPointList'),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/account/assistant-memory',
+        operationId: 'forgetAllRememberedPoints',
+        summary: 'Forget everything the assistant remembers (\u00ab\u0418\u0437\u0442\u0440\u0438\u0439 \u0432\u0441\u0438\u0447\u043a\u043e\u00bb)',
+        description:
+            'Forgets every live point for the caller. Returns the COUNT rather than a bare '
+            + 'success, so a client can say how many were forgotten \u2014 \u201cnothing to forget\u201d '
+            + 'and \u201cforgot everything\u201d are different things to a person.\n\n'
+            + '**A forgotten point is never re-learned from the same evidence.** The row is kept '
+            + 'as a tombstone precisely so that holds: a hard delete would let the next '
+            + 'conversation that mentioned the same thing undo the decision, and \u00ab\u0418\u0437\u0442\u0440\u0438\u0439\u00bb '
+            + 'would not stick. It is re-learned only if the person says it again.\n\n'
+            + 'Idempotent \u2014 forgetting an empty profile succeeds with `forgotten: 0`.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description: 'How many points were forgotten.',
+            schema: z.object({ forgotten: z.number().int() }).openapi('ForgetAllResult'),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/account/assistant-memory/{id}',
+        operationId: 'forgetRememberedPoint',
+        summary: 'Forget one remembered point',
+        description:
+            'Forgets a single point. Kept as a tombstone for the reason '
+            + '`forgetAllRememberedPoints` describes.\n\n'
+            + '**A point that is not the caller\u2019s answers NOT FOUND, never FORBIDDEN.** A 403 '
+            + 'would confirm the id exists, and these ids are about people.\n\n'
+            + 'Refusal code: `MEMORY_POINT_NOT_FOUND` \u2014 unknown id, already forgotten, or '
+            + 'somebody else\u2019s. The three are deliberately indistinguishable.',
+        tags: ['Account'],
+        params: z.object({
+            id: z.string().openapi({
+                param: { name: 'id', in: 'path' },
+                description: 'The point to forget, from `listRememberedPoints`.',
+            }),
+        }),
+        success: {
+            status: 200,
+            description: 'Forgotten.',
+            schema: z.object({ ok: z.literal(true) }).openapi('ForgetPointResult'),
+        },
+    });
+
+    op(registry, {
+        method: 'patch',
+        path: '/api/account/assistant-memory/{id}',
+        operationId: 'editRememberedPoint',
+        summary: 'Correct one remembered point',
+        description:
+            'Replaces the text of a point the assistant remembers.\n\n'
+            + '**The real effect is that the point becomes the PERSON\u2019s, and the extractor '
+            + 'never rewrites it again.** That is the whole reason this verb exists rather than '
+            + 'being a convenience over delete-and-wait: a corrected point that the next '
+            + 'extraction could overwrite would make correcting it pointless.\n\n'
+            + 'The text is sanitised and bounded. It re-enters the model\u2019s context on every '
+            + 'later answer, so it is treated as DATA there and never as instruction \u2014 a '
+            + 'remembered point sets a default and authorises nothing.\n\n'
+            + 'Refusal codes: `MEMORY_POINT_INVALID` (missing, empty or over the length bound) '
+            + 'and `MEMORY_POINT_NOT_FOUND` (unknown id, already forgotten, or somebody '
+            + 'else\u2019s).',
+        tags: ['Account'],
+        params: z.object({
+            id: z.string().openapi({
+                param: { name: 'id', in: 'path' },
+                description: 'The point to correct, from `listRememberedPoints`.',
+            }),
+        }),
+        body: z
+            .object({ text: z.string().min(1).max(REMEMBERED_POINT_MAX_CHARS) })
+            .openapi('EditRememberedPointInput'),
+        success: {
+            status: 200,
+            description: 'The corrected point.',
+            schema: RememberedPointSchema,
         },
     });
 }
