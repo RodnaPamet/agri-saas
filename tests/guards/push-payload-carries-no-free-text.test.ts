@@ -28,6 +28,7 @@ import { readFileSync } from 'node:fs';
 import { createAssignmentNotification } from '@/app-layer/notifications/assignment';
 import { createAgroSignalNotification } from '@/app-layer/notifications/agro';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
 /** A label no copy string could contain by accident. */
@@ -56,7 +57,24 @@ export function pushEnqueueSites(): Array<{ file: string; body: string }> {
     const sites: Array<{ file: string; body: string }> = [];
 
     for (const file of files) {
-        const src = readFileSync(file, 'utf8');
+        /**
+         * Comments BLANKED before matching — #1774's register is what caught
+         * the omission, and it is a real defect rather than bookkeeping.
+         *
+         * The matcher looks for `enqueue('push-send', { … })` in raw source,
+         * so a comment MENTIONING that call — "see the enqueue('push-send')
+         * site in task.ts" — would have been counted as a site, and a
+         * commented-OUT one too. That is `a-scar-is-not-a-wound`: a comment
+         * hit usually means the code is absent, which here would have
+         * inflated the denominator with a site that cannot leak anything.
+         *
+         * `strings` is left OFF deliberately: `'push-send'` is a string
+         * literal and is how the site is found at all, so blanking strings
+         * would empty the population — and `collectSourceFiles`'s floor would
+         * then be the only thing standing between this guard and passing over
+         * nothing.
+         */
+        const src = blankNonCode(readFileSync(file, 'utf8'));
         if (!src.includes("enqueue('push-send'")) continue;
         // The object literal of each call, up to its closing brace.
         const re = /enqueue\(\s*'push-send'\s*,\s*\{([\s\S]*?)\n\s*\}\s*\)/g;
