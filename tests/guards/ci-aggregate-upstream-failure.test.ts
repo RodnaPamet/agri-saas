@@ -86,6 +86,11 @@ const AGGREGATES = [
         // No prerequisites, so this never reaches the GATED block; declared
         // so every entry has the same shape and `GATED` is the only filter.
         prereqSkipIsPass: true,
+        // Every entry declares `outputs`, even the three that read none.
+        // With `as const` a field present on ONE member is not on the union,
+        // so `agg.outputs` was a TS2339 that jest never saw — ts-jest
+        // transpiles without typechecking.
+        outputs: {} as Record<string, string>,
     },
     {
         id: 'e2e',
@@ -96,6 +101,7 @@ const AGGREGATES = [
         // `changes` is excluded from `merge_group`, so a skipped prerequisite
         // there is the schedule doing its job rather than a break.
         prereqSkipIsPass: true,
+        outputs: {} as Record<string, string>,
     },
     {
         id: 'docker-summary',
@@ -106,6 +112,7 @@ const AGGREGATES = [
         prerequisites: ['changes', 'build'],
         childSkipIsPass: true,
         prereqSkipIsPass: true,
+        outputs: {} as Record<string, string>,
     },
     {
         // The FOURTH, added by #2676 — and its absence is why that defect
@@ -134,7 +141,7 @@ const AGGREGATES = [
         // that makes `test`'s own `childSkipIsPass` false. Forcing a pass on it
         // would green-tick an audit that never partitioned anything.
         prereqSkipIsPass: false,
-        outputs: { 'selector-teeth-plan.total': '0' },
+        outputs: { 'selector-teeth-plan.total': '0' } as Record<string, string>,
     },
 ] as const;
 
