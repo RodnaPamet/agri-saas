@@ -151,6 +151,20 @@ interface AssistantTool {
      * and a guard can see which tools claim to answer it at all.
      */
     readonly isPartial?: (result: unknown) => boolean;
+    /*
+     * A note on the `as { hasMore?: boolean }` casts at the `isPartial` call
+     * sites, since they look like the defect #2680 fixed and are not.
+     *
+     * `isPartial` takes `unknown` BY DESIGN — the registry cannot know each
+     * tool's projection type — so those casts narrow a value this file itself
+     * just built, at a seam declared to be untyped. The journal defect was a
+     * cast over a DEPENDENCY's return: a shape this file does not own, where
+     * `as` silenced the one check that would have caught a wrong field name.
+     *
+     * The line is ownership. Narrowing `unknown` at your own declared seam is
+     * fine; asserting the shape of something you import is how a confident
+     * empty ships.
+     */
 
     /**
      * The proposal KIND this tool prepares, read by `runTool` — #2632.
@@ -452,7 +466,13 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 status: r.status,
                 occurredAt: r.occurredAt,
             })),
-                hasMore: (page as { pageInfo?: { hasNextPage?: boolean } }).pageInfo?.hasNextPage === true,
+                // Read, not asserted — the sibling `list_blocks` already does
+                // `page.pageInfo?.hasNextPage` with no cast, and this line is
+                // what made the defect above diagnosable: the shape was KNOWN
+                // here and guessed four lines up (backend-1's observation).
+                // With the cast gone from both, tsc checks each against the
+                // real return.
+                hasMore: page.pageInfo?.hasNextPage === true,
             };
         },
     },
