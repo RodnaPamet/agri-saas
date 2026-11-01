@@ -345,15 +345,16 @@ describe('assistant tools (#2578)', () => {
         list_journal_entries: 'JOURNAL',
         list_cost_entries: 'GRAIN',
         list_exchange_listings: 'EXCHANGE',
-        propose_journal_entry: 'JOURNAL',
+        propose_treatment: 'JOURNAL',
+        propose_activity: 'JOURNAL',
     };
 
     it.each(Object.entries(TOOL_MODULE))(
         '%s asserts the %s module BEFORE reading anything (#2629)',
         async (tool, moduleKey) => {
             const args =
-                tool === 'propose_journal_entry'
-                    ? JSON.stringify({ type: 'OBSERVATION', title: 'x' })
+                tool.startsWith('propose_')
+                    ? JSON.stringify({ kind: tool === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
                     : '{}';
 
             // Refuse the module, then require that the USECASE was never
