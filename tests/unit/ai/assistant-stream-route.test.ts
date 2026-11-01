@@ -124,6 +124,80 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(events[1].type).toBe('halt');
     });
 
+    /**
+     * #2655 — "the model was unreachable" was asserted for every non-budget
+     * failure, and during the #2654 outage both halves of that sentence were
+     * false: the model had answered with a 400, and the tools had already run.
+     */
+    describe('refused vs unreachable (#2655)', () => {
+        /** An SDK-shaped failure: a plain Error carrying a numeric status. */
+        const sdkError = (status: number | undefined): Error => {
+            const e = new Error('invalid_request_error: messages.1 ...');
+            if (status !== undefined) (e as { status?: number }).status = status;
+            return e;
+        };
+
+        const endingFor = async (err: unknown): Promise<string> => {
+            completeWithRouting.mockRejectedValue(err);
+            const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+            const res = await POST(...ask({ question: 'нещо' }));
+            const { events } = await drain(res);
+            return String(events[1].code);
+        };
+
+        it.each([
+            [400, 'ASSISTANT_REQUEST_REJECTED', 'a malformed request — the #2654 shape'],
+            [401, 'ASSISTANT_REQUEST_REJECTED', 'a bad key is still a refusal, not silence'],
+            [404, 'ASSISTANT_REQUEST_REJECTED', 'an unknown model id'],
+            [422, 'ASSISTANT_REQUEST_REJECTED', 'an unprocessable request'],
+            [429, 'ASSISTANT_PROVIDER_UNAVAILABLE', 'rate limited — retry is the advice'],
+            [500, 'ASSISTANT_PROVIDER_UNAVAILABLE', 'the provider failed, not refused'],
+            [529, 'ASSISTANT_PROVIDER_UNAVAILABLE', "Anthropic's overloaded"],
+            [undefined, 'ASSISTANT_PROVIDER_UNAVAILABLE', 'a connection failure carries no status'],
+            // All THREE tuple members must be declared even though the
+            // third only feeds the test NAME: `it.each`'s callback type is
+            // derived from the row arity, so a 2-param callback against a
+            // 3-element row is TS2345. ts-jest transpiles without
+            // typechecking, so the suite ran green locally and only
+            // `npm run typecheck` saw it.
+        ])('status %s -> %s (%s)', async (status, expected, _why) => {
+            expect(await endingFor(sdkError(status as number | undefined))).toBe(expected);
+        });
+
+        it('OUR OWN coded 4xx is never reported as the model refusing', async () => {
+            // The one that makes the exclusion in `isProviderRejection`
+            // load-bearing rather than decorative. `AppError` declares
+            // `status`, so every coded failure in this codebase carries a 4xx
+            // — a bare range check would tell a farmer the model rejected
+            // their question when their ROLE had refused it, which is the same
+            // defect #2655 is about, pointed somewhere new.
+            const { AppError } = await import('@/lib/errors/types');
+            const ours = new AppError('role may not read that', 'FORBIDDEN', 403);
+            expect(await endingFor(ours)).not.toBe('ASSISTANT_REQUEST_REJECTED');
+        });
+
+        it('the budget refusal still wins, though it also carries a 4xx', async () => {
+            // Ordering, not coincidence: `assertAiBudget` throws a coded
+            // forbidden, so it is an `AppError` with status 403. The budget
+            // test runs FIRST, and this asserts the order rather than trusting
+            // the comment that explains it.
+            const { AppError } = await import('@/lib/errors/types');
+            const budget = new AppError('ai_budget_exceeded: monthly cap', 'AI_BUDGET_EXCEEDED', 403);
+            expect(await endingFor(budget)).toBe('ASSISTANT_SPEND_CEILING');
+        });
+
+        it('the two codes carry OPPOSITE claims about the records', async () => {
+            // The reason there are two codes at all. If both sentences said
+            // the records went unread, the split would be invisible to the
+            // person it exists for.
+            const { ENDING_FALLBACK_EN } = await import('@/app-layer/ai/safety/refusal-codes');
+            expect(ENDING_FALLBACK_EN.ASSISTANT_PROVIDER_UNAVAILABLE).toMatch(/were not read/);
+            expect(ENDING_FALLBACK_EN.ASSISTANT_REQUEST_REJECTED).not.toMatch(/were not read/);
+            // And neither may claim to have created anything.
+            expect(ENDING_FALLBACK_EN.ASSISTANT_REQUEST_REJECTED).toMatch(/[Nn]othing was created/);
+        });
+    });
+
     it('an empty answer is a refusal, not an empty answer event', async () => {
         completeWithRouting.mockResolvedValue({ text: '   ' });
         const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');

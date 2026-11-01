@@ -75,6 +75,29 @@ export const HALT_CODES = [
      * whose notice says the records were not read and nothing was created.
      */
     'ASSISTANT_PROVIDER_UNAVAILABLE',
+    /**
+     * The provider was REACHED and REFUSED the request — a 4xx that is not a
+     * budget refusal and not a rate limit (#2655).
+     *
+     * Split out of `ASSISTANT_PROVIDER_UNAVAILABLE`, whose sentence asserted
+     * two things that were both false during the #2654 outage: the model had
+     * answered (with a 400 carrying a `request_id`), and the farm's records
+     * HAD been read — the tools ran and returned rows before the final call
+     * failed. Two engineers diagnosed from that sentence and produced four
+     * reasonable hypotheses, all wrong, because the code pointed away from the
+     * cause. `uniform-failure-shape-blinds-the-client`, with the client being
+     * people.
+     *
+     * It is in `HALT_WITHOUT_PARTIAL_ANSWER` because, like its sibling, it can
+     * land before the first token — but its copy says the OPPOSITE thing about
+     * the records, which is the entire reason the two are not one code.
+     *
+     * 429 is deliberately NOT here: a rate limit is transient, is retried, and
+     * when the retries run out the useful thing to tell a farmer is "try
+     * again", which is what the unavailable copy already says. 4xx-as-a-class
+     * would have swept it in.
+     */
+    'ASSISTANT_REQUEST_REJECTED',
     /** A tool result was too large and was read in part. */
     'ASSISTANT_TRUNCATED_RESULT',
     /**
@@ -113,7 +136,15 @@ export const HALT_CODES = [
  * alternative — splitting it into a pre-stream and a mid-stream code — doubles
  * the catalogue for a distinction no client would branch on differently.
  */
-export const HALT_WITHOUT_PARTIAL_ANSWER: readonly string[] = ['ASSISTANT_PROVIDER_UNAVAILABLE'];
+export const HALT_WITHOUT_PARTIAL_ANSWER: readonly string[] = [
+    'ASSISTANT_PROVIDER_UNAVAILABLE',
+    // The second member, and the guard caps this list at two on purpose —
+    // "if a second arrives it should cost a reader's attention". Here is that
+    // attention: both can land before the first token, so neither can say
+    // "incomplete"; they differ in what they say about the RECORDS, and
+    // getting that wrong is what #2655 fixes.
+    'ASSISTANT_REQUEST_REJECTED',
+];
 
 export type RefusalCode = (typeof REFUSAL_CODES)[number];
 export type HaltCode = (typeof HALT_CODES)[number];
@@ -171,6 +202,8 @@ export const ENDING_FALLBACK_EN: Record<string, string> = {
         'The answer above is incomplete — it was taking too long, so I stopped rather than leave you waiting.',
     ASSISTANT_PROVIDER_UNAVAILABLE:
         "I could not reach the model. This farm's records were not read and nothing was created.",
+    ASSISTANT_REQUEST_REJECTED:
+        'The model refused the request, so there is no answer and nothing was created. This is a fault on our side, not something you did — please report it.',
     ASSISTANT_TRUNCATED_RESULT:
         'The answer above uses part of the data — one of the lists I read was too long to use whole.',
     ASSISTANT_PARTIAL_DATA:

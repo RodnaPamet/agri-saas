@@ -6673,6 +6673,7 @@
         "ASSISTANT_PARTIAL_DATA": "The answer above is incomplete — some of your records could not be included, so treat it as a partial picture.",
         "ASSISTANT_PROVIDER_UNAVAILABLE": "I could not reach the model. This farm's records were not read and nothing was created.",
         "ASSISTANT_QUESTION_INVALID": "The question was empty, too long, or not text. Try shortening it.",
+        "ASSISTANT_REQUEST_REJECTED": "The model refused the request, so there is no answer and nothing was created. This is a fault on our side, not something you did — please report it.",
         "ASSISTANT_SPEND_CEILING": "The answer above is incomplete because this farm has reached its monthly limit for the assistant.",
         "ASSISTANT_TIME_BUDGET": "The answer above is incomplete — it was taking too long, so I stopped rather than leave you waiting.",
         "ASSISTANT_TOOL_BUDGET": "The answer above is real but incomplete — I reached the limit on how much I may look up for one question.",

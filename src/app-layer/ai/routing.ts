@@ -52,6 +52,7 @@ import {
     normalizeText,
 } from '@/lib/cache/ai-cache';
 import { AiProviderError } from './provider/openai-compatible-provider';
+import { httpStatusOf, isProviderRejection } from './provider/error-status';
 import { ClaudeProvider } from './provider/claude-provider';
 import { OpenAiCompatibleProvider } from './provider/openai-compatible-provider';
 import { inferBackend } from './provider/index';
@@ -283,9 +284,11 @@ function isTransient(err: unknown): boolean {
     if (err instanceof Error) {
         const msg = err.message.toLowerCase();
         if (msg.includes('timeout') || msg.includes('aborted') || msg.includes('econnreset')) return true;
-        // OpenAI/Anthropic SDK errors carry a numeric `status`.
-        const status = (err as { status?: number }).status;
-        if (typeof status === 'number' && (status === 429 || status >= 500)) return true;
+        // OpenAI/Anthropic SDK errors carry a numeric `status`. Read through
+        // the shared helper so this and the halt-code decision in the stream
+        // route cannot disagree about where the status lives (#2655).
+        const status = httpStatusOf(err);
+        if (status !== undefined && (status === 429 || status >= 500)) return true;
     }
     return false;
 }
@@ -467,6 +470,39 @@ export async function completeWithRouting<T = unknown>(
 
             const targets = orderTargets(route, preferLocal);
             let lastError: unknown;
+            /**
+             * The most DIAGNOSTIC failure, which is not the most recent one
+             * (#2655).
+             *
+             * `lastError` is overwritten on every attempt, so the error that
+             * escapes is whichever target happened to be tried LAST. During the
+             * #2654 outage that masked the cause: claude refused with a 400
+             * naming a malformed message history, then `ollama` and
+             * `openrouter` were tried and failed to connect — because this
+             * deployment runs no ollama container and holds no openrouter key —
+             * so the error that reached the stream route was a connection
+             * failure, and the farmer was told the model could not be reached.
+             *
+             * A 4xx means a provider was REACHED and rejected what we sent, so
+             * it is about OUR request and survives. A connection failure to a
+             * target that may not be configured at all is about the
+             * deployment's shape and says nothing about the question.
+             *
+             * The FIRST rejection wins rather than the last, so the primary
+             * target's verdict is not overwritten by a fallback complaining
+             * about a request shape it never supported.
+             *
+             * The tradeoff, stated because it is real: if the primary fails 5xx
+             * and a fallback then rejects with 4xx, the fallback's complaint is
+             * what gets reported. That is still a true statement about a
+             * request we sent, and the alternative — reporting the connection
+             * failure — is the behaviour this exists to fix.
+             */
+            let rejectionError: unknown;
+            const noteFailure = (err: unknown) => {
+                lastError = err;
+                if (rejectionError === undefined && isProviderRejection(err)) rejectionError = err;
+            };
 
             for (let t = 0; t < targets.length; t++) {
                 const target = targets[t];
@@ -474,7 +510,7 @@ export async function completeWithRouting<T = unknown>(
                 try {
                     provider = providerForTarget(target);
                 } catch (err) {
-                    lastError = err;
+                    noteFailure(err);
                     logger.warn('ai routing target unavailable, trying next', {
                         component: 'ai',
                         task,
@@ -530,7 +566,7 @@ export async function completeWithRouting<T = unknown>(
 
                         return result;
                     } catch (err) {
-                        lastError = err;
+                        noteFailure(err);
                         const transient = isTransient(err);
                         const moreRetries = attempt < route.retries;
                         const moreTargets = t < targets.length - 1;
@@ -565,8 +601,10 @@ export async function completeWithRouting<T = unknown>(
                 outcome: 'error',
             });
 
-            throw lastError instanceof Error
-                ? lastError
+            // The rejection if there was one, else the most recent failure.
+            const reported = rejectionError ?? lastError;
+            throw reported instanceof Error
+                ? reported
                 : new AiProviderError(route.backend, `All routing targets failed for task "${task}".`);
         },
     );
