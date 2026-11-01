@@ -258,6 +258,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             "listFarmClaims is the platform review queue: `WHERE status = 'PENDING' ORDER BY createdAt ASC`, and CROSS-tenant — a reviewer looks at every farm, and a collision is by definition two tenants. So `tenantId` does NOT lead here, unlike every other entry in this list: it is a column the query never mentions. `status` is the equality predicate, `createdAt` the sort key.",
     },
+    // ── AssistantTurn (the memory extraction sweep, #2671) ─────────
+    {
+        model: 'AssistantTurn',
+        fields: ['tenantId', 'conversationId', 'createdAt'],
+        justification:
+            "The extraction sweep reads one conversation's questions: `WHERE tenantId = ? AND conversationId = ? AND role = 'user' ORDER BY createdAt ASC`, capped at MAX_TURNS. The composite carries the two equality predicates and the sort key in that order. `role` is deliberately NOT in the index: it has two values, so it eliminates roughly half a conversation's rows after an already-bounded seek, and adding it would widen every write for no useful selectivity. `tenantId` leads because the read runs under RLS inside `runInTenantContext` — the key is per-tenant, which is also why the sweep cannot batch this read across farms.",
+    },
     // ── FarmDocument («Документи», #2495) ──────────────────────────
     {
         model: 'FarmDocument',

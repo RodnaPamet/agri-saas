@@ -39,9 +39,11 @@
 import { z } from 'zod';
 
 import { getAiProvider } from '@/app-layer/ai/provider';
+import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { REMEMBERED_POINT_MAX_CHARS } from '@/lib/schemas/assistant-memory-limits';
+import type { RequestContext } from '@/app-layer/types';
 
 const COMPONENT = 'memory-extract';
 
@@ -250,7 +252,23 @@ function evidenceAlreadyUsed(c: Candidate, existing: ExistingPoint[]): 'refused'
     return hit.refused ? 'refused' : 'active';
 }
 
+/**
+ * `ctx` is here for the SPEND GATE, and the gate is here rather than in the
+ * caller deliberately.
+ *
+ * The job already had it, and "my only caller gates" is a claim nothing
+ * enforces — a second caller arrives ungated and nothing says so.
+ * `ai-spend-gate-covers-embeddings` derives its population from the
+ * filesystem: any file reaching an AI provider must gate or be recorded as
+ * exempt, and an exemption here would be a recorded risk rather than an
+ * answer, because this path CAN make a per-tenant assertion. `notice-scorer`'s
+ * exemption is the case that cannot — a person-scoped notice has no tenant.
+ *
+ * It also carries P3.5f: `assertAiBudget` refuses an UNVERIFIED farm whatever
+ * its plan, so bypassing it would let one spend.
+ */
 export async function extractMemoryPoints(
+    ctx: RequestContext,
     turns: UserTurn[],
     existing: ExistingPoint[],
 ): Promise<ExtractionOutcome> {
@@ -262,6 +280,10 @@ export async function extractMemoryPoints(
     };
 
     if (turns.length === 0) return { points: [], discarded };
+
+    // AFTER the early return: a run with nothing to read spends nothing, so it
+    // must not be refused for being over budget either.
+    await assertAiSpendAllowed(ctx);
 
     const completion = await getAiProvider().complete({
         messages: [

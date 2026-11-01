@@ -44,11 +44,6 @@ jest.mock('@/lib/feature-flags', () => ({
     isFeatureEnabled: (...a: unknown[]) => mockIsFeatureEnabled(...a),
 }));
 
-const mockAssertSpend = jest.fn();
-jest.mock('@/app-layer/ai/budget', () => ({
-    assertAiSpendAllowed: (...a: unknown[]) => mockAssertSpend(...a),
-}));
-
 const mockExtract = jest.fn();
 jest.mock('@/app-layer/ai/memory-extractor', () => ({
     extractMemoryPoints: (...a: unknown[]) => mockExtract(...a),
@@ -91,12 +86,11 @@ function captureTx(): string[] {
 
 beforeEach(() => {
     [mockQueryRaw, mockConvUpdate, mockFactFindMany, mockFactCreate, mockFactUpdate,
-     mockTurnFindMany, mockTransaction, mockIsFeatureEnabled, mockAssertSpend, mockExtract]
+     mockTurnFindMany, mockTransaction, mockIsFeatureEnabled, mockExtract]
         .forEach((m) => m.mockReset());
 
     mockQueryRaw.mockResolvedValue([CONV]);
     mockIsFeatureEnabled.mockResolvedValue(true);
-    mockAssertSpend.mockResolvedValue({ ok: true });
     mockFactFindMany.mockResolvedValue([]);
     mockTurnFindMany.mockResolvedValue([
         { content: 'Отглеждам слънчоглед.', createdAt: new Date('2026-11-01T09:00:00Z') },
@@ -154,7 +148,10 @@ describe('what is NOT stamped — the three silent failures', () => {
     });
 
     it('a farm over its AI ceiling leaves the conversation QUEUED', async () => {
-        mockAssertSpend.mockRejectedValue(
+        // The gate lives inside `extractMemoryPoints` now, so the refusal
+        // arrives from there. What matters to this job is unchanged: the row
+        // is not stamped.
+        mockExtract.mockRejectedValue(
             codedForbidden('AI_BUDGET_EXCEEDED', 'Monthly AI budget exhausted.'),
         );
         const res = await runMemoryExtract();
@@ -168,12 +165,15 @@ describe('what is NOT stamped — the three silent failures', () => {
             { id: 'c2', tenantId: 't1', userId: 'u2' },
             { id: 'c3', tenantId: 't1', userId: 'u3' },
         ]);
-        mockAssertSpend.mockRejectedValue(
+        mockExtract.mockRejectedValue(
             codedForbidden('AI_BUDGET_EXCEEDED', 'Monthly AI budget exhausted.'),
         );
         const res = await runMemoryExtract();
-        // Asked ONCE for the tenant, not once per conversation.
-        expect(mockAssertSpend).toHaveBeenCalledTimes(1);
+        // Attempted ONCE for the tenant, not once per conversation. The memo is
+        // what stops two further extractor calls — each of which would reach
+        // the gate and pay a usage aggregate for an answer that cannot change
+        // inside one run.
+        expect(mockExtract).toHaveBeenCalledTimes(1);
         expect(res.result.itemsSkipped).toBe(3);
     });
 
@@ -182,11 +182,11 @@ describe('what is NOT stamped — the three silent failures', () => {
             { id: 'c1', tenantId: 't1', userId: 'u1' },
             { id: 'c2', tenantId: 't2', userId: 'u2' },
         ]);
-        mockAssertSpend
+        mockExtract
             .mockRejectedValueOnce(codedForbidden('AI_BUDGET_EXCEEDED', 'exhausted'))
-            .mockResolvedValueOnce({ ok: true });
+            .mockResolvedValueOnce({ points: [], discarded: [] });
         const res = await runMemoryExtract();
-        expect(mockAssertSpend).toHaveBeenCalledTimes(2);
+        expect(mockExtract).toHaveBeenCalledTimes(2);
         expect(res.result.itemsActioned).toBe(1);
     });
 });
@@ -252,6 +252,15 @@ describe('the write', () => {
 });
 
 describe('what reaches the model', () => {
+    it('passes a ctx carrying the QUEUE ROW’s tenant, never a payload value', async () => {
+        await runMemoryExtract();
+        const ctx = mockExtract.mock.calls[0][0] as { tenantId: string };
+        // The spend gate reads this, so the wrong tenant would charge the wrong
+        // farm — and the payload deliberately has no tenantId at all, which is
+        // why `MemoryExtractPayload` is on the tenant-isolation exemption list.
+        expect(ctx.tenantId).toBe('t1');
+    });
+
     it('reads ONLY the person’s own turns — never the assistant’s', async () => {
         await runMemoryExtract();
         const args = mockTurnFindMany.mock.calls[0][0] as { where: Record<string, unknown> };
@@ -271,7 +280,7 @@ describe('what reaches the model', () => {
         // No deletedAt filter: the extractor needs them ALL.
         expect(where).toEqual({ userId: 'u1' });
 
-        const existing = mockExtract.mock.calls[0][1] as Array<{ id: string; refused: boolean }>;
+        const existing = mockExtract.mock.calls[0][2] as Array<{ id: string; refused: boolean }>;
         // `refused` is rule 5 — the PERSON's deletion only. A supersede is the
         // extractor's own bookkeeping and must not read as somebody's wish.
         expect(existing.find((e) => e.id === 'a')?.refused).toBe(true);
@@ -284,7 +293,7 @@ describe('what reaches the model', () => {
             { content: 'я'.repeat(11_000), createdAt: new Date('2026-11-01T09:01:00Z') },
         ]);
         await runMemoryExtract();
-        const turns = mockExtract.mock.calls[0][0] as Array<{ content: string }>;
+        const turns = mockExtract.mock.calls[0][1] as Array<{ content: string }>;
         // One fits, the second would breach the ceiling. A count-only bound
         // cannot express this: 2 turns is under any count limit.
         expect(turns).toHaveLength(1);

@@ -43,7 +43,6 @@
 import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
-import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
 import { extractMemoryPoints, type ExistingPoint, type UserTurn } from '@/app-layer/ai/memory-extractor';
 import { isFeatureEnabled } from '@/lib/feature-flags';
 import { runInTenantContext } from '@/lib/db-context';
@@ -114,7 +113,25 @@ export async function runMemoryExtract(
      */
     const exhausted = new Set<string>();
 
-    for (const conv of queue) {
+    /*
+     * guardrail-allow: n+1 — the per-conversation reads cannot be hoisted, and
+     * the loop is bounded.
+     *
+     * `AssistantTurn.content` is encrypted under the TENANT's DEK, so it is
+     * only readable inside `runInTenantContext` for THAT tenant. The queue is
+     * cross-tenant by design, so one `findMany({ conversationId: { in: [...] } })`
+     * would have to pick a single tenant context and would silently return
+     * ciphertext — or nothing — for every other farm in the batch. The read is
+     * per-tenant because the KEY is per-tenant.
+     *
+     * The fact read is per-PERSON for the same structural reason: rules 4, 5
+     * and 6 are evaluated against that person's own points, and batching them
+     * would mean passing one person's profile while extracting another's.
+     *
+     * Bounded at `DEFAULT_BATCH` (20) conversations, so this is at most 40
+     * indexed reads per run, each backed by a purpose-built composite.
+     */
+    for (const conv of queue) { // guardrail-allow: n+1
         try {
             // Per PERSON, because the flag resolves cohorts per user. An OFF
             // flag leaves the row UNSTAMPED on purpose — see the module note.
@@ -186,9 +203,10 @@ export async function runMemoryExtract(
                 sourceQuote: f.sourceQuote,
             }));
 
-            await assertAiSpendAllowed(ctx);
-
-            const outcome = await extractMemoryPoints(turns, existing);
+            // The gate lives INSIDE `extractMemoryPoints`, beside the spend it
+            // guards — see its docblock. The refusal still arrives here, which
+            // is what drives the skip-without-stamping and the exhausted memo.
+            const outcome = await extractMemoryPoints(ctx, turns, existing);
 
             const now = new Date();
             await prisma.$transaction(async (tx) => {
