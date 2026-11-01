@@ -5128,6 +5128,22 @@
             "diseaseReason": {
                 "noSustainedWarmWet": "No sustained warm-wet period",
                 "consecutiveWarmWetDays": "Consecutive warm-wet days: {days} — favourable for foliar disease"
+            },
+            "soilReason": {
+                "noPreferences": "No soil preferences on file for this crop, or soil is still pending for this field",
+                "phTooAcidicHard": "Soil pH {ph} is well below the preferred {band} — too acidic",
+                "phTooAcidicSoft": "Soil pH {ph} is slightly below the preferred {band} — a little too acidic",
+                "phTooAlkalineHard": "Soil pH {ph} is well above the preferred {band} — too alkaline",
+                "phTooAlkalineSoft": "Soil pH {ph} is slightly above the preferred {band} — a little too alkaline",
+                "textureNotPreferred": "Soil texture ({texture}) is not among this crop's preferred textures ({preferred})",
+                "drainageMismatch": "Texture implies {actual} drainage, but this crop prefers {preferred} drainage",
+                "matchesPreferences": "This field's soil matches the crop's preferences",
+                "advisory": "Verify with a soil test or your agronomist before planting.",
+                "drainage": {
+                    "well": "good",
+                    "moderate": "moderate",
+                    "poor": "weak"
+                }
             }
         },
         "detail": {

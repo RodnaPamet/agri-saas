@@ -15454,6 +15454,44 @@
         ],
         "description": "A parcel’s modelled soil profile, fetched asynchronously — null upstream while the fetch is pending, which is an ordinary state rather than an error."
       },
+      "SoilReason": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "noPreferences",
+                "phTooAcidicHard",
+                "phTooAcidicSoft",
+                "phTooAlkalineHard",
+                "phTooAlkalineSoft",
+                "textureNotPreferred",
+                "drainageMismatch",
+                "matchesPreferences"
+              ]
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "code",
+            "params"
+          ]
+        }
+      },
       "SoilSuitability": {
         "type": "object",
         "properties": {
@@ -15474,12 +15512,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "reasonCodes": {
+            "$ref": "#/components/schemas/SoilReason"
           }
         },
         "required": [
           "flag",
           "reason",
-          "reasons"
+          "reasons",
+          "reasonCodes"
         ],
         "description": "An ADVISORY verdict. `unknown` is returned whenever the variety has no curated preferences or the parcel has no soil yet — never a fabricated verdict, so a client must render unknown as unknown rather than as a neutral pass."
       },
