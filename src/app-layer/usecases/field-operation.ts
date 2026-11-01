@@ -27,6 +27,8 @@ import { appliesAProduct } from '@/lib/operations/line-kind';
 import { composeFarmActivityTitle } from '@/lib/journal/auto-title';
 import { createLogEntryWithAudit } from './journal-write';
 import { ACTIVITY_LABELS_BG, isBareActivityKind } from '@/lib/operations/activity-labels';
+import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { translateFor } from '@/lib/i18n/server-messages';
 
 
 // Derived from the Prisma enum rather than restated. #2316 added three
@@ -1400,7 +1402,19 @@ export async function reviewFieldOperation(
     return runInTenantContext(ctx, async (db) => {
         const task = await db.task.findFirst({
             where: { id: taskId, tenantId: ctx.tenantId },
-            select: { id: true, status: true, type: true, title: true, assigneeUserId: true },
+            select: {
+                id: true,
+                status: true,
+                type: true,
+                title: true,
+                assigneeUserId: true,
+                // The RECIPIENT's language, off a relation rather than a second
+                // query. The reviewer is the one acting here and the assignee
+                // is the one reading, so `getTranslations()` would resolve the
+                // wrong person's locale — the exact defect the outbound-email
+                // rule names.
+                assignee: { select: { uiLanguage: true } },
+            },
         });
         if (!task) throw codedNotFound('TASK_NOT_FOUND', 'Task not found');
         if (task.type !== 'FIELD_OPERATION') {
@@ -1448,19 +1462,56 @@ export async function reviewFieldOperation(
         // Notify the operator who was assigned the job (graceful degrade when
         // unassigned — mirrors the Evidence review notification).
         if (task.assigneeUserId) {
+            /**
+             * `bg` on a failed lookup, NOT `DEFAULT_LOCALE` — the assignee is a
+             * known user whose column defaults to `bg`; `en` is documented for
+             * UNAUTHENTICATED surfaces, and handing English to a Bulgarian
+             * operator because a relation came back null is the defect, not the
+             * fallback.
+             */
+            const locale = resolveRecipientLocale(task.assignee?.uiLanguage ?? null);
             await db.notification.create({
                 data: {
                     tenantId: ctx.tenantId,
                     userId: task.assigneeUserId,
                     type: 'TASK_ASSIGNED',
-                    title: action === 'APPROVE'
-                        ? `Field operation approved: ${task.title}`
-                        : `Changes requested: ${task.title}`,
-                    message: comment
-                        || (action === 'APPROVE'
-                            ? `Your field operation "${task.title}" was approved.`
-                            : `Your field operation "${task.title}" needs changes.`),
-                    linkUrl: `/farm-tasks/${taskId}`,
+                    title: await translateFor(
+                        locale,
+                        action === 'APPROVE'
+                            ? 'notifications.fieldOperationReview.approvedTitle'
+                            : 'notifications.fieldOperationReview.changesTitle',
+                        { task: task.title },
+                    ),
+                    /**
+                     * The reviewer's own `comment` wins, and is deliberately
+                     * NOT translated: it is tenant-authored prose, the same
+                     * case as `rule.name` in the action executor. Only the
+                     * fallback is ours to write, so only the fallback is keyed.
+                     */
+                    message:
+                        comment
+                        || (await translateFor(
+                            locale,
+                            action === 'APPROVE'
+                                ? 'notifications.fieldOperationReview.approvedBody'
+                                : 'notifications.fieldOperationReview.changesBody',
+                            { task: task.title },
+                        )),
+                    /**
+                     * TENANT-PREFIXED, and null rather than unprefixed (#2512).
+                     *
+                     * `/farm-tasks/{id}` resolves on the web only because the
+                     * browser is already inside a farm. A phone has no current
+                     * farm, so an unprefixed path is unresolvable — and for
+                     * someone signed in to two farms there is no safe guess.
+                     *
+                     * `tenantSlug` is OPTIONAL on `RequestContext`, so the
+                     * absent case answers `null`: a notification with no link
+                     * is navigable-nowhere, which a client can handle, where a
+                     * broken link is one it cannot. Same shape as the
+                     * insurance and promotions producers.
+                     */
+                    linkUrl: ctx.tenantSlug ? `/t/${ctx.tenantSlug}/farm-tasks/${taskId}` : null,
                 },
             });
         }

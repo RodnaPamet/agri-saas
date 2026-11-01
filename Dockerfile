@@ -144,6 +144,32 @@ RUN rm -rf node_modules/playwright \
            node_modules/@playwright \
            node_modules/@axe-core/playwright
 
+# onnxruntime-node ships a prebuilt binary PER PLATFORM, and two of the three
+# can never execute in a linux container. Measured in this tree:
+#
+#   linux  329 MB   (x64 305, arm64 25)   <- the only one this image can run
+#   win32  134 MB
+#   darwin  86 MB
+#
+# So 220 MB of the image is a Windows DLL set and a macOS dylib set, carried
+# into every layer, every registry push and every Watchtower pull. That is not
+# only waste: it is what exhausted the GHCR runner's disk on 2026-10-30 and
+# left main shipping NOTHING for two commits while `/api/readyz` and
+# `/api/health` stayed green (#2582).
+#
+# `darwin` and `win32` only — NOT `linux/arm64`. A platform directory for
+# another OS cannot run here whatever the build arch, so removing those two is
+# safe unconditionally; pruning an ARCH would couple this line to the publish
+# workflow's `platforms:` and break an arm64 build silently. 25 MB is not worth
+# that coupling.
+#
+# Enforced in the BUILT IMAGE by `scripts/verify-image-deps.mjs`, with the
+# linux directory as the positive control — "the binaries are gone" and "I
+# resolved the wrong tree" are the same observation, and the second fails
+# toward green.
+RUN rm -rf node_modules/onnxruntime-node/bin/napi-v6/darwin \
+           node_modules/onnxruntime-node/bin/napi-v6/win32
+
 # Drop the Next.js webpack build cache before the runner stage copies
 # `.next`. `.next/cache` holds incremental-compilation artefacts used
 # only by a subsequent `next build` — `next start` never reads it. On

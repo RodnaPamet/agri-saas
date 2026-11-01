@@ -4255,6 +4255,223 @@ exports[`API contract — per-schema snapshots schema: CostEntryList 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CostInvoiceScanRequest 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "file": {
+      "type": "string",
+      "format": "binary"
+    },
+    "fileId": {
+      "type": "string"
+    },
+    "documentId": {
+      "type": "string"
+    }
+  }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CostInvoiceScanResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "invoiceFileId": {
+      "type": "string",
+      "description": "The stored invoice. Pre-filled on every proposed line."
+    },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "PAYROLL",
+              "RENT",
+              "FERTILIZER",
+              "FUEL",
+              "SEED",
+              "PESTICIDE",
+              "SERVICE",
+              "CREDIT",
+              "DEPRECIATION",
+              "OTHER"
+            ]
+          },
+          "amount": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 999999999999
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8
+          },
+          "incurredOn": {
+            "type": "string",
+            "minLength": 8
+          },
+          "supplier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "invoiceFileId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "plantingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "seasonId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "locationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "parcelId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "leaseId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "itemId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "amountPerDca": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "payrollHeadcount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "payrollAnnualPerPerson": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "allocationBasis": {
+            "type": "string",
+            "enum": [
+              "TARGET",
+              "HOLDING",
+              "PARCEL_SUBSET",
+              "CROP"
+            ]
+          },
+          "allocationParcelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 200
+          },
+          "commodityCanonical": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "category",
+          "amount",
+          "currency",
+          "incurredOn"
+        ]
+      },
+      "description": "Proposed lines, in the batch endpoint's own body shape. At most 25; attribution fields are null by design."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "description": "Findings about the INVOICE rather than one line. A code and figures, never a sentence — the client writes the copy in the reader's language."
+    }
+  },
+  "required": [
+    "invoiceFileId",
+    "lines",
+    "warnings"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CreateAdminInviteRequest 1`] = `
 "{
   "type": "object",
@@ -16059,6 +16276,47 @@ exports[`API contract — per-schema snapshots schema: SoilProfile 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: SoilReason 1`] = `
+"{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "code": {
+        "type": "string",
+        "enum": [
+          "noPreferences",
+          "phTooAcidicHard",
+          "phTooAcidicSoft",
+          "phTooAlkalineHard",
+          "phTooAlkalineSoft",
+          "textureNotPreferred",
+          "drainageMismatch",
+          "matchesPreferences"
+        ]
+      },
+      "params": {
+        "type": "object",
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        }
+      }
+    },
+    "required": [
+      "code",
+      "params"
+    ]
+  }
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: SoilSuitability 1`] = `
 "{
   "type": "object",
@@ -16080,12 +16338,16 @@ exports[`API contract — per-schema snapshots schema: SoilSuitability 1`] = `
       "items": {
         "type": "string"
       }
+    },
+    "reasonCodes": {
+      "$ref": "#/components/schemas/SoilReason"
     }
   },
   "required": [
     "flag",
     "reason",
-    "reasons"
+    "reasons",
+    "reasonCodes"
   ],
   "description": "An ADVISORY verdict. \`unknown\` is returned whenever the variety has no curated preferences or the parcel has no soil yet — never a fabricated verdict, so a client must render unknown as unknown rather than as a neutral pass."
 }"

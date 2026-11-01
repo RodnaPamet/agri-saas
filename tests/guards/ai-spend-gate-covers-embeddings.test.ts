@@ -101,6 +101,8 @@ const DELIBERATELY_UNGATED: Readonly<Record<string, string>> = {
         'A provider IMPLEMENTATION, same reasoning as claude-provider — the spend is attributed at the caller, which is where the tenant is known.',
     'src/app-layer/ai/vision/claude-vision-provider.ts':
         'A provider implementation for the vision surface; its callers hold the RequestContext and are where a budget decision belongs.',
+    'src/app-layer/ai/invoice-reader.ts':
+        'A provider implementation for the invoice-scan surface (#482): it takes bytes and returns a parsed result, holding no RequestContext and making no budget decision. Its ONE caller, `usecases/invoice-scan.ts`, does both halves — `assertAiBudget(ctx)` before the call and `recordAiUsage(ctx, …)` after it, including when the read FAILS, since an unreadable document still spent the tokens. That is the arrangement this exemption asserts rather than assumes, and it is the difference from the sibling entry above, whose caller (`jobs/classify-photo.ts`) gates nothing — see #2596.',
 
 };
 
@@ -318,5 +320,89 @@ describe('§4 the detector can tell gated from ungated', () => {
         // cover.
         const code = codeOnly(prose);
         expect(USES_FACTORY.test(code) && CALLS_MODEL.test(code)).toBe(false);
+    });
+});
+
+/**
+ * §5 — the CALLERS of a provider this guard exempts (#2596).
+ *
+ * §2's population is PROVIDERS: a file that imports an SDK and calls it. Two
+ * of those are exempt because "its callers hold the RequestContext and are
+ * where a budget decision belongs" — which is correct, and which §1-§4 cannot
+ * check, because every caller is OUTSIDE their population. Measured: the
+ * gated `usecases/invoice-scan.ts` and the ungated `jobs/classify-photo.ts`
+ * were both invisible to this guard, so it answered "is each spending
+ * MECHANISM gated" and could not answer "is each spending DECISION made".
+ *
+ * That gap shipped an unmetered paid vision call reachable from any photo
+ * upload, while the sibling `askKnowledgeBase` call in the SAME job was gated
+ * the whole time.
+ *
+ * The population is derived from the ENTRY POINT rather than from a list of
+ * callers, so a second caller added later is covered the moment it exists —
+ * a list is the thing that goes stale, and a new caller is exactly the case
+ * this is for.
+ */
+const SPENDING_ENTRY_POINTS: Readonly<Record<string, string>> = {
+    identifyPhoto: 'src/app-layer/ai/vision/claude-vision-provider.ts',
+    readInvoice: 'src/app-layer/ai/invoice-reader.ts',
+};
+
+/** The modules that DEFINE or orchestrate an entry point, not callers of it. */
+const ENTRY_POINT_HOMES: readonly string[] = [
+    'src/app-layer/ai/vision/index.ts',
+    'src/app-layer/ai/vision/claude-vision-provider.ts',
+    'src/app-layer/ai/vision/onnx-provider.ts',
+    'src/app-layer/ai/invoice-reader.ts',
+];
+
+function callersOf(fn: string): string[] {
+    const call = new RegExp(`\\b${fn}\\s*\\(`);
+    return ALL.map(rel).filter((p) => {
+        if (ENTRY_POINT_HOMES.includes(p)) return false;
+        const code = withoutImports(codeOnly(readFileSync(join(ROOT, p), 'utf8')));
+        return call.test(code);
+    });
+}
+
+describe('§5 every CALLER of an exempted provider makes the budget decision', () => {
+    it('prints the caller population', () => {
+        const rows = Object.keys(SPENDING_ENTRY_POINTS).map((fn) => `${fn}: ${callersOf(fn).length}`);
+        console.log(`[ai-spend] callers of an exempted entry point — ${rows.join(', ')}`);
+        const total = Object.keys(SPENDING_ENTRY_POINTS).reduce(
+            (n, fn) => n + callersOf(fn).length,
+            0,
+        );
+        // A population of zero would pass the assertion below vacuously, and
+        // zero is also a real possibility if an entry point is renamed.
+        expect(total).toBeGreaterThanOrEqual(2);
+    });
+
+    it.each(Object.entries(SPENDING_ENTRY_POINTS))(
+        'every caller of %s is gated',
+        (fn, provider) => {
+            const callers = callersOf(fn);
+            const ungated = callers.filter((p) => {
+                const code = withoutImports(codeOnly(readFileSync(join(ROOT, p), 'utf8')));
+                return !GATED.test(code) && !PLATFORM_ASSERTS.test(code);
+            });
+            expect({ entryPoint: fn, provider, ungated }).toEqual({
+                entryPoint: fn,
+                provider,
+                ungated: [],
+            });
+        },
+    );
+
+    it('the entry points still exist — a rename would empty this section', () => {
+        // Without this, renaming `identifyPhoto` makes §5 range over nothing
+        // and pass forever, which is the failure this whole file is about.
+        for (const [fn, provider] of Object.entries(SPENDING_ENTRY_POINTS)) {
+            expect(Object.keys(DELIBERATELY_UNGATED)).toContain(provider);
+            const home = ENTRY_POINT_HOMES.map((h) =>
+                readFileSync(join(ROOT, h), 'utf8'),
+            ).join('\n');
+            expect(home).toContain(fn);
+        }
     });
 });

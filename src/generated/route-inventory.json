@@ -1402,6 +1402,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/grain/costs/invoice-scan",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/grain/costs/{costEntryId}",
       "status": "live",
       "documented": true

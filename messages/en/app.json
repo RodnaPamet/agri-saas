@@ -541,6 +541,19 @@
             "title": "Lease expiring",
             "body": "The lease for “{parcel}” with {lessor} expires on {date} (days remaining: {days})."
         },
+        "contractDeliveryWindow": {
+            "overdueTitle": "Overdue delivery window",
+            "closingTitle": "Delivery window approaching",
+            "overdueBody": "The delivery window for the {what} contract ended on {date} (days overdue: {days}).{outstanding}",
+            "closingBody": "The delivery window for the {what} contract ends on {date} (days remaining: {days}).{outstanding}",
+            "outstanding": " Outstanding for delivery (t): {tonnes}."
+        },
+        "fieldOperationReview": {
+            "approvedTitle": "Field operation approved: {task}",
+            "changesTitle": "Changes requested: {task}",
+            "approvedBody": "Your field operation “{task}” was approved.",
+            "changesBody": "Your field operation “{task}” needs changes."
+        },
         "markRead": "Mark read",
         "noNotifications": "No notifications",
         "slaBreach": {
@@ -5115,6 +5128,22 @@
             "diseaseReason": {
                 "noSustainedWarmWet": "No sustained warm-wet period",
                 "consecutiveWarmWetDays": "Consecutive warm-wet days: {days} — favourable for foliar disease"
+            },
+            "soilReason": {
+                "noPreferences": "No soil preferences on file for this crop, or soil is still pending for this field",
+                "phTooAcidicHard": "Soil pH {ph} is well below the preferred {band} — too acidic",
+                "phTooAcidicSoft": "Soil pH {ph} is slightly below the preferred {band} — a little too acidic",
+                "phTooAlkalineHard": "Soil pH {ph} is well above the preferred {band} — too alkaline",
+                "phTooAlkalineSoft": "Soil pH {ph} is slightly above the preferred {band} — a little too alkaline",
+                "textureNotPreferred": "Soil texture ({texture}) is not among this crop's preferred textures ({preferred})",
+                "drainageMismatch": "Texture implies {actual} drainage, but this crop prefers {preferred} drainage",
+                "matchesPreferences": "This field's soil matches the crop's preferences",
+                "advisory": "Verify with a soil test or your agronomist before planting.",
+                "drainage": {
+                    "well": "good",
+                    "moderate": "moderate",
+                    "poor": "weak"
+                }
             }
         },
         "detail": {
@@ -6810,6 +6839,12 @@
         "INVALID_TAB_ORDER": "Tab order must be empty, or a list of up to {max} unique tabs.",
         "INVALID_TASK": "Task not found.",
         "INVALID_VARIETY": "That variety was not found.",
+        "INVOICE_NOT_RECOGNISED": "That does not look like an invoice we can read. Try a clearer photo of the whole page.",
+        "INVOICE_NO_USABLE_LINES": "The invoice was read, but none of its lines can be recorded as a cost.",
+        "INVOICE_SCAN_INPUT_AMBIGUOUS": "Send either the invoice file or the id of one already uploaded, not both.",
+        "INVOICE_SCAN_MEDIA_UNSUPPORTED": "An invoice must be a photo (JPEG, PNG, GIF or WebP) or a PDF.",
+        "INVOICE_SCAN_TOO_LARGE": "That invoice is too large to read.",
+        "INVOICE_SCAN_UNAVAILABLE": "Invoice scanning is not set up on this installation.",
         "ITEM_NAME_ALREADY_EXISTS": "A product with that name already exists. Open it instead of creating a second one — two rows with one name split a product's history between them.",
         "JOURNAL_ENTRY_NOT_DELETED": "Journal entry is not deleted",
         "JOURNAL_ENTRY_NOT_FOUND": "Journal entry not found",

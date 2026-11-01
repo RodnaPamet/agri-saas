@@ -39,6 +39,32 @@ export interface PestIdentification {
     modelVersion: string;
     /** Which backend produced this identification. */
     backend: VisionBackend;
+    /**
+     * Tokens this identification cost, when a paid backend produced it
+     * (#2596). Absent for `onnx`, which spends nothing.
+     */
+    usage?: VisionUsage;
+}
+
+/**
+ * What a CLOUD identification cost, so the caller can write the usage ledger
+ * (#2596).
+ *
+ * Optional, and absent from the on-device backend by construction: ONNX runs
+ * locally and spends nothing, so a zero-filled `usage` would be a claim about
+ * a transaction that never happened. `undefined` says "no spend to record";
+ * a present value says "record this".
+ *
+ * It rides the RESULT rather than being written by the provider, because the
+ * provider holds no `RequestContext` — that is the arrangement
+ * `ai-spend-gate-covers-embeddings` exempts it on, and giving it a ctx to
+ * write the ledger itself would void the exemption's own reasoning.
+ */
+export interface VisionUsage {
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
 }
 
 /** An image to classify — raw bytes plus the declared MIME type. */

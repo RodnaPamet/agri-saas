@@ -241,6 +241,60 @@ describe('grain costs — the create affordance (PHONE)', () => {
         expect(screen.queryByRole('button', { name: COPY.addCost })).not.toBeInTheDocument();
     });
 
+    /**
+     * #2583 — a phone BROWSER could not delete an expense at all.
+     *
+     * `MobileCardList` omits every column with no `mobileCard` meta, and the
+     * actions column had none, so edit and delete were desktop-only. The iOS
+     * app has its own delete, which is why this went unnoticed: the gap only
+     * shows on Android or in a phone browser, where the only remedy was "find
+     * a desktop".
+     *
+     * Asserted in the PHONE branch deliberately — the desktop block above
+     * passes with or without the fix, so a desktop assertion is a control that
+     * cannot express this failure.
+     *
+     * The fetch stub has to SERVE the row here. `beforeEach` answers every
+     * request with `rows: []`, and the card branch mounts on an effect, so any
+     * `await` lets that empty refetch replace `initialRows` and the card list
+     * renders its empty state — which is what the first version of this test
+     * measured.
+     */
+    function serveOneRow() {
+        global.fetch = jest.fn(() =>
+            Promise.resolve({
+                ok: true,
+                json: async () => ({ rows: [costRow()], totalCount: 1, truncated: false }),
+            }),
+        ) as unknown as typeof fetch;
+    }
+
+    it('offers delete and edit on a phone, not only on a desktop', async () => {
+        setViewport('mobile');
+        serveOneRow();
+        renderPage();
+
+        // The card list, not the table — if this id is absent the assertions
+        // below would be about the desktop branch and prove nothing.
+        expect(await screen.findByTestId('cost-delete-ce-1')).toBeInTheDocument();
+        expect(await screen.findByTestId('cost-edit-ce-1')).toBeInTheDocument();
+        expect(document.getElementById('mobile-card-list')).not.toBeNull();
+    });
+
+    it('withholds both affordances from a reader on a phone', async () => {
+        setViewport('mobile');
+        serveOneRow();
+        renderPage([costRow()], false);
+
+        // The card must have RENDERED for this absence to mean anything — a
+        // missing testid on an empty list is the vacuous pass the first version
+        // of this test returned.
+        await screen.findByText('Petrol AD');
+        expect(document.getElementById('mobile-card-list')).not.toBeNull();
+        expect(screen.queryByTestId('cost-delete-ce-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('cost-edit-ce-1')).not.toBeInTheDocument();
+    });
+
     it('opens the create modal, and its confirm keeps the VERB', () => {
         setViewport('mobile');
         renderPage();
