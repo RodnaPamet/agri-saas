@@ -60,7 +60,15 @@ describe('LOG_FILE_PATH', () => {
             .spyOn(process.stderr, 'write')
             .mockImplementation(() => true);
         // A path whose PARENT is a file, so a directory cannot be created.
-        const blocker = path.join(os.tmpdir(), `logblock-${Date.now()}`);
+        //
+        // The blocker lives inside a `mkdtempSync` directory rather than
+        // directly in the OS temp dir under a `Date.now()` name. CodeQL
+        // flagged the latter as an insecure temporary file and was right:
+        // a predictable name in a world-writable directory is a symlink
+        // target, and "it is only a test" is how that pattern gets copied
+        // into something that is not.
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agrentblock-'));
+        const blocker = path.join(dir, 'not-a-directory');
         fs.writeFileSync(blocker, 'not a directory');
         try {
             const { pinoInstance } = loadLogger(path.join(blocker, 'nested', 'app.jsonl'));
@@ -72,7 +80,7 @@ describe('LOG_FILE_PATH', () => {
             const said = warn.mock.calls.map((c) => String(c[0])).join('');
             expect(said).toContain('LOG_FILE_PATH');
         } finally {
-            fs.rmSync(blocker, { force: true });
+            fs.rmSync(dir, { recursive: true, force: true });
             warn.mockRestore();
         }
     });
