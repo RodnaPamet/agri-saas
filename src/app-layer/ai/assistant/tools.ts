@@ -45,7 +45,15 @@ import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
 import { linksFromRows, type AssistantLink, type LinkShape } from './links';
-import { proposeJournalEntry, ProposeJournalEntryArgs, type AssistantProposal } from './propose';
+import {
+    ACTIVITY_KIND_VALUES,
+    proposeDraft,
+    ProposeActivityArgs,
+    ProposeTreatmentArgs,
+    TREATMENT_KIND_VALUES,
+    type AssistantProposal,
+    type ProposalKind,
+} from './propose';
 import { toPublicListing } from '@/lib/exchange/public-listing';
 import { LOG_ENTRY_TYPE_VALUES } from '@/lib/schemas';
 
@@ -100,7 +108,15 @@ interface AssistantTool {
      * CONSUMER of a route-level gate, and carries it the way a route does.
      */
     readonly module?: ModuleKey;
-    readonly proposes?: boolean;
+    /**
+     * The proposal KIND this tool prepares, read by `runTool` — #2632.
+     *
+     * The kind rather than a boolean, so the kind is declared once on the
+     * registry instead of hard-wired into `runTool`. It was `proposes: true`
+     * with `proposeJournalEntry` named at the call site, which is why adding a
+     * second kind meant editing the loop.
+     */
+    readonly proposes?: ProposalKind;
 }
 
 /**
@@ -462,42 +478,82 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             });
         },
     },
-    propose_journal_entry: {
+    propose_treatment: {
         def: {
-            name: 'propose_journal_entry',
+            name: 'propose_treatment',
             description:
-                'PREPARE a Дневник entry for the person to confirm. Writes NOTHING — it returns a '
-                + 'draft the app prefills into the real form, which the person submits themselves. '
-                + 'Use it when asked to record something. Do not include any ids; the person picks '
-                + 'the block and equipment in the form.',
+                'PREPARE a ДНЕВНИК treatment record — spraying, fertilising or sowing — for the '
+                + 'person to confirm. Writes NOTHING: it returns a draft the app prefills into the '
+                + 'real form, which the person submits themselves. Use it when asked to record a '
+                + 'treatment. Send only what was said; every field is optional. Do NOT include '
+                + 'parcels, products as ids, or a dose unit — the person picks those in the form.',
             parameters: {
                 type: 'object',
                 properties: {
-                    type: {
+                    kind: {
                         type: 'string',
-                        enum: [...LOG_ENTRY_TYPE_VALUES],
-                        description: 'The kind of journal entry.',
+                        enum: [...TREATMENT_KIND_VALUES],
+                        description: 'SPRAY fills химични обработки, FERTILIZE fills торове, SEED is сеитба.',
                     },
-                    title: { type: 'string', description: 'A short title, in the farmer\'s language.' },
-                    notes: { type: 'string', description: 'Optional detail.' },
-                    status: { type: 'string', enum: ['PLANNED', 'DONE'] },
-                    occurredAt: { type: 'string', description: 'ISO timestamp, if the person said when.' },
+                    occurredOn: { type: 'string', description: 'The calendar day, YYYY-MM-DD.' },
+                    productName: { type: 'string', description: 'The product as NAMED. Never an id.' },
+                    fertilizerName: { type: 'string', description: 'The fertiliser as named.' },
+                    doseValue: { type: 'number', description: 'The dose as a number. The person picks the unit.' },
+                    targetNote: { type: 'string', description: 'The pest or target treated.' },
+                    phenophase: { type: 'string', description: 'BBCH phenophase, if stated.' },
+                    pppRegistrationNo: { type: 'string', description: 'Registration number, if stated.' },
+                    quarantinePeriodDays: {
+                        type: 'integer',
+                        description: 'Quarantine in DAYS, 0-365 — a number, not text.',
+                    },
+                    applicationTechnique: { type: 'string', description: 'The rig used.' },
+                    title: { type: 'string' },
                 },
-                required: ['type', 'title'],
                 additionalProperties: false,
             },
         },
         module: 'JOURNAL',
-        args: ProposeJournalEntryArgs,
+        args: ProposeTreatmentArgs,
         run: async (_ctx, args) => {
-            // No ctx use, and no write: this validates and echoes. The policy
-            // that matters here is the one on the route the PERSON will post
-            // to, which is unchanged.
-            const outcome = proposeJournalEntry(args);
+            // No ctx use and no write: this validates and echoes. The policy
+            // that matters is the one on the route the PERSON posts to, which
+            // is unchanged.
+            const outcome = proposeDraft('treatment', args);
             if (!outcome.ok) throw new Error(outcome.message);
             return { prepared: true, kind: outcome.proposal?.kind, draft: outcome.proposal?.draft };
         },
-        proposes: true,
+        proposes: 'treatment',
+    },
+    propose_activity: {
+        def: {
+            name: 'propose_activity',
+            description:
+                'PREPARE a farm activity record — pruning, cultivation or harvest — for the person '
+                + 'to confirm. Writes NOTHING. Сеитба is NOT an activity: use propose_treatment '
+                + 'with kind SEED. Do NOT include parcels; the person picks them in the form.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    kind: {
+                        type: 'string',
+                        enum: [...ACTIVITY_KIND_VALUES],
+                        description: 'Pruning, cultivation or harvest.',
+                    },
+                    occurredOn: { type: 'string', description: 'The calendar day, YYYY-MM-DD.' },
+                    harvestKg: { type: 'number', description: 'Harvested kilograms, for a HARVEST.' },
+                    title: { type: 'string' },
+                },
+                additionalProperties: false,
+            },
+        },
+        module: 'JOURNAL',
+        args: ProposeActivityArgs,
+        run: async (_ctx, args) => {
+            const outcome = proposeDraft('activity', args);
+            if (!outcome.ok) throw new Error(outcome.message);
+            return { prepared: true, kind: outcome.proposal?.kind, draft: outcome.proposal?.draft };
+        },
+        proposes: 'activity',
     },
 };
 
@@ -557,7 +613,9 @@ export async function runTool(
         // A propose tool's validated draft, lifted onto the outcome so the
         // loop can attach it to the answer. Re-validated rather than trusted
         // from `result`: one source of truth for what a draft may contain.
-        const proposal = tool.proposes ? (proposeJournalEntry(check.data).proposal ?? null) : null;
+        const proposal = tool.proposes
+            ? (proposeDraft(tool.proposes, check.data).proposal ?? null)
+            : null;
         // Built from the ROWS, before serialising — so truncation below cannot
         // silently drop the links for records the model was still shown.
         const links = tool.link ? linksFromRows(tool.link, result) : [];

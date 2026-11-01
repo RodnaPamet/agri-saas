@@ -100,7 +100,7 @@ describe('emitAnswer (#2578)', () => {
         const out = await emitAnswer(send, 'Подготвих запис.', {
             tenantId: 't1',
             proposal: {
-                kind: 'journal-entry',
+                kind: 'treatment',
                 draft: { type: 'OBSERVATION', title: 'x', notes: `key ${AWS_EXAMPLE}` },
             },
         });
@@ -116,12 +116,12 @@ describe('emitAnswer (#2578)', () => {
         const withDraft = collect();
         await emitAnswer(withDraft.send, 'Подготвих запис.', {
             tenantId: 't1',
-            proposal: { kind: 'journal-entry', draft: { type: 'OBSERVATION', title: 'Оглед' } },
+            proposal: { kind: 'treatment', draft: { kind: 'SPRAY', title: 'Оглед' } },
         });
         const ev = JSON.parse(withDraft.sent[0].replace(/^data: /, '').trim()) as Record<string, unknown>;
         expect(ev.proposal).toEqual({
-            kind: 'journal-entry',
-            draft: { type: 'OBSERVATION', title: 'Оглед' },
+            kind: 'treatment',
+            draft: { kind: 'SPRAY', title: 'Оглед' },
         });
 
         const none = collect();
