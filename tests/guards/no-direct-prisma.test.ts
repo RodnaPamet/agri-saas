@@ -157,6 +157,29 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
 
     // ─── Usecases ───
     const USECASE_ALLOWLIST: string[] = [
+    // #493 — `usage-insights.ts` is the superuser's read of product usage
+    // ACROSS every farm, and that breadth IS the question: "which screens are
+    // used, in the product" cannot be asked one tenant at a time. A
+    // tenant-scoped version would need a tenant list, take a connection per
+    // tenant, and silently omit any farm the loop forgot — so it would answer a
+    // narrower question while looking like it answered this one.
+    //
+    // What stands in for tenant scoping is the CALLER and the SHAPE:
+    //
+    //   * the only consumer is `/t/{PLATFORM_TENANT_SLUG}/admin/usage`, gated
+    //     on `isPlatformTenant` AND `canAdmin` — the same gate as
+    //     `admin/market-prices` and `admin/promotions`, and there is no API
+    //     route, so the page is the whole surface.
+    //   * it returns AGGREGATES only. `distinctUsers` is a COUNT, never a list
+    //     of ids, and there is no per-user timeline and no event list. The same
+    //     table could answer "what did this named person do on Tuesday"; the
+    //     absence of a query shape that returns rows is what stops it, and that
+    //     absence is the thing to check in review.
+    //
+    // The INGEST side is deliberately not here: `usage-events.ts` writes
+    // through `runInTenantContext` so `UsageEvent`'s FORCED insert policy
+    // applies. Reads being cross-tenant does not make writes so.
+    'usage-insights.ts',
         // P3.6 / agrent-ios — `my-farms.ts` answers "which farms are mine",
         // so there is no tenant to scope to: that IS the question. And
         // `runInUserContext` cannot serve it — `TenantMembership`'s only
