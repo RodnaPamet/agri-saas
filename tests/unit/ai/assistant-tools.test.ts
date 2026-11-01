@@ -26,6 +26,18 @@ jest.mock('@/app-layer/usecases/journal', () => ({
 jest.mock('@/app-layer/usecases/cost-entry', () => ({
     listCostEntries: (...a: unknown[]) => listCostEntries(...a),
 }));
+// `{ rows, nextCursor }` — the browse usecase's REAL shape.
+//
+// `toPublicListing` is deliberately NOT mocked. It is the one place that
+// applies the seller's own disclosure choice, so a double would verify that
+// the tool calls something and nothing about the rule it exists to enforce.
+const listActiveListings = jest.fn<
+    Promise<{ rows: unknown[]; nextCursor: string | null }>,
+    unknown[]
+>();
+jest.mock('@/app-layer/usecases/exchange', () => ({
+    listActiveListings: (...a: unknown[]) => listActiveListings(...a),
+}));
 
 import {
     ASSISTANT_TOOLS,
@@ -48,6 +60,7 @@ describe('assistant tools (#2578)', () => {
         listTasks.mockResolvedValue([]);
         listLogEntriesPaginated.mockResolvedValue({ rows: [] });
         listCostEntries.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
+        listActiveListings.mockResolvedValue({ rows: [], nextCursor: null });
     });
 
     it('the set is closed and every def matches its key', () => {
@@ -201,6 +214,119 @@ describe('assistant tools (#2578)', () => {
             expect((await runTool(ctx, 'list_cost_entries', raw)).ok).toBe(false);
         }
         expect(listCostEntries).not.toHaveBeenCalled();
+    });
+
+    /** A Борса row as the usecase really hands it over, decimals included. */
+    const listingRow = (over: Record<string, unknown> = {}) => ({
+        id: 'l1',
+        sellerTenantId: 'other-tenant',
+        side: 'SELL',
+        kind: 'CULTURE',
+        commodity: 'wheat',
+        quantityTonnes: 25,
+        pricePerTonne: 210,
+        priceCurrency: 'EUR',
+        regionCode: 'PDV',
+        regionName: 'Пловдив',
+        lat: 42.1,
+        lon: 24.7,
+        description: 'Хлебна пшеница, реколта 2026',
+        sellerDisplayName: 'Иван Петров',
+        sellerContact: '+359 888 123456',
+        status: 'ACTIVE',
+        createdAt: new Date('2026-10-01T00:00:00Z'),
+        expiresAt: null,
+        ...over,
+    });
+
+    it('the Борса tool is BOUNDED and refuses free text and the seller-hiding control', async () => {
+        await runTool(ctx, 'list_exchange_listings', '{}');
+        const [, filters, page] = listActiveListings.mock.calls[0] as [
+            unknown,
+            Record<string, unknown>,
+            Record<string, unknown>,
+        ];
+        expect(page).toEqual({ limit: 20 });
+        // `excludeSellerTenantIds` is a privacy control shaped like a filter:
+        // the usecase computes it from the tenants that switched the exchange
+        // OFF, so a caller-supplied value would let a model unhide them.
+        for (const key of [
+            'search',
+            'searchRegionCodes',
+            'searchCommodities',
+            'excludeSellerTenantIds',
+        ]) {
+            expect(filters).not.toHaveProperty(key);
+            const refused = await runTool(
+                ctx,
+                'list_exchange_listings',
+                JSON.stringify({ [key]: key === 'excludeSellerTenantIds' ? ['t2'] : 'x' }),
+            );
+            expect(refused.ok).toBe(false);
+        }
+    });
+
+    it('does NOT name a farm that chose not to publish — the real projection decides', async () => {
+        // The usecase resolves a farm brand for EVERY seller regardless of the
+        // flag, so both halves are present here and only the flag differs.
+        // This is the assertion a mocked `toPublicListing` could not make.
+        const farm = { handle: 'zlatno-zarno', displayName: 'Златно зърно ЕООД' };
+
+        listActiveListings.mockResolvedValue({
+            rows: [listingRow({ publishAsFarm: false, farm })],
+            nextCursor: null,
+        });
+        const hidden = await runTool(ctx, 'list_exchange_listings', '{}');
+        expect(hidden.ok).toBe(true);
+        expect(hidden.content).not.toContain('Златно зърно');
+        expect(hidden.content).not.toContain('zlatno-zarno');
+        expect(hidden.content).toContain('Иван Петров');
+
+        // Control: with the flag SET the farm IS named, so the assertion above
+        // is about the flag and not about a projection that drops farms.
+        listActiveListings.mockResolvedValue({
+            rows: [listingRow({ publishAsFarm: true, farm })],
+            nextCursor: null,
+        });
+        const shown = await runTool(ctx, 'list_exchange_listings', '{}');
+        expect(shown.content).toContain('Златно зърно');
+    });
+
+    it('withholds the seller contact and the precise coordinates', async () => {
+        listActiveListings.mockResolvedValue({
+            rows: [listingRow({ publishAsFarm: false, farm: null })],
+            nextCursor: null,
+        });
+        const res = await runTool(ctx, 'list_exchange_listings', '{}');
+        // `sellerContact` is a third party's phone number, and no egress scan
+        // recognises one as sensitive — `ExchangeListingRow`'s own docblock
+        // says a listing projection must never carry it.
+        expect(res.content).not.toContain('888 123456');
+        expect(res.content).not.toContain('sellerContact');
+        // lat/lon are in the PUBLIC projection because the browse UI draws a
+        // map. An answer in prose has no use for them.
+        expect(res.content).not.toContain('42.1');
+        expect(res.content).not.toContain('24.7');
+        // Control: the row DID arrive and was projected.
+        expect(res.content).toContain('wheat');
+        expect(res.content).toContain('Пловдив');
+    });
+
+    it('takes its Борса enums from Prisma, not from a hand-written list', async () => {
+        const ok = await runTool(
+            ctx,
+            'list_exchange_listings',
+            JSON.stringify({ sides: ['SELL'], kinds: ['FERTILIZER'] }),
+        );
+        expect(ok.ok).toBe(true);
+        // A plausible-looking value the database does not have. I once
+        // hand-wrote five work-item statuses and three were wrong.
+        const bad = await runTool(
+            ctx,
+            'list_exchange_listings',
+            JSON.stringify({ kinds: ['CHEMICALS'] }),
+        );
+        expect(bad.ok).toBe(false);
     });
 
     it('refuses a hallucinated tool name without throwing', async () => {

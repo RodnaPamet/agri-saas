@@ -34,16 +34,18 @@
  *   longest and most sensitive free text to answer a list-level question. A
  *   later single-task tool can fetch one deliberately.
  */
-import { WorkItemStatus } from '@prisma/client';
+import { ExchangeKind, ExchangeSide, WorkItemStatus } from '@prisma/client';
 import { z } from 'zod';
 
 import { listCostEntries } from '@/app-layer/usecases/cost-entry';
+import { listActiveListings } from '@/app-layer/usecases/exchange';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
 import { linksFromRows, type AssistantLink, type LinkShape } from './links';
 import { proposeJournalEntry, ProposeJournalEntryArgs, type AssistantProposal } from './propose';
+import { toPublicListing } from '@/lib/exchange/public-listing';
 import { LOG_ENTRY_TYPE_VALUES } from '@/lib/schemas';
 
 /** How much of one tool result may reach the model. */
@@ -154,6 +156,34 @@ const ListCostsArgs = z
         incurredTo: z.string().max(40).optional(),
     })
     .strict();
+
+/**
+ * Борса facets. Every field mirrors a `ListingFilters` field that is an
+ * ENUM or a NUMBER, and the omissions are the design:
+ *
+ * - `search` / `searchRegionCodes` / `searchCommodities` — free text into a
+ *   query, which a browse question does not need and whose content cannot be
+ *   bounded by a charset. The last two are additionally RESOLVED BY THE ROUTE
+ *   from the oblast and crop catalogues, so a value invented here would not
+ *   even be a region or commodity code.
+ * - `excludeSellerTenantIds` — usecase-INTERNAL. `listActiveListings`
+ *   computes it from `sellerTenantsWithExchangeOff()`, so accepting one from
+ *   a caller would let a model UNHIDE sellers who switched the exchange off,
+ *   or hide farms that did not. It is a privacy control shaped like a filter.
+ *
+ * The two enums come from Prisma rather than being written out, for the
+ * reason the task tool's status list does: I once hand-wrote five work-item
+ * statuses and three were wrong, and a JSON-Schema enum of values the
+ * database does not have is a refusal the model cannot diagnose.
+ */
+const ListExchangeArgs = z.object({
+    sides: z.array(z.nativeEnum(ExchangeSide)).max(2).optional(),
+    kinds: z.array(z.nativeEnum(ExchangeKind)).max(4).optional(),
+    commodities: z.array(z.string().min(1).max(64)).max(12).optional(),
+    regionCodes: z.array(z.string().min(1).max(16)).max(28).optional(),
+    minTonnes: z.number().nonnegative().max(1_000_000).optional(),
+    maxTonnes: z.number().nonnegative().max(1_000_000).optional(),
+}).strict();
 
 const parseDay = (v: string | undefined): Date | undefined => {
     if (v === undefined) return undefined;
@@ -306,6 +336,111 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 incurredOn: r.incurredOn ?? r.incurredAt,
                 note: typeof r.note === 'string' ? r.note.slice(0, 120) : undefined,
             }));
+        },
+    },
+    list_exchange_listings: {
+        def: {
+            name: 'list_exchange_listings',
+            description:
+                'Борса — ACTIVE listings across every farm on the platform, both offers to sell '
+                + 'and wanted-to-buy. Use it for what is on the market, at what price, and where. '
+                + 'Returns at most 20.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    sides: {
+                        type: 'array',
+                        items: { type: 'string', enum: Object.values(ExchangeSide) },
+                        description: 'SELL for offers, BUY for wanted.',
+                    },
+                    kinds: {
+                        type: 'array',
+                        items: { type: 'string', enum: Object.values(ExchangeKind) },
+                        description: 'What class of good.',
+                    },
+                    commodities: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description:
+                            'Canonical commodity slugs, e.g. "wheat". Stored canonical, so a '
+                            + 'Bulgarian crop name will not match — omit this rather than guess.',
+                    },
+                    regionCodes: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Oblast codes. Omit rather than guess.',
+                    },
+                    minTonnes: { type: 'number' },
+                    maxTonnes: { type: 'number' },
+                },
+                additionalProperties: false,
+            },
+        },
+        args: ListExchangeArgs,
+        run: async (ctx, args) => {
+            const a = ListExchangeArgs.parse(args);
+            // `{ rows, nextCursor }`, NOT an array — the same shape mistake
+            // `listCostEntries` cost me, so it is read off `.rows` here.
+            //
+            // The policy and the ENTITLEMENT both live inside this usecase:
+            // `assertCanRead(ctx)` and `assertNotPastDueRestricted(ctx,
+            // 'exchange')`. That is why this tool is a plain usecase call,
+            // where a prices tool cannot be — `getPriceTrends` takes no
+            // RequestContext at all and its gate sits in the three trends
+            // ROUTES, so calling it from here would answer a tenant whose
+            // trends surface is closed. Tracked on #2626; do not copy this
+            // tool's shape onto that one without reading it.
+            const page = await listActiveListings(
+                ctx,
+                {
+                    ...(a.sides ? { sides: a.sides } : {}),
+                    ...(a.kinds ? { kinds: a.kinds } : {}),
+                    ...(a.commodities ? { commodities: a.commodities } : {}),
+                    ...(a.regionCodes ? { regionCodes: a.regionCodes } : {}),
+                    ...(a.minTonnes != null ? { minTonnes: a.minTonnes } : {}),
+                    ...(a.maxTonnes != null ? { maxTonnes: a.maxTonnes } : {}),
+                },
+                { limit: 20 },
+            );
+            // Project through `toPublicListing`, never by hand. It is the ONE
+            // place that applies the seller's own disclosure choice:
+            //
+            //     row.publishAsFarm && row.farm ? row.farm.displayName : row.sellerDisplayName
+            //
+            // `withFarmAttribution` resolves a farm brand for EVERY seller
+            // regardless of that flag, so a hand-rolled projection reading
+            // `row.farm.displayName` would name a farm that deliberately did
+            // not publish — a privacy regression with the data sitting right
+            // there in the return value. It also already withholds
+            // `sellerContact`, which is a third party's phone or email and
+            // which no egress scan would recognise as sensitive.
+            //
+            // Then NARROWED: `lat`/`lon` are dropped. The public projection
+            // carries them because the browse UI draws a map; an answer in
+            // prose has no use for coordinates, and they are a third party's
+            // precise location. Narrowing a published projection is safe —
+            // widening one would not be.
+            return page.rows.map((row) => {
+                const pub = toPublicListing(row, ctx.tenantId);
+                return {
+                    id: pub.id,
+                    side: pub.side,
+                    kind: pub.kind,
+                    commodity: pub.commodity,
+                    quantityTonnes: pub.quantityTonnes,
+                    pricePerTonne: pub.pricePerTonne,
+                    priceCurrency: pub.priceCurrency,
+                    regionName: pub.regionName,
+                    seller: pub.sellerDisplayName,
+                    farmHandle: pub.farmHandle,
+                    isOwn: pub.isOwn,
+                    expiresAt: pub.expiresAt,
+                    description:
+                        typeof pub.description === 'string'
+                            ? pub.description.slice(0, 160)
+                            : null,
+                };
+            });
         },
     },
     propose_journal_entry: {

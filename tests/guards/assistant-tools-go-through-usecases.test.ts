@@ -128,6 +128,39 @@ describe('assistant tools go through usecases (#2578)', () => {
         expect(CODE).not.toMatch(/includeTaskWritten/);
     });
 
+    it('projects a Борса listing through toPublicListing, never by hand', () => {
+        // The privacy property is a one-line diff from being lost, and the
+        // data needed to lose it sits right there in the return value.
+        //
+        // `withFarmAttribution` resolves a farm brand for EVERY seller
+        // regardless of `publishAsFarm`, and `toPublicListing` is the ONE
+        // place that applies the seller's choice:
+        //
+        //     row.publishAsFarm && row.farm ? row.farm.displayName : row.sellerDisplayName
+        //
+        // So a projection reading `row.farm.displayName` would name a farm
+        // that deliberately did not publish. `toPublicListing` additionally
+        // withholds `sellerContact` — a third party's phone or email, which
+        // no egress scan recognises as sensitive.
+        //
+        // Asserted structurally AND behaviourally: the unit test proves the
+        // rule holds today (with a control that the farm IS named when the
+        // flag is set), and this proves the next author cannot reintroduce a
+        // hand-rolled projection without the assertion firing.
+        expect(CODE).toMatch(/toPublicListing\s*\(/);
+        // The two reads that would bypass the choice.
+        expect(CODE).not.toMatch(/\brow\.farm\b/);
+        expect(CODE).not.toMatch(/\bsellerContact\b/);
+    });
+
+    it('does not hand a caller-supplied seller-exclusion list to the exchange', () => {
+        // `excludeSellerTenantIds` is a privacy control shaped like a filter:
+        // `listActiveListings` computes it from the tenants that switched the
+        // exchange module OFF. Accepting one from the model would let it
+        // unhide those sellers, or hide farms that never opted out.
+        expect(CODE).not.toMatch(/excludeSellerTenantIds:\s*(?!\/\/)/);
+    });
+
     it('does not expose a free-text query parameter to the model', () => {
         // `TaskFilters.q` is real and deliberately unexposed: it is the one
         // argument whose content cannot be bounded by a charset. Asserted
