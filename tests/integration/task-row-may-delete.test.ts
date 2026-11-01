@@ -127,13 +127,34 @@ describeFn('mayDelete on a task list row (#2395)', () => {
         expect(find(await rowsFor(asOwner()), theirsId)?.mayDelete).toBe(true);
     });
 
-    it("false on a treatment's block share, even for its creator and an admin", async () => {
-        // The 409 arm: `TASK_BELONGS_TO_TREATMENT`, which binds administrators
-        // too. A recorded treatment writes one task per block, so on a farm that
-        // records treatments many ordinary-looking rows are false for this
-        // reason rather than a permission one.
-        expect(find(await rowsFor(asEditor()), treatmentTaskId)?.mayDelete).toBe(false);
-        expect(find(await rowsFor(asOwner()), treatmentTaskId)?.mayDelete).toBe(false);
+    it("omits a treatment's block share from the list entirely (#2696)", async () => {
+        // SUPERSEDED, and in the stronger direction. This asserted
+        // `mayDelete === false` on a treatment's block share — the 409 arm,
+        // `TASK_BELONGS_TO_TREATMENT`, which binds administrators too. #2696
+        // then stopped those rows reaching any person-facing list at all,
+        // because a diary record's container tasks are bookkeeping rather than
+        // the farm's work, so there is no longer a row here to carry a flag.
+        //
+        // Absence is a stronger claim than `mayDelete: false`, so the test
+        // moves rather than being deleted — and asserting the ROW is absent
+        // rather than `?.mayDelete` being undefined matters: the optional
+        // chain would also be undefined for a row that was present and simply
+        // missing the field, which is the opposite of what this now proves.
+        //
+        // What is NOT weakened: the 409 still binds a DIRECT open by id — that
+        // is `assertTaskIsNotTreatmentShare` (#2220), reached from the route
+        // rather than the list — and `withMayDelete`'s treatment-share arm is
+        // still exercised by `tests/unit/usecases/task.test.ts` and
+        // `tests/unit/parcel-tasks.test.ts`, which call it directly instead of
+        // through a list that now filters. Checked before moving this, because
+        // a superseded test that takes the last coverage of a rule with it is
+        // how a rule stops being enforced.
+        expect(find(await rowsFor(asEditor()), treatmentTaskId)).toBeUndefined();
+        expect(find(await rowsFor(asOwner()), treatmentTaskId)).toBeUndefined();
+
+        // The control: the list is not simply empty. A filter that dropped
+        // every row would satisfy the two absences above perfectly.
+        expect(find(await rowsFor(asEditor()), mineId)?.mayDelete).toBe(true);
     });
 
     it('false for every row when the caller cannot write tasks at all', async () => {
