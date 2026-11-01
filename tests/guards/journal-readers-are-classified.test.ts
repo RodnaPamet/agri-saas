@@ -50,6 +50,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT as ROOT } from '../helpers/collect-files';
 
 /** The reader that must keep seeing task-written entries, and why. */
@@ -81,13 +82,34 @@ function journalReaders(): string[] {
         const rel = path.relative(ROOT, file);
         // The usecase module defines them; it is not a reader of itself.
         if (rel === 'src/app-layer/usecases/journal.ts') continue;
-        const src = fs.readFileSync(file, 'utf8');
+        // Blanked (#2623): a docblock naming `listLogEntries(...)` — which this
+        // very file does, twice — would enter the POPULATION as a reader and
+        // demand a classification for a file that calls nothing.
+        const src = blankNonCode(fs.readFileSync(file, 'utf8'), { strings: true });
         if (/\blistLogEntries(?:Paginated)?\s*\(/.test(src)) found.push(rel);
     }
     return found.sort();
 }
 
-const reads = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * Source with comments and string CONTENTS blanked (#2623).
+ *
+ * `{ strings: true }` because every subject here is a CALL or a STRUCTURE —
+ * `includeTaskWritten: true`, `includeTaskWritten !== true`, a `where.NOT`
+ * object literal — never message copy, so a sequence appearing inside a string
+ * is no more a call than one inside a comment.
+ *
+ * Found on #2621: `src/app-layer/ai/assistant/tools.ts` mentions
+ * `includeTaskWritten` THREE times, all in comments explaining why it is never
+ * passed, and passed this guard only because none of them happened to spell
+ * `: true`. A correct file was one quotation away from reddening three shards,
+ * and the quotation is the natural thing to write — "passing
+ * `includeTaskWritten: true` would widen a БАБХ register". That is cases 2 and
+ * 4 of `guards-blank-comments-before-matching`'s own docblock, the second of
+ * which has already happened twice in this repo.
+ */
+const reads = (rel: string): string =>
+    blankNonCode(fs.readFileSync(path.join(ROOT, rel), 'utf8'), { strings: true });
 
 describe('every journal reader is classified', () => {
     it('control: the scan found readers at all', () => {
