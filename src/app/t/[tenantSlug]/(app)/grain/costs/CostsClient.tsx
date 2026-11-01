@@ -363,6 +363,19 @@ function CostsPageInner({
                     id: 'actions',
                     header: '',
                     enableHiding: false,
+                    /**
+                     * #2583 — without this the column is DROPPED on a phone.
+                     *
+                     * `MobileCardList` omits every column with no `mobileCard`
+                     * meta, so edit and delete were desktop-only and a farmer
+                     * in a phone BROWSER (not the app) could not delete an
+                     * expense at all. The `actions` slot renders a
+                     * right-aligned footer and wraps it in a
+                     * `stopPropagation`, so a tap on delete never also fires
+                     * the row's own click. Six other lists already use it,
+                     * `RentClient`'s lease removal among them.
+                     */
+                    meta: { mobileCard: { slot: 'actions' as const } },
                     cell: ({ row }) =>
                         permissions.canWrite ? (
                             <div className="flex items-center justify-end gap-tight">
