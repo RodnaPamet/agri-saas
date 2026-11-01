@@ -34,11 +34,12 @@
  *   longest and most sensitive free text to answer a list-level question. A
  *   later single-task tool can fetch one deliberately.
  */
-import { ExchangeKind, ExchangeSide, WorkItemStatus } from '@prisma/client';
+import { ExchangeKind, ExchangeSide, type ModuleKey, WorkItemStatus } from '@prisma/client';
 import { z } from 'zod';
 
 import { listCostEntries } from '@/app-layer/usecases/cost-entry';
 import { listActiveListings } from '@/app-layer/usecases/exchange';
+import { assertModuleEnabled } from '@/app-layer/usecases/modules';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
@@ -84,6 +85,21 @@ interface AssistantTool {
      */
     readonly link?: LinkShape;
     /** A PROPOSE tool: its result becomes a draft on the answer. */
+    /**
+     * The per-tenant MODULE this tool's surface sits behind, asserted by
+     * `runTool` before `run` — #2629.
+     *
+     * Declared here rather than called inside each `run` so it cannot be
+     * forgotten in a body, and so a guard can read the mapping off the
+     * registry. Absent means the surface gates no module, which is TRUE of
+     * `/farm-tasks` — measured, not assumed.
+     *
+     * It belongs on the TOOL and not pushed down into the usecase: 52 route
+     * files already assert it and 2 usecases do, so moving it would make
+     * every one of those 52 a second copy of one policy. A tool is a new
+     * CONSUMER of a route-level gate, and carries it the way a route does.
+     */
+    readonly module?: ModuleKey;
     readonly proposes?: boolean;
 }
 
@@ -257,6 +273,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 additionalProperties: false,
             },
         },
+        module: 'JOURNAL',
         args: ListJournalArgs,
         link: { template: '/journal/[id]', idField: 'id', labelField: 'title' },
         run: async (ctx, args) => {
@@ -308,6 +325,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 additionalProperties: false,
             },
         },
+        module: 'GRAIN',
         args: ListCostsArgs,
         run: async (ctx, args) => {
             const a = ListCostsArgs.parse(args);
@@ -376,6 +394,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 additionalProperties: false,
             },
         },
+        module: 'EXCHANGE',
         args: ListExchangeArgs,
         run: async (ctx, args) => {
             const a = ListExchangeArgs.parse(args);
@@ -468,6 +487,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 additionalProperties: false,
             },
         },
+        module: 'JOURNAL',
         args: ProposeJournalEntryArgs,
         run: async (_ctx, args) => {
             // No ctx use, and no write: this validates and echoes. The policy
@@ -521,6 +541,18 @@ export async function runTool(
         };
     }
     try {
+        // The module gate, BEFORE the usecase — #2629. The gate for every
+        // surface these tools read lives in the ROUTE, not the usecase
+        // (measured: 52 route files call it, 2 usecases do), so a tool
+        // calling the usecase directly read data for a tenant whose module
+        // is switched off — or whose PLAN does not include it, since
+        // `assertModuleEnabled` checks `planAllowsModule` first and reports
+        // `reason: 'plan'` separately for exactly that case.
+        //
+        // Inside the `try` deliberately: a MODULE_DISABLED refusal must reach
+        // the model as a FAILED TOOL, so it can say it cannot see that data,
+        // rather than killing a stream that has already sent a 200.
+        if (tool.module) await assertModuleEnabled(ctx, tool.module);
         const result = await tool.run(ctx, check.data);
         // A propose tool's validated draft, lifted onto the outcome so the
         // loop can attach it to the answer. Re-validated rather than trusted

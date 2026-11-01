@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
-import { REPO_ROOT } from '../helpers/collect-files';
+import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
 const TOOLS = 'src/app-layer/ai/assistant/tools.ts';
 
@@ -159,6 +159,67 @@ describe('assistant tools go through usecases (#2578)', () => {
         // exchange module OFF. Accepting one from the model would let it
         // unhide those sellers, or hide farms that never opted out.
         expect(CODE).not.toMatch(/excludeSellerTenantIds:\s*(?!\/\/)/);
+    });
+
+    /**
+     * Every module gated by a ROUTE that reads the same usecase a tool reads
+     * — derived, so a sixth tool cannot quietly skip one (#2629).
+     *
+     * The defect this closes: `assertModuleEnabled` is an almost entirely
+     * route-level control (measured: 52 route files call it, 2 usecases do),
+     * so the first three tools called their usecase directly and read data
+     * for a tenant whose module was switched OFF — or whose PLAN does not
+     * include it, since the gate checks `planAllowsModule` first.
+     *
+     * Derived rather than listed, which is the whole point. A hand-written
+     * map is the map somebody forgets on the next tool, and that is exactly
+     * how three shipped tools ended up without one.
+     */
+    function modulesGatedByRoutesOfOurUsecases(): { required: string[]; declared: string[] } {
+        // Usecase FUNCTIONS the subject imports.
+        const fns = new Set(
+            [...CODE.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@\/app-layer\/usecases\/[^']+'/g)]
+                .flatMap((m) => m[1].split(','))
+                .map((n) => n.trim().split(/\s+as\s+/)[0].trim())
+                .filter(Boolean),
+        );
+        // `assertModuleEnabled` is the gate itself, not a data read.
+        fns.delete('assertModuleEnabled');
+
+        const required = new Set<string>();
+        for (const file of collectSourceFiles({ roots: ['src/app/api'], floor: 100 })) {
+            const code = blankNonCode(readFileSync(file, 'utf8'), { strings: false });
+            // Does this route read one of the same usecases?
+            const importsOurs = [
+                ...code.matchAll(/import\s*\{([^}]*)\}\s*from\s*'@\/app-layer\/usecases\/[^']+'/g),
+            ]
+                .flatMap((m) => m[1].split(','))
+                .map((n) => n.trim().split(/\s+as\s+/)[0].trim())
+                .some((n) => fns.has(n));
+            if (!importsOurs) continue;
+            for (const m of code.matchAll(/assertModuleEnabled\(\s*ctx\s*,\s*'([A-Z_]+)'\s*\)/g)) {
+                required.add(m[1]);
+            }
+        }
+        const declared = new Set(
+            [...CODE.matchAll(/\bmodule:\s*'([A-Z_]+)'/g)].map((m) => m[1]),
+        );
+        return { required: [...required].sort(), declared: [...declared].sort() };
+    }
+
+    it('declares every module gated by the routes reading the same usecases', () => {
+        const { required, declared } = modulesGatedByRoutesOfOurUsecases();
+        console.log(
+            `[assistant-tools] modules required=${required.join(',') || 'none'} ` +
+                `declared=${declared.join(',') || 'none'}`,
+        );
+        // A floor: an extraction that matched nothing would make the equality
+        // below `[] === []`, which is agreement and worthless.
+        expect(required.length).toBeGreaterThanOrEqual(3);
+        // Equality in BOTH directions. A missing module is #2629 again; a
+        // declared module no route gates would refuse a surface the product
+        // leaves open, which is the same defect inverted and just as silent.
+        expect(declared).toEqual(required);
     });
 
     it('does not expose a free-text query parameter to the model', () => {
