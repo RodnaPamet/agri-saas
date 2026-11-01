@@ -29,6 +29,7 @@
  */
 import { endingEvent } from './endings';
 import { mergeLinks, type AssistantLink } from './links';
+import type { AssistantProposal } from './propose';
 import { runTool, toolDefs } from './tools';
 import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import type { HaltCode } from '../safety/refusal-codes';
@@ -48,6 +49,12 @@ export interface ToolLoopResult {
      * `links.ts` for why the model does not author these.
      */
     readonly links: readonly AssistantLink[];
+    /**
+     * The LAST prepared draft of the turn, if any. Last rather than all: a
+     * person confirms one form, and offering two would ask them to choose
+     * between drafts the assistant could not decide between itself.
+     */
+    readonly proposal: AssistantProposal | null;
     readonly truncatedAny: boolean;
     /** The halt to report after the answer, if the tool phase was cut short. */
     readonly halt: HaltCode | null;
@@ -77,6 +84,7 @@ export async function runToolLoop(
     let truncatedAny = false;
     let toolCallsMade = 0;
     const linkGroups: AssistantLink[][] = [];
+    let proposal: AssistantProposal | null = null;
     let halt: HaltCode | null = null;
     let text: string | null = null;
 
@@ -103,6 +111,7 @@ export async function runToolLoop(
             const outcome = await runTool(deps.ctx, call.name, call.arguments ?? '');
             if (outcome.truncated) truncatedAny = true;
             if (outcome.links.length > 0) linkGroups.push([...outcome.links]);
+            if (outcome.proposal !== null) proposal = outcome.proposal;
             emit({
                 type: 'tool_result',
                 name: call.name,
@@ -135,7 +144,7 @@ export async function runToolLoop(
     // weakest and is reported on `done` regardless, so it is never silent.
     if (halt === null && truncatedAny) halt = 'ASSISTANT_TRUNCATED_RESULT';
 
-    return { text, links: mergeLinks(linkGroups), truncatedAny, halt, toolCallsMade };
+    return { text, links: mergeLinks(linkGroups), proposal, truncatedAny, halt, toolCallsMade };
 }
 
 /** Emit the halt, if there is one. Separate so the caller controls ordering. */
