@@ -1,3 +1,5 @@
+import { sanitizePlainText } from '@/lib/security/sanitize';
+
 /**
  * Untrusted-content sanitiser for the advisory prompt (feat/ai-evals-safety).
  *
@@ -12,6 +14,25 @@
  *
  * It NEVER eval/exec's anything and never follows the content — it only
  * rewrites known injection-shaped lines into an inert, labelled form.
+ */
+
+/*
+ * ONE anchored pattern among several unanchored ones, and that asymmetry is a
+ * trap (#2698).
+ *
+ * `INJECTION_LINE_PATTERNS` are all `\b`-bounded and UNANCHORED, so markup
+ * around them changes nothing — `<p>ignore all previous instructions</p>` is
+ * neutralised exactly as the bare line is. Measured.
+ *
+ * `ROLE_SPOOF_PREFIX` is ANCHORED at the start of the line. So anything
+ * occupying that position defeats it, and a single HTML tag is enough:
+ * `<p>system: …` passes through untouched. Also measured, with a positive
+ * control, because "not neutralised" and "the function is broken" are
+ * otherwise the same reading.
+ *
+ * That makes the order of operations load-bearing for any caller whose input
+ * may carry markup — see `sanitizeUntrustedMarkup` below, which is the only
+ * safe way to feed one of those in.
  */
 
 /** Patterns that look like an attempt to override the system instructions. */
@@ -50,4 +71,37 @@ export function sanitizeUntrusted(text: string): string {
             return line;
         })
         .join('\n');
+}
+
+/**
+ * `sanitizeUntrusted` for input that may carry MARKUP — RSS bodies, scraped
+ * HTML, anything an external author wrote (#2698).
+ *
+ * ## Why this exists rather than a note telling callers to strip first
+ *
+ * The role-spoof pattern is anchored, so a leading tag masks it. Which means a
+ * caller has exactly two orders available and they fail in opposite
+ * directions:
+ *
+ *   · strip, THEN check — the prefix is unmasked for the CHECK, and defanged.
+ *   · check, THEN strip — the prefix is unmasked for the MODEL, after the
+ *     check has already passed on text where it was invisible.
+ *
+ * Same two functions, opposite outcomes, and neither errors. A convention
+ * documented at eight call sites is a convention that will be got wrong at the
+ * ninth, so the order is encoded in a NAME instead.
+ *
+ * ## Why not strip inside `sanitizeUntrusted` itself
+ *
+ * It would fix every caller at once, and it is the wrong shape here for a
+ * specific reason: `sanitizePlainText` is NOT idempotent. It decodes entities
+ * LAST, so `&amp;lt;` becomes `&lt;` on one pass and `<` on two. A caller that
+ * already strips — and #2694 adds one — would then corrupt any text containing
+ * an escaped entity. One application per value, at the point the value enters
+ * the prompt.
+ */
+export function sanitizeUntrustedMarkup(text: string): string {
+    // STRIP FIRST. See the note above: the other order defangs nothing and
+    // hands the model a clean role prefix.
+    return sanitizeUntrusted(sanitizePlainText(text));
 }
