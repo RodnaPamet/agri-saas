@@ -154,7 +154,13 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
             [500, 'ASSISTANT_PROVIDER_UNAVAILABLE', 'the provider failed, not refused'],
             [529, 'ASSISTANT_PROVIDER_UNAVAILABLE', "Anthropic's overloaded"],
             [undefined, 'ASSISTANT_PROVIDER_UNAVAILABLE', 'a connection failure carries no status'],
-        ])('status %s -> %s (%s)', async (status, expected) => {
+            // All THREE tuple members must be declared even though the
+            // third only feeds the test NAME: `it.each`'s callback type is
+            // derived from the row arity, so a 2-param callback against a
+            // 3-element row is TS2345. ts-jest transpiles without
+            // typechecking, so the suite ran green locally and only
+            // `npm run typecheck` saw it.
+        ])('status %s -> %s (%s)', async (status, expected, _why) => {
             expect(await endingFor(sdkError(status as number | undefined))).toBe(expected);
         });
 
