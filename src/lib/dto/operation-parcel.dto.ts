@@ -34,10 +34,31 @@ export const OperationParcelDTOSchema = z
         tenantId: z.string(),
         taskId: z.string(),
         parcelId: z.string(),
-        productItemId: z.string(),
+        /**
+         * NULLABLE, all three together — a BARE ACTIVITY line (#2316) applies
+         * no product. «Обработка на почвата» is the worked example: soil
+         * cultivation on a parcel, nothing applied, nothing to deduct.
+         *
+         * The database has said so since `20261025120000_operation_parcel_bare
+         * _activity`, with a CHECK enforcing `num_nulls(productItemId,
+         * doseValue, doseUnitId) IN (0, 3)` — all three or none, never one.
+         * This schema said `z.string()` and was LYING, so a client that
+         * believed the contract and decoded strictly failed the whole section
+         * (agrent-ios, owner-visible 2026-11-01).
+         *
+         * `.nullable()` and NOT `.optional()`: the route serialises the raw
+         * row, so the keys are always PRESENT and the value is null. A strict
+         * decoder needs that distinction — "absent" and "present and null" are
+         * different shapes and only one of them is what we send.
+         *
+         * The field below documents the same class of failure for `version`:
+         * an undeclared-but-always-present field that iOS decoded as optional.
+         * This is that bug's mirror — declared, but declared wrongly.
+         */
+        productItemId: z.string().nullable(),
         /** Decimal → string. RATE doses (L/ha) multiply by parcel area on completion. */
-        doseValue: z.string(),
-        doseUnitId: z.string(),
+        doseValue: z.string().nullable(),
+        doseUnitId: z.string().nullable(),
         targetNote: z.string().nullable().optional(),
         /** PENDING | DONE | SKIPPED. */
         status: z.string(),
@@ -62,8 +83,10 @@ export const OperationParcelDTOSchema = z
         completedByUserId: z.string().nullable().optional(),
         createdAt: z.string().datetime().optional(),
         updatedAt: z.string().datetime().optional(),
-        product: OpProductRefSchema,
-        doseUnit: OpDoseUnitRefSchema,
+        /** Null on a bare activity line — see `productItemId` above. */
+        product: OpProductRefSchema.nullable(),
+        /** Null on a bare activity line — see `productItemId` above. */
+        doseUnit: OpDoseUnitRefSchema.nullable(),
         parcel: OpParcelRefSchema,
         completedBy: UserRefSchema.nullable().optional(),
     })

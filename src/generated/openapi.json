@@ -11426,13 +11426,22 @@
             "type": "string"
           },
           "productItemId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "doseValue": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "doseUnitId": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "targetNote": {
             "type": [
@@ -11468,7 +11477,10 @@
             "format": "date-time"
           },
           "product": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
               "id": {
                 "type": "string"
@@ -11484,7 +11496,10 @@
             "additionalProperties": {}
           },
           "doseUnit": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
               "id": {
                 "type": "string"

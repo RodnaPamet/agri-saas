@@ -12048,13 +12048,22 @@ exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
       "type": "string"
     },
     "productItemId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "doseValue": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "doseUnitId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "targetNote": {
       "type": [
@@ -12090,7 +12099,10 @@ exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
       "format": "date-time"
     },
     "product": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
         "id": {
           "type": "string"
@@ -12106,7 +12118,10 @@ exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
       "additionalProperties": {}
     },
     "doseUnit": {
-      "type": "object",
+      "type": [
+        "object",
+        "null"
+      ],
       "properties": {
         "id": {
           "type": "string"
