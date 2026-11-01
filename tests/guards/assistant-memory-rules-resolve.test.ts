@@ -24,36 +24,43 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const REPO = path.resolve(__dirname, '../..');
+import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+
 const DOC = 'docs/assistant-memory-rules.md';
-
-/** Files that may cite a rule. Derived, not listed — see §2. */
-const CITING_ROOTS = [
-    'prisma/schema/ai.prisma',
-    'src/app-layer/usecases/assistant-memory.ts',
-    'src/app/api/account/assistant-memory',
-    'src/lib/schemas/assistant-memory-limits.ts',
-];
-
 const EXPECTED_RULE_COUNT = 9;
+
+/**
+ * The citing population, DERIVED rather than listed.
+ *
+ * It was a hand-written list of four paths with its own walk, which
+ * `file-collection-is-not-silently-empty` (#865) correctly refused: that walk
+ * returned `[]` for a root that had been renamed, so the dangling-citation
+ * assertion would have passed over nothing. `collectSourceFiles` throws on a
+ * missing root and on a result under `floor`.
+ *
+ * Deriving it also widened the population for free: any NEW file named
+ * `assistant-memory*` under these roots is covered the moment it exists, which
+ * matters because the extraction job is the next thing to cite these rules.
+ */
+function citingFiles(): string[] {
+    return collectSourceFiles({
+        roots: ['prisma/schema', 'src/app-layer', 'src/app/api/account', 'src/lib/schemas'],
+        extensions: ['.ts', '.prisma'],
+        // REPLACES the default, which drops `dist` and `coverage` BY NAME and
+        // would hide a real path under `src` — the helper's own warning.
+        skipDirs: ['node_modules', '.next', '.git'],
+        exclude: (rel) => !/assistant-memory|[/\\]ai\.prisma$/.test(rel),
+        floor: 4,
+    });
+}
 
 function readIfFile(p: string): string {
     return fs.existsSync(p) && fs.statSync(p).isFile() ? fs.readFileSync(p, 'utf8') : '';
 }
 
-function filesUnder(rel: string): string[] {
-    const abs = path.join(REPO, rel);
-    if (!fs.existsSync(abs)) return [];
-    if (fs.statSync(abs).isFile()) return [rel];
-    return fs
-        .readdirSync(abs, { withFileTypes: true, recursive: true })
-        .filter((d) => d.isFile())
-        .map((d) => path.relative(REPO, path.join(d.parentPath ?? abs, d.name)));
-}
-
 /** `### 4. Latest wins.` -> 4 */
 function declaredRules(): number[] {
-    const body = readIfFile(path.join(REPO, DOC));
+    const body = readIfFile(path.join(REPO_ROOT, DOC));
     const nums = [...body.matchAll(/^###\s+(\d+)\.\s+\S/gm)].map((m) => Number(m[1]));
     return [...new Set(nums)].sort((a, b) => a - b);
 }
@@ -61,15 +68,14 @@ function declaredRules(): number[] {
 /** Every `rule N` / `rules N and M` citation, with the file it sits in. */
 function citations(): { file: string; rule: number }[] {
     const out: { file: string; rule: number }[] = [];
-    for (const root of CITING_ROOTS) {
-        for (const rel of filesUnder(root)) {
-            const text = readIfFile(path.join(REPO, rel));
-            // `rule 6`, `rules 4 and 5`, `rules 4\n * and 5` — the second form
-            // is why this is two passes rather than one anchored regex.
-            for (const m of text.matchAll(/\brules?\s+(\d+)/gi)) out.push({ file: rel, rule: Number(m[1]) });
-            for (const m of text.matchAll(/\brules\s+\d+\s*(?:and|,)\s*(\d+)/gi)) {
-                out.push({ file: rel, rule: Number(m[1]) });
-            }
+    for (const abs of citingFiles()) {
+        const rel = path.relative(REPO_ROOT, abs);
+        const text = readIfFile(abs);
+        // `rule 6`, `rules 4 and 5` — two passes, because the second form puts
+        // its second number out of reach of one anchored regex.
+        for (const m of text.matchAll(/\brules?\s+(\d+)/gi)) out.push({ file: rel, rule: Number(m[1]) });
+        for (const m of text.matchAll(/\brules\s+\d+\s*(?:and|,)\s*(\d+)/gi)) {
+            out.push({ file: rel, rule: Number(m[1]) });
         }
     }
     return out;
@@ -77,7 +83,7 @@ function citations(): { file: string; rule: number }[] {
 
 describe('the nine assistant-memory rules have a written referent', () => {
     it('the doc exists and declares exactly nine numbered rules', () => {
-        expect(fs.existsSync(path.join(REPO, DOC))).toBe(true);
+        expect(fs.existsSync(path.join(REPO_ROOT, DOC))).toBe(true);
         const rules = declaredRules();
         console.log(`[memory-rules] declared=${rules.length} (${rules.join(',')}) in ${DOC}`);
         expect(rules).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -116,7 +122,7 @@ describe('the nine assistant-memory rules have a written referent', () => {
         // publish. Keeping the correction is the point — the doc explains it —
         // but no tracked file may make the CLAIM again.
         for (const rel of ['prisma/schema/ai.prisma']) {
-            const text = readIfFile(path.join(REPO, rel));
+            const text = readIfFile(path.join(REPO_ROOT, rel));
             expect(text).not.toMatch(/rules borrowed from akitaonrails/i);
         }
     });
