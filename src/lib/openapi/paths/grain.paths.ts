@@ -84,6 +84,7 @@ import {
     CostEntryBatchResponseSchema,
     CostEntryDTOSchema,
     CostEntryListSchema,
+    CostSummarySchema,
     YieldRecordDTOSchema,
     YieldRecordListSchema,
     ContractDTOSchema,
@@ -423,6 +424,33 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
         tags: ['Grain'],
         params: TenantParams,
         success: { status: 200, description: 'A capped page of cost entries.', schema: CostEntryListSchema },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/grain/costs/summary',
+        operationId: 'getCostSummary',
+        summary: 'Exact cost aggregates for the expenses graphs',
+        description:
+            'Per-type, per-month and per-type-per-month totals over EVERY matching cost \u2014 no cap. ' +
+            'It exists because both clients were computing these from `GET /grain/costs`, which IS ' +
+            'capped: above the cap the number is wrong and un-disclosably so, since a farmer cannot ' +
+            'tell whether their largest category is genuinely largest or merely recent.\n\n' +
+            'Takes the SAME facets as the list next door so one filter state serves both: ' +
+            '`?category=` comma-joined (`?category=SEED,FUEL`), and the window as ONE token ' +
+            '`?incurredOn=2026-09-01|2026-10-31` with either side optional. Deliberately not ' +
+            '`?from=&to=` \u2014 two conventions would mean two parsers and a chart that could ' +
+            'disagree with the list beneath it about which window it describes.\n\n' +
+            'All three groupings arrive in ONE response because the third is what an unfolded type ' +
+            'row needs, and a second request would put a round trip behind a disclosure triangle. ' +
+            'Soft-deleted costs are excluded. Carries a weak ETag.',
+        tags: ['Grain'],
+        params: TenantParams,
+        success: {
+            status: 200,
+            description: 'Exact aggregates, grouped by currency.',
+            schema: CostSummarySchema,
+        },
     });
 
     op(registry, {
