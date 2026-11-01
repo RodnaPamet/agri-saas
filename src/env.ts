@@ -587,6 +587,13 @@ export const env = createEnv({
         AI_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
         AI_EMBED_CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional(),
         AI_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().optional(),
+        //   AI_MONTHLY_TOKEN_CAP      — SELF-HOSTED monthly AI token ceiling
+        //                               per tenant (#2666). Unset means the
+        //                               default in `entitlements.ts`; it is a
+        //                               BOUND either way, never unlimited.
+        //                               Ignored in SaaS mode, where the plan
+        //                               ladder decides.
+        AI_MONTHLY_TOKEN_CAP: z.coerce.number().int().positive().optional(),
         // ── Dhenu2 A/B eval hook (feat/ai-guardrails, OPTIONAL) ──
         // When set to a base URL + model (`<baseURL>|<model>`), the offline
         // eval harness runs the agronomy suites a SECOND time against this
@@ -947,6 +954,7 @@ export const env = createEnv({
         AI_CACHE_TTL_SECONDS: process.env.AI_CACHE_TTL_SECONDS,
         AI_EMBED_CACHE_TTL_SECONDS: process.env.AI_EMBED_CACHE_TTL_SECONDS,
         AI_RATE_LIMIT_PER_MIN: process.env.AI_RATE_LIMIT_PER_MIN,
+        AI_MONTHLY_TOKEN_CAP: process.env.AI_MONTHLY_TOKEN_CAP,
         AI_EVAL_AB_BACKEND: process.env.AI_EVAL_AB_BACKEND,
         AGRO_DATASTREAMS_ENABLED: process.env.AGRO_DATASTREAMS_ENABLED,
         GEE_PROJECT_ID: process.env.GEE_PROJECT_ID,

@@ -20,6 +20,28 @@ jest.mock('@/app-layer/ai/provider', () => ({
     getAiProvider: mockGetAiProvider,
 }));
 
+/*
+ * The AI spend gate is mocked so this suite measures RETRIEVAL, not billing.
+ *
+ * It is not optional cosmetics: until #2666 `getLimit` returned null for
+ * ENTERPRISE in self-hosted mode, so `assertAiSpendAllowed` early-returned and
+ * this suite never reached a budget read. Giving the cap a figure made the real
+ * gate run here against no database and silently degraded every vector
+ * assertion to keyword-only — 8 failures whose shape (0.2 where 0.7 was
+ * expected) named a ranking bug that did not exist.
+ *
+ * Mocking it is safe because the gate's PRESENCE is held elsewhere, by a
+ * population derived from the filesystem:
+ * `tests/guards/ai-spend-gate-covers-embeddings.test.ts` requires every file
+ * reaching `getEmbeddingProvider().embed()` to call it. What that guard does
+ * NOT hold is what happens to a refusal, which is why the two tests at the
+ * bottom of this file exist.
+ */
+const mockAssertAiSpendAllowed = jest.fn();
+jest.mock('@/app-layer/ai/budget', () => ({
+    assertAiSpendAllowed: (...a: unknown[]) => mockAssertAiSpendAllowed(...a),
+}));
+
 const mockLoggerWarn = jest.fn();
 jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: (...a: unknown[]) => mockLoggerWarn(...a), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -41,12 +63,17 @@ jest.mock('@/lib/db/embeddings', () => ({
 }));
 
 import { retrieve } from '@/app-layer/ai/rag/retrieve';
+import { codedForbidden } from '@/lib/errors/types';
 import { makeRequestContext } from '../helpers/make-context';
 
 beforeEach(() => {
     mockEmbed.mockReset();
     mockGetAiProvider.mockReset();
     mockLoggerWarn.mockReset();
+    // mockReset, not clearAllMocks: a rejection installed by one test would
+    // otherwise poison every later one in this file.
+    mockAssertAiSpendAllowed.mockReset();
+    mockAssertAiSpendAllowed.mockResolvedValue({ ok: true });
     mockEmbed.mockResolvedValue([{ text: 'q', vector: [0.1, 0.2] }]);
     fakeDb = {
         knowledgeChunk: { findMany: jest.fn().mockResolvedValue([]) },
@@ -216,5 +243,64 @@ describe('retrieve — degrades to keyword-only when embeddings are unavailable'
         mockEmbed.mockRejectedValueOnce(new Error('timeout'));
         const out = await retrieve(ctx, { query: 'no matches anywhere' });
         expect(out).toEqual([]);
+    });
+});
+
+/*
+ * ─── A policy refusal is NOT a provider outage (#2666) ───
+ *
+ * The handler above exists for an unconfigured or unreachable embedding
+ * backend. The AI spend gate is called INSIDE it, so until #2666 a budget
+ * refusal was caught by it and reported as `embedding provider unavailable`.
+ *
+ * Nobody noticed because the gate could not refuse: `getLimit` returned null
+ * for ENTERPRISE in self-hosted mode, so `assertAiBudget` early-returned on
+ * every self-hosted install — which is every install that ships. Giving the
+ * cap a figure made the path reachable and the swallowing live.
+ *
+ * Two costs, and the second is the expensive one. A farm over its ceiling gets
+ * quietly worse answers — keyword-only retrieval — instead of being told. And
+ * the log line is FALSE in the direction that wastes an operator's day: it
+ * names an embedding backend that is working perfectly.
+ *
+ * These two tests are a PAIR and neither is sufficient. The first alone passes
+ * for a `retrieve` that stopped degrading at all (a 500 on every unreachable
+ * backend, which is what the handler was written to prevent); the second alone
+ * passes for the swallowing this fixes. The property is the SPLIT.
+ */
+describe('retrieve — a spend refusal propagates, a provider failure degrades', () => {
+    const ctx = makeRequestContext();
+
+    it('PROPAGATES an AI_BUDGET_EXCEEDED refusal instead of degrading', async () => {
+        mockAssertAiSpendAllowed.mockRejectedValueOnce(
+            codedForbidden('AI_BUDGET_EXCEEDED', 'Monthly AI budget exhausted.'),
+        );
+        fakeDb.knowledgeChunk.findMany.mockResolvedValueOnce([
+            { id: 'k1', source: 's', sourceType: 'EXTERNAL', text: 'blight' },
+        ]);
+
+        await expect(retrieve(ctx, { query: 'blight' })).rejects.toMatchObject({
+            code: 'AI_BUDGET_EXCEEDED',
+        });
+
+        // And it must not have been reported as a provider problem — the log
+        // line is what would send an operator to the wrong system.
+        expect(mockLoggerWarn).not.toHaveBeenCalled();
+        // A keyword hit was available. Returning it would be the defect:
+        // a degraded answer the caller cannot tell from a complete one.
+        expect(mockEmbed).not.toHaveBeenCalled();
+    });
+
+    it('still degrades for a genuine provider failure — the handler keeps its job', async () => {
+        mockEmbed.mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:11434'));
+        fakeDb.knowledgeChunk.findMany.mockResolvedValueOnce([
+            { id: 'k1', source: 's', sourceType: 'EXTERNAL', text: 'blight' },
+        ]);
+
+        const out = await retrieve(ctx, { query: 'blight' });
+
+        expect(out.map((c) => c.id)).toEqual(['k1']);
+        expect(mockLoggerWarn).toHaveBeenCalledTimes(1);
+        expect(mockLoggerWarn.mock.calls[0][0]).toMatch(/keyword-only/i);
     });
 });

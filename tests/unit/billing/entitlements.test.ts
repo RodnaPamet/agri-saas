@@ -71,7 +71,60 @@ describe('getLimit', () => {
         expect(mod.getLimit('FREE', 'ai_tokens')).toBe(50_000);
         expect(mod.getLimit('TRIAL', 'ai_tokens')).toBe(1_000_000);
         expect(mod.getLimit('PRO', 'ai_tokens')).toBe(5_000_000);
-        expect(mod.getLimit('ENTERPRISE', 'ai_tokens')).toBeNull();
+    });
+
+    /**
+     * `ENTERPRISE.ai_tokens` is the one limit that depends on MODE — #2666.
+     *
+     * Asserted as a PAIR rather than two separate cases, because the whole
+     * point is the asymmetry and a single-mode assertion would read as a flat
+     * fact. The reason for it is a ladder inversion: TRIAL already allows
+     * 1,000,000 and PRO 5,000,000, so a flat ENTERPRISE cap of a million
+     * would make the top paid tier stingier than a cheaper one. In
+     * SELF-HOSTED there is no ladder — every tenant resolves to ENTERPRISE —
+     * so a ceiling there is the only ceiling there is.
+     */
+    it('ENTERPRISE ai_tokens is CAPPED self-hosted and UNLIMITED on SaaS', async () => {
+        const selfHosted = await loadEntitlements(undefined);
+        const saas = await loadEntitlements('sk_test_123');
+        expect({
+            selfHosted: selfHosted.getLimit('ENTERPRISE', 'ai_tokens'),
+            saas: saas.getLimit('ENTERPRISE', 'ai_tokens'),
+        }).toEqual({ selfHosted: 1_000_000, saas: null });
+    });
+
+    it('the other three ENTERPRISE resources stay unlimited in BOTH modes', async () => {
+        // The blast-radius assertion. `PLAN_LIMITS.ENTERPRISE` is an explicit
+        // per-resource record with no spread, so capping `ai_tokens` must not
+        // touch its neighbours — and a reader should not have to take that on
+        // trust from the shape of an object literal.
+        for (const key of [undefined, 'sk_test_123'] as const) {
+            const mod = await loadEntitlements(key);
+            for (const r of ['user', 'location', 'exchange_listing'] as const) {
+                expect(mod.getLimit('ENTERPRISE', r)).toBeNull();
+            }
+        }
+    });
+
+    it('AI_MONTHLY_TOKEN_CAP is the operator lever, read PER CALL', async () => {
+        // Per call, not captured at module load: an operator who hits the
+        // ceiling mid-month must be able to raise it with a restart rather
+        // than a rebuild, which is the half of #2666 that keeps a finite cap
+        // from being the bricking shape `assertAiBudget`'s own docblock warns
+        // about.
+        const mod = await loadEntitlements(undefined);
+        const original = process.env.AI_MONTHLY_TOKEN_CAP;
+        try {
+            process.env.AI_MONTHLY_TOKEN_CAP = '250000';
+            expect(Number(mod.getLimit('ENTERPRISE', 'ai_tokens'))).toBe(250_000);
+            // And removing it falls back to the default WITHOUT a re-import,
+            // which is what "per call" means.
+            delete process.env.AI_MONTHLY_TOKEN_CAP;
+            expect(mod.getLimit('ENTERPRISE', 'ai_tokens')).toBe(1_000_000);
+        } finally {
+            if (original === undefined) delete process.env.AI_MONTHLY_TOKEN_CAP;
+            else process.env.AI_MONTHLY_TOKEN_CAP = original;
+        }
     });
     it('caps users + locations for FREE (startup-farmer tier)', async () => {
         const mod = await loadEntitlements(undefined);

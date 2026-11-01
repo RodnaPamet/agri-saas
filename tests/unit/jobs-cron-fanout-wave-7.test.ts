@@ -45,6 +45,27 @@ const mockComputeNextRun = jest.fn();
 const mockEmbed = jest.fn();
 jest.mock('@/app-layer/ai/provider', () => ({ getEmbeddingProvider: () => ({ embed: mockEmbed }) }));
 
+/*
+ * The AI spend gate (#2666). `runEmbedChunks` calls `assertAiSpendAllowed`
+ * before embedding — #1345 — and this suite's `db` double carries no
+ * `aiUsageEvent`, so the real gate dies on `db.aiUsageEvent.aggregate`.
+ *
+ * It only became reachable here when `ai_tokens` got a finite self-hosted cap:
+ * before that `getLimit` returned null and `assertAiBudget` early-returned
+ * before touching the database, so every suite exercising an embedding path
+ * got the gate for free. Nine suites import a gate-calling module; this is the
+ * only one whose path actually reaches the read, measured rather than assumed.
+ *
+ * Safe to mock because the gate's PRESENCE in this job is held by
+ * `tests/guards/ai-spend-gate-covers-embeddings.test.ts`, whose population is
+ * derived from the filesystem. Mocking it here says nothing about whether the
+ * job gates — only that this suite is about batch bounds and tenant scoping.
+ */
+jest.mock('@/app-layer/ai/budget', () => ({
+    assertAiSpendAllowed: jest.fn().mockResolvedValue({ ok: true }),
+    assertAiBudget: jest.fn().mockResolvedValue({ ok: true }),
+}));
+
 const mockQueryRaw = jest.fn();
 const mockExecuteRaw = jest.fn();
 const mockDb = { $queryRaw: mockQueryRaw, $executeRaw: mockExecuteRaw } as any;

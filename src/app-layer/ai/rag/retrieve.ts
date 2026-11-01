@@ -27,6 +27,12 @@
  * lexical-only answer beats a 500, and `safety/advisor.ts` already
  * refuses on empty retrieval, so the degraded path stays safe.
  *
+ * That degradation is scoped to PROVIDER failures and nothing else. A
+ * refusal we raise ourselves — the AI spend gate below — PROPAGATES
+ * (#2666), because the farm needs to be told it is over its ceiling
+ * rather than handed quietly worse answers under a log line blaming an
+ * embedding backend that is working. See the catch for the mechanism.
+ *
  * Language-aware ranking (S7, KB agronomy structure PR): the product is
  * Bulgarian-first, so a chunk whose stamped `language` matches the
  * caller's preferred language gets a small score BONUS
@@ -48,6 +54,7 @@ import { logger } from '@/lib/observability/logger';
 import { env } from '@/env';
 import type { RequestContext } from '@/app-layer/types';
 import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
+import { isAppError } from '@/lib/errors/types';
 import type { KnowledgeChunkSourceType } from '@prisma/client';
 
 export interface RetrieveOptions {
@@ -137,6 +144,30 @@ export async function retrieve(
             await setCachedEmbedding(embedModel, query, queryVector);
         }
     } catch (err) {
+        /*
+         * A refusal from `assertAiSpendAllowed` is OUR POLICY, not a provider
+         * outage, and must NOT be swallowed here (#2666).
+         *
+         * This handler exists for an unconfigured or unreachable embedding
+         * backend, where degrading to the keyword branch is strictly better
+         * than failing the search. A budget refusal is a different fact with a
+         * different remedy, and swallowing it costs twice: the farm gets
+         * quietly worse answers instead of being told it is over its ceiling,
+         * and the log line sends an operator to debug an embedding backend
+         * that is working fine.
+         *
+         * `isAppError` is the whole distinction and it needs nothing
+         * maintained: `AppError` and `AiProviderError` both extend `Error`
+         * SEPARATELY — disjoint hierarchies — so every coded refusal we raise
+         * (`AI_BUDGET_EXCEEDED`, the farm-verification gate) is an `AppError`,
+         * while an unconfigured provider, an unreachable backend and a Redis
+         * failure are not. A new budget code is therefore covered the day it
+         * is added, which a list of codes would not be.
+         *
+         * Same reasoning as #2655: one failure shape for two causes reports
+         * the wrong cause with full confidence.
+         */
+        if (isAppError(err)) throw err;
         logger.warn('rag retrieve: embedding provider unavailable, degrading to keyword-only search', {
             component: 'rag',
             tenantId: ctx.tenantId,
