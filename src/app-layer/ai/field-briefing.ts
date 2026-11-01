@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { withLocaleInstruction } from './locale-instruction';
+import { findRussianLeakage } from './bulgarian-output';
 import { isPlatformAiSpendAllowed, recordPlatformAiUsage } from './platform-budget';
 
 /** Model for the briefing — the caller supplies a Haiku API key. */
@@ -258,6 +259,13 @@ export async function generateFieldBriefing(input: BriefingInput): Promise<Field
         return null;
     }
 
+    /**
+     * A sentinel distinct from `null`, because "ask again" and "give up" are
+     * different outcomes and `null` already means the second one.
+     */
+    const RETRY = Symbol('retry');
+
+    const attemptOnce = async (attempt: number): Promise<FieldBriefing | null | typeof RETRY> => {
     try {
         const client = new Anthropic({
             apiKey,
@@ -293,7 +301,34 @@ export async function generateFieldBriefing(input: BriefingInput): Promise<Field
         for (const block of response.content) {
             if (block.type === 'tool_use' && block.name === 'field_briefing') {
                 const parsed = BriefingSchema.safeParse(block.input);
-                if (parsed.success) return parsed.data;
+                if (parsed.success) {
+                    // A schema-valid briefing can still be in the WRONG
+                    // LANGUAGE. The owner was shown «проверь» — the Russian
+                    // imperative — on 2026-11-01 and nothing refused it: every
+                    // field was a non-empty string, so zod was perfectly happy.
+                    // Validity and correctness are different questions, and
+                    // only the first one was being asked.
+                    const leaks = input.locale === 'bg' ? findRussianLeakage(parsed.data) : [];
+                    if (leaks.length === 0) return parsed.data;
+                    logger.warn('field-briefing produced Russian orthography in Bulgarian output', {
+                        component: 'ai',
+                        attempt,
+                        leaks: leaks.length,
+                        // The offending TEXT. This is model prose about field
+                        // conditions — no farm identifiers — and which phrasing
+                        // drifted is the whole value of the line.
+                        sample: leaks[0],
+                    });
+                    // Regenerate ONCE: the drift is sampling rather than a
+                    // deterministic property of the prompt, so a second call
+                    // usually lands correctly.
+                    if (attempt === 1) return RETRY;
+                    // Twice is enough. Showing a farmer Russian is worse than
+                    // showing them nothing, and `null` is a state this card
+                    // already handles — it hides, nothing is cached, and the
+                    // next load tries again.
+                    return null;
+                }
                 logger.warn('field-briefing tool output failed schema validation', {
                     component: 'ai',
                     error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
@@ -314,4 +349,14 @@ export async function generateFieldBriefing(input: BriefingInput): Promise<Field
         });
         return null;
     }
+    };
+
+    // At most two calls. Each one records its own token usage inside
+    // `attemptOnce`, so the ledger counts what was actually spent rather than
+    // what was kept — a regenerated briefing costs twice and should say so.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        const outcome = await attemptOnce(attempt);
+        if (outcome !== RETRY) return outcome;
+    }
+    return null;
 }
