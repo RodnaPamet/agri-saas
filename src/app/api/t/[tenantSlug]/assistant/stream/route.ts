@@ -7,7 +7,9 @@
  *   2. `assertFeatureEnabled('assistant.enabled')` — a 404 when off, so an
  *      unlaunched surface does not announce itself.
  *   3. Body validation, `.strict()`.
- *   4. `sanitizeUntrusted` on the question AND on the rendered page context.
+ *   4. `sanitizePlainText` then `sanitizeUntrusted` on the question (the
+ *      order matters — see the call site), and `sanitizeUntrusted` on the
+ *      rendered page context.
  *   5. `completeWithRouting` — which applies the tier gate, the AI rate limit
  *      and `assertAiBudget` on the way to the model.
  *   6. `scanEgress` on the composed answer, BEFORE a byte of it is sent.
@@ -51,6 +53,7 @@ import { endingEvent } from '@/app-layer/ai/assistant/endings';
 import { emitHalt, runToolLoop } from '@/app-layer/ai/assistant/tool-loop';
 import { sseFormat, type AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
 import { sanitizeUntrusted } from '@/app-layer/ai/safety/sanitize-untrusted';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import {
     loadWindow,
     recordTurn,
@@ -143,7 +146,35 @@ export const POST = withApiErrorHandling(
                   );
         }
 
-        const question = sanitizeUntrusted(parsed.data.question);
+        // TWO sanitisers, and the ORDER is the load-bearing part (#2698).
+        //
+        // `sanitizePlainText` is here because the turn is now STORED and
+        // rendered — `AssistantTurn.content`'s registry entry asks the PR that
+        // writes turns to register a sanitiser, and notes that fencing
+        // protects the model while a sanitiser protects a renderer. Both are
+        // needed and they are not substitutes.
+        //
+        // It runs FIRST, which is the opposite of my instinct. The six
+        // `INJECTION_LINE_PATTERNS` are `\b`-bounded and UNANCHORED, so markup
+        // around them changes nothing — but `ROLE_SPOOF_PREFIX` is
+        // `/^\s*(system|assistant|developer|tool)\s*:/i`, anchored, so
+        // anything occupying the start of the line defeats it. Strip first and
+        // a hidden `<b>system:</b>` is unmasked for the CHECK to catch; strip
+        // second and it is unmasked for the MODEL to read, after the check has
+        // already passed. The second order fails silently in the direction of
+        // the model obeying.
+        //
+        // Applied exactly ONCE. `sanitizePlainText` is NOT idempotent — it
+        // decodes `&amp;` last, deliberately, so `&amp;lt;` becomes the
+        // literal `&lt;` on one pass and `<` on two. A defensive second call
+        // inside `recordTurn` would corrupt any question containing an escaped
+        // entity.
+        //
+        // And this single value is what BOTH the model and the stored turn
+        // receive, below. That is what keeps them byte-identical, so a later
+        // recall (#2695) or a quote check against a stored turn cannot be
+        // comparing against text the model never saw.
+        const question = sanitizeUntrusted(sanitizePlainText(parsed.data.question));
         const screen = renderPageContext(parsed.data.pageContext);
 
         const controller = new AbortController();
@@ -234,7 +265,20 @@ export const POST = withApiErrorHandling(
                         // answer is not a turn the next question should inherit
                         // as context — replaying one would make the model treat
                         // a non-answer as something it had said.
-                        if (answered.sent) await recordTurn(ctx, conversationId, 'assistant', loop.text);
+                        // `sanitizePlainText` on the ANSWER too, because the
+                        // column is one column and «Какво помни асистентът»
+                        // will list both roles (#2695). A fresh value from the
+                        // model, never previously sanitised, so this is the
+                        // single application that function requires — not a
+                        // second pass over `question`.
+                        if (answered.sent) {
+                            await recordTurn(
+                                ctx,
+                                conversationId,
+                                'assistant',
+                                sanitizePlainText(loop.text),
+                            );
+                        }
                         emit({
                             type: 'done',
                             truncatedAny: loop.truncatedAny,
