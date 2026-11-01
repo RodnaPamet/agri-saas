@@ -41,23 +41,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
+import { collectSourceFiles } from '../helpers/collect-files';
+
 const ROOT = path.resolve(__dirname, '../..');
-const SRC = path.join(ROOT, 'src');
 
 /** Reads that deliberately ENUMERATE containers. Empty, and meant to stay so. */
 const DECLARED_CONTAINER_READS: Record<string, string> = {};
 
-function walk(dir: string, out: string[] = []): string[] {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const p = path.join(dir, e.name);
-        if (e.isDirectory()) walk(p, out);
-        else if (e.name.endsWith('.ts') || e.name.endsWith('.tsx')) out.push(p);
-    }
-    return out;
-}
-
-function stripComments(src: string): string {
-    return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+/**
+ * The source population, through the SHARED collector.
+ *
+ * Not a local `readdirSync` walk — `file-collection-is-not-silently-empty`
+ * refuses a new hand-rolled one, and its reason applies here exactly: a
+ * hand-rolled collector can be gutted to return `[]` with every assertion
+ * built on it still green, measured at 81% of the guards an automated sweep
+ * could audit. `collectSourceFiles` refuses an empty result, so the floor is
+ * part of the collector rather than something this file has to remember.
+ */
+function sourceFiles(): string[] {
+    return collectSourceFiles({ roots: ['src'], extensions: ['.ts', '.tsx'], floor: 1_000 });
 }
 
 type Verdict = 'excluded' | 'via-buildWhere' | 'bounded-by-caller' | 'group-scoped' | 'UNCLASSIFIED';
@@ -70,7 +73,12 @@ interface Site {
 
 /** Classify every `task.findMany` in one file. */
 export function classifyFile(relPath: string, source: string): Site[] {
-    const code = stripComments(source);
+    // `blankNonCode` rather than a local stripper: the canonical helper is
+    // what `guards-blank-comments-before-matching` recognises, and BLANKING
+    // (spaces, newlines kept) rather than REMOVING is the behaviour this file
+    // needs anyway — every verdict below is keyed on a line index, and a
+    // stripper that deleted comment lines would shift them.
+    const code = blankNonCode(source);
     const lines = code.split('\n');
     const sites: Site[] = [];
 
@@ -104,7 +112,7 @@ export function classifyFile(relPath: string, source: string): Site[] {
 }
 
 describe('#2696 — a diary record\'s container tasks stay out of the task lists', () => {
-    const sites = walk(SRC)
+    const sites = sourceFiles()
         .flatMap((abs) => classifyFile(path.relative(ROOT, abs), fs.readFileSync(abs, 'utf-8')));
 
     it('classifies every `task.findMany`, with nothing unaccounted for', () => {
@@ -113,7 +121,6 @@ describe('#2696 — a diary record\'s container tasks stay out of the task lists
             return acc;
         }, {});
 
-        // eslint-disable-next-line no-console
         console.log(
             `[diary-container-visibility] ${sites.length} task.findMany reads: `
                 + `${counts.excluded ?? 0} exclude containers, `
@@ -153,10 +160,10 @@ describe('#2696 — a diary record\'s container tasks stay out of the task lists
         // `treatmentGroupId: null` spelled at a call site would drift from the
         // module that explains it, and is how the sixth surface gets a filter
         // with no reasoning attached.
-        const strays = walk(SRC)
+        const strays = sourceFiles()
             .filter((p) => !p.endsWith('diary-container.ts'))
             .flatMap((abs) => {
-                const code = stripComments(fs.readFileSync(abs, 'utf-8'));
+                const code = blankNonCode(fs.readFileSync(abs, 'utf-8'));
                 return /treatmentGroupId:\s*null/.test(code) ? [path.relative(ROOT, abs)] : [];
             });
         expect(strays).toEqual([]);

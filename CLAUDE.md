@@ -1993,7 +1993,7 @@ only checks its own callers.
   addition costs — the `fonts:vendor` lesson, where writing files and hashes in
   one step makes a changed font program a green diff.
 - **`documented: false` means the route EXISTS and no schema describes it.**
-  212 of the 429 LIVE paths are in `openapi.json`; the other 217 sit on
+  213 of the 429 LIVE paths are in `openapi.json`; the other 216 sit on
   `tests/guards/openapi-undocumented-baseline.json`. A client checking against
   the spec ALONE would report `/api/auth/token`, `/api/account/profile` and
   most of the admin surface as nonexistent, so the inventory carries the
