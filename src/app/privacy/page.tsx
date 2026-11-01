@@ -7,6 +7,7 @@ import {
 } from '@/app-layer/jobs/promotion-lead-retention';
 import { Heading } from '@/components/ui/typography';
 import { DELETION_GRACE_DAYS } from '@/app-layer/usecases/account-erasure';
+import { USAGE_EVENT_RETENTION_DAYS } from '@/app-layer/telemetry/usage-events';
 
 /**
  * Privacy notice — a PUBLIC route (no tenant, no auth), because the promotions
@@ -42,7 +43,17 @@ export default async function PrivacyPage() {
     const contact = env.PRIVACY_CONTACT_EMAIL;
 
     const sections = [
-        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests'] },
+        // `collectUsage` added with #493. Product-usage telemetry is personal
+        // data — it is LINKED to the account, which is what makes it personal
+        // rather than statistical — so it has to be in "what we hold" BEFORE
+        // the first event is recorded, not after. The flag that enables
+        // collection stays off until this ships.
+        //
+        // The paragraph says what is NOT collected as deliberately as what is:
+        // no typed content, no position, nothing naming a field or a crop, no
+        // cross-service tracking, no ad network. A reader told only "we record
+        // how you use the app" would reasonably assume the worse version.
+        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests', 'collectUsage'] },
         // `useExchange` added with #1348: the exchange now shares a name with
         // the other farm, exactly as an offer request does. The notice said so
         // for offer requests only, and a document that describes one of two
@@ -104,6 +115,14 @@ export default async function PrivacyPage() {
                         months: retentionMonths,
                         graceDays: PROMOTION_LEAD_PURGE_GRACE_DAYS,
                     })}
+                </p>
+                {/* INTERPOLATED from the same constant the sweep reads, never
+                    written as a literal. The notice promising one period while
+                    the job enforces another is the failure here, and the drift
+                    direction is always "the notice promises a shorter life than
+                    the data gets". Same reasoning as `{graceDays}` above. */}
+                <p className="text-content-muted">
+                    {t('keepUsage', { usageDays: USAGE_EVENT_RETENTION_DAYS })}
                 </p>
             </section>
 
