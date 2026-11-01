@@ -35,6 +35,10 @@ import { logEvent } from '@/app-layer/events/audit';
 import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { identifyPhoto } from '@/app-layer/ai/vision';
+import { assertAiBudget } from '@/app-layer/ai/budget';
+import { recordAiUsage } from '@/app-layer/ai/usage';
+import { estimateCostMicros } from '@/app-layer/ai/cost';
+import { AppError } from '@/lib/errors/types';
 import { askKnowledgeBase } from '@/app-layer/usecases/rag';
 import type { StorageProviderType } from '@/lib/storage/types';
 import type { RequestContext } from '../types';
@@ -56,6 +60,41 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
 /** The mandatory advisory disclaimer stamped on every persisted result. */
+/**
+ * May this tenant pay for the CLOUD vision fallback right now? (#2596)
+ *
+ * ## Why this asks the throwing gate instead of a predicate of its own
+ *
+ * `assertAiBudget` is the authority — it reads `PLAN_LIMITS` through
+ * `getLimit` + `getAiTokensUsedThisMonth` and is what every text path is
+ * gated on. A second, non-throwing predicate beside it would be two spellings
+ * of one policy, and the pair would eventually disagree about the limit. So
+ * this calls the authority and interprets its refusal.
+ *
+ * ## It catches ONLY the budget refusal
+ *
+ * Anything else — an unreachable database, a missing billing row, a bug —
+ * RETHROWS. Absorbing those as "no budget" would make two very different
+ * causes produce one answer: a farm would silently lose its cloud
+ * classification because Postgres blinked, and the log would say it was out of
+ * tokens. The job's own error handling is the right home for a real failure.
+ */
+async function cloudVisionAllowed(ctx: RequestContext): Promise<boolean> {
+    try {
+        await assertAiBudget(ctx);
+        return true;
+    } catch (err) {
+        if (err instanceof AppError && err.code === 'AI_BUDGET_EXCEEDED') {
+            logger.info('vision cloud fallback refused — AI budget exhausted', {
+                component: 'classify-photo',
+                tenantId: ctx.tenantId,
+            });
+            return false;
+        }
+        throw err;
+    }
+}
+
 export const PEST_ID_DISCLAIMER = 'AI suggestion — verify with an agronomist, not a diagnosis';
 
 /**
@@ -182,7 +221,54 @@ export async function runClassifyPhoto(payload: ClassifyPhotoPayload): Promise<C
                 }
 
                 if (bytes) {
-                    const identification = await identifyPhoto({ bytes, mimeType: file.mimeType });
+                    /**
+                     * #2596 — the budget is ASSERTED here and the spend
+                     * RECORDED below, and neither happened before.
+                     *
+                     * This surface reaches Anthropic through
+                     * `ai/vision/claude-vision-provider`, which constructs the
+                     * SDK directly rather than going through
+                     * `completeWithRouting` — the one place that gates and
+                     * records for every text path. So an unmetered paid call
+                     * was reachable from any photo upload, while the sibling
+                     * `askKnowledgeBase` call forty lines up was gated the
+                     * whole time.
+                     */
+                    const budgetCtx = makeSystemCtx(tenantId);
+                    const identification = await identifyPhoto(
+                        { bytes, mimeType: file.mimeType },
+                        { allowCloud: await cloudVisionAllowed(budgetCtx) },
+                    );
+
+                    /**
+                     * Recorded whenever a PAID backend produced the result.
+                     * `usage` is absent for the on-device backend by
+                     * construction, so this writes a row only for a real
+                     * spend — and the assertion above would otherwise cap
+                     * against a total nothing contributes to, which is a cap
+                     * that never binds.
+                     */
+                    if (identification?.usage) {
+                        const u = identification.usage;
+                        await recordAiUsage(budgetCtx, {
+                            task: 'classify-photo',
+                            model: u.model,
+                            backend: identification.backend,
+                            promptTokens: u.promptTokens,
+                            completionTokens: u.completionTokens,
+                            totalTokens: u.totalTokens,
+                            costMicros: estimateCostMicros(u.model, {
+                                promptTokens: u.promptTokens,
+                                completionTokens: u.completionTokens,
+                                totalTokens: u.totalTokens,
+                            }),
+                            cacheHit: false,
+                            // The FILE, not the prompt: the prompt is a
+                            // constant here, so hashing it would correlate
+                            // nothing. Never the bytes.
+                            promptHash: fileId,
+                        });
+                    }
 
                     if (identification) {
                         const lowConfidence = identification.confidence < LOW_CONFIDENCE_THRESHOLD;
