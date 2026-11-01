@@ -351,6 +351,20 @@ jobs:
                 ;;
               *)
                 echo "::notice::${GITHUB_EVENT_NAME} carries no base (BASE='${BASE:-}') — first push to a branch; nothing to diff."
+                # WRITE THE OUTPUTS BEFORE LEAVING (#2676). This `exit 0` is
+                # correct — there is genuinely nothing to diff — but it used to
+                # return without writing `total`, and the aggregate reads that
+                # output. An UNSET output arrives there as the empty string,
+                # `[ "" = "0" ]` is false, and a required check failed on main
+                # printing "the plan found  changed guard file(s)" with a blank
+                # where the count belongs.
+                #
+                # Writing them here makes the unset state impossible rather
+                # than handled, which is the preferred direction: the aggregate
+                # still refuses an empty total loudly, but nothing in this
+                # workflow can now produce one.
+                echo "total=0" >> "$GITHUB_OUTPUT"
+                echo 'shards=[]' >> "$GITHUB_OUTPUT"
                 exit 0
                 ;;
             esac
@@ -497,7 +511,7 @@ jobs:
           echo "plan=$plan shards=$shards total=$total"
           case "$plan" in
             success) ;;
-            *) echo "::error::the plan job reported '$plan', so nothing was partitioned and no guard was audited. A green tick here would be a pass over an audit that never ran." ; exit 1 ;;
+            *) echo "::error::the prerequisite selector-teeth-plan reported '$plan', so nothing was partitioned and no guard was audited. A green tick here would be a pass over an audit that never ran." ; exit 1 ;;
           esac
           # THE non-obvious case, and the reason this job exists at all. GitHub
           # SKIPS a matrix job whose include list is empty, and a skipped job is
@@ -505,6 +519,22 @@ jobs:
           # `skipped` is legitimate ONLY when the plan found nothing to audit.
           # Skipped WITH files to audit means the matrix or `fromJSON` dropped
           # them, which is silent truncation wearing a green tick.
+          # An EMPTY total is its own case, not a zero (#2676). It means the
+          # plan returned without writing the output the line below reads, so
+          # the count is UNKNOWN — and "the plan counted zero" is a different
+          # fact from "the plan never counted". Treating empty as 0 would make
+          # a job that never partitioned anything report a clean pass, which is
+          # the empty-selection defect this job exists for; treating it as
+          # non-zero printed "found  changed guard file(s)" with a blank where
+          # the count belongs, and failed a correct build on main.
+          #
+          # So it fails, and says WHICH of the two it is. The plan now writes
+          # its outputs before every exit, so reaching this arm means a NEW
+          # path was added that does not.
+          if [ -z "$total" ]; then
+            echo "::error::the plan job exited without writing a \`total\` output, so the number of guard files to audit is UNKNOWN — not zero. Some path in selector-teeth-plan returns before \`total=\` is written. Failing rather than guessing, because guessing zero reports a clean audit of nothing."
+            exit 1
+          fi
           if [ "$shards" = "skipped" ]; then
             if [ "$total" = "0" ]; then
               echo "no guard files changed; the detector control in the plan job still ran."
