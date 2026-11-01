@@ -59,6 +59,7 @@ import { logger } from '@/lib/observability';
 import { createSseResponse } from '@/lib/realtime/sse';
 import { ASSISTANT_ASK_LIMIT } from '@/lib/security/rate-limit';
 
+import { httpStatusOf, isProviderRejection } from '@/app-layer/ai/provider/error-status';
 // Node runtime: a long-lived ReadableStream, a heartbeat and the provider
 // clients all stay on one process. Matches `notifications/stream`.
 export const runtime = 'nodejs';
@@ -193,13 +194,35 @@ export const POST = withApiErrorHandling(
                         // response is already a 200 with bytes sent, so the
                         // only honest ending is an event carrying a reason.
                         const msg = err instanceof Error ? err.message : String(err);
+                        // Three outcomes, not two (#2655). The budget test stays
+                        // FIRST: `assertAiBudget` throws a coded forbidden, so it
+                        // is an `AppError` carrying status 403, and the rejection
+                        // test below deliberately excludes `AppError` — but the
+                        // order is what makes the budget code win rather than a
+                        // happy accident, so a test asserts the order.
+                        //
+                        // Then the question is whether a provider REFUSED us or
+                        // could not be REACHED, which the old catch-all asserted
+                        // without checking. It said "I could not reach the model
+                        // and this farm's records were not read" for every
+                        // non-budget failure — and on #2654 both halves were
+                        // false: the model answered with a 400, and the tools had
+                        // already run and returned rows.
+                        const status = httpStatusOf(err);
                         const code = /budget|ai_budget_exceeded|AI_BUDGET_EXCEEDED/i.test(msg)
                             ? 'ASSISTANT_SPEND_CEILING'
-                            : 'ASSISTANT_PROVIDER_UNAVAILABLE';
+                            : isProviderRejection(err)
+                              ? 'ASSISTANT_REQUEST_REJECTED'
+                              : 'ASSISTANT_PROVIDER_UNAVAILABLE';
                         logger.warn('assistant.ended_early', {
                             component: 'assistant',
                             tenantId: ctx.tenantId,
                             endingCode: code,
+                            // The status is what separates the two halt codes, so
+                            // it belongs in the line an operator reads when
+                            // asking why a given code was chosen. Absent for a
+                            // connection failure, which is itself the signal.
+                            ...(status !== undefined ? { providerStatus: status } : {}),
                             error: msg,
                         });
                         emit(await endingEvent(code));

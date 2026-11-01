@@ -246,9 +246,14 @@ describe('retry + failover', () => {
         expect(claudeInstances.length).toBe(1);
     });
 
-    it('throws the last error when every target fails', async () => {
+    it('throws the last error when no target REFUSED — only failed', async () => {
         const ctx = makeRequestContext('ADMIN');
         // spray-explanation: primary + one failover. Both hard-fail.
+        //
+        // Renamed by #2655: "the last error" is now only half the rule, and
+        // this case is the half where it still holds. Neither failure carries
+        // a status — `AiProviderError` has none — so there is no rejection to
+        // prefer and the most recent failure is the only thing to report.
         completeQueue = [
             jest.fn().mockRejectedValue(new AiProviderError('claude', 'down')),
             jest.fn().mockRejectedValue(new AiProviderError('openrouter', 'also down')),
@@ -257,6 +262,60 @@ describe('retry + failover', () => {
         await expect(
             completeWithRouting(ctx, 'spray-explanation', { messages: [{ role: 'user', content: 'x' }] }),
         ).rejects.toThrow('also down');
+    });
+
+    /**
+     * #2655 — the failover chain MASKED the cause of the #2654 outage.
+     *
+     * Claude refused with a 400 naming a malformed message history; `ollama`
+     * and `openrouter` were then tried and could not connect, because this
+     * deployment runs no ollama container and holds no openrouter key. The
+     * error that escaped was a connection failure, so the stream route told
+     * the farmer the model could not be reached — and two engineers spent the
+     * outage looking at keys, model ids and egress.
+     */
+    describe('a rejection survives the failover chain (#2655)', () => {
+        const rejection = (msg: string, status: number) =>
+            Object.assign(new Error(msg), { status });
+
+        it('the 4xx escapes, not the connection failure that followed it', async () => {
+            const ctx = makeRequestContext('ADMIN');
+            completeQueue = [
+                jest.fn().mockRejectedValue(rejection('invalid_request_error: messages.1', 400)),
+                jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:11434')),
+            ];
+
+            await expect(
+                completeWithRouting(ctx, 'spray-explanation', { messages: [{ role: 'user', content: 'x' }] }),
+            ).rejects.toThrow('invalid_request_error');
+        });
+
+        it('the FIRST rejection wins, so a fallback cannot overwrite the primary verdict', async () => {
+            const ctx = makeRequestContext('ADMIN');
+            completeQueue = [
+                jest.fn().mockRejectedValue(rejection('primary says: bad tool_use block', 400)),
+                jest.fn().mockRejectedValue(rejection('fallback says: unsupported field', 422)),
+            ];
+
+            await expect(
+                completeWithRouting(ctx, 'spray-explanation', { messages: [{ role: 'user', content: 'x' }] }),
+            ).rejects.toThrow('primary says');
+        });
+
+        it('a 429 is NOT a rejection, so the later failure still escapes', async () => {
+            // The boundary. A rate limit is transient and retried; preferring
+            // it would report "your request was invalid" for a queue that was
+            // merely full.
+            const ctx = makeRequestContext('ADMIN');
+            completeQueue = [
+                jest.fn().mockRejectedValue(rejection('rate limited', 429)),
+                jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:11434')),
+            ];
+
+            await expect(
+                completeWithRouting(ctx, 'spray-explanation', { messages: [{ role: 'user', content: 'x' }] }),
+            ).rejects.toThrow('ECONNREFUSED');
+        });
     });
 });
 
