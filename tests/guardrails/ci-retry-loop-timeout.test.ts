@@ -57,6 +57,30 @@ const WORKFLOW_DIR = path.join(REPO_ROOT, '.github/workflows');
 const ACTION_DIR = path.join(REPO_ROOT, '.github/actions');
 
 /**
+ * Shell scripts invoked BY workflows — #2576.
+ *
+ * A loop in a script has the same failure mode as a loop in a workflow: it
+ * only re-enters when the command RETURNS, so without a per-attempt cap it
+ * defends against a fast failure and not a hung one. The original two roots
+ * were an artefact of where loops happened to live when this was written.
+ *
+ * `ci-failure-issue.sh`'s own comment claimed this guard "enumerates this
+ * loop and requires the cap". It did not — on BOTH counts. The root was
+ * unscanned, AND the pattern below required the loop variable to be exactly
+ * `attempt` while that loop uses `settle_attempt`. A comment asserting a
+ * guarantee nothing provides is the shape worth naming: the claim read as
+ * coverage to anyone who edited the script.
+ */
+const SCRIPT_DIR = path.join(REPO_ROOT, '.github/scripts');
+
+/**
+ * GitHub's default job budget when a workflow declares no `timeout-minutes`.
+ * Used for a script's callers, where an undeclared budget does not bind and
+ * the lowest DECLARED one does.
+ */
+const GITHUB_DEFAULT_JOB_MINUTES = 360;
+
+/**
  * Normal `npm ci` on these runners is 41-60s (measured across five
  * consecutive runs of both jobs). The observed hang ran 602s. Any
  * per-attempt cap between those two numbers separates the cases; the
@@ -79,6 +103,12 @@ function candidateFiles(): Array<{ rel: string; abs: string }> {
         if (!/\.ya?ml$/.test(name)) continue;
         out.push({ rel: `.github/workflows/${name}`, abs: path.join(WORKFLOW_DIR, name) });
     }
+    if (fs.existsSync(SCRIPT_DIR)) {
+        for (const name of fs.readdirSync(SCRIPT_DIR)) {
+            if (!name.endsWith('.sh')) continue;
+            out.push({ rel: `.github/scripts/${name}`, abs: path.join(SCRIPT_DIR, name) });
+        }
+    }
     if (fs.existsSync(ACTION_DIR)) {
         for (const dir of fs.readdirSync(ACTION_DIR)) {
             for (const f of ['action.yml', 'action.yaml']) {
@@ -97,7 +127,12 @@ function findRetryLoops(): RetryLoop[] {
         const lines = fs.readFileSync(abs, 'utf-8').split('\n');
 
         lines.forEach((text, i) => {
-            if (!/^\s*for\s+attempt\s+in\b/.test(text)) return;
+            // `[A-Za-z_]*attempt` rather than `attempt`: every workflow and
+            // action loop happens to be named exactly `attempt`, but
+            // `ci-failure-issue.sh` uses `settle_attempt` and was invisible to
+            // the narrow form. A retry loop is a retry loop whatever its
+            // counter is called.
+            if (!/^\s*for\s+[A-Za-z_]*attempt\s+in\b/.test(text)) return;
             // Body runs to the matching `done`, which the repo's shell
             // blocks always indent to the same column as the `for`.
             const indent = text.length - text.trimStart().length;
@@ -123,9 +158,21 @@ describe('CI retry loops bound each attempt', () => {
         // renamed away from `for attempt in`), this fails loudly rather
         // than letting the suite pass vacuously over zero matches --
         // the exact failure mode the guard exists to prevent.
-        expect(loops.length).toBeGreaterThanOrEqual(2);
+        expect(loops.length).toBeGreaterThanOrEqual(3);
         expect(loops.map((l) => l.file)).toEqual(
-            expect.arrayContaining(['.github/workflows/ci.yml', '.github/workflows/release.yml']),
+            expect.arrayContaining([
+                '.github/workflows/ci.yml',
+                '.github/workflows/release.yml',
+                // The script root, named so a silent return to the two
+                // original roots fails here rather than passing over one
+                // fewer loop (#2576).
+                '.github/scripts/ci-failure-issue.sh',
+            ]),
+        );
+        console.log(
+            `[ci-retry-loops] ${loops.length} loop(s) across `
+                + `${new Set(loops.map((l) => l.file.split('/').slice(0, 2).join('/'))).size} root(s):\n  `
+                + loops.map((l) => `${l.file}:${l.line}`).join('\n  '),
         );
     });
 
@@ -164,11 +211,47 @@ describe('CI retry loops bound each attempt', () => {
             // inside the smallest budget any caller is allowed to declare".
             const COMPOSITE_CALLER_FLOOR_SECONDS = 10 * 60;
             const isCompositeAction = loop.file.startsWith('.github/actions/');
-            if (!isCompositeAction) expect(budgets.length).toBeGreaterThan(0);
 
-            const budgetSeconds = isCompositeAction
-                ? COMPOSITE_CALLER_FLOOR_SECONDS
-                : Number(budgets[budgets.length - 1][1]) * 60;
+            // A SCRIPT has no budget of its own either, and unlike a composite
+            // action it can be invoked from several workflows with different
+            // ones. The binding constraint is the LOWEST, so the callers are
+            // found by grepping the workflow tree for the script path and the
+            // minimum declared `timeout-minutes` is used. A caller that
+            // declares none contributes GitHub's default, which does not bind.
+            const isScript = loop.file.startsWith('.github/scripts/');
+            let scriptBudgetSeconds = 0;
+            if (isScript) {
+                const base = path.basename(loop.file);
+                const callers = fs
+                    .readdirSync(WORKFLOW_DIR)
+                    .filter((n) => /\.ya?ml$/.test(n))
+                    .map((n) => ({ n, src: fs.readFileSync(path.join(WORKFLOW_DIR, n), 'utf-8') }))
+                    .filter((c) => c.src.includes(base));
+                // A script nothing invokes is itself the finding: the budget
+                // would be unconstrained and the minimum of an empty set is
+                // not a number.
+                expect({ script: loop.file, callers: callers.length > 0 }).toEqual({
+                    script: loop.file,
+                    callers: true,
+                });
+                const minutes = callers.map((c) => {
+                    const declared = [...c.src.matchAll(/^\s*timeout-minutes:\s*(\d+)/gm)].map(
+                        (m) => Number(m[1]),
+                    );
+                    return declared.length > 0
+                        ? Math.min(...declared)
+                        : GITHUB_DEFAULT_JOB_MINUTES;
+                });
+                scriptBudgetSeconds = Math.min(...minutes) * 60;
+            } else if (!isCompositeAction) {
+                expect(budgets.length).toBeGreaterThan(0);
+            }
+
+            const budgetSeconds = isScript
+                ? scriptBudgetSeconds
+                : isCompositeAction
+                  ? COMPOSITE_CALLER_FLOOR_SECONDS
+                  : Number(budgets[budgets.length - 1][1]) * 60;
             const capped = loop.body.match(/\btimeout\s+(?:-k\s+\d+\s+)?(\d+)\b/);
 
             // Reported as a plain assertion rather than an inherited
