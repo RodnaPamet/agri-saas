@@ -162,6 +162,7 @@ export function SeasonsClient({ initialSeasons, tenantSlug, permissions }: Seaso
                             </Tooltip>
                         </div>
                     ),
+                    meta: { mobileCard: { slot: 'actions' } },
                 },
             ]),
         [downloadSeasonDiary, t, permissions.canWrite, formatDate],
