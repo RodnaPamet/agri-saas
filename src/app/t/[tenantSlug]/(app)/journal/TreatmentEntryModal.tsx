@@ -634,17 +634,42 @@ export function TreatmentEntryModal({ open, setOpen, offlineSubmit, onSaved }: P
                                 day. */}
                             <DatePicker
                                 id="treatment-day"
-                                value={draft.occurredOn ? new Date(`${draft.occurredOn}T00:00:00`) : null}
+                                /* `Z` — UTC midnight, which is this picker's
+                                   CONTRACT ("UTC-midnight Date per the
+                                   date-utils contract"). Without it this builds
+                                   LOCAL midnight, and `toRDPSingle` then reads
+                                   UTC parts off it: east of UTC that is the
+                                   PREVIOUS day, so a Sofia farmer reopening the
+                                   picker saw the day before the one they had
+                                   just chosen. (#2614) */
+                                value={draft.occurredOn ? new Date(`${draft.occurredOn}T00:00:00Z`) : null}
                                 onChange={(d) =>
                                     set(
                                         'occurredOn',
-                                        // Local parts, not `toISOString()`: that
-                                        // would shift the day for a farmer east
-                                        // of UTC picking a date near midnight —
-                                        // the same UTC-slice mistake the server
-                                        // guard had.
+                                        /**
+                                         * UTC parts, because that is what this
+                                         * picker EMITS (#2614).
+                                         *
+                                         * `fromRDPSingle` rebuilds the clicked
+                                         * day as `Date.UTC(y, m, d)`, and its
+                                         * docblock says so: "downstream callers
+                                         * reading `getUTCDate()` see the day the
+                                         * user clicked". Reading LOCAL parts off
+                                         * that instant is a day too early west
+                                         * of UTC — clicking 1 Sept submitted
+                                         * 2026-08-31 at UTC-7.
+                                         *
+                                         * NOT `toISOString().slice(0, 10)`
+                                         * either, though it would work here: it
+                                         * is right only because the instant is
+                                         * already UTC midnight, so it reads as
+                                         * correct while teaching the UTC-slice
+                                         * habit this file has been bitten by
+                                         * three times. Explicit UTC getters say
+                                         * which representation is intended.
+                                         */
                                         d
-                                            ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                                            ? `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
                                             : '',
                                     )
                                 }

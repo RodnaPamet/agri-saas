@@ -379,6 +379,85 @@ describe('the three-step treatment form', () => {
         expect(submit.mock.calls[0][0].body.occurredOn).toMatch(/^\d{4}-\d{2}-01$/);
     });
 
+    /**
+     * On a fresh open the calendar HIGHLIGHTS today — the day the draft is
+     * dated (#2614).
+     *
+     * Asserted on `aria-selected`, and the choice of observable is the whole
+     * point. The trigger's TEXT goes through `format-date.ts`, which pins
+     * `FARM_TIME_ZONE` — so for a Sofia host it renders the correct day even
+     * when the `value` prop carries the wrong instant, and a trigger-text
+     * assertion passes while the defect is live. Measured: my first version of
+     * this test did exactly that.
+     *
+     * RDP derives the highlight from the input Date's LOCAL parts, which is
+     * what the `value` prop actually drives, so this is the one observable the
+     * bug cannot hide from.
+     */
+    it('highlights today on a fresh open, in every timezone', async () => {
+        mount();
+        const u = user();
+        await u.click(screen.getByRole('button', { name: /Date carried out/ }));
+
+        const selected = await waitFor(() => {
+            const el = document.querySelector('[aria-selected="true"]');
+            expect(el).not.toBeNull();
+            return el as HTMLElement;
+        });
+
+        const expected = String(new Date().getDate());
+        expect(selected.textContent?.trim()).toBe(expected);
+    });
+
+    /**
+     * The picker shows BACK the day it was given (#2614).
+     *
+     * This is the other half of the off-by-one, and nothing tested it: the
+     * `value` prop built LOCAL midnight where the picker's contract is UTC
+     * midnight, and `toRDPSingle` reads UTC parts off whatever it is handed.
+     * East of UTC that lands a day early, so a Sofia farmer who picked the 1st
+     * and reopened the picker saw the previous month's last day highlighted.
+     *
+     * Measured: dropping the `Z` from that prop fails NOTHING in any timezone
+     * — UTC, Sofia, Kiritimati and Los_Angeles all stayed green — which is why
+     * this test exists rather than the fix being left on review alone.
+     *
+     * Asserted through the TRIGGER's accessible name, which #2449 extends with
+     * the value slot, because that is the only place the chosen day is
+     * observable without reaching into the calendar's internals.
+     */
+    it('shows back the day it was given, not the day before it', async () => {
+        mount();
+        const u = user();
+
+        await u.click(screen.getByRole('button', { name: /Date carried out/ }));
+        await u.click(screen.getByTestId('calendar-prev-month'));
+        const first = () =>
+            screen.getAllByRole('button').find((b) => b.textContent?.trim() === '1');
+        await waitFor(() => expect(first()).toBeDefined());
+        await u.click(first() as HTMLElement);
+        await waitFor(() =>
+            expect(screen.queryByTestId('calendar-prev-month')).not.toBeInTheDocument(),
+        );
+
+        // Reopen: the day just chosen must be the day displayed. A value
+        // round-tripped through the wrong midnight comes back as the previous
+        // month's last day, which is never a "1".
+        /**
+         * Through `textContent`, not `toHaveAccessibleName`: the trigger's name
+         * comes from `aria-labelledby`, and jsdom's accname computation returns
+         * EMPTY for it here even though the role query matches by name. The
+         * rendered text is «01 Oct 2026» and is what a farmer actually reads.
+         */
+        const trigger = screen.getByRole('button', { name: /Date carried out/ });
+        const shown = trigger.textContent ?? '';
+        // The FIRST day — zero-padded, so `\b1\b` would not match it.
+        expect(shown).toMatch(/\b01\b/);
+        // And never a month-end, which is exactly what the off-by-one yields:
+        // in Sofia the unfixed value prop rendered «30 Sep 2026» here.
+        expect(shown).not.toMatch(/\b(28|29|30|31)\b/);
+    });
+
     it('will not advance until the treatment is fully described', async () => {
         mount();
         const next = await screen.findByRole('button', { name: 'Next' });
