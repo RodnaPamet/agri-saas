@@ -337,7 +337,19 @@ export async function reviewEvidence(ctx: RequestContext, id: string, data: { ac
                                     : 'notifications.evidenceReview.rejected.body',
                                 { title: evidence.title },
                             )),
-                        linkUrl: `/evidence`,
+                        /**
+                         * TENANT-PREFIXED, and null rather than unprefixed
+                         * (#2512) — see `field-operation.ts` for why null is
+                         * the safe absent case.
+                         *
+                         * The LIST and not a detail page, deliberately: there
+                         * is no `evidence/[id]` route, only
+                         * `evidence/page.tsx`. #2512 reads the missing id as
+                         * part of the defect; it is not — there is nowhere
+                         * deeper to send anyone. Add the id here when a detail
+                         * route exists.
+                         */
+                        linkUrl: ctx.tenantSlug ? `/t/${ctx.tenantSlug}/evidence` : null,
                     },
                 });
             }

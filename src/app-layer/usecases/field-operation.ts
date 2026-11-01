@@ -1497,7 +1497,21 @@ export async function reviewFieldOperation(
                                 : 'notifications.fieldOperationReview.changesBody',
                             { task: task.title },
                         )),
-                    linkUrl: `/farm-tasks/${taskId}`,
+                    /**
+                     * TENANT-PREFIXED, and null rather than unprefixed (#2512).
+                     *
+                     * `/farm-tasks/{id}` resolves on the web only because the
+                     * browser is already inside a farm. A phone has no current
+                     * farm, so an unprefixed path is unresolvable — and for
+                     * someone signed in to two farms there is no safe guess.
+                     *
+                     * `tenantSlug` is OPTIONAL on `RequestContext`, so the
+                     * absent case answers `null`: a notification with no link
+                     * is navigable-nowhere, which a client can handle, where a
+                     * broken link is one it cannot. Same shape as the
+                     * insurance and promotions producers.
+                     */
+                    linkUrl: ctx.tenantSlug ? `/t/${ctx.tenantSlug}/farm-tasks/${taskId}` : null,
                 },
             });
         }
