@@ -49,13 +49,34 @@ function citingFiles(): string[] {
         // REPLACES the default, which drops `dist` and `coverage` BY NAME and
         // would hide a real path under `src` — the helper's own warning.
         skipDirs: ['node_modules', '.next', '.git'],
-        exclude: (rel) => !/assistant-memory|[/\\]ai\.prisma$/.test(rel),
+        // Grouped explicitly. `/a|b$/` binds the `$` to the SECOND alternative
+        // only, which is what is wanted here — "contains assistant-memory" OR
+        // "ends with /ai.prisma" — but precedence that has to be reasoned out
+        // is precedence somebody will get wrong, and CodeQL flags it
+        // (js/regex/missing-regexp-anchor) for that reason.
+        exclude: (rel) => !/(?:assistant-memory)|(?:[/\\]ai\.prisma$)/.test(rel),
         floor: 4,
     });
 }
 
+/**
+ * Read a file, or `''` if it is not one.
+ *
+ * Attempted directly rather than `existsSync` + `statSync` + read, which is a
+ * TOCTOU race CodeQL flags as `js/file-system-race`: the three calls can
+ * disagree, and in this repo that is not hypothetical — the selector-teeth
+ * mutation runner edits files while suites read them.
+ *
+ * The empty string cannot turn into a silent pass. `declaredRules()` asserts
+ * exactly 1-9, so an unreadable doc fails rather than reporting no rules, and
+ * `citingFiles()` carries a floor.
+ */
 function readIfFile(p: string): string {
-    return fs.existsSync(p) && fs.statSync(p).isFile() ? fs.readFileSync(p, 'utf8') : '';
+    try {
+        return fs.readFileSync(p, 'utf8');
+    } catch {
+        return '';
+    }
 }
 
 /** `### 4. Latest wins.` -> 4 */
