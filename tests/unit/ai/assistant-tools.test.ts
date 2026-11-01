@@ -7,14 +7,43 @@
  * because a throw ends a stream that has already sent a 200 and the model
  * cannot learn from a dead socket.
  */
+/**
+ * Double return types are DERIVED from the real usecase, never hand-written.
+ *
+ * This file used to declare `listLogEntriesPaginated` as
+ * `jest.fn<Promise<{ rows: unknown[] }>, …>()`. The usecase returns
+ * `{ items, pageInfo }` — every repository `listPaginated` here does, and four
+ * integration tests already read `.items` from this one. So the double and the
+ * tool shared a false belief about a dependency neither owns, the tool read
+ * `.rows`, `?? []` turned the miss into an EMPTY JOURNAL for every farm, and
+ * this suite was green throughout.
+ *
+ * The comment that used to sit on `listCostEntries` had already learned the
+ * lesson — "a double whose shape is wrong verifies the wiring and nothing
+ * about the dependency" — and fixed THAT double by hand while the one two
+ * lines above stayed wrong. A comment explaining why something is load-bearing
+ * is evidence the author knew, which makes every unfixed neighbour a
+ * deliberate-looking accident.
+ *
+ * `ReturnType<typeof import(…).fn>` makes tsc the enforcer: a double that
+ * resolves the wrong shape is now a compile error rather than a green test,
+ * and it cannot drift when a usecase is reshaped.
+ */
+type Ret<T extends (...a: never[]) => unknown> = ReturnType<T>;
+
+// Deliberately NOT derived. `listTasks` returns a BARE ARRAY, and the bug
+// class this derivation exists for is a misnamed WRAPPER field — which a bare
+// array cannot have. Deriving it would force every double to carry a dozen
+// required WorkItem fields for tests whose subject is a refusal, which buys
+// noise rather than a guarantee. The line is: derive the shape where a wrapper
+// can be got wrong, stay loose where there is no wrapper.
 const listTasks = jest.fn<Promise<unknown[]>, unknown[]>();
-const listLogEntriesPaginated = jest.fn<Promise<{ rows: unknown[] }>, unknown[]>();
-// `{ rows, totalCount, truncated }` — the usecase's REAL shape. The first
-// version of this double returned a bare array, so the tool read `.map` on an
-// object and the test passed anyway. A double whose shape is wrong verifies
-// the wiring and nothing about the dependency.
+const listLogEntriesPaginated = jest.fn<
+    Ret<typeof import('@/app-layer/usecases/journal').listLogEntriesPaginated>,
+    unknown[]
+>();
 const listCostEntries = jest.fn<
-    Promise<{ rows: unknown[]; totalCount: number; truncated: boolean }>,
+    Ret<typeof import('@/app-layer/usecases/cost-entry').listCostEntries>,
     unknown[]
 >();
 jest.mock('@/app-layer/usecases/task', () => ({
@@ -138,7 +167,7 @@ describe('assistant tools (#2578)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         listTasks.mockResolvedValue([]);
-        listLogEntriesPaginated.mockResolvedValue({ rows: [] });
+        listLogEntriesPaginated.mockResolvedValue({ items: [], pageInfo: { hasNextPage: false } });
         listCostEntries.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
         listActiveListings.mockResolvedValue({ rows: [], nextCursor: null });
         assertModuleEnabled.mockResolvedValue(undefined);
@@ -280,7 +309,8 @@ describe('assistant tools (#2578)', () => {
 
     it('the ДНЕВНИК projection omits the long notes, and links to the entry', async () => {
         listLogEntriesPaginated.mockResolvedValue({
-            rows: [
+            pageInfo: { hasNextPage: false },
+            items: [
                 {
                     id: 'j1',
                     title: 'Пръскане',
@@ -740,10 +770,13 @@ describe('assistant tools (#2578)', () => {
     });
 
     it.each([
+        // `items`, and NO `as never`. The cast is why this entry could carry
+        // `rows` — a shape the usecase has never returned — while asserting
+        // that the tool reported `hasMore` correctly from it.
         ['list_journal_entries', () => listLogEntriesPaginated.mockResolvedValue({
-            rows: [{ id: 'j1', title: 'Пръскане' }],
+            items: [{ id: 'j1', title: 'Пръскане' }],
             pageInfo: { nextCursor: 'c', hasNextPage: true },
-        } as never)],
+        })],
         ['list_cost_entries', () => listCostEntries.mockResolvedValue({
             rows: [{ id: 'c1', category: 'FUEL' }], totalCount: 99, truncated: false,
         } as never)],
@@ -777,15 +810,15 @@ describe('assistant tools (#2578)', () => {
         // tools with no error, which is why the first attempt at #2647 was
         // abandoned. `linksFromRows` now unwraps `rows`/`items`.
         listLogEntriesPaginated.mockResolvedValue({
-            rows: [{ id: 'j1', title: 'Пръскане' }],
-            pageInfo: { nextCursor: null, hasNextPage: false },
-        } as never);
+            items: [{ id: 'j1', title: 'Пръскане' }],
+            pageInfo: { hasNextPage: false },
+        });
         const journal = await runTool(ctx, 'list_journal_entries', '{}');
         expect(journal.links).toEqual([{ route: '/journal/j1', label: 'Пръскане' }]);
 
         listLocationsPaginated.mockResolvedValue({
             items: [{ id: 'l1', name: 'Голямо поле' }],
-            pageInfo: { nextCursor: null, hasNextPage: false },
+            pageInfo: { hasNextPage: false },
         } as never);
         const blocks = await runTool(ctx, 'list_blocks', '{}');
         expect(blocks.links).toEqual([{ route: '/locations/l1', label: 'Голямо поле' }]);
