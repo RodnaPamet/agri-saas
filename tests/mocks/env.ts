@@ -57,7 +57,6 @@ export const DECLARED_DEFAULTS: Readonly<Record<string, string>> = {
     // `=== undefined` does not, and the production answer is ''.
     LOOKUP_HMAC_KEY: '',
     NATIVE_AUTH_REDIRECT_ALLOWLIST: '',
-    AI_RISK_PLAN_REQUIRED: '',
     // Outbound mail: the From address every email carries in production.
     SMTP_FROM: 'noreply@agrent.bg',
     // AI provider wiring. These reach `getProvider`/`routing`, and a test that
@@ -71,8 +70,6 @@ export const DECLARED_DEFAULTS: Readonly<Record<string, string>> = {
     AI_EMBED_MODEL: 'nomic-embed-text',
     VISION_BACKEND: 'auto',
     AI_EVAL_LLM_JUDGE: '0',
-    AI_RISK_PROVIDER: 'stub',
-    AI_RISK_ENABLED: 'true',
     // Cadastre WMS layer list.
     CADASTRE_WMS_LAYERS: 'CP.CadastralParcel',
     // Feature switch, off in production by default.
