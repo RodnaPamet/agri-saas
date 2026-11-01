@@ -56,7 +56,7 @@ export interface EvaluateLocationSignalsResult {
      * caller (weather-pull job) to deliver AFTER the tx commits — so the
      * push network send never holds a DB transaction open.
      */
-    sprayPush?: { recipientUserId: string; title: string; message: string; linkUrl: string };
+    sprayPush?: { recipientUserId: string; title: string; message: string; pushBody: string; linkUrl: string };
 }
 
 /** Decimal | number | null → number | null. Prisma Decimals stringify. */
@@ -218,7 +218,7 @@ export async function evaluateLocationSignals(
         // ── Spray notification + audit, inside this tx (no own-tx call). ──
         // Web Push is fanned out by the CALLER after this tx commits (so the
         // network send never holds the tx) — capture its payload here.
-        let sprayNotification: { title: string; message: string; linkUrl: string } | null = null;
+        let sprayNotification: { title: string; message: string; pushBody: string; linkUrl: string } | null = null;
         let sprayRecipientUserId: string | null = null;
         if (sprayNew) {
             const recipient = location.ownerUserId ?? ctx.userId;

@@ -983,7 +983,10 @@ async function emitTaskAssignedNotification(
                 tenantId: task.tenantId,
                 recipientUserId: assigneeUserId,
                 title: outcome.notification.title,
-                body: outcome.notification.message,
+                // `pushBody`, never `message` — #1999. `message` carries the
+                // farmer's own task title, and an APNs alert body is readable
+                // by Apple.
+                body: outcome.notification.pushBody,
                 link: outcome.notification.linkUrl,
                 collapseKey: `task-${task.id}`,
             });
@@ -1099,7 +1102,10 @@ async function emitBulkSummary(
                 tenantId,
                 recipientUserId,
                 title: outcome.notification.title,
-                body: outcome.notification.message,
+                // `pushBody`, never `message` — #1999. `message` carries the
+                // farmer's own task title, and an APNs alert body is readable
+                // by Apple.
+                body: outcome.notification.pushBody,
                 link: outcome.notification.linkUrl,
                 collapseKey: `bulk-${kind}-${outcome.notification.id}`,
             });
