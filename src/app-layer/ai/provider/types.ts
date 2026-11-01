@@ -45,6 +45,23 @@ export interface AiMessage {
     toolCallId?: string;
     /** Optional name (tool name on a `tool` message). */
     name?: string;
+    /**
+     * The tool calls an ASSISTANT message made — required, not decorative.
+     *
+     * Anthropic rejects a `tool_result` whose `tool_use` is not in the
+     * preceding message:
+     *
+     *     messages.0.content.2: unexpected `tool_use_id` found in
+     *     `tool_result` blocks … Each `tool_result` block must have a
+     *     corresponding `tool_use` block in the previous message.
+     *
+     * Until this field existed the shape could not be expressed: `content` is
+     * a string, so a caller could push the RESULTS and never the CALLS. The
+     * assistant tool loop did exactly that and failed 100% of questions the
+     * moment it reached a real provider — for every model, since the request
+     * was malformed before any model saw it.
+     */
+    toolCalls?: readonly AiToolCall[];
 }
 
 // ─── Tools ───

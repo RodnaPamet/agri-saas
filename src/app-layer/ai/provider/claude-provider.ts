@@ -302,6 +302,32 @@ export class ClaudeProvider implements AiProvider {
                 out.push({ role: 'user', content: [block] });
                 continue;
             }
+            // An ASSISTANT turn that made tool calls must carry them as
+            // `tool_use` blocks, or the `tool_result` that follows has nothing
+            // to correspond to and the API refuses the whole request.
+            //
+            // `input` is an OBJECT here while `AiToolCall.arguments` is the
+            // model's raw JSON STRING, so it is parsed. A string the model
+            // emitted malformed becomes `{}` rather than throwing: the history
+            // has to stay well-formed, and the tool already refused that call
+            // on the way out — losing the arguments from the transcript is
+            // better than losing the turn.
+            if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+                const blocks: ContentBlockParam[] = [];
+                if (m.content.trim() !== '') blocks.push({ type: 'text', text: m.content });
+                for (const c of m.toolCalls) {
+                    let input: unknown = {};
+                    try {
+                        const parsed: unknown = JSON.parse(c.arguments === '' ? '{}' : c.arguments);
+                        if (typeof parsed === 'object' && parsed !== null) input = parsed;
+                    } catch {
+                        /* keep `{}` — see above */
+                    }
+                    blocks.push({ type: 'tool_use', id: c.id, name: c.name, input });
+                }
+                out.push({ role: 'assistant', content: blocks });
+                continue;
+            }
             // 'user' | 'assistant'
             out.push({ role: m.role, content: m.content });
         }
