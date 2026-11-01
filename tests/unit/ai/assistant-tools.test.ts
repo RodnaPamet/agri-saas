@@ -223,9 +223,9 @@ describe('assistant tools (#2578)', () => {
         // truncation cannot silently drop the links for records the model was
         // still shown.
         listTasks.mockResolvedValue(
-            Array.from({ length: 400 }, (_, i) => ({
+            Array.from({ length: 20 }, (_, i) => ({
                 id: `t${i}`,
-                title: 'a'.repeat(40),
+                title: 'a'.repeat(900),
                 status: 'OPEN',
             })),
         );
@@ -241,7 +241,10 @@ describe('assistant tools (#2578)', () => {
         expect(gotCtx).toBe(ctx);
         expect(filters).toEqual({ due: 'overdue' });
         // Bounded, so one tool call cannot pull the whole table into a prompt.
-        expect(options).toEqual({ take: 20 });
+        // 21: the tool over-reads by one to learn whether a 21st task exists,
+        // because `listTasks` returns a bare array with no count (#2647). The
+        // extra row is discarded.
+        expect(options).toEqual({ take: 21 });
     });
 
     it('the ДНЕВНИК tool is BOUNDED and does not widen the register', async () => {
@@ -699,6 +702,95 @@ describe('assistant tools (#2578)', () => {
         }
     });
 
+    it('list_farm_tasks OVER-READS by one and discards the probe row (#2647)', async () => {
+        // `listTasks` returns a bare array with no count and no cursor, so the
+        // only way to learn whether a 21st task exists is to ask for 21.
+        listTasks.mockResolvedValue(
+            Array.from({ length: 21 }, (_, i) => ({ id: `t${i}`, title: `T${i}`, status: 'OPEN' })),
+        );
+        const res = await runTool(ctx, 'list_farm_tasks', '{}');
+        expect(res.ok).toBe(true);
+        const [, , options] = listTasks.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+        expect(options).toEqual({ take: 21 });
+        const body = JSON.parse(res.content) as { rows: unknown[]; hasMore: boolean };
+        // Twenty returned, the 21st DISCARDED — it is a probe, not data.
+        expect({ rows: body.rows.length, hasMore: body.hasMore }).toEqual({
+            rows: 20,
+            hasMore: true,
+        });
+        expect(res.content).not.toContain('"T20"');
+        expect(res.partial).toBe(true);
+    });
+
+    it('a FULL page that is not partial says so — the control', async () => {
+        // Without this, `hasMore` could be "the page is full", which would
+        // tell a farm with exactly 20 tasks its answer was incomplete every
+        // time. A claim the data does not support, firing constantly on small
+        // farms.
+        listTasks.mockResolvedValue(
+            Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, title: `T${i}`, status: 'OPEN' })),
+        );
+        const res = await runTool(ctx, 'list_farm_tasks', '{}');
+        const body = JSON.parse(res.content) as { rows: unknown[]; hasMore: boolean };
+        expect({ rows: body.rows.length, hasMore: body.hasMore }).toEqual({
+            rows: 20,
+            hasMore: false,
+        });
+        expect(res.partial).toBe(false);
+    });
+
+    it.each([
+        ['list_journal_entries', () => listLogEntriesPaginated.mockResolvedValue({
+            rows: [{ id: 'j1', title: 'Пръскане' }],
+            pageInfo: { nextCursor: 'c', hasNextPage: true },
+        } as never)],
+        ['list_cost_entries', () => listCostEntries.mockResolvedValue({
+            rows: [{ id: 'c1', category: 'FUEL' }], totalCount: 99, truncated: false,
+        } as never)],
+        ['list_exchange_listings', () => listActiveListings.mockResolvedValue({
+            rows: [], nextCursor: 'cur-1',
+        } as never)],
+        ['list_blocks', () => listLocationsPaginated.mockResolvedValue({
+            items: [{ id: 'l1', name: 'Поле' }],
+            pageInfo: { nextCursor: 'c', hasNextPage: true },
+        } as never)],
+    ])('%s reports hasMore from its OWN usecase signal (#2647)', async (tool, arrange) => {
+        // Each usecase says "there is more" differently —
+        // `pageInfo.hasNextPage`, `totalCount`, `nextCursor` — and the tool
+        // reads whichever its own dependency provides rather than guessing
+        // from the row count.
+        arrange();
+        const res = await runTool(ctx, tool, '{}');
+        expect(res.ok).toBe(true);
+        const body = JSON.parse(res.content) as { hasMore: boolean };
+        expect({ tool, hasMore: body.hasMore, partial: res.partial }).toEqual({
+            tool,
+            hasMore: true,
+            partial: true,
+        });
+    });
+
+    it('LINKS survive the wrapper — the regression that blocked this once', async () => {
+        // `runTool` hands the result straight to `linksFromRows`, which opened
+        // with `if (!Array.isArray(rows)) return []` — SILENTLY. So wrapping a
+        // list result to carry `hasMore` would have dropped the links on three
+        // tools with no error, which is why the first attempt at #2647 was
+        // abandoned. `linksFromRows` now unwraps `rows`/`items`.
+        listLogEntriesPaginated.mockResolvedValue({
+            rows: [{ id: 'j1', title: 'Пръскане' }],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        } as never);
+        const journal = await runTool(ctx, 'list_journal_entries', '{}');
+        expect(journal.links).toEqual([{ route: '/journal/j1', label: 'Пръскане' }]);
+
+        listLocationsPaginated.mockResolvedValue({
+            items: [{ id: 'l1', name: 'Голямо поле' }],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        } as never);
+        const blocks = await runTool(ctx, 'list_blocks', '{}');
+        expect(blocks.links).toEqual([{ route: '/locations/l1', label: 'Голямо поле' }]);
+    });
+
     it('refuses a hallucinated tool name without throwing', async () => {
         const out = await runTool(ctx, 'delete_everything', '{}');
         expect(out.ok).toBe(false);
@@ -767,9 +859,9 @@ describe('assistant tools (#2578)', () => {
 
     it('TRUNCATES a large result and says so, rather than dropping it', async () => {
         listTasks.mockResolvedValue(
-            Array.from({ length: 400 }, (_, i) => ({
+            Array.from({ length: 20 }, (_, i) => ({
                 id: `t${i}`,
-                title: 'a'.repeat(40),
+                title: 'a'.repeat(900),
                 status: 'OPEN',
                 priority: 'LOW',
                 dueDate: '2026-11-05',

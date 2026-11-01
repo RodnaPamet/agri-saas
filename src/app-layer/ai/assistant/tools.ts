@@ -340,22 +340,42 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             },
         },
         args: ListFarmTasksArgs,
+        isPartial: (r) => (r as { hasMore?: boolean }).hasMore === true,
         link: { template: '/farm-tasks/[taskId]', idField: 'id', labelField: 'title' },
         run: async (ctx, args) => {
             const a = ListFarmTasksArgs.parse(args);
             // The USECASE, which opens with `assertCanReadTasks(ctx)`. A
             // repository call here would read the farm's tasks for a role the
             // policy refuses.
-            const rows = await listTasks(ctx, a, { take: 20 });
+            // 21, not 20: the `limit + 1` probe the exchange feed already uses.
+            // `listTasks` returns a BARE ARRAY with no count and no cursor, so
+            // over-reading by one is the only way to learn whether a 21st task
+            // exists. The extra row is DISCARDED — it is a probe, not data.
+            //
+            // The cheap alternative, calling a full page partial, would tell a
+            // farm with exactly 20 tasks that its answer was incomplete every
+            // time: a claim the data does not support, firing constantly on
+            // small farms, which is most of them.
+            const probed = (await listTasks(ctx, a, { take: 21 })) as Array<
+                Record<string, unknown>
+            >;
+            const rows = probed.slice(0, 20);
             // A projection, and the omissions are the decision — see the
             // header on `description`/`resolution`.
-            return (rows as Array<Record<string, unknown>>).map((r) => ({
+            // `{ rows, hasMore }`, not a bare array — #2647. Every list here
+            // stops at 20, and until this nothing in the payload said whether a
+            // 21st existed: a farm with 50 blocks was told about twenty, and the
+            // model could not disclose what it had not been given.
+            return {
+                rows: (rows as Array<Record<string, unknown>>).map((r) => ({
                 id: r.id,
                 title: r.title,
                 status: r.status,
                 priority: r.priority,
                 dueDate: r.dueDate,
-            }));
+            })),
+                hasMore: probed.length > 20,
+            };
         },
     },
     list_journal_entries: {
@@ -382,6 +402,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
         },
         module: 'JOURNAL',
         args: ListJournalArgs,
+        isPartial: (r) => (r as { hasMore?: boolean }).hasMore === true,
         link: { template: '/journal/[id]', idField: 'id', labelField: 'title' },
         run: async (ctx, args) => {
             const a = ListJournalArgs.parse(args);
@@ -403,13 +424,20 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // field, and a list-level question does not need it. A later
             // single-entry tool can fetch one deliberately — the same line the
             // task tool draws at `description`.
-            return (rows as Array<Record<string, unknown>>).map((r) => ({
+            // `{ rows, hasMore }`, not a bare array — #2647. Every list here
+            // stops at 20, and until this nothing in the payload said whether a
+            // 21st existed: a farm with 50 blocks was told about twenty, and the
+            // model could not disclose what it had not been given.
+            return {
+                rows: (rows as Array<Record<string, unknown>>).map((r) => ({
                 id: r.id,
                 title: r.title,
                 type: r.type,
                 status: r.status,
                 occurredAt: r.occurredAt,
-            }));
+            })),
+                hasMore: (page as { pageInfo?: { hasNextPage?: boolean } }).pageInfo?.hasNextPage === true,
+            };
         },
     },
     list_cost_entries: {
@@ -434,6 +462,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
         },
         module: 'GRAIN',
         args: ListCostsArgs,
+        isPartial: (r) => (r as { hasMore?: boolean }).hasMore === true,
         run: async (ctx, args) => {
             const a = ListCostsArgs.parse(args);
             // `{ rows, totalCount, truncated }`, NOT an array. I treated it as
@@ -453,14 +482,21 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // No link shape: `/grain/costs` is a LIST template with no record
             // parameter, so there is nothing for `linksFromRows` to substitute.
             // A link to the list would be an affordance the person already has.
-            return (rows as Array<Record<string, unknown>>).map((r) => ({
+            // `{ rows, hasMore }`, not a bare array — #2647. Every list here
+            // stops at 20, and until this nothing in the payload said whether a
+            // 21st existed: a farm with 50 blocks was told about twenty, and the
+            // model could not disclose what it had not been given.
+            return {
+                rows: (rows as Array<Record<string, unknown>>).map((r) => ({
                 id: r.id,
                 category: r.category,
                 amountCents: r.amountCents ?? r.amount,
                 currency: r.currency,
                 incurredOn: r.incurredOn ?? r.incurredAt,
                 note: typeof r.note === 'string' ? r.note.slice(0, 120) : undefined,
-            }));
+            })),
+                hasMore: page.truncated === true || (typeof page.totalCount === 'number' && page.totalCount > rows.length),
+            };
         },
     },
     list_exchange_listings: {
@@ -503,6 +539,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
         },
         module: 'EXCHANGE',
         args: ListExchangeArgs,
+        isPartial: (r) => (r as { hasMore?: boolean }).hasMore === true,
         run: async (ctx, args) => {
             const a = ListExchangeArgs.parse(args);
             // `{ rows, nextCursor }`, NOT an array — the same shape mistake
@@ -546,7 +583,12 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // prose has no use for coordinates, and they are a third party's
             // precise location. Narrowing a published projection is safe —
             // widening one would not be.
-            return page.rows.map((row) => {
+            // `{ rows, hasMore }`, not a bare array — #2647. Every list here
+            // stops at 20, and until this nothing in the payload said whether a
+            // 21st existed: a farm with 50 blocks was told about twenty, and the
+            // model could not disclose what it had not been given.
+            return {
+                rows: page.rows.map((row) => {
                 const pub = toPublicListing(row, ctx.tenantId);
                 return {
                     id: pub.id,
@@ -566,7 +608,9 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                             ? pub.description.slice(0, 160)
                             : null,
                 };
-            });
+            }),
+                hasMore: page.nextCursor != null,
+            };
         },
     },
     list_blocks: {
@@ -593,6 +637,7 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             },
         },
         args: ListBlocksArgs,
+        isPartial: (r) => (r as { hasMore?: boolean }).hasMore === true,
         run: async (ctx, args) => {
             const a = ListBlocksArgs.parse(args);
             // `{ items, pageInfo: { nextCursor, hasNextPage } }` — a FOURTH
@@ -614,7 +659,12 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                     ...(a.statuses?.length === 1 ? { status: a.statuses[0] } : {}),
                 },
             });
-            return (page.items as Array<Record<string, unknown>>).map((l) => ({
+            // `{ rows, hasMore }`, not a bare array — #2647. Every list here
+            // stops at 20, and until this nothing in the payload said whether a
+            // 21st existed: a farm with 50 blocks was told about twenty, and the
+            // model could not disclose what it had not been given.
+            return {
+                rows: (page.items as Array<Record<string, unknown>>).map((l) => ({
                 id: l.id,
                 name: l.name,
                 key: l.key,
@@ -626,7 +676,9 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 // `owner` is NOT projected. The repository includes it
                 // (`{ id, name }`), and it is a person's name that an answer
                 // about land has no use for.
-            }));
+            })),
+                hasMore: page.pageInfo?.hasNextPage === true,
+            };
         },
         link: { template: '/locations/[locationId]', idField: 'id', labelField: 'name' },
     },

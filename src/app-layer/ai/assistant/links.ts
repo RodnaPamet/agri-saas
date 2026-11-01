@@ -94,13 +94,36 @@ function recordParam(template: string): string | null {
  * link costs a tap and a wrong one costs trust.
  */
 export function linksFromRows(shape: LinkShape, rows: unknown): AssistantLink[] {
-    if (!Array.isArray(rows)) return [];
+    // A list tool's result may be the ARRAY itself, or `{ rows }` / `{ items }`
+    // wrapping it — #2647.
+    //
+    // The wrapper exists so a list can report its own bound: every list tool
+    // stops at 20 rows, and until #2647 nothing in the payload said whether a
+    // 21st existed, so a farm with 50 blocks was told about twenty and the
+    // model could not disclose what it had not been given.
+    //
+    // Unwrapping here rather than changing the caller is what makes that
+    // possible at all: `runTool` hands this function the tool's result
+    // directly, and the bare-array check below answers `[]` for anything else
+    // — SILENTLY, by design. So wrapping a result to carry a flag would have
+    // dropped the links on three tools with no error, which is how the first
+    // attempt at #2647 was abandoned.
+    const list = Array.isArray(rows)
+        ? rows
+        : ((): unknown => {
+              if (typeof rows !== 'object' || rows === null) return null;
+              const o = rows as Record<string, unknown>;
+              return Array.isArray(o.rows) ? o.rows : Array.isArray(o.items) ? o.items : null;
+          })();
+    // The soft failure is KEPT for genuinely unexpected shapes: a malformed
+    // result still costs a tap, never a wrong link.
+    if (!Array.isArray(list)) return [];
     if (!linkTemplateIsReal(shape.template)) return [];
     const param = recordParam(shape.template);
     if (param === null) return [];
 
     const out: AssistantLink[] = [];
-    for (const row of rows) {
+    for (const row of list) {
         if (typeof row !== 'object' || row === null) continue;
         const r = row as Record<string, unknown>;
         const id = r[shape.idField];
