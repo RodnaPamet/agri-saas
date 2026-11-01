@@ -108,3 +108,124 @@ model AiUsageEvent {
   // Layer A (tenantId-leading) + backs the monthly-sum budget aggregate.
   @@index([tenantId, createdAt])
 }
+
+// ─── Assistant memory (#2671) ──────────────────────────────────────────
+//
+//  Owner decisions 2026-11-01: a bounded conversation window PLUS a short
+//  per-PERSON profile, with see-and-delete control, kept while the account
+//  exists. Nine design rules borrowed from akitaonrails/ai-memory — not the
+//  software, and not its decay curves.
+//
+//  TABLES ONLY in this release. P5's standing rule is that tables ship one
+//  release before the code that writes them, so nothing reads or writes these
+//  yet.
+
+/// One conversation, so a follow-up («а каква доза?») can see earlier turns.
+///
+/// TENANT-SCOPED, unlike the profile below, and the split is the whole key
+/// decision. A question is answered against whichever farm is open, so the
+/// turns belong to that farm and exactly one tenant reads them — which is what
+/// makes a per-tenant DEK correct here. The profile is per PERSON and read
+/// while ANY farm is open, so no single tenant's key can serve it.
+model AssistantConversation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  /// The person. No FK: a conversation is kept as history even if the user row
+  /// is later pseudonymised by the erasure sweep, which rewrites columns rather
+  /// than cascading.
+  userId    String
+  startedAt DateTime @default(now())
+  /// Touched on every turn, so an idle timeout can decide a conversation ENDED
+  /// without a client telling us. "Ended" is what triggers extraction.
+  lastTurnAt DateTime @default(now())
+
+  turns  AssistantTurn[]
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Layer A (tenantId-leading). `userId` second because the only list query is
+  // "this person's recent conversations in this farm".
+  @@index([tenantId, userId, lastTurnAt])
+}
+
+/// One turn — the person's question or the assistant's answer.
+///
+/// `content` is VERBATIM user text for a `user` turn and cannot be anything
+/// else: the point of a window is that a follow-up sees what was asked. So a
+/// replayed turn must re-enter the prompt through the same fencing the live
+/// question already gets — wrapped and labelled as DATA, never as instruction.
+/// The shape to design against is someone storing "ignore previous
+/// instructions" in turn 1 and it arriving unfenced in turn 5.
+model AssistantTurn {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  /// 'user' | 'assistant'. A string rather than an enum: the provider contract
+  /// already uses these two literals and an enum would be a third spelling to
+  /// keep in step.
+  role           String
+  /// ENCRYPTED at rest under the TENANT's DEK — see `ENCRYPTED_FIELDS`. Not
+  /// the global KEK: exactly one tenant reads a turn, so per-tenant key
+  /// isolation is both achievable and required (`GLOBAL_KEK_MODELS` forbids
+  /// adding tenant-scoped models for that reason).
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Layer A, and the window query is "this conversation's last N turns".
+  @@index([tenantId, conversationId, createdAt])
+  // Layer B: the FK column, second on a tenant composite.
+  @@index([tenantId, conversationId])
+}
+
+/// One remembered point about a PERSON — the profile.
+///
+/// NO `tenantId`, deliberately: "per person, across farms" is the owner's
+/// decision, so this is read while any of their farms is open. More than one
+/// tenant must read the same row, which is exactly the `GLOBAL_KEK_MODELS`
+/// rule — and a per-tenant DEK would make the profile silently unreadable the
+/// moment the person switched farms.
+///
+/// Four of the nine design rules are columns rather than prose, because a rule
+/// enforced by an extraction prompt is a request:
+///
+///   · rule 3 — learn ONLY from the person's own words. `sourceQuote` is that
+///     sentence, and a fact with no quote cannot be created. This is what makes
+///     the cross-farm leak structurally impossible: «Блок 3 has mana» came from
+///     TOOL output, so it has no quote and can never become a fact.
+///   · rule 5 — forgotten stays forgotten. A delete sets `deletedAt` and KEEPS
+///     the row, so the extractor can refuse to re-learn the same point from the
+///     same evidence. Hard-deleting would make «Изтрий» undone by the next
+///     conversation that mentioned it.
+///   · rule 6 — a point the person EDITED is theirs. `editedByPerson` stops the
+///     extractor rewriting it.
+///   · rule 7 — evidence kept server-side. `sourceQuote` + `sourceAt` are what
+///     make rules 4 and 5 checkable, and support the Art 15 export.
+model AssistantMemoryFact {
+  id       String @id @default(cuid())
+  /// The person this is about. No FK, for the same reason as above.
+  userId   String
+  /// The remembered point: one short sentence in the person's own language,
+  /// MODEL-EXTRACTED into a constrained shape and sanitised. Never a span
+  /// copied out of what they typed — the extraction is a narrowing, and that
+  /// narrowing is what bounds what can be smuggled into the profile.
+  ///
+  /// ENCRYPTED under the GLOBAL KEK (`GLOBAL_KEK_MODELS`).
+  text     String
+  /// The person's OWN sentence this was learned from — rule 3 and rule 7.
+  /// ENCRYPTED under the global KEK, like `text`.
+  sourceQuote String
+  /// When they said it. Rule 4: the latest statement wins, and repetition adds
+  /// evidence rather than rewriting.
+  sourceAt    DateTime
+  /// Set when the person edits the point. Rule 6.
+  editedByPerson Boolean @default(false)
+  /// Set by «Изтрий». The row SURVIVES — rule 5.
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  /// The live profile read: this person's undeleted points, newest first.
+  @@index([userId, deletedAt, sourceAt])
+}

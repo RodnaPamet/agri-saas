@@ -143,6 +143,24 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
             + 'answers nothing the person asked.',
     },
     {
+        model: 'AssistantMemoryFact',
+        columns: ['userId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
+        reason:
+            'The assistant\'s per-person memory profile (#2671) — what it remembers '
+            + 'about someone across all their farms. EXPORTED because "what does it '
+            + 'know about me" is the clearest possible Art 15 case: a person is '
+            + 'entitled to read back the points themselves, which is also what the '
+            + 'in-product «Какво помни асистентът» screen shows. DELETED rather than '
+            + 'pseudonymised because the row has no meaning without the person — it '
+            + 'is a statement ABOUT them, not somebody else\'s record that merely '
+            + 'names them, so there is no second party whose history would lose its '
+            + 'subject. That is the same test ExchangeBlock fails and Account passes.'
+            + ' Note the row also carries the person\'s verbatim sentence as evidence, '
+            + 'which makes retaining it indefensible once they are gone.',
+    },
+    {
         model: 'AuthSession',
         columns: ['userId'],
         disposition: 'ERASE_ONLY',

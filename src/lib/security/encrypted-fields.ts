@@ -194,6 +194,31 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  WorkItemRepository searches `title` + `key` only — `description`
     //  is safe to encrypt.
     Task: ['description', 'resolution'],
+
+    // ─── Assistant memory (#2671) ──────────────────────
+    //  A turn's content is what a farmer typed — questions about their own
+    //  operation, and the assistant's answers about it. Personal content, and
+    //  the most candid text in the product: people ask an assistant things
+    //  they would not put in a form.
+    //
+    //  `AssistantTurn` is TENANT-SCOPED and stays on the per-tenant DEK.
+    //  Exactly one farm reads a conversation's turns, so per-tenant key
+    //  isolation is achievable — and `GLOBAL_KEK_MODELS` forbids adding a
+    //  tenant-scoped model precisely because it would throw that isolation
+    //  away.
+    AssistantTurn: ['content'],
+
+    //  `AssistantMemoryFact` is the opposite case and IS in
+    //  `GLOBAL_KEK_MODELS`: no `tenantId`, per PERSON, read while any of their
+    //  farms is open. A per-tenant DEK would make the profile silently
+    //  unreadable the moment they switched farms — the `ContentReport.detail`
+    //  case, not the `PromotionLead` one.
+    //
+    //  `sourceQuote` is encrypted for a stronger reason than `text`: it is the
+    //  person's VERBATIM sentence, kept server-side as the evidence that makes
+    //  "the latest statement wins" and "a deleted point is never re-learned"
+    //  checkable. `text` is model-extracted and constrained; the quote is raw.
+    AssistantMemoryFact: ['text', 'sourceQuote'],
     TaskComment: ['body'],
 
     // ─── Agriculture — БАБХ farm-record ────────────────
