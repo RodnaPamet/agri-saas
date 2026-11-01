@@ -1227,13 +1227,35 @@ The codebase has two billing modes, decided by a single env var:
     `BillingAccount` row resolve to `FREE`.
 
   • `STRIPE_SECRET_KEY` unset/empty → **self-hosted mode**.
-    Every tenant resolves to `ENTERPRISE` and per-resource limits
-    are unlimited. No DB query happens for plan resolution.
+    Every tenant resolves to `ENTERPRISE`, and three of the four
+    per-resource limits are unlimited. No DB query happens for plan
+    resolution.
+    **`ai_tokens` is NOT unlimited here any more (#2666).** It was,
+    and that was the defect: the declared caps bound nobody, so the
+    only live bound on assistant spend was a per-minute burst limit.
+    `getLimit` now returns `AI_MONTHLY_TOKEN_CAP` — default
+    **1,000,000** tokens per tenant per month — for the
+    `(ENTERPRISE, ai_tokens)` pair **in self-hosted mode only**.
+    Two things about that scoping, because both are easy to get
+    wrong. It is MODE-scoped rather than a flat table entry because
+    TRIAL already allows 1M and PRO 5M, so a flat ENTERPRISE cap of
+    a million would make the top paid tier stingier than a cheaper
+    one — the ladder upside down. And self-hosted is where a cap is
+    the only cap there is, because `getEffectivePlan` returns
+    ENTERPRISE unconditionally and FREE/TRIAL/PRO are unreachable.
+    The env var is the operator's lever and is read PER CALL, so a
+    deployment that hits the ceiling mid-month recovers with a
+    restart rather than a rebuild. An unset value is still a BOUND,
+    never unlimited — the default. One million is derived, not
+    rounded: measured in production, one answered assistant question
+    is ~2,300 tokens (~1.5 US cents), so it is ~435 questions or
+    ~$6.50 a month, against ~690k for a farm asking ten a day.
 
 The decision is read once at module load. Four resources are gated
 today — `user` (FREE 3 / working tiers 25), `location` (5 / 50),
 `exchange_listing` (5 / 50) and `ai_tokens` (a monthly token budget:
-50k / 1M / 5M) — with ENTERPRISE unlimited on all four. The fifth,
+50k / 1M / 5M) — with ENTERPRISE unlimited on three of the four and
+CAPPED on `ai_tokens` in self-hosted mode (see above). The fifth,
 `practice`, went with the GRC teardown.
 Adding a new gated resource is a one-line change in `PLAN_LIMITS`,
 a `switch` arm in `getCurrentCount`, and one

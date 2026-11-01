@@ -99,6 +99,20 @@ export interface PersonalDataExport {
     readonly exchangeMessages: ExportCollection<Record<string, unknown>>;
     readonly insuranceLeads: ExportCollection<Record<string, unknown>>;
     readonly promotionLeads: ExportCollection<Record<string, unknown>>;
+    /**
+     * What the assistant remembers about this person (#2671).
+     *
+     * The clearest Art 15 case in the envelope: "what does it know about me"
+     * is literally the question the right exists to answer, and it is what the
+     * in-product «Какво помни асистентът» screen shows — the two must not
+     * disagree.
+     *
+     * TOMBSTONED points are INCLUDED, deliberately. A forgotten point is still
+     * data held about the person until the account goes — the registry
+     * classifies the MODEL, not the row — and omitting them would make the
+     * export quietly narrower than the database.
+     */
+    readonly assistantMemory: ExportCollection<Record<string, unknown>>;
     readonly organisationMemberships: ExportCollection<Record<string, unknown>>;
     readonly featureCohorts: ExportCollection<Record<string, unknown>>;
 }
@@ -150,6 +164,7 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         messages,
         insuranceLeads,
         promotionLeads,
+        assistantMemory,
         orgMemberships,
         cohorts,
     ] = await Promise.all([
@@ -257,6 +272,20 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             orderBy: { createdAt: 'desc' },
             take,
         }),
+        // `sourceQuote` IS exported, unlike most evidence columns: it is the
+        // person's OWN sentence, and withholding what they said while showing
+        // what we concluded from it would be the wrong half to keep.
+        // `deletedAt` rides along so a reader can tell a live point from one
+        // they already forgot.
+        prisma.assistantMemoryFact.findMany({
+            where: { userId },
+            select: {
+                id: true, text: true, sourceQuote: true, sourceAt: true,
+                editedByPerson: true, deletedAt: true, createdAt: true,
+            },
+            orderBy: { sourceAt: 'desc' },
+            take,
+        }),
         prisma.orgMembership.findMany({
             where: { userId },
             select: { id: true, organizationId: true, role: true, createdAt: true },
@@ -300,6 +329,7 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         exchangeMessages: collection(messages as Record<string, unknown>[]),
         insuranceLeads: collection(insuranceLeads as Record<string, unknown>[]),
         promotionLeads: collection(promotionLeads as Record<string, unknown>[]),
+        assistantMemory: collection(assistantMemory as Record<string, unknown>[]),
         organisationMemberships: collection(orgMemberships as Record<string, unknown>[]),
         featureCohorts: collection(cohorts as Record<string, unknown>[]),
     };

@@ -50,6 +50,7 @@
  *     guessing the webhook would race with it and produce confusing
  *     user-facing failures.
  */
+import { env } from '@/env';
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { codedForbidden, forbidden } from '@/lib/errors/types';
@@ -374,7 +375,50 @@ export async function assertAiTierAllowed(
 
 // ─── Limit lookup ────────────────────────────────────────────────
 
+/**
+ * The SELF-HOSTED monthly AI token ceiling, when `AI_MONTHLY_TOKEN_CAP` is
+ * unset — #2666, owner decision 2026-11-01.
+ *
+ * One million, derived rather than rounded: measured in production, one
+ * answered assistant question is ~2,300 tokens (~1.5 US cents on
+ * `claude-sonnet-4-6`), so this is ~435 questions or ~$6.50 per tenant per
+ * month. A farm asking ten questions a day uses ~690k, so the default sits
+ * above ordinary use with headroom and still bounds a runaway.
+ */
+const DEFAULT_SELFHOSTED_AI_TOKEN_CAP = 1_000_000;
+
+/**
+ * The limit for a (plan, resource) pair.
+ *
+ * ## One pair depends on the MODE, and the reason is a ladder inversion
+ *
+ * `ENTERPRISE.ai_tokens` is `null` in the table because in SaaS mode
+ * ENTERPRISE is the TOP paid tier: TRIAL already allows 1,000,000 and PRO
+ * 5,000,000, so a flat ENTERPRISE cap of a million would make the most
+ * expensive plan stingier than a cheaper one. That is not a tuning question — it
+ * is the ladder upside down, and it would bill somebody for less.
+ *
+ * In SELF-HOSTED mode there is no ladder to invert: `getEffectivePlan`
+ * returns ENTERPRISE unconditionally, so FREE/TRIAL/PRO are unreachable and
+ * "ENTERPRISE" means "every tenant" rather than "the top tier". A ceiling
+ * there is the only ceiling there is — #2666 is exactly that the declared
+ * caps bind nobody.
+ *
+ * So the cap applies in SELF-HOSTED only, and `AI_MONTHLY_TOKEN_CAP` is the
+ * operator's lever. That lever is the other half of the decision: without it
+ * a deployment that hit the ceiling mid-month could only recover by editing
+ * this file and rebuilding the image — the same bricking shape
+ * `assertAiBudget`'s own docblock warns about for the verification gate, just
+ * delayed by a month. Read per call rather than captured at module load, so a
+ * restart is enough.
+ *
+ * It is a BOUND either way: an unset variable means the default above, never
+ * unlimited. That is the point of #2666.
+ */
 export function getLimit(plan: Plan, resource: GatedResource): number | null {
+    if (plan === 'ENTERPRISE' && resource === 'ai_tokens' && BILLING_MODE === 'SELFHOSTED') {
+        return env.AI_MONTHLY_TOKEN_CAP ?? DEFAULT_SELFHOSTED_AI_TOKEN_CAP;
+    }
     return PLAN_LIMITS[plan][resource];
 }
 

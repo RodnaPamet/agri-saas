@@ -97,6 +97,19 @@ export const REFERENCED_FLAG_KEYS = [
     // set is on for that cohort ONLY — which is the thing to get right if a
     // narrower rollout is ever wanted.
     'assistant.enabled',
+    // «Какво помни асистентът» (#2671). A SEPARATE key from
+    // `assistant.enabled` on purpose: what this gates is a STORE of what the
+    // product remembers about a person, and that has to be switchable without
+    // taking the assistant down with it — the reverse would mean the only way
+    // to stop remembering is to stop answering.
+    //
+    // Dark by default, and `feature-flags-capability` will report it in
+    // `missingRows` until an operator inserts the row. Same reading as the two
+    // keys above: a key gating routes with no row is the thing the capability
+    // exists to report, not noise. The row goes in at merge time, DISABLED —
+    // an absent row and a disabled row behave identically to every caller, and
+    // the only difference is whether the probe can see that somebody decided.
+    'assistant.memory',
     'integrations.google',
     'notifications.sse',
     'social.farm-media',
