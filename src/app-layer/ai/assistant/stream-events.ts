@@ -80,7 +80,20 @@ export type AssistantStreamEvent =
       }
     | { readonly type: 'refusal'; readonly code: RefusalCode; readonly message: string }
     | { readonly type: 'halt'; readonly code: HaltCode; readonly message: string }
-    | { readonly type: 'done'; readonly truncatedAny: boolean };
+    | {
+          readonly type: 'done';
+          readonly truncatedAny: boolean;
+          /**
+           * Any tool reported its own result INCOMPLETE — #2639.
+           *
+           * Here for `truncatedAny`'s reason, which the tool loop states as a
+           * principle: a fact that makes the answer partial must not be lost
+           * to halt precedence. A turn that was partial AND hit the time
+           * budget reports TIME, and without this the partial half would
+           * vanish entirely.
+           */
+          readonly partialAny: boolean;
+      };
 
 /**
  * `data: <json>\n\n`, with no `event:` field.

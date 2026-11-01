@@ -180,6 +180,42 @@ describe('the assistant tool loop (#2578)', () => {
         });
     });
 
+    it('a PARTIAL fact survives a higher-precedence halt (#2639)', async () => {
+        // The principle this file's own docblock states for truncation:
+        // "Truncation is additionally always reported on `done.truncatedAny`,
+        // so it is never silent even when a higher-precedence halt wins."
+        //
+        // `partialAny` needs the same treatment, and I had not given it any —
+        // the loop computed it and the `done` event did not carry it. A turn
+        // that was partial AND out of time reports TIME, and the partial half
+        // would have vanished. Caught by reading the stream union, not by a
+        // test, which is why this one exists.
+        const h = harness();
+        // The clock must stay INSIDE the budget until the tool has run, then
+        // pass it — otherwise the loop halts before any tool executes and
+        // nothing is partial, which is how this test first failed.
+        let reads = 0;
+        const now = () => {
+            reads += 1;
+            return reads <= 2 ? 0 : TOOL_PHASE_BUDGET_MS + 1;
+        };
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле', analysed: 3, total: 40, worst: 'stress',
+            counts: { unknown: 0, good: 2, watch: 0, stress: 1 },
+            configured: true, parcels: [], generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const complete = jest.fn().mockResolvedValue({
+            text: 'Частичен отговор.',
+            toolCalls: [call('analyze_block_risk', '{"locationId":"loc-1"}')],
+        });
+        const r = await runToolLoop({ ctx, complete, send: h.send, now }, []);
+        // The HALT is the higher-precedence one…
+        expect(r.halt).toBe('ASSISTANT_TIME_BUDGET');
+        // …and the partial fact is still reported, which is what the route
+        // puts on `done.partialAny`.
+        expect(r.partialAny).toBe(true);
+    });
+
     it('a truncated result sets truncatedAny and halts with TRUNCATED_RESULT', async () => {
         const h = harness();
         listTasks.mockResolvedValue(

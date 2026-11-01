@@ -15,10 +15,15 @@
  *
  * ## One halt per turn, by precedence
  *
- * TIME > TOOL_CALLS > TRUNCATED. Two halts would ask a person to reconcile
- * two reasons for one stop. Truncation is additionally always reported on
- * `done.truncatedAny`, so it is never silent even when a higher-precedence
- * halt wins.
+ * TIME > TOOL_CALLS > TRUNCATED > PARTIAL. Two halts would ask a person to
+ * reconcile two reasons for one stop. Truncation is additionally always
+ * reported on `done.truncatedAny`, so it is never silent even when a
+ * higher-precedence halt wins — and `done.partialAny` is there for the same
+ * reason since #2639.
+ *
+ * PARTIAL is last because TRUNCATED is the narrower statement about THIS turn:
+ * the model did not see all of what was gathered, where partial data would be
+ * partial however much of it was read.
  *
  * ## A failed tool is reported to the MODEL, not to the stream as an ending
  *
