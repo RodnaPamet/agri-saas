@@ -444,6 +444,19 @@ export interface NoticeScorePayload {
     limit?: number;
 }
 
+export interface MemoryExtractPayload {
+    /** Conversations per run. Defaults to 20. */
+    limit?: number;
+    /**
+     * Quiet minutes after which a conversation counts as ENDED. Defaults to 30.
+     *
+     * Overridable for a backfill and for tests. It is the whole definition of
+     * "the conversation finished" — nothing fires when a person puts their
+     * phone down, so there is no event to hook and this number is the event.
+     */
+    idleMinutes?: number;
+}
+
 export interface NotificationDispatchPayload {
     tenantId?: string;
     /** Which categories to dispatch. Default: all */
@@ -962,6 +975,7 @@ export interface JobPayloadMap {
     'notification-dispatch': NotificationDispatchPayload;
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
+    'memory-extract': MemoryExtractPayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
     'usage-event-retention': UsageEventRetentionPayload;
     'document-retention-sweep': DocumentRetentionSweepPayload;
@@ -1390,6 +1404,19 @@ export const JOB_DEFAULTS: Record<JobName, {
     // because a retry would re-SPEND. Each scored notice costs platform AI
     // budget, and the queue is "notices with no score row", so the next
     // scheduled run picks up anything this one missed at no extra cost.
+    // #2671 — ONE attempt, and for `notice-score`'s reason rather than
+    // `statement-dispatch`'s: a retry would re-SPEND. Each conversation costs
+    // the FARM's AI budget, and the queue is "conversations with no
+    // extractedAt", so the next scheduled run picks up anything this one
+    // missed at no extra cost.
+    'memory-extract': {
+        attempts: 1,
+        // INERT — the type requires it and `attempts: 1` leaves nothing to
+        // delay. Values copied from the neighbours rather than chosen.
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
     'notice-score': {
         attempts: 1,
         // INERT — the type requires it and `attempts: 1` leaves nothing to

@@ -973,6 +973,14 @@ executorRegistry.register('notice-score', async (payload) => {
     return result;
 });
 
+// ── memory-extract ───────────────────────────────────────────────────
+
+executorRegistry.register('memory-extract', async (payload) => {
+    const { runMemoryExtract } = await import('./memory-extract');
+    const { result } = await runMemoryExtract({ limit: payload.limit, idleMinutes: payload.idleMinutes });
+    return result;
+});
+
 // ── statement-dispatch ───────────────────────────────────────────────
 
 executorRegistry.register('statement-dispatch', async (payload) => {

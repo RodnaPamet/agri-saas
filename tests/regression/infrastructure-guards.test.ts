@@ -176,7 +176,16 @@ describe('Infrastructure Regression Guards', () => {
             // `usage-event-retention`. Both of those were mine, both moved this
             // line, and arithmetic on either branch's number gives the wrong
             // answer — which is exactly why the pin exists.
-            expect(SCHEDULED_JOBS).toHaveLength(32);
+            // 32 → 33 (#2671): `memory-extract`. Every 15 minutes, turns the
+            // questions of an ENDED conversation into a short standing profile
+            // of the PERSON. The cadence is a LATENCY choice, unlike
+            // `notice-score` next door which shares it for sampling reasons:
+            // somebody who ends a conversation and comes back the same
+            // afternoon should find the assistant already knows what they said.
+            //
+            // MEASURED from the failing assertion rather than computed from the
+            // line above, for the reason the previous entry records.
+            expect(SCHEDULED_JOBS).toHaveLength(33);
         });
 
         test('scheduled job names match expected set', () => {
@@ -255,6 +264,10 @@ describe('Infrastructure Regression Guards', () => {
                 // on BARCHART_API_KEY — absent in this key-less test env — so it
                 // is deliberately not in this always-on set.)
                 'market-prices-pull',
+                // #2671 — every 15 minutes, extracts per-person memory points
+                // from conversations gone quiet for 30 minutes. The queue is
+                // "no extractedAt", so an empty run costs one indexed query.
+                'memory-extract',
                 // P5.5b — every 15 minutes, scores unscored DSA notices for
                 // abuse likelihood. SHADOW MODE: written, and read by nothing
                 // that decides anything.

@@ -202,6 +202,20 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // notice-score (P5.5b) shadow-scores those same notices. Person-scoped
         // for the same reason, and `NoticeScore` likewise carries no tenantId:
         // the score is about a notice, and a notice belongs to no farm.
+        // #2671 — `memory-extract` sweeps ENDED conversations ACROSS tenants,
+        // which is the same shape as `notice-score` above and for a stronger
+        // reason: the profile it writes is PERSON-scoped with no tenantId at
+        // all, because "one memory per person, across farms" is the owner's
+        // decision. A tenantId on the payload would narrow the sweep to one
+        // farm and silently leave every other farm's conversations unextracted.
+        //
+        // What stands in for payload tenant-scoping is that the tenantId comes
+        // from the QUEUE ROW, never from the payload, and the turn read runs
+        // under `runInTenantContext` with that value — so a conversation's
+        // turns are only ever read in their own farm's context. A function here
+        // taking a tenantId from the payload is the defect this exemption could
+        // hide, and is the thing to check in review.
+        'memory-extract',
         'notice-score',
         // document-retention-sweep (#2495 step 5) purges expired farm documents
         // in ONE cross-tenant pass. The retention deadline is a per-document day
@@ -327,6 +341,9 @@ describe('Payload Type Contract — tenantId field audit', () => {
         'StatementDispatchPayload',
         // Person-scoped too: a notice belongs to no farm, so neither does its
         // shadow score. See 'notice-score' above.
+        // #2671 — see 'memory-extract' above: the sweep is cross-tenant and
+        // the profile it writes has no tenantId by design.
+        'MemoryExtractPayload',
         'NoticeScorePayload',
         // Cross-tenant sweep over a per-document deadline; the tenant axis is
         // per row. See 'document-retention-sweep' above.

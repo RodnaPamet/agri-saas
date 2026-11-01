@@ -214,6 +214,27 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
+         * #2671 — extract remembered points from conversations that have ENDED.
+         *
+         * Every 15 minutes, and the cadence is a LATENCY choice rather than a
+         * sampling one, which is the opposite of `notice-score` next door.
+         * Nothing waits on a score; a person who ends a conversation and comes
+         * back the same afternoon should find the assistant already knows what
+         * they said. The idle threshold (30 minutes) dominates anyway — a
+         * sparser schedule would add its own interval on top of that wait for
+         * no saving, because the queue is almost always empty.
+         *
+         * It cannot run away: `attempts: 1`, a batch cap of 20, and the queue
+         * is "conversations with no extractedAt", so a run that does nothing
+         * costs one indexed query.
+         */
+        name: 'memory-extract',
+        pattern: '*/15 * * * *',  // every 15 minutes
+        description: 'Extract per-person memory points from ended assistant conversations (#2671)',
+        defaultPayload: {},
+    },
+    {
+        /**
          * P5.4b — drain the Art 17 statement queue.
          *
          * Every 10 minutes rather than daily, because the number this feeds
