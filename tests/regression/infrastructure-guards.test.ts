@@ -171,7 +171,11 @@ describe('Infrastructure Regression Guards', () => {
             // promise with no enforcement, the same shape step 5 closed for
             // `expiresOn`. Every two minutes, because a farmer who uploads a
             // scan watches that row for «Копие в Google Drive».
-            expect(SCHEDULED_JOBS).toHaveLength(32);
+            // 33: 32 as it stood, plus `usage-event-retention` (#493).
+            // NOTE the collision with fix/remove-low-stock-notifications, which
+            // takes this the other way — whichever lands second must RE-MEASURE
+            // rather than do arithmetic on the other branch's number.
+            expect(SCHEDULED_JOBS).toHaveLength(33);
         });
 
         test('scheduled job names match expected set', () => {
@@ -304,6 +308,10 @@ describe('Infrastructure Regression Guards', () => {
                 'unverified-account-sweep',
                 // Agro-intel — daily Open-Meteo weather pull per Location
                 // → WeatherObservation upsert + spray/disease signal eval.
+                // #493 — delete usage events past their 90-day life. Daily at
+                // 04:30 UTC, last in the retention chain. Placed
+                // ALPHABETICALLY: this list is compared against `.sort()`.
+                'usage-event-retention',
                 'weather-pull',
                 // Daily 06:45 UTC — names every API route that took failures
                 // and ZERO successes in the last 24h, read from the hourly
