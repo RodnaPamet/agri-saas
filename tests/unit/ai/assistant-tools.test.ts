@@ -38,6 +38,12 @@ const listActiveListings = jest.fn<
 jest.mock('@/app-layer/usecases/exchange', () => ({
     listActiveListings: (...a: unknown[]) => listActiveListings(...a),
 }));
+// #2629 — the module gate. Every surface these tools read is gated in its
+// ROUTE, not its usecase, so a tool calling the usecase directly bypassed it.
+const assertModuleEnabled = jest.fn<Promise<void>, unknown[]>();
+jest.mock('@/app-layer/usecases/modules', () => ({
+    assertModuleEnabled: (...a: unknown[]) => assertModuleEnabled(...a),
+}));
 
 import {
     ASSISTANT_TOOLS,
@@ -61,6 +67,7 @@ describe('assistant tools (#2578)', () => {
         listLogEntriesPaginated.mockResolvedValue({ rows: [] });
         listCostEntries.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
         listActiveListings.mockResolvedValue({ rows: [], nextCursor: null });
+        assertModuleEnabled.mockResolvedValue(undefined);
     });
 
     it('the set is closed and every def matches its key', () => {
@@ -327,6 +334,64 @@ describe('assistant tools (#2578)', () => {
             JSON.stringify({ kinds: ['CHEMICALS'] }),
         );
         expect(bad.ok).toBe(false);
+    });
+
+    /**
+     * The module each tool's surface gates, READ off the route rather than
+     * assumed. `/farm-tasks` gates none, which is why `list_farm_tasks` is
+     * absent here and asserted separately below.
+     */
+    const TOOL_MODULE: Record<string, string> = {
+        list_journal_entries: 'JOURNAL',
+        list_cost_entries: 'GRAIN',
+        list_exchange_listings: 'EXCHANGE',
+        propose_journal_entry: 'JOURNAL',
+    };
+
+    it.each(Object.entries(TOOL_MODULE))(
+        '%s asserts the %s module BEFORE reading anything (#2629)',
+        async (tool, moduleKey) => {
+            const args =
+                tool === 'propose_journal_entry'
+                    ? JSON.stringify({ type: 'OBSERVATION', title: 'x' })
+                    : '{}';
+
+            // Refuse the module, then require that the USECASE was never
+            // reached. Asserting only that the gate was called would pass for
+            // a gate placed AFTER the read, which reads the data and then
+            // declines to return it — the rows have already left the database.
+            assertModuleEnabled.mockRejectedValue(
+                Object.assign(new Error('module is not available'), { code: 'MODULE_DISABLED' }),
+            );
+            const refused = await runTool(ctx, tool, args);
+            expect(refused.ok).toBe(false);
+            expect(refused.content).toContain('module');
+            expect(listLogEntriesPaginated).not.toHaveBeenCalled();
+            expect(listCostEntries).not.toHaveBeenCalled();
+            expect(listActiveListings).not.toHaveBeenCalled();
+
+            // And it names THIS tool's module, not merely some module.
+            expect(assertModuleEnabled).toHaveBeenCalledWith(ctx, moduleKey);
+        },
+    );
+
+    it('list_farm_tasks asserts NO module, because its route gates none', async () => {
+        // The negative half, and it is a MEASUREMENT rather than an omission:
+        // `/api/t/[tenantSlug]/farm-tasks/route.ts` calls no
+        // `assertModuleEnabled`. Inventing one here would refuse a surface the
+        // product leaves open — the mirror defect of #2629 and just as silent.
+        await runTool(ctx, 'list_farm_tasks', '{}');
+        expect(assertModuleEnabled).not.toHaveBeenCalled();
+        expect(listTasks).toHaveBeenCalled();
+    });
+
+    it('a MODULE_DISABLED refusal is a failed tool, never a throw', async () => {
+        // Same contract as a policy refusal: the stream has already sent a 200,
+        // so a throw kills a socket the model cannot learn from.
+        assertModuleEnabled.mockRejectedValue(new Error('module GRAIN is not available'));
+        await expect(runTool(ctx, 'list_cost_entries', '{}')).resolves.toMatchObject({
+            ok: false,
+        });
     });
 
     it('refuses a hallucinated tool name without throwing', async () => {
