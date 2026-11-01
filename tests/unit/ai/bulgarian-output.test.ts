@@ -1,22 +1,25 @@
 import fs from 'node:fs';
-import path from 'node:path';
 
+import { collectSourceFiles } from '../../helpers/collect-files';
 import {
     RUSSIAN_ORTHOGRAPHY,
     findRussianLeakage,
     hasRussianOrthography,
 } from '@/app-layer/ai/bulgarian-output';
 
-const ROOT = path.resolve(__dirname, '../../..');
-
-/** Every Bulgarian catalogue file, from the filesystem. */
-function bgCatalogueFiles(dir = path.join(ROOT, 'messages'), acc: string[] = []): string[] {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, e.name);
-        if (e.isDirectory()) bgCatalogueFiles(full, acc);
-        else if (e.name.endsWith('.json') && /(^|[/\\])bg/.test(full)) acc.push(full);
-    }
-    return acc;
+/**
+ * Every Bulgarian catalogue file.
+ *
+ * Collected with the house walker rather than a local `readdirSync` recursion:
+ * `file-collection-is-not-silently-empty` requires it, and for the reason that
+ * guard exists — a hand-rolled collector that stops matching contributes zero
+ * files and the assertions above it pass over nothing. `collectSourceFiles`
+ * throws on a root that does not exist, which a local walker would not.
+ */
+function bgCatalogueFiles(): string[] {
+    return collectSourceFiles({ roots: ['messages'], extensions: ['.json'] }).filter((f) =>
+        /(^|[/\\])bg/.test(f),
+    );
 }
 
 function stringsIn(value: unknown, acc: string[] = []): string[] {
