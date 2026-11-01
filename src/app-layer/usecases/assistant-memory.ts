@@ -30,9 +30,10 @@
  * which is correct: the registry classifies the MODEL, and a tombstoned fact
  * is still data held about the person until the account goes.
  */
+import { REMEMBERED_POINT_MAX_CHARS } from '@/lib/schemas/assistant-memory-limits';
 import { prisma } from '@/lib/prisma';
 import { runInUserContext } from '@/lib/db-context';
-import { codedNotFound } from '@/lib/errors/types';
+import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { PrismaClient } from '@prisma/client';
 
@@ -62,8 +63,14 @@ export interface RememberedPoint {
  */
 export const REMEMBERED_POINT_LIMIT = 50;
 
-/** The longest an edited point may be, matching what the extractor emits. */
-export const REMEMBERED_POINT_MAX_CHARS = 280;
+/**
+ * The longest an edited point may be, matching what the extractor emits.
+ *
+ * Re-exported from `lib/schemas/assistant-memory-limits` since #2671, so the
+ * shared `EditRememberedPointInput` body and this usecase cannot disagree
+ * about the bound. See that module for why it does not live here.
+ */
+export { REMEMBERED_POINT_MAX_CHARS };
 
 function toPoint(row: { id: string; text: string; sourceAt: Date }): RememberedPoint {
     return { id: row.id, text: row.text, rememberedAt: row.sourceAt.toISOString() };
@@ -126,7 +133,16 @@ export async function editRememberedPoint(
     // `sanitizePlainText` TRIMS since #1825, so a whitespace-only edit is
     // empty here rather than truthy — which is why this check is after it.
     if (!clean) {
-        throw codedNotFound('MEMORY_POINT_EMPTY', 'A remembered point cannot be empty.');
+        /*
+         * A BAD REQUEST, deliberately not `codedNotFound`, which is what this
+         * file answers for an id that is unknown, already forgotten or
+         * somebody else's. Those three are indistinguishable ON PURPOSE (a 403
+         * would confirm the id exists), and reusing the same status for "your
+         * text was blank" would fold a body-validation failure into that
+         * privacy posture: a client could no longer tell a point that is not
+         * theirs from a point that is theirs and an edit it sent wrong.
+         */
+        throw codedBadRequest('MEMORY_POINT_EMPTY', 'A remembered point cannot be empty.');
     }
     const { count } = await prisma.assistantMemoryFact.updateMany({
         where: { id, userId, deletedAt: null },

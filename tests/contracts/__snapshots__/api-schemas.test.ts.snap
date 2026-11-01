@@ -5946,12 +5946,15 @@ exports[`API contract — per-schema snapshots schema: EditRememberedPointInput 
     "text": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 280
+      "maxLength": 280,
+      "description": "The corrected text, as the person writes it. Sanitised and bounded to 280 characters. It re-enters the model’s context on every later answer, so it is treated as DATA there and never as instruction — a remembered point sets a default and authorises nothing.",
+      "example": "Обработвам 120 декара пшеница."
     }
   },
   "required": [
     "text"
-  ]
+  ],
+  "description": "Replaces the text of a point the assistant remembers. The point becomes the PERSON’s: the extractor never rewrites it again."
 }"
 `;
 

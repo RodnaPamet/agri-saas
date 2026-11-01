@@ -5693,12 +5693,15 @@
           "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 280
+            "maxLength": 280,
+            "description": "The corrected text, as the person writes it. Sanitised and bounded to 280 characters. It re-enters the model’s context on every later answer, so it is treated as DATA there and never as instruction — a remembered point sets a default and authorises nothing.",
+            "example": "Обработвам 120 декара пшеница."
           }
         },
         "required": [
           "text"
-        ]
+        ],
+        "description": "Replaces the text of a point the assistant remembers. The point becomes the PERSON’s: the extractor never rewrites it again."
       },
       "EikCheckResult": {
         "type": "object",
@@ -37534,7 +37537,7 @@
       "patch": {
         "operationId": "editRememberedPoint",
         "summary": "Correct one remembered point",
-        "description": "Replaces the text of a point the assistant remembers.\n\n**The real effect is that the point becomes the PERSON’s, and the extractor never rewrites it again.** That is the whole reason this verb exists rather than being a convenience over delete-and-wait: a corrected point that the next extraction could overwrite would make correcting it pointless.\n\nThe text is sanitised and bounded. It re-enters the model’s context on every later answer, so it is treated as DATA there and never as instruction — a remembered point sets a default and authorises nothing.\n\nRefusal codes: `MEMORY_POINT_INVALID` (missing, empty or over the length bound) and `MEMORY_POINT_NOT_FOUND` (unknown id, already forgotten, or somebody else’s).",
+        "description": "Replaces the text of a point the assistant remembers.\n\n**The real effect is that the point becomes the PERSON’s, and the extractor never rewrites it again.** That is the whole reason this verb exists rather than being a convenience over delete-and-wait: a corrected point that the next extraction could overwrite would make correcting it pointless.\n\nThe text is sanitised and bounded. It re-enters the model’s context on every later answer, so it is treated as DATA there and never as instruction — a remembered point sets a default and authorises nothing.\n\nRefusal codes: `MEMORY_POINT_INVALID` (missing, or over the length bound), `MEMORY_POINT_EMPTY` (a text that is non-empty on the wire but blank once sanitised — whitespace only; it is a 400, not a 404) and `MEMORY_POINT_NOT_FOUND` (unknown id, already forgotten, or somebody else’s — the three are deliberately indistinguishable).",
         "tags": [
           "Account"
         ],

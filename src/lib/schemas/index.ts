@@ -18,6 +18,7 @@ import { normaliseTechnique } from '@/lib/agro/application-techniques';
 import { REGULATORY } from '@/app-layer/schemas/catalog.schemas';
 import { instantTimestamp, clearableTimestamp, requestTimestamp } from './timestamp';
 import { FARM_NAME_MAX } from './farm-limits';
+import { REMEMBERED_POINT_MAX_CHARS } from './assistant-memory-limits';
 
 export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
     description: 'Empty request body. Used by mutation endpoints whose semantics live entirely in the URL (e.g. POST /restore on a soft-deleted resource).',
@@ -1729,3 +1730,40 @@ export const QueueStatementSchema = z.object({
         + 'rendered because what was sent is a fact, and re-rendering later '
         + 'from a changed template would answer a different question.',
 });
+
+/**
+ * `PATCH /api/account/assistant-memory/{id}` — correct one remembered point.
+ *
+ * ONE declaration, imported by the route and by `account.paths.ts` (#1555).
+ * It was two hand-written Zod objects, neither importing the other, which is
+ * the shape that lets a bound drift on one side only.
+ *
+ * `.strip()` is load-bearing rather than house style: the stored row carries
+ * `editedByPerson`, `sourceQuote` and `sourceAt`, which this verb sets
+ * ITSELF — the whole point of an edit is that the point becomes the person's
+ * and the extractor stops rewriting it. Stripping means a client sending
+ * `editedByPerson: false` is ignored rather than refused, so a caller cannot
+ * learn from an error which columns exist.
+ *
+ * `min(1)` refuses an empty string here; it does NOT make the usecase's blank
+ * check redundant. `sanitizePlainText` TRIMS since #1825, so `'   '` satisfies
+ * this schema and sanitises to `''` — a second, reachable refusal
+ * (`MEMORY_POINT_EMPTY`) that this bound cannot express.
+ */
+export const EditRememberedPointSchema = z
+    .object({
+        text: z.string().min(1).max(REMEMBERED_POINT_MAX_CHARS).openapi({
+            description:
+                'The corrected text, as the person writes it. Sanitised and bounded to '
+                + `${REMEMBERED_POINT_MAX_CHARS} characters. It re-enters the model\u2019s context on `
+                + 'every later answer, so it is treated as DATA there and never as instruction \u2014 '
+                + 'a remembered point sets a default and authorises nothing.',
+            example: '\u041e\u0431\u0440\u0430\u0431\u043e\u0442\u0432\u0430\u043c 120 \u0434\u0435\u043a\u0430\u0440\u0430 \u043f\u0448\u0435\u043d\u0438\u0446\u0430.',
+        }),
+    })
+    .strip()
+    .openapi('EditRememberedPointInput', {
+        description:
+            'Replaces the text of a point the assistant remembers. The point becomes the '
+            + 'PERSON\u2019s: the extractor never rewrites it again.',
+    });

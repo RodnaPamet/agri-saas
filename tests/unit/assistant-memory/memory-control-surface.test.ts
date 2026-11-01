@@ -178,6 +178,36 @@ describe('edit — rule 6, the point becomes the person’s', () => {
         expect(updateMany).not.toHaveBeenCalled();
     });
 
+    /*
+     * The two refusals must stay TELLABLE APART, and nothing above checks
+     * that: every assertion in this file matched a MESSAGE, and a 404 whose
+     * message is "A remembered point cannot be empty." satisfies `/empty/i`
+     * perfectly. `MEMORY_POINT_EMPTY` shipped as a `codedNotFound` for exactly
+     * that reason — found by the spec guard, not by a test.
+     *
+     * It matters because 404 is LOAD-BEARING here: this file answers it for an
+     * id that is unknown, already forgotten or somebody else's, and those three
+     * are indistinguishable ON PURPOSE (a 403 would confirm the id exists).
+     * Folding a body-validation failure into that status means a client can no
+     * longer tell "that point is not yours" from "your text was blank" — the
+     * caller's own mistake, about a point they do own, reported as the privacy
+     * refusal. So this asserts the PAIR, as a comparison.
+     */
+    it('a blank text and a point that is not mine are DISTINGUISHABLE', async () => {
+        const blank = await editRememberedPoint(ME, 'f1', '   ').catch((e) => e);
+        updateMany.mockResolvedValue({ count: 0 });
+        const notMine = await editRememberedPoint(ME, 'f1', 'нещо').catch((e) => e);
+
+        expect(blank.code).toBe('MEMORY_POINT_EMPTY');
+        expect(blank.status).toBe(400);
+        expect(notMine.code).toBe('MEMORY_POINT_NOT_FOUND');
+        expect(notMine.status).toBe(404);
+
+        // The property, not the two readings: neither field may collapse.
+        expect(blank.status).not.toBe(notMine.status);
+        expect(blank.code).not.toBe(notMine.code);
+    });
+
     it('editing a point that is not mine is NOT FOUND', async () => {
         updateMany.mockResolvedValue({ count: 0 });
         await expect(editRememberedPoint(ME, 'f1', 'нещо')).rejects.toThrow(/not found/i);

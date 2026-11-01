@@ -14,24 +14,16 @@
  * block, and for the same reason.
  */
 import type { NextRequest } from 'next/server';
-import { z } from 'zod';
 
 import { getUserCtx } from '@/app-layer/context';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { codedBadRequest } from '@/lib/errors/types';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
-import {
-    editRememberedPoint,
-    forgetRememberedPoint,
-    REMEMBERED_POINT_MAX_CHARS,
-} from '@/app-layer/usecases/assistant-memory';
+import { editRememberedPoint, forgetRememberedPoint } from '@/app-layer/usecases/assistant-memory';
+import { EditRememberedPointSchema } from '@/lib/schemas';
 
 const MEMORY_FLAG = 'assistant.memory';
-
-const EditSchema = z.object({
-    text: z.string().min(1).max(REMEMBERED_POINT_MAX_CHARS),
-});
 
 export const DELETE = withApiErrorHandling(
     async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
@@ -48,7 +40,7 @@ export const PATCH = withApiErrorHandling(
         const ctx = await getUserCtx(req);
         await assertFeatureEnabled(MEMORY_FLAG, ctx.userId);
         const { id } = await params;
-        const parsed = EditSchema.safeParse(await req.json().catch(() => null));
+        const parsed = EditRememberedPointSchema.safeParse(await req.json().catch(() => null));
         if (!parsed.success) {
             throw codedBadRequest('MEMORY_POINT_INVALID', 'That remembered point is not valid.');
         }

@@ -26,7 +26,7 @@ import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { MAX_BOTTOM_TABS } from '@/lib/account/bottom-tabs';
 import { ApiErrorResponseSchema } from '@/lib/dto/common';
-import { REMEMBERED_POINT_MAX_CHARS } from '@/app-layer/usecases/assistant-memory';
+import { EditRememberedPointSchema } from '@/lib/schemas';
 import { codedErrorResponses, op, rawErrorResponses } from './helpers';
 
 /**
@@ -940,9 +940,11 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             + 'The text is sanitised and bounded. It re-enters the model\u2019s context on every '
             + 'later answer, so it is treated as DATA there and never as instruction \u2014 a '
             + 'remembered point sets a default and authorises nothing.\n\n'
-            + 'Refusal codes: `MEMORY_POINT_INVALID` (missing, empty or over the length bound) '
-            + 'and `MEMORY_POINT_NOT_FOUND` (unknown id, already forgotten, or somebody '
-            + 'else\u2019s).',
+            + 'Refusal codes: `MEMORY_POINT_INVALID` (missing, or over the length bound), '
+            + '`MEMORY_POINT_EMPTY` (a text that is non-empty on the wire but blank once '
+            + 'sanitised \u2014 whitespace only; it is a 400, not a 404) and '
+            + '`MEMORY_POINT_NOT_FOUND` (unknown id, already forgotten, or somebody '
+            + 'else\u2019s \u2014 the three are deliberately indistinguishable).',
         tags: ['Account'],
         params: z.object({
             id: z.string().openapi({
@@ -950,9 +952,7 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                 description: 'The point to correct, from `listRememberedPoints`.',
             }),
         }),
-        body: z
-            .object({ text: z.string().min(1).max(REMEMBERED_POINT_MAX_CHARS) })
-            .openapi('EditRememberedPointInput'),
+        body: EditRememberedPointSchema,
         success: {
             status: 200,
             description: 'The corrected point.',
