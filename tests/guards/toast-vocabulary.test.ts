@@ -100,6 +100,23 @@ describe('Toast vocabulary discipline (Roadmap-2 PR-9)', () => {
         }
     });
 
+    it('the walker SELECTS on the real tree — the control', () => {
+        // `expect(offenders).toEqual([])` below is satisfied perfectly by a
+        // walker that returns nothing, which is exactly what `selector-teeth`
+        // mutated `walk` to. So the population is shown to be real before any
+        // assertion ranges over it.
+        const files = walk(SCAN_ROOT);
+        console.log(`[toast-vocabulary] ${files.length} file(s) under ${path.relative(ROOT, SCAN_ROOT)}`);
+        expect(files.length).toBeGreaterThanOrEqual(100);
+
+        // ...and it finds the thing the guard is ABOUT: the curated seam files
+        // are inside the scanned tree, so a walker that missed them would make
+        // the exemption list meaningless rather than merely the scan empty.
+        const rels = new Set(files.map((f) => path.relative(ROOT, f)));
+        const seamInTree = [...SONNER_PRIMITIVE_FILES].filter((f) => rels.has(f));
+        expect(seamInTree.length).toBeGreaterThan(0);
+    });
+
     it('no file outside the curated seam imports from sonner', () => {
         const offenders: string[] = [];
         for (const file of walk(SCAN_ROOT)) {
