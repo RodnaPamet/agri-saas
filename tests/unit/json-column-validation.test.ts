@@ -3,7 +3,9 @@
  *
  * Verifies:
  * 1. Valid payloads pass centralized schemas
- * 2. Invalid payloads are rejected with typed ValidationError (400)
+ * 2. Invalid USER payloads are rejected with typed ValidationError (400) —
+ *    tags, certifications, metadataJson, configJson. `detailsJson` is the
+ *    exception and throws a 500: it is OUR payload, not the caller's (#2602).
  * 3. Validation helpers return parsed data or throw
  * 4. All JSON column schemas are centralized in one module
  * 5. Edge cases: null, undefined, empty, oversized
@@ -23,7 +25,7 @@ import {
     validateTaskMetadata,
     validateIntegrationConfig,
 } from '@/app-layer/schemas/json-columns.schemas';
-import { ValidationError } from '@/lib/errors/types';
+import { ValidationError, InternalError } from '@/lib/errors/types';
 
 describe('JSON Column Schemas', () => {
     // ─── AuditDetailsJsonSchema ───
@@ -237,18 +239,51 @@ describe('JSON Column Validation Helpers', () => {
             expect(validateAuditDetailsJson(null)).toBeUndefined();
         });
 
-        it('throws ValidationError for invalid input', () => {
-            expect(() => validateAuditDetailsJson({ badField: 'x' }))
-                .toThrow(ValidationError);
+        it('throws a SERVER fault, not a ValidationError — #2602', () => {
+            // Changed deliberately. A bad `detailsJson` is OUR payload being
+            // wrong, not the caller's request, and since #1223 the audit
+            // append runs on the caller's transaction — so a 400 here
+            // surfaced on the business write and told a farmer their data was
+            // invalid. Three such 400s were found in a release check of
+            // «Документи» on 2026-10-31.
+            //
+            // Note the other four validators in this file still throw
+            // ValidationError and SHOULD: tags, certifications, metadataJson
+            // and configJson all validate USER-supplied payloads, where a 400
+            // is the honest answer.
+            expect(() => validateAuditDetailsJson({ badField: 'x' })).toThrow(InternalError);
+            expect(() => validateAuditDetailsJson({ badField: 'x' })).not.toThrow(
+                ValidationError,
+            );
         });
 
-        it('thrown error has status 400', () => {
+        it('answers the client 500/INTERNAL and leaks no schema detail', () => {
             try {
                 validateAuditDetailsJson({ missingCategory: true });
                 fail('Expected to throw');
             } catch (err) {
-                expect(err).toBeInstanceOf(ValidationError);
-                expect((err as ValidationError).status).toBe(400);
+                const e = err as InternalError & { details?: unknown; expose: boolean };
+                expect(e.status).toBe(500);
+                expect(e.code).toBe('INTERNAL');
+                // `expose: false` is what keeps the diagnostic server-side:
+                // `toApiErrorResponse` sends `error.message` only when
+                // `expose` is set, and otherwise 'An error occurred'.
+                expect(e.expose).toBe(false);
+                // And NO `details`. That field is sent to the client
+                // UNCONDITIONALLY for any AppError, so the old call handed the
+                // caller the zod issue list describing this schema's own shape.
+                expect(e.details).toBeUndefined();
+                // The diagnostic names the failing PATH and never a value — a
+                // value could carry user data.
+                // Asserted as a SHAPE, not as the absence of one spelling. The
+                // first version read `.not.toContain('missingCategory: true')`
+                // and a mutation that appended `JSON.stringify(input)` PASSED
+                // it — a leak arrives JSON-encoded (`{"missingCategory":true}`),
+                // so looking for the JS-literal form checks the wrong string.
+                // Only paths, separators and `(root)` may appear.
+                expect(e.message).toMatch(
+                    /^Invalid detailsJson structure at: [A-Za-z0-9_.()\[\], ]*$/,
+                );
             }
         });
     });

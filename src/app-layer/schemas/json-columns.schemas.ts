@@ -17,7 +17,7 @@
  * @module app-layer/schemas/json-columns.schemas
  */
 import { z } from 'zod';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, InternalError } from '@/lib/errors/types';
 
 // ─── Audit Log: detailsJson ──────────────────────────────────────────
 // The structured event payload for machine-readable audit entries.
@@ -140,14 +140,51 @@ export type OnboardingStepData = z.infer<typeof OnboardingStepDataSchema>;
 // These throw typed ValidationError (400) on invalid input.
 
 /**
- * Validate and return audit detailsJson, or throw 400.
- * Accepts undefined/null and returns undefined to support optional fields.
+ * Validate and return audit detailsJson. Accepts undefined/null and returns
+ * undefined to support optional fields.
+ *
+ * ## Throws a 500, not a 400 — #2602
+ *
+ * This threw `badRequest('Invalid detailsJson structure', result.error.issues)`
+ * until 2026-11-01, and since #1223 the audit append runs on the CALLER's
+ * transaction, so that refusal surfaced to the client as a 400 on the business
+ * write. Three of them were found in a release check of «Документи» on
+ * 2026-10-31: the phone fell back to its generic «Заявката съдържа невалидни
+ * данни.» because the payload carried no code it knew.
+ *
+ * A bad `detailsJson` is OUR payload being wrong, not the caller's request.
+ * The remedy — "the server is passing an invalid audit discriminator" — is not
+ * a sentence any client should show a farmer, and a 400 tells them their
+ * request was invalid, which is false and unactionable. `InternalError` says
+ * "not your fault", which is true. It costs nothing extra: on a fail-closed
+ * entity the business write aborted either way, so this changes what the
+ * person is TOLD and not what survives.
+ *
+ * `InternalError` carries `expose: false`, so the client receives
+ * `code: 'INTERNAL'` with a generic message while this one reaches the log.
+ * The zod issues are NOT passed as `details`: `toApiErrorResponse` sends
+ * `details` unconditionally for any `AppError`, so the old call handed the
+ * caller the issue list describing this schema's own shape.
+ *
+ * The issue PATHS are folded into the non-exposed message instead — they name
+ * our fields, never a value, and a value could carry user data. The message
+ * PREFIX is unchanged deliberately: four assertions match
+ * `/Invalid detailsJson structure/`, and rewording a throw to reflect a
+ * changed shape is how a fix arrives looking like a regression.
+ *
+ * #2601 moved this validation to the type layer, which is what makes the
+ * change safe: the runtime case is unreachable from TypeScript call sites and
+ * stays a defensive check against anything dynamic. A defensive check against
+ * our own bug is exactly what a 500 is for.
  */
 export function validateAuditDetailsJson(input: unknown): AuditDetailsJson | undefined {
     if (input === undefined || input === null) return undefined;
     const result = AuditDetailsJsonSchema.safeParse(input);
     if (!result.success) {
-        throw badRequest('Invalid detailsJson structure', result.error.issues);
+        const where = result.error.issues
+            .map((i) => i.path.join('.') || '(root)')
+            .join(', ');
+        throw new InternalError(`Invalid detailsJson structure at: ${where}`);
     }
     return result.data;
 }
