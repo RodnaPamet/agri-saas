@@ -1,54 +1,59 @@
-#!/usr/bin/env node
+#!/usr/bin/env tsx
 /**
- * `.secret-patterns` → `src/lib/security/generated/secret-patterns.ts` — #2578.
+ * `.secret-patterns` → `src/lib/security/generated/secret-patterns.ts` — #2586.
  *
- *   node scripts/generate-secret-patterns.mjs            # write
- *   node scripts/generate-secret-patterns.mjs --check     # exit 1 on drift
+ *   npm run secret-patterns:generate      # write
+ *   npm run secret-patterns:check         # exit 1 on drift
  *
- * `--check` is what CI runs, and it exists for the reason the token generator's
- * does: regenerating the output and its own verification in one step would make
- * a changed pattern a green diff.
+ * `--check` exists for the reason the token generator's does: regenerating the
+ * output and its own verification in one step would make a changed pattern a
+ * green diff.
+ *
+ * TypeScript run through `tsx`, not a `.mjs`, so the parser it imports is the
+ * SAME module `tests/guardrails/no-secrets.test.ts` imports — a `.mjs` cannot
+ * be loaded by a ts-jest suite, because a dynamic `import()` is rewritten to
+ * `require()`. That mechanical detail was the whole reason the translation
+ * existed twice. Same arrangement as `tsx scripts/generate-route-inventory.ts`.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
+import * as path from 'node:path';
 
-import { parseSecretPatterns, renderModule } from './lib/secret-patterns.mjs';
+import { parseSecretPatterns, renderModule, REPO_ROOT } from './lib/secret-patterns';
 
-const ROOT = path.resolve(import.meta.dirname, '..');
 /**
  * Both paths take an env override, the same seam `detect-secrets.sh` uses for
- * its own `PATTERN_FILE`.
- *
- * It exists so a test can drive the REAL generator over a fixture — the
- * translation's one genuinely dangerous case is a mid-pattern `(?i)`, and
- * asserting the refusal by importing this module from jest does not work:
- * ts-jest rewrites a dynamic `import()` to `require()`, which throws against a
- * `.mjs`. Driving the CLI tests the path that production uses anyway.
+ * its own `PATTERN_FILE`. It exists so a test can drive the REAL CLI — the
+ * exit code and the `::error::` prefix are what CI reads, and an in-process
+ * call cannot exercise either.
  */
 const SOURCE = process.env.SECRET_PATTERNS_FILE
     ? path.resolve(process.env.SECRET_PATTERNS_FILE)
-    : path.join(ROOT, '.secret-patterns');
+    : path.join(REPO_ROOT, '.secret-patterns');
 const TARGET = process.env.SECRET_PATTERNS_TARGET
     ? path.resolve(process.env.SECRET_PATTERNS_TARGET)
-    : path.join(ROOT, 'src/lib/security/generated/secret-patterns.ts');
+    : path.join(REPO_ROOT, 'src/lib/security/generated/secret-patterns.ts');
 
-let patterns;
+let rendered: string;
+let count: number;
 try {
-    patterns = parseSecretPatterns(readFileSync(SOURCE, 'utf8'));
+    const patterns = parseSecretPatterns(readFileSync(SOURCE, 'utf8'));
+    rendered = renderModule(patterns);
+    count = patterns.length;
 } catch (error) {
-    // A refusal is the point, so it must exit non-zero with the reason rather
-    // than a stack trace — this is what CI and the test both read.
+    // A refusal is the point, so it exits non-zero with the REASON rather than
+    // a stack trace — this is what CI and the guard both read.
     console.error(`::error::${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
 }
-const rendered = renderModule(patterns);
 
 if (process.argv.includes('--check')) {
     let current = '';
     try {
         current = readFileSync(TARGET, 'utf8');
     } catch {
-        console.error('::error::secret-patterns module is MISSING. Run `npm run secret-patterns:generate`.');
+        console.error(
+            '::error::secret-patterns module is MISSING. Run `npm run secret-patterns:generate`.',
+        );
         process.exit(1);
     }
     if (current !== rendered) {
@@ -58,7 +63,7 @@ if (process.argv.includes('--check')) {
         );
         process.exit(1);
     }
-    console.log(`[secret-patterns] in sync — ${patterns.length} pattern(s)`);
+    console.log(`[secret-patterns] in sync — ${count} pattern(s)`);
     process.exit(0);
 }
 
@@ -73,7 +78,7 @@ writeFileSync(TARGET, rendered, 'utf8');
 // output. The default is a literal, and an override says only THAT it was
 // overridden — which is all a reader needs, since only a test sets it.
 console.log(
-    `[secret-patterns] wrote ${patterns.length} pattern(s) to `
+    `[secret-patterns] wrote ${count} pattern(s) to `
         + (process.env.SECRET_PATTERNS_TARGET
             ? 'the SECRET_PATTERNS_TARGET override'
             : 'src/lib/security/generated/secret-patterns.ts'),
