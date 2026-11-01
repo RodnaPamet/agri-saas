@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import prisma from '@/lib/prisma';
+import { runInTenantContext } from '@/lib/db-context';
 import { log } from '@/lib/observability';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
 import {
@@ -143,7 +143,14 @@ export async function recordUsageEvents(
     }
 
     if (rows.length > 0) {
-        await prisma.usageEvent.createMany({ data: rows });
+        // `runInTenantContext`, not the global client. `UsageEvent` has FORCED
+        // RLS with a `tenant_isolation_insert` WITH CHECK clause, and a write
+        // through the global handle runs as the owner role — so the policy that
+        // makes it impossible to record one farm's usage against another would
+        // never be consulted. The `tenantId` on every row comes from `ctx`
+        // already; this is what makes that a checked fact rather than a
+        // convention. `no-direct-prisma` is the guard that caught it.
+        await runInTenantContext(ctx, (db) => db.usageEvent.createMany({ data: rows }));
     }
 
     return { accepted: rows.length, dropped };
