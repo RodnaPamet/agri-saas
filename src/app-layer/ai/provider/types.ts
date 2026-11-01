@@ -159,9 +159,37 @@ export interface AiCompleteOptions<T = unknown> {
  * approximate.
  */
 export interface AiUsage {
+    /**
+     * Prompt tokens charged at the FULL input rate.
+     *
+     * For Anthropic this EXCLUDES anything served from or written to the
+     * prompt cache — the SDK reports those separately and `input_tokens` is
+     * the remainder. For an OpenAI-compatible host `prompt_tokens` INCLUDES
+     * the cached portion, so this field is reduced by `cacheReadTokens` to
+     * keep one meaning across providers (#2669).
+     *
+     * One meaning matters because `cost.ts` multiplies this by the input rate
+     * and `assertAiBudget` sums it against `PLAN_LIMITS[plan].ai_tokens`. Two
+     * providers disagreeing about whether a number includes its own subset is
+     * how a cost model goes quietly wrong.
+     */
     promptTokens: number;
     completionTokens: number;
+    /** `promptTokens + completionTokens`, and so also full-rate only. */
     totalTokens: number;
+    /**
+     * Prompt tokens served FROM the cache, billed at ~0.1× (#2669).
+     *
+     * `undefined` means the provider reported nothing — which is NOT the same
+     * as zero, and the difference is the whole point of this field. Zero means
+     * "asked and told: no cache hit"; undefined means "we cannot tell". Prompt
+     * caching was silently off once after a rename mangled `cache_control` and
+     * the API ignored the unknown field, and the only reason that was
+     * survivable is that nothing depended on it. Something does now.
+     */
+    cacheReadTokens?: number;
+    /** Prompt tokens WRITTEN to the cache, billed at ~1.25× (#2669). */
+    cacheWriteTokens?: number;
     /** True when the counts are an estimate (SDK returned no usage). */
     estimated?: boolean;
 }

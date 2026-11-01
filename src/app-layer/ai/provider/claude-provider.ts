@@ -139,14 +139,48 @@ export class ClaudeProvider implements AiProvider {
      * response and flag `estimated`.
      */
     private toUsage(
-        sdkUsage: { input_tokens?: number; output_tokens?: number } | null | undefined,
+        sdkUsage:
+            | {
+                  input_tokens?: number;
+                  output_tokens?: number;
+                  cache_read_input_tokens?: number | null;
+                  cache_creation_input_tokens?: number | null;
+              }
+            | null
+            | undefined,
         promptMessages: MessageParam[],
         completionText: string,
     ): AiUsage {
         const input = sdkUsage?.input_tokens;
         const output = sdkUsage?.output_tokens;
         if (typeof input === 'number' && typeof output === 'number') {
-            return { promptTokens: input, completionTokens: output, totalTokens: input + output };
+            // Anthropic's `input_tokens` EXCLUDES the cached portion, so
+            // `promptTokens` is already full-rate-only and needs no
+            // adjustment — unlike the OpenAI-compatible path, where
+            // `prompt_tokens` includes its own cached subset (#2669).
+            //
+            // `null` is what the SDK sends for "no caching on this call", and
+            // it must become 0 rather than undefined: 0 says we asked and
+            // there was no hit, undefined says we never looked, and a hit rate
+            // computed over the second is a fiction.
+            // THREE-way, not two. Anthropic types both fields `number | null`
+            // and always sends them, so:
+            //   a number  → that many tokens
+            //   null      → asked, and there was no caching on this call → 0
+            //   absent    → NOT REPORTED, which is a different fact and must
+            //               stay `undefined`
+            // Collapsing absent to 0 would claim a measurement we never made,
+            // which is exactly what `AiUsage`'s own docblock forbids — and the
+            // first version of this function did it.
+            const cacheTokens = (v: number | null | undefined): number | undefined =>
+                typeof v === 'number' ? v : v === null ? 0 : undefined;
+            return {
+                promptTokens: input,
+                completionTokens: output,
+                totalTokens: input + output,
+                cacheReadTokens: cacheTokens(sdkUsage?.cache_read_input_tokens),
+                cacheWriteTokens: cacheTokens(sdkUsage?.cache_creation_input_tokens),
+            };
         }
         const promptTokens = this.estimatePromptTokens(promptMessages);
         const completionTokens = estimateTokens(completionText);
