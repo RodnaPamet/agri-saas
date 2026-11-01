@@ -184,6 +184,30 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
         ['user_block_select', 'user_block_insert',
          'user_block_update', 'user_block_delete'],
     ],
+    // #2671 — the assistant's per-person memory profile. Person-scoped like
+    // `UserBlock`, with one difference that shapes the policy list: there is
+    // only ONE party. A remembered point is about one person and read by that
+    // person, so the audience is a single user rather than a pair.
+    //
+    // SELECT-only for `app_user`, deliberately. Every write goes through the
+    // privileged client in a usecase that sets `userId` itself, so a caller
+    // cannot forge a fact about somebody else or resurrect one they deleted —
+    // `ContentReport`'s arrangement for the same reason.
+    //
+    // TWO read arms, one per session variable, and this is #1664 avoided
+    // rather than rediscovered. The profile is read from BOTH contexts: the
+    // assistant reads it mid-answer inside a tenant transaction
+    // (`app.actor_user_id`), and «Какво помни асистентът» reads it
+    // person-scoped under /api/account/** (`app.user_id`). One arm would make
+    // the other context select from an empty view and return nothing, with
+    // nothing erroring — which is exactly what `UserBlock` did for every pair
+    // until #1664. The two arms admit the same person in the two contexts, so
+    // this widens nothing.
+    [
+        'AssistantMemoryFact',
+        ['memory_fact_owner_read_user', 'memory_fact_owner_read_actor',
+         'superuser_bypass'],
+    ],
 ]);
 
 // Models reached ONLY through a platform-admin surface, with RLS that no

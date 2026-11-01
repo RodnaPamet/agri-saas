@@ -195,6 +195,18 @@ const NO_DEK_PAIR: TenantDekPair = { primary: null, previous: null };
 // absent from the repair's view keeps its misplaced v2 rows forever.
 export const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set([
     'Tenant',
+    // #2671. The assistant's per-PERSON memory profile. No `tenantId`, and the
+    // rule above applies in its second form: MORE THAN ONE TENANT must read
+    // the same row. "Per person, across farms" is the owner's decision, so a
+    // fact is read while any of that person's farms is open — and a row
+    // encrypted under farm A's DEK would be unreadable the moment they opened
+    // farm B, silently, which is the `ExchangeMessage` break one party over.
+    //
+    // Note what is NOT here: `AssistantTurn`. A conversation belongs to the
+    // farm it happened in and exactly one tenant reads its turns, so the
+    // per-tenant DEK is both achievable and required for it. Adding it would
+    // be the mistake this set's docblock warns about.
+    'AssistantMemoryFact',
     'Company',
     'ExchangeMessage',
     // #1222. No `tenantId`, and every reader is a platform admin rather than a
