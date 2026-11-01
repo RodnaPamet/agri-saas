@@ -5939,6 +5939,25 @@ exports[`API contract — per-schema snapshots schema: DataStreamReading 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EditRememberedPointInput 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 280,
+      "description": "The corrected text, as the person writes it. Sanitised and bounded to 280 characters. It re-enters the model’s context on every later answer, so it is treated as DATA there and never as instruction — a remembered point sets a default and authorises nothing.",
+      "example": "Обработвам 120 декара пшеница."
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "description": "Replaces the text of a point the assistant remembers. The point becomes the PERSON’s: the extractor never rewrites it again."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EikCheckResult 1`] = `
 "{
   "type": "object",
@@ -8668,6 +8687,37 @@ exports[`API contract — per-schema snapshots schema: FiledReport 1`] = `
     "status"
   ],
   "description": "Acknowledgement of a filed notice. Deliberately minimal: it does NOT say whether the reported subject exists. A response that distinguished a real id from a made-up one would be an enumeration oracle on an unauthenticated endpoint, so a missing subject is recorded against the moderator-only snapshot instead."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ForgetAllResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "forgotten": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "forgotten"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ForgetPointResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "ok"
+  ]
 }"
 `;
 
@@ -16052,6 +16102,48 @@ exports[`API contract — per-schema snapshots schema: RegisterVerifyResult 1`] 
   "required": [
     "ok",
     "verified"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RememberedPoint 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string",
+      "description": "The remembered point: ONE short sentence in the person’s own language. Model-extracted into a constrained shape and sanitised — never a span copied out of what they typed, because the extraction is a narrowing and that narrowing is what bounds what can reach the profile."
+    },
+    "rememberedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601, the date the person SAID the thing — not when the row was written. The client formats it; the server never pre-formats a date."
+    }
+  },
+  "required": [
+    "id",
+    "text",
+    "rememberedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: RememberedPointList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/RememberedPoint"
+      }
+    }
+  },
+  "required": [
+    "facts"
   ]
 }"
 `;

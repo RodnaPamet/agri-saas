@@ -556,6 +556,33 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // calls getTenantCtx before serving — and the payload is public
         // reference data. The review queue is PLATFORM_ADMIN_API_KEY-gated.
         'support-schemes.ts',
+        // #2671 — `assistant-memory.ts` is the `trust-safety.ts` shape: the
+        // READ and the WRITES use different clients ON PURPOSE.
+        //
+        //   * the READ (`listRememberedPoints`) goes through
+        //     `runInUserContext`, because `memory_fact_owner_read_user`
+        //     matches on `app.user_id` and only that runner sets it.
+        //   * the WRITES (forget, forget-all, edit) use the global handle,
+        //     because `AssistantMemoryFact` carries only TWO SELECT arms plus
+        //     `superuser_bypass` — there is no `app_user` UPDATE, INSERT or
+        //     DELETE policy at all, by design, since a person may correct a
+        //     point but not forge its provenance (`editedByPerson`,
+        //     `sourceQuote`, `sourceAt` are set by the usecase).
+        //
+        // That makes the global handle the only client the policies permit,
+        // and the failure it avoids is SILENT: with no permissive arm for the
+        // command, an `updateMany` under a user context selects zero rows and
+        // RETURNS NORMALLY, so a forget would report success having changed
+        // nothing. Only INSERT raises 42501.
+        //
+        // What stands in for tenant scoping is that `userId` comes from the
+        // verified session and never from the request, and every write carries
+        // it in the `where` beside the id — so a caller can only reach their
+        // own points. A function here taking a user id from a request body is
+        // the defect this exemption could hide, and is the thing to check in
+        // review. This model has no `tenantId` to filter on: a remembered
+        // point is about a PERSON, who may farm in several tenants.
+        'assistant-memory.ts',
     ];
 
     const usecases = readFilesInDir(path.join(SRC_ROOT, 'app-layer/usecases'));
