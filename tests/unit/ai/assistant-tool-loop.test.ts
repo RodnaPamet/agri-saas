@@ -7,6 +7,11 @@
  * `ASSISTANT_PROVIDER_UNAVAILABLE` problem — telling somebody their
  * non-existent answer is partial.
  */
+const analyzeBlockRisk = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+jest.mock('@/app-layer/usecases/parcel-risk', () => ({
+    analyzeBlockRisk: (...a: unknown[]) => analyzeBlockRisk(...a),
+}));
+
 const listTasks = jest.fn<Promise<unknown[]>, unknown[]>();
 jest.mock('@/app-layer/usecases/task', () => ({
     listTasks: (...a: unknown[]) => listTasks(...a),
@@ -98,6 +103,81 @@ describe('the assistant tool loop (#2578)', () => {
         expect(r.halt).toBe('ASSISTANT_TIME_BUDGET');
         expect(r.text).toBe('Частичен отговор.');
         expect(complete.mock.calls[complete.mock.calls.length - 1][1]).toBeUndefined();
+    });
+
+    it('a PARTIAL result halts with PARTIAL_DATA — the prose is not relied on (#2639)', async () => {
+        // `analyze_block_risk` returns `analysed`/`total` and its description
+        // asks the model to say them. A description is a request and the prose
+        // is the model's, and agrent-ios made the observation that settles it:
+        // the phone renders nothing from the payload, so the answer prose is
+        // the ONLY place the pair can be lost. So the disclosure is a HALT,
+        // which accompanies the answer rather than replacing it.
+        const h = harness();
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле', analysed: 24, total: 30, worst: 'good',
+            counts: { unknown: 0, good: 24, watch: 0, stress: 0 },
+            configured: true, parcels: [], generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const complete = jest
+            .fn()
+            .mockResolvedValueOnce({ text: '', toolCalls: [call('analyze_block_risk', '{"locationId":"loc-1"}')] })
+            // The model answers without the numbers — the exact case.
+            .mockResolvedValueOnce({ text: 'Нищо не е под стрес.' });
+        const r = await runToolLoop({ ctx, complete, send: h.send }, []);
+        expect(r.partialAny).toBe(true);
+        expect(r.halt).toBe('ASSISTANT_PARTIAL_DATA');
+        // The answer still reaches the person; the halt says it is incomplete.
+        expect(r.text).toBe('Нищо не е под стрес.');
+    });
+
+    it('a COMPLETE result halts with nothing', async () => {
+        // The control. Without it the assertion above is satisfied by a flag
+        // that is always set, which would halt on every block-risk question.
+        const h = harness();
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле', analysed: 30, total: 30, worst: 'good',
+            counts: { unknown: 0, good: 30, watch: 0, stress: 0 },
+            configured: true, parcels: [], generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const complete = jest
+            .fn()
+            .mockResolvedValueOnce({ text: '', toolCalls: [call('analyze_block_risk', '{"locationId":"loc-1"}')] })
+            .mockResolvedValueOnce({ text: 'Нищо не е под стрес.' });
+        const r = await runToolLoop({ ctx, complete, send: h.send }, []);
+        expect({ partialAny: r.partialAny, halt: r.halt }).toEqual({ partialAny: false, halt: null });
+    });
+
+    it('PRECEDENCE: truncation beats partial, and partial is still on the result', async () => {
+        // Both are true here. TRUNCATED wins because it is the narrower
+        // statement about THIS turn — the model did not see all of what was
+        // gathered — while partial data would be partial however much was
+        // read. `partialAny` stays set so nothing is silent.
+        const h = harness();
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле', analysed: 1, total: 99, worst: 'stress',
+            counts: { unknown: 0, good: 0, watch: 0, stress: 1 },
+            configured: true,
+            // Long enough to exceed TOOL_RESULT_MAX_CHARS.
+            // The projection keeps only 12 `attention` rows, so 400 short
+            // ones do NOT exceed the cap — my own bound was doing its job and
+            // the first version of this fixture could not make the result
+            // truncated at all. Twelve very long names do.
+            parcels: Array.from({ length: 12 }, (_, i) => ({
+                name: `П-${i}-${'x'.repeat(1200)}`, overall: 'stress',
+                vegetation: 'stress', moisture: 'stress', acquiredDate: '2026-10-30',
+            })),
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const complete = jest
+            .fn()
+            .mockResolvedValueOnce({ text: '', toolCalls: [call('analyze_block_risk', '{"locationId":"loc-1"}')] })
+            .mockResolvedValueOnce({ text: 'Част от парцелите.' });
+        const r = await runToolLoop({ ctx, complete, send: h.send }, []);
+        expect({ truncatedAny: r.truncatedAny, partialAny: r.partialAny, halt: r.halt }).toEqual({
+            truncatedAny: true,
+            partialAny: true,
+            halt: 'ASSISTANT_TRUNCATED_RESULT',
+        });
     });
 
     it('a truncated result sets truncatedAny and halts with TRUNCATED_RESULT', async () => {

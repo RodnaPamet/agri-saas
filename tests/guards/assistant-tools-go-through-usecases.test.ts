@@ -222,6 +222,50 @@ describe('assistant tools go through usecases (#2578)', () => {
         expect(declared).toEqual(required);
     });
 
+    it('a tool whose result can be INCOMPLETE declares isPartial (#2639)', () => {
+        // The disclosure must not depend on the model. `analyze_block_risk`
+        // returns `analysed`/`total` and asks for them in its description, but
+        // a description is a request and the prose is the model's — and the
+        // phone renders nothing from the payload, so the prose is the only
+        // place the pair can be lost.
+        //
+        // DERIVED from each tool's own projection: a tool that computes a
+        // completeness signal and does not report it is the regression. The
+        // markers are the three this file actually uses, and the check is per
+        // TOOL BLOCK rather than per file, so one tool declaring `isPartial`
+        // cannot cover another.
+        const MARKERS = [/\bcomplete:/, /\banalysed:/, /\bseriesTotal:/, /\bcommoditiesTotal:/];
+        // Split on the registry's top-level keys. Comments blanked, strings
+        // kept: the subject is code structure, and a docblock naming
+        // `complete:` would otherwise enrol a tool that computes nothing.
+        const code = blankNonCode(readFileSync(path.join(REPO_ROOT, TOOLS), 'utf8'), {
+            strings: true,
+        });
+        const blocks = [...code.matchAll(/^ {4}([a-z_]+): \{$/gm)];
+        expect(blocks.length).toBeGreaterThanOrEqual(8);
+
+        const offenders: string[] = [];
+        const declaring: string[] = [];
+        for (let i = 0; i < blocks.length; i += 1) {
+            const name = blocks[i][1];
+            const from = blocks[i].index ?? 0;
+            const to = i + 1 < blocks.length ? (blocks[i + 1].index ?? code.length) : code.length;
+            const body = code.slice(from, to);
+            const computesCompleteness = MARKERS.some((m) => m.test(body));
+            const declares = /\bisPartial:/.test(body);
+            if (declares) declaring.push(name);
+            if (computesCompleteness && !declares) offenders.push(name);
+        }
+        console.log(
+            `[assistant-tools] ${blocks.length} tool block(s); isPartial on: `
+                + `${declaring.join(', ') || 'none'}`,
+        );
+        // A floor: if the block split ever stops matching, every body is empty
+        // and `offenders` is trivially [].
+        expect(declaring.length).toBeGreaterThanOrEqual(2);
+        expect(offenders).toEqual([]);
+    });
+
     it('does not expose a free-text query parameter to the model', () => {
         // `TaskFilters.q` is real and deliberately unexposed: it is the one
         // argument whose content cannot be bounded by a charset. Asserted

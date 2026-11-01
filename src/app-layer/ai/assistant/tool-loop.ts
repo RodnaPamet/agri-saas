@@ -56,6 +56,8 @@ export interface ToolLoopResult {
      */
     readonly proposal: AssistantProposal | null;
     readonly truncatedAny: boolean;
+    /** Any tool reported its own result INCOMPLETE — #2639. */
+    readonly partialAny: boolean;
     /** The halt to report after the answer, if the tool phase was cut short. */
     readonly halt: HaltCode | null;
     readonly toolCallsMade: number;
@@ -82,6 +84,7 @@ export async function runToolLoop(
 
     const messages: AiMessage[] = [...initial];
     let truncatedAny = false;
+    let partialAny = false;
     let toolCallsMade = 0;
     const linkGroups: AssistantLink[][] = [];
     let proposal: AssistantProposal | null = null;
@@ -110,6 +113,7 @@ export async function runToolLoop(
             emit({ type: 'tool_call', name: call.name });
             const outcome = await runTool(deps.ctx, call.name, call.arguments ?? '');
             if (outcome.truncated) truncatedAny = true;
+            if (outcome.partial) partialAny = true;
             if (outcome.links.length > 0) linkGroups.push([...outcome.links]);
             if (outcome.proposal !== null) proposal = outcome.proposal;
             emit({
@@ -143,8 +147,17 @@ export async function runToolLoop(
     // Precedence, so a turn carries at most one halt. Truncation is the
     // weakest and is reported on `done` regardless, so it is never silent.
     if (halt === null && truncatedAny) halt = 'ASSISTANT_TRUNCATED_RESULT';
+    // LAST in precedence, after TRUNCATED — #2639.
+    //
+    // When a result was both truncated and partial, "the model did not see all
+    // of what was gathered" is the more specific statement about this turn:
+    // truncation is about THIS answer, while partial data would be partial
+    // however much of it the model read. Either sentence tells the person the
+    // answer is incomplete, so the order decides only which reason they get,
+    // and the narrower one is more useful.
+    if (halt === null && partialAny) halt = 'ASSISTANT_PARTIAL_DATA';
 
-    return { text, links: mergeLinks(linkGroups), proposal, truncatedAny, halt, toolCallsMade };
+    return { text, links: mergeLinks(linkGroups), proposal, truncatedAny, partialAny, halt, toolCallsMade };
 }
 
 /** Emit the halt, if there is one. Separate so the caller controls ordering. */

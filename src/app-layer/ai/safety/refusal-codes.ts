@@ -77,6 +77,21 @@ export const HALT_CODES = [
     'ASSISTANT_PROVIDER_UNAVAILABLE',
     /** A tool result was too large and was read in part. */
     'ASSISTANT_TRUNCATED_RESULT',
+    /**
+     * A tool's result was INCOMPLETE — it did not gather everything that
+     * exists — #2639.
+     *
+     * Distinct from `ASSISTANT_TRUNCATED_RESULT` on purpose, and the two are
+     * easy to conflate. Truncated means the result exceeded
+     * `TOOL_RESULT_MAX_CHARS`, so the MODEL did not see all of what was
+     * gathered. Partial means the TOOL did not gather it: 24 of 30 parcels
+     * analysed, a net worth whose commodities had no price.
+     *
+     * Collapsing them would tell a farmer "the result was shortened" when the
+     * truth is "six of your parcels were never looked at" —
+     * `uniform-failure-shape-blinds-the-client`.
+     */
+    'ASSISTANT_PARTIAL_DATA',
 ] as const;
 
 /**
@@ -158,4 +173,6 @@ export const ENDING_FALLBACK_EN: Record<string, string> = {
         "I could not reach the model. This farm's records were not read and nothing was created.",
     ASSISTANT_TRUNCATED_RESULT:
         'The answer above uses part of the data — one of the lists I read was too long to use whole.',
+    ASSISTANT_PARTIAL_DATA:
+        'The answer above is incomplete — some of your records could not be included, so treat it as a partial picture.',
 };
