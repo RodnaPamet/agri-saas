@@ -113,6 +113,21 @@ describe('assistant tools go through usecases (#2578)', () => {
         expect(closed).toBe(defs);
     });
 
+    it('never passes includeTaskWritten — an OWNER RULING, one word from being lost', () => {
+        // «journal should be entered manually only and tasks list should
+        // appear only in tasks» (owner, 2026-10-10). `LogEntryFilters`
+        // defaults to manual-only BECAUSE that is what the journal now means,
+        // and exactly one caller in the repo opts out: `satellite-briefing`,
+        // whose job is to summarise the farm.
+        //
+        // A tool setting this would widen the БАБХ register against that
+        // ruling, and nothing in a prompt or an answer would show it. It is a
+        // one-word diff, which is why it is asserted here rather than left to
+        // a comment — including `false`, because passing it at all means a
+        // caller deciding something the ruling already decided.
+        expect(CODE).not.toMatch(/includeTaskWritten/);
+    });
+
     it('does not expose a free-text query parameter to the model', () => {
         // `TaskFilters.q` is real and deliberately unexposed: it is the one
         // argument whose content cannot be bounded by a charset. Asserted

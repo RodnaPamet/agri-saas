@@ -8,8 +8,23 @@
  * cannot learn from a dead socket.
  */
 const listTasks = jest.fn<Promise<unknown[]>, unknown[]>();
+const listLogEntriesPaginated = jest.fn<Promise<{ rows: unknown[] }>, unknown[]>();
+// `{ rows, totalCount, truncated }` — the usecase's REAL shape. The first
+// version of this double returned a bare array, so the tool read `.map` on an
+// object and the test passed anyway. A double whose shape is wrong verifies
+// the wiring and nothing about the dependency.
+const listCostEntries = jest.fn<
+    Promise<{ rows: unknown[]; totalCount: number; truncated: boolean }>,
+    unknown[]
+>();
 jest.mock('@/app-layer/usecases/task', () => ({
     listTasks: (...a: unknown[]) => listTasks(...a),
+}));
+jest.mock('@/app-layer/usecases/journal', () => ({
+    listLogEntriesPaginated: (...a: unknown[]) => listLogEntriesPaginated(...a),
+}));
+jest.mock('@/app-layer/usecases/cost-entry', () => ({
+    listCostEntries: (...a: unknown[]) => listCostEntries(...a),
 }));
 
 import {
@@ -31,6 +46,8 @@ describe('assistant tools (#2578)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         listTasks.mockResolvedValue([]);
+        listLogEntriesPaginated.mockResolvedValue({ rows: [] });
+        listCostEntries.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
     });
 
     it('the set is closed and every def matches its key', () => {
@@ -109,6 +126,81 @@ describe('assistant tools (#2578)', () => {
         expect(filters).toEqual({ due: 'overdue' });
         // Bounded, so one tool call cannot pull the whole table into a prompt.
         expect(options).toEqual({ take: 20 });
+    });
+
+    it('the ДНЕВНИК tool is BOUNDED and does not widen the register', async () => {
+        await runTool(ctx, 'list_journal_entries', '{"status":["DONE"]}');
+        expect(listLogEntriesPaginated).toHaveBeenCalledTimes(1);
+        const [gotCtx, params] = listLogEntriesPaginated.mock.calls[0] as [
+            unknown,
+            { limit?: number; filters?: Record<string, unknown> },
+        ];
+        expect(gotCtx).toBe(ctx);
+        // Bounded, so one call cannot pull the register into a prompt.
+        expect(params.limit).toBe(20);
+        expect(params.filters).toEqual({ status: ['DONE'] });
+        // The owner ruling: «journal should be entered manually only». The
+        // usecase defaults to manual-only, so the tool must not pass this at
+        // all — passing it even as `false` would mean a caller deciding
+        // something the ruling already decided.
+        expect(params.filters).not.toHaveProperty('includeTaskWritten');
+    });
+
+    it('the ДНЕВНИК tool refuses free text and record ids', async () => {
+        for (const raw of [
+            '{"q":"пшеница"}',
+            '{"locationId":"loc1"}',
+            '{"cropPlanId":"cp1"}',
+            '{"includeTaskWritten":true}',
+        ]) {
+            const out = await runTool(ctx, 'list_journal_entries', raw);
+            expect({ raw, ok: out.ok }).toEqual({ raw, ok: false });
+        }
+        expect(listLogEntriesPaginated).not.toHaveBeenCalled();
+    });
+
+    it('the ДНЕВНИК projection omits the long notes, and links to the entry', async () => {
+        listLogEntriesPaginated.mockResolvedValue({
+            rows: [
+                {
+                    id: 'j1',
+                    title: 'Пръскане',
+                    type: 'INPUT_APPLICATION',
+                    status: 'DONE',
+                    occurredAt: '2026-10-01',
+                    notes: 'SENSITIVE-NOTES',
+                },
+            ],
+        });
+        const out = await runTool(ctx, 'list_journal_entries', '{}');
+        expect(out.content).toContain('Пръскане');
+        expect(out.content).not.toContain('SENSITIVE-NOTES');
+        expect(out.links).toEqual([{ route: '/journal/j1', label: 'Пръскане' }]);
+    });
+
+    it('the expense tool is bounded, refuses ids, and PARSES its dates', async () => {
+        await runTool(ctx, 'list_cost_entries', '{"incurredFrom":"2026-01-01"}');
+        const [, filters, opts] = listCostEntries.mock.calls[0] as [
+            unknown,
+            Record<string, unknown>,
+            { take?: number },
+        ];
+        expect(opts).toEqual({ take: 20 });
+        // A Date, not the string — the usecase takes `Date`, and handing it a
+        // string reaches Prisma as `Invalid Date` far from its cause.
+        expect(filters.incurredFrom).toBeInstanceOf(Date);
+
+        jest.clearAllMocks();
+        // A value that is not a date is refused HERE rather than passed on.
+        const bad = await runTool(ctx, 'list_cost_entries', '{"incurredFrom":"not-a-date"}');
+        expect(bad.ok).toBe(false);
+        expect(listCostEntries).not.toHaveBeenCalled();
+
+        jest.clearAllMocks();
+        for (const raw of ['{"q":"x"}', '{"parcelIds":["p1"]}', '{"itemIds":["i1"]}']) {
+            expect((await runTool(ctx, 'list_cost_entries', raw)).ok).toBe(false);
+        }
+        expect(listCostEntries).not.toHaveBeenCalled();
     });
 
     it('refuses a hallucinated tool name without throwing', async () => {
