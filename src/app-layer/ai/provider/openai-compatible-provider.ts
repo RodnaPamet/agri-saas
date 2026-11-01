@@ -415,7 +415,35 @@ export class OpenAiCompatibleProvider implements AiProvider {
                 return { role: 'tool', content: m.content, tool_call_id: m.toolCallId ?? '' };
             }
             if (m.role === 'system') return { role: 'system', content: m.content };
-            if (m.role === 'assistant') return { role: 'assistant', content: m.content };
+            if (m.role === 'assistant') {
+                // An assistant turn that made tool calls must carry them, for
+                // the SAME reason as the Claude path (#2654): OpenAI refuses a
+                // `tool` message that is not a response to a preceding message
+                // with `tool_calls`.
+                //
+                // This path is NOT hypothetical. `copilot-chat` routes to
+                // claude, but routing FAILS OVER — the outage logs show
+                // attempts through `ollama` and `openrouter` either side of
+                // the claude ones. So a claude-only fix would have left a
+                // failover sending a malformed history and failing for a
+                // DIFFERENT reason, which is the worst kind of masking.
+                //
+                // `arguments` passes through as the model's raw STRING here,
+                // unlike Anthropic's `input`, which is an object and has to be
+                // parsed.
+                if (m.toolCalls && m.toolCalls.length > 0) {
+                    return {
+                        role: 'assistant',
+                        content: m.content === '' ? null : m.content,
+                        tool_calls: m.toolCalls.map((c) => ({
+                            id: c.id,
+                            type: 'function' as const,
+                            function: { name: c.name, arguments: c.arguments },
+                        })),
+                    };
+                }
+                return { role: 'assistant', content: m.content };
+            }
             return { role: 'user', content: m.content };
         });
     }
