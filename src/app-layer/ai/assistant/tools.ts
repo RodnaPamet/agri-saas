@@ -37,6 +37,8 @@
 import { WorkItemStatus } from '@prisma/client';
 import { z } from 'zod';
 
+import { listCostEntries } from '@/app-layer/usecases/cost-entry';
+import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
@@ -107,6 +109,59 @@ const ListFarmTasksArgs = z
     })
     .strict();
 
+/**
+ * Дневник filters the model may set — and the OMISSIONS are the decision.
+ *
+ * `LogEntryFilters` also carries `q`, `locationId`, `cropPlanId` and
+ * `includeTaskWritten`. None is exposed:
+ *
+ * - `q` is free text into a query, excluded for the reason the task tool
+ *   excludes it and the page context excludes the toolbar's search term;
+ * - `locationId` and `cropPlanId` are record references the model would have
+ *   to fabricate — the `links.ts` provenance problem, with no derivation to
+ *   fall back on;
+ * - **`includeTaskWritten` is excluded on an OWNER RULING**, not on taste. Its
+ *   own docblock records it: «journal should be entered manually only and
+ *   tasks list should appear only in tasks» (2026-10-10). The filter defaults
+ *   to manual-only *because that is what the journal now means*, and exactly
+ *   one caller opts out — `satellite-briefing`, whose job is to summarise the
+ *   farm. A tool setting it would quietly widen the register against a ruling,
+ *   and nothing in a prompt would show it. Asserted in the guard, not just
+ *   left unwritten.
+ */
+const ListJournalArgs = z
+    .object({
+        type: z.array(z.string().min(1).max(64)).max(8).optional(),
+        status: z.array(z.enum(['PLANNED', 'DONE'])).max(2).optional(),
+        occurredFrom: z.string().max(40).optional(),
+        occurredTo: z.string().max(40).optional(),
+    })
+    .strict();
+
+/**
+ * Expense filters the model may set. Same omissions, same reasons: no `q`, and
+ * none of the six id arrays (`plantingIds`, `seasonIds`, `locationIds`,
+ * `parcelIds`, `leaseIds`, `itemIds`).
+ *
+ * The dates arrive as STRINGS and the usecase takes `Date`, so they are parsed
+ * here and a value that does not parse is refused — rather than handed on as
+ * `Invalid Date`, which Prisma reports far from its cause.
+ */
+const ListCostsArgs = z
+    .object({
+        categories: z.array(z.string().min(1).max(64)).max(12).optional(),
+        incurredFrom: z.string().max(40).optional(),
+        incurredTo: z.string().max(40).optional(),
+    })
+    .strict();
+
+const parseDay = (v: string | undefined): Date | undefined => {
+    if (v === undefined) return undefined;
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) throw new Error(`Not a date: ${v.slice(0, 20)}`);
+    return d;
+};
+
 export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
     list_farm_tasks: {
         def: {
@@ -147,6 +202,109 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 status: r.status,
                 priority: r.priority,
                 dueDate: r.dueDate,
+            }));
+        },
+    },
+    list_journal_entries: {
+        def: {
+            name: 'list_journal_entries',
+            description:
+                "The farm's ДНЕВНИК — the field journal of work already carried out, which is "
+                + 'also the БАБХ compliance register. Manually-entered entries only. Returns at '
+                + 'most 20, newest first, without their long notes.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    type: {
+                        type: 'array',
+                        items: { type: 'string', enum: [...LOG_ENTRY_TYPE_VALUES] },
+                        description: 'Narrow to these entry kinds.',
+                    },
+                    status: { type: 'array', items: { type: 'string', enum: ['PLANNED', 'DONE'] } },
+                    occurredFrom: { type: 'string', description: 'ISO date, inclusive.' },
+                    occurredTo: { type: 'string', description: 'ISO date, inclusive.' },
+                },
+                additionalProperties: false,
+            },
+        },
+        args: ListJournalArgs,
+        link: { template: '/journal/[id]', idField: 'id', labelField: 'title' },
+        run: async (ctx, args) => {
+            const a = ListJournalArgs.parse(args);
+            // The PAGINATED form, because `listLogEntries` takes no limit and
+            // a tool must be bounded. `includeTaskWritten` is not passed, so
+            // the usecase's own manual-only default applies — see the schema's
+            // docblock for whose ruling that is.
+            const page = await listLogEntriesPaginated(ctx, {
+                limit: 20,
+                filters: {
+                    ...(a.type ? { type: a.type as never } : {}),
+                    ...(a.status ? { status: a.status as never } : {}),
+                    ...(a.occurredFrom ? { occurredFrom: a.occurredFrom } : {}),
+                    ...(a.occurredTo ? { occurredTo: a.occurredTo } : {}),
+                },
+            });
+            const rows = (page as { rows?: unknown[] }).rows ?? [];
+            // `notes` omitted: sanitised rich-text HTML, by far the largest
+            // field, and a list-level question does not need it. A later
+            // single-entry tool can fetch one deliberately — the same line the
+            // task tool draws at `description`.
+            return (rows as Array<Record<string, unknown>>).map((r) => ({
+                id: r.id,
+                title: r.title,
+                type: r.type,
+                status: r.status,
+                occurredAt: r.occurredAt,
+            }));
+        },
+    },
+    list_cost_entries: {
+        def: {
+            name: 'list_cost_entries',
+            description:
+                "The farm's recorded expenses. Use it for what has been spent, and on what. "
+                + 'Returns at most 20, newest first.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    categories: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Narrow to these cost categories.',
+                    },
+                    incurredFrom: { type: 'string', description: 'ISO date, inclusive.' },
+                    incurredTo: { type: 'string', description: 'ISO date, inclusive.' },
+                },
+                additionalProperties: false,
+            },
+        },
+        args: ListCostsArgs,
+        run: async (ctx, args) => {
+            const a = ListCostsArgs.parse(args);
+            // `{ rows, totalCount, truncated }`, NOT an array. I treated it as
+            // one and the test passed, because my own mock returned an array —
+            // a double whose shape was wrong told me nothing about the
+            // dependency. `tsc` caught it; jest could not.
+            const page = await listCostEntries(
+                ctx,
+                {
+                    ...(a.categories ? { categories: a.categories as never } : {}),
+                    ...(a.incurredFrom ? { incurredFrom: parseDay(a.incurredFrom) } : {}),
+                    ...(a.incurredTo ? { incurredTo: parseDay(a.incurredTo) } : {}),
+                },
+                { take: 20 },
+            );
+            const rows = page.rows;
+            // No link shape: `/grain/costs` is a LIST template with no record
+            // parameter, so there is nothing for `linksFromRows` to substitute.
+            // A link to the list would be an affordance the person already has.
+            return (rows as Array<Record<string, unknown>>).map((r) => ({
+                id: r.id,
+                category: r.category,
+                amountCents: r.amountCents ?? r.amount,
+                currency: r.currency,
+                incurredOn: r.incurredOn ?? r.incurredAt,
+                note: typeof r.note === 'string' ? r.note.slice(0, 120) : undefined,
             }));
         },
     },

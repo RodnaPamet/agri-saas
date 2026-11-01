@@ -60,6 +60,8 @@ const TASK_INCLUSIVE: Readonly<Record<string, string>> = {
 
 /** Readers that must stay manual-only, each with the reason it is listed. */
 const MANUAL_ONLY: Readonly<Record<string, string>> = {
+    'src/app-layer/ai/assistant/tools.ts':
+        'the assistant answers questions ABOUT the journal, so it must describe the same register the journal page shows — and it is the one reader whose output is prose, where a task-written row would read as something the farmer wrote',
     'src/app-layer/usecases/ag-dashboard.ts':
         'the recent-entries strip sits beside the journal page; the two must not disagree about what the journal contains',
     'src/app/api/t/[tenantSlug]/journal/route.ts': 'the journal API itself',
