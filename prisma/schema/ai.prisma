@@ -113,8 +113,16 @@ model AiUsageEvent {
 //
 //  Owner decisions 2026-11-01: a bounded conversation window PLUS a short
 //  per-PERSON profile, with see-and-delete control, kept while the account
-//  exists. Nine design rules borrowed from akitaonrails/ai-memory — not the
-//  software, and not its decay curves.
+//  exists. Built to NINE design rules, written down in
+//  `docs/assistant-memory-rules.md` — which is the referent for every
+//  `rule N` citation below, held by
+//  `tests/guards/assistant-memory-rules-resolve.test.ts`.
+//
+//  This comment said the rules were "borrowed from akitaonrails/ai-memory".
+//  That attribution was wrong: the project is a real influence (and NOT taking
+//  its decay curves was deliberate) but it publishes no numbered list of nine.
+//  The rules and the numbering are ours; rules 1 and 9 were lost before being
+//  written to a file and are authored in that doc, marked as such.
 //
 //  TABLES ONLY in this release. P5's standing rule is that tables ship one
 //  release before the code that writes them, so nothing reads or writes these
