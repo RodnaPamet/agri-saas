@@ -385,6 +385,13 @@ const TreatmentPdfBody = z.string().openapi({
     description: 'The \u0414\u041d\u0415\u0412\u041d\u0418\u041a pages for this treatment, as a PDF document.',
 });
 
+const ActivityDiaryPdfBody = z.string().openapi({
+    format: 'binary',
+    description:
+        'This activity\u2019s page of \u00ab\u0414\u041d\u0415\u0412\u041d\u0418\u041a \u041d\u0410 \u0421\u0422\u041e\u041f\u0410\u041d\u0421\u0422\u0412\u041e\u0422\u041e\u00bb, as a PDF document. NOT '
+        + '\u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 1 \u2014 see the operation description.',
+});
+
 const TreatmentDefinitionLine = z
     .object({
         parcelId: z.string(),
@@ -1473,6 +1480,60 @@ export function registerJournalPaths(registry: OpenAPIRegistry): void {
                     + 'through the treatments route precisely because it applies a product.',
             }),
         },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/journal/activities/{treatmentGroupId}/campaign-diary',
+        operationId: 'getActivityCampaignDiary',
+        summary: 'One activity\u2019s page of \u00ab\u0414\u043d\u0435\u0432\u043d\u0438\u043a \u043d\u0430 \u0441\u0442\u043e\u043f\u0430\u043d\u0441\u0442\u0432\u043e\u0442\u043e\u00bb',
+        description:
+            'The \u00ab\u0414\u041d\u0415\u0412\u041d\u0418\u041a \u041d\u0410 \u0421\u0422\u041e\u041f\u0410\u041d\u0421\u0422\u0412\u041e\u0422\u041e\u00bb register limited to ONE recorded activity \u2014 ' +
+            'cultivation, pruning, sowing or harvest. Same gatherer and same renderer as the ' +
+            'campaign-wide document at `POST /reports/campaign-diary`, so this is one PAGE of ' +
+            'that register rather than a second document: one row for the activity, summed ' +
+            'across the blocks actually worked.\n\n' +
+            '**This is NOT `.../farm-record`, and the difference is the document.** That route ' +
+            'serves \u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 1 \u043a\u044a\u043c \u0437\u0430\u043f\u043e\u0432\u0435\u0434 \u0420\u0414 11-3194/31.12.2021, whose core table is ' +
+            '\u041f\u0420\u041e\u0412\u0415\u0414\u0415\u041d\u0418 \u0425\u0418\u041c\u0418\u0427\u041d\u0418 \u041e\u0411\u0420\u0410\u0411\u041e\u0422\u041a\u0418 \u2014 keyed on \u0432\u0440\u0435\u0434\u0438\u0442\u0435\u043b, the \u041f\u0420\u0417 product, \u0434\u043e\u0437\u0430 and ' +
+            '\u043a\u0430\u0440\u0430\u043d\u0442\u0438\u043d\u0435\u043d \u0441\u0440\u043e\u043a. A cultivation has no row in it. That is why the treatment route ' +
+            'already answers `NOT_IN_BABH_REGISTER` for a sowing and says the record ' +
+            '"prints in \u00ab\u0414\u041d\u0415\u0412\u041d\u0418\u041a \u041d\u0410 \u0421\u0422\u041e\u041f\u0410\u041d\u0421\u0422\u0412\u041e\u0422\u041e\u00bb" \u2014 this is the route that prints it, ' +
+            'per record, so that pointer is now something a client can follow.\n\n' +
+            '**Bytes inline.** 200 `application/pdf` with a `Content-Disposition` filename \u2014 ' +
+            'no job, no URL to poll, nothing persisted. Check for `%PDF` and open it. ' +
+            'A4 LANDSCAPE, matching the campaign-wide document exactly: nine columns do not fit ' +
+            'portrait, and a reader filing both must not get two orientations of one register.\n\n' +
+            'A GET where the campaign-wide sibling is a POST, because the handle is this ' +
+            'document\u2019s only input. The handle is a PATH segment rather than a query ' +
+            'parameter: iOS writes the full URL including the query string to the device log, ' +
+            'unsuppressably.\n\n' +
+            'The page prints the campaign the work FALLS IN, derived from the activity\u2019s own ' +
+            'date \u2014 an activity carries no campaign label, and a blank header cell on a filed ' +
+            'document is worse than a derived one.\n\n' +
+            'Unmarked parcels of a two-step treatment are COUNTED, not hidden: they arrive as ' +
+            '`skippedIncomplete` and the document states what it omitted.\n\n' +
+            'Node runtime, 60s budget \u2014 one activity is a handful of rows, so it needs none of ' +
+            'the campaign route\u2019s 120s.',
+        tags: ['Journal', 'Farm records'],
+        params: TreatmentParams,
+        success: {
+            status: 200,
+            description: 'The activity\u2019s page of \u00ab\u0414\u043d\u0435\u0432\u043d\u0438\u043a \u043d\u0430 \u0441\u0442\u043e\u043f\u0430\u043d\u0441\u0442\u0432\u043e\u0442\u043e\u00bb as PDF bytes.',
+            content: { 'application/pdf': ActivityDiaryPdfBody },
+        },
+        extraResponses: codedErrorResponses({
+            404:
+                '`ACTIVITY_NOT_FOUND` when the handle names no lines at all \u2014 a wrong handle. '
+                + 'Carries `reference: "treatmentGroupId"`, the same shape the activity '
+                + 'correction route answers.\n\n'
+                + '`REGISTER_EMPTY_FOR_PERIOD` when lines exist but none is complete \u2014 a '
+                + 'two-step treatment still in progress.\n\n'
+                + 'Two codes rather than one, because a typo and an unfinished record want '
+                + 'different things from the person holding the phone. Neither is a 200 with an '
+                + 'empty table: in a document somebody files, an empty table is '
+                + 'indistinguishable from a period that was genuinely quiet.',
+        }),
     });
 
     op(registry, {

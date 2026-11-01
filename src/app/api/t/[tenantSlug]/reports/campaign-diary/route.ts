@@ -59,7 +59,7 @@ export const POST = withApiErrorHandling(
 
         let data;
         try {
-            data = await gatherCampaignDiary(ctx, campaign);
+            data = await gatherCampaignDiary(ctx, { kind: 'campaign', campaignLabel: campaign });
         } catch (err) {
             // A malformed label is the CALLER's error. Left to bubble it would
             // surface as a 500 — `InvalidCampaignError` is not one of the coded

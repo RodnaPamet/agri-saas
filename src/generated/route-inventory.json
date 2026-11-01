@@ -1627,6 +1627,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/journal/activities/{treatmentGroupId}/campaign-diary",
+      "status": "live",
+      "documented": false
+    },
+    {
       "path": "/api/t/{tenantSlug}/journal/activities/{treatmentGroupId}/corrections",
       "status": "live",
       "documented": true
