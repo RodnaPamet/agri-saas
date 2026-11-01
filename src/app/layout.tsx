@@ -12,6 +12,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { preloadFaces } from '@/lib/fonts/preload';
 import { Providers } from './providers';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 import {
     PUBLIC_SURFACE_HEADER,
@@ -148,6 +149,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     // NOT having it is one operator's rows rendering for the next one on a
     // shared device.
     const sessionUserId = (await auth())?.user?.id ?? null;
+
+    // #493 — the usage-telemetry switch, resolved HERE because there is no
+    // client-side flags hook and adding one would be a second source of truth
+    // for a kill switch. `isFeatureEnabled` is cohort-aware and an absent flag
+    // row reads as false, so an un-provisioned deployment records nothing.
+    const usageTelemetryEnabled = sessionUserId
+        ? await isFeatureEnabled('usage.events', sessionUserId)
+        : false;
 
     return (
         // Seeded from the theme cookie (see above), not pinned to dark. The
@@ -353,7 +362,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                                 src/lib/offline/client-data-retention.ts.
                             */}
                             <ClientDataRetentionSweep />
-                            <Providers userId={sessionUserId} isAuthSurface={isAuthSurface}>
+                            <Providers
+                            userId={sessionUserId}
+                            isAuthSurface={isAuthSurface}
+                            usageTelemetryEnabled={usageTelemetryEnabled}
+                        >
                                 {children}
                             </Providers>
                         </>

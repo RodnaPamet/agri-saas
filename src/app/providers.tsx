@@ -18,6 +18,7 @@ import { registerFormTelemetrySink } from '@/lib/telemetry/form-telemetry';
 import { SWRPersistenceProvider } from '@/components/providers/SWRPersistenceProvider';
 import { setCurrentUserId } from '@/lib/offline/current-user';
 import { ViewTransitions } from '@/lib/view-transitions';
+import { UsageTelemetry } from '@/components/telemetry/UsageTelemetry';
 
 /**
  * Epic 54 — bootstrap the global form-telemetry sink once at mount.
@@ -94,8 +95,15 @@ export function Providers({
     children,
     userId,
     isAuthSurface = false,
+    usageTelemetryEnabled = false,
 }: {
     children: React.ReactNode;
+    /**
+     * #493 — resolved on the SERVER from the `usage.events` flag and passed
+     * down. Defaults to FALSE so a caller that forgets it records nothing:
+     * the safe direction for a data-collection switch is off.
+     */
+    usageTelemetryEnabled?: boolean;
     /** Signed-in user id from the root layout — namespaces the SWR cache. */
     userId?: string | null;
     /**
@@ -157,6 +165,7 @@ export function Providers({
                          * + reduced-motion-aware + feature-detected, so
                          * desktop and reduced-motion users are untouched.
                          */}
+                        <UsageTelemetry enabled={usageTelemetryEnabled} />
                         <ViewTransitions>{children}</ViewTransitions>
                         {/* Not before sign-in — see `isAuthSurface`. */}
                         {!isAuthSurface && <CommandPalette />}
