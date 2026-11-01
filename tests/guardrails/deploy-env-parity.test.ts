@@ -120,6 +120,60 @@ describe('deploy/env.prod.example parity with src/env.ts', () => {
         expect(keys.has(name)).toBe(true);
     });
 
+    it('no template key is a variable src/env.ts does not declare (#2571)', () => {
+        // The REVERSE direction, added by #2571 because the issue predicted
+        // this guard "would be the thing that fails on removal" and it was
+        // not: every assertion here ranged over the SCHEMA, so a key listed in
+        // the template with nothing behind it was outside the population.
+        //
+        // Measured while removing five unread `AI_RISK_*` keys: deleting them
+        // from the schema and LEAVING them in the template kept this file
+        // green. A documented variable that nothing reads is the defect #2571
+        // is about, one level up — an operator sets it, nothing happens, and
+        // no error says so.
+        //
+        // Each exemption is a variable deliberately NOT in `src/env.ts`, with
+        // the reason, because "not in the schema" has two very different
+        // causes and only one of them is a mistake.
+        const NOT_IN_SCHEMA_BY_DESIGN: Readonly<Record<string, string>> = {
+            POSTGRES_DB: 'consumed by the postgres CONTAINER via docker-compose, never by the app',
+            POSTGRES_USER: 'consumed by the postgres CONTAINER via docker-compose, never by the app',
+            POSTGRES_PASSWORD: 'consumed by the postgres CONTAINER via docker-compose, never by the app',
+            REDIS_PASSWORD: 'consumed by the redis CONTAINER (--requirepass) via docker-compose, never by the app',
+            AUTH_CREDENTIALS_UI_HIDDEN:
+                'read as a RAW process.env in api/auth/ui-config/route.ts, deliberately — it is a request-time toggle an operator flips without a rebuild, which routing it through the validated env surface would prevent. no-fallbacks.test.ts records that choice.',
+        };
+
+        const schemaKeys = new Set(
+            [...ENV_TS.matchAll(/^\s{8}([A-Z][A-Z0-9_]+):\s/gm)].map((m) => m[1]),
+        );
+        // A control: the parse has to find the schema at all, or the set
+        // difference below is every template key and the exemption map would
+        // look far too small rather than passing silently.
+        expect(schemaKeys.size).toBeGreaterThanOrEqual(80);
+
+        const unexplained = [...keys]
+            .filter((k) => !schemaKeys.has(k) && !(k in NOT_IN_SCHEMA_BY_DESIGN))
+            .sort();
+        console.log(
+            `[deploy-env-parity] ${keys.size} template key(s), ${schemaKeys.size} schema key(s), `
+                + `${Object.keys(NOT_IN_SCHEMA_BY_DESIGN).length} not-in-schema by design`,
+        );
+        expect(unexplained).toEqual([]);
+
+        // And no stale exemption: a variable that has since joined the schema,
+        // or left the template, should lose its line rather than keep a name
+        // pre-approved for whatever is written there next.
+        for (const name of Object.keys(NOT_IN_SCHEMA_BY_DESIGN)) {
+            expect({
+                name,
+                stillInTemplate: keys.has(name),
+                stillAbsentFromSchema: !schemaKeys.has(name),
+            }).toEqual({ name, stillInTemplate: true, stillAbsentFromSchema: true });
+            expect(NOT_IN_SCHEMA_BY_DESIGN[name].length).toBeGreaterThan(40);
+        }
+    });
+
     it.each(FEATURE_DISABLING_DEFAULTS)(
         'deploy/env.prod.example lists %s, whose default disables a feature',
         (name) => {
