@@ -667,9 +667,59 @@ async function finishCompletion(ctx: RequestContext, input: FinishInput): Promis
             'ai.cost_micros': costMicros,
             'ai.latency_ms': input.latencyMs,
             'ai.cache_hit': input.cacheHit,
+            // PROMPT cache, which is not `ai.cache_hit` — see the log below.
+            ...(usage.cacheReadTokens !== undefined
+                ? { 'ai.tokens.cache_read': usage.cacheReadTokens }
+                : {}),
+            ...(usage.cacheWriteTokens !== undefined
+                ? { 'ai.tokens.cache_write': usage.cacheWriteTokens }
+                : {}),
         });
     } catch {
         // OTel absent — span attrs are best-effort.
+    }
+
+    /**
+     * The PROMPT cache, reported so a hit RATE is computable — #2669.
+     *
+     * This is NOT `cacheHit`, and conflating the two is the trap this comment
+     * exists for: `cacheHit` means the Redis RESPONSE cache (no provider call
+     * happened at all), while these are Anthropic's prompt-prefix cache inside
+     * a call that did happen. One is "we did not ask the model"; the other is
+     * "we asked, and it did not have to re-read the system prompt and tool
+     * definitions".
+     *
+     * A LOG LINE rather than a new instrument, deliberately: this deployment
+     * runs no OTel→Prometheus→Alertmanager pipeline, so a histogram reaches
+     * nobody while a structured log line does (the container ships structured
+     * logs since #1940). The span attributes above are set anyway, for the day
+     * that pipeline exists.
+     *
+     * Skipped entirely when the provider reported nothing, because `undefined`
+     * and `0` mean different things here — "we cannot tell" versus "we asked
+     * and there was no hit" — and a rate averaged over the first is a fiction.
+     * `cache_control` was once silently inert after a rename mangled it and the
+     * API ignored the unknown field; the only reason that was survivable is
+     * that nothing depended on it, and the point of this line is to make the
+     * next occurrence visible rather than survivable.
+     */
+    if (usage.cacheReadTokens !== undefined) {
+        const fullRate = usage.promptTokens;
+        const cached = usage.cacheReadTokens;
+        const written = usage.cacheWriteTokens ?? 0;
+        logger.info('ai.prompt_cache', {
+            component: 'ai',
+            task: input.task,
+            model: input.model,
+            backend: input.backend,
+            promptTokensFullRate: fullRate,
+            cacheReadTokens: cached,
+            cacheWriteTokens: written,
+            // The reading, so nobody has to recompute it from three numbers:
+            // what share of the prompt the model did not have to re-read.
+            cacheReadShare:
+                cached + fullRate > 0 ? Math.round((cached / (cached + fullRate)) * 100) : 0,
+        });
     }
 
     // Metrics.
