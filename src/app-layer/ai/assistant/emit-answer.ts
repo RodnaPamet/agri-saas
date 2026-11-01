@@ -33,6 +33,7 @@ import { endingEvent } from './endings';
 import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import { scanEgress } from '../safety/egress-scan';
 import type { AssistantLink } from './links';
+import type { AssistantProposal } from './propose';
 import { logger } from '@/lib/observability';
 
 /** What `emitAnswer` decided, so a caller can report it without re-deciding. */
@@ -53,7 +54,11 @@ export interface AnswerOutcome {
 export async function emitAnswer(
     send: (chunk: string) => void,
     text: string,
-    meta: { tenantId: string; links?: readonly AssistantLink[] },
+    meta: {
+        tenantId: string;
+        links?: readonly AssistantLink[];
+        proposal?: AssistantProposal | null;
+    },
 ): Promise<AnswerOutcome> {
     const trimmed = text.trim();
     if (trimmed === '') {
@@ -73,7 +78,19 @@ export async function emitAnswer(
     // data is not trustworthy either, and "DISCARD, never redact" is the one
     // decision this module makes.
     const links = meta.links ?? [];
-    const verdict = scanEgress([trimmed, ...links.map((l) => l.label)].join('\n'));
+    const proposal = meta.proposal ?? null;
+    // The DRAFT is scanned too, and for the label's reason taken one step
+    // further: a draft's `title` and `notes` are prose the model wrote FROM
+    // farm data, so they are outgoing text by the same route. Serialised
+    // whole, so a secret in any field is caught rather than only in the ones
+    // this line happened to name.
+    const verdict = scanEgress(
+        [
+            trimmed,
+            ...links.map((l) => l.label),
+            ...(proposal ? [JSON.stringify(proposal.draft)] : []),
+        ].join('\n'),
+    );
     if (!verdict.clean) {
         logger.warn('assistant.egress_blocked', {
             component: 'assistant',
@@ -90,8 +107,14 @@ export async function emitAnswer(
     // it is what the guard refuses.
     // Absent rather than empty when there are none, so a client need not
     // distinguish "no links" from "links omitted".
-    const event: AssistantStreamEvent =
-        links.length > 0 ? { type: 'answer', text: trimmed, links } : { type: 'answer', text: trimmed };
+    const event: AssistantStreamEvent = {
+        type: 'answer',
+        text: trimmed,
+        // Absent rather than empty/null, so a client need not distinguish
+        // "none" from "omitted" for either field.
+        ...(links.length > 0 ? { links } : {}),
+        ...(proposal ? { proposal } : {}),
+    };
     send(sseFormat(event));
     return { sent: true, ruleIds: [] };
 }

@@ -90,6 +90,46 @@ describe('emitAnswer (#2578)', () => {
         expect('links' in ev2).toBe(false);
     });
 
+    it('a secret in a DRAFT FIELD discards the whole answer', async () => {
+        // The door phase 2 opens. A draft's `title` and `notes` are prose the
+        // model wrote FROM farm data, so they are outgoing text by the same
+        // route the answer is. The draft is serialised whole for the scan, so
+        // a secret in any field is caught rather than only in the ones a
+        // hand-written list happened to name.
+        const { sent, send } = collect();
+        const out = await emitAnswer(send, 'Подготвих запис.', {
+            tenantId: 't1',
+            proposal: {
+                kind: 'journal-entry',
+                draft: { type: 'OBSERVATION', title: 'x', notes: `key ${AWS_EXAMPLE}` },
+            },
+        });
+        expect(out.sent).toBe(false);
+        expect(types(sent)).toEqual(['refusal']);
+        const raw = sent.join('');
+        expect(raw).not.toContain(AWS_EXAMPLE);
+        expect(raw).not.toContain(AWS_EXAMPLE.slice(0, 8));
+        expect(raw).not.toContain('Подготвих запис.');
+    });
+
+    it('a clean draft rides along, and is ABSENT when there is none', async () => {
+        const withDraft = collect();
+        await emitAnswer(withDraft.send, 'Подготвих запис.', {
+            tenantId: 't1',
+            proposal: { kind: 'journal-entry', draft: { type: 'OBSERVATION', title: 'Оглед' } },
+        });
+        const ev = JSON.parse(withDraft.sent[0].replace(/^data: /, '').trim()) as Record<string, unknown>;
+        expect(ev.proposal).toEqual({
+            kind: 'journal-entry',
+            draft: { type: 'OBSERVATION', title: 'Оглед' },
+        });
+
+        const none = collect();
+        await emitAnswer(none.send, 'Нищо.', { tenantId: 't1', proposal: null });
+        const ev2 = JSON.parse(none.sent[0].replace(/^data: /, '').trim()) as Record<string, unknown>;
+        expect('proposal' in ev2).toBe(false);
+    });
+
     it('an empty or whitespace answer is no-grounding, not an empty bubble', async () => {
         for (const text of ['', '   ', '\n\t ']) {
             const { sent, send } = collect();

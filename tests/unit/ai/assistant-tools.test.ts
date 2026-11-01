@@ -45,6 +45,16 @@ describe('assistant tools (#2578)', () => {
         }
     });
 
+    it('every tool args schema REJECTS an unknown key — behaviourally', async () => {
+        // The property the guard used to approximate by counting `.strict()`
+        // in one file, which broke when a schema moved to its own module.
+        // Handing each schema a bad key is the actual question.
+        for (const [name, tool] of Object.entries(ASSISTANT_TOOLS)) {
+            const r = tool.args.safeParse({ __not_a_real_arg__: 1 });
+            expect({ name, accepted: r.success }).toEqual({ name, accepted: false });
+        }
+    });
+
     it('every declared link template names a REAL screen', async () => {
         // A tool whose template is not a screen produces links that 404 — and
         // the failure would land on a phone rather than in CI. Asserted here

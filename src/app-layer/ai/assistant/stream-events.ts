@@ -70,6 +70,13 @@ export type AssistantStreamEvent =
            * so a client need not distinguish the two.
            */
           readonly links?: readonly { readonly route: string; readonly label: string }[];
+          /**
+           * A PREPARED draft for the person to confirm — phase 2. No id,
+           * nothing written. The client prefills the real form with it and the
+           * person submits that form, so every policy and audit write on the
+           * normal create path applies unchanged.
+           */
+          readonly proposal?: { readonly kind: string; readonly draft: Record<string, unknown> };
       }
     | { readonly type: 'refusal'; readonly code: RefusalCode; readonly message: string }
     | { readonly type: 'halt'; readonly code: HaltCode; readonly message: string }

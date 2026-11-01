@@ -41,6 +41,8 @@ import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 import type { AiToolDef } from '@/app-layer/ai/provider/types';
 import { linksFromRows, type AssistantLink, type LinkShape } from './links';
+import { proposeJournalEntry, ProposeJournalEntryArgs, type AssistantProposal } from './propose';
+import { LOG_ENTRY_TYPE_VALUES } from '@/lib/schemas';
 
 /** How much of one tool result may reach the model. */
 export const TOOL_RESULT_MAX_CHARS = 4000;
@@ -57,6 +59,11 @@ export interface ToolOutcome {
      * removes.
      */
     readonly links: readonly AssistantLink[];
+    /**
+     * A prepared draft, when the tool was a PROPOSE tool. Nothing is written —
+     * see `propose.ts` and the guard that holds it.
+     */
+    readonly proposal: AssistantProposal | null;
 }
 
 interface AssistantTool {
@@ -72,6 +79,8 @@ interface AssistantTool {
      * phone rather than failing in CI.
      */
     readonly link?: LinkShape;
+    /** A PROPOSE tool: its result becomes a draft on the answer. */
+    readonly proposes?: boolean;
 }
 
 /**
@@ -141,6 +150,42 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             }));
         },
     },
+    propose_journal_entry: {
+        def: {
+            name: 'propose_journal_entry',
+            description:
+                'PREPARE a Дневник entry for the person to confirm. Writes NOTHING — it returns a '
+                + 'draft the app prefills into the real form, which the person submits themselves. '
+                + 'Use it when asked to record something. Do not include any ids; the person picks '
+                + 'the block and equipment in the form.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    type: {
+                        type: 'string',
+                        enum: [...LOG_ENTRY_TYPE_VALUES],
+                        description: 'The kind of journal entry.',
+                    },
+                    title: { type: 'string', description: 'A short title, in the farmer\'s language.' },
+                    notes: { type: 'string', description: 'Optional detail.' },
+                    status: { type: 'string', enum: ['PLANNED', 'DONE'] },
+                    occurredAt: { type: 'string', description: 'ISO timestamp, if the person said when.' },
+                },
+                required: ['type', 'title'],
+                additionalProperties: false,
+            },
+        },
+        args: ProposeJournalEntryArgs,
+        run: async (_ctx, args) => {
+            // No ctx use, and no write: this validates and echoes. The policy
+            // that matters here is the one on the route the PERSON will post
+            // to, which is unchanged.
+            const outcome = proposeJournalEntry(args);
+            if (!outcome.ok) throw new Error(outcome.message);
+            return { prepared: true, kind: outcome.proposal?.kind, draft: outcome.proposal?.draft };
+        },
+        proposes: true,
+    },
 };
 
 /** The definitions handed to the model. */
@@ -164,13 +209,13 @@ export async function runTool(
 ): Promise<ToolOutcome> {
     const tool = ASSISTANT_TOOLS[name];
     if (!tool) {
-        return { ok: false, content: `No such tool: ${name}`, truncated: false, links: [] };
+        return { ok: false, content: `No such tool: ${name}`, truncated: false, links: [], proposal: null };
     }
     let parsed: unknown;
     try {
         parsed = JSON.parse(rawArgs === '' ? '{}' : rawArgs);
     } catch {
-        return { ok: false, content: 'Arguments were not valid JSON.', truncated: false, links: [] };
+        return { ok: false, content: 'Arguments were not valid JSON.', truncated: false, links: [], proposal: null };
     }
     const check = tool.args.safeParse(parsed);
     if (!check.success) {
@@ -179,16 +224,21 @@ export async function runTool(
             content: `Arguments rejected: ${check.error.issues[0]?.message ?? 'invalid'}`,
             truncated: false,
             links: [],
+            proposal: null,
         };
     }
     try {
         const result = await tool.run(ctx, check.data);
+        // A propose tool's validated draft, lifted onto the outcome so the
+        // loop can attach it to the answer. Re-validated rather than trusted
+        // from `result`: one source of truth for what a draft may contain.
+        const proposal = tool.proposes ? (proposeJournalEntry(check.data).proposal ?? null) : null;
         // Built from the ROWS, before serialising — so truncation below cannot
         // silently drop the links for records the model was still shown.
         const links = tool.link ? linksFromRows(tool.link, result) : [];
         const full = JSON.stringify(result);
         if (full.length <= TOOL_RESULT_MAX_CHARS) {
-            return { ok: true, content: full, truncated: false, links };
+            return { ok: true, content: full, truncated: false, links, proposal };
         }
         // Truncated rather than dropped: a partial list is useful and the
         // `truncated` flag is what makes the answer's incompleteness
@@ -198,6 +248,7 @@ export async function runTool(
             content: full.slice(0, TOOL_RESULT_MAX_CHARS),
             truncated: true,
             links,
+            proposal,
         };
     } catch (err) {
         // Includes the usecase's own policy refusal. Reported to the model as
@@ -208,6 +259,7 @@ export async function runTool(
             content: err instanceof Error ? err.message.slice(0, 200) : 'Tool failed.',
             truncated: false,
             links: [],
+            proposal: null,
         };
     }
 }

@@ -94,15 +94,23 @@ describe('assistant tools go through usecases (#2578)', () => {
         console.log(`[assistant-tools] @prisma/client names: ${clientNames.join(', ') || 'none'}`);
     });
 
-    it('every tool declares strict arguments — the model supplies them', () => {
-        // `.strict()` per schema, and `additionalProperties: false` in the
-        // JSON-Schema the model sees. A hallucinated argument is a refused
-        // call, not a query.
-        const schemas = (CODE.match(/\.strict\(\)/g) ?? []).length;
+    it('every tool def closes its JSON-Schema to the model', () => {
+        // `additionalProperties: false` in the schema the MODEL sees, once per
+        // tool. A hallucinated argument should be refused rather than ignored.
+        //
+        // This used to also count `.strict()` here and require the two counts
+        // to MATCH — which broke the moment a tool's args schema moved to its
+        // own module (`propose.ts`), because the `.strict()` was no longer in
+        // this file. The count was never the property; "each schema rejects an
+        // unknown key" is, and that is asserted BEHAVIOURALLY in
+        // `tests/unit/ai/assistant-tools.test.ts`, where the schemas can be
+        // loaded and handed a bad key. Text-matching a strictness marker
+        // across module boundaries is the wrong tool for it.
         const closed = (CODE.match(/additionalProperties:\s*false/g) ?? []).length;
-        expect(schemas).toBeGreaterThanOrEqual(1);
-        expect(closed).toBeGreaterThanOrEqual(1);
-        expect(closed).toBe(schemas);
+        const defs = (CODE.match(/^\s{8}def:\s*\{/gm) ?? []).length;
+        console.log(`[assistant-tools] ${defs} def(s), ${closed} closed schema(s)`);
+        expect(defs).toBeGreaterThanOrEqual(1);
+        expect(closed).toBe(defs);
     });
 
     it('does not expose a free-text query parameter to the model', () => {

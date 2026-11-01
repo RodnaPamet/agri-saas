@@ -987,7 +987,11 @@ export const UpdateOperationParcelSchema = z.object({
 
 // ─── Agriculture: Field Journal (LogEntry + quantities/links/photos) ───
 
-const LOG_ENTRY_TYPE_VALUES = [
+// Exported for #2578: the assistant's propose tool lists these in the
+// JSON-Schema the MODEL sees, so it is told the real values rather than
+// guessing and being refused. Hand-writing them there is how three of five
+// status values came out wrong earlier in that issue.
+export const LOG_ENTRY_TYPE_VALUES = [
     'ACTIVITY',
     'OBSERVATION',
     'INPUT_APPLICATION',
