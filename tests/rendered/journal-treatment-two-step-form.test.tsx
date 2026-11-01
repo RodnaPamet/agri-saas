@@ -329,6 +329,73 @@ describe('the three-step treatment form', () => {
     });
 
     it('keeps the picker’s own day when one is chosen', async () => {
+        /*
+         * The clock is PINNED, and this is the defect that made it necessary.
+         *
+         * This case clicked the day cell labelled "1", on the reasoning in
+         * `fillStepOne`'s docblock: "the 1st — never a future day, which is
+         * what a fixed 15 would be for the first half of every month". Sound,
+         * and it collides with the OTHER date fact in that same docblock —
+         * "a fresh draft is dated TODAY".
+         *
+         * On the 1st of a month those are the SAME CELL, and clicking an
+         * already-selected day in single mode DESELECTS it. So the date went
+         * empty, «Next» stayed disabled, and the failure surfaced two steps
+         * later as "Unable to find a combobox named Crop" — a cleared field
+         * reported as a missing one.
+         *
+         * Measured on 2026-11-01, when main went red at the UTC rollover:
+         *
+         *   TZ=UTC            aria-label "…November 1st, 2026, selected"  FAIL
+         *   TZ=Europe/Sofia   aria-label "…November 1st, 2026"            pass
+         *
+         * The offset decided whether today's stored instant landed on the 1st,
+         * which is why it passed for a month and then failed everywhere at
+         * once. Both halves — the ambient DATE and the ambient OFFSET — are
+         * removed by fixing the clock, which is the only version of this that
+         * cannot come back on some future 1st.
+         *
+         * Mid-month and midday UTC on purpose: the 1st is then comfortably
+         * past and never the default selection.
+         *
+         * ## What this does NOT fix, measured
+         *
+         * Pinning the clock makes UTC and positive offsets pass. A NEGATIVE
+         * offset still fails, and differently — and that difference is a real
+         * defect this test was masking rather than a second test problem:
+         *
+         *   TZ=America/Los_Angeles  clicking "1 June" submits "2026-05-31"
+         *
+         * An off-by-one DAY on the submitted farm day. The picked day is held
+         * as one midnight and formatted against the other, so at a negative
+         * offset it lands on the previous date. That is a ДНЕВНИК date being
+         * wrong by a day, which for a compliance register is material.
+         *
+         * Latent for the real user base — the product serves Bulgaria at
+         * UTC+2/+3 — which is exactly why it has never been noticed and why
+         * the ambient-date flakiness was able to hide it. Filed separately;
+         * fixing the conversion belongs with the form, not in a test, and this
+         * case will go on asserting `-01` so it reddens when that is done
+         * wrong.
+         */
+        jest.useFakeTimers({
+            now: new Date('2026-06-15T12:00:00Z'),
+            // The picker and user-event both need real timers to settle; only
+            // the CLOCK is faked.
+            doNotFake: [
+                'setTimeout',
+                'clearTimeout',
+                'setInterval',
+                'clearInterval',
+                'setImmediate',
+                'clearImmediate',
+                'queueMicrotask',
+                'requestAnimationFrame',
+                'cancelAnimationFrame',
+                'performance',
+            ],
+        });
+        try {
         const { submit } = mount();
         const u = user();
         // The trigger's accessible name now ENDS WITH its value: WCAG 2.5.3
@@ -354,6 +421,9 @@ describe('the three-step treatment form', () => {
 
         await waitFor(() => expect(submit).toHaveBeenCalled());
         expect(submit.mock.calls[0][0].body.occurredOn).toMatch(/^\d{4}-\d{2}-01$/);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 
     it('will not advance until the treatment is fully described', async () => {
