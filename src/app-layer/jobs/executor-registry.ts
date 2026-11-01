@@ -953,6 +953,18 @@ executorRegistry.register('account-erasure-sweep', async (payload) => {
     return result;
 });
 
+// ── usage-event-retention ────────────────────────────────────────────
+
+executorRegistry.register('usage-event-retention', async (payload) => {
+    const { runUsageEventRetention } = await import('./usage-event-retention');
+    const { result } = await runUsageEventRetention({
+        chunk: payload.chunk as number | undefined,
+        maxChunks: payload.maxChunks as number | undefined,
+        before: payload.before as string | undefined,
+    });
+    return result;
+});
+
 // ── notice-score ─────────────────────────────────────────────────────
 
 executorRegistry.register('notice-score', async (payload) => {

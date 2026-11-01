@@ -34,6 +34,18 @@ const TENANT_API_DIR = path.join(REPO_ROOT, 'src/app/api/t/[tenantSlug]');
  * whose IMAGERY is being redistributed.
  */
 const DELIBERATELY_EXCLUDED: readonly string[] = [
+    // Usage telemetry (#493). Excluded because the events are statements about
+    // a PERSON using the app — `screen_opened` on a phone, a treatment saved by
+    // somebody standing in a field. An `iflk_` key is not a person and carries
+    // no `uiLanguage`, no device and no session, so a machine client recording
+    // "a screen was opened" is incoherent in the same way the assistant case
+    // below is.
+    //
+    // It would also be the one write path on the platform where a key could
+    // manufacture data about human behaviour, which is precisely the data the
+    // closed name vocabulary exists to keep trustworthy. Fail-closed is the
+    // right default here and there is no use case to withhold.
+    'usage-events',
     // «Асистент» (#2578). Excluded, and for a reason the other two do not
     // cover: this surface SPENDS. Every request is a model call charged against
     // the tenant's monthly AI budget, so a key that could reach it could drain

@@ -2271,6 +2271,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/usage-events",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/users/assignable",
       "status": "live",
       "documented": false

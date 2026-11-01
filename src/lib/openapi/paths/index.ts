@@ -40,6 +40,7 @@ import { registerMeFarmsPaths } from './me-farms.paths';
 import { registerMeNewsPreferencesPaths } from './me-news-preferences.paths';
 import { registerMeStreamPaths } from './me-stream.paths';
 import { registerTrustSafetyPaths } from './trust-safety.paths';
+import { registerTelemetryPaths } from './telemetry.paths';
 import { registerAccessReviewPaths } from './access-review.paths';
 import { registerModerationPaths } from './moderation.paths';
 import { registerAdminMembersPaths } from './admin-members.paths';
@@ -88,6 +89,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerMeNewsPreferencesPaths(registry);
     registerMeStreamPaths(registry);
     registerTrustSafetyPaths(registry);
+    registerTelemetryPaths(registry);
     registerModerationPaths(registry);
     registerAdminMembersPaths(registry);
     registerPppRegisterPaths(registry);

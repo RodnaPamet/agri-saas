@@ -103,6 +103,15 @@ export const REFERENCED_FLAG_KEYS = [
     'social.farm-registration',
     'social.person-blocks',
     'social.public-profile',
+    /**
+     * #493 — product-usage telemetry ingest. Default OFF, and the ONLY way to
+     * turn telemetry off without shipping an image, which is why it is a
+     * runtime flag rather than a build-time constant.
+     *
+     * Also read per-caller by `/api/auth/me`, so a client checks it and records
+     * nothing while it is false rather than learning from a 403.
+     */
+    'usage.events',
 ] as const;
 
 export type ReferencedFlagKey = (typeof REFERENCED_FLAG_KEYS)[number];

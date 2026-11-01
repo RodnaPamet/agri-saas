@@ -397,6 +397,22 @@ export interface AccountErasureSweepPayload {
 }
 
 /**
+ * The usage-event retention sweep (#493).
+ *
+ * All three fields are overrides for tests. A run with an empty payload uses
+ * the 90-day period from `USAGE_EVENT_RETENTION_DAYS`, which is shared with the
+ * privacy notice so the two cannot drift.
+ */
+export interface UsageEventRetentionPayload {
+    /** Rows per statement. Defaults to 5000. */
+    chunk?: number;
+    /** Statements this run. Defaults to 20, bounding the worst run. */
+    maxChunks?: number;
+    /** Override the cutoff instant. Defaults to now minus 90 days. */
+    before?: string;
+}
+
+/**
  * The Drive-copy drain (#2495 step 4).
  *
  * No `documentId`. `driveState = PENDING` is the queue, so a payload naming one
@@ -947,6 +963,7 @@ export interface JobPayloadMap {
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
+    'usage-event-retention': UsageEventRetentionPayload;
     'document-retention-sweep': DocumentRetentionSweepPayload;
     'document-drive-copy-sweep': DocumentDriveCopySweepPayload;
     'notice-triage-alert': NoticeTriageAlertPayload;
@@ -1316,6 +1333,19 @@ export const JOB_DEFAULTS: Record<JobName, {
         attempts: 1,
         // Inert — the type requires it and `attempts: 1` leaves nothing to
         // delay.
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    // #493 — ONE attempt, for the reason its neighbours give and one of its
+    // own: the sweep is a bulk DELETE, so a re-run after a partial failure
+    // would re-scan rows already gone and the only cost of not retrying is a
+    // day of extra retention. The queue IS `receivedAt < cutoff`, so tomorrow's
+    // run is the retry, and the per-run chunk cap is what keeps the backlog
+    // case bounded rather than a retry policy.
+    'usage-event-retention': {
+        attempts: 1,
+        // Inert — `attempts: 1` leaves nothing to delay.
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
         removeOnFail: 500,

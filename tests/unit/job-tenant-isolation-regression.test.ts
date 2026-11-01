@@ -179,7 +179,12 @@ describe('Executor Registry — structural tenant-scope guards', () => {
     // tenant is explicitly excluded from the sweep. This is also why the job
     // does not live in `data-lifecycle.ts`, which is tenant-scoped by
     // construction ("never cross-tenant in one pass").
-    const EXEMPT_JOBS = ['health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
+    // #493 — `usage-event-retention` deletes rows past their 90-day life across
+    // EVERY farm. Retention is a platform duty, not a per-tenant errand: a
+    // tenant-scoped loop would need a tenant list, take a connection per
+    // tenant, and silently skip any farm the loop forgot. The queue is
+    // `receivedAt < cutoff`, which names no tenant by construction.
+    const EXEMPT_JOBS = ['usage-event-retention', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction',
         'unverified-account-sweep',
         // mail-canary (P3.10) sends ONE message to an operator address to
         // prove the mail send path works. There is no farm it belongs to — it
@@ -308,7 +313,10 @@ describe('Payload Type Contract — tenantId field audit', () => {
     // Jobs that legitimately don't need tenantId
     // SharePointDeltaSyncDispatchPayload (SP-3) is the global fan-out cron — no
     // single tenantId; it enqueues per-tenant SharePointDeltaSyncPayload jobs.
-    const EXEMPT_PAYLOADS = ['MailCanaryPayload', 'UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
+    // #493 — see EXEMPT_JOBS above: a cross-tenant retention sweep has no
+    // tenant to carry, and a `tenantId` on its payload would be a field that
+    // could only ever be wrong.
+    const EXEMPT_PAYLOADS = ['UsageEventRetentionPayload', 'MailCanaryPayload', 'UnverifiedAccountSweepPayload', 'HealthCheckPayload', 'SyncPullPayload', 'ScheduleTriggerSweepPayload', 'SharePointDeltaSyncDispatchPayload', 'SharePointSubscriptionRenewPayload', 'RiskAppetiteMonitorPayload', 'RiskSnapshotPayload', 'ReportDeliveryPayload', 'ExchangeExpirySweepPayload', 'MarketPricesPullPayload', 'MarketNewsPullPayload',
         // Global sweep over a cross-tenant table — no payload tenant axis.
         'PromotionLeadRetentionPayload',
         // Drains the whole outbox; each ROW carries the tenantId, so a

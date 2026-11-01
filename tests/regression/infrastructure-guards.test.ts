@@ -171,12 +171,12 @@ describe('Infrastructure Regression Guards', () => {
             // promise with no enforcement, the same shape step 5 closed for
             // `expiresOn`. Every two minutes, because a farmer who uploads a
             // scan watches that row for «Копие в Google Drive».
-            // 31 since the LOW_STOCK sweep was removed (owner ruling
-            // 2026-11-01). The pin is what makes adding or removing a schedule
-            // a visible line in a diff rather than a silent change to what the
-            // deployment runs, so update it deliberately — never to make a red
-            // run green.
-            expect(SCHEDULED_JOBS).toHaveLength(31);
+            // 32, MEASURED after merging rather than computed: main removed
+            // `low-stock-monitor` (33 -> 31 there) while this branch adds
+            // `usage-event-retention`. Both of those were mine, both moved this
+            // line, and arithmetic on either branch's number gives the wrong
+            // answer — which is exactly why the pin exists.
+            expect(SCHEDULED_JOBS).toHaveLength(32);
         });
 
         test('scheduled job names match expected set', () => {
@@ -306,6 +306,10 @@ describe('Infrastructure Regression Guards', () => {
                 'unverified-account-sweep',
                 // Agro-intel — daily Open-Meteo weather pull per Location
                 // → WeatherObservation upsert + spray/disease signal eval.
+                // #493 — delete usage events past their 90-day life. Daily at
+                // 04:30 UTC, last in the retention chain. Placed
+                // ALPHABETICALLY: this list is compared against `.sort()`.
+                'usage-event-retention',
                 'weather-pull',
                 // Daily 06:45 UTC — names every API route that took failures
                 // and ZERO successes in the last 24h, read from the hourly
