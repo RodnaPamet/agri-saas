@@ -1,26 +1,9 @@
-import fs from 'node:fs';
-
-import { collectSourceFiles } from '../../helpers/collect-files';
+import { readCatalogue } from '../../helpers/catalogue';
 import {
     RUSSIAN_ORTHOGRAPHY,
     findRussianLeakage,
     hasRussianOrthography,
 } from '@/app-layer/ai/bulgarian-output';
-
-/**
- * Every Bulgarian catalogue file.
- *
- * Collected with the house walker rather than a local `readdirSync` recursion:
- * `file-collection-is-not-silently-empty` requires it, and for the reason that
- * guard exists — a hand-rolled collector that stops matching contributes zero
- * files and the assertions above it pass over nothing. `collectSourceFiles`
- * throws on a root that does not exist, which a local walker would not.
- */
-function bgCatalogueFiles(): string[] {
-    return collectSourceFiles({ roots: ['messages'], extensions: ['.json'] }).filter((f) =>
-        /(^|[/\\])bg/.test(f),
-    );
-}
 
 function stringsIn(value: unknown, acc: string[] = []): string[] {
     if (typeof value === 'string') acc.push(value);
@@ -64,17 +47,22 @@ describe('Russian orthography in Bulgarian model output (#493-adjacent, owner re
         // The denominator that makes this detector safe to act on: if it fired
         // even once here, wiring it to suppress output would start hiding
         // legitimate briefings.
-        const files = bgCatalogueFiles();
-        expect(files.length).toBeGreaterThanOrEqual(3);
-
-        const strings = files.flatMap((f) => stringsIn(JSON.parse(fs.readFileSync(f, 'utf8'))));
-        const chars = strings.reduce((n, s) => n + s.length, 0);
+        //
+        // Read through `readCatalogue`, the one reader — `one-catalogue-reader`
+        // requires it, and for a reason this test would otherwise have to
+        // rediscover: `messages/` is SPLIT into four bundles per locale, so a
+        // hand-built path to `messages/bg.json` reads a file that does not
+        // exist and a hand-rolled walk has to know the layout. The reader
+        // merges them.
+        const bg = readCatalogue('bg');
+        const strings = stringsIn(bg);
+        const chars = strings.reduce((n, v) => n + v.length, 0);
         const hits = strings.filter(hasRussianOrthography);
 
         console.log(
-            `[bulgarian-orthography] files=${files.length} strings=${strings.length} chars=${chars} hits=${hits.length}`,
+            `[bulgarian-orthography] strings=${strings.length} chars=${chars} hits=${hits.length}`,
         );
-        // Floors, because an empty scan satisfies `hits === 0` perfectly.
+        // Floors, because an empty catalogue satisfies `hits === 0` perfectly.
         expect(strings.length).toBeGreaterThanOrEqual(5000);
         expect(chars).toBeGreaterThanOrEqual(100_000);
         expect(hits).toEqual([]);
