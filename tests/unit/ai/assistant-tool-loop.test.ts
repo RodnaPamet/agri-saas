@@ -278,7 +278,7 @@ describe('the assistant tool loop (#2578)', () => {
     it('a truncated result sets truncatedAny and halts with TRUNCATED_RESULT', async () => {
         const h = harness();
         listTasks.mockResolvedValue(
-            Array.from({ length: 400 }, (_, i) => ({ id: `t${i}`, title: 'a'.repeat(40), status: 'OPEN' })),
+            Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, title: 'a'.repeat(900), status: 'OPEN' })),
         );
         const complete = jest
             .fn()
@@ -294,7 +294,7 @@ describe('the assistant tool loop (#2578)', () => {
         // Two halts would ask a person to reconcile two reasons for one stop.
         const h = harness();
         listTasks.mockResolvedValue(
-            Array.from({ length: 400 }, (_, i) => ({ id: `t${i}`, title: 'a'.repeat(40), status: 'OPEN' })),
+            Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, title: 'a'.repeat(900), status: 'OPEN' })),
         );
         let calls = 0;
         // TWO calls inside the budget, not one: the loop reads the clock once
