@@ -39,6 +39,9 @@ const SCAN_DIR = 'src/app/t/[tenantSlug]/(app)';
  * absence of a gear; PRs that mount a gear should REMOVE the entry.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // #493 — the superuser usage console.
+    "admin/usage/UsageConsoleClient.tsx":
+        "(a) cross-tenant aggregation, not a record list. A column gear hides and shows columns; these three tables have three or four FIXED columns each — name, events, people, last seen — and every one of them is the answer to the question the page asks. There is nothing a reader would plausibly want hidden, so the gear would be chrome offering a choice nobody has.",
     // Asset maintenance tab (assets roadmap PR2).
     "assets/[id]/MaintenanceTab.tsx":
         "(a) detail-page sub-table — one machine's service history, not a list page. The set is bounded by MAINTENANCE_PAGE_SIZE and already ordered newest-first, which is how a service log is read; the open records a farmer is actually looking for sit at the top by construction. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",

@@ -639,6 +639,27 @@
         }
     },
     "admin": {
+        "usage": {
+            "title": "Използване",
+            "subtitle": "Какво отварят и правят хората във всички стопанства. Последните {days} дни.",
+            "totalEvents": "{count} събития",
+            "noData": "Все още няма използване",
+            "noDataDescription": "Нищо не е записано за този период",
+            "flagOff": "Телеметрията е изключена. Включете флага usage.events, за да започне записването.",
+            "byFarm": "По стопанство",
+            "byScreen": "По екран",
+            "byAction": "По действие",
+            "breadcrumbDashboard": "Табло",
+            "breadcrumbAdmin": "Админ",
+            "breadcrumbUsage": "Използване",
+            "colFarm": "Стопанство",
+            "colScreen": "Екран",
+            "colAction": "Действие",
+            "colEvents": "Събития",
+            "colPeople": "Хора",
+            "colLastSeen": "Последно",
+            "windowNote": "Събитията се пазят {retention} дни, така че по-дълъг период показва същите данни."
+            },
         "title": "Администрация",
         "auditLog": "Одитна пътека",
         "policyTemplates": "Шаблони за политики",

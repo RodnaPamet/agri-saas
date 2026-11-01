@@ -639,6 +639,27 @@
         }
     },
     "admin": {
+        "usage": {
+            "title": "Usage",
+            "subtitle": "What people open and do, across every farm. Last {days} days.",
+            "totalEvents": "{count} events",
+            "noData": "No usage yet",
+            "noDataDescription": "Nothing has been recorded in this window",
+            "flagOff": "Telemetry is off. Turn on the usage.events flag to start recording.",
+            "byFarm": "By farm",
+            "byScreen": "By screen",
+            "byAction": "By action",
+            "breadcrumbDashboard": "Dashboard",
+            "breadcrumbAdmin": "Admin",
+            "breadcrumbUsage": "Usage",
+            "colFarm": "Farm",
+            "colScreen": "Screen",
+            "colAction": "Action",
+            "colEvents": "Events",
+            "colPeople": "People",
+            "colLastSeen": "Last seen",
+            "windowNote": "Events are kept for {retention} days, so a longer window shows the same data."
+            },
         "title": "Administration",
         "auditLog": "Audit Log",
         "policyTemplates": "Policy Templates",

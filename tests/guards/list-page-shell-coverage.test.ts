@@ -52,6 +52,10 @@ const APP_ROOT = path.resolve(
  * consistency is large.
  */
 const EXEMPTIONS: Record<string, string> = {
+    // #493 — the superuser usage console.
+    "admin/usage/UsageConsoleClient.tsx":
+        "multi-table platform console, the same shape as admin/api-keys and admin/members. THREE tables answer one question together — by farm, by screen, by action — and an operator reads them by scrolling between them to compare. ListPageShell clamps ONE table to the viewport and scrolls its body, which is right for a single list page and wrong here: it would make the second and third tables reachable only after the first stopped scrolling. There is also nothing to filter — the page takes a ?days window and the rows are already ordered by count — so the toolbar the shell is built around would be empty chrome.",
+
     // Asset maintenance tab (assets roadmap PR2).
     "assets/[id]/MaintenanceTab.tsx":
         "detail-page sub-table — one machine's service history, not a list page. The set is bounded by MAINTENANCE_PAGE_SIZE and already ordered newest-first, which is how a service log is read; the open records a farmer is actually looking for sit at the top by construction. Faceted filtering, a column gear and viewport-clamping all add chrome without adding reach.",

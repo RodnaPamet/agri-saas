@@ -85,6 +85,7 @@ export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/t/[tenantSlug]/admin/scim",
     "/t/[tenantSlug]/admin/security",
     "/t/[tenantSlug]/admin/sso",
+    "/t/[tenantSlug]/admin/usage",
     "/t/[tenantSlug]/assets",
     "/t/[tenantSlug]/assets/[id]",
     "/t/[tenantSlug]/assets/new",
