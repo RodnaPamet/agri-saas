@@ -28,10 +28,19 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 const mockGeometryForParcel = jest.fn();
+const mockCountForLocation = jest.fn<Promise<number>, unknown[]>();
+const mockListIdsForLocation = jest.fn<Promise<Array<{ id: string; name: string }>>, unknown[]>();
 jest.mock('@/app-layer/repositories/ParcelRepository', () => ({
     ParcelRepository: {
         geometryForParcel: (...a: unknown[]) => mockGeometryForParcel(...a),
+        countForLocation: (...a: unknown[]) => mockCountForLocation(...a),
+        listIdsForLocation: (...a: unknown[]) => mockListIdsForLocation(...a),
     },
+}));
+
+const mockLocationGetById = jest.fn();
+jest.mock('@/app-layer/repositories/LocationRepository', () => ({
+    LocationRepository: { getById: (...a: unknown[]) => mockLocationGetById(...a) },
 }));
 
 const mockIsGeeConfigured = jest.fn<boolean, []>();
@@ -48,7 +57,11 @@ jest.mock('@/lib/redis', () => ({
     getRedis: () => redisInstance,
 }));
 
-import { analyzeParcelRisk } from '@/app-layer/usecases/parcel-risk';
+import {
+    analyzeBlockRisk,
+    analyzeParcelRisk,
+    MAX_BATCH_PARCELS,
+} from '@/app-layer/usecases/parcel-risk';
 import { makeRequestContext } from '../helpers/make-context';
 
 const ctx = makeRequestContext('READER', { userId: 'u-1', tenantId: 't-1', tenantSlug: 'acme' });
@@ -215,5 +228,129 @@ describe('analyzeParcelRisk — risk levels', () => {
         const result = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
 
         expect(result.overall).toBe(expected);
+    });
+});
+
+
+describe('analyzeBlockRisk — a partial answer must say so (#2631)', () => {
+    /** A cached per-parcel result, so no Earth Engine call is needed. */
+    const cached = (id: string, overall: 'good' | 'watch' | 'stress' | 'unknown') =>
+        JSON.stringify({
+            parcelId: id,
+            name: id,
+            areaHa: 1,
+            cropType: 'WHEAT',
+            configured: true,
+            ndvi: 0.7,
+            ndmi: 0.2,
+            vegetation: overall,
+            moisture: 'good',
+            overall,
+            acquiredDate: '2026-07-18',
+            generatedAt: NOW.toISOString(),
+        });
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        redisInstance = { get: redisGet, set: redisSet };
+        mockIsGeeConfigured.mockReturnValue(true);
+        mockLocationGetById.mockResolvedValue({ id: 'loc-1', name: 'Голямо поле' });
+    });
+
+    it('reports analysed BELOW total when the block exceeds the bound', async () => {
+        // The property the batch exists for. `RiskLevel` already has an
+        // `unknown` member, so a caller counting levels would score the 6
+        // un-analysed parcels as merely unknown — and "0 stressed" across 24
+        // of 30 parcels reads as a clean bill of health for a farm nobody
+        // fully looked at.
+        const ids = Array.from({ length: MAX_BATCH_PARCELS }, (_, i) => ({
+            id: `p-${i}`,
+            name: `P${i}`,
+        }));
+        mockListIdsForLocation.mockResolvedValue(ids);
+        mockCountForLocation.mockResolvedValue(30);
+        redisGet.mockImplementation(async (k) => cached(k.split(':')[3], 'good'));
+
+        const res = await analyzeBlockRisk(ctx, 'loc-1', { now: NOW });
+
+        expect({ analysed: res.analysed, total: res.total }).toEqual({
+            analysed: MAX_BATCH_PARCELS,
+            total: 30,
+        });
+        expect(res.analysed).toBeLessThan(res.total);
+        // The bound reached the REPOSITORY, rather than being applied after a
+        // full read — the whole point of `listIdsForLocation` taking `take`.
+        expect(mockListIdsForLocation).toHaveBeenCalledWith(
+            expect.anything(),
+            ctx,
+            'loc-1',
+            MAX_BATCH_PARCELS,
+        );
+        // Every parcel was a cache hit, so no satellite call happened.
+        expect(mockGetIndexMeansForPolygon).not.toHaveBeenCalled();
+    });
+
+    it('a block that does not exist REFUSES, rather than reading as a block with no parcels', async () => {
+        // The two answers are "we could not find your block" and "your block
+        // has nothing to worry about". Returning the second for the first is
+        // a confident all-clear about a farm we never found.
+        mockLocationGetById.mockResolvedValue(null);
+        await expect(analyzeBlockRisk(ctx, 'nope', { now: NOW })).rejects.toThrow(
+            /not found/i,
+        );
+        expect(mockListIdsForLocation).not.toHaveBeenCalled();
+    });
+
+    it('EXCLUDES a parcel whose analysis throws, rather than substituting `unknown`', async () => {
+        mockListIdsForLocation.mockResolvedValue([
+            { id: 'p-1', name: 'P1' },
+            { id: 'p-2', name: 'P2' },
+            { id: 'p-3', name: 'P3' },
+        ]);
+        mockCountForLocation.mockResolvedValue(3);
+        // p-2 vanished between the id query and the analysis.
+        redisGet.mockImplementation(async (k) => {
+            const id = k.split(':')[3];
+            return id === 'p-2' ? null : cached(id, 'good');
+        });
+        mockParcelFindFirst.mockResolvedValue(null); // → PARCEL_NOT_FOUND for p-2
+
+        const res = await analyzeBlockRisk(ctx, 'loc-1', { now: NOW });
+
+        // Dropped from `parcels`, so `analysed` falls and `total` does not —
+        // a synthetic `unknown` row would claim p-2 was looked at.
+        expect({ analysed: res.analysed, total: res.total }).toEqual({ analysed: 2, total: 3 });
+        expect(res.parcels.map((p) => p.parcelId).sort()).toEqual(['p-1', 'p-3']);
+        // counts sums to ANALYSED, never to total.
+        const summed = Object.values(res.counts).reduce((a, b) => a + b, 0);
+        expect(summed).toBe(res.analysed);
+    });
+
+    it('reports the WORST level across the analysed parcels', async () => {
+        mockListIdsForLocation.mockResolvedValue([
+            { id: 'p-1', name: 'P1' },
+            { id: 'p-2', name: 'P2' },
+            { id: 'p-3', name: 'P3' },
+        ]);
+        mockCountForLocation.mockResolvedValue(3);
+        redisGet.mockImplementation(async (k) => {
+            const id = k.split(':')[3];
+            return cached(id, id === 'p-2' ? 'stress' : 'good');
+        });
+
+        const res = await analyzeBlockRisk(ctx, 'loc-1', { now: NOW });
+        expect(res.worst).toBe('stress');
+        expect(res.counts).toEqual({ unknown: 0, good: 2, watch: 0, stress: 1 });
+        // And a caller can NAME the stressed parcel rather than report a count.
+        expect(res.parcels.filter((p) => p.overall === 'stress').map((p) => p.parcelId)).toEqual([
+            'p-2',
+        ]);
+    });
+
+    it('asserts the read policy', async () => {
+        mockListIdsForLocation.mockResolvedValue([]);
+        mockCountForLocation.mockResolvedValue(0);
+        await analyzeBlockRisk(ctx, 'loc-1', { now: NOW });
+        expect(mockAssertCanRead).toHaveBeenCalledWith(ctx);
     });
 });
