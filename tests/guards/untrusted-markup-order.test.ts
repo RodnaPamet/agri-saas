@@ -34,6 +34,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { blankNonCode } from '../helpers/blank-non-code';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
 /*
@@ -59,13 +60,18 @@ function aiFiles(): { rel: string; src: string }[] {
     }));
 }
 
-/** Comments stripped, so a docblock explaining the hazard is not a call. */
+/**
+ * Comments blanked, so a docblock explaining the hazard is not read as a call.
+ *
+ * `blankNonCode` rather than a local stripper, and two META-guards were right
+ * to refuse mine. #1774 wants every source-scanning guard on the shared
+ * helper; #1497 wants LINE comments stripped before block ones, and mine did
+ * block first — which mangles a line comment containing a block opener. The
+ * shared one also BLANKS rather than deletes, so every offset and line number
+ * survives, and it handles astral characters by code unit (#2106).
+ */
 function code(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .split('\n')
-        .map((l) => l.replace(/\/\/.*$/, ''))
-        .join('\n');
+    return blankNonCode(src);
 }
 
 describe('external-author text uses the strip-first helper', () => {
@@ -93,7 +99,6 @@ describe('external-author text uses the strip-first helper', () => {
             .filter(({ src }) => src.includes('MarketNewsItem'))
             .map(({ rel, src }) => {
                 const body = code(src);
-                const markup = (body.match(MARKUP_CALL) ?? []).length;
                 const plain = (body.match(PLAIN_CALL) ?? []).length;
                 return { rel, plain };
             })
