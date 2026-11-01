@@ -63,6 +63,21 @@ model Promotion {
   mediaUrl    String?
   /// Curated category: "culture" | "fertilizer" | "seeds" | "products" | "service".
   category    String    @default("service")
+  /// The БАБХ registration number, when this promotion is for a ПРЗ.
+  ///
+  /// NULL means "not a plant protection product", and that distinction is a
+  /// COMPLIANCE INPUT rather than a tidiness one: Reg. (EC) 1107/2009 Art 66
+  /// puts specific requirements on advertising a ПРЗ — prescribed safety
+  /// wording, prohibited claim types — and free text cannot tell a pesticide
+  /// from a fertiliser. Withholding ПРЗ promotions until their wording is
+  /// configured is a one-line predicate with this column and impossible
+  /// without it.
+  ///
+  /// Set by the owner at REVIEW time, resolved against `PppRegisterEntry`.
+  /// Deliberately not derived from the AI read of a supplier leaflet: a
+  /// misread registration number would silently reclassify a pesticide as a
+  /// fertiliser, which is the one error in this feature that matters.
+  pppRegistrationNo String?
   ctaUrl      String?
   /// Editorial gate — null means draft. Set when support publishes.
   publishedAt DateTime?

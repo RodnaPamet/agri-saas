@@ -161,6 +161,134 @@ describe('OpenAiCompatibleProvider usage', () => {
         expect(out.usage).toEqual({ promptTokens: 30, completionTokens: 20, totalTokens: 50 });
     });
 
+    /**
+     * #2669 — the two providers report prompt caching under OPPOSITE
+     * conventions, and the cost model multiplies one field by one rate.
+     */
+    describe('prompt cache accounting (#2669)', () => {
+        const claude = () => new ClaudeProvider({ apiKey: 'k', model: 'claude-opus-4-8' });
+        const openai = () =>
+            new OpenAiCompatibleProvider({
+                backend: 'groq',
+                baseURL: 'https://api.groq.com/openai/v1',
+                apiKey: 'k',
+                model: 'llama-3.3-70b-versatile',
+            });
+
+        it('THE EQUIVALENCE: one real situation, two conventions, one answer', async () => {
+            // 1000 prompt tokens of which 800 were served from cache.
+            //
+            // Anthropic EXCLUDES the cached part from `input_tokens`, so it
+            // sends 200. OpenAI INCLUDES it in `prompt_tokens`, so it sends
+            // 1000 with an 800 subset. Both must arrive as the same AiUsage,
+            // because `cost.ts` multiplies `promptTokens` by the full input
+            // rate and `assertAiBudget` sums it against a plan limit — a field
+            // that means "full-rate tokens" on one backend and "all prompt
+            // tokens" on the other is wrong for one of them and errors on
+            // neither.
+            anthropicCreate.mockResolvedValue({
+                content: [{ type: 'text', text: 'x' }],
+                usage: {
+                    input_tokens: 200,
+                    output_tokens: 10,
+                    cache_read_input_tokens: 800,
+                    cache_creation_input_tokens: 0,
+                },
+                stop_reason: 'end_turn',
+            });
+            openaiCreate.mockResolvedValue({
+                choices: [{ message: { content: 'x', tool_calls: [] } }],
+                usage: {
+                    prompt_tokens: 1000,
+                    completion_tokens: 10,
+                    prompt_tokens_details: { cached_tokens: 800 },
+                },
+            });
+
+            const a = await claude().complete({ messages: [{ role: 'user', content: 'hi' }] });
+            const o = await openai().complete({ messages: [{ role: 'user', content: 'hi' }] });
+
+            expect(a.usage!.promptTokens).toBe(200);
+            expect(o.usage!.promptTokens).toBe(200);
+            expect(a.usage!.cacheReadTokens).toBe(800);
+            expect(o.usage!.cacheReadTokens).toBe(800);
+            // And the full-rate total agrees, which is what gets priced.
+            expect(a.usage!.totalTokens).toBe(o.usage!.totalTokens);
+        });
+
+        it('null means ASKED AND NO CACHE (0); absent means NOT REPORTED (undefined)', async () => {
+            // The discriminator the whole issue is about: a hit rate averaged
+            // over calls that never reported is a fiction, so the two cannot
+            // collapse to the same value.
+            anthropicCreate.mockResolvedValue({
+                content: [{ type: 'text', text: 'x' }],
+                usage: {
+                    input_tokens: 50,
+                    output_tokens: 5,
+                    cache_read_input_tokens: null,
+                    cache_creation_input_tokens: null,
+                },
+                stop_reason: 'end_turn',
+            });
+            const told = await claude().complete({ messages: [{ role: 'user', content: 'hi' }] });
+            expect(told.usage!.cacheReadTokens).toBe(0);
+
+            anthropicCreate.mockResolvedValue({
+                content: [{ type: 'text', text: 'x' }],
+                usage: { input_tokens: 50, output_tokens: 5 },
+                stop_reason: 'end_turn',
+            });
+            const silent = await claude().complete({ messages: [{ role: 'user', content: 'hi' }] });
+            expect(silent.usage!.cacheReadTokens).toBeUndefined();
+        });
+
+        it('a cache WRITE is reported, and only Anthropic has the concept', async () => {
+            anthropicCreate.mockResolvedValue({
+                content: [{ type: 'text', text: 'x' }],
+                usage: {
+                    input_tokens: 10,
+                    output_tokens: 5,
+                    cache_read_input_tokens: 0,
+                    cache_creation_input_tokens: 1200,
+                },
+                stop_reason: 'end_turn',
+            });
+            const a = await claude().complete({ messages: [{ role: 'user', content: 'hi' }] });
+            expect(a.usage!.cacheWriteTokens).toBe(1200);
+
+            // These hosts do not charge for a write, so the field stays
+            // undefined — "no such concept" is not "we measured zero".
+            openaiCreate.mockResolvedValue({
+                choices: [{ message: { content: 'x', tool_calls: [] } }],
+                usage: {
+                    prompt_tokens: 100,
+                    completion_tokens: 5,
+                    prompt_tokens_details: { cached_tokens: 40 },
+                },
+            });
+            const o = await openai().complete({ messages: [{ role: 'user', content: 'hi' }] });
+            expect(o.usage!.cacheWriteTokens).toBeUndefined();
+            expect(o.usage!.cacheReadTokens).toBe(40);
+        });
+
+        it('a host reporting a cached count ABOVE its own prompt total cannot go negative', async () => {
+            // Defensive rather than observed: `Math.max(0, …)` is the kind of
+            // clamp that is invisible until a host is inconsistent, and a
+            // negative promptTokens would flow into a cost multiplication.
+            openaiCreate.mockResolvedValue({
+                choices: [{ message: { content: 'x', tool_calls: [] } }],
+                usage: {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                    prompt_tokens_details: { cached_tokens: 999 },
+                },
+            });
+            const o = await openai().complete({ messages: [{ role: 'user', content: 'hi' }] });
+            expect(o.usage!.promptTokens).toBe(0);
+            expect(o.usage!.totalTokens).toBe(5);
+        });
+    });
+
     it('estimates usage when the host omits the usage object', async () => {
         openaiCreate.mockResolvedValue({
             choices: [{ message: { content: 'abcd', tool_calls: [] } }], // 4 chars → 1 token

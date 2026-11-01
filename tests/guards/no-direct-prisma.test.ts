@@ -180,6 +180,21 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
     // through `runInTenantContext` so `UsageEvent`'s FORCED insert policy
     // applies. Reads being cross-tenant does not make writes so.
     'usage-insights.ts',
+    // #2664 — `promotion-disclosure.ts` reads PLATFORM promotions, which are
+    // tenantless by design: the owner loads them once for every farm, so
+    // `Promotion` carries no tenantId and there is no RLS arm to run under.
+    // Same situation as the moderation console below.
+    //
+    // What stands in for tenant scoping is that it reads NOTHING tenant-scoped:
+    // `Promotion` and `Company` only, selected by id, returning three fields —
+    // advertiser name, a ПРЗ flag, and configured legal wording. There is no
+    // farm data in the result to confine.
+    //
+    // Worth knowing while reviewing a change here: because the table is
+    // tenantless there is no backstop behind the query at all. For every
+    // tenant read in this codebase RLS would catch a dropped filter; here the
+    // `where` IS the entire control. Same inversion the account export has.
+    'promotion-disclosure.ts',
         // P3.6 / agrent-ios — `my-farms.ts` answers "which farms are mine",
         // so there is no tenant to scope to: that IS the question. And
         // `runInUserContext` cannot serve it — `TenantMembership`'s only

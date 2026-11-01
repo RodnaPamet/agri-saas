@@ -109,7 +109,24 @@ export interface BulkTaskSummaryTarget {
 
 export interface BulkTaskSummaryOutcome {
     status: 'created' | 'duplicate' | 'empty';
-    notification?: { id: string; title: string; message: string; linkUrl: string };
+    notification?: {
+        id: string;
+        title: string;
+        message: string;
+        /**
+         * The PUSH body — #1999. Here it is IDENTICAL to `message`, and the
+         * field exists anyway.
+         *
+         * Every `bulkTask` body interpolates `{count}` and nothing else, so
+         * there is no farmer-written text to withhold: «Възложени Ви са 3
+         * задачи.» names no task. Reusing `message` would therefore be
+         * correct today — and it would make the rule "a push body comes from
+         * `pushBody`" have an exception, which is what a guard cannot check
+         * and a future producer cannot see. One uniform rule, one total guard.
+         */
+        pushBody: string;
+        linkUrl: string;
+    };
 }
 
 /**
@@ -210,5 +227,5 @@ export async function createBulkTaskSummaryNotification(
         publishNotificationEvent(target.tenantId, target.recipientUserId, { id: row.id }),
     );
 
-    return { status: 'created', notification: { id: row.id, title, message, linkUrl } };
+    return { status: 'created', notification: { id: row.id, title, message, pushBody: message, linkUrl } };
 }

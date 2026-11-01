@@ -180,14 +180,53 @@ export class OpenAiCompatibleProvider implements AiProvider {
      * host omitted the usage object.
      */
     private toUsage(
-        sdkUsage: { prompt_tokens?: number; completion_tokens?: number } | null | undefined,
+        sdkUsage:
+            | {
+                  prompt_tokens?: number;
+                  completion_tokens?: number;
+                  prompt_tokens_details?: { cached_tokens?: number } | null;
+              }
+            | null
+            | undefined,
         promptMessages: ChatMessage[],
         completionText: string,
     ): AiUsage {
         const input = sdkUsage?.prompt_tokens;
         const output = sdkUsage?.completion_tokens;
         if (typeof input === 'number' && typeof output === 'number') {
-            return { promptTokens: input, completionTokens: output, totalTokens: input + output };
+            /**
+             * The OPPOSITE convention to Anthropic's, and the reason
+             * `promptTokens` is reduced here but not there (#2669).
+             *
+             * OpenAI's `prompt_tokens` INCLUDES `prompt_tokens_details
+             * .cached_tokens` as a subset of itself; Anthropic's
+             * `input_tokens` EXCLUDES its cache fields. Carrying both through
+             * unchanged would make `promptTokens` mean "full-rate tokens" on
+             * one provider and "all prompt tokens" on the other — and
+             * `cost.ts` multiplies it by one rate while `assertAiBudget` sums
+             * it against a plan limit. Neither would error; both would be
+             * wrong for one backend, which is the shape that survives review.
+             *
+             * No cache write field exists here: these hosts do not charge for
+             * one, so `cacheWriteTokens` stays undefined rather than 0 —
+             * "this provider has no such concept" is not "we measured zero".
+             */
+            const cached = sdkUsage?.prompt_tokens_details?.cached_tokens;
+            // Absent means the host reported nothing — most of these hosts
+            // (groq, ollama, openrouter) send no `prompt_tokens_details` at
+            // all. Then `prompt_tokens` has no cached subset to remove and
+            // there is no measurement to report, so BOTH the subtraction and
+            // the field are skipped rather than defaulted to 0.
+            if (typeof cached !== 'number') {
+                return { promptTokens: input, completionTokens: output, totalTokens: input + output };
+            }
+            const fullRate = Math.max(0, input - cached);
+            return {
+                promptTokens: fullRate,
+                completionTokens: output,
+                totalTokens: fullRate + output,
+                cacheReadTokens: cached,
+            };
         }
         const flat: AiMessage[] = promptMessages.map((m): AiMessage => ({
             role: 'user',

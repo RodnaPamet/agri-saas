@@ -52,6 +52,7 @@ import {
     normalizeText,
 } from '@/lib/cache/ai-cache';
 import { AiProviderError } from './provider/openai-compatible-provider';
+import { httpStatusOf, isProviderRejection } from './provider/error-status';
 import { ClaudeProvider } from './provider/claude-provider';
 import { OpenAiCompatibleProvider } from './provider/openai-compatible-provider';
 import { inferBackend } from './provider/index';
@@ -283,9 +284,11 @@ function isTransient(err: unknown): boolean {
     if (err instanceof Error) {
         const msg = err.message.toLowerCase();
         if (msg.includes('timeout') || msg.includes('aborted') || msg.includes('econnreset')) return true;
-        // OpenAI/Anthropic SDK errors carry a numeric `status`.
-        const status = (err as { status?: number }).status;
-        if (typeof status === 'number' && (status === 429 || status >= 500)) return true;
+        // OpenAI/Anthropic SDK errors carry a numeric `status`. Read through
+        // the shared helper so this and the halt-code decision in the stream
+        // route cannot disagree about where the status lives (#2655).
+        const status = httpStatusOf(err);
+        if (status !== undefined && (status === 429 || status >= 500)) return true;
     }
     return false;
 }
@@ -467,6 +470,39 @@ export async function completeWithRouting<T = unknown>(
 
             const targets = orderTargets(route, preferLocal);
             let lastError: unknown;
+            /**
+             * The most DIAGNOSTIC failure, which is not the most recent one
+             * (#2655).
+             *
+             * `lastError` is overwritten on every attempt, so the error that
+             * escapes is whichever target happened to be tried LAST. During the
+             * #2654 outage that masked the cause: claude refused with a 400
+             * naming a malformed message history, then `ollama` and
+             * `openrouter` were tried and failed to connect — because this
+             * deployment runs no ollama container and holds no openrouter key —
+             * so the error that reached the stream route was a connection
+             * failure, and the farmer was told the model could not be reached.
+             *
+             * A 4xx means a provider was REACHED and rejected what we sent, so
+             * it is about OUR request and survives. A connection failure to a
+             * target that may not be configured at all is about the
+             * deployment's shape and says nothing about the question.
+             *
+             * The FIRST rejection wins rather than the last, so the primary
+             * target's verdict is not overwritten by a fallback complaining
+             * about a request shape it never supported.
+             *
+             * The tradeoff, stated because it is real: if the primary fails 5xx
+             * and a fallback then rejects with 4xx, the fallback's complaint is
+             * what gets reported. That is still a true statement about a
+             * request we sent, and the alternative — reporting the connection
+             * failure — is the behaviour this exists to fix.
+             */
+            let rejectionError: unknown;
+            const noteFailure = (err: unknown) => {
+                lastError = err;
+                if (rejectionError === undefined && isProviderRejection(err)) rejectionError = err;
+            };
 
             for (let t = 0; t < targets.length; t++) {
                 const target = targets[t];
@@ -474,7 +510,7 @@ export async function completeWithRouting<T = unknown>(
                 try {
                     provider = providerForTarget(target);
                 } catch (err) {
-                    lastError = err;
+                    noteFailure(err);
                     logger.warn('ai routing target unavailable, trying next', {
                         component: 'ai',
                         task,
@@ -530,7 +566,7 @@ export async function completeWithRouting<T = unknown>(
 
                         return result;
                     } catch (err) {
-                        lastError = err;
+                        noteFailure(err);
                         const transient = isTransient(err);
                         const moreRetries = attempt < route.retries;
                         const moreTargets = t < targets.length - 1;
@@ -565,8 +601,10 @@ export async function completeWithRouting<T = unknown>(
                 outcome: 'error',
             });
 
-            throw lastError instanceof Error
-                ? lastError
+            // The rejection if there was one, else the most recent failure.
+            const reported = rejectionError ?? lastError;
+            throw reported instanceof Error
+                ? reported
                 : new AiProviderError(route.backend, `All routing targets failed for task "${task}".`);
         },
     );
@@ -629,9 +667,59 @@ async function finishCompletion(ctx: RequestContext, input: FinishInput): Promis
             'ai.cost_micros': costMicros,
             'ai.latency_ms': input.latencyMs,
             'ai.cache_hit': input.cacheHit,
+            // PROMPT cache, which is not `ai.cache_hit` — see the log below.
+            ...(usage.cacheReadTokens !== undefined
+                ? { 'ai.tokens.cache_read': usage.cacheReadTokens }
+                : {}),
+            ...(usage.cacheWriteTokens !== undefined
+                ? { 'ai.tokens.cache_write': usage.cacheWriteTokens }
+                : {}),
         });
     } catch {
         // OTel absent — span attrs are best-effort.
+    }
+
+    /**
+     * The PROMPT cache, reported so a hit RATE is computable — #2669.
+     *
+     * This is NOT `cacheHit`, and conflating the two is the trap this comment
+     * exists for: `cacheHit` means the Redis RESPONSE cache (no provider call
+     * happened at all), while these are Anthropic's prompt-prefix cache inside
+     * a call that did happen. One is "we did not ask the model"; the other is
+     * "we asked, and it did not have to re-read the system prompt and tool
+     * definitions".
+     *
+     * A LOG LINE rather than a new instrument, deliberately: this deployment
+     * runs no OTel→Prometheus→Alertmanager pipeline, so a histogram reaches
+     * nobody while a structured log line does (the container ships structured
+     * logs since #1940). The span attributes above are set anyway, for the day
+     * that pipeline exists.
+     *
+     * Skipped entirely when the provider reported nothing, because `undefined`
+     * and `0` mean different things here — "we cannot tell" versus "we asked
+     * and there was no hit" — and a rate averaged over the first is a fiction.
+     * `cache_control` was once silently inert after a rename mangled it and the
+     * API ignored the unknown field; the only reason that was survivable is
+     * that nothing depended on it, and the point of this line is to make the
+     * next occurrence visible rather than survivable.
+     */
+    if (usage.cacheReadTokens !== undefined) {
+        const fullRate = usage.promptTokens;
+        const cached = usage.cacheReadTokens;
+        const written = usage.cacheWriteTokens ?? 0;
+        logger.info('ai.prompt_cache', {
+            component: 'ai',
+            task: input.task,
+            model: input.model,
+            backend: input.backend,
+            promptTokensFullRate: fullRate,
+            cacheReadTokens: cached,
+            cacheWriteTokens: written,
+            // The reading, so nobody has to recompute it from three numbers:
+            // what share of the prompt the model did not have to re-read.
+            cacheReadShare:
+                cached + fullRate > 0 ? Math.round((cached / (cached + fullRate)) * 100) : 0,
+        });
     }
 
     // Metrics.

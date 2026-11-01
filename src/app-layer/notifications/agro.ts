@@ -75,6 +75,27 @@ interface AgroCopy {
     titleKey: string;
     bodyKey: string;
     bodyWithDetailKey: string;
+    /**
+     * The PUSH body — #1999. Takes NO parameters, deliberately.
+     *
+     * `bodyKey` and `bodyWithDetailKey` both interpolate `{label}`, which is
+     * the LOCATION NAME the farmer chose («блок 3 до реката»). That is right
+     * for the bell and the web UI and wrong for an APNs alert, which Apple can
+     * read — so the push body names no block.
+     *
+     * Unlike the assignment notifications, there is no identifier to keep: a
+     * Location has no user-facing key the way a Task has `T-123`. The deep
+     * link carries the location id, so tapping the notification still lands on
+     * the right block; the cost is that a farm with several blocks cannot tell
+     * which one from the lock screen. Owner ruling 2026-11-01.
+     *
+     * Every kind has one even though only SPRAY_WINDOW_WARNING is pushed
+     * today, because the alternative is a kind whose push body resolves to the
+     * empty string — and an empty body is indistinguishable from a deliberate
+     * title-only alert, so the next producer to push `DISEASE_RISK` would ship
+     * a blank notification and no test would notice.
+     */
+    pushBodyKey: string;
 }
 
 const COPY: Record<AgroNotificationKind, AgroCopy> = {
@@ -82,16 +103,19 @@ const COPY: Record<AgroNotificationKind, AgroCopy> = {
         titleKey: 'notifications.agro.sprayWindow.title',
         bodyKey: 'notifications.agro.sprayWindow.body',
         bodyWithDetailKey: 'notifications.agro.sprayWindow.bodyWithDetail',
+        pushBodyKey: 'notifications.agro.sprayWindow.pushBody',
     },
     DISEASE_RISK_RAISED: {
         titleKey: 'notifications.agro.diseaseRisk.title',
         bodyKey: 'notifications.agro.diseaseRisk.body',
         bodyWithDetailKey: 'notifications.agro.diseaseRisk.bodyWithDetail',
+        pushBodyKey: 'notifications.agro.diseaseRisk.pushBody',
     },
     AGRO_COPILOT_READY: {
         titleKey: 'notifications.agro.copilot.title',
         bodyKey: 'notifications.agro.copilot.body',
         bodyWithDetailKey: 'notifications.agro.copilot.bodyWithDetail',
+        pushBodyKey: 'notifications.agro.copilot.pushBody',
     },
 };
 
@@ -126,8 +150,15 @@ export function buildAgroDedupeKey(
 
 export interface AgroNotificationOutcome {
     status: 'created' | 'duplicate';
-    /** Notification copy, present only when `status === 'created'` (for Web Push fan-out). */
-    notification?: { title: string; message: string; linkUrl: string };
+    /** Notification copy, present only when `status === 'created'`. */
+    notification?: {
+        title: string;
+        /** For the bell and the web UI — names the location. */
+        message: string;
+        /** For a PUSH payload — names no location (#1999). */
+        pushBody: string;
+        linkUrl: string;
+    };
 }
 
 export async function createAgroSignalNotification(
@@ -175,6 +206,14 @@ export async function createAgroSignalNotification(
     }
 
     return result.count > 0
-        ? { status: 'created', notification: { title: row.title, message: row.message, linkUrl: row.linkUrl } }
+        ? {
+              status: 'created',
+              notification: {
+                  title: row.title,
+                  message: row.message,
+                  pushBody: await translateFor(target.locale, copy.pushBodyKey),
+                  linkUrl: row.linkUrl,
+              },
+          }
         : { status: 'duplicate' };
 }

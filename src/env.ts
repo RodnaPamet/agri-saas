@@ -651,6 +651,19 @@ export const env = createEnv({
         // every farm's owner write access to every other farm's feed.
         PLATFORM_TENANT_SLUG: z.string().min(1).optional(),
 
+        // #2664 — the prescribed safety wording that Reg. (EC) 1107/2009 Art 66
+        // requires on advertising for plant protection products, in Bulgarian.
+        //
+        // UNSET = every ПРЗ promotion is withheld from the assistant (fail
+        // closed). Never default this, and in particular never default it to a
+        // plausible paraphrase: wording that LOOKS official and is not is worse
+        // than none, because it reads as compliance to everyone who sees it.
+        // The authoritative text is a БАБХ / legal question, not a thing to
+        // write from memory.
+        //
+        // A deployment that promotes no pesticides never needs to set it.
+        PPP_ADVERTISING_SAFETY_BG: z.string().min(1).optional(),
+
         // Contact address shown on the public /privacy page. The data
         // CONTROLLER is the organisation operating this deployment, not the
         // software, so the address cannot be baked in. UNSET renders no contact
@@ -944,6 +957,7 @@ export const env = createEnv({
         PLATFORM_ADMIN_API_KEY: process.env.PLATFORM_ADMIN_API_KEY,
         PLATFORM_ADMIN_API_KEY_PREVIOUS: process.env.PLATFORM_ADMIN_API_KEY_PREVIOUS,
         PLATFORM_TENANT_SLUG: process.env.PLATFORM_TENANT_SLUG,
+        PPP_ADVERTISING_SAFETY_BG: process.env.PPP_ADVERTISING_SAFETY_BG,
         PRIVACY_CONTACT_EMAIL: process.env.PRIVACY_CONTACT_EMAIL,
         DSA_CONTACT_EMAIL: process.env.DSA_CONTACT_EMAIL,
         APPLE_TEAM_ID: process.env.APPLE_TEAM_ID,
