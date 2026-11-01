@@ -48,9 +48,18 @@
  *      sees it. This one is the backstop that matters; the other four only
  *      reduce how much a reviewer has to reject.
  *
- * Every news item is wrapped in `sanitizeUntrusted()` before it enters the
- * prompt. RSS bodies are attacker-influenceable, and a hostile feed could
+ * Every news item is wrapped in `sanitizeUntrustedMarkup()` before it enters
+ * the prompt. RSS bodies are attacker-influenceable, and a hostile feed could
  * otherwise inject a fabricated scheme with a fabricated deadline.
+ *
+ * The `Markup` variant, not the plain one, and that was a live gap rather than
+ * a style choice (#2698): an RSS `<description>` routinely carries HTML, and
+ * the plain `sanitizeUntrusted` has ONE anchored pattern among several
+ * unanchored ones — so a single leading tag masked the role-spoof defang while
+ * the "ignore previous instructions" family kept working. The mitigation this
+ * docblock claims was therefore INERT for the role-spoof class on any
+ * HTML-bearing feed, and backstop 5 (everything lands PROPOSED for a human) was
+ * carrying it alone.
  *
  * @module app-layer/ai/support-scheme-extractor
  */
@@ -58,7 +67,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
-import { sanitizeUntrusted } from './safety/sanitize-untrusted';
+import { sanitizeUntrustedMarkup } from './safety/sanitize-untrusted';
 import { withLocaleInstruction } from './locale-instruction';
 import { isPlatformAiSpendAllowed, recordPlatformAiUsage } from './platform-budget';
 import {
@@ -168,8 +177,8 @@ function buildUserContent(items: NewsPolicyItemInput[]): string {
     for (const item of items) {
         // RSS bodies are attacker-influenceable; a hostile feed could otherwise
         // inject a fabricated scheme with a fabricated deadline.
-        const title = sanitizeUntrusted(item.title);
-        const summary = item.summary ? sanitizeUntrusted(item.summary) : '';
+        const title = sanitizeUntrustedMarkup(item.title);
+        const summary = item.summary ? sanitizeUntrustedMarkup(item.summary) : '';
         lines.push(`=== UNTRUSTED NEWS ITEM id="${item.id}" START ===`);
         lines.push(`Published: ${item.publishedAt}`);
         lines.push(`Title: ${title}`);
