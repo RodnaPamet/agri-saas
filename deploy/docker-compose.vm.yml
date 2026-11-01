@@ -175,6 +175,19 @@ services:
     env_file:
       - .env
     environment:
+      # ── #2682 — a log copy that OUTLIVES the container ──
+      #
+      # `docker logs` is the only copy today, and Watchtower REMOVES the
+      # predecessor on every image publish, so the window is "until the next
+      # merge" — hours, and not a schedule anybody controls. Two production
+      # incidents were lost that way in one week, and the incentive is backwards:
+      # fixing an incident publishes an image, which destroys the evidence for
+      # the next one.
+      #
+      # ADDITIVE. stdout is unchanged, so `docker logs`, the E2E audit-write gate
+      # and every operator habit keep working. Unset it and the logger is
+      # byte-identical to the previous image.
+      LOG_FILE_PATH: /var/log/agrent/app.jsonl
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-agrent_production}?schema=public&pgbouncer=true
       DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
@@ -198,6 +211,10 @@ services:
       UPLOAD_DIR: /data/uploads
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}"
     volumes:
+      # #2682. A NAMED volume, not a host bind: this VM runs three products’
+      # containers, and a bind mount into an arbitrary host directory is how one
+      # of them fills a disk the others share.
+      - applogs:/var/log/agrent
       - uploads:/data/uploads
     expose:
       - "3000"
@@ -253,6 +270,19 @@ services:
     env_file:
       - .env
     environment:
+      # ── #2682 — a log copy that OUTLIVES the container ──
+      #
+      # `docker logs` is the only copy today, and Watchtower REMOVES the
+      # predecessor on every image publish, so the window is "until the next
+      # merge" — hours, and not a schedule anybody controls. Two production
+      # incidents were lost that way in one week, and the incentive is backwards:
+      # fixing an incident publishes an image, which destroys the evidence for
+      # the next one.
+      #
+      # ADDITIVE. stdout is unchanged, so `docker logs`, the E2E audit-write gate
+      # and every operator habit keep working. Unset it and the logger is
+      # byte-identical to the previous image.
+      LOG_FILE_PATH: /var/log/agrent/worker.jsonl
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-agrent_production}?schema=public&pgbouncer=true
       DIRECT_DATABASE_URL: postgresql://${POSTGRES_USER:-inflect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-agrent_production}?schema=public
@@ -276,6 +306,10 @@ services:
       UPLOAD_DIR: /data/uploads
       DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}"
     volumes:
+      # #2682. A NAMED volume, not a host bind: this VM runs three products’
+      # containers, and a bind mount into an arbitrary host directory is how one
+      # of them fills a disk the others share.
+      - applogs:/var/log/agrent
       - uploads:/data/uploads
     # Proves the worker is CONSUMING, not merely running (#809). This service
     # had no healthcheck at all, so `docker inspect` reported health=none while
@@ -390,6 +424,8 @@ networks:
     driver: bridge
 
 volumes:
+  # #2682 — application log copy that survives container replacement.
+  applogs:
   pgdata:
     name: agrent-pgdata
   redisdata:

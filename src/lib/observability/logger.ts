@@ -72,10 +72,49 @@ function buildTransport(): pino.TransportSingleOptions | undefined {
 const transport = buildTransport();
 
 /**
- * Base Pino instance — singleton for the process.
- * Child loggers can be created from this for subsystem-specific bindings.
+ * A SECOND destination that outlives the container (#2682).
+ *
+ * `docker logs` is the only copy of this output today, and it lives inside the
+ * container. Watchtower REPLACES the container on every image publish and
+ * removes the predecessor, so the retention window is "until the next merge" —
+ * hours, and not a schedule anybody controls. Two production incidents were
+ * lost that way in one week, and the incentive is backwards: fixing an incident
+ * publishes an image, which destroys the evidence for the next one.
+ *
+ * Writing to a bind-mounted path survives the container. Nothing else changes:
+ * stdout keeps receiving exactly what it receives now, so `docker logs`,
+ * `check-e2e-audit-writes.mjs` and every operator habit are untouched.
+ *
+ * OPT-IN, and unset is the default. With no `LOG_FILE_PATH` this function
+ * returns undefined and the logger is byte-identical to before — a logging
+ * change that could break a deployment it was meant to help diagnose is not a
+ * trade worth making.
+ *
+ * Failure is SWALLOWED and reported to stderr once. A log destination that
+ * throws takes down the process it was observing, which is the worst possible
+ * direction for this particular feature.
  */
-export const pinoInstance: pino.Logger = pino({
+function buildFileDestination(): pino.DestinationStream | undefined {
+    // Same defensive shape as `isDev` and `logLevel` above: this module is
+    // pre-env-validation infrastructure and may be imported where `process`
+    // does not exist (the Edge runtime).
+    const target =
+        typeof process !== 'undefined' ? process.env?.LOG_FILE_PATH?.trim() : undefined;
+    if (!target) return undefined;
+    try {
+        // `sync: false` — buffered, because a synchronous write per log line on
+        // a shared disk is a latency tax on every request. `mkdir: true` so a
+        // fresh volume does not need provisioning by hand.
+        return pino.destination({ dest: target, sync: false, mkdir: true });
+    } catch (err) {
+        console.error('[logger] LOG_FILE_PATH is set but unusable; continuing on stdout only', err);
+        return undefined;
+    }
+}
+
+const fileDestination = buildFileDestination();
+
+const baseOptions: pino.LoggerOptions = {
     level: logLevel,
     redact: {
         paths: REDACT_PATHS,
@@ -85,8 +124,28 @@ export const pinoInstance: pino.Logger = pino({
     serializers: {
         err: pino.stdSerializers.err,
     },
-    ...(transport ? { transport } : {}),
-});
+};
+
+/**
+ * Base Pino instance — singleton for the process.
+ * Child loggers can be created from this for subsystem-specific bindings.
+ *
+ * Three shapes, and the ORDER of the checks matters: a dev `transport` and a
+ * multistream cannot both be passed, so the file destination is only consulted
+ * when no transport is in play. In development pino-pretty wins, which is
+ * correct — nobody is diagnosing a production incident from a dev machine.
+ */
+export const pinoInstance: pino.Logger = transport
+    ? pino({ ...baseOptions, transport })
+    : fileDestination
+      ? pino(
+            baseOptions,
+            pino.multistream([
+                { stream: process.stdout },
+                { stream: fileDestination },
+            ]),
+        )
+      : pino(baseOptions);
 
 // ── Public API ──
 
