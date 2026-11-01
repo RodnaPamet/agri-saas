@@ -19,6 +19,25 @@
  *                    whole point of having bounds.
  *   `done`         — separates "finished" from "connection open, nothing yet".
  *
+ * ## Both `done` flags are DISCLOSURE, and a client that stops at `halt` loses them
+ *
+ * `truncatedAny` and `partialAny` are not telemetry. `tool-loop.ts` cites them
+ * as the reason one-halt-per-turn is safe: "Truncation is additionally always
+ * reported on `done.truncatedAny`, so it is never silent even when a
+ * higher-precedence halt wins." That argument holds only if the client reads
+ * `done` AFTER a halt.
+ *
+ * It did not. Measured 2026-11-01 (#2649): iOS stopped reading at the halt, so
+ * a `done` after one was dropped unread, and no web consumer exists at all — so
+ * from the flag's introduction until agrent-ios#497 a turn that truncated AND
+ * hit a higher-precedence halt disclosed nothing to anybody. The emitter was
+ * faithful the whole time, which is what made it invisible.
+ *
+ * So: a client MUST continue to `done` after a `halt`, and a new client is
+ * wrong if it treats `halt` as terminal. Said here rather than in a guard
+ * because the web assistant does not exist yet and a guard over absent code
+ * would be a gate narrow enough to always pass.
+ *
  * **`error` is deliberately NOT a member.** Every terminal state a person
  * should see is `refusal`, `halt` or `done`. An `error` event would be a
  * fourth way to end carrying no actionable reason, and the case it would
@@ -80,7 +99,20 @@ export type AssistantStreamEvent =
       }
     | { readonly type: 'refusal'; readonly code: RefusalCode; readonly message: string }
     | { readonly type: 'halt'; readonly code: HaltCode; readonly message: string }
-    | { readonly type: 'done'; readonly truncatedAny: boolean };
+    | {
+          readonly type: 'done';
+          readonly truncatedAny: boolean;
+          /**
+           * Any tool reported its own result INCOMPLETE — #2639.
+           *
+           * Here for `truncatedAny`'s reason, which the tool loop states as a
+           * principle: a fact that makes the answer partial must not be lost
+           * to halt precedence. A turn that was partial AND hit the time
+           * budget reports TIME, and without this the partial half would
+           * vanish entirely.
+           */
+          readonly partialAny: boolean;
+      };
 
 /**
  * `data: <json>\n\n`, with no `event:` field.

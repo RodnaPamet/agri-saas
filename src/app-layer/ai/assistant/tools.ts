@@ -82,6 +82,23 @@ export interface ToolOutcome {
     readonly content: string;
     readonly truncated: boolean;
     /**
+     * The tool's own answer is INCOMPLETE — it did not gather everything that
+     * exists — #2639.
+     *
+     * Set by a tool that KNOWS its result is partial, and collected by the
+     * loop into a coded halt, exactly as `truncated` is. The point is that the
+     * disclosure stops depending on the model: `analyze_block_risk` returns
+     * `analysed`/`total` and its description asks for them, but a description
+     * is a request and the prose is the model's. agrent-ios made the
+     * observation that settles it — the phone renders nothing from the
+     * payload, so the answer prose is the ONLY place the pair can be lost.
+     *
+     * Not inferred from `content`: a flag the tool sets is checkable, where
+     * re-parsing a serialised projection is the `a-detector-reads-the-
+     * serialised-form` problem.
+     */
+    readonly partial?: boolean;
+    /**
      * The links this result supports, built HERE from the rows rather than
      * parsed back out of `content` — which would have to survive truncation
      * and would reintroduce the fabrication risk the server-built design
@@ -124,6 +141,16 @@ interface AssistantTool {
      * CONSUMER of a route-level gate, and carries it the way a route does.
      */
     readonly module?: ModuleKey;
+
+    /**
+     * Whether this tool's result is INCOMPLETE, read off the projection it
+     * just built — #2639.
+     *
+     * Declared on the registry rather than returned from `run`, so the
+     * completeness question is answered beside the projection that knows it
+     * and a guard can see which tools claim to answer it at all.
+     */
+    readonly isPartial?: (result: unknown) => boolean;
 
     /**
      * The proposal KIND this tool prepares, read by `runTool` — #2632.
@@ -623,6 +650,14 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             },
         },
         args: AnalyzeBlockRiskArgs,
+        // `analysed < total` means parcels were never looked at. Reported as a
+        // halt so the person is TOLD, rather than relying on the model having
+        // obeyed the description above.
+        isPartial: (r) => {
+            const x = r as { analysed?: number; total?: number };
+            return typeof x.analysed === 'number' && typeof x.total === 'number'
+                && x.analysed < x.total;
+        },
         run: async (ctx, args) => {
             const a = AnalyzeBlockRiskArgs.parse(args);
             const r = await analyzeBlockRisk(ctx, a.locationId);
@@ -666,6 +701,9 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
         },
         module: 'GRAIN',
         args: GrainCalculatorArgs,
+        // `complete` already folds in both causes — a bounded read hitting its
+        // cap, and rows that could not be valued.
+        isPartial: (r) => (r as { complete?: boolean }).complete === false,
         run: async (ctx) => {
             // Through `buildCalculatorPayload`, which is what the route serves
             // — not a second projection of `getGrainNetWorth`. Two shapings of
@@ -690,7 +728,15 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                 // because the causes differ and only one of them is fixable by
                 // the farmer (a missing price is ours; a missing yield
                 // estimate is theirs).
-                complete: payload.truncated !== true && left === 0,
+                // The 12-row slice counts too. `truncated` and `excluded`
+                // are about what the USECASE could not value; this is about
+                // what the TOOL did not pass on, and a farmer asking "what is
+                // my grain worth" cannot tell the three apart from a total.
+                complete:
+                    payload.truncated !== true
+                    && left === 0
+                    && (payload.rows as unknown[]).length <= 12,
+                commoditiesTotal: (payload.rows as unknown[]).length,
                 truncated: payload.truncated === true,
                 rowsLeftOut: left,
                 leftOutBecause: excluded.slice(0, 8),
@@ -753,6 +799,14 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             },
         },
         args: ListPriceTrendsArgs,
+        // More series than the 8 kept. Found while writing the guard below:
+        // the projection ALREADY returns `seriesTotal`, so the slice was
+        // detectable and silently undisclosed.
+        isPartial: (r) => {
+            const x = r as { series?: unknown[]; seriesTotal?: number };
+            return Array.isArray(x.series) && typeof x.seriesTotal === 'number'
+                && x.seriesTotal > x.series.length;
+        },
         run: async (ctx, args) => {
             const a = ListPriceTrendsArgs.parse(args);
             // The entitlement gate, with a LITERAL capability — #2626.
@@ -977,9 +1031,13 @@ export async function runTool(
         // Built from the ROWS, before serialising — so truncation below cannot
         // silently drop the links for records the model was still shown.
         const links = tool.link ? linksFromRows(tool.link, result) : [];
+        // Computed from the RESULT OBJECT, before serialising. Re-reading it
+        // out of `content` would be the `a-detector-reads-the-serialised-form`
+        // problem, and would additionally have to survive truncation.
+        const partial = tool.isPartial?.(result) === true;
         const full = JSON.stringify(result);
         if (full.length <= TOOL_RESULT_MAX_CHARS) {
-            return { ok: true, content: full, truncated: false, links, proposal };
+            return { ok: true, content: full, truncated: false, links, proposal, partial };
         }
         // Truncated rather than dropped: a partial list is useful and the
         // `truncated` flag is what makes the answer's incompleteness
@@ -988,6 +1046,7 @@ export async function runTool(
             ok: true,
             content: full.slice(0, TOOL_RESULT_MAX_CHARS),
             truncated: true,
+            partial,
             links,
             proposal,
         };
