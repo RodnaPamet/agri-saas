@@ -241,6 +241,23 @@ const RICH_TEXT_COVERAGE: Readonly<
     // own comment says "if this grows, the diff is the conversation". Wiring
     // the sanitiser was about ten lines and left the ratchet at 1, which is
     // the better trade: the debt was ~10 lines of work, not a policy question.
+    // ── AssistantTurn (the conversation window, #2671a) ─────────────
+    //
+    // The ROUTE, not `assistant-conversation.ts`, and that is the whole
+    // reasoning: `sanitizePlainText` is applied where the value is DERIVED —
+    // once, before both the model message and the stored turn — so the two
+    // stay byte-identical and a later recall (#2695) cannot compare a quote
+    // against text the model never saw. A defensive second call inside
+    // `recordTurn` would read as the safer choice and would corrupt any text
+    // carrying an escaped entity: the function decodes `&amp;` LAST, on
+    // purpose, so `&amp;lt;` is `&lt;` on one pass and `<` on two.
+    //
+    // Mutation-proved both ways: removing the two calls from the route fails
+    // the field-level assertion AND the dangling-import one.
+    AssistantTurn: {
+        usecases: ['src/app/api/t/[tenantSlug]/assistant/stream/route.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     Location: { usecases: ['src/app-layer/usecases/location.ts'], sanitizer: 'sanitizePlainText' },
     FeatureFlag: { usecases: ['src/app-layer/usecases/feature-flag-admin.ts'], sanitizer: 'sanitizePlainText' },
 };
@@ -322,14 +339,6 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
     // RICH_TEXT_COVERAGE. Claiming coverage would be false and claiming "not
     // user rich text" would be worse, because both columns ARE user-authored
     // free text and the exemption would outlive the gap.
-    AssistantTurn:
-        'AssistantTurn.content is the person\'s verbatim question (or the '
-        + 'assistant\'s answer), encrypted under the tenant DEK. No writer '
-        + 'exists yet. Ratchet target: the PR that writes turns registers the '
-        + 'usecase here, and note that for a REPLAYED turn the protection that '
-        + 'matters is prompt FENCING rather than sanitisation — a sanitiser '
-        + 'protects a renderer, and a turn re-enters a model. Both are needed; '
-        + 'this registry only tracks the first.',
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -560,10 +569,18 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // same diff rather than left at 3, because slack a later regression
         // can spend is the thing a ratchet exists to refuse.
         //
-        // `AssistantTurn` stays: nothing writes a turn yet. The PR that does
-        // owes this list an entry, and the live-writer assertion is what will
-        // say so.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(2);
+        // Back to 1, and the live-writer assertion said so rather than
+        // anybody remembering: #2671a's `recordTurn` is the writer the note
+        // below was waiting for, and CI tripped on it the same run the window
+        // landed. The entry moved into RICH_TEXT_COVERAGE against the stream
+        // ROUTE — see the reasoning there for why not the usecase.
+        //
+        // 1 is `EvidenceReview`, which is the other KIND of entry: a real gap
+        // with a live writer, not a table shipped one release ahead of its
+        // writer. Lowered in the same diff rather than left at 2, because
+        // slack a later regression can spend is the thing a ratchet exists to
+        // refuse.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {

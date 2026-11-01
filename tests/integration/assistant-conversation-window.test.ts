@@ -47,10 +47,42 @@ beforeAll(async () => {
 
 afterAll(async () => {
     if (!DB_AVAILABLE) return;
+
+    // THE USERS AND TENANTS CANNOT BE REMOVED FROM HERE, and that is
+    // structural rather than an omission in this teardown. Measured against
+    // the test database:
+    //
+    //   • `AuditLog` carries an `audit_log_immutable` TRIGGER and ZERO
+    //     inbound foreign keys. The rows are append-only because the chain
+    //     requires it, so they cannot be deleted at all.
+    //   • `AuditLog.user` is `User? @relation(fields: [userId], …)` with no
+    //     `onDelete`, so it RESTRICTS. The audit extension writes a row per
+    //     conversation and turn created above, carrying the acting user id.
+    //
+    // Those two together mean any suite whose code path writes an audit row
+    // cannot delete its own users — which is why the neighbouring integration
+    // suites wrap teardown in a bare catch and leave rows behind.
+    //
+    // Two things cost real time here and are worth leaving written down.
+    //
+    // FIRST, Prisma reports the trigger's refusal as "Foreign key constraint
+    // violated on the (not available)". There is no such foreign key. I went
+    // looking for one in the schema, found nothing referencing `AuditLog`, and
+    // only a `pg_constraint` / `pg_trigger` probe said what was actually
+    // refusing the statement.
+    //
+    // SECOND, this suite was GREEN locally and failed in CI, and the asymmetry
+    // is the audit write being FAIL-SAFE: the extension logs
+    // `audit.write_failed` and swallows, so locally "no audit rows exist" and
+    // in CI "audit rows exist and pin these users" were the same observation
+    // from the test's side. A local pass on a path guarded by a fail-safe
+    // subsystem says nothing about CI.
+    //
+    // So: remove what this suite OWNS and can remove, and leave the rest
+    // deliberately. The assistant rows are the ones that would otherwise bleed
+    // into another run's window.
     await prisma.assistantTurn.deleteMany({ where: { tenantId: { in: [FARM_A, FARM_B] } } });
     await prisma.assistantConversation.deleteMany({ where: { tenantId: { in: [FARM_A, FARM_B] } } });
-    await prisma.user.deleteMany({ where: { id: { in: [userOne, userTwo] } } });
-    await prisma.tenant.deleteMany({ where: { id: { in: [FARM_A, FARM_B] } } });
     await prisma.$disconnect();
 });
 
