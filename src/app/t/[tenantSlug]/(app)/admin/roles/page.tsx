@@ -576,6 +576,7 @@ export default function CustomRolesPage() {
                         </div>
                     );
                 },
+                meta: { mobileCard: { slot: 'actions' } },
             },
         ]),
         // eslint-disable-next-line react-hooks/exhaustive-deps

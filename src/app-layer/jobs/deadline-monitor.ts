@@ -27,6 +27,7 @@ import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import type { DueItem, DueItemUrgency, JobRunResult } from './types';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
+import { EXCLUDE_DIARY_CONTAINERS } from '@/lib/operations/diary-container';
 
 // ─── Configuration ──────────────────────────────────────────────────
 
@@ -99,6 +100,10 @@ async function scanTasks(
         deletedAt: null,
         status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
         dueAt: { not: null, lte: horizon },
+        // Same as the due-date notifier next door: unreachable today because a
+        // container has no `dueAt`, written down because the clause is what
+        // keeps it unreachable.
+        ...EXCLUDE_DIARY_CONTAINERS,
     };
     if (tenantId) where.tenantId = tenantId;
 

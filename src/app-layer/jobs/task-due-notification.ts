@@ -37,6 +37,7 @@ import {
     type TaskDueWindow,
 } from '../notifications/task-due';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
+import { EXCLUDE_DIARY_CONTAINERS } from '@/lib/operations/diary-container';
 
 // Re-export the shared surface so existing importers (tests, the
 // executor registry) keep resolving it from this module.
@@ -116,6 +117,12 @@ export async function processTaskDueNotifications(
         assigneeUserId: { not: null },
         status: { notIn: [...TERMINAL_WORK_ITEM_STATUSES] },
         dueAt: { gte: horizonStart, lt: horizonEnd },
+        // A recorded activity must never produce a due-date email. It cannot
+        // today — a container carries no `dueAt` and this read requires one —
+        // but that makes the property depend on an absence three files away,
+        // and the recipient of the mistake would be a farmer told that work
+        // they finished last week is due tomorrow.
+        ...EXCLUDE_DIARY_CONTAINERS,
     };
     if (tenantId) where.tenantId = tenantId;
 

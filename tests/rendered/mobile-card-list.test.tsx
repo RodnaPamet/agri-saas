@@ -22,6 +22,9 @@
  *   2. Columns without `mobileCard` meta (actions) are omitted.
  *   3. Tapping a card taps through via `onRowClick`.
  *   4. Default (scroll) mode renders NO card list.
+ *   5. A TAGGED actions column renders in the card footer, and tapping it
+ *      does NOT tap the row through (#2610) — the `stopPropagation` that was
+ *      true by reading and executed by nothing.
  */
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { DataTable, createColumns } from '@/components/ui/table';
@@ -39,6 +42,36 @@ const DATA: TaskRow[] = [
     { id: 't1', name: 'Spray North 40', status: 'OPEN', due: '2026-07-01' },
     { id: 't2', name: 'Scout East', status: 'DONE', due: '2026-07-03' },
 ];
+
+/**
+ * The same columns with the actions column TAGGED — #2696's shape.
+ *
+ * `columns` below deliberately leaves it untagged, and the suite asserts the
+ * action is then absent from the card. That is the negative; it was the whole
+ * of the coverage, so "a tagged actions column actually renders" and "tapping
+ * it does not also tap the card through" were both unproven in the primitive
+ * that #2610 just pointed six screens at.
+ */
+const columnsWithTaggedActions = createColumns<TaskRow>([
+    {
+        accessorKey: 'name',
+        header: 'Task',
+        cell: ({ row }) => <span>{row.original.name}</span>,
+        meta: { mobileCard: { slot: 'title' } },
+    },
+    {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => (
+            <button type="button" onClick={() => onAction(row.original.id)}>
+                Delete
+            </button>
+        ),
+        meta: { mobileCard: { slot: 'actions' } },
+    },
+]);
+
+const onAction = jest.fn();
 
 const columns = createColumns<TaskRow>([
     {
@@ -120,6 +153,59 @@ describe('DataTable mobileFallback="card"', () => {
         expect(onRowClick).toHaveBeenCalledTimes(1);
         // First arg is the TanStack Row for t2.
         expect(onRowClick.mock.calls[0][0].original).toEqual(DATA[1]);
+    });
+
+    it('renders a TAGGED actions column in the card footer', () => {
+        // The positive of the negative above. Without it, "tagged columns
+        // appear" rests on the title/status/meta slots only, and `actions` is
+        // the one slot with its own branch in `MobileCardList` — a
+        // right-aligned footer rather than a field.
+        render(
+            <DataTable<TaskRow>
+                data={DATA}
+                columns={columnsWithTaggedActions}
+                getRowId={(r) => r.id}
+                selectionEnabled={false}
+                mobileFallback="card"
+            />,
+        );
+        const cards = within(screen.getByRole('list')).getAllByRole('listitem');
+        expect(within(cards[0]).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+    });
+
+    it('tapping a card action does NOT also tap the row through', () => {
+        // THE ONE THAT MATTERS for #2610. Two of the six screens it fixes pass
+        // `onRowClick`, so their cards now carry two gestures: the card
+        // navigates, and the footer button deletes. `MobileCardList` wraps the
+        // footer in `onClick={(e) => e.stopPropagation()}` — which was true by
+        // READING and executed by nothing.
+        //
+        // Getting this wrong is not a cosmetic bug: tapping «Изтрий» would
+        // delete the row AND navigate to a detail page for the row just
+        // deleted.
+        const onRowClick = jest.fn();
+        onAction.mockClear();
+        render(
+            <DataTable<TaskRow>
+                data={DATA}
+                columns={columnsWithTaggedActions}
+                getRowId={(r) => r.id}
+                selectionEnabled={false}
+                mobileFallback="card"
+                onRowClick={onRowClick}
+            />,
+        );
+        const cards = within(screen.getByRole('list')).getAllByRole('listitem');
+        fireEvent.click(within(cards[1]).getByRole('button', { name: 'Delete' }));
+
+        expect(onAction).toHaveBeenCalledWith('t2');
+        expect(onRowClick).not.toHaveBeenCalled();
+
+        // The control: the card DOES tap through when tapped anywhere else, so
+        // the absence above is the stopPropagation and not a card that never
+        // navigated at all.
+        fireEvent.click(cards[1].firstElementChild as HTMLElement);
+        expect(onRowClick).toHaveBeenCalledTimes(1);
     });
 
     it('renders NO card list in default (scroll) mode', () => {

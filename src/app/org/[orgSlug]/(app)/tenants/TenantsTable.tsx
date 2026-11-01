@@ -184,6 +184,16 @@ export function TenantsTable({ rows, orgSlug }: Props) {
                                       />
                                   </div>
                               ),
+                              // `as const` because this column sits inside a
+                              // CONDITIONAL SPREAD — `...(perms.canManageTenants
+                              // ? [ … ] : [])` — so the inner array literal is
+                              // inferred on its own and `slot` widens to
+                              // `string`, which `ColumnDef`'s meta rejects.
+                              // `createColumns` narrows the OUTER array and
+                              // cannot reach in. tsc caught this; the other
+                              // four files in this change declare their actions
+                              // column inline and needed nothing.
+                              meta: { mobileCard: { slot: 'actions' as const } },
                           },
                       ]
                     : []),

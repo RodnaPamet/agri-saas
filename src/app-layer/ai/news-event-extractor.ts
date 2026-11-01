@@ -35,10 +35,14 @@
  *      a commitment, unlike an advisory briefing card.
  *
  * Untrusted input handling: every title/summary is passed through
- * `sanitizeUntrusted()` (neutralises obvious prompt-injection markers)
- * before it enters the prompt, and each item is wrapped in an explicit
- * untrusted-content delimiter so the model reads it as DATA, never as
- * instructions from the operator.
+ * `sanitizeUntrustedMarkup()` before it enters the prompt, and each item is
+ * wrapped in an explicit untrusted-content delimiter so the model reads it as
+ * DATA, never as instructions from the operator.
+ *
+ * The `Markup` variant is REQUIRED here rather than tidier (#2698). These
+ * values come from an RSS `<description>`, which routinely carries HTML, and
+ * the plain `sanitizeUntrusted` leaves its anchored role-spoof check masked by
+ * a single leading tag — so `<p>system: …` reached the prompt undefanged.
  *
  * Server-only (imports the Anthropic SDK) — only ever imported from
  * `src/app-layer/jobs/news-event-extraction.ts`, which runs in the Node
@@ -49,7 +53,7 @@ import { z } from 'zod';
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
 import { withLocaleInstruction } from './locale-instruction';
-import { sanitizeUntrusted } from './safety/sanitize-untrusted';
+import { sanitizeUntrustedMarkup } from './safety/sanitize-untrusted';
 import { isPlatformAiSpendAllowed, recordPlatformAiUsage } from './platform-budget';
 import {
     NEWS_DERIVED_EVENT_KINDS,
@@ -161,8 +165,8 @@ function buildUserContent(items: NewsPolicyItemInput[]): string {
     );
     lines.push('');
     for (const item of items) {
-        const title = sanitizeUntrusted(item.title);
-        const summary = item.summary ? sanitizeUntrusted(item.summary) : '';
+        const title = sanitizeUntrustedMarkup(item.title);
+        const summary = item.summary ? sanitizeUntrustedMarkup(item.summary) : '';
         lines.push(`=== UNTRUSTED NEWS ITEM id="${item.id}" START ===`);
         lines.push(`Published: ${item.publishedAt}`);
         lines.push(`Title: ${title}`);

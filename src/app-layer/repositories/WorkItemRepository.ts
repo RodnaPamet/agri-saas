@@ -1,6 +1,7 @@
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { Prisma, WorkItemStatus, WorkItemType, WorkItemSeverity, WorkItemPriority, WorkItemSource, TaskLinkEntityType, TaskLinkRelation } from '@prisma/client';
+import { EXCLUDE_DIARY_CONTAINERS } from '@/lib/operations/diary-container';
 import { buildCursorWhere, CURSOR_ORDER_BY, computePageInfo, clampLimit } from '@/lib/pagination';
 import type { PaginatedResponse } from '@/lib/dto/pagination';
 import {
@@ -176,6 +177,12 @@ export class WorkItemRepository {
                 tenantId: ctx.tenantId,
                 type: { in: [WorkItemType.FARM_TASK, WorkItemType.FIELD_OPERATION] },
                 OR: [{ createdAt: { gte: since } }, { completedAt: { gte: since } }],
+                // A raw `findMany`, so it does not inherit `_buildWhere`'s
+                // exclusion and needs its own. Without it the dashboard counts
+                // a diary record as N tasks created — and, because a container
+                // is born resolved, as N completed on the same day: a trend
+                // line that moves when somebody writes up last week's work.
+                ...EXCLUDE_DIARY_CONTAINERS,
             },
             select: { createdAt: true, completedAt: true },
             take: 5000,
@@ -255,7 +262,16 @@ export class WorkItemRepository {
     }
 
     private static _buildWhere(ctx: RequestContext, filters: TaskFilters = {}): Prisma.TaskWhereInput {
-        const where: Prisma.TaskWhereInput = { tenantId: ctx.tenantId };
+        // A diary record's container tasks are excluded from every list this
+        // builds, which is four surfaces for one edit: `GET /tasks`,
+        // `GET /farm-tasks` (via `listMyFarmTasks` → `listTasks`), the
+        // assistant's `list_farm_tasks` (same route) and the cursor-paged
+        // `listPaginated`. See `@/lib/operations/diary-container` for why the
+        // marker is `treatmentGroupId` and why a lookup BY ID still resolves.
+        const where: Prisma.TaskWhereInput = {
+            tenantId: ctx.tenantId,
+            ...EXCLUDE_DIARY_CONTAINERS,
+        };
         const and: Prisma.TaskWhereInput[] = [];
 
         // Guarded on `.length`: a CLEARED facet must OMIT the filter —
@@ -571,7 +587,18 @@ export class WorkItemRepository {
         // round trip to learn what the caller already knows.
         if (ids.length === 0) return [];
         return db.task.findMany({
-            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, deletedAt: null },
+            where: {
+                tenantId: ctx.tenantId,
+                id: { in: [...ids] },
+                deletedAt: null,
+                // Its one caller is `listTasksForParcel` — a parcel's TASK
+                // LIST, not a by-id resolution, despite the name. The sibling
+                // `listResolutionsByIds` over the same id set deliberately
+                // does NOT filter: that one builds the parcel's comment and
+                // closing-note history, and a note somebody typed is
+                // information whatever its container is for.
+                ...EXCLUDE_DIARY_CONTAINERS,
+            },
             orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             select: taskListSelect,
             take: options.take,
