@@ -72,6 +72,19 @@
 import type { HaltCode, RefusalCode } from '../safety/refusal-codes';
 
 export type AssistantStreamEvent =
+    /**
+     * FIRST event of every stream — #2671 (a). Carries the conversation this
+     * question was filed under, which the client sends back on the next
+     * question so «го» resolves.
+     *
+     * Emitted BEFORE any work, including before `thinking`, so a client that
+     * loses the stream mid-answer still holds the id and its next question
+     * continues the thread rather than silently starting a new one.
+     *
+     * It is an id, not a credential: the server re-verifies on every use that
+     * the conversation belongs to this person in this farm.
+     */
+    | { readonly type: 'conversation'; readonly conversationId: string }
     | { readonly type: 'thinking' }
     | { readonly type: 'tool_call'; readonly name: string }
     | {
