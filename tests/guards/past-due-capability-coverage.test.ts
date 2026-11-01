@@ -232,3 +232,154 @@ describe('§5 every upload-byte path carries the `upload` gate (#2030)', () => {
         }
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// §6 — the trends gate, derived from the CALLERS (#2626)
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * §1–§4's population is PATH-derived: a file counts if it sits under
+ * `src/app-layer/usecases/` and its path contains `exchange` or `trends`.
+ * That is right for the exchange surface, where the gate lives in the
+ * usecase — but it leaves the trends exemption resting on a premise nothing
+ * checks.
+ *
+ * `usecases/trends.ts` is deliberately open, and its recorded reason ends
+ * "so the three trends ROUTES carry it". The gate therefore lives at the CALL
+ * SITES, and the exemption is only sound while the call sites are those
+ * routes. Nothing asserted that. A caller elsewhere — `src/app-layer/ai/`,
+ * a job, a server page — is invisible to a population keyed on the word
+ * "trends" appearing in its own path.
+ *
+ * Measured with the real regexes before writing this:
+ *
+ *     OUT  src/app-layer/ai/assistant/tools.ts
+ *     IN   src/app-layer/usecases/exchange.ts
+ *     IN   src/app/api/t/[tenantSlug]/trends/prices/route.ts
+ *
+ * The assistant (#2578) is the live case: four of its six data sources are
+ * still unbuilt and one of them is `prices`. A tool calling `getPriceTrends`
+ * would assert NO policy — the usecase takes no `RequestContext` to assert
+ * on — and would answer a PAST_DUE tenant whose trends surface is closed.
+ *
+ * So this section derives its population from the IMPORT, the way §5 derives
+ * upload writers from who calls `FileRepository.markStored`. A new caller
+ * fails until somebody decides.
+ */
+const TENANT_INDEPENDENT_TRENDS_EXPORTS = [
+    'getPriceTrends',
+    'getMarketNews',
+    'getMarketReferences',
+] as const;
+
+/**
+ * Callers that legitimately carry no `trends` gate, each with the reason.
+ *
+ * Both entries existed BEFORE this section and were outside §1–§4's
+ * population, so nobody was ever asked. They are recorded rather than gated:
+ * the owner's ruling was "read what you have, add nothing new, and the two
+ * market surfaces close", and a reference price attached to grain the farm
+ * already holds, or to a contract it already signed, is reading what it has.
+ * Gating them would withhold a farm's OWN records over a payment problem,
+ * which is the thing the ruling deliberately did not do.
+ */
+const TRENDS_CALLER_EXEMPT: Readonly<Record<string, string>> = {
+    'src/app-layer/usecases/grain-net-worth.ts':
+        'getMarketReferences values grain the farm ALREADY HOLDS — its own net worth, not the market surface. "Read what you have" is explicitly preserved by the ruling, and the figure is one column of a report about the farm itself.',
+    'src/app-layer/usecases/contract.ts':
+        'getMarketReferences decorates contracts the farm ALREADY SIGNED, so the same reasoning applies. Withholding it would blank a column of the tenant\'s own contract list rather than close a market surface.',
+};
+
+/** Files importing one of the tenant-independent trends exports. */
+function trendsCallers(): string[] {
+    const found: string[] = [];
+    for (const f of ALL) {
+        const relPath = rel(f);
+        if (relPath === 'src/app-layer/usecases/trends.ts') continue; // defines them
+        // Comments and strings blanked FIRST. A grep for the bare name finds
+        // the docblock that EXPLAINS it far more often than a call: measured
+        // over `src/`, 2 of 8 name-level hits were prose with no import at
+        // all, and `dashboard/trends/route.ts` names two of these functions
+        // in a comment while importing `getMetricTrends` instead.
+        const code = blankNonCode(readFileSync(f, 'utf8'), { strings: false });
+        for (const m of code.matchAll(
+            /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g,
+        )) {
+            const spec = m[2];
+            // `@/app-layer/usecases/trends`, or `./trends` from a sibling
+            // usecase. NOT `metric-trends`, which is a different surface and
+            // is exempted on its own terms in DELIBERATELY_OPEN.
+            const isTrendsModule =
+                /(^|\/)trends$/.test(spec)
+                && (spec.includes('usecases/') || relPath.startsWith('src/app-layer/usecases/'));
+            if (!isTrendsModule) continue;
+            const names = m[1]
+                .split(',')
+                .map((n) => n.trim().split(/\s+as\s+/)[0].trim())
+                .filter(Boolean);
+            if (names.some((n) => (TENANT_INDEPENDENT_TRENDS_EXPORTS as readonly string[]).includes(n))) {
+                found.push(relPath);
+                break;
+            }
+        }
+    }
+    return [...new Set(found)].sort();
+}
+
+describe('§6 every caller of the tenant-independent trends usecases has a decision (#2626)', () => {
+    it('finds callers at all, INCLUDING the gated ones', () => {
+        const callers = trendsCallers();
+        console.log(
+            `[past-due-trends] ${callers.length} caller(s) of `
+                + `${TENANT_INDEPENDENT_TRENDS_EXPORTS.join('/')}:\n  `
+                + callers.map((c) => `${GATED.get(c)?.has('trends') ? 'GATED  ' : 'exempt '}${c}`).join('\n  '),
+        );
+        expect(callers.length).toBeGreaterThanOrEqual(4);
+
+        // The control that matters. If the import matcher broke and selected
+        // ONLY the two exempt usecases, every assertion below would pass over
+        // a population with no gated member — green while blind. So require
+        // the two routes the exemption's own reason names.
+        const gatedCallers = callers.filter((c) => GATED.get(c)?.has('trends'));
+        expect(gatedCallers).toEqual(
+            expect.arrayContaining([
+                'src/app/api/t/[tenantSlug]/trends/prices/route.ts',
+                'src/app/api/t/[tenantSlug]/trends/news/route.ts',
+            ]),
+        );
+    });
+
+    it.each(trendsCallers())('%s gates on `trends` or is exempt in writing', (path) => {
+        const isGated = GATED.get(path)?.has('trends') === true;
+        const isExempt = path in TRENDS_CALLER_EXEMPT;
+        if (!isGated && !isExempt) {
+            throw new Error(
+                `${path} imports a tenant-INDEPENDENT trends usecase, which asserts no `
+                    + `policy and no entitlement of its own, and neither calls `
+                    + `assertNotPastDueRestricted(ctx, 'trends') nor appears in `
+                    + `TRENDS_CALLER_EXEMPT. Decide which it is: add the gate, or add an `
+                    + `entry saying why this caller may read the market without one. See #2626.`,
+            );
+        }
+        expect(isGated && isExempt).toBe(false);
+    });
+
+    it('the exempt list has no stale entries', () => {
+        // A stale entry keeps a path pre-approved for whatever is written
+        // there next — the `require('@/env')` allowlist's failure mode.
+        const callers = new Set(trendsCallers());
+        for (const path of Object.keys(TRENDS_CALLER_EXEMPT)) {
+            expect({ path, stillACaller: callers.has(path) }).toEqual({
+                path,
+                stillACaller: true,
+            });
+        }
+    });
+
+    it('every exemption carries a real reason', () => {
+        for (const [path, reason] of Object.entries(TRENDS_CALLER_EXEMPT)) {
+            expect({ path, long: reason.length >= 60 }).toEqual({ path, long: true });
+            expect(reason).not.toMatch(/^(TODO|TBD|see above|n\/a)/i);
+        }
+    });
+});
