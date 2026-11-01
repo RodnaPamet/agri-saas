@@ -10,12 +10,24 @@ import { collectSourceFiles } from '../helpers/collect-files';
  * ## Why a guard and not just a deletion
  *
  * The sweep was deleted, and a deletion is undone by one plausible-looking
- * commit. The numbers are the argument for holding it: measured in production
- * 2026-10-30, LOW_STOCK was **8,778 of 8,815 notification rows — 99.6% of every
- * notification in the product**, growing ~66 a day. Because the phone reads only
- * the newest 50, that flood pushed every other kind off the farm's «Известия»
- * screen entirely. Re-introducing the producer does not merely add noise; it
- * takes the notification surface away from everything else.
+ * commit.
+ *
+ * Two measurements, and the SECOND is the live one — do not quote the first as
+ * current, which is a mistake I made in this change's own PR before measuring:
+ *
+ *   · **2026-10-30, before the episode-dedupe fix:** 8,778 of 8,815 rows —
+ *     99.6% of every notification in the product, growing ~66 a day.
+ *   · **2026-11-01, immediately before removal:** **66 of 79 rows (83.5%)**.
+ *     Two orders of magnitude smaller, because the 2026-10-31 ruling had
+ *     already changed it from once-per-day to once-per-episode and that worked.
+ *
+ * The case for removal does not rest on the big number. Even at 66 rows
+ * LOW_STOCK was still 5 of every 6 notifications a farm received, and the phone
+ * reads only the newest 50 — so it was still crowding out the kinds anyone acts
+ * on. The owner's verdict was about usefulness, not volume.
+ *
+ * It had already been TUNED rather than removed once, which is what makes
+ * removal the right answer on the second look.
  *
  * It had already been tuned once rather than removed — the 2026-10-31 ruling
  * made it once-per-episode instead of once-per-day — so "make it quieter" is a
