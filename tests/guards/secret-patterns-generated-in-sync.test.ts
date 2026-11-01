@@ -8,10 +8,12 @@
  * diff.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { blankNonCode } from '../helpers/blank-non-code';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+import { parseSecretPatterns, translatePattern } from '../../scripts/lib/secret-patterns';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const SOURCE = '.secret-patterns';
@@ -22,7 +24,7 @@ describe('generated secret patterns (#2578)', () => {
     it('is in sync with .secret-patterns', () => {
         // The generator's own `--check`, so the comparison cannot drift from
         // the thing that writes the file.
-        const out = execFileSync('node', ['scripts/generate-secret-patterns.mjs', '--check'], {
+        const out = execFileSync('npx', ['tsx', 'scripts/generate-secret-patterns.ts', '--check'], {
             cwd: REPO_ROOT,
             encoding: 'utf8',
         });
@@ -103,9 +105,54 @@ describe('generated secret patterns (#2578)', () => {
         // occurrences are at index 0; this proves the refusal exists for the
         // day one is not.
         //
-        // Driven through the CLI rather than by importing the module: ts-jest
-        // rewrites a dynamic `import()` to `require()`, which throws against a
-        // `.mjs`. The CLI is also the path CI uses, so this tests the real one.
+        // Asserted IN PROCESS since #2586. It was driven through the CLI over a
+        // temp fixture before, and the reason was purely mechanical — the
+        // parser was a `.mjs`, which a ts-jest suite cannot import, because a
+        // dynamic `import()` is rewritten to `require()`. Now that the parser
+        // is the same `.ts` module the guardrail imports, the subprocess is a
+        // choice rather than a constraint, and the direct call can assert WHICH
+        // pattern was refused and WHY — neither of which survives a stderr
+        // match.
+        expect(() => translatePattern('Mid-pattern modifier', 'abc(?i)def')).toThrow(
+            /not at the start/,
+        );
+        expect(() => translatePattern('Mid-pattern modifier', 'abc(?i)def')).toThrow(/WIDEN/);
+
+        // A LEADING one is ACCEPTED, so the refusal is about PLACEMENT and not
+        // about the modifier. Without this the assertion above is satisfied by
+        // a parser that refuses every `(?i)`, which would reject 2 of the 14
+        // live patterns and is the same mistake in the other direction.
+        expect(translatePattern('Leading modifier', '(?i)abc')).toEqual({
+            source: 'abc',
+            flags: 'i',
+        });
+        // …and a pattern with no modifier keeps empty flags, which is what
+        // makes the `i` above attributable to the translation.
+        expect(translatePattern('No modifier', 'abc')).toEqual({ source: 'abc', flags: '' });
+    });
+
+    it('refuses an EMPTY pattern file — every scan would report clean', () => {
+        // The `absence-reads-as-success` shape, and the worst available outcome
+        // for a secret scanner: zero patterns means every file is clean.
+        expect(() => parseSecretPatterns('# only a comment\n\n')).toThrow(/No patterns parsed/);
+        // A malformed line is refused rather than SKIPPED, for the same reason:
+        // skipping it would silently shrink the pattern set.
+        expect(() => parseSecretPatterns('no pipe here\n')).toThrow(/Malformed line/);
+        // Control: a well-formed line parses, so the refusals above are about
+        // the input and not about a parser that rejects everything.
+        expect(parseSecretPatterns('Name | abc\n')).toEqual([
+            { name: 'Name', source: 'abc', flags: '' },
+        ]);
+    });
+
+    it('the CLI turns a refusal into exit 1 with an ::error:: line', () => {
+        // The ONE subprocess test, kept deliberately rather than inherited.
+        //
+        // `npm run secret-patterns:check` is a CI step, so the EXIT CODE and the
+        // `::error::` prefix are the contract — a non-zero exit is what fails
+        // the job and the prefix is what GitHub renders as an annotation. An
+        // in-process call cannot exercise either: it sees a thrown Error, which
+        // is a different observable from a process that exited.
         const dir = mkdtempSync(path.join(tmpdir(), 'secpat-'));
         try {
             const bad = path.join(dir, 'patterns');
@@ -113,7 +160,7 @@ describe('generated secret patterns (#2578)', () => {
             let status = 0;
             let stderr = '';
             try {
-                execFileSync('node', ['scripts/generate-secret-patterns.mjs'], {
+                execFileSync('npx', ['tsx', 'scripts/generate-secret-patterns.ts'], {
                     cwd: REPO_ROOT,
                     encoding: 'utf8',
                     env: {
@@ -127,55 +174,14 @@ describe('generated secret patterns (#2578)', () => {
                 status = e.status ?? 1;
                 stderr = e.stderr ?? '';
             }
-            expect({ status, mentionsTheReason: /not at the start/.test(stderr) }).toEqual({
-                status: 1,
-                mentionsTheReason: true,
-            });
-            // And a LEADING one is accepted, so the refusal is about placement
-            // rather than about the modifier.
-            const good = path.join(dir, 'good');
-            writeFileSync(good, 'Leading modifier | (?i)abc\n', 'utf8');
-            const out = execFileSync('node', ['scripts/generate-secret-patterns.mjs'], {
-                cwd: REPO_ROOT,
-                encoding: 'utf8',
-                env: {
-                    ...process.env,
-                    SECRET_PATTERNS_FILE: good,
-                    SECRET_PATTERNS_TARGET: path.join(dir, 'out.ts'),
-                },
-            });
-            expect(out).toContain('wrote 1 pattern');
-        } finally {
-            rmSync(dir, { recursive: true, force: true });
-        }
-    });
-
-    it('refuses an EMPTY pattern file — every scan would report clean', () => {
-        const dir = mkdtempSync(path.join(tmpdir(), 'secpat-'));
-        try {
-            const empty = path.join(dir, 'patterns');
-            writeFileSync(empty, '# only a comment\n\n', 'utf8');
-            let status = 0;
-            let stderr = '';
-            try {
-                execFileSync('node', ['scripts/generate-secret-patterns.mjs'], {
-                    cwd: REPO_ROOT,
-                    encoding: 'utf8',
-                    env: {
-                        ...process.env,
-                        SECRET_PATTERNS_FILE: empty,
-                        SECRET_PATTERNS_TARGET: path.join(dir, 'out.ts'),
-                    },
-                });
-            } catch (error) {
-                const e = error as { status?: number; stderr?: string };
-                status = e.status ?? 1;
-                stderr = e.stderr ?? '';
-            }
-            expect({ status, says: /No patterns parsed/.test(stderr) }).toEqual({
-                status: 1,
-                says: true,
-            });
+            expect({
+                status,
+                annotated: stderr.includes('::error::'),
+                mentionsTheReason: /not at the start/.test(stderr),
+            }).toEqual({ status: 1, annotated: true, mentionsTheReason: true });
+            // And it did NOT write the target — a generator that refuses and
+            // still emits a file would leave a weakened module behind.
+            expect(existsSync(path.join(dir, 'out.ts'))).toBe(false);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

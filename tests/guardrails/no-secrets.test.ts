@@ -31,6 +31,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { compilePatterns } from '../../scripts/lib/secret-patterns';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const PATTERN_FILE = path.join(REPO_ROOT, '.secret-patterns');
 const ALLOWLIST_MARKER = 'pragma: allowlist secret';
@@ -140,49 +142,25 @@ function isBaselineHit(file: string, patternName: string): boolean {
     );
 }
 
-// ─── Pattern loader ─────────────────────────────────────────────────
+// ─── Patterns ───────────────────────────────────────────────────────
 
-interface Pattern {
-    name: string;
-    regex: RegExp;
-}
-
-function loadPatterns(file: string): Pattern[] {
-    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-    const out: Pattern[] = [];
-    for (const raw of lines) {
-        const line = raw.trim();
-        if (!line) continue;
-        if (line.startsWith('#')) continue;
-        const idx = line.indexOf('|');
-        if (idx <= 0) {
-            throw new Error(
-                `Malformed line in .secret-patterns: ${JSON.stringify(raw)}`,
-            );
-        }
-        const name = line.slice(0, idx).trim();
-        const pcre = line.slice(idx + 1).trim();
-        // The pattern file uses PCRE syntax that bash's `grep -P`
-        // accepts. The Node `RegExp` engine accepts everything we use
-        // (`(?i)`, alternation, character classes) once we strip the
-        // inline-modifier and lift it to the flag set. Translate
-        // `(?i)` → flags = 'i'; otherwise use no flags.
-        let flags = '';
-        let body = pcre;
-        if (body.startsWith('(?i)')) {
-            flags = 'i';
-            body = body.slice(4);
-        }
-        // PCRE `\x27` is `'` — Node RegExp accepts this verbatim.
-        out.push({ name, regex: new RegExp(body, flags) });
-    }
-    if (out.length === 0) {
-        throw new Error('No patterns loaded from .secret-patterns');
-    }
-    return out;
-}
-
-const PATTERNS = loadPatterns(PATTERN_FILE);
+/**
+ * The PCRE→RegExp translation is NOT inline here any more — #2586.
+ *
+ * It lived here as `loadPatterns` and simultaneously in
+ * `scripts/lib/secret-patterns.ts`, and the two did not agree: this copy
+ * handled a LEADING `(?i)` and left a mid-pattern one in the body, where
+ * `new RegExp` threw at MODULE LOAD about an invalid group rather than about a
+ * secret pattern whose case-insensitivity does not mean what its author
+ * thought. The shared parser refuses that case by name, because hoisting a
+ * mid-pattern `(?i)` to the flag set WIDENS the match — the direction in which
+ * a secret pattern stops being a control.
+ *
+ * Only the PARSER is shared. This guardrail goes on reading `.secret-patterns`
+ * ITSELF, deliberately: pointing it at the generated module would let a stale
+ * generated file weaken it.
+ */
+const PATTERNS = compilePatterns(PATTERN_FILE);
 
 // ─── File discovery ────────────────────────────────────────────────
 
