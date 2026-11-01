@@ -26,6 +26,9 @@
  *   - Sensitive fields are redacted by Pino before serialization.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 import pino from 'pino';
 import { getRequestContext } from './context';
 
@@ -102,12 +105,49 @@ function buildFileDestination(): pino.DestinationStream | undefined {
         typeof process !== 'undefined' ? process.env?.LOG_FILE_PATH?.trim() : undefined;
     if (!target) return undefined;
     try {
-        // `sync: false` — buffered, because a synchronous write per log line on
-        // a shared disk is a latency tax on every request. `mkdir: true` so a
-        // fresh volume does not need provisioning by hand.
-        return pino.destination({ dest: target, sync: false, mkdir: true });
+        // PROVE THE PATH IS WRITABLE FIRST, synchronously, before pino ever
+        // sees it. This ordering is the entire safety property.
+        //
+        // Two earlier versions got this wrong and the second looked correct:
+        //
+        //   1. try/catch around `pino.destination` alone. It does NOT throw
+        //      synchronously on a bad path, so the catch never ran.
+        //   2. ...plus a `dest.on('error')` handler. Also insufficient — the
+        //      failure surfaces at PROCESS EXIT through pino's flush, not as a
+        //      stream `error` event, so the handler never fired either.
+        //
+        // Both were measured, and both CRASHED Node at exit: a log destination
+        // taking down the process it was observing, which is the one outcome
+        // worse than losing the logs. `mkdirSync` + an empty `appendFileSync`
+        // answer "can this process write here" now, on this tick, where a
+        // failure is an ordinary catchable exception.
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.appendFileSync(target, '');
+
+        // `sync: false` — buffered, because a synchronous write per log line
+        // on a shared disk is a latency tax on every request. `mkdir` is no
+        // longer needed: the directory exists by the line above.
+        const dest = pino.destination({ dest: target, sync: false });
+        // Belt and braces for a path that becomes unwritable LATER — a full
+        // disk, a removed volume. Cannot catch the construction case above,
+        // which is why the check comes first.
+        dest.on('error', (err: unknown) => {
+            const reason = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`[logger] log file write failed: ${reason}\n`);
+        });
+        return dest;
     } catch (err) {
-        console.error('[logger] LOG_FILE_PATH is set but unusable; continuing on stdout only', err);
+        // `process.stderr.write`, not `console.error`. Two reasons, and the
+        // guard is only the first: `logging-import-hygiene` bans `console.*`
+        // in server code and its carve-out list is SHRINK-ONLY, so adding this
+        // file would be the wrong direction. The better reason is that THIS IS
+        // THE LOGGER FAILING — routing that through anything that might itself
+        // be the logger risks recursion at exactly the worst moment. The raw
+        // stream is the one thing still known to work.
+        const reason = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+            `[logger] LOG_FILE_PATH is set but unusable; continuing on stdout only: ${reason}\n`,
+        );
         return undefined;
     }
 }

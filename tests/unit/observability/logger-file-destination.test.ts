@@ -50,15 +50,27 @@ describe('LOG_FILE_PATH', () => {
         expect(() => pinoInstance.info('hello')).not.toThrow();
     });
 
-    it('UNUSABLE path: warns once and keeps running on stdout', () => {
-        const warn = jest.spyOn(console, 'error').mockImplementation(() => {});
+    it('UNUSABLE path: warns on stderr and keeps running on stdout', () => {
+        // Spying on `process.stderr.write`, which is what the code calls —
+        // NOT `console.error`. An earlier version of this test spied on
+        // console and kept passing after the implementation moved, because the
+        // only hard assertion is the no-throw below; the spy had become
+        // decoration that read as a check.
+        const warn = jest
+            .spyOn(process.stderr, 'write')
+            .mockImplementation(() => true);
         // A path whose PARENT is a file, so a directory cannot be created.
         const blocker = path.join(os.tmpdir(), `logblock-${Date.now()}`);
         fs.writeFileSync(blocker, 'not a directory');
         try {
             const { pinoInstance } = loadLogger(path.join(blocker, 'nested', 'app.jsonl'));
-            // The process is alive and logging. That is the whole assertion.
+            // The process is alive and logging. That is the main assertion.
             expect(() => pinoInstance.info('still here')).not.toThrow();
+            // ...and the operator was TOLD, rather than the file silently not
+            // existing. A silent fallback here would mean an incident is
+            // unreadable and nobody knows why.
+            const said = warn.mock.calls.map((c) => String(c[0])).join('');
+            expect(said).toContain('LOG_FILE_PATH');
         } finally {
             fs.rmSync(blocker, { force: true });
             warn.mockRestore();
