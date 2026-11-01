@@ -59,7 +59,23 @@ const analyzeBlockRisk = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
 jest.mock('@/app-layer/usecases/parcel-risk', () => ({
     analyzeBlockRisk: (...a: unknown[]) => analyzeBlockRisk(...a),
 }));
+const getPriceTrends = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+jest.mock('@/app-layer/usecases/trends', () => ({
+    getPriceTrends: (...a: unknown[]) => getPriceTrends(...a),
+}));
+const getGrainNetWorth = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+jest.mock('@/app-layer/usecases/grain-net-worth', () => ({
+    getGrainNetWorth: (...a: unknown[]) => getGrainNetWorth(...a),
+}));
+// `buildCalculatorPayload` is deliberately NOT mocked: it is the projection the
+// ROUTE serves, and a double would verify the tool calls something while
+// saying nothing about the shape it produces.
+const assertNotPastDueRestricted = jest.fn<Promise<void>, unknown[]>();
+jest.mock('@/lib/billing/entitlements', () => ({
+    assertNotPastDueRestricted: (...a: unknown[]) => assertNotPastDueRestricted(...a),
+}));
 
+import { makeRequestContext } from '../../helpers/make-context';
 import {
     ASSISTANT_TOOLS,
     runTool,
@@ -67,15 +83,58 @@ import {
     TOOL_RESULT_MAX_CHARS,
 } from '@/app-layer/ai/assistant/tools';
 
-const ctx = {
-    userId: 'u1',
-    tenantId: 't1',
-    role: 'EDITOR',
-    permissions: {},
-    appPermissions: {},
-} as never;
+/**
+ * A REAL context, not a hand-rolled stub — changed when `runTool` began
+ * asserting the read policy centrally.
+ *
+ * The stub was `{ userId, tenantId, role, permissions: {}, appPermissions: {} }
+ * as never`, and `assertCanRead` reads `ctx.permissions.canRead`. So every
+ * tool test was passing a context that CANNOT read, and passing only because
+ * each usecase was mocked and its own assert never ran. The central assert
+ * reddened seven of them immediately, which is the assert being real rather
+ * than a problem with it.
+ */
+const ctx = makeRequestContext('EDITOR', { userId: 'u1', tenantId: 't1' });
 
 describe('assistant tools (#2578)', () => {
+    /** A GrainNetWorthResult as `buildCalculatorPayload` really consumes it. */
+    const grainResult = (over: Record<string, unknown> = {}) => ({
+        generatedAt: '2026-11-01T06:00:00.000Z',
+        seasonId: 's-2026',
+        rows: [
+            {
+                commodity: 'wheat',
+                pricePerTonne: 210,
+                priceCurrency: 'EUR',
+                priceObservedAt: '2026-08-04',
+                priceSource: 'SAPI',
+                standingCropAreaHa: 120,
+                grainOnHandTonnes: 480,
+                grainOnHandValue: 100_800,
+                standingCropValue: 50_000,
+                cashCostTotal: 61_000,
+                breakEven: 127,
+                netWorth: 89_800,
+                netWorthUnavailableCode: null,
+                // `buildCalculatorPayload` does
+                // `row.cashCostCurrencies.filter(...)`, so this array is
+                // REQUIRED. Omitting it threw "Cannot read properties of
+                // undefined (reading 'filter')" — the real projection telling
+                // me my double's shape was wrong, which is exactly what a
+                // double that is NOT mocked is for.
+                cashCostCurrencies: ['EUR'],
+            },
+        ],
+        farm: { totals: [{ currency: 'EUR', netWorth: 89_800 }], perArea: {} },
+        exclusions: { commoditiesWithNoPrice: [{ id: 'maize' }], lotsUnresolvedUnit: [] },
+        unvalued: { noUnitCost: 0, unitMismatch: 0 },
+        cashOut: 0,
+        unallocatedToCrop: 0,
+        imputedLandCharge: 0,
+        truncated: false,
+        ...over,
+    });
+
     beforeEach(() => {
         jest.clearAllMocks();
         listTasks.mockResolvedValue([]);
@@ -83,6 +142,14 @@ describe('assistant tools (#2578)', () => {
         listCostEntries.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
         listActiveListings.mockResolvedValue({ rows: [], nextCursor: null });
         assertModuleEnabled.mockResolvedValue(undefined);
+        assertNotPastDueRestricted.mockResolvedValue(undefined);
+        getPriceTrends.mockResolvedValue({
+            commodity: 'wheat',
+            range: '3m',
+            generatedAt: '2026-11-01T06:00:00.000Z',
+            series: [],
+        });
+        getGrainNetWorth.mockResolvedValue(grainResult());
         listLocationsPaginated.mockResolvedValue({
             items: [],
             pageInfo: { nextCursor: null, hasNextPage: false },
@@ -523,6 +590,113 @@ describe('assistant tools (#2578)', () => {
         // And the id is required — a block-risk question about no block is
         // not a question this tool can answer.
         expect((await runTool(ctx, 'analyze_block_risk', '{}')).ok).toBe(false);
+    });
+
+    it('EVERY tool asserts the read policy, even where the usecase cannot', async () => {
+        // `assertCanRead` is called centrally by `runTool`. Most usecases
+        // assert it too, but `getPriceTrends` takes no RequestContext and can
+        // assert nothing — "the one tool whose usecase cannot must remember
+        // to" is a rule with no enforcement.
+        const denied = makeRequestContext('READER', {
+            permissions: { canRead: false } as never,
+        });
+        for (const name of Object.keys(ASSISTANT_TOOLS)) {
+            const args =
+                name === 'analyze_block_risk'
+                    ? '{"locationId":"loc-1"}'
+                    : name === 'price_trends'
+                      ? '{"commodity":"wheat"}'
+                      : name.startsWith('propose_')
+                        ? JSON.stringify({ kind: name === 'propose_treatment' ? 'SPRAY' : 'PRUNE' })
+                        : '{}';
+            const out = await runTool(denied, name, args);
+            expect({ name, ok: out.ok }).toEqual({ name, ok: false });
+        }
+    });
+
+    it('grain_calculator reports what the totals LEFT OUT, not just the totals', async () => {
+        const res = await runTool(ctx, 'grain_calculator', '{}');
+        expect(res.ok).toBe(true);
+        expect(res.content).toContain('"complete":false');
+        expect(res.content).toContain('"rowsLeftOut":1');
+        expect(res.content).toContain('commoditiesWithNoPrice');
+        // An EMPTY exclusion list is not reported as a reason.
+        expect(res.content).not.toContain('lotsUnresolvedUnit');
+        // Real field names, through the route's own projection. The first
+        // version of this projection guessed `tonnes`/`value`/`cost` — none of
+        // which exist on a calculator row.
+        expect(res.content).toContain('"grainOnHandTonnes":480');
+        expect(res.content).toContain('"netWorth":89800');
+        // The price's age travels with the money it produced.
+        expect(res.content).toContain('2026-08-04');
+    });
+
+    it('grain_calculator reports truncation SEPARATELY from exclusions', async () => {
+        // Different causes: a bounded read hitting its cap is ours, a missing
+        // price is ours too but a missing yield estimate is the farmer's.
+        // Collapsing them would point them at the wrong thing.
+        getGrainNetWorth.mockResolvedValue(
+            grainResult({ truncated: true, exclusions: { lotsUnresolvedUnit: [] } }),
+        );
+        const res = await runTool(ctx, 'grain_calculator', '{}');
+        expect(res.content).toContain('"truncated":true');
+        expect(res.content).toContain('"rowsLeftOut":0');
+        expect(res.content).toContain('"complete":false');
+    });
+
+    it('price_trends gates on `trends` — the usecase cannot', async () => {
+        await runTool(ctx, 'price_trends', '{"commodity":"wheat"}');
+        expect(assertNotPastDueRestricted).toHaveBeenCalledWith(ctx, 'trends');
+        assertNotPastDueRestricted.mockRejectedValue(new Error('PAST_DUE_RESTRICTED'));
+        await expect(
+            runTool(ctx, 'price_trends', '{"commodity":"wheat"}'),
+        ).resolves.toMatchObject({ ok: false });
+    });
+
+    it('price_trends ages each series against generatedAt, not the wall clock', async () => {
+        // The payload is Redis-cached for 6h and this process's clock is not
+        // the observation's. The openapi description is explicit that a dead
+        // series' last point "looks equally current" as a live one's.
+        getPriceTrends.mockResolvedValue({
+            commodity: 'wheat',
+            range: '3m',
+            // `generatedAt` is deliberately WEEKS OLD, and that is what gives
+            // this test its teeth. The first fixture used today's date, so
+            // `generatedAt` and `Date.now()` agreed and a mutation computing
+            // staleness from the wall clock PASSED — a fixture with no
+            // discriminating power. A payload this old is also the realistic
+            // case: it is Redis-cached and shared across tenants.
+            generatedAt: '2026-09-01T00:00:00.000Z',
+            series: [
+                {
+                    source: 'SAPI', region: 'BG', stage: 'DELIVERED', unit: 't',
+                    currency: 'EUR', label: null, lastObservedAt: '2026-08-30',
+                    points: [{ date: '2026-08-30', price: 212 }],
+                },
+                {
+                    source: 'OLD', region: 'BG', unit: 'kg', currency: 'BGN',
+                    label: null, lastObservedAt: '2026-06-01',
+                    points: [{ date: '2026-06-01', price: 0.41 }],
+                },
+            ],
+        });
+        const res = await runTool(ctx, 'price_trends', '{"commodity":"wheat"}');
+        expect(res.ok).toBe(true);
+        expect(res.content).toContain('"staleDays":2');
+        expect(res.content).toContain('"staleDays":92');
+        // Unit and currency travel WITH each price: these two are not
+        // comparable, and a bare number invites an average.
+        expect(res.content).toContain('"unit":"kg"');
+        expect(res.content).toContain('"currency":"BGN"');
+        expect(res.content).toContain('"stage":"DELIVERED"');
+    });
+
+    it('price_trends refuses a commodity the usecase does not chart', async () => {
+        expect((await runTool(ctx, 'price_trends', '{"commodity":"wheat"}')).ok).toBe(true);
+        for (const bad of ['WHEAT', 'rapeseed', '']) {
+            const out = await runTool(ctx, 'price_trends', JSON.stringify({ commodity: bad }));
+            expect({ bad, ok: out.ok }).toEqual({ bad, ok: false });
+        }
     });
 
     it('refuses a hallucinated tool name without throwing', async () => {
