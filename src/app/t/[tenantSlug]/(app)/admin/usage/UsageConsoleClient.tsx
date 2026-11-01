@@ -114,6 +114,7 @@ export function UsageConsoleClient({ insights }: { insights: UsageInsights }) {
                 <Heading level={2}>{t('byFarm')}</Heading>
                 <DataTable
                     mobileFallback="card"
+                    data-testid="usage-by-farm"
                     data={insights.byFarm}
                     columns={farmColumns}
                     getRowId={(r: UsageInsights['byFarm'][number]) => r.tenantId}
@@ -124,6 +125,7 @@ export function UsageConsoleClient({ insights }: { insights: UsageInsights }) {
                 <Heading level={2}>{t('byScreen')}</Heading>
                 <DataTable
                     mobileFallback="card"
+                    data-testid="usage-by-screen"
                     data={insights.byScreen}
                     columns={nameColumns(t('colScreen'), true)}
                     getRowId={(r: UsageInsights['byScreen'][number]) => r.surface ?? r.name}
@@ -134,6 +136,7 @@ export function UsageConsoleClient({ insights }: { insights: UsageInsights }) {
                 <Heading level={2}>{t('byAction')}</Heading>
                 <DataTable
                     mobileFallback="card"
+                    data-testid="usage-by-action"
                     data={insights.byAction}
                     columns={nameColumns(t('colAction'), false)}
                     getRowId={(r: UsageInsights['byAction'][number]) => r.name}

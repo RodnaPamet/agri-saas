@@ -20,6 +20,17 @@ const COMPONENTS_DIR = path.resolve(__dirname, '../../src/components');
  * These pages must NOT regress to raw color utilities.
  */
 const MIGRATED_PAGES = [
+    // #493 the superuser usage console — design-system-native from birth:
+    // DataTable / EmptyState / Heading / PageBreadcrumbs and semantic tokens
+    // only, no raw colours and no legacy btn/badge/glass-card.
+    //
+    // PROMOTED rather than parked in the unmigrated tally, which is the
+    // stronger position and the one `admin/public-profile` set: the cap stays
+    // where it is and the allowlist grows, so these two files now carry the
+    // raw-colour and legacy-class assertions from day one instead of being
+    // counted as debt they do not owe.
+    'admin/usage/page.tsx',
+    'admin/usage/UsageConsoleClient.tsx',
     // P6.6 public-profile editor (#1884) — design-system-native from birth:
     // cardVariants / Heading / FormField / Input / Textarea / Switch /
     // Checkbox / Button / InlineNotice / QrCode and semantic tokens only, no
