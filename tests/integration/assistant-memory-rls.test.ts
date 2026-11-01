@@ -44,6 +44,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
 
+import { listRememberedPointsForPrompt } from '@/app-layer/usecases/assistant-memory';
 import { runInTenantContext, runInUserContext } from '@/lib/db-context';
 import { encryptField, hashForLookup } from '@/lib/security/encryption';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
@@ -262,6 +263,38 @@ describeFn('#2671 — assistant memory RLS', () => {
             tenantCtx(owner, ownerTenant), (db) => countFacts(db, owner),
         );
         expect(back).toBe(1);
+    });
+
+    /*
+     * §7 — a SMOKE TEST of the prompt read, and that is all it is.
+     *
+     * Labelled honestly because I tried to make it two stronger things first
+     * and MEASURED that it could be neither:
+     *
+     *   · "the wrong RUNNER returns zero rows" — #1664's lesson. FALSE for
+     *     this model: `runInTenantContext` and `runInUserContext` both return
+     *     the owner's facts, because #2683 built a SELECT arm per session
+     *     variable so either works. #1664 bit `UserBlock`, which had only the
+     *     `app.user_id` arm. Mutating the runner here changes nothing.
+     *   · "a dropped `userId` filter leaks another person's profile" — also
+     *     false. Both policy arms restrict to `userId = current_setting(…)`,
+     *     so RLS confines the read whatever the application `where` says.
+     *     Mutating the filter out changes nothing either. That is defence in
+     *     depth doing its job, and §1/§2 already prove the policy.
+     *
+     * What it DOES cover is the only thing no other test does: that the
+     * function the stream route actually calls is wired to the right table and
+     * returns TEXT for the right person. It would catch a wrong model, a
+     * `select` that returns ids, or a `where` that excludes everything.
+     *
+     * The pair is reported together so 0-and-0 reads as a broken fixture
+     * rather than as isolation — the one way a smoke test like this can lie.
+     */
+    it('§7 SMOKE: the prompt read is wired, returning this person’s text', async () => {
+        const mine = await listRememberedPointsForPrompt(tenantCtx(owner, ownerTenant));
+        const theirs = await listRememberedPointsForPrompt(tenantCtx(outsider, outsiderTenant));
+        expect({ mine: mine.length, theirs: theirs.length }).toEqual({ mine: 1, theirs: 0 });
+        expect(typeof mine[0]).toBe('string');
     });
 
     /*

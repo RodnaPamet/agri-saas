@@ -32,10 +32,11 @@
  */
 import { REMEMBERED_POINT_MAX_CHARS } from '@/lib/schemas/assistant-memory-limits';
 import { prisma } from '@/lib/prisma';
-import { runInUserContext } from '@/lib/db-context';
+import { runInUserContext, runInTenantContext } from '@/lib/db-context';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { PrismaClient } from '@prisma/client';
+import type { RequestContext } from '@/app-layer/types';
 
 /**
  * One remembered point as a CLIENT sees it.
@@ -92,6 +93,44 @@ export async function listRememberedPoints(userId: string): Promise<RememberedPo
         }),
     );
     return rows.map(toPoint);
+}
+
+/**
+ * The profile text for the ASSISTANT's prompt, newest first.
+ *
+ * A separate function from `listRememberedPoints` because it returns TEXT for
+ * a prompt rather than points for a screen, and because it takes the ctx the
+ * assistant already has.
+ *
+ * **The runner is a CONSISTENCY choice, not a correctness one, and I had that
+ * wrong first.** `listRememberedPoints` serves «Какво помни асистентът» under
+ * `runInUserContext` (`app.user_id`); this serves the assistant mid-answer,
+ * where `runInTenantContext` has set `app.actor_user_id`. I wrote that the
+ * wrong runner would return ZERO ROWS silently — #1664's shape — and
+ * MEASURED that it does not: `AssistantMemoryFact` carries a SELECT arm per
+ * session variable, so either runner returns the owner's facts. #1664 bit
+ * `UserBlock`, which had only the `app.user_id` arm; #2683 built the second
+ * arm here precisely so this read cannot hit it.
+ *
+ * So `runInTenantContext` is used because the caller's ctx IS a tenant ctx and
+ * needs no second shape — and the integration test for this is labelled a
+ * SMOKE test, because neither the runner nor the `where` clause can be
+ * mutated into a visible failure: RLS confines the read either way.
+ *
+ * Returns TEXT only. The prompt has no use for ids, and `sourceQuote` is
+ * rule 7's server-side evidence — putting it in the prompt would double every
+ * point's cost to say the same thing twice.
+ */
+export async function listRememberedPointsForPrompt(ctx: RequestContext): Promise<string[]> {
+    const rows = await runInTenantContext(ctx, (db) =>
+        (db as PrismaClient).assistantMemoryFact.findMany({
+            where: { userId: ctx.userId, deletedAt: null, supersededAt: null },
+            select: { text: true },
+            orderBy: { sourceAt: 'desc' },
+            take: REMEMBERED_POINT_LIMIT,
+        }),
+    );
+    return rows.map((r) => r.text);
 }
 
 /**
