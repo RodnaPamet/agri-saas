@@ -27,6 +27,7 @@ import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { forbidden } from '@/lib/errors/types';
 import { capPerType, computeRankScore, sortHits } from '@/lib/search/rank';
+import { EXCLUDE_DIARY_CONTAINERS } from '@/lib/operations/diary-container';
 import {
     DEFAULT_PER_TYPE_LIMIT,
     MAX_QUERY_LENGTH,
@@ -119,6 +120,14 @@ export async function getUnifiedSearch(
                         { description: { contains, mode: 'insensitive' } },
                         { key: { contains, mode: 'insensitive' } },
                     ],
+                    // Not one of the surfaces the owner named, and included
+                    // for the same reason: a diary record writes one container
+                    // per block and they share a title, so searching
+                    // «обработка» returned the same «Обработка на почвата»
+                    // three times as tasks beside the one journal entry that
+                    // is the actual record. The record is reachable from
+                    // Дневник, which is where it lives.
+                    ...EXCLUDE_DIARY_CONTAINERS,
                 },
                 select: {
                     id: true,

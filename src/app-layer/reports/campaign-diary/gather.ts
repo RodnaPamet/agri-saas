@@ -45,12 +45,13 @@
  * what the template's date RANGE (`01-05.02.2025`) is for; filtering on
  * `Task.completedAt` would collapse that to one day or drop the task entirely.
  */
+import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '@/app-layer/types';
 import { assertCanRead } from '@/app-layer/policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { codedNotFound } from '@/lib/errors/types';
 import { ACTIVITY_LABELS_BG } from '@/lib/operations/activity-labels';
-import { campaignWindow } from '@/lib/reports/campaign-window';
+import { campaignWindow, currentCampaignLabel } from '@/lib/reports/campaign-window';
 import { buildCampaignRows, type DiaryLineInput } from './rows';
 import type { CampaignDiaryData } from '@/app-layer/reports/pdf/campaign-diary';
 import { cropLabelForDocument, loadDocumentCropLabels } from '../crop-label';
@@ -78,9 +79,28 @@ import { cropLabelForDocument, loadDocumentCropLabels } from '../crop-label';
 const dec = (v: unknown): number | null =>
     v === null || v === undefined ? null : Number(v as { toString(): string });
 
+/**
+ * What this document is ABOUT — a whole campaign, or one recorded activity.
+ *
+ * The activity arm is #2696: the owner could not print «Обработка на почвата»
+ * because the only per-record print we had was Приложение 1, and a cultivation
+ * has no row in a plant-protection register. «Дневник на стопанството» is the
+ * document that DOES describe it, and this gatherer already aggregated one row
+ * per activity grouped on `treatmentGroupId` — so one page of it is this
+ * gatherer narrowed to one handle, not a new document.
+ *
+ * A union rather than an optional second parameter, because the two arms
+ * select on different columns and an optional `treatmentGroupId` beside a
+ * required `campaignLabel` would let a caller pass both and leave the
+ * precedence to whoever read the body.
+ */
+export type CampaignDiaryScope =
+    | { kind: 'campaign'; campaignLabel: string }
+    | { kind: 'activity'; treatmentGroupId: string };
+
 export async function gatherCampaignDiary(
     ctx: RequestContext,
-    campaignLabel: string,
+    scope: CampaignDiaryScope,
 ): Promise<CampaignDiaryData> {
     // One load per document — see `crop-label.ts`. `Parcel.cropType` is a
     // catalogue key; the register must print its Bulgarian label.
@@ -90,15 +110,37 @@ export async function gatherCampaignDiary(
     // inside the gatherer, no `requirePermission`.
     assertCanRead(ctx);
 
-    // Throws InvalidCampaignError on a malformed label, before any query.
-    const window = campaignWindow(campaignLabel);
+    // An if/else rather than two ternaries, and that is a correction rather
+    // than a style choice: narrowing through a DERIVED value does not narrow
+    // the union. `const window = scope.kind === 'campaign' ? … : null` followed
+    // by `window ? … : scope.treatmentGroupId` typechecked as far as the
+    // `window` test and then failed — `scope` is still the full union inside
+    // that branch. tsc caught it; the shape that would have slipped through is
+    // a `?? null` on the handle, which Prisma reads as IS NULL and would have
+    // matched every NON-container line in the tenant.
+    //
+    // `campaignWindow` throws InvalidCampaignError on a malformed label, and it
+    // stays INSIDE the campaign branch and ahead of every query, which is what
+    // keeps a bad label a 400 rather than a 500 from the route.
+    let lineWhere: Prisma.OperationParcelWhereInput;
+    let windowLabel: string | null = null;
+    if (scope.kind === 'campaign') {
+        const w = campaignWindow(scope.campaignLabel);
+        windowLabel = w.label;
+        lineWhere = { completedAt: { gte: w.startsAt, lt: w.endsAtExclusive } };
+    } else {
+        // Every line under the handle, INCLUDING unmarked ones. The row
+        // builder counts those as `skippedIncomplete` and the document states
+        // what it omitted, which is the honest answer for a two-step treatment
+        // still in progress — a `completedAt: { not: null }` here would print a
+        // page silently missing half its parcels.
+        lineWhere = { task: { treatmentGroupId: scope.treatmentGroupId } };
+    }
 
     return runInTenantContext(ctx, async (db) => {
         const lines = await db.operationParcel.findMany({
             // The LINE's own completedAt — see the module docblock.
-            where: {
-                completedAt: { gte: window.startsAt, lt: window.endsAtExclusive },
-            },
+            where: lineWhere,
             select: {
                 id: true,
                 taskId: true,
@@ -114,9 +156,21 @@ export async function gatherCampaignDiary(
         });
 
         if (lines.length === 0) {
+            // Two different facts, so two codes. A handle with nothing under
+            // it is a WRONG HANDLE — `ACTIVITY_NOT_FOUND` is what the
+            // correction route already answers for it, carrying the same
+            // `reference` so a client can say which field was wrong. A
+            // campaign with nothing in it is a real, empty period.
+            if (scope.kind === 'activity') {
+                throw codedNotFound(
+                    'ACTIVITY_NOT_FOUND',
+                    'No activity was recorded under that handle.',
+                    { reference: 'treatmentGroupId' },
+                );
+            }
             throw codedNotFound(
                 'REGISTER_EMPTY_FOR_PERIOD',
-                `Няма записи за кампания ${campaignLabel}.`,
+                `Няма записи за кампания ${scope.campaignLabel}.`,
             );
         }
 
@@ -182,6 +236,15 @@ export async function gatherCampaignDiary(
             produceKg: kgByLine.get(l.id) ?? null,
         }));
 
+        // Earliest COMPLETED line, for the activity arm's campaign label. Not
+        // `lines[0]`: the read has no `orderBy`, and an unmarked line has no
+        // date at all, so the first row is neither the earliest nor
+        // necessarily dated.
+        const firstCompletedAt = lines
+            .map((l) => l.completedAt)
+            .filter((d): d is Date => d instanceof Date)
+            .sort((a, b) => a.getTime() - b.getTime())[0];
+
         const { rows, skippedIncomplete, rowsWithUnknownArea } = buildCampaignRows(
             input,
             ACTIVITY_LABELS_BG,
@@ -193,7 +256,9 @@ export async function gatherCampaignDiary(
         if (rows.length === 0) {
             throw codedNotFound(
                 'REGISTER_EMPTY_FOR_PERIOD',
-                `Няма завършени записи за кампания ${campaignLabel}.`,
+                scope.kind === 'activity'
+                    ? 'Няма завършени записи за това мероприятие.'
+                    : `Няма завършени записи за кампания ${scope.campaignLabel}.`,
             );
         }
 
@@ -204,7 +269,12 @@ export async function gatherCampaignDiary(
                 municipality: profile?.municipality ?? null,
                 oblast: profile?.oblast ?? null,
             },
-            campaignLabel: window.label,
+            // The activity arm has no label of its own, so it prints the
+            // campaign it FALLS IN, derived from the work's own date. A page
+            // of «Дневник на стопанството» should say which campaign it came
+            // out of; the alternative was a blank header cell or the date
+            // twice.
+            campaignLabel: windowLabel ?? currentCampaignLabel(firstCompletedAt ?? new Date()),
             rows,
             skippedIncomplete,
             rowsWithUnknownArea,

@@ -41,6 +41,14 @@ describe('WorkItemRepository.listRowsByIds (#2463)', () => {
             tenantId: 't1',
             id: { in: ['a', 'b'] },
             deletedAt: null,
+            // #2696. This read is a parcel's task LIST, not a by-id
+            // resolution despite the name, so a diary record's container
+            // tasks are excluded here like everywhere else a person sees a
+            // list. The sibling `listResolutionsByIds` over the SAME ids
+            // deliberately does not exclude them — it builds the parcel's
+            // comment and closing-note history, and a note somebody typed is
+            // information whatever its container is for.
+            treatmentGroupId: null,
         });
     });
 

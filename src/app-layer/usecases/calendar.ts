@@ -58,6 +58,7 @@ import { assertCanRead } from '../policies/common';
 import { TERMINAL_WORK_ITEM_STATUSES } from '../domain/work-item-status';
 import type { WorkItemStatus, AgroSignalKind } from '@prisma/client';
 import { logger } from '@/lib/observability/logger';
+import { EXCLUDE_DIARY_CONTAINERS } from '@/lib/operations/diary-container';
 import type { RequestContext } from '../types';
 import {
     type CalendarEvent,
@@ -373,6 +374,16 @@ async function loadTaskEvents(
             tenantId: ctx.tenantId,
             deletedAt: null,
             dueAt: { not: null, gte: range.from, lte: range.to },
+            // REDUNDANT TODAY, DELIBERATELY NOT OMITTED. A container carries
+            // no `dueAt` — `createFieldOperation` writes `input.dueAt ?? null`
+            // and neither diary writer passes one — so this clause excludes
+            // nothing right now. That is an absence somewhere else holding a
+            // property here: the day anything passes a `dueAt` for a recorded
+            // activity, a calendar full of work already done appears, and the
+            // cause would be three files away. The guard's mutation proof
+            // stamps a `dueAt` on a container to keep this clause honest
+            // rather than merely present.
+            ...EXCLUDE_DIARY_CONTAINERS,
         },
         select: {
             id: true,

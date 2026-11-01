@@ -226,11 +226,23 @@ describe('WorkItemRepository — tenant isolation', () => {
 // ─────────────────────────────────────────────────────────────────────
 
 describe('WorkItemRepository — filter translation', () => {
-    it('emits nothing but the tenant filter when no filters are supplied', async () => {
+    it('emits the tenant filter and the diary-container exclusion, nothing else', async () => {
         // Break: a stray default filter would silently hide rows.
+        //
+        // RENAMED rather than patched, because the old name ("nothing but the
+        // tenant filter") stopped being true and a name that lies is worse
+        // than one that is merely out of date. `treatmentGroupId: null` is
+        // #2696: a diary record's container tasks are bookkeeping, not the
+        // farm's work list, and `_buildWhere` is where four surfaces inherit
+        // that in one place. The clause is DELIBERATE and belongs in this
+        // assertion — a future reader seeing it appear from nowhere is exactly
+        // who this test is for.
         await WorkItemRepository.list(asTx(db), ctx);
 
-        expect(whereOf(db.task.findMany)).toEqual({ tenantId: 'tenant-1' });
+        expect(whereOf(db.task.findMany)).toEqual({
+            tenantId: 'tenant-1',
+            treatmentGroupId: null,
+        });
     });
 
     it('maps the six scalar filters straight onto the where clause', async () => {
@@ -247,6 +259,7 @@ describe('WorkItemRepository — filter translation', () => {
 
         expect(whereOf(db.task.findMany)).toEqual({
             tenantId: 'tenant-1',
+            treatmentGroupId: null, // #2696 — see the first test in this block
             status: { in: ['OPEN'] },
             type: 'FARM_TASK',
             severity: 'HIGH',
@@ -263,6 +276,7 @@ describe('WorkItemRepository — filter translation', () => {
 
         expect(whereOf(db.task.findMany)).toEqual({
             tenantId: 'tenant-1',
+            treatmentGroupId: null, // #2696
             dueAt: { lt: NOW },
             status: { notIn: ['RESOLVED', 'CLOSED', 'CANCELED'] },
         });
@@ -347,8 +361,8 @@ describe('WorkItemRepository — filter translation', () => {
         await WorkItemRepository.list(asTx(db), ctx, { linkedEntityType: 'ASSET' });
         await WorkItemRepository.list(asTx(db), ctx, { linkedEntityId: 'a-1' });
 
-        expect(whereOf(db.task.findMany, 0)).toEqual({ tenantId: 'tenant-1' });
-        expect(whereOf(db.task.findMany, 1)).toEqual({ tenantId: 'tenant-1' });
+        expect(whereOf(db.task.findMany, 0)).toEqual({ tenantId: 'tenant-1', treatmentGroupId: null });
+        expect(whereOf(db.task.findMany, 1)).toEqual({ tenantId: 'tenant-1', treatmentGroupId: null });
     });
 
     it('leaves AND off the where clause entirely when no AND-shaped filter applies', async () => {
@@ -435,6 +449,12 @@ describe('WorkItemRepository — list shape', () => {
             tenantId: 'tenant-1',
             type: { in: ['FARM_TASK', 'FIELD_OPERATION'] },
             OR: [{ createdAt: { gte: since } }, { completedAt: { gte: since } }],
+            // #2696, and this read needed its OWN clause: it is a raw
+            // `findMany` that does not go through `_buildWhere`. Without it the
+            // dashboard counts a diary record as N tasks created and — because
+            // a container is born resolved — N completed the same day, so the
+            // trend line moves when somebody writes up last week's work.
+            treatmentGroupId: null,
         });
     });
 });
