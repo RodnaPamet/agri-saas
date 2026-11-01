@@ -85,6 +85,11 @@ export const USAGE_EVENT_NAMES = [
     // ── exchange ──
     'listing_created',
     'listing_edited',
+    // The two custody moves on «Моите обяви» (55.1). Added on the iOS peer's
+    // request 2026-11-01, before any row existed — a rename after that needs a
+    // migration, which is why the vocabulary is worth settling early.
+    'listing_fulfilled',
+    'listing_withdrawn',
     'inquiry_sent',
     'message_sent',
 
@@ -114,6 +119,22 @@ export type UsageEventName = (typeof USAGE_EVENT_NAMES)[number];
  * name contains a crop, a unit or an id-looking segment.
  */
 export const NAME_SHAPE = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
+
+/**
+ * How long a usage event lives, in days.
+ *
+ * 90 days, and it is a SHARED constant because two things have to agree about
+ * it: the sweep that deletes the rows, and the privacy notice that tells people
+ * how long they are kept. Those drift silently, and the drift direction is
+ * "the notice promises a shorter life than the data gets".
+ *
+ * Ninety rather than forever: this is Product Interaction data LINKED to the
+ * user, so it is personal data under GDPR, and a retention period is the
+ * difference between analytics and a permanent behavioural record. Ninety
+ * rather than thirty: a season is the unit this product is used in, and a month
+ * of data cannot answer whether a screen is used at sowing but not at harvest.
+ */
+export const USAGE_EVENT_RETENTION_DAYS = 90;
 
 /** Upper bound on one batch. */
 export const MAX_USAGE_EVENTS_PER_BATCH = 50;

@@ -177,6 +177,26 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
     },
     {
         /**
+         * #493 — delete usage events past their 90-day life.
+         *
+         * Daily, which only decides how long past day 90 a row waits — up to 24
+         * hours, within any reading of "kept for 90 days".
+         *
+         * 04:30 UTC, LAST in the 03:45–04:30 retention chain and deliberately
+         * after `account-erasure-sweep` (04:15). Every other sweep in that chain
+         * enforces a deadline somebody can ask about by date — a document's
+         * `expiresOn`, a person's 30-day erasure — while this one enforces a
+         * figure in our own privacy notice with a day of slack either side. It
+         * is also the only one whose statement is a BULK delete, so it goes
+         * where it cannot queue the others behind it on the 12-connection pool.
+         */
+        name: 'usage-event-retention',
+        pattern: '30 4 * * *',
+        description: 'Delete usage events older than 90 days (#493)',
+        defaultPayload: {},
+    },
+    {
+        /**
          * P5.5b — shadow-score the unscored notices.
          *
          * Quarter-hourly, which is a SAMPLING decision rather than a latency
