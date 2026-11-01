@@ -594,11 +594,13 @@
         "assignment": {
             "task": {
                 "title": "You were assigned a task",
-                "body": "{label} is now yours."
+                "body": "{label} is now yours.",
+                "pushBody": "Task {key} is now yours."
             },
             "asset": {
                 "title": "You were assigned an asset",
-                "body": "{label} is now yours."
+                "body": "{label} is now yours.",
+                "pushBody": "Asset {key} is now yours."
             }
         },
         "taskDue": {
@@ -619,17 +621,20 @@
             "sprayWindow": {
                 "title": "Spray window unsuitable",
                 "body": "Today's conditions at {label} are unsuitable for spraying.",
-                "bodyWithDetail": "Today's conditions at {label} are unsuitable for spraying — {detail}"
+                "bodyWithDetail": "Today's conditions at {label} are unsuitable for spraying — {detail}",
+                "pushBody": "Conditions today are unsuitable for spraying. Open for details."
             },
             "diseaseRisk": {
                 "title": "Disease pressure rising",
                 "body": "High disease pressure detected at {label}.",
-                "bodyWithDetail": "High disease pressure detected at {label} — {detail}"
+                "bodyWithDetail": "High disease pressure detected at {label} — {detail}",
+                "pushBody": "High disease pressure detected. Open for details."
             },
             "copilot": {
                 "title": "Agronomy copilot explanation",
                 "body": "An agronomy explanation is ready for {label}.",
-                "bodyWithDetail": "An agronomy explanation is ready for {label} — {detail}"
+                "bodyWithDetail": "An agronomy explanation is ready for {label} — {detail}",
+                "pushBody": "An agronomy explanation is ready. Open for details."
             }
         }
     },

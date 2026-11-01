@@ -63,6 +63,25 @@ export type AssignmentNotificationKind =
 interface AssignmentCopy {
     titleKey: string;
     bodyKey: string;
+    /**
+     * The PUSH body, which is NOT `bodyKey` — #1999.
+     *
+     * `bodyKey` interpolates `{label}`, which is the entity's KEY plus the
+     * farmer's own title in quotes. That body is correct for the bell and the
+     * web UI, which are inside our own boundary. A push alert is not: APNs
+     * payloads are not end-to-end encrypted, so Apple reads
+     * `aps.alert.body` — and a task title is farm operational prose
+     * («Пръскане на блок 3 срещу мана»).
+     *
+     * So the push body interpolates `{key}` only. Owner ruling 2026-11-01,
+     * chosen over strict ids-only (which would show «Възложена Ви е задача»
+     * with no key and force the app open to learn which one) and over
+     * keeping the prose. Web Push is encrypted to the subscription's own
+     * `p256dh`/`auth` keys, so the push service cannot read it there — the
+     * reduction is for Apple, and it is applied to BOTH transports because one
+     * payload feeds both and two bodies for one notification is a drift seam.
+     */
+    pushBodyKey: string;
     linkPath: (tenantSlug: string, entityId: string) => string;
 }
 
@@ -83,11 +102,13 @@ const COPY: Record<AssignmentNotificationKind, AssignmentCopy> = {
     TASK_ASSIGNED: {
         titleKey: 'notifications.assignment.task.title',
         bodyKey: 'notifications.assignment.task.body',
+        pushBodyKey: 'notifications.assignment.task.pushBody',
         linkPath: (slug, id) => `/t/${slug}/farm-tasks/${id}`,
     },
     ASSET_ASSIGNED: {
         titleKey: 'notifications.assignment.asset.title',
         bodyKey: 'notifications.assignment.asset.body',
+        pushBodyKey: 'notifications.assignment.asset.pushBody',
         linkPath: (slug, id) => `/t/${slug}/assets/${id}`,
     },
 };
@@ -116,7 +137,19 @@ export interface AssignmentNotificationOutcome {
      * the caller fan the same alert out to other channels (Web Push) without
      * rebuilding the title/body/link.
      */
-    notification?: { title: string; message: string; linkUrl: string };
+    notification?: {
+        title: string;
+        /** For the bell and the web UI — carries the farmer's own label. */
+        message: string;
+        /**
+         * For a PUSH payload — carries the entity KEY and no free text
+         * (#1999). Empty when the entity has no key, which makes the push
+         * title-only rather than letting the prose back in through a
+         * fallback.
+         */
+        pushBody: string;
+        linkUrl: string;
+    };
 }
 
 export async function createAssignmentNotification(
@@ -129,6 +162,12 @@ export async function createAssignmentNotification(
     const label = target.entityKey
         ? `${target.entityKey} "${target.entityLabel}"`
         : `"${target.entityLabel}"`;
+    // No key means no push body: the alert then carries its title only.
+    // Falling back to `label` here is the whole defect #1999 is about, and a
+    // fallback is exactly how it would come back.
+    const pushBody = target.entityKey
+        ? await translateFor(target.locale, copy.pushBodyKey, { key: target.entityKey })
+        : '';
 
     const row = {
         tenantId: target.tenantId,
@@ -166,6 +205,14 @@ export async function createAssignmentNotification(
     }
 
     return result.count > 0
-        ? { status: 'created', notification: { title: row.title, message: row.message, linkUrl: row.linkUrl } }
+        ? {
+              status: 'created',
+              notification: {
+                  title: row.title,
+                  message: row.message,
+                  pushBody,
+                  linkUrl: row.linkUrl,
+              },
+          }
         : { status: 'duplicate' };
 }

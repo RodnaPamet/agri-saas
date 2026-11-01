@@ -280,7 +280,10 @@ export async function runWeatherPull(
                             tenantId: ctx.tenantId,
                             recipientUserId: r.sprayPush.recipientUserId,
                             title: r.sprayPush.title,
-                            body: r.sprayPush.message,
+                            // `pushBody`, never `message` — #1999. `message`
+                            // names the block; an APNs alert body is readable
+                            // by Apple.
+                            body: r.sprayPush.pushBody,
                             link: r.sprayPush.linkUrl,
                             collapseKey: `spray-${locationId}`,
                         });
