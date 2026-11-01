@@ -44,6 +44,21 @@ const assertModuleEnabled = jest.fn<Promise<void>, unknown[]>();
 jest.mock('@/app-layer/usecases/modules', () => ({
     assertModuleEnabled: (...a: unknown[]) => assertModuleEnabled(...a),
 }));
+// `{ items, pageInfo: { nextCursor, hasNextPage } }` — the usecase's REAL
+// shape, and a FOURTH distinct pagination shape in this codebase. A double
+// returning `{ rows }` would agree with the tool and tell us nothing about the
+// dependency, which is what `listCostEntries` already cost.
+const listLocationsPaginated = jest.fn<
+    Promise<{ items: unknown[]; pageInfo: { nextCursor: string | null; hasNextPage: boolean } }>,
+    unknown[]
+>();
+jest.mock('@/app-layer/usecases/location', () => ({
+    listLocationsPaginated: (...a: unknown[]) => listLocationsPaginated(...a),
+}));
+const analyzeBlockRisk = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+jest.mock('@/app-layer/usecases/parcel-risk', () => ({
+    analyzeBlockRisk: (...a: unknown[]) => analyzeBlockRisk(...a),
+}));
 
 import {
     ASSISTANT_TOOLS,
@@ -68,6 +83,20 @@ describe('assistant tools (#2578)', () => {
         listCostEntries.mockResolvedValue({ rows: [], totalCount: 0, truncated: false });
         listActiveListings.mockResolvedValue({ rows: [], nextCursor: null });
         assertModuleEnabled.mockResolvedValue(undefined);
+        listLocationsPaginated.mockResolvedValue({
+            items: [],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        });
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле',
+            analysed: 0,
+            total: 0,
+            worst: 'unknown',
+            counts: { unknown: 0, good: 0, watch: 0, stress: 0 },
+            configured: true,
+            parcels: [],
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
     });
 
     it('the set is closed and every def matches its key', () => {
@@ -376,6 +405,18 @@ describe('assistant tools (#2578)', () => {
         },
     );
 
+    it.each(['list_blocks', 'analyze_block_risk'])(
+        '%s asserts NO module — its route gates none, measured',
+        async (tool) => {
+            // `/locations/route.ts` and `/agro/parcels/[parcelId]/analysis/route.ts`
+            // call no `assertModuleEnabled`. Inventing one would refuse a
+            // surface the product leaves open — #2629's defect inverted.
+            const args = tool === 'analyze_block_risk' ? '{"locationId":"loc-1"}' : '{}';
+            await runTool(ctx, tool, args);
+            expect(assertModuleEnabled).not.toHaveBeenCalled();
+        },
+    );
+
     it('list_farm_tasks asserts NO module, because its route gates none', async () => {
         // The negative half, and it is a MEASUREMENT rather than an omission:
         // `/api/t/[tenantSlug]/farm-tasks/route.ts` calls no
@@ -393,6 +434,95 @@ describe('assistant tools (#2578)', () => {
         await expect(runTool(ctx, 'list_cost_entries', '{}')).resolves.toMatchObject({
             ok: false,
         });
+    });
+
+    it('list_blocks reads .items, is bounded, and withholds the owner', async () => {
+        listLocationsPaginated.mockResolvedValue({
+            items: [
+                {
+                    id: 'loc-1',
+                    name: 'Голямо поле',
+                    key: 'GP',
+                    kind: 'FIELD',
+                    status: 'ACTIVE',
+                    _count: { parcels: 7 },
+                    owner: { id: 'u-9', name: 'Иван Петров' },
+                    boundsJson: { type: 'Polygon' },
+                },
+            ],
+            pageInfo: { nextCursor: null, hasNextPage: false },
+        });
+        const res = await runTool(ctx, 'list_blocks', '{}');
+        expect(res.ok).toBe(true);
+        const [, params] = listLocationsPaginated.mock.calls[0] as [unknown, Record<string, unknown>];
+        expect(params).toMatchObject({ limit: 20 });
+        // Read off `.items`. A tool reading `.rows` here gets undefined and
+        // the test would fail on the projection rather than silently pass.
+        expect(res.content).toContain('Голямо поле');
+        expect(res.content).toContain('"parcelCount":7');
+        // The owner is a person's NAME, and an answer about land has no use
+        // for it. Geometry likewise.
+        expect(res.content).not.toContain('Иван Петров');
+        expect(res.content).not.toContain('boundsJson');
+        // And a link to the real block screen.
+        expect(res.links).toEqual([{ route: '/locations/loc-1', label: 'Голямо поле' }]);
+    });
+
+    it('list_blocks refuses free text and an unknown kind', async () => {
+        for (const bad of [{ q: 'поле' }, { kinds: ['PADDOCK'] }, { search: 'x' }]) {
+            const out = await runTool(ctx, 'list_blocks', JSON.stringify(bad));
+            expect({ bad: Object.keys(bad)[0], ok: out.ok }).toEqual({
+                bad: Object.keys(bad)[0],
+                ok: false,
+            });
+        }
+        // Control: the real enum values are accepted.
+        expect((await runTool(ctx, 'list_blocks', '{"kinds":["FIELD","BIN"]}')).ok).toBe(true);
+    });
+
+    it('analyze_block_risk reports analysed OUT OF total, and whether it is complete', async () => {
+        // The property the batch usecase exists for. Without it a model
+        // counting levels scores the un-analysed parcels as merely `unknown`
+        // and answers "nothing stressed" about a farm it did not finish.
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле',
+            analysed: 24,
+            total: 30,
+            worst: 'stress',
+            counts: { unknown: 0, good: 22, watch: 1, stress: 1 },
+            configured: true,
+            parcels: [
+                { name: 'П-1', overall: 'stress', vegetation: 'stress', moisture: 'good', acquiredDate: '2026-10-28' },
+                { name: 'П-2', overall: 'watch', vegetation: 'watch', moisture: 'good', acquiredDate: '2026-10-28' },
+                { name: 'П-3', overall: 'good', vegetation: 'good', moisture: 'good', acquiredDate: '2026-10-28' },
+            ],
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const res = await runTool(ctx, 'analyze_block_risk', '{"locationId":"loc-1"}');
+        expect(res.ok).toBe(true);
+        expect(res.content).toContain('"analysed":24');
+        expect(res.content).toContain('"total":30');
+        expect(res.content).toContain('"complete":false');
+        // Parcels needing attention are NAMED, and the fine one is not listed.
+        expect(res.content).toContain('П-1');
+        expect(res.content).toContain('П-2');
+        expect(res.content).not.toContain('П-3');
+    });
+
+    it('analyze_block_risk takes a DERIVED id but refuses a malformed one', async () => {
+        // The first tool that accepts a record id, and the distinction is
+        // provenance: a `locationId` comes from a prior `list_blocks` result,
+        // which the model READ rather than composed. The charset bound is the
+        // same one `links.ts` applies, so junk is refused here rather than
+        // reaching Prisma.
+        expect((await runTool(ctx, 'analyze_block_risk', '{"locationId":"loc-1"}')).ok).toBe(true);
+        for (const bad of ['', 'a'.repeat(65), "'; DROP TABLE", '../../etc/passwd']) {
+            const out = await runTool(ctx, 'analyze_block_risk', JSON.stringify({ locationId: bad }));
+            expect(out.ok).toBe(false);
+        }
+        // And the id is required — a block-risk question about no block is
+        // not a question this tool can answer.
+        expect((await runTool(ctx, 'analyze_block_risk', '{}')).ok).toBe(false);
     });
 
     it('refuses a hallucinated tool name without throwing', async () => {
