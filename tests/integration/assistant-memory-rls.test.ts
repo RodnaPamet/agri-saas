@@ -296,7 +296,7 @@ describeFn('#2671 — assistant memory RLS', () => {
          * audit rows in teardown would be subverting the control this codebase
          * exists to keep.
          *
-         * So: any tenant a Prisma write touches is undeletable afterwards. The
+         * So any tenant a Prisma write touches is undeletable afterwards. The
          * rest of this file is cleanable only because it inserts via raw SQL,
          * which bypasses the extension — which is ALSO why nothing else here
          * proves encryption. The two facts have one cause.

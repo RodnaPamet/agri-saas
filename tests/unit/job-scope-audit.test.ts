@@ -146,7 +146,16 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // own tenantId — so a payload tenantId would be a NARROWER claim
             // than the job makes, and a per-tenant schedule would need one
             // schedule per farm to reach them all.
-            if (['usage-event-retention', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep'].includes(jobName)) continue;
+            // memory-extract (#2671) sweeps ENDED assistant conversations across
+            // every farm. The tenant axis is PER ROW — each conversation carries
+            // its own tenantId, and the turn read runs under
+            // runInTenantContext with THAT value, so a conversation's turns are
+            // only ever decrypted in their own farm's context. A payload
+            // tenantId would be a NARROWER claim than the job makes and would
+            // leave every other farm's conversations unextracted. The profile it
+            // writes has no tenantId at all, by the owner's "one memory per
+            // person, across farms" decision.
+            if (['usage-event-retention', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {
