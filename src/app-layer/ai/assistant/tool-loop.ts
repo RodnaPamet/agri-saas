@@ -107,6 +107,20 @@ export async function runToolLoop(
             text = completion.text ?? '';
             break;
         }
+        // The ASSISTANT turn that made these calls, pushed BEFORE their
+        // results. Without it the history is `[question] [tool_result]`, and
+        // Anthropic refuses a `tool_result` whose `tool_use` is absent from
+        // the previous message — which is every question, for every model,
+        // because the request is malformed before a model sees it.
+        //
+        // It must carry ALL the calls from this round, not one per result:
+        // they belong to one assistant turn, and splitting them would put a
+        // `tool_result` after a message holding a different call's `tool_use`.
+        messages.push({
+            role: 'assistant',
+            content: completion.text ?? '',
+            toolCalls: calls,
+        } as AiMessage);
         for (const call of calls) {
             if (toolCallsMade >= MAX_TOOL_CALLS) {
                 halt = 'ASSISTANT_TOOL_BUDGET';

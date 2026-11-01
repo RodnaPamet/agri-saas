@@ -180,6 +180,65 @@ describe('the assistant tool loop (#2578)', () => {
         });
     });
 
+    it('pushes the assistant TOOL_USE turn before the tool result — the outage', async () => {
+        // The bug that broke every question the moment the flag went on.
+        //
+        // The loop pushed a `role: 'tool'` message per result and NEVER the
+        // assistant turn that made the calls, so the history reached Anthropic
+        // as `[question] [tool_result]` and was refused:
+        //
+        //   messages.0.content.2: unexpected `tool_use_id` found in
+        //   `tool_result` blocks … Each `tool_result` block must have a
+        //   corresponding `tool_use` block in the previous message.
+        //
+        // A 400 on a malformed request, so it failed for EVERY model and was
+        // not environmental. The shape was previously inexpressible:
+        // `AiMessage.content` is a string, so there was nowhere to put the
+        // calls.
+        const h = harness();
+        const complete = jest
+            .fn()
+            .mockResolvedValueOnce({ text: 'Проверявам.', toolCalls: [call('list_farm_tasks')] })
+            .mockResolvedValueOnce({ text: 'Имате една задача.' });
+        await runToolLoop({ ctx, complete, send: h.send }, []);
+
+        // The history handed to the SECOND call is the one that matters.
+        const history = complete.mock.calls[1][0] as Array<Record<string, unknown>>;
+        const toolIdx = history.findIndex((m) => m.role === 'tool');
+        expect(toolIdx).toBeGreaterThan(0);
+        const before = history[toolIdx - 1];
+        expect(before.role).toBe('assistant');
+        // Carrying the call whose id the result answers — that correspondence
+        // IS the thing the API checks.
+        expect((before.toolCalls as Array<{ id: string }>).map((c) => c.id)).toEqual([
+            (history[toolIdx] as { toolCallId: string }).toolCallId,
+        ]);
+    });
+
+    it('puts ALL of one round\'s calls on a SINGLE assistant turn', async () => {
+        // They belong to one assistant turn. Splitting them would place a
+        // `tool_result` after a message holding a DIFFERENT call's `tool_use`,
+        // which is the same refusal one step further on.
+        const h = harness();
+        const complete = jest
+            .fn()
+            .mockResolvedValueOnce({
+                text: '',
+                toolCalls: [call('list_farm_tasks'), call('list_blocks')],
+            })
+            .mockResolvedValueOnce({ text: 'Готово.' });
+        await runToolLoop({ ctx, complete, send: h.send }, []);
+        const history = complete.mock.calls[1][0] as Array<Record<string, unknown>>;
+        const assistants = history.filter((m) => m.role === 'assistant' && m.toolCalls);
+        expect(assistants).toHaveLength(1);
+        expect((assistants[0].toolCalls as unknown[]).length).toBe(2);
+        // And every tool result's id corresponds to one of them.
+        const ids = new Set((assistants[0].toolCalls as Array<{ id: string }>).map((c) => c.id));
+        for (const m of history.filter((x) => x.role === 'tool')) {
+            expect(ids.has((m as { toolCallId: string }).toolCallId)).toBe(true);
+        }
+    });
+
     it('a PARTIAL fact survives a higher-precedence halt (#2639)', async () => {
         // The principle this file's own docblock states for truncation:
         // "Truncation is additionally always reported on `done.truncatedAny`,
