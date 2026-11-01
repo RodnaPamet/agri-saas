@@ -16101,6 +16101,7 @@ exports[`API contract — per-schema snapshots schema: RememberedPoint 1`] = `
     },
     "rememberedAt": {
       "type": "string",
+      "format": "date-time",
       "description": "ISO-8601, the date the person SAID the thing — not when the row was written. The client formats it; the server never pre-formats a date."
     }
   },

@@ -364,7 +364,11 @@ const RememberedPointSchema = z
                 + 'copied out of what they typed, because the extraction is a narrowing and '
                 + 'that narrowing is what bounds what can reach the profile.',
         }),
-        rememberedAt: z.string().openapi({
+        // `.datetime()`, not a bare string — `timestamps-declare-their-format`
+        // requires a response-side timestamp to declare one, and the reason is
+        // a client's: a reader cannot tell an ISO instant from a date or a
+        // formatted string without it, and the three parse differently.
+        rememberedAt: z.string().datetime().openapi({
             description:
                 'ISO-8601, the date the person SAID the thing \u2014 not when the row was '
                 + 'written. The client formats it; the server never pre-formats a date.',
