@@ -611,3 +611,41 @@ export const ContractListSchema = z
         description:
             'A capped page of contracts. `totals` is computed over the rows on this page and filtered to committed statuses, so it is a summary of what was returned — on a truncated page it is NOT the whole book.',
     });
+
+/** One aggregate bucket. `totalMinor` is integer CENTS, never a float. */
+const CostSummaryBucketShape = {
+    currency: z.string().openapi({ example: 'EUR' }),
+    totalMinor: z.number().int().openapi({
+        description:
+            'The total in integer MINOR UNITS (cents) of `currency`. Multiplied in Postgres ' +
+            'numeric arithmetic, never in JavaScript, so no float is involved at any point. ' +
+            'Divide by 100 in a decimal type — never a double.',
+        example: 210000,
+    }),
+    count: z.number().int().openapi({ example: 3 }),
+};
+
+export const CostSummarySchema = z
+    .object({
+        byType: z.array(z.object({ category: z.string(), ...CostSummaryBucketShape })),
+        byMonth: z.array(z.object({ month: z.string(), ...CostSummaryBucketShape })),
+        byTypeAndMonth: z.array(
+            z.object({ category: z.string(), month: z.string(), ...CostSummaryBucketShape }),
+        ),
+        currencies: z.array(z.object({ currency: z.string(), count: z.number().int() })),
+    })
+    .openapi('CostSummary', {
+        description:
+            'Exact cost aggregates over EVERY matching row — no cap, unlike `GET /grain/costs`.\n\n' +
+            '**Grouped by currency, never blended.** There is no FX table in this deployment, so ' +
+            'a farm with costs in BGN and EUR gets a row per currency and the CLIENT decides what ' +
+            'to draw. `currencies` is the per-currency row count, so a client can name what it ' +
+            'left out («не са включени N разхода в BGN») without scanning the other arrays. ' +
+            'NOTE a category therefore appears ONCE PER CURRENCY in `byType` — a decoder keying ' +
+            'on category alone silently drops a row.\n\n' +
+            '`month` is a `YYYY-MM` STRING rather than a date, which removes the time-zone ' +
+            'question entirely: a UTC-bucketed instant drawn at local midnight labels September ' +
+            'as August.\n\n' +
+            '`byTypeAndMonth` re-sums exactly to both coarser groupings, so two charts on one ' +
+            'screen cannot disagree.',
+    });

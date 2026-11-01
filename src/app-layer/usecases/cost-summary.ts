@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 
-import prisma from '@/lib/prisma';
+import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
 import type { CostCategory } from '@prisma/client';
 import type { RequestContext } from '../types';
@@ -77,6 +77,12 @@ function whereClause(ctx: RequestContext, filter: CostSummaryFilter): Prisma.Sql
         // the application-layer filter that every Prisma query gets, so this is
         // the only thing standing between this aggregate and another farm's
         // costs. RLS is the backstop, not the control.
+        // DEFENCE IN DEPTH, not redundancy. These queries run inside
+        // `runInTenantContext`, which drops to `app_user` and sets
+        // `app.tenant_id`, so RLS already confines them — but the house rule is
+        // that every query ALSO filters by tenantId, and here it is what makes
+        // the intent legible at the call site rather than depending on a
+        // policy two files away.
         Prisma.sql`"tenantId" = ${ctx.tenantId}`,
         Prisma.sql`"deletedAt" IS NULL`,
     ];
@@ -98,51 +104,72 @@ export async function getCostSummary(
     assertCanRead(ctx);
     const where = whereClause(ctx, filter);
 
-    // `to_char(…, 'YYYY-MM')` rather than a date: a year-month STRING removes
-    // the time-zone question entirely. The phone was bucketing by UTC date and
-    // drawing at local midnight, which labelled September as «авг».
-    const [byType, byMonth, byTypeAndMonth, currencies] = await Promise.all([
-        prisma.$queryRaw<{ category: CostCategory; currency: string; totalMinor: bigint; count: bigint }[]>`
+    // `runInTenantContext` rather than the global client. RLS is FORCED on
+    // `CostEntry`, and raw SQL on the global client runs as the owner role and
+    // bypasses it entirely — defeating the isolation layer that the
+    // application-level filter is only the second half of. `no-direct-prisma`
+    // is the guard that caught me doing it the other way, and it was right.
+    return runInTenantContext(ctx, async (db) => {
+        // SEQUENTIAL, not `Promise.all`. These share ONE transaction and
+        // therefore one connection; issuing four queries concurrently on it is
+        // not parallelism, and nothing serialises them for you. Each is an
+        // indexed aggregate (`[tenantId, category, incurredOn]`) over a bounded
+        // table, so the cost is four fast round trips rather than one.
+        //
+        // `to_char(…, 'YYYY-MM')` rather than a date: a year-month STRING
+        // removes the time-zone question entirely. The phone was bucketing by
+        // UTC date and drawing at local midnight, which labelled September «авг».
+        const byType = await db.$queryRaw<
+            { category: CostCategory; currency: string; totalMinor: bigint; count: bigint }[]
+        >`
             SELECT "category", "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
             GROUP BY "category", "currency"
             ORDER BY (SUM("amount") * 100)::bigint DESC
-        `,
-        prisma.$queryRaw<{ month: string; currency: string; totalMinor: bigint; count: bigint }[]>`
+        `;
+
+        const byMonth = await db.$queryRaw<
+            { month: string; currency: string; totalMinor: bigint; count: bigint }[]
+        >`
             SELECT to_char("incurredOn", 'YYYY-MM') AS "month", "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
             GROUP BY 1, "currency"
             ORDER BY 1 ASC
-        `,
-        prisma.$queryRaw<{ category: CostCategory; month: string; currency: string; totalMinor: bigint; count: bigint }[]>`
+        `;
+
+        const byTypeAndMonth = await db.$queryRaw<
+            { category: CostCategory; month: string; currency: string; totalMinor: bigint; count: bigint }[]
+        >`
             SELECT "category", to_char("incurredOn", 'YYYY-MM') AS "month", "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
             GROUP BY "category", 2, "currency"
             ORDER BY 2 ASC
-        `,
-        prisma.$queryRaw<{ currency: string; count: bigint }[]>`
+        `;
+
+        const currencies = await db.$queryRaw<{ currency: string; count: bigint }[]>`
             SELECT "currency", COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
             GROUP BY "currency"
             ORDER BY COUNT(*) DESC
-        `,
-    ]);
+        `;
 
-    // `bigint` out of `::bigint` and `COUNT(*)`. JSON cannot serialise it, and
-    // `JSON.stringify` THROWS on one rather than coercing — so this conversion
-    // is load-bearing, not cosmetic. Safe as a Number: the column is
-    // Decimal(14,2), so the largest representable total is 10^12 cents, four
-    // orders of magnitude inside Number.MAX_SAFE_INTEGER.
-    const n = (v: bigint) => Number(v);
+        // `bigint` out of `::bigint` and `COUNT(*)`. This conversion is
+        // load-bearing rather than cosmetic: `JSON.stringify` THROWS on a
+        // bigint instead of coercing it, so without this the route 500s.
+        // Safe as a Number — the column is Decimal(14,2), so the largest
+        // representable total is 10^12 cents, four orders of magnitude inside
+        // Number.MAX_SAFE_INTEGER.
+        const n = (v: bigint) => Number(v);
 
-    return {
-        byType: byType.map((r) => ({ ...r, totalMinor: n(r.totalMinor), count: n(r.count) })),
-        byMonth: byMonth.map((r) => ({ ...r, totalMinor: n(r.totalMinor), count: n(r.count) })),
-        byTypeAndMonth: byTypeAndMonth.map((r) => ({
-            ...r,
-            totalMinor: n(r.totalMinor),
-            count: n(r.count),
-        })),
-        currencies: currencies.map((r) => ({ ...r, count: n(r.count) })),
-    };
+        return {
+            byType: byType.map((r) => ({ ...r, totalMinor: n(r.totalMinor), count: n(r.count) })),
+            byMonth: byMonth.map((r) => ({ ...r, totalMinor: n(r.totalMinor), count: n(r.count) })),
+            byTypeAndMonth: byTypeAndMonth.map((r) => ({
+                ...r,
+                totalMinor: n(r.totalMinor),
+                count: n(r.count),
+            })),
+            currencies: currencies.map((r) => ({ ...r, count: n(r.count) })),
+        };
+    });
 }

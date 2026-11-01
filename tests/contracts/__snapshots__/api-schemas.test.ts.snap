@@ -4472,6 +4472,133 @@ exports[`API contract — per-schema snapshots schema: CostInvoiceScanResult 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CostSummary 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "byType": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "example": "EUR"
+          },
+          "totalMinor": {
+            "type": "integer",
+            "description": "The total in integer MINOR UNITS (cents) of \`currency\`. Multiplied in Postgres numeric arithmetic, never in JavaScript, so no float is involved at any point. Divide by 100 in a decimal type — never a double.",
+            "example": 210000
+          },
+          "count": {
+            "type": "integer",
+            "example": 3
+          }
+        },
+        "required": [
+          "category",
+          "currency",
+          "totalMinor",
+          "count"
+        ]
+      }
+    },
+    "byMonth": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "example": "EUR"
+          },
+          "totalMinor": {
+            "type": "integer",
+            "description": "The total in integer MINOR UNITS (cents) of \`currency\`. Multiplied in Postgres numeric arithmetic, never in JavaScript, so no float is involved at any point. Divide by 100 in a decimal type — never a double.",
+            "example": 210000
+          },
+          "count": {
+            "type": "integer",
+            "example": 3
+          }
+        },
+        "required": [
+          "month",
+          "currency",
+          "totalMinor",
+          "count"
+        ]
+      }
+    },
+    "byTypeAndMonth": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "example": "EUR"
+          },
+          "totalMinor": {
+            "type": "integer",
+            "description": "The total in integer MINOR UNITS (cents) of \`currency\`. Multiplied in Postgres numeric arithmetic, never in JavaScript, so no float is involved at any point. Divide by 100 in a decimal type — never a double.",
+            "example": 210000
+          },
+          "count": {
+            "type": "integer",
+            "example": 3
+          }
+        },
+        "required": [
+          "category",
+          "month",
+          "currency",
+          "totalMinor",
+          "count"
+        ]
+      }
+    },
+    "currencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "count"
+        ]
+      }
+    }
+  },
+  "required": [
+    "byType",
+    "byMonth",
+    "byTypeAndMonth",
+    "currencies"
+  ],
+  "description": "Exact cost aggregates over EVERY matching row — no cap, unlike \`GET /grain/costs\`.\\n\\n**Grouped by currency, never blended.** There is no FX table in this deployment, so a farm with costs in BGN and EUR gets a row per currency and the CLIENT decides what to draw. \`currencies\` is the per-currency row count, so a client can name what it left out («не са включени N разхода в BGN») without scanning the other arrays. NOTE a category therefore appears ONCE PER CURRENCY in \`byType\` — a decoder keying on category alone silently drops a row.\\n\\n\`month\` is a \`YYYY-MM\` STRING rather than a date, which removes the time-zone question entirely: a UTC-bucketed instant drawn at local midnight labels September as August.\\n\\n\`byTypeAndMonth\` re-sums exactly to both coarser groupings, so two charts on one screen cannot disagree."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CreateAdminInviteRequest 1`] = `
 "{
   "type": "object",

@@ -1409,7 +1409,7 @@
     {
       "path": "/api/t/{tenantSlug}/grain/costs/summary",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/grain/costs/{costEntryId}",
