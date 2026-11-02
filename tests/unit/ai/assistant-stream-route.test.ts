@@ -73,6 +73,31 @@ const loadWindow = jest.fn<Promise<unknown[]>, unknown[]>(async () => []);
 const renderWindow = jest.fn<string, unknown[]>(() => '');
 const recordTurn = jest.fn<Promise<void>, unknown[]>(async () => undefined);
 
+/*
+ * The logger, so #2681's two endings can be told apart.
+ *
+ * A client disconnect EMITS NOTHING — that is the whole point of it — so the
+ * stream carries no observable to assert on, and the log line is the only
+ * place the route says which of the two it decided. Spread from the real
+ * module rather than replaced: the route imports only `logger`, but the SSE
+ * helper and the tool loop underneath it reach for other exports, and a bare
+ * factory makes those `undefined` at the moment they are called.
+ */
+const loggerInfo = jest.fn();
+const loggerWarn = jest.fn();
+jest.mock('@/lib/observability', () => {
+    const actual = jest.requireActual('@/lib/observability') as Record<string, unknown>;
+    const real = actual.logger as Record<string, unknown>;
+    return {
+        ...actual,
+        logger: {
+            ...real,
+            info: (...a: unknown[]) => loggerInfo(...a),
+            warn: (...a: unknown[]) => loggerWarn(...a),
+        },
+    };
+});
+
 jest.mock('@/app-layer/usecases/assistant-conversation', () => ({
     resolveConversation: (...a: unknown[]) => resolveConversation(...a),
     loadWindow: (...a: unknown[]) => loadWindow(...a),
@@ -402,5 +427,79 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(screen).toContain('SCREEN_CONTEXT');
         expect(screen).toContain('route: /t/[tenantSlug]/journal');
         expect(screen).toContain('filter.status: DRAFT');
+    });
+    /*
+     * #2681 — the client went away, and that is not a provider failure.
+     *
+     * The pair is the test, not either half: BOTH arms reject with the exact
+     * message the SDK raises for an abort, so a route that keys on the error
+     * TEXT passes one and fails the other. Only the route's own controller
+     * separates them, which is what the issue asks for in its point 4 —
+     * "getting this backwards would hide a real provider timeout, which is
+     * worse than the current noise".
+     */
+    describe('a client that went away vs a provider that timed out (#2681)', () => {
+        /** The message BOTH causes produce — the reason text cannot discriminate. */
+        const ABORT_MESSAGE = 'Request was aborted.';
+
+        /** Let the stream's own async work run until `cond` holds. */
+        async function until(cond: () => boolean): Promise<void> {
+            for (let i = 0; i < 200 && !cond(); i++) {
+                await new Promise((r) => setTimeout(r, 0));
+            }
+            expect(cond()).toBe(true);
+        }
+
+        it('a cancelled stream is logged as a disconnect at INFO, and ends nothing', async () => {
+            let rejectProvider: (e: Error) => void = () => {};
+            completeWithRouting.mockImplementation(
+                () =>
+                    new Promise<{ text: string }>((_resolve, reject) => {
+                        rejectProvider = reject;
+                    }),
+            );
+
+            const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+            const res = await POST(...ask({ question: 'Кога да поливам?' }));
+            const reader = res.body!.getReader();
+            await reader.read();
+
+            // The provider call must be IN FLIGHT before the phone leaves, or
+            // the test proves a cancellation the route never raced.
+            await until(() => completeWithRouting.mock.calls.length > 0);
+
+            // The phone goes away. `cancel` is wired to `release`, which runs
+            // the subscribe releaser — `controller.abort()`.
+            await reader.cancel();
+            rejectProvider(new Error(ABORT_MESSAGE));
+            await until(() => loggerInfo.mock.calls.length > 0 || loggerWarn.mock.calls.length > 0);
+
+            expect(loggerInfo).toHaveBeenCalledWith(
+                'assistant.client_disconnected',
+                expect.objectContaining({ elapsedMs: expect.any(Number) }),
+            );
+            // NOT a provider failure, and the whole defect was that it was.
+            expect(loggerWarn).not.toHaveBeenCalledWith('assistant.ended_early', expect.anything());
+        });
+
+        it('a per-attempt TIMEOUT is still a provider failure, though it reads identically', async () => {
+            // Same message, nobody cancelled: this is OUR abort, and it IS a
+            // provider timeout.
+            completeWithRouting.mockRejectedValue(new Error(ABORT_MESSAGE));
+
+            const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+            const res = await POST(...ask({ question: 'Кога да поливам?' }));
+            const { events } = await drain(res);
+
+            expect(payload(events).code).toBe('ASSISTANT_PROVIDER_UNAVAILABLE');
+            expect(loggerWarn).toHaveBeenCalledWith(
+                'assistant.ended_early',
+                expect.objectContaining({ endingCode: 'ASSISTANT_PROVIDER_UNAVAILABLE' }),
+            );
+            expect(loggerInfo).not.toHaveBeenCalledWith(
+                'assistant.client_disconnected',
+                expect.anything(),
+            );
+        });
     });
 });

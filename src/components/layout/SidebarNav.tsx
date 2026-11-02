@@ -12,6 +12,7 @@ import { useCommandPalette } from '@/components/command-palette/command-palette-
 import {
     X,
     LayoutDashboard,
+    ToggleRight,
     BadgeEuro,
     Building2,
     AlertTriangle,
@@ -310,6 +311,21 @@ export function useNavSections(): NavSectionDef[] {
                     href: tenantHref('/admin/market-prices'),
                     label: t('platformPrices'),
                     icon: BadgeEuro,
+                    visible: tenant.isPlatformTenant === true,
+                },
+                // «Функции» (#2706) — the deployment-wide switchboard, and the
+                // widest-reaching entry here: the three above curate data a
+                // farm reads, while a switch behind this one turns a FEATURE
+                // on or off for every farm at once. Same `=== true` as its
+                // siblings, same reason — showing a global console to the
+                // wrong tenant is the worse failure, so it degrades CLOSED.
+                //
+                // Discoverability only. The page `notFound()`s and the route
+                // runs `assertPlatformSupport`, each independently.
+                {
+                    href: tenantHref('/admin/feature-flags'),
+                    label: t('platformFeatures'),
+                    icon: ToggleRight,
                     visible: tenant.isPlatformTenant === true,
                 },
             ]),

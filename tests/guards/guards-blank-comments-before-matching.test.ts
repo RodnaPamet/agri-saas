@@ -251,7 +251,18 @@ const POPULATION_FLOOR = 1200;
  * suggests `readsSource` could exclude a read routed through the TypeScript
  * parser rather than each one costing an entry here.
  */
-const UNBLANKED_CAP = 465;
+// 464 since #2706: `public-routes-self-authenticate` now blanks comments.
+// It was pulled off this list by a false alarm rather than a tidy-up — a
+// route whose DOCBLOCK explains why it does NOT use the platform key matched
+// `VERIFIES` on the bare word `verifyPlatformApiKey` and was reported as an
+// unreachable credential route. The remedy it printed, "add the path to
+// PUBLIC_PATH_PREFIXES", would have opened the Edge for a route that needs no
+// opening, which is the opposite of what that guard is for.
+//
+// Measured before and after: the population went 33 → 32 route files and the
+// ONE removed is the route with the docblock. Lowered in the same diff,
+// because slack a later regression can spend is what a ratchet refuses.
+const UNBLANKED_CAP = 464;
 
 /**
  * How far below the cap the live count may sit before this fails as slack.

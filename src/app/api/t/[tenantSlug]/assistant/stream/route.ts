@@ -179,6 +179,10 @@ export const POST = withApiErrorHandling(
         const screen = renderPageContext(parsed.data.pageContext);
 
         const controller = new AbortController();
+        // For the disconnect log below: an operator asking "how often do
+        // phones go away mid-answer, and how far in" needs the elapsed time,
+        // and the ending is the only place that knows it.
+        const startedAtMs = Date.now();
         const { start, release } = createSseResponse({
             subscribe: (send) => {
                 const emit = (e: AssistantStreamEvent): void => send(sseFormat(e));
@@ -331,6 +335,52 @@ export const POST = withApiErrorHandling(
                         // non-budget failure — and on #2654 both halves were
                         // false: the model answered with a 400, and the tools had
                         // already run and returned rows.
+                        /*
+                         * FOURTH outcome, and it is not a halt (#2681): the
+                         * CLIENT went away. Nobody is listening, so there is
+                         * nothing to tell and no code to choose.
+                         *
+                         * `controller.signal.aborted` is the authoritative
+                         * discriminator, and the reason it is safe is in
+                         * `completeOnce`: routing builds its OWN
+                         * `timeoutController`, the per-attempt timeout aborts
+                         * only that, and a caller abort is LINKED INTO it.
+                         * Routing never aborts the signal we passed. So this
+                         * flag is true only when our `cancel` hook fired —
+                         * which happens when the ReadableStream is cancelled,
+                         * i.e. the phone left.
+                         *
+                         * That distinction is the whole care in #2681: the easy
+                         * version treats EVERY abort as a disconnect, and the
+                         * per-attempt timeout also surfaces as
+                         * "Request was aborted." — so the easy version would
+                         * silently reclassify a genuine provider timeout as
+                         * user behaviour, which is worse than the noise it
+                         * removes. Checking our own controller rather than the
+                         * error text is what keeps them apart.
+                         *
+                         * INFO, not WARN: this is normal phone behaviour — a
+                         * screen switch, or a second question cancelling the
+                         * first — and counting it as a provider failure is what
+                         * made the production logs say the provider was
+                         * unreachable while the provider was fine.
+                         */
+                        if (controller.signal.aborted) {
+                            logger.info('assistant.client_disconnected', {
+                                component: 'assistant',
+                                tenantId: ctx.tenantId,
+                                elapsedMs: Date.now() - startedAtMs,
+                                // The provider error is kept, because "aborted
+                                // at 4.7s against a 60s timeout" is the shape
+                                // that made #2681 diagnosable at all.
+                                error: msg,
+                            });
+                            // Emit NOTHING. The socket is gone, so a halt event
+                            // is at best a no-op and at worst a log line
+                            // claiming we told somebody something.
+                            return;
+                        }
+
                         const status = httpStatusOf(err);
                         const code = /budget|ai_budget_exceeded|AI_BUDGET_EXCEEDED/i.test(msg)
                             ? 'ASSISTANT_SPEND_CEILING'

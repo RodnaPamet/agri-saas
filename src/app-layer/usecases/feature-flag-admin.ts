@@ -49,6 +49,22 @@ export interface UpsertFlagInput {
     cohorts: string[];
     /** `undefined` leaves it alone; `null` clears it. */
     description?: string | null;
+    /**
+     * The person who flipped it, when there IS one (#2706).
+     *
+     * OPTIONAL, and that is the whole point. The key-gated console upstream
+     * has no user in scope — the credential is a shared
+     * `PLATFORM_ADMIN_API_KEY` — so it passes nothing and the behaviour below
+     * is unchanged: `updatedByUserId` NULL and `actorType: PLATFORM_ADMIN`.
+     *
+     * The «Функции» page is session-authenticated, so there IS a person, and
+     * this must come from `ctx.userId` and NEVER from a request body. The
+     * write below explains why: a caller-supplied name in an attribution field
+     * is worse than an absent one. A session-resolved id is not
+     * caller-supplied, which is what makes recording it an improvement rather
+     * than a contradiction of that rule.
+     */
+    actorUserId?: string;
 }
 
 /** Bounded so one cohort cannot return an unbounded body. */
@@ -101,6 +117,11 @@ export async function upsertFeatureFlag(input: UpsertFlagInput): Promise<FlagAdm
             enabled: input.enabled,
             cohorts: input.cohorts,
             description: description ?? null,
+            // The CREATE arm as well as the update arm. A flag flipped for the
+            // first time from the page would otherwise record no actor, which
+            // is the one write where the attribution matters most — it is the
+            // flip that turned a feature on.
+            ...(input.actorUserId ? { updatedByUserId: input.actorUserId } : {}),
         },
         update: {
             enabled: input.enabled,
@@ -113,15 +134,27 @@ export async function upsertFeatureFlag(input: UpsertFlagInput): Promise<FlagAdm
             // `description` keeps the three-state contract: absent leaves it,
             // explicit null clears it.
             ...(description !== undefined ? { description } : {}),
+            // `updatedByUserId` is NULL when nobody is in scope, and that is
+            // the honest answer rather than a gap: on the key-gated path the
+            // credential is a platform API key, so there is no user to record,
+            // and taking an actor id from the REQUEST would put a
+            // caller-supplied name in an attribution field — worse than an
+            // absent one.
+            //
+            // #2706 adds the one case where a person IS in scope: «Функции»
+            // resolves `ctx.userId` from the session, which is not
+            // caller-supplied, so recording it satisfies that rule rather than
+            // bending it. The keyed path passes nothing and lands on NULL
+            // exactly as before.
+            //
+            // INSIDE the update arm, not beside it. tsc caught my first
+            // version, which put it at the upsert's top level — a sibling of
+            // `where`/`create`/`update`, where Prisma's args have no such
+            // field. Worth noting because the near-miss of that shape is a
+            // wrong `select` KEY, which typechecks clean on the extended
+            // client and fails at runtime.
+            ...(input.actorUserId ? { updatedByUserId: input.actorUserId } : {}),
         },
-        // `updatedByUserId` is left NULL, and that is the honest answer rather
-        // than a gap: the credential upstream is a platform API key, so there
-        // is no user in scope to record. Taking an actor id from the request
-        // would put a caller-supplied name in an attribution field, which is
-        // worse than an absent one. The record of WHO flipped a flag is the
-        // operator's access to the key plus the log line below; a real platform
-        // audit chain is P1.9 (`PlatformAuditLog`), and this is one of its
-        // first writers.
         select: FLAG_SELECT,
     });
 
@@ -154,6 +187,13 @@ export async function upsertFeatureFlag(input: UpsertFlagInput): Promise<FlagAdm
     await appendPlatformAuditEntry({
         scope: 'feature-flags',
         action: 'FEATURE_FLAG_UPSERTED',
+        // A real actor when the page supplied one, `PLATFORM_ADMIN` otherwise.
+        // The default stays the key path's answer, so a regulator reading the
+        // chain can tell a person's flip from a script's — which the previous
+        // single `actorType` could not express at all.
+        ...(input.actorUserId
+            ? { actorType: 'USER' as const, actorUserId: input.actorUserId }
+            : {}),
         detailsJson: {
             key: flag.key,
             enabled: flag.enabled,
