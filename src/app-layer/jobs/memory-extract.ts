@@ -21,6 +21,14 @@
  *     decrypts it. Read them raw and the model extracts from ciphertext,
  *     returning a confident nothing with nothing failing.
  *
+ * ## A deleted exchange is not extracted (#2695)
+ *
+ * `deletedAt IS NULL` is in the queue, and it is the easiest clause here to
+ * leave out. Without it the sweep reads a conversation the person deleted
+ * through «Какво помни асистентът» and writes a PROFILE POINT from it — rule 5
+ * violated through a side door, and invisible: the point looks like any other,
+ * and the exchange it came from is gone from every screen.
+ *
  * ## Stamping
  *
  * `extractedAt` is set in the SAME transaction as the facts, and AFTER them.
@@ -97,6 +105,7 @@ export async function runMemoryExtract(
         SELECT "id", "tenantId", "userId"
         FROM "AssistantConversation"
         WHERE "extractedAt" IS NULL
+          AND "deletedAt" IS NULL
           AND "lastTurnAt" < ${cutoff}
         ORDER BY "lastTurnAt" ASC
         LIMIT ${take}

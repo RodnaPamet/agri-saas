@@ -80,7 +80,18 @@ export async function resolveConversation(
     return runInTenantContext(ctx, async (db) => {
         if (requested) {
             const existing = await db.assistantConversation.findFirst({
-                where: { id: requested, tenantId: ctx.tenantId, userId: ctx.userId },
+                /*
+                 * `deletedAt: null` as well (#2695). A deleted conversation
+                 * resolves to NOTHING, so the caller starts a fresh one — the
+                 * same silent behaviour this function already gives an unknown
+                 * or foreign id, and for the same reason: a refusal would
+                 * confirm the id existed.
+                 *
+                 * Without it, a person who deleted an exchange and still held
+                 * its id in a sheet session would keep appending to it, and
+                 * the replay would keep quoting what they deleted.
+                 */
+                where: { id: requested, tenantId: ctx.tenantId, userId: ctx.userId, deletedAt: null },
                 select: { id: true },
             });
             if (existing) return existing.id;
@@ -105,7 +116,13 @@ export async function resolveConversation(
 export async function loadWindow(ctx: RequestContext, conversationId: string): Promise<WindowTurn[]> {
     const newestFirst = await runInTenantContext(ctx, (db) =>
         db.assistantTurn.findMany({
-            where: { conversationId, tenantId: ctx.tenantId },
+            /*
+             * Scoped through the CONVERSATION's tombstone (#2695), not the
+             * turn's: the person deletes an exchange, not a sentence. A
+             * relation filter keeps the window honest even for a caller that
+             * resolved the id before the delete landed.
+             */
+            where: { conversationId, tenantId: ctx.tenantId, conversation: { deletedAt: null } },
             orderBy: { createdAt: 'desc' },
             take: MAX_WINDOW_TURNS,
             select: { role: true, content: true },

@@ -583,6 +583,32 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // review. This model has no `tenantId` to filter on: a remembered
         // point is about a PERSON, who may farm in several tenants.
         'assistant-memory.ts',
+        // #2695 — `assistant-conversations-control.ts` is «Какво помни
+        // асистентът»'s EXCHANGES half, and it is `my-farms.ts`'s situation
+        // rather than `assistant-memory.ts`'s.
+        //
+        // `AssistantConversation` IS tenant-scoped: `tenant_isolation` keyed on
+        // `app.tenant_id`, its INSERT twin, and `superuser_bypass`. There is NO
+        // person clause. But the owner's scope is "all exchanges from all
+        // sessions with a user", so the question is person-scoped ACROSS farms —
+        // and no context can serve it: `runInUserContext` binds no tenant and
+        // returns zero rows SILENTLY, while `runInTenantContext` would confine
+        // the answer to whichever farm happened to be open and hide the rest of
+        // the person's own history.
+        //
+        // So the global handle is not a shortcut, it is the only client that can
+        // express the query. The read goes through PRISMA rather than raw SQL
+        // deliberately: `AssistantTurn.content` is encrypted under the tenant
+        // DEK and the extension is what decrypts it, so a raw query would hand
+        // the person ciphertext as the label on their own conversation.
+        //
+        // What stands in for tenant scoping is that `userId` comes from the
+        // verified session and never from a request, and every statement here
+        // carries it. A function here taking a userId from a request body is the
+        // defect this exemption could hide, and is the thing to check in review.
+        // Deletes are TOMBSTONES for rule 5's reason — four separate readers
+        // touch turns, so a hard delete would be a claim about all of them.
+        'assistant-conversations-control.ts',
     ];
 
     const usecases = readFilesInDir(path.join(SRC_ROOT, 'app-layer/usecases'));
