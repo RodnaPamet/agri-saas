@@ -3150,11 +3150,30 @@ worth a rule rather than a caution — the more carefully you disclaim, the more
 likely you are to trip it.
 
 Never write the words `close` / `closes` / `closed` / `fix` / `fixes` /
-`resolve` / `resolves` adjacent to a `#N` you intend to leave open, even
-negated. Say what remains instead:
+`resolve` / `resolves` anywhere in the same SENTENCE as a `#N` you intend to
+leave open, even negated. Say what remains instead:
 
 > Ships one measured cause; the swallowed `networkidle` waits are a separate
 > PR. Refs #748.
+
+**"Adjacent" was too narrow, measured 2026-11-02.** This paragraph said
+"adjacent to a `#N`", and a commit subject reading
+
+    Closes the wiring half of #2691
+
+**closed #2691** — five words between the keyword and the number. The issue's
+timeline attributes the close to that squash commit, whose only
+closing-shaped text is that line. So the parser's reach spans intervening
+words, which means the two defences people reach for both fail: narrowing the
+claim ("closes the wiring half", "closes the first part of") and negating it
+("does NOT close") are the SAME mistake, and the careful phrasing is what
+produces it.
+
+The outcome was harmless there — the issue was finished anyway — and that is
+the hazard: a partial-scope close only hurts when the remaining scope was
+real, which is exactly when nobody is watching the subject line. If a PR
+closes one issue and references another, write `Closes #A.` as its own
+sentence and `Refs #B` in a different one.
 
 ### The same parser eats a QUOTED CI-skip marker — 2026-10-30
 
