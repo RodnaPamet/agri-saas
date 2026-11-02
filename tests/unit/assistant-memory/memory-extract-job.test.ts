@@ -136,6 +136,36 @@ describe('the queue', () => {
     });
 });
 
+describe('a DELETED exchange is never extracted from (#2695)', () => {
+    /*
+     * The worst omission in this job, and the least visible.
+     *
+     * Without `deletedAt IS NULL` the sweep reads a conversation the person
+     * removed through «Какво помни асистентът» and writes a PROFILE POINT from
+     * it. Rule 5 — "forgotten stays forgotten" — violated through a side door:
+     * the point looks like any other, and the exchange it came from is gone
+     * from every screen, so nothing a person or an operator can see says where
+     * it came from.
+     *
+     * Asserted on the QUEUE rather than by simulating a deleted row, because
+     * the queue is raw SQL and the clause either appears or it does not.
+     */
+    it('the queue excludes deleted conversations', async () => {
+        await runMemoryExtract();
+        const sql = String(mockQueryRaw.mock.calls[0][0]);
+        expect(sql).toMatch(/"deletedAt" IS NULL/);
+    });
+
+    it('and still excludes already-extracted ones — both clauses, not one', async () => {
+        // A regression that replaced rather than added would pass a test
+        // asserting only the new clause.
+        await runMemoryExtract();
+        const sql = String(mockQueryRaw.mock.calls[0][0]);
+        expect(sql).toMatch(/"extractedAt" IS NULL/);
+        expect(sql).toMatch(/"deletedAt" IS NULL/);
+    });
+});
+
 describe('what is NOT stamped — the three silent failures', () => {
     it('a person whose flag is OFF leaves the conversation QUEUED', async () => {
         mockIsFeatureEnabled.mockResolvedValue(false);
