@@ -92,6 +92,13 @@ export function registerPromotionsAdminPaths(registry: OpenAPIRegistry): void {
             schema: LeafletScanResultSchema,
         },
         extraResponses: {
+            400: {
+                description:
+                    '`LEAFLET_SCAN_INPUT_MISSING` — the request was not '
+                    + '`multipart/form-data`, or carried no `file` field holding a real file. A '
+                    + 'field sent as TEXT counts as absent rather than being coerced, so the '
+                    + 'refusal names the real problem instead of failing later on empty bytes.',
+            },
             415: {
                 description:
                     '`LEAFLET_MEDIA_UNSUPPORTED` — the file is STORED and cannot be read '
