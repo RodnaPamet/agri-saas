@@ -13,6 +13,7 @@ import { randomUUID } from 'crypto';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
+import { listRememberedPoints } from '@/app-layer/usecases/assistant-memory';
 import {
     deletePastConversation,
     getPastConversation,
@@ -410,5 +411,49 @@ describeFn('the shipped readers decrypt too (#2711, #2713)', () => {
 
         await deletePastConversation(userOne, id);
         expect(await searchPastConversations(userOne, { query: 'уникалнадума' })).toHaveLength(0);
+    });
+});
+
+/*
+ * §9 — the question agrent-ios asked: is «Запомнено» affected the same way?
+ *
+ * Answered by measurement rather than by reading a Set. `AssistantMemoryFact`
+ * is in `GLOBAL_KEK_MODELS`, which makes `resolveTenantDekPair` return
+ * `NO_DEK_PAIR` DELIBERATELY — and for a global-KEK model that is the correct
+ * key, not an absent one, so the value decrypts with no tenant bound at all.
+ *
+ * That is the structural reason the profile was never affected: it is
+ * tenantless BECAUSE a person reads it while any of their farms is open, which
+ * is the same property that makes it immune. The opposite decision for
+ * `AssistantTurn` is what exposed the conversations.
+ */
+describeFn('the profile is on the GLOBAL KEK, so it never needed a tenant', () => {
+    it('§9a a remembered point reads back plaintext with NO tenant context', async () => {
+        const fact = await prisma.assistantMemoryFact.create({
+            data: {
+                userId: userOne,
+                text: 'Стопанството отглежда предимно пшеница.',
+                sourceQuote: 'Отглеждам пшеница.',
+                // Required, and there is no `kind` column — the field names
+                // here came from the schema, not from a green typecheck: the
+                // extended client accepts a wrong key at compile time and
+                // throws `PrismaClientValidationError` at runtime.
+                sourceAt: new Date('2026-11-01T09:00:00Z'),
+            },
+            select: { id: true },
+        });
+        try {
+            const points = await listRememberedPoints(userOne);
+            const mine = points.find((pt) => pt.id === fact.id);
+            expect(mine).toBeDefined();
+            // Plaintext, read through `runInUserContext`, which binds a USER
+            // and no tenant. If this ever returns an envelope, the model moved
+            // out of GLOBAL_KEK_MODELS and the profile has the conversations'
+            // defect.
+            expect(mine?.text).toBe('Стопанството отглежда предимно пшеница.');
+            expect(mine?.text).not.toMatch(/^v[12]:/);
+        } finally {
+            await prisma.assistantMemoryFact.delete({ where: { id: fact.id } });
+        }
     });
 });

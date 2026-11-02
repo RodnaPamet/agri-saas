@@ -1060,8 +1060,12 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             schema: z
                 .object({
                     id: z.string(),
-                    startedAt: z.string(),
-                    lastTurnAt: z.string(),
+                    // `.datetime()`, not a bare string — `timestamps-declare-their-format`
+                    // (#1391): a client decoding a bare string has to guess the
+                    // encoding, and a generated client gets `string` where it
+                    // could have had a date.
+                    startedAt: z.string().datetime(),
+                    lastTurnAt: z.string().datetime(),
                     turns: z
                         .number()
                         .int()
@@ -1069,8 +1073,14 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
                     items: z.array(
                         z.object({
                             role: z.enum(['user', 'assistant']),
-                            text: z.string(),
-                            at: z.string(),
+                            text: z
+                                .string()
+                                .nullable()
+                                .describe(
+                                    'Null when the turn is stored and the server could not read '
+                                    + 'it. Never a storage envelope.',
+                                ),
+                            at: z.string().datetime(),
                         }),
                     ),
                     truncated: z.boolean(),

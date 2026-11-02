@@ -14229,10 +14229,12 @@ exports[`API contract — per-schema snapshots schema: PastConversationDetail 1`
       "type": "string"
     },
     "startedAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "lastTurnAt": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "turns": {
       "type": "integer",
@@ -14251,10 +14253,15 @@ exports[`API contract — per-schema snapshots schema: PastConversationDetail 1`
             ]
           },
           "text": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null when the turn is stored and the server could not read it. Never a storage envelope."
           },
           "at": {
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [

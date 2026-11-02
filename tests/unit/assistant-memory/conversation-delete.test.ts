@@ -45,6 +45,7 @@ jest.mock('@/lib/db-context', () => ({
 }));
 
 import {
+    searchPastConversations,
     CONVERSATION_DETAIL_TURN_CAP,
     CONVERSATION_LIST_LIMIT,
     deleteAllPastConversations,
@@ -286,5 +287,66 @@ describe('reading ONE exchange', () => {
         ]);
         const d = await getPastConversation(ME, 'c1');
         expect(d.items[0].role).toBe('user');
+    });
+});
+
+/*
+ * The boundary check (#2721).
+ *
+ * This is the one question about encryption a MOCKED suite can answer. It
+ * cannot tell whether decryption HAPPENED — a double hands back the string it
+ * was given, so plaintext and ciphertext are the same observation, which is
+ * exactly why the defect shipped. But it can answer "given an envelope, what
+ * do we emit?", because here the double is the thing choosing the encoding.
+ *
+ * It matters because `readContentPerTenant` makes the DEK resolvable and
+ * cannot make it resolve: `resolveTenantDekPair` logs a warning and returns
+ * NO_DEK_PAIR on a failed lookup, and the extension then passes the ciphertext
+ * through — the same silent shape, reachable again for a different reason.
+ */
+describe('an envelope never reaches a client', () => {
+    const ENVELOPE = 'v2:GnxO1vf/3MkC4orNu07tftzwnlxBD99pB5hqmN1pwds7j4bvLDpSDIPSvLg3';
+
+    it('the list sends NULL rather than the envelope as a row label', async () => {
+        mockFindMany.mockResolvedValueOnce([
+            { id: 'c1', tenantId: 'farm-a', startedAt: new Date(), lastTurnAt: new Date(), _count: { turns: 1 } },
+        ]);
+        mockFindMany.mockResolvedValueOnce([{ id: 'c1', turns: [{ content: ENVELOPE }] }]);
+        const rows = await listPastConversations(ME);
+        // `null`, which the client renders as "no question". An envelope
+        // rendered as a person's own words is both wrong and a leak of our
+        // storage format.
+        expect(rows[0].opening).toBeNull();
+    });
+
+    it('a transcript turn sends NULL rather than the envelope', async () => {
+        mockFindFirst.mockResolvedValue({
+            id: 'c1',
+            tenantId: 'farm-a',
+            startedAt: new Date(),
+            lastTurnAt: new Date(),
+            _count: { turns: 2 },
+        });
+        mockTurnFindMany.mockResolvedValue([
+            { role: 'assistant', content: ENVELOPE, createdAt: new Date('2026-11-01T09:05:00Z') },
+            { role: 'user', content: 'четимо', createdAt: new Date('2026-11-01T09:00:00Z') },
+        ]);
+        const d = await getPastConversation(ME, 'c1');
+        // NOT a throw, and not a dropped turn: the readable half of a
+        // transcript is still worth showing, and dropping one would make the
+        // gap invisible.
+        expect(d.items.map((t) => t.text)).toEqual(['четимо', null]);
+        expect(d.items).toHaveLength(2);
+    });
+
+    it('recall skips an envelope instead of scanning it', async () => {
+        mockFindMany.mockResolvedValueOnce([{ id: 'c1', tenantId: 'farm-a' }]);
+        mockFindMany.mockResolvedValueOnce([
+            { id: 'c1', turns: [{ role: 'user', content: ENVELOPE, createdAt: new Date() }] },
+        ]);
+        // An envelope cannot match any needle, so the RESULT is unchanged —
+        // the point is that the case is now logged rather than silent, and
+        // that no excerpt can ever carry one.
+        expect(await searchPastConversations(ME, { query: 'повитица' })).toEqual([]);
     });
 });

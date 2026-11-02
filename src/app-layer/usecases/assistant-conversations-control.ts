@@ -37,7 +37,43 @@
  */
 import { prisma } from '@/lib/prisma';
 import { withTenantDb, type PrismaTx } from '@/lib/db-context';
+import { logger } from '@/lib/observability';
 import { codedNotFound } from '@/lib/errors/types';
+
+/** A value still carrying an envelope was never decrypted. */
+const CIPHERTEXT_ENVELOPE = /^v[12]:/;
+
+/**
+ * Refuse to hand an ENVELOPE to a client, whatever went wrong upstream.
+ *
+ * `readContentPerTenant` makes the DEK resolvable, but it cannot make it
+ * resolve: `resolveTenantDekPair` logs a warning and returns `NO_DEK_PAIR`
+ * when the lookup fails, and the extension then passes the ciphertext through
+ * — the same silent shape that caused this file's defect, reachable again for
+ * an entirely different reason.
+ *
+ * So the boundary checks. `null` means "stored, and this server could not read
+ * it", which is a degraded answer rather than a wrong one — an envelope
+ * rendered as a person's own question is both wrong and a leak of our storage
+ * format. The log line is how an operator finds out, since every caller
+ * downstream of here sees only a missing value.
+ *
+ * Deliberately NOT a throw. On the list that would make one farm with an
+ * unresolvable key break a person's whole cross-farm history; on a transcript
+ * it would discard the turns that DID decrypt.
+ */
+function readableOrNull(value: string, where: string, conversationId: string): string | null {
+    if (!CIPHERTEXT_ENVELOPE.test(value)) return value;
+    logger.warn('assistant.ciphertext_reached_boundary', {
+        component: 'assistant-memory',
+        at: where,
+        conversationId,
+        // Never the value: it is a person's own words under an envelope we
+        // could not open, and the envelope is not the useful part anyway.
+        envelope: value.slice(0, 3),
+    });
+    return null;
+}
 
 /**
  * Read turn CONTENT for conversations that may span several farms.
@@ -161,7 +197,9 @@ export async function listPastConversations(userId: string): Promise<PastConvers
         }),
     )) {
         const opening = found.turns[0]?.content;
-        if (opening !== undefined) openings.set(found.id, opening);
+        if (opening === undefined) continue;
+        const readable = readableOrNull(opening, 'listPastConversations', found.id);
+        if (readable !== null) openings.set(found.id, readable);
     }
 
     // Mapped over `rows`, so the `lastTurnAt desc` order survives the
@@ -195,7 +233,12 @@ export const CONVERSATION_DETAIL_TURN_CAP = 200;
 
 export interface PastConversationTurn {
     role: 'user' | 'assistant';
-    text: string;
+    /**
+     * `null` means the turn is stored and this server could not read it —
+     * see `readableOrNull`. Never the `v2:` envelope, which would be both
+     * wrong as a person's words and a leak of our storage format.
+     */
+    text: string | null;
     at: string;
 }
 
@@ -296,7 +339,7 @@ export async function getPastConversation(
             // these two literals), so the narrowing happens here rather than
             // being asserted on the schema.
             role: t.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-            text: t.content,
+            text: readableOrNull(t.content, 'getPastConversation', row.id),
             at: t.createdAt.toISOString(),
         }));
     return {
@@ -453,12 +496,19 @@ export async function searchPastConversations(
         for (const turn of turnsByConversation.get(conversation.id) ?? []) {
             if (scanned >= RECALL_TURN_SCAN_CAP) return out;
             scanned += 1;
-            if (!turn.content.toLowerCase().includes(needle)) continue;
+            // An envelope cannot match any needle, so this changes no result
+            // — it is here so the one case that WOULD be invisible is logged
+            // instead. Recall returning nothing is its documented behaviour
+            // past the scan cap, which is exactly what made the ciphertext
+            // defect look like the accepted gap.
+            const content = readableOrNull(turn.content, 'searchPastConversations', conversation.id);
+            if (content === null) continue;
+            if (!content.toLowerCase().includes(needle)) continue;
             out.push({
                 conversationId: conversation.id,
                 on: turn.createdAt.toISOString().slice(0, 10),
                 role: turn.role === 'assistant' ? 'assistant' : 'user',
-                text: turn.content.slice(0, RECALL_EXCERPT_CHARS),
+                text: content.slice(0, RECALL_EXCERPT_CHARS),
             });
             if (out.length >= RECALL_MAX_EXCERPTS) return out;
         }
