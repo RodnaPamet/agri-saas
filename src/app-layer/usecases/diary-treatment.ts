@@ -41,7 +41,7 @@ import {
 import { logEvent } from '../events/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { withDeleted } from '@/lib/soft-delete';
-import { createFieldOperation, markOperationParcel } from './field-operation';
+import { createFieldOperation, markOperationParcel, resolveOperationType } from './field-operation';
 import type { CreateFieldOperationInput } from './field-operation';
 
 /**
@@ -276,15 +276,38 @@ export interface DiaryTreatmentSummary {
  * per-entry PDF can reuse this without catching.
  */
 /**
- * The kind recorded under a handle, or null when the handle names nothing.
+ * The operation type recorded under a handle, or null when the handle names
+ * nothing.
  *
- * Exists for one caller: the per-treatment farm-record route must tell a SOWING
- * from a handle that recorded nothing, because the БАБХ register excludes the
- * first and never had the second, and reporting either as the other is a false
- * statement about real data (#2316).
+ * Exists for one caller: the per-treatment farm-record route must tell a kind
+ * the БАБХ register EXCLUDES from a handle that recorded nothing, because the
+ * register never had the second, and reporting either as the other is a false
+ * statement about real data (#2316, #2697).
  *
  * Reads the TASK rather than a line: a sowing's lines may all be pending, and
  * the kind is a property of the operation either way.
+ *
+ * ## It DERIVES, because `?? null` was collapsing two different facts
+ *
+ * This ended `return task?.operationType ?? null`, so null meant EITHER "no
+ * such handle" OR "a task whose `operationType` predates the column" — and
+ * telling those two apart is the caller's entire job. A legacy spray therefore
+ * answered `TREATMENT_NOT_FOUND`: the handle names nothing, about a record that
+ * plainly exists and that the register prints.
+ *
+ * `resolveOperationType` is the derivation the register ITSELF uses —
+ * `farm-record-diary.ts` calls it on every line — so the per-treatment read
+ * and the register cannot disagree about what a pre-column row is. That
+ * agreement is what the published contract asserts: `kind` on the journal row
+ * documents null as *"a row whose task predates the column, which the register
+ * reads by deriving from the title — treat it as a treatment"*. A client
+ * following that sentence and then being refused is the defect.
+ *
+ * Deliberately NOT `treatmentKindOfOperation`, whose `?? 'SPRAY'` default would
+ * report a legacy HARVEST as a spray. The register derives `'OTHER'` for such a
+ * title and excludes it; this has to say the same thing, not a third thing.
+ *
+ * Null now means exactly one fact: no undeleted task under that handle.
  */
 export async function treatmentKindOf(
     ctx: RequestContext,
@@ -294,9 +317,10 @@ export async function treatmentKindOf(
     return runInTenantContext(ctx, async (db) => {
         const task = await db.task.findFirst({
             where: { tenantId: ctx.tenantId, treatmentGroupId, deletedAt: null },
-            select: { operationType: true },
+            select: { operationType: true, title: true },
         });
-        return task?.operationType ?? null;
+        if (!task) return null;
+        return resolveOperationType(task);
     });
 }
 

@@ -21,6 +21,7 @@ import { recordFarmActivity } from '@/app-layer/usecases/farm-activity';
 import { gatherCampaignDiary } from '@/app-layer/reports/campaign-diary/gather';
 import { generateFarmRecordDiaryPdfScoped } from '@/app-layer/reports/pdf/farm-record-diary';
 import { farmRecordAbsence } from '@/app-layer/reports/pdf/farm-record-absence';
+import { treatmentKindOf } from '@/app-layer/usecases/diary-treatment';
 import { currentCampaignLabel } from '@/lib/reports/campaign-window';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -188,5 +189,76 @@ describeFn('#2696 — an activity prints as a page of «Дневник на ст
         await expect(
             gatherCampaignDiary(ctx(), { kind: 'activity', treatmentGroupId: 'not-a-campaign' }),
         ).rejects.toMatchObject({ code: 'ACTIVITY_NOT_FOUND' });
+    });
+});
+
+
+describeFn('#2697 — a row whose operationType PREDATES the column is derived, not reported missing', () => {
+    // `treatmentKindOf` ended `return task?.operationType ?? null`, so null
+    // meant EITHER "no such handle" OR "a task written before the column
+    // existed" — and telling those two apart is the function's entire stated
+    // purpose. Its own docblock said "or null when the handle names nothing".
+    //
+    // The published contract makes the gap reachable rather than theoretical:
+    // `kind` on the journal row documents null as "a row whose task predates
+    // the column, which the register reads by deriving from the title — treat
+    // it as a treatment". A client following that sentence asks for the
+    // per-treatment extract and is told the record does not exist, while the
+    // register prints the very same row.
+    //
+    // Both reads now go through `resolveOperationType` — the function
+    // `farm-record-diary.ts` already calls on every line — so the register and
+    // this route cannot disagree about what a pre-column row is.
+    const legacy = `${TAG}-legacy`;
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        // `Task.treatmentGroupId` is a plain indexed column with no FK, so
+        // these need no TreatmentGroup — fitting, since rows of that era
+        // predate the group model as well as the column.
+        for (const [suffix, title] of [
+            ['spray', 'Spray — Карате Зеон'],
+            ['harvest', 'Harvest — пшеница'],
+        ] as const) {
+            await globalPrisma.task.create({
+                data: {
+                    tenantId,
+                    createdByUserId: userId,
+                    type: 'FIELD_OPERATION',
+                    title,
+                    operationType: null,
+                    treatmentGroupId: `${legacy}-${suffix}`,
+                },
+            });
+        }
+    });
+
+    it('derives SPRAY from the same title the register derives it from', async () => {
+        // THE LOAD-BEARING CONTROL for the assertion below. "A legacy harvest
+        // is refused" is satisfied perfectly by a derivation that returns
+        // something outside the register for EVERY pre-column row — which
+        // would newly refuse every legacy spray in the database and contradict
+        // the register, where those rows print. This is the half that fails if
+        // the derivation is too broad rather than too narrow.
+        expect(await treatmentKindOf(ctx(), `${legacy}-spray`)).toBe('SPRAY');
+    });
+
+    it('a legacy harvest answers NOT_IN_BABH_REGISTER, not TREATMENT_NOT_FOUND', async () => {
+        // 'OTHER' is what `resolveOperationType` derives from a title it does
+        // not recognise, and the register excludes it for the same reason this
+        // route refuses it — so the two agree on this row as well.
+        expect(await treatmentKindOf(ctx(), `${legacy}-harvest`)).toBe('OTHER');
+        const err = await farmRecordAbsence(ctx(), `${legacy}-harvest`);
+        expect(err).toMatchObject({ code: 'NOT_IN_BABH_REGISTER' });
+        expect(err.message).toContain('campaign-diary');
+    });
+
+    it('and null now means exactly one fact — no undeleted task under that handle', async () => {
+        // The other half of un-collapsing the `??`. The genuine not-found has
+        // to stay reachable, or the fix trades one false statement for another.
+        expect(await treatmentKindOf(ctx(), `${legacy}-nope`)).toBeNull();
+        await expect(farmRecordAbsence(ctx(), `${legacy}-nope`)).resolves.toMatchObject({
+            code: 'TREATMENT_NOT_FOUND',
+        });
     });
 });

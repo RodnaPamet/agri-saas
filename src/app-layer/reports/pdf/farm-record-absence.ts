@@ -55,16 +55,21 @@ export async function farmRecordAbsence(
     treatmentGroupId: string,
 ): Promise<NotFoundError> {
     const kind = await treatmentKindOf(ctx, treatmentGroupId);
-    // ANY kind the form excludes, not only a sowing (#2697). `treatmentKindOf`
-    // returns the RAW `operationType`, so a cultivation arrived here as
-    // `'CULTIVATE'`, missed the `=== 'SEED'` test and fell through to
-    // `TREATMENT_NOT_FOUND` — which says the handle names nothing, about a
-    // record that plainly exists. That is the false statement this function's
-    // own docblock was written to avoid, reached by a kind it had not
-    // considered.
+    // ANY kind the form excludes, not only a sowing (#2697). This tested
+    // `=== 'SEED'`, so a cultivation arrived as `'CULTIVATE'`, missed it and
+    // fell through to `TREATMENT_NOT_FOUND` — which says the handle names
+    // nothing, about a record that plainly exists. That is the false statement
+    // this function's own docblock was written to avoid, reached by a kind it
+    // had not considered.
     //
-    // `kind !== null` is what separates "excluded from this form" from "no
-    // such handle": a missing handle must keep answering TREATMENT_NOT_FOUND.
+    // `kind !== null` separates "excluded from this form" from "no such
+    // handle", and it only does that because `treatmentKindOf` DERIVES. It
+    // used to end `?? null`, so null meant either — and a row whose
+    // `operationType` predates the column got TREATMENT_NOT_FOUND while the
+    // register printed it, deriving SPRAY from its title. Both reads now go
+    // through `resolveOperationType`, so a legacy spray prints here too and a
+    // legacy harvest is refused with the code the register's exclusion
+    // implies. Null is now one fact: no undeleted task under that handle.
     if (kind !== null && !isInBabhRegister(kind)) {
         return codedNotFound(
             'NOT_IN_BABH_REGISTER',
