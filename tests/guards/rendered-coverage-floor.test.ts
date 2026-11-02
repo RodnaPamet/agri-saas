@@ -337,7 +337,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // the web — the flag-off person seeing NOTHING and the honest empty state are
 // the two behaviours a reasonable implementation gets wrong, and both are the
 // COMMON case while the feature is dark.
-const RENDERED_TEST_FLOOR = 272;
+// 272 -> 273 (#2695): `assistant-conversations-card`. The EXCHANGES half of
+// «Какво помни асистентът» on the web. Its load-bearing test is that the
+// delete-all copy says the PROFILE POINTS survive — two controls on one
+// screen with different scopes, and the copy is the only thing that tells
+// them apart.
+const RENDERED_TEST_FLOOR = 273;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
