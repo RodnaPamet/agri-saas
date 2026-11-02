@@ -181,7 +181,7 @@ export async function loadWindow(ctx: RequestContext, conversationId: string): P
  * `<<<<<<END>>>` reassemble, and a visibly broken marker is also legible to a
  * human reading a prompt dump.
  */
-function neutraliseFence(content: string): string {
+export function neutraliseFence(content: string): string {
     return content.replace(/<{2,}/g, '<\u200b<').replace(/>{2,}/g, '>\u200b>');
 }
 

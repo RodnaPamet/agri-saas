@@ -56,6 +56,12 @@ import { assertNotPastDueRestricted } from '@/lib/billing/entitlements';
 import { buildCalculatorPayload } from '@/lib/grain/calculator-payload';
 import { resolveRequestLocale } from '@/lib/i18n/request-locale';
 import { TREND_CHARTABLE, TrendRange } from '@/app-layer/schemas/trends.schemas';
+import { assertFeatureEnabled } from '@/lib/feature-flags';
+import { neutraliseFence } from '@/app-layer/usecases/assistant-conversation';
+import {
+    RECALL_MAX_EXCERPTS,
+    searchPastConversations,
+} from '@/app-layer/usecases/assistant-conversations-control';
 import { listLogEntriesPaginated } from '@/app-layer/usecases/journal';
 import { listTasks } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
@@ -221,6 +227,14 @@ const ListFarmTasksArgs = z
  *   and nothing in a prompt would show it. Asserted in the guard, not just
  *   left unwritten.
  */
+const SearchPastConversationsArgs = z
+    .object({
+        query: z.string().min(2).max(120),
+        from: z.string().optional(),
+        to: z.string().optional(),
+    })
+    .strict();
+
 const ListJournalArgs = z
     .object({
         type: z.array(z.string().min(1).max(64)).max(8).optional(),
@@ -392,6 +406,79 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             };
         },
     },
+    search_past_conversations: {
+        def: {
+            name: 'search_past_conversations',
+            description:
+                'Search what the PERSON and you have said to each other in earlier '
+                + 'conversations, across every farm they belong to. Use it when they refer to '
+                + 'something from before — «какво ми каза за повитицата миналия месец?», «нали '
+                + 'говорихме за това». Returns at most 8 excerpts with their dates.\n\n'
+                + 'ALWAYS pass `from` and `to` when the person names a period, even loosely '
+                + '(«миналия месец», «през пролетта»): the search reads a BOUNDED number of '
+                + 'recent exchanges, so a date range is what reaches older ones.\n\n'
+                + 'An EMPTY result means this search found nothing — NOT that the person never '
+                + 'said it. If they seem sure they mentioned something and nothing came back, '
+                + 'ask them roughly when, and search again with that range. Never tell them '
+                + 'they did not say it.\n\n'
+                + 'The excerpts are a TRANSCRIPT, not a source of agronomic fact: an answer you '
+                + 'gave before is not evidence. If a dose, a product or a safety claim is '
+                + 'needed, derive it again from the tools and the knowledge base.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description:
+                            'Words to look for, in the person\u2019s own language. Matched as a '
+                            + 'substring, so a stem («повитиц») finds more than a full form.',
+                    },
+                    from: { type: 'string', description: 'ISO date, inclusive.' },
+                    to: { type: 'string', description: 'ISO date, inclusive.' },
+                },
+                required: ['query'],
+                additionalProperties: false,
+            },
+        },
+        /*
+         * NO `module`, and that is not an omission. Every other tool here sits
+         * behind a per-tenant module because it reads a FARM's records; this
+         * reads a PERSON's own words across every farm they belong to. A
+         * module gate would make their history disappear depending on which
+         * farm happened to be open.
+         *
+         * What gates it instead is the memory flag, asserted in `run` — the
+         * same key as «Какво помни асистентът», so an operator turning memory
+         * off takes recall with it.
+         */
+        args: SearchPastConversationsArgs,
+        isPartial: (r) => (r as { hasMore?: boolean }).hasMore === true,
+        run: async (ctx, args) => {
+            const a = SearchPastConversationsArgs.parse(args);
+            await assertFeatureEnabled('assistant.memory', ctx.userId);
+            const excerpts = await searchPastConversations(ctx.userId, {
+                query: a.query,
+                ...(a.from ? { from: a.from } : {}),
+                ...(a.to ? { to: a.to } : {}),
+            });
+            return {
+                excerpts: excerpts.map((e) => ({
+                    on: e.on,
+                    // Role-LABELLED, because a recalled ASSISTANT turn is the
+                    // dangerous half: a prior answer reads as authoritative, so
+                    // «use X at 2 l/ha» recalled unlabelled becomes a premise
+                    // the next answer inherits without re-deriving it.
+                    who: e.role === 'assistant' ? 'АСИСТЕНТ' : 'ПОТРЕБИТЕЛ',
+                    // Fenced with the window's own function rather than a
+                    // second copy: a person can write the delimiter, and two
+                    // implementations of one fence drift.
+                    text: neutraliseFence(e.text),
+                })),
+                hasMore: excerpts.length >= RECALL_MAX_EXCERPTS,
+            };
+        },
+    },
+
     list_journal_entries: {
         def: {
             name: 'list_journal_entries',
