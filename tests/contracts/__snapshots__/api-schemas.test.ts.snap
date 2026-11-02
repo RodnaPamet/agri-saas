@@ -8270,6 +8270,105 @@ exports[`API contract — per-schema snapshots schema: FarmTaskTrendPoint 1`] = 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FeatureFlagConsolePayload 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "flags": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/FeatureFlagRow"
+      },
+      "description": "The RAW table, never a resolved per-caller view. An operator opens this screen precisely to see that a flag is enabled-but-cohort-gated, which \`/api/auth/me\` collapses to one boolean on purpose."
+    },
+    "cohorts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "cohort": {
+            "type": "string"
+          },
+          "members": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cohort",
+          "members"
+        ]
+      },
+      "description": "Cohort SIZES. A flag naming a cohort with zero members is OFF for everyone while reading as a live rollout, which the flag row alone cannot show. A cohort with no members does not appear at all — there is no row to group."
+    },
+    "forcedOff": {
+      "type": "boolean",
+      "description": "\`FEATURE_FLAGS_FORCE_OFF\` is set, which overrides EVERY row. A client showing a flag as enabled while this is true is actively misleading. It is deliberately not clearable through any API — the switch exists for when the application is the thing going wrong — so clearing it is an operator action on the host."
+    }
+  },
+  "required": [
+    "flags",
+    "cohorts",
+    "forcedOff"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FeatureFlagRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "cohorts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "EMPTY means \\"everyone, once enabled\\"; non-empty NARROWS. Read as OR, an enabled flag with cohorts set would expose the surface to the whole deployment."
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "key",
+    "enabled",
+    "cohorts",
+    "description",
+    "updatedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: FeatureFlagUpsertResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "flag": {
+      "$ref": "#/components/schemas/FeatureFlagRow"
+    },
+    "forcedOff": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "flag",
+    "forcedOff"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FieldBriefing 1`] = `
 "{
   "type": "object",

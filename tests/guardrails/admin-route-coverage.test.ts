@@ -66,6 +66,11 @@ const ADMIN_ONLY_ROUTES = [
     // curates. It writes no `Promotion` at all, which is a separate control
     // and not a substitute for these.
     'admin/promotions/leaflet-scan/route.ts',
+    // «Функции» (#2706) — the session-authenticated door onto the platform flag
+    // table. Same two gates as its neighbours, and the widest blast radius in
+    // this list by a distance: the others curate data a farm reads, while a
+    // switch here turns a FEATURE on or off for every farm at once.
+    'admin/feature-flags/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
     // Platform-tenant gated: a price typed here renders in every tenant's

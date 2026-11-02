@@ -20,6 +20,8 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+import { blankNonCode } from '../helpers/blank-non-code';
 import { isPublicPath } from '../../src/lib/auth/guard';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -103,7 +105,21 @@ describe('credential-verifying routes are reachable, and public routes verify', 
     it('A — a route that reads a credential header is not refused by the Edge', () => {
         const unreachable: string[] = [];
         for (const file of files) {
-            const src = fs.readFileSync(file, 'utf8');
+            // COMMENTS BLANKED, strings kept (#2706). `VERIFIES` matches
+            // `verifyPlatformApiKey` as a bare word, so a route whose DOCBLOCK
+            // explains why it does NOT use the platform key was pulled into
+            // this population by its own prose and then reported as an
+            // unreachable credential route. That is a false alarm on a
+            // session-authenticated route, and the remedy it printed — "add
+            // the path to PUBLIC_PATH_PREFIXES" — would have been actively
+            // harmful: opening the Edge for a route that needs no opening.
+            //
+            // `strings` stays OFF, deliberately. `CREDENTIAL_HEADERS` matches
+            // a call shape whose header name is a STRING LITERAL
+            // (`get('x-platform-admin-key')`), so blanking strings here would
+            // gut half the detector. Comments are the only non-code this guard
+            // must ignore.
+            const src = blankNonCode(fs.readFileSync(file, 'utf8'));
             // Calling a verification function IS the signal. Requiring an
             // INLINE header read as well was too strict and produced a false
             // negative on a known instance: the platform-admin routes call
@@ -231,7 +247,7 @@ describe('credential-verifying routes are reachable, and public routes verify', 
             // session-establishing surface; they are public by definition.
             if (p.startsWith('/api/auth') || p.startsWith('/api/invites') || p.startsWith('/api/org/invite')) continue;
             if (EXEMPT[p]) continue;
-            const src = fs.readFileSync(file, 'utf8');
+            const src = blankNonCode(fs.readFileSync(file, 'utf8'));
             if (!VERIFIES.test(src)) {
                 anonymous.push(`${p}  (${path.relative(ROOT, file)})`);
             }

@@ -34,41 +34,21 @@
  * the VM.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
-import { flagsForcedOff, FLAG_KEY_PATTERN, FLAG_KEY_MAX_LENGTH } from '@/lib/feature-flags';
+import { flagsForcedOff } from '@/lib/feature-flags';
+import { UpsertFlagBody } from '@/app-layer/schemas/feature-flag-admin.schemas';
 import { listFeatureFlags, upsertFeatureFlag } from '@/app-layer/usecases/feature-flag-admin';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 
-/**
- * A flag key, held to the grammar `@/lib/feature-flags` publishes.
- *
- * Imported rather than spelled here because the flag-gating guard holds every
- * social route's key to the same pattern, and a console that accepted keys the
- * guard rejects (or the reverse) would let a route ship gated on a flag nobody
- * can create. See `FLAG_KEY_PATTERN`'s docblock.
- */
-const FlagKey = z
-    .string()
-    .min(1)
-    .max(FLAG_KEY_MAX_LENGTH)
-    .regex(FLAG_KEY_PATTERN, 'keys are dotted lowercase, e.g. social.profiles');
-
-const UpsertBody = z.object({
-    key: FlagKey,
-    enabled: z.boolean(),
-    /**
-     * Cohort names. EMPTY means "everyone, once enabled"; non-empty NARROWS.
-     * Capped so one request cannot grow the row without bound — the resolver
-     * reads every cohort on every request that touches flags.
-     */
-    cohorts: z.array(z.string().min(1).max(64)).max(20).optional(),
-    description: z.string().max(500).nullable().optional(),
-});
+// The key grammar and the write shape moved to
+// `@/app-layer/schemas/feature-flag-admin.schemas` when #2706 added the
+// session-gated door onto the same table. Two copies would drift silently:
+// one console accepting a key the other refuses means a flag an operator can
+// create in one place and never edit in the other.
 
 /** Convert the verifier's typed failure into its HTTP answer. */
 function platformGate(req: NextRequest): NextResponse | null {
@@ -110,7 +90,7 @@ export const PUT = withApiErrorHandling(
         } catch {
             return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
         }
-        const body = UpsertBody.parse(raw);
+        const body = UpsertFlagBody.parse(raw);
 
         const flag = await upsertFeatureFlag({
             key: body.key,

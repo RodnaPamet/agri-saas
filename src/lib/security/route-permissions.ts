@@ -196,6 +196,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // to the designated PLATFORM_TENANT_SLUG and 404s elsewhere. The
     // permission is still required: it is what makes a denial an audited
     // AUTHZ_DENIED row and keeps these routes inside the Epic C.1 guardrail.
+    // «Функции» (#2706) — the session-authenticated door onto the platform
+    // flag table, which is what the superuser page can actually call. Same
+    // two-gate reasoning as the catalogues above, and one sharper detail:
+    // `FeatureFlag` has no `tenantId`, so `admin.manage` alone would let one
+    // farm's admin launch a feature for every other farm. The key-gated
+    // `/api/admin/feature-flags` stays for scripts — a browser cannot hold
+    // that key without inlining it into every user's bundle.
+    {
+        path: new RegExp(`^${T}\\/admin\\/feature-flags(\\/.*)?$`),
+        permission: 'admin.manage',
+        note:
+            'Platform flag table — a switch here changes behaviour for EVERY tenant. ' +
+            'Platform-tenant gated in-handler; admin.manage is the audited role floor, ' +
+            'not the isolation practice.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/promotions(\\/.*)?$`),
         permission: 'admin.manage',

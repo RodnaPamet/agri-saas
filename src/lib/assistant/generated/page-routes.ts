@@ -71,6 +71,7 @@ export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/t/[tenantSlug]/admin/companies",
     "/t/[tenantSlug]/admin/entra",
     "/t/[tenantSlug]/admin/farm-profile",
+    "/t/[tenantSlug]/admin/feature-flags",
     "/t/[tenantSlug]/admin/integrations",
     "/t/[tenantSlug]/admin/integrations/sharepoint-health",
     "/t/[tenantSlug]/admin/ledger-integrity",
