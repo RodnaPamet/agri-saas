@@ -183,6 +183,14 @@ export const STORAGE_DOMAINS = [
     // a domain here keeps `parseTenantKey` able to read keys this module
     // mints — the drift that bit `cost-invoice` cannot recur.
     'documents',
+    // Supplier promotion leaflets (#2664) — the source document platform
+    // support uploads so the reader can propose its offers. Its OWN domain
+    // rather than 'general' or 'documents': these belong to the platform
+    // tenant and to no farm, they are read by a model, and a retention or
+    // inspection sweep wants to be able to name them. The regex below
+    // interpolates this list, so `parseTenantKey` can read the keys minted
+    // here.
+    'promotion-leaflet',
 ] as const;
 
 export type StorageDomain = (typeof STORAGE_DOMAINS)[number];

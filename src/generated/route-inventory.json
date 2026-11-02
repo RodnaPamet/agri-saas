@@ -801,6 +801,11 @@
       "documented": false
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/promotions/leaflet-scan",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/promotions/{id}",
       "status": "live",
       "documented": false

@@ -282,11 +282,20 @@ describe('what gets recorded', () => {
         // arrives because somebody filed one on an endpoint that needs no
         // credential — so it is the first for which this ceiling is
         // load-bearing rather than prudent.
+        //
+        // And a fifth: `promotion-leaflet-read` (#2664), the first triggered by
+        // a PERSON with a file rather than a schedule or the public. Platform
+        // support uploads a supplier leaflet when a trading company sends one,
+        // so the volume is bounded by somebody's working day — but a document
+        // read sends a whole PDF on every attempt, which makes it the most
+        // expensive call shape here and the one where a few repeats cost the
+        // most. The ceiling is for a stuck retry loop rather than a flood.
         expect([...PLATFORM_AI_JOBS]).toEqual([
             'field-briefing',
             'news-event-extraction',
             'support-scheme-extraction',
             'notice-score',
+            'promotion-leaflet-read',
         ]);
     });
 });

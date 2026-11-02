@@ -59,6 +59,13 @@ const ADMIN_ONLY_ROUTES = [
     // Artwork upload/removal. Same two gates as its siblings, and the one most
     // worth having them: the bytes it accepts render in EVERY tenant's feed.
     'admin/promotions/[id]/image/route.ts',
+    // «Прочети брошура» (#2664) — upload a supplier leaflet and PROPOSE its
+    // offers. Same two gates, and it earns them twice over: it stores bytes
+    // AND spends platform AI budget, so one farm's admin reaching it would
+    // charge every other farm's ceiling for a document only this console
+    // curates. It writes no `Promotion` at all, which is a separate control
+    // and not a substitute for these.
+    'admin/promotions/leaflet-scan/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
     // Platform-tenant gated: a price typed here renders in every tenant's
