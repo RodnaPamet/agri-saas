@@ -335,6 +335,31 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(completeWithRouting).not.toHaveBeenCalled();
     });
 
+    it('the system block forbids showing an internal code (#2691)', async () => {
+        /*
+         * The BACKSTOP, not the fix. The fix is that the serialisers resolve
+         * codes to the farmer's word, so the model never sees `ACTIVITY` —
+         * `enum-labels-wired` holds that, and `tsc` holds the dropped-await
+         * case.
+         *
+         * This line is for a code that escapes some FUTURE serialiser: a new
+         * tool, a new enum, a field somebody forgets. It costs a sentence in a
+         * prefix that is already cached, and it is in the cached half so every
+         * person gets it.
+         */
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        await POST(...ask({ question: 'какво' }));
+        const [, , opts] = completeWithRouting.mock.calls[0] as [unknown, unknown, { messages: { role: string; content: string }[] }];
+        const system = opts.messages.find((m) => m.role === 'system')?.content ?? '';
+        expect(system).toMatch(/Never show an internal code/i);
+        // And it must name the SHAPE, not just forbid the abstraction — a
+        // model told "no internal codes" cannot tell which of the strings it
+        // was handed is one.
+        expect(system).toMatch(/ALL_CAPS/);
+        expect(system).toMatch(/never print it in brackets/i);
+    });
+
     it('the profile RULE is always in the system block, and the block only when there is one', async () => {
         completeWithRouting.mockResolvedValue({ text: 'ок' });
         const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
