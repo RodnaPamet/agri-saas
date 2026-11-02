@@ -62,3 +62,40 @@ export function treatmentKindOfOperation(operationType: FieldOperationType | str
     if (operationType == null) return 'SPRAY';
     return DEFINITION_KIND[operationType as FieldOperationType] ?? 'SPRAY';
 }
+
+/**
+ * The operation kinds Приложение 1 has COLUMNS for (#2697).
+ *
+ * The form is «ДНЕВНИК ЗА ПРОВЕДЕНИТЕ РАСТИТЕЛНОЗАЩИТНИ МЕРОПРИЯТИЯ И
+ * ТОРЕНЕ» — plant protection and fertilising, and nothing else. A cultivation,
+ * a pruning, a harvest and a sowing all have records that EXIST and print in
+ * «ДНЕВНИК НА СТОПАНСТВОТО»; it is only this form that excludes them.
+ *
+ * ## An ALLOWLIST, because the defect was an else-branch
+ *
+ * `farm-record-diary.ts` classified a line as `FERTILIZE` or fell through to
+ * the chemical table, with one explicit `SEED` skip in front and a comment
+ * asserting the bare kinds "never reach this function at all". They did: both
+ * gatherer branches select lines by TASK and `status: 'DONE'` with no product
+ * predicate, so a cultivation printed as a plant-protection treatment with
+ * empty вредител, ПРЗ, доза and карантинен срок columns — in the document a
+ * БАБХ inspector reads.
+ *
+ * Listing what is ADMITTED rather than what is skipped means a new
+ * `FieldOperationType` is excluded by default. The previous shape admitted it
+ * by default, which is how three kinds got in.
+ *
+ * Deliberately NOT `treatmentKindOfOperation`, whose `?? 'SPRAY'` default is
+ * the same hazard in a different function: it answers "which DEFINITION shape
+ * does this use", where this answers "does the form have a row for it".
+ *
+ * The iOS client derives the same predicate on its own side to decide whether
+ * to offer the БАБХ button. This is the server's copy of that rule and the two
+ * should converge on it.
+ */
+export const BABH_REGISTER_KINDS = ['SPRAY', 'FERTILIZE'] as const;
+
+export function isInBabhRegister(operationType: string | null | undefined): boolean {
+    if (!operationType) return false;
+    return (BABH_REGISTER_KINDS as readonly string[]).includes(operationType);
+}

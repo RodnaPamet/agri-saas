@@ -20,6 +20,8 @@ import { makeRequestContext } from '../helpers/make-context';
 import { recordFarmActivity } from '@/app-layer/usecases/farm-activity';
 import { gatherCampaignDiary } from '@/app-layer/reports/campaign-diary/gather';
 import { generateFarmRecordDiaryPdfScoped } from '@/app-layer/reports/pdf/farm-record-diary';
+import { farmRecordAbsence } from '@/app-layer/reports/pdf/farm-record-absence';
+import { treatmentKindOf } from '@/app-layer/usecases/diary-treatment';
 import { currentCampaignLabel } from '@/lib/reports/campaign-window';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -91,39 +93,50 @@ afterAll(async () => {
 });
 
 describeFn('#2696 — an activity prints as a page of «Дневник на стопанството»', () => {
-    it('Приложение 1 WRONGLY admits it today — #2697, and this test is its tripwire', async () => {
-        // This assertion is the opposite of what I wrote first, and the
-        // correction is the reason the route exists at all.
+    it('Приложение 1 refuses it — a cultivation is not a plant-protection measure', async () => {
+        // THE TRIPWIRE FIRED, which is what it was for. This test used to
+        // assert `not.toBeNull()` and carried #2697's number, because the
+        // register ADMITTED a bare activity: both gatherer branches resolve
+        // lines by TASK and `status: 'DONE'` with no product predicate, so a
+        // cultivation fell past the single `SEED` skip into the `else` — the
+        // ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ table — and printed as a
+        // plant-protection treatment with empty вредител, ПРЗ, доза and
+        // карантинен срок columns.
         //
-        // I expected null: a cultivation has no spray and no fertiliser lines,
-        // and `farm-record-diary.ts` states that "the bare activity kinds
-        // (PRUNE/CULTIVATE/HARVEST) never reach this function at all — they
-        // have no product, and the gatherer selects on lines that have one."
-        // The second clause is FALSE. Both gatherer branches resolve lines by
-        // TASK and `status: 'DONE'` with no product predicate, so the
-        // cultivation's line IS selected and falls through the SEED guard into
-        // the `else` — which is the ПРОВЕДЕНИ ХИМИЧНИ ОБРАБОТКИ table.
-        //
-        // A non-null document proves it, because the only null path is
-        // `sprayLines.length === 0 && fertilizeLines.length === 0` and the
-        // cultivation's is the only line under this handle.
-        //
-        // So the owner's "this can not be printed" was never a 404 from this
-        // register — it was the absence of a print button on an activity
-        // entry. The register's own answer is worse than a refusal: a
-        // cultivation filed as a plant-protection treatment with empty
-        // вредител, ПРЗ, доза and карантинен срок columns.
-        //
-        // PINNED AS-IS so #2697's fix has to come past this test rather than
-        // appear to break something. When `CULTIVATE` joins `SEED` in the skip,
-        // this becomes `toBeNull()` and the route below becomes the only way
-        // to print the record — which is what the treatment route's spec has
-        // said all along.
+        // #2697 replaced that skip with an ALLOWLIST of what the form has
+        // columns for, so the assertion inverts. Kept as one test with its
+        // history rather than deleted and rewritten: the previous expectation
+        // is the reason this one is worth asserting at all.
         const doc = await generateFarmRecordDiaryPdfScoped(ctx(), {
             kind: 'treatment',
             treatmentGroupId: handle,
         });
-        expect(doc).not.toBeNull();
+        expect(doc).toBeNull();
+    });
+
+    it('and says so with NOT_IN_BABH_REGISTER, not TREATMENT_NOT_FOUND', async () => {
+        // The second half of #2697, and the one that was lying. `treatmentKindOf`
+        // returns the RAW `operationType`, so a cultivation arrived at
+        // `farmRecordAbsence` as 'CULTIVATE', missed the `=== 'SEED'` test and
+        // fell through to TREATMENT_NOT_FOUND — "No treatment was recorded
+        // under that handle", about a record that plainly exists. That is the
+        // false statement that function's own docblock was written to avoid,
+        // reached by a kind it had not considered.
+        const err = await farmRecordAbsence(ctx(), handle);
+        expect(err).toMatchObject({ code: 'NOT_IN_BABH_REGISTER' });
+        // And it names where the record DOES print, so the refusal is
+        // actionable rather than merely correct.
+        expect(err.message).toContain('campaign-diary');
+    });
+
+    it('a handle that names nothing still answers TREATMENT_NOT_FOUND', async () => {
+        // The control for the arm above: widening NOT_IN_BABH_REGISTER to
+        // every non-register kind must not swallow the genuine not-found, or a
+        // typo'd handle would report "that record is not in this register"
+        // about a record that does not exist. `kind !== null` is what keeps
+        // them apart.
+        const err = await farmRecordAbsence(ctx(), `${TAG}-no-such-handle`);
+        expect(err).toMatchObject({ code: 'TREATMENT_NOT_FOUND' });
     });
 
     it('the campaign register aggregates it into ONE row across both blocks', async () => {
@@ -176,5 +189,76 @@ describeFn('#2696 — an activity prints as a page of «Дневник на ст
         await expect(
             gatherCampaignDiary(ctx(), { kind: 'activity', treatmentGroupId: 'not-a-campaign' }),
         ).rejects.toMatchObject({ code: 'ACTIVITY_NOT_FOUND' });
+    });
+});
+
+
+describeFn('#2697 — a row whose operationType PREDATES the column is derived, not reported missing', () => {
+    // `treatmentKindOf` ended `return task?.operationType ?? null`, so null
+    // meant EITHER "no such handle" OR "a task written before the column
+    // existed" — and telling those two apart is the function's entire stated
+    // purpose. Its own docblock said "or null when the handle names nothing".
+    //
+    // The published contract makes the gap reachable rather than theoretical:
+    // `kind` on the journal row documents null as "a row whose task predates
+    // the column, which the register reads by deriving from the title — treat
+    // it as a treatment". A client following that sentence asks for the
+    // per-treatment extract and is told the record does not exist, while the
+    // register prints the very same row.
+    //
+    // Both reads now go through `resolveOperationType` — the function
+    // `farm-record-diary.ts` already calls on every line — so the register and
+    // this route cannot disagree about what a pre-column row is.
+    const legacy = `${TAG}-legacy`;
+
+    beforeAll(async () => {
+        if (!DB_AVAILABLE) return;
+        // `Task.treatmentGroupId` is a plain indexed column with no FK, so
+        // these need no TreatmentGroup — fitting, since rows of that era
+        // predate the group model as well as the column.
+        for (const [suffix, title] of [
+            ['spray', 'Spray — Карате Зеон'],
+            ['harvest', 'Harvest — пшеница'],
+        ] as const) {
+            await globalPrisma.task.create({
+                data: {
+                    tenantId,
+                    createdByUserId: userId,
+                    type: 'FIELD_OPERATION',
+                    title,
+                    operationType: null,
+                    treatmentGroupId: `${legacy}-${suffix}`,
+                },
+            });
+        }
+    });
+
+    it('derives SPRAY from the same title the register derives it from', async () => {
+        // THE LOAD-BEARING CONTROL for the assertion below. "A legacy harvest
+        // is refused" is satisfied perfectly by a derivation that returns
+        // something outside the register for EVERY pre-column row — which
+        // would newly refuse every legacy spray in the database and contradict
+        // the register, where those rows print. This is the half that fails if
+        // the derivation is too broad rather than too narrow.
+        expect(await treatmentKindOf(ctx(), `${legacy}-spray`)).toBe('SPRAY');
+    });
+
+    it('a legacy harvest answers NOT_IN_BABH_REGISTER, not TREATMENT_NOT_FOUND', async () => {
+        // 'OTHER' is what `resolveOperationType` derives from a title it does
+        // not recognise, and the register excludes it for the same reason this
+        // route refuses it — so the two agree on this row as well.
+        expect(await treatmentKindOf(ctx(), `${legacy}-harvest`)).toBe('OTHER');
+        const err = await farmRecordAbsence(ctx(), `${legacy}-harvest`);
+        expect(err).toMatchObject({ code: 'NOT_IN_BABH_REGISTER' });
+        expect(err.message).toContain('campaign-diary');
+    });
+
+    it('and null now means exactly one fact — no undeleted task under that handle', async () => {
+        // The other half of un-collapsing the `??`. The genuine not-found has
+        // to stay reachable, or the fix trades one false statement for another.
+        expect(await treatmentKindOf(ctx(), `${legacy}-nope`)).toBeNull();
+        await expect(farmRecordAbsence(ctx(), `${legacy}-nope`)).resolves.toMatchObject({
+            code: 'TREATMENT_NOT_FOUND',
+        });
     });
 });

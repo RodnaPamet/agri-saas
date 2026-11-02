@@ -34,6 +34,7 @@
  */
 
 import { treatmentKindOf } from '@/app-layer/usecases/diary-treatment';
+import { isInBabhRegister } from '@/lib/operations/treatment-kind';
 import type { RequestContext } from '../../types';
 import { codedNotFound, type NotFoundError } from '@/lib/errors/types';
 
@@ -54,11 +55,27 @@ export async function farmRecordAbsence(
     treatmentGroupId: string,
 ): Promise<NotFoundError> {
     const kind = await treatmentKindOf(ctx, treatmentGroupId);
-    if (kind === 'SEED') {
+    // ANY kind the form excludes, not only a sowing (#2697). This tested
+    // `=== 'SEED'`, so a cultivation arrived as `'CULTIVATE'`, missed it and
+    // fell through to `TREATMENT_NOT_FOUND` — which says the handle names
+    // nothing, about a record that plainly exists. That is the false statement
+    // this function's own docblock was written to avoid, reached by a kind it
+    // had not considered.
+    //
+    // `kind !== null` separates "excluded from this form" from "no such
+    // handle", and it only does that because `treatmentKindOf` DERIVES. It
+    // used to end `?? null`, so null meant either — and a row whose
+    // `operationType` predates the column got TREATMENT_NOT_FOUND while the
+    // register printed it, deriving SPRAY from its title. Both reads now go
+    // through `resolveOperationType`, so a legacy spray prints here too and a
+    // legacy harvest is refused with the code the register's exclusion
+    // implies. Null is now one fact: no undeleted task under that handle.
+    if (kind !== null && !isInBabhRegister(kind)) {
         return codedNotFound(
             'NOT_IN_BABH_REGISTER',
-            'A sowing is not part of the БАБХ register, which covers plant protection '
-                + 'and fertilising. It appears in the whole-farm journal instead.',
+            'That record is not part of the БАБХ register, which covers plant protection '
+                + 'and fertilising. It appears in «Дневник на стопанството» instead — '
+                + 'GET /journal/activities/{treatmentGroupId}/campaign-diary.',
             { reference: 'treatmentGroupId' },
         );
     }
