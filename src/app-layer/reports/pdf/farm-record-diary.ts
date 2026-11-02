@@ -31,6 +31,7 @@ import type { ReportMeta } from '@/lib/pdf/types';
 import { techniqueLabelBg } from '@/lib/agro/application-techniques';
 import { collectPdfBuffer } from '@/app-layer/reports/pdf/collect-buffer';
 import { cropLabelForDocument, loadDocumentCropLabels } from '../crop-label';
+import { isInBabhRegister } from '@/lib/operations/treatment-kind';
 
 // ─────────────────────────────────────────────────────────────────────
 // Bulgarian labels (document language is BG regardless of UI locale)
@@ -1422,10 +1423,23 @@ export async function gatherFarmRecord(
             // there. A sowing reaching it would be filed as a plant-protection
             // treatment in a document an inspector reads.
             //
-            // The bare activity kinds (PRUNE/CULTIVATE/HARVEST) never reach this
-            // function at all — they have no product, and the gatherer selects
-            // on lines that have one. This guard is for SEED, which does.
-            if (opType === 'SEED') {
+            // ALLOWLIST, and the comment that used to sit here was false
+            // (#2697). It said "the bare activity kinds (PRUNE/CULTIVATE/
+            // HARVEST) never reach this function at all — they have no
+            // product, and the gatherer selects on lines that have one."
+            // Neither gatherer branch selects on a product: both resolve lines
+            // by TASK and `status: 'DONE'`. So a cultivation DID reach here,
+            // fell past the single `SEED` skip into the `else` below, and
+            // printed as a plant-protection treatment with empty вредител,
+            // ПРЗ, доза and карантинен срок columns.
+            //
+            // Found by a test written to assert the opposite — that the
+            // register refused a bare activity — which came back red.
+            //
+            // Asking what the FORM has columns for, rather than listing four
+            // kinds to skip, means a new `FieldOperationType` is excluded by
+            // default. The old shape admitted one by default.
+            if (!isInBabhRegister(opType)) {
                 continue;
             }
 
