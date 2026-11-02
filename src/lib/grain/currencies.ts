@@ -97,7 +97,28 @@ export function currencyOptions(
  * Spellings that mean euro. `'EURO'` is the phone's historical free-text
  * value; the rest are the shapes a free-text field produces.
  */
-const EURO_SPELLINGS = new Set(['EUR', 'EURO', 'EUROS', '€', 'E']);
+/**
+ * Every spelling of euro this product has stored.
+ *
+ * `CostEntry.currency` was free text («Валута») before the EUR-only save path,
+ * so one currency exists under several labels and the owner's «Торове» read
+ * «11 119,50 EUR и 10,00 EURO» as two rows (#2707).
+ *
+ * EXPORTED since #2707 so `cost-summary.ts` can fold the same spellings inside
+ * its SQL. It cannot call `canonicalCostCurrency` from a `GROUP BY`, and
+ * retyping this list into a query string is how the two drift — which is the
+ * argument this module's own docblock already makes against private copies.
+ * One list, two readers.
+ *
+ * Note what this set does NOT contain: lev. `canonicalCostCurrency` folds BGN
+ * into EUR as well, but only because it is used beside `normaliseCostToEur`,
+ * which converts at the fixed peg. A consumer that folds the LABEL without
+ * converting the AMOUNT would add lev to euros as the same unit, so a caller
+ * that cannot convert wants these spellings and not that function.
+ */
+export const EURO_SPELLINGS_LIST = ['EUR', 'EURO', 'EUROS', '€', 'E'] as const;
+
+const EURO_SPELLINGS = new Set<string>(EURO_SPELLINGS_LIST);
 
 /** What a cost row contributes to a EUR total, and whether it could be read. */
 export interface NormalisedCost {

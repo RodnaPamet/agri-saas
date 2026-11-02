@@ -27,6 +27,15 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `csum-${randomUUID().slice(0, 8)}`;
 const MINE = `t-${TAG}-mine`;
 const THEIRS = `t-${TAG}-theirs`;
+/**
+ * A THIRD farm, for the spelling fold (#2707).
+ *
+ * Its own tenant on purpose: folding «EURO» into «EUR» changes what the MINE
+ * rows sum to, so seeding a spelling there would have silently rewritten §1
+ * and §3's expected totals — and a test suite you have to re-baseline to add
+ * a case is one that stops telling you when a total changed for a real reason.
+ */
+const SPELLINGS = `t-${TAG}-spellings`;
 let userId = '';
 
 async function makeTenant(id: string, slug: string) {
@@ -58,6 +67,7 @@ beforeAll(async () => {
     await prisma.$connect();
     await makeTenant(MINE, `${TAG}-mine`);
     await makeTenant(THEIRS, `${TAG}-theirs`);
+    await makeTenant(SPELLINGS, `${TAG}-spellings`);
     const email = `${TAG}@example.test`;
     const u = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
     userId = u.id;
@@ -73,13 +83,24 @@ beforeAll(async () => {
     // ANOTHER farm, same shapes. Must never appear in my totals.
     await cost(THEIRS, 'FERTILIZER', '5000.00', 'EUR', '2026-09-10');
     await cost(THEIRS, 'FUEL', '7000.00', 'EUR', '2026-10-11');
+
+    // THE SPELLING FARM (#2707). «Валута» was free text before the EUR-only
+    // save path, so one currency is stored under several labels — the owner's
+    // own «Торове» read «11 119,50 EUR и 10,00 EURO». Five euro spellings,
+    // one with padding and one lower-case, plus a BGN row as the control.
+    await cost(SPELLINGS, 'FERTILIZER', '100.00', 'EUR', '2026-09-10');
+    await cost(SPELLINGS, 'FERTILIZER', '10.00', 'EURO', '2026-09-11');
+    await cost(SPELLINGS, 'FERTILIZER', '1.00', 'euros', '2026-09-12');
+    await cost(SPELLINGS, 'FERTILIZER', '0.50', ' € ', '2026-09-13');
+    await cost(SPELLINGS, 'FERTILIZER', '0.25', '', '2026-09-14');
+    await cost(SPELLINGS, 'FERTILIZER', '400.00', 'BGN', '2026-09-15');
 });
 
 afterAll(async () => {
     if (!DB_AVAILABLE) return;
-    await prisma.costEntry.deleteMany({ where: { tenantId: { in: [MINE, THEIRS] } } });
+    await prisma.costEntry.deleteMany({ where: { tenantId: { in: [MINE, THEIRS, SPELLINGS] } } });
     await prisma.user.deleteMany({ where: { id: userId } });
-    await prisma.tenant.deleteMany({ where: { id: { in: [MINE, THEIRS] } } });
+    await prisma.tenant.deleteMany({ where: { id: { in: [MINE, THEIRS, SPELLINGS] } } });
     await prisma.$disconnect();
 });
 
@@ -170,5 +191,63 @@ describeFn('cost summary aggregate', () => {
         const fert = s.byType.find((r) => r.category === 'FERTILIZER');
         expect(fert?.totalMinor).toBe(98_850);
         expect(fert?.count).toBe(2);
+    });
+
+    describe('§9 one currency is one row, however it was spelled (#2707)', () => {
+        const spellingCtx = () => makeRequestContext('ADMIN', { tenantId: SPELLINGS, userId });
+
+        it('folds every euro spelling into a single EUR row', async () => {
+            // The defect: `GROUP BY "currency"` on a free-text column split one
+            // currency across its labels, so the owner saw «11 119,50 EUR и
+            // 10,00 EURO» for one thing. 100 + 10 + 1 + 0.50 + 0.25 = 111.75.
+            const s = await getCostSummary(spellingCtx());
+            const fert = s.byType.filter((r) => r.category === 'FERTILIZER');
+            const eur = fert.filter((r) => r.currency === 'EUR');
+
+            expect(eur).toHaveLength(1);
+            expect(eur[0].totalMinor).toBe(11_175);
+            expect(eur[0].count).toBe(5);
+        });
+
+        it('keeps BGN SEPARATE — the control that makes the fold meaningful', async () => {
+            // Without this, a fold that swallowed lev into EUR would satisfy
+            // the assertion above perfectly, and the total would be wrong
+            // rather than merely split. `canonicalCostCurrency` DOES fold BGN,
+            // correctly, because it is used beside `normaliseCostToEur`; this
+            // aggregate converts nothing, so folding lev here would add two
+            // different units together.
+            const s = await getCostSummary(spellingCtx());
+            const fert = s.byType.filter((r) => r.category === 'FERTILIZER');
+
+            expect(fert.map((r) => r.currency).sort()).toEqual(['BGN', 'EUR']);
+            expect(fert.find((r) => r.currency === 'BGN')?.totalMinor).toBe(40_000);
+        });
+
+        it('folds in the currencies LIST too, so nothing is reported excluded', async () => {
+            // The second half of the defect, and the one a farmer reads: the
+            // list drives «не са включени N разхода в EURO», which counted
+            // euros among the rows excluded from a euro total.
+            const s = await getCostSummary(spellingCtx());
+
+            expect(s.currencies.map((c) => c.currency).sort()).toEqual(['BGN', 'EUR']);
+            expect(s.currencies.find((c) => c.currency === 'EUR')?.count).toBe(5);
+        });
+
+        it('folds in byMonth and byTypeAndMonth, not only byType', async () => {
+            // Four aggregates share the column and each has its own GROUP BY.
+            // Fixing one and leaving three is how the charts and the summary
+            // would disagree about the same farm.
+            const s = await getCostSummary(spellingCtx());
+
+            const monthEur = s.byMonth.filter((r) => r.currency === 'EUR');
+            expect(monthEur).toHaveLength(1);
+            expect(monthEur[0].totalMinor).toBe(11_175);
+
+            const cellEur = s.byTypeAndMonth.filter(
+                (r) => r.category === 'FERTILIZER' && r.currency === 'EUR',
+            );
+            expect(cellEur).toHaveLength(1);
+            expect(cellEur[0].totalMinor).toBe(11_175);
+        });
     });
 });
