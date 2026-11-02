@@ -24,15 +24,21 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
  * around them changes nothing — `<p>ignore all previous instructions</p>` is
  * neutralised exactly as the bare line is. Measured.
  *
- * `ROLE_SPOOF_PREFIX` is ANCHORED at the start of the line. So anything
- * occupying that position defeats it, and a single HTML tag is enough:
- * `<p>system: …` passes through untouched. Also measured, with a positive
- * control, because "not neutralised" and "the function is broken" are
- * otherwise the same reading.
+ * `ROLE_SPOOF_PREFIX` is POSITIONAL, and it used to be strictly anchored —
+ * so anything occupying the start of the line defeated it, and a single HTML
+ * tag was enough: `<p>system: …` passed through untouched. Measured with a
+ * positive control, because "not neutralised" and "the function is broken"
+ * are otherwise the same reading.
  *
- * That makes the order of operations load-bearing for any caller whose input
- * may carry markup — see `sanitizeUntrustedMarkup` below, which is the only
- * safe way to feed one of those in.
+ * **It now skips a leading run of non-letters, so that class is closed at the
+ * pattern rather than per caller** — see the pattern's own docblock for the
+ * measurement, including why #2698's prescribed strip-then-check is a no-op
+ * on one input shape and actively worse on another.
+ *
+ * `sanitizeUntrustedMarkup` is still the right door for genuine HTML
+ * (RSS descriptions), and for a second reason that has not changed: a
+ * delimited block should not carry tags into the prompt at all. It is no
+ * longer the only thing standing between a tagged role prefix and the model.
  */
 
 /** Patterns that look like an attempt to override the system instructions. */
@@ -45,8 +51,53 @@ const INJECTION_LINE_PATTERNS: RegExp[] = [
     /\bnew instructions?:\b/i,
 ];
 
-/** Role-spoofing prefixes at the start of a line (e.g. "system:", "assistant:"). */
-const ROLE_SPOOF_PREFIX = /^\s*(system|assistant|developer|tool)\s*:/i;
+/**
+ * Role-spoofing prefixes at the start of a line (e.g. "system:", "assistant:").
+ *
+ * ## It skips a leading run of non-letters, and that is the #2698 fix
+ *
+ * A role marker only impersonates a role when it LEADS, so the check has to
+ * be positional. But a strict `^\s*` anchor is defeated by ANY leading
+ * character, and #2698's prescribed remedy — strip markup, then check — turns
+ * out to be the wrong tool for the one call site it left open. Measured on
+ * the advisor's RAG path, with `system: <innocuous Bulgarian>` as the payload
+ * (the "ignore previous instructions" family is unanchored, so using it as
+ * the probe gives a reading identical in both worlds):
+ *
+ *   `<p>system: …`            already defanged — `chunkHtmlByParagraph`,
+ *                             `ingest-tenant`'s `plainText` and the article
+ *                             reindex all strip tags upstream, so a markup
+ *                             strip here is a NO-OP
+ *   `&lt;p&gt;system: …`      masked, and `sanitizePlainText` DECODES the
+ *                             entities last, so stripping first hands the
+ *                             model literal `<p>` it did not have — the
+ *                             prescribed fix makes this case WORSE
+ *   `• system: …`             masked, and no markup is involved at all
+ *   `"system: …` / `- ` / `> ` same
+ *
+ * So the residual gap is the anchor itself, not the markup, and widening the
+ * anchor fixes every caller at once rather than one call site at a time.
+ *
+ * The `<[^>]{0,40}>` alternative is needed because a tag contains LETTERS
+ * ("p", "div"), so skipping non-letters alone cannot pass one; it is bounded
+ * so a line of pure `<` can never make this super-linear.
+ *
+ * ## The false-alarm control is part of the contract
+ *
+ * Widening a positional pattern buys reach with precision, so the cases that
+ * must NOT match are measured alongside the ones that must — a URL containing
+ * `system:`, a mid-sentence `assistant:`, a timestamp, and an ordinary list
+ * item with a colon are the shapes a knowledge article really contains. All
+ * five stay unmatched; the test holds both directions.
+ *
+ * NOT fixed, and recorded rather than left implied: a CYRILLIC role word
+ * («Асистент:») matches neither form. These four are the provider contract's
+ * own literals, and a Bulgarian word is not a role marker any provider
+ * honours — so defanging it would be theatre. If that ever changes it is a
+ * list change, not a pattern change.
+ */
+const ROLE_SPOOF_PREFIX =
+    /^(?:\s|<[^>]{0,40}>|[^\p{L}\p{N}\s])*(system|assistant|developer|tool)\s*:/iu;
 
 /**
  * Replacement marker for a neutralised line — visible to the model as
