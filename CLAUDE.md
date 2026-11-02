@@ -3156,24 +3156,39 @@ leave open, even negated. Say what remains instead:
 > Ships one measured cause; the swallowed `networkidle` waits are a separate
 > PR. Refs #748.
 
-**"Adjacent" was too narrow, measured 2026-11-02.** This paragraph said
-"adjacent to a `#N`", and a commit subject reading
+**"Adjacent" was too narrow, and the two channels do not agree. Measured
+2026-11-02 on a matched pair.** Both of these have the identical shape —
+keyword, four intervening words, number — and they went opposite ways:
 
-    Closes the wiring half of #2691
+| channel carrying it | text | outcome |
+|---|---|---|
+| **PR body** (#2716) | `Closes the wiring half of #2691` | **CLOSED #2691** |
+| **commit message** (#2701) | `Closes the RSS half of #2698` | **left #2698 open** |
 
-**closed #2691** — five words between the keyword and the number. The issue's
-timeline attributes the close to that squash commit, whose only
-closing-shaped text is that line. So the parser's reach spans intervening
-words, which means the two defences people reach for both fail: narrowing the
-claim ("closes the wiring half", "closes the first part of") and negating it
-("does NOT close") are the SAME mistake, and the careful phrasing is what
-produces it.
+In the second case the PR body said only `Refs #2698`, so the commit was the
+only channel carrying a keyword — and nothing closed. In the first, BOTH
+carried that line, so the timeline's attribution to the squash commit cannot
+tell them apart; the negative result above is what identifies the PR BODY as
+the cause. **So the body's parser spans intervening words and the commit's
+appears not to.**
 
-The outcome was harmless there — the issue was finished anyway — and that is
-the hazard: a partial-scope close only hurts when the remaining scope was
-real, which is exactly when nobody is watching the subject line. If a PR
+That asymmetry is the actionable part, and it is the opposite of the
+intuition: the body is the LENIENT channel, while the paragraphs above are
+all about commits. Do not rely on the commit parser's narrowness — one
+measurement is not a specification, GitHub documents neither, and the
+adjacent form in a commit closes for certain (#626, #748 above).
+
+**The rule, therefore, covers both channels and both directions.** Narrowing
+a claim ("closes the wiring half of") and negating it ("does NOT close") are
+the SAME mistake, and the careful phrasing is what produces it. If a PR
 closes one issue and references another, write `Closes #A.` as its own
-sentence and `Refs #B` in a different one.
+sentence and `Refs #B` in a different one — in the body AND in every commit.
+
+A worked consequence: that commit's failure to close was not a lucky escape,
+it was a LOSS. 2698 has real remaining scope, the commit asserted it was
+handled, and the only reason the issue is still open for anyone to find is
+that the parser did not read the sentence the author wrote. Say `Refs` and
+mean it, rather than writing a close you are relying on GitHub to ignore.
 
 ### The same parser eats a QUOTED CI-skip marker — 2026-10-30
 
