@@ -13,7 +13,12 @@ import { randomUUID } from 'crypto';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
-import { deletePastConversation } from '@/app-layer/usecases/assistant-conversations-control';
+import {
+    deletePastConversation,
+    getPastConversation,
+    listPastConversations,
+    searchPastConversations,
+} from '@/app-layer/usecases/assistant-conversations-control';
 import { makeRequestContext } from '../helpers/make-context';
 import {
     MAX_WINDOW_TURNS,
@@ -221,5 +226,189 @@ describe('renderWindow fencing', () => {
         // close the fence early and leave its tail reading as instructions.
         const closes = out.split('<<<END_CONVERSATION_HISTORY>>>').length - 1;
         expect(closes).toBe(1);
+    });
+});
+
+/*
+ * §7 — the detail reader (#2721), and why it is here rather than in the unit
+ * suite.
+ *
+ * The property is a COMPARISON: a tombstoned conversation must answer exactly
+ * what a nonexistent id answers. With Prisma mocked both cases are whatever
+ * `mockResolvedValue` says, so the assertion would be about the double. Only
+ * real rows can make the two genuinely different and then require them to look
+ * the same — the shape `person-block-is-silent` uses, one layer down.
+ *
+ * It also exercises the decryption: `AssistantTurn.content` is `v2:`
+ * ciphertext at rest, so a reader that bypassed the extension would return an
+ * envelope and a unit test with a string in the double would never notice.
+ */
+describeFn('the past-conversation detail reader (#2721)', () => {
+    /** Everything a caller can observe about a refusal. */
+    const refusal = async (fn: () => Promise<unknown>): Promise<unknown> => {
+        try {
+            await fn();
+        } catch (e: unknown) {
+            return {
+                status: (e as { status?: number }).status,
+                code: (e as { code?: string }).code,
+                message: (e as { message?: string }).message,
+            };
+        }
+        throw new Error('expected a refusal, got a result');
+    };
+
+    it('§7a returns the turns DECRYPTED and oldest first', async () => {
+        const ctx = ctxFor(FARM_A, userOne);
+        const id = await resolveConversation(ctx, undefined);
+        await recordTurn(ctx, id, 'user', 'Кога да поливам житото?');
+        await recordTurn(ctx, id, 'assistant', 'Рано сутрин, преди осем.');
+
+        const d = await getPastConversation(userOne, id);
+        expect(d.id).toBe(id);
+        expect(d.items.map((t) => t.role)).toEqual(['user', 'assistant']);
+        // The PLAINTEXT, not the envelope. A reader that went round the
+        // extension would return a `v2:`-prefixed string here, and the row
+        // would still look populated.
+        expect(d.items[0].text).toBe('Кога да поливам житото?');
+        expect(d.items[0].text).not.toMatch(/^v[12]:/);
+        expect(d.items[1].text).toBe('Рано сутрин, преди осем.');
+        expect(d.turns).toBe(2);
+        expect(d.truncated).toBe(false);
+    });
+
+    it('§7b a TOMBSTONED exchange is indistinguishable from one that never existed', async () => {
+        const ctx = ctxFor(FARM_A, userOne);
+        const id = await resolveConversation(ctx, undefined);
+        await recordTurn(ctx, id, 'user', 'това ще бъде изтрито');
+        // It reads fine first, so the comparison below is about the DELETE
+        // and not about a reader that never worked.
+        expect((await getPastConversation(userOne, id)).items).toHaveLength(1);
+
+        await deletePastConversation(userOne, id);
+
+        const deleted = await refusal(() => getPastConversation(userOne, id));
+        const neverExisted = await refusal(() =>
+            getPastConversation(userOne, 'conversation-that-does-not-exist'),
+        );
+        // Every observable, not merely "it was refused". A distinct code or
+        // message would let a caller learn that an id once existed.
+        expect(deleted).toEqual(neverExisted);
+    });
+
+    it('§7c ANOTHER PERSON’S real conversation answers the same refusal', async () => {
+        const theirs = await resolveConversation(ctxFor(FARM_A, userTwo), undefined);
+        await recordTurn(ctxFor(FARM_A, userTwo), theirs, 'user', 'чужд разговор');
+
+        const foreign = await refusal(() => getPastConversation(userOne, theirs));
+        const neverExisted = await refusal(() =>
+            getPastConversation(userOne, 'conversation-that-does-not-exist'),
+        );
+        // NOT FOUND, never FORBIDDEN — a 403 confirms the id exists, and these
+        // ids are about people.
+        expect(foreign).toEqual(neverExisted);
+        expect((foreign as { status: number }).status).toBe(404);
+
+        // The control: it is a real, readable conversation for its OWNER, so
+        // the refusal above is scoping and not a broken reader.
+        expect((await getPastConversation(userTwo, theirs)).items).toHaveLength(1);
+    });
+
+    it('§7d the same person in ANOTHER farm still reads their own exchange', async () => {
+        /*
+         * The deliberate opposite of §3. Resolving an id is tenant-scoped
+         * because it serves ONE farm's stream; reading your own history is
+         * person-scoped across farms, which is the owner's scope ("all
+         * exchanges from all sessions with a user"). A tenant filter on this
+         * reader would hide a person's exchanges from their other farms, and
+         * would do it silently.
+         */
+        const inB = await resolveConversation(ctxFor(FARM_B, userOne), undefined);
+        await recordTurn(ctxFor(FARM_B, userOne), inB, 'user', 'във второто стопанство');
+        const d = await getPastConversation(userOne, inB);
+        expect(d.items[0].text).toBe('във второто стопанство');
+    });
+});
+
+/*
+ * §8 — the two SHIPPED readers that had the same defect.
+ *
+ * These are regression tests for #2711 and #2713, written while fixing
+ * #2721, because the detail reader's §7a is what exposed the cause: a
+ * person-scoped read binds no tenant, so the encryption extension resolves
+ * `NO_DEK_PAIR` and hands back the `v2:` envelope with no error and no log.
+ *
+ * Both functions shipped broken and every test they had was green, because
+ * every one of them mocked Prisma — and a double returns whatever string it
+ * was given, so no mocked test can tell plaintext from ciphertext. The
+ * measurement that mattered could only be made against real rows.
+ *
+ * The flag (`assistant.memory`) is off in production, so nothing was visible
+ * to anybody. That is luck about timing, not a mitigation.
+ */
+describeFn('the shipped readers decrypt too (#2711, #2713)', () => {
+    it('§8a the LIST label is the person’s own words, not a v2: envelope', async () => {
+        const ctx = ctxFor(FARM_A, userOne);
+        const id = await resolveConversation(ctx, undefined);
+        await recordTurn(ctx, id, 'user', 'Колко да пръскам срещу повитица?');
+
+        const row = (await listPastConversations(userOne)).find((r) => r.id === id);
+        expect(row).toBeDefined();
+        // This was `v2:8X18HAVp…` for every row on the phone's «Минали
+        // разговори» screen. An envelope is not a label.
+        expect(row?.opening).toBe('Колко да пръскам срещу повитица?');
+        expect(row?.opening).not.toMatch(/^v[12]:/);
+    });
+
+    it('§8b the list spans FARMS, each decrypted under its own key', async () => {
+        /*
+         * The case a single tenant context cannot serve, and the reason the
+         * fix groups by farm rather than picking one: two conversations, two
+         * farms, two different DEKs, one person-scoped answer. Whichever farm
+         * a single-context read had chosen, the other would have come back as
+         * ciphertext — and the list would have looked half-working.
+         */
+        const inA = await resolveConversation(ctxFor(FARM_A, userTwo), undefined);
+        await recordTurn(ctxFor(FARM_A, userTwo), inA, 'user', 'първо стопанство');
+        const inB = await resolveConversation(ctxFor(FARM_B, userTwo), undefined);
+        await recordTurn(ctxFor(FARM_B, userTwo), inB, 'user', 'второ стопанство');
+
+        const rows = await listPastConversations(userTwo);
+        expect(rows.find((r) => r.id === inA)?.opening).toBe('първо стопанство');
+        expect(rows.find((r) => r.id === inB)?.opening).toBe('второ стопанство');
+    });
+
+    it('§8c RECALL matches a word a farmer actually typed', async () => {
+        const ctx = ctxFor(FARM_A, userOne);
+        const id = await resolveConversation(ctx, undefined);
+        await recordTurn(ctx, id, 'user', 'Имам повитица в житото, какво да правя?');
+        await recordTurn(ctx, id, 'assistant', 'Пръскайте с хербицид до братене.');
+
+        const hits = await searchPastConversations(userOne, { query: 'повитица' });
+        /*
+         * This returned ZERO for every query ever made. The comparison ran
+         * `'v2:GnxO…'.toLowerCase().includes('повитица')`, which is false for
+         * all input — so recall was not weak, it was inert, and the empty
+         * result is indistinguishable from "you never mentioned it". The
+         * tool's own description tells the model to ask for a timeframe on an
+         * empty result, which would have made the failure look like the
+         * documented scan-cap gap rather than a defect.
+         */
+        expect(hits.length).toBeGreaterThan(0);
+        expect(hits.some((h) => h.conversationId === id)).toBe(true);
+        expect(hits[0].text).not.toMatch(/^v[12]:/);
+        expect(hits[0].text).toContain('повитица');
+    });
+
+    it('§8d recall still excludes a DELETED exchange', async () => {
+        // The tombstone has to survive the regrouping: it is filtered on the
+        // metadata query, which is the one that now selects the ids.
+        const ctx = ctxFor(FARM_A, userOne);
+        const id = await resolveConversation(ctx, undefined);
+        await recordTurn(ctx, id, 'user', 'уникалнадума за изтриване');
+        expect(await searchPastConversations(userOne, { query: 'уникалнадума' })).not.toHaveLength(0);
+
+        await deletePastConversation(userOne, id);
+        expect(await searchPastConversations(userOne, { query: 'уникалнадума' })).toHaveLength(0);
     });
 });
