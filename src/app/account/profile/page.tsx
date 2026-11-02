@@ -2,11 +2,13 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { auth } from '@/auth';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { Heading } from '@/components/ui/typography';
 
 import { AvatarUploadField } from './AvatarUploadField';
 import { NameEditField } from './NameEditField';
 import { FeedbackPrefsCard } from './FeedbackPrefsCard';
+import { AssistantMemoryCard } from './AssistantMemoryCard';
 
 /**
  * Account → Profile. Avatar roadmap P3 — the first home for the
@@ -18,6 +20,13 @@ export default async function AccountProfilePage() {
     if (!session?.user) redirect('/login?next=/account/profile');
 
     const t = await getTranslations('account.profile');
+    /*
+     * Resolved on the SERVER and passed down — P5.3's rule. There is no
+     * client-side flags hook in this codebase, and adding one would be a
+     * second source of truth for a kill switch. Per PERSON, because the flag
+     * resolves cohorts per user.
+     */
+    const memoryEnabled = await isFeatureEnabled('assistant.memory', session.user.id);
 
     return (
         <div className="w-full max-w-md">
@@ -38,6 +47,8 @@ export default async function AccountProfilePage() {
                 <NameEditField initialName={session.user.name ?? null} />
 
                 <FeedbackPrefsCard />
+
+                <AssistantMemoryCard enabled={memoryEnabled} />
         </div>
     );
 }

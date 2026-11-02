@@ -333,7 +333,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // never-warning implementation satisfies the negative half alone.
 // 270 is this branch's own measured live count against base 0b47fdc95
 // (269 files → 270), not a projected total.
-const RENDERED_TEST_FLOOR = 271;
+// 271 -> 272 (#2671): `assistant-memory-card`. «Какво помни асистентът» on
+// the web — the flag-off person seeing NOTHING and the honest empty state are
+// the two behaviours a reasonable implementation gets wrong, and both are the
+// COMMON case while the feature is dark.
+const RENDERED_TEST_FLOOR = 272;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre

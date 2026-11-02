@@ -659,7 +659,7 @@
             "colPeople": "People",
             "colLastSeen": "Last seen",
             "windowNote": "Events are kept for {retention} days, so a longer window shows the same data."
-            },
+        },
         "title": "Administration",
         "auditLog": "Audit Log",
         "policyTemplates": "Policy Templates",
@@ -5449,6 +5449,20 @@
             "hapticFeedback": "Haptic feedback",
             "successSoundAria": "Success sound on marking work done",
             "hapticFeedbackAria": "Haptic feedback on marking work done"
+        },
+        "assistantMemory": {
+            "title": "What the assistant remembers",
+            "explainer": "A short profile built from your own questions — what you grow, what problems recur, what you prefer. It is used in every answer so the assistant need not ask again. It holds no farm data: the assistant reads that from your records.",
+            "emptyTitle": "The assistant does not remember anything about you yet",
+            "emptyBody": "When you mention something about your farm in a conversation — a crop, a recurring problem, a preferred product — it will appear here and you will be able to delete it.",
+            "rememberedOn": "Remembered on {date}",
+            "forget": "Delete",
+            "forgotten": "Deleted",
+            "undo": "Undo",
+            "forgetAll": "Delete everything",
+            "forgetAllConfirmTitle": "Delete everything remembered?",
+            "forgetAllConfirmBody": "The assistant will forget every point below and start again. This cannot be undone. Your conversations are kept.",
+            "forgetAllConfirm": "Delete everything"
         },
         "security": {
             "title": "Account security"
