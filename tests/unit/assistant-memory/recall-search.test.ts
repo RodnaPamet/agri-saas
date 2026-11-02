@@ -11,10 +11,34 @@
  * detail, and that is most of what this suite asserts.
  */
 const mockFindMany = jest.fn();
+/** Every tenant a content read was run under, in order. */
+const tenantContexts: string[] = [];
 jest.mock('@/lib/prisma', () => {
     const client = { assistantConversation: { findMany: (...a: unknown[]) => mockFindMany(...a) } };
     return { __esModule: true, default: client, prisma: client };
 });
+/*
+ * `withTenantDb` is the seam the content read goes through, and mocking it is
+ * the only way this suite can see the property that matters.
+ *
+ * It had none, and that is why the real defect shipped: the whole file mocked
+ * `prisma` and a double hands back whatever string it was given, so plaintext
+ * and a `v2:` envelope are the same observation. The implementation read turns
+ * person-scoped with no tenant bound, the extension resolved no DEK, and every
+ * test here stayed green over a search that matched NOTHING for every query.
+ *
+ * So the double records the tenant each content read ran under, and a test
+ * below asserts it — the unit-level half of the integration proof in
+ * `assistant-conversation-window`'s §8.
+ */
+jest.mock('@/lib/db-context', () => ({
+    withTenantDb: async (tenantId: string, cb: (db: unknown) => Promise<unknown>) => {
+        tenantContexts.push(tenantId);
+        return cb({
+            assistantConversation: { findMany: (...a: unknown[]) => mockFindMany(...a) },
+        });
+    },
+}));
 
 import {
     RECALL_CONVERSATION_CAP,
@@ -27,9 +51,14 @@ import {
 const ME = 'user-me';
 const D = (iso: string) => new Date(iso);
 
-function conversation(id: string, texts: Array<[string, string]>) {
+const FARM = 'tenant-a';
+
+function conversation(id: string, texts: Array<[string, string]>, tenantId = FARM) {
     return {
         id,
+        // Selected by the metadata query, and what routes the content read to
+        // the farm whose DEK can decrypt these turns.
+        tenantId,
         turns: texts.map(([role, content], i) => ({
             role,
             content,
@@ -41,6 +70,7 @@ function conversation(id: string, texts: Array<[string, string]>) {
 beforeEach(() => {
     mockFindMany.mockReset();
     mockFindMany.mockResolvedValue([]);
+    tenantContexts.length = 0;
 });
 
 describe('the query', () => {
@@ -215,11 +245,48 @@ describe('the bounds are the contract', () => {
     });
 
     it('bounds turns PER conversation, so one long exchange cannot hide the rest', async () => {
+        mockFindMany.mockResolvedValue([conversation('c1', [['user', 'нещо']])]);
         await searchPastConversations(ME, { query: 'повитица' });
-        const args = mockFindMany.mock.calls[0][0] as {
+        // Call 1 is the CONTENT read — call 0 is the metadata query, which
+        // selects no turns at all. A nested `take` is per PARENT, which is why
+        // the shape stays nested instead of flattening to one turn query.
+        const args = mockFindMany.mock.calls[1][0] as {
             select: { turns: { take: number; orderBy: unknown } };
         };
         expect(args.select.turns.take).toBeLessThanOrEqual(60);
         expect(args.select.turns.orderBy).toEqual({ createdAt: 'desc' });
+    });
+});
+
+describe('the content read runs under a TENANT, because the key is per tenant', () => {
+    it('reads turns inside the conversation’s own farm', async () => {
+        mockFindMany.mockResolvedValue([conversation('c1', [['user', 'повитица тук']])]);
+        const out = await searchPastConversations(ME, { query: 'повитица' });
+        expect(out).toHaveLength(1);
+        // Without this the search reads ciphertext and matches nothing, with
+        // no error and no log — the defect measured 2026-11-02.
+        expect(tenantContexts).toEqual([FARM]);
+    });
+
+    it('groups by FARM: one context per farm, never one per conversation', async () => {
+        mockFindMany.mockResolvedValue([
+            conversation('a1', [['user', 'повитица 1']], 'farm-a'),
+            conversation('a2', [['user', 'повитица 2']], 'farm-a'),
+            conversation('b1', [['user', 'повитица 3']], 'farm-b'),
+        ]);
+        await searchPastConversations(ME, { query: 'повитица' });
+        // Two farms, three conversations, two contexts. A context per
+        // conversation would be an N+1 over the cap; a single context would
+        // return ciphertext for every other farm.
+        expect(tenantContexts).toEqual(['farm-a', 'farm-b']);
+    });
+
+    it('asks for nothing when the person has no conversations', async () => {
+        mockFindMany.mockResolvedValue([]);
+        expect(await searchPastConversations(ME, { query: 'повитица' })).toEqual([]);
+        // No empty-`in` content query, which Prisma would run and which would
+        // open a transaction for nothing.
+        expect(tenantContexts).toEqual([]);
+        expect(mockFindMany).toHaveBeenCalledTimes(1);
     });
 });

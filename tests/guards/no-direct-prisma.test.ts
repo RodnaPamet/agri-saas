@@ -665,6 +665,29 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // recipient's. Best-effort + fail-open — a message is never rolled
         // back because its notification failed.
         'exchange-messaging.ts',
+        // «Какво помни асистентът» — the EXCHANGES half (#2721). Same
+        // cross-tenant fan-out as the four above, arrived at from the other
+        // direction: the question is PERSON-scoped across farms ("all
+        // exchanges from all sessions with a user"), so the answer spans
+        // every farm that person belongs to and there is no single tenant for
+        // `runInTenantContext` to take.
+        //
+        // Two reasons `withTenantDb` is the RIGHT tool here rather than a
+        // concession. The caller is `getUserCtx` — person-scoped, with no
+        // `RequestContext` and so no tenant, role or permission set to pass;
+        // synthesizing one per farm to satisfy this rule would invent an
+        // authorization context nobody granted, when the authorization has
+        // already happened (every row matched `userId` from the verified
+        // session). And `withTenantDb` binds exactly what is needed and
+        // nothing more: `app.tenant_id`, so RLS confines the read, plus the
+        // audit context, so the per-tenant DEK resolves.
+        //
+        // That last part is why the fan-out is not optional. `AssistantTurn
+        // .content` is encrypted under the FARM's DEK, and a single context
+        // would return the `v2:` envelope for every other farm — silently,
+        // with no error and no log. That is the defect #2721 fixed and #2723
+        // tracks as a class; `memory-extract.ts` states the rule.
+        'assistant-conversations-control.ts',
     ];
 
     for (const file of usecases) {
