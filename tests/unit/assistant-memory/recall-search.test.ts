@@ -110,9 +110,23 @@ describe('matching, in the language the product is in', () => {
         expect(out.some((e) => e.text.includes('повитицата'))).toBe(true);
     });
 
-    it('is case-insensitive across Cyrillic', async () => {
-        const out = await searchPastConversations(ME, { query: 'ПОВИТИЦ' });
-        expect(out.length).toBeGreaterThan(0);
+    it('is case-insensitive on BOTH sides, not just the query', async () => {
+        /*
+         * The query side alone proves nothing: the needle is lowercased once
+         * when it is read, so an uppercase QUERY matches whatever the content
+         * casing. My first version tested only that, and a mutation making the
+         * CONTENT comparison case-sensitive sailed past it.
+         *
+         * The fixture's assistant turn opens «Повитицата» with a capital П, so
+         * this asserts the content is folded too.
+         */
+        const upperQuery = await searchPastConversations(ME, { query: 'ПОВИТИЦ' });
+        expect(upperQuery.length).toBeGreaterThan(0);
+
+        const lowerQuery = await searchPastConversations(ME, { query: 'повитиц' });
+        // The capital-П turn must be among them, which is the half a
+        // query-only fold misses.
+        expect(lowerQuery.some((e) => e.text.startsWith('Повитицата'))).toBe(true);
     });
 
     it('labels who said it, and dates each excerpt to a DAY', async () => {
@@ -147,21 +161,49 @@ describe('the bounds are the contract', () => {
         expect(out).toHaveLength(RECALL_MAX_EXCERPTS);
     });
 
-    it('stops SCANNING at the decrypt cap even when nothing matches', async () => {
-        // The cap that makes this affordable. Every turn read here was
-        // decrypted, so an unbounded scan is an unbounded cost that grows with
-        // the person's history — which is what the owner rejected.
-        const many = Array.from({ length: 20 }, (_, i) =>
+    it('stops SCANNING at the decrypt cap — a match BEYOND it is missed', async () => {
+        /*
+         * The cap has to be OBSERVABLE or the test is decorative, and my first
+         * version was: it asserted an empty result over non-matching content
+         * plus `CAP < 1200`, and removing the cap entirely changed neither.
+         * Found by mutation.
+         *
+         * So the match is planted BEYOND the budget. With the cap, it is
+         * missed; without it, it is found. That also documents the accepted
+         * cost of the owner's date-bounded choice in the one place somebody
+         * will look — a match older than the budget needs a date range to
+         * reach it.
+         */
+        const filler = Array.from({ length: 10 }, (_, i) =>
             conversation(
                 `c${i}`,
                 Array.from({ length: 60 }, () => ['user', 'нищо подобно'] as [string, string]),
             ),
         );
-        mockFindMany.mockResolvedValue(many);
+        // 600 filler turns ahead of it, against a 300 cap.
+        mockFindMany.mockResolvedValue([
+            ...filler,
+            conversation('late', [['user', 'ето я повитицата']]),
+        ]);
         const out = await searchPastConversations(ME, { query: 'повитица' });
         expect(out).toEqual([]);
-        // 20 × 60 = 1200 turns available; the cap is what stopped it.
-        expect(RECALL_TURN_SCAN_CAP).toBeLessThan(1200);
+        expect(RECALL_TURN_SCAN_CAP).toBeLessThan(600);
+    });
+
+    it('and a match INSIDE the budget is found — the control for the above', async () => {
+        // Without this, the test above passes for a search that finds nothing
+        // ever, which is the same reading as a working cap.
+        mockFindMany.mockResolvedValue([
+            conversation('early', [['user', 'ето я повитицата']]),
+            ...Array.from({ length: 10 }, (_, i) =>
+                conversation(
+                    `c${i}`,
+                    Array.from({ length: 60 }, () => ['user', 'нищо подобно'] as [string, string]),
+                ),
+            ),
+        ]);
+        const out = await searchPastConversations(ME, { query: 'повитица' });
+        expect(out).toHaveLength(1);
     });
 
     it('truncates each excerpt', async () => {
