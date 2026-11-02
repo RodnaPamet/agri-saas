@@ -54,50 +54,117 @@ const INJECTION_LINE_PATTERNS: RegExp[] = [
 /**
  * Role-spoofing prefixes at the start of a line (e.g. "system:", "assistant:").
  *
- * ## It skips a leading run of non-letters, and that is the #2698 fix
+ * ## It skips whitespace and TAGS, and nothing else — the #2698 fix
  *
- * A role marker only impersonates a role when it LEADS, so the check has to
- * be positional. But a strict `^\s*` anchor is defeated by ANY leading
- * character, and #2698's prescribed remedy — strip markup, then check — turns
- * out to be the wrong tool for the one call site it left open. Measured on
- * the advisor's RAG path, with `system: <innocuous Bulgarian>` as the payload
- * (the "ignore previous instructions" family is unanchored, so using it as
- * the probe gives a reading identical in both worlds):
+ * A role marker only impersonates a role when it LEADS, so the check is
+ * positional. A strict `^\s*` anchor is defeated by one HTML tag, which is
+ * what #2698 is about; the skip closes that at the PATTERN, so every caller
+ * is covered at once instead of one call site at a time.
  *
- *   `<p>system: …`            already defanged — `chunkHtmlByParagraph`,
- *                             `ingest-tenant`'s `plainText` and the article
- *                             reindex all strip tags upstream, so a markup
- *                             strip here is a NO-OP
- *   `&lt;p&gt;system: …`      masked, and `sanitizePlainText` DECODES the
- *                             entities last, so stripping first hands the
- *                             model literal `<p>` it did not have — the
- *                             prescribed fix makes this case WORSE
- *   `• system: …`             masked, and no markup is involved at all
- *   `"system: …` / `- ` / `> ` same
+ * The skip has to understand TAGS specifically, because a tag contains
+ * LETTERS ("p", "div") — so skipping non-letters alone cannot step over one.
+ * It is done by `skipLeadingMarkup` rather than by a regex: see that
+ * function for why CodeQL refuses the regex form.
  *
- * So the residual gap is the anchor itself, not the markup, and widening the
- * anchor fixes every caller at once rather than one call site at a time.
+ * **#2698's prescribed remedy — strip markup, then check — is the wrong tool
+ * for the call site it left open, and that is why this is a pattern change.**
+ * Measured on the advisor's RAG path with `system: <innocuous Bulgarian>` as
+ * the payload (the "ignore previous instructions" family is unanchored, so
+ * using it as the probe reads identically in both worlds and proves nothing):
  *
- * The `<[^>]{0,40}>` alternative is needed because a tag contains LETTERS
- * ("p", "div"), so skipping non-letters alone cannot pass one; it is bounded
- * so a line of pure `<` can never make this super-linear.
+ *   `<p>system: …`        the strip is a NO-OP — `chunkHtmlByParagraph`,
+ *                         `ingest-tenant`'s `plainText` and the article
+ *                         reindex all remove tags upstream already
+ *   `&lt;p&gt;system: …`  `sanitizePlainText` decodes entities LAST, so
+ *                         stripping first hands the model literal `<p>` it
+ *                         did not have — the remedy makes this case WORSE
  *
- * ## The false-alarm control is part of the contract
+ * ## What it deliberately does NOT skip, and why the narrow version won
  *
- * Widening a positional pattern buys reach with precision, so the cases that
- * must NOT match are measured alongside the ones that must — a URL containing
- * `system:`, a mid-sentence `assistant:`, a timestamp, and an ordinary list
- * item with a colon are the shapes a knowledge article really contains. All
- * five stay unmatched; the test holds both directions.
+ * An earlier version of this fix also skipped leading punctuation, catching
+ * `• system: …`, `"system: …`, `- system: …` and `> system: …`. It was
+ * withdrawn after agrent backend-1 pointed at the population it would damage,
+ * and the measurement agreed: a knowledge article QUOTING a config block —
  *
- * NOT fixed, and recorded rather than left implied: a CYRILLIC role word
- * («Асистент:») matches neither form. These four are the provider contract's
- * own literals, and a Bulgarian word is not a role marker any provider
- * honours — so defanging it would be theatre. If that ever changes it is a
- * list change, not a pattern change.
+ *     irrigation:
+ *       system: drip
+ *       tool: boom-sprayer
+ *
+ * — is where these four English words actually occur in a Bulgarian agronomy
+ * corpus. So the false-positive population is nearly identical to the
+ * population where a false positive HURTS: a farmer reading a mangled
+ * `[role] drip` about the sprayer setting they are trying to change. The
+ * punctuation skip additionally matched a markdown table row
+ * (`| tool: … |`), a dash-led spec line and a CSV fragment. Measured, all
+ * three were introduced by the widening; this narrow form introduces none.
+ *
+ * Two residual gaps, recorded because a silent omission teaches nothing:
+ *
+ *   · A punctuation-led role prefix (`• system: …`) stays masked. It is
+ *     defence in depth here, not the only control — the block is delimited
+ *     and the system prompt says it is data — and missing it costs less than
+ *     mangling a legitimate technical line.
+ *   · `&lt;p&gt;system: …` stays masked under EVERY form above, this one
+ *     included. Entity-escaped markup needs a decode, and a decode is what
+ *     cannot be applied twice.
+ *   · A CYRILLIC role word («Асистент:») matches nothing. These four are the
+ *     provider contract's own literals, and a Bulgarian word is not a role
+ *     marker any provider honours, so defanging it would be theatre. A list
+ *     change, not a pattern change.
+ *
+ * ## One false positive is PRE-EXISTING, and this does not fix it
+ *
+ * `  system: drip` and `developer: Netafim` match the STRICT anchor too — the
+ * old `^\s*` already skipped indentation. So the config-block damage above
+ * shipped long before this change and is untouched by it. Tracked separately
+ * rather than folded in, because narrowing the role list or demanding
+ * non-key-value context is a product decision about the corpus, not a fix to
+ * the anchor.
  */
-const ROLE_SPOOF_PREFIX =
-    /^(?:\s|<[^>]{0,40}>|[^\p{L}\p{N}\s])*(system|assistant|developer|tool)\s*:/iu;
+const ROLE_SPOOF_PREFIX = /^(system|assistant|developer|tool)\s*:/i;
+
+/** The longest a tag-like group may be for the skip to step over it. */
+const MAX_SKIPPABLE_TAG = 40;
+
+/**
+ * Index of the first character that is neither whitespace nor a tag-like
+ * group — i.e. where the role check should start looking.
+ *
+ * ## Why this is a loop and not a regex
+ *
+ * The obvious form is `/^(?:\s|<[^>]{0,40}>)*(system|…)\s*:/`, and it works.
+ * CodeQL rejected it as a high-severity finding on the pull request, and it is
+ * right to: a bounded quantifier nested inside a star is the polynomial-ReDoS
+ * shape, and this function's input is untrusted text from an RSS feed or a
+ * tenant's own document — the exact "uncontrolled data" the rule is about.
+ * Rewriting the regex smaller would be arguing with the rule; removing the
+ * backtracking answers it.
+ *
+ * This scan is unambiguously linear. Each iteration either advances `i` or
+ * breaks, and the one `indexOf` that could scan far runs at most ONCE, because
+ * a `<` with no matching `>` within the bound ends the loop.
+ */
+function skipLeadingMarkup(line: string): number {
+    let i = 0;
+    while (i < line.length) {
+        const ch = line[i] as string;
+        if (ch === ' ' || ch === '\t' || /\s/.test(ch)) {
+            i += 1;
+            continue;
+        }
+        if (ch === '<') {
+            const close = line.indexOf('>', i + 1);
+            // `close - i <= MAX_SKIPPABLE_TAG + 1` keeps the same bound the
+            // regex form carried: a very long `<…>` is content, not markup.
+            if (close !== -1 && close - i <= MAX_SKIPPABLE_TAG + 1) {
+                i = close + 1;
+                continue;
+            }
+        }
+        break;
+    }
+    return i;
+}
 
 /**
  * Replacement marker for a neutralised line — visible to the model as
@@ -115,9 +182,15 @@ export function sanitizeUntrusted(text: string): string {
         .split(/\r?\n/)
         .map((line) => {
             if (INJECTION_LINE_PATTERNS.some((p) => p.test(line))) return NEUTRALISED;
-            if (ROLE_SPOOF_PREFIX.test(line)) {
-                // Defang the role prefix so it reads as plain text.
-                return line.replace(ROLE_SPOOF_PREFIX, '[role] ');
+            // Look PAST leading whitespace and markup — see
+            // `skipLeadingMarkup`. A role marker only impersonates a role
+            // when it leads, and one HTML tag used to be enough to hide it.
+            const rest = line.slice(skipLeadingMarkup(line));
+            if (ROLE_SPOOF_PREFIX.test(rest)) {
+                // Defang the role prefix so it reads as plain text. The
+                // skipped prefix is dropped with it: a tag or indentation in
+                // front of a neutralised marker is not worth preserving.
+                return rest.replace(ROLE_SPOOF_PREFIX, '[role] ');
             }
             return line;
         })
