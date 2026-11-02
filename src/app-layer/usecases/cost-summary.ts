@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { EURO_SPELLINGS_LIST } from '@/lib/grain/currencies';
 
 import { runInTenantContext } from '@/lib/db-context';
 import { assertCanRead } from '../policies/common';
@@ -97,6 +98,65 @@ function whereClause(ctx: RequestContext, filter: CostSummaryFilter): Prisma.Sql
 /** `SUM(amount)` as exact integer minor units, in Postgres numeric arithmetic. */
 const TOTAL_MINOR = Prisma.sql`(SUM("amount") * 100)::bigint AS "totalMinor"`;
 
+/**
+ * One currency, one row (#2707).
+ *
+ * `CostEntry.currency` was free text («Валута») before the EUR-only save path,
+ * so grouping by the raw column split one currency across its spellings: the
+ * owner's own «Торове» read «11 119,50 EUR и 10,00 EURO» on the phone, and the
+ * `currencies` list counted euros among the rows EXCLUDED from a euro total.
+ *
+ * ## Folded in the SQL, not backfilled
+ *
+ * A read-time fold fixes every stored row whatever it says, needs no
+ * production write, cannot be half-applied, and does not leave the next
+ * free-text row to re-break it. Measured before choosing: ZERO migrations
+ * contain an `UPDATE "CostEntry"` (against 11 that mention the table), so
+ * nothing has ever normalised these values and nothing will.
+ *
+ * ## The spellings come from `currencies.ts`, and BGN deliberately does not
+ *
+ * The list is interpolated from `EURO_SPELLINGS_LIST` rather than retyped here
+ * — two copies is how the TS and the SQL drift, and that module's docblock
+ * already argues against private copies.
+ *
+ * It is NOT `canonicalCostCurrency`, which folds BGN into EUR too. That
+ * function is correct where it is used, beside `normaliseCostToEur`, which
+ * converts lev at the fixed peg — fold the label, convert the amount. This
+ * aggregate converts nothing, by its own contract three paragraphs up:
+ * *"Never blended — there is no FX table in this repo, so consumers group BY
+ * currency or refuse."* Folding BGN here without converting would add lev to
+ * euros as the same unit, which is a wrong TOTAL rather than a split series.
+ * So lev keeps its own row.
+ *
+ * `btrim` and `upper` before comparing, because the stored values are what
+ * somebody typed: « eur », «Euro» and «EUR» are all one currency.
+ *
+ * ## Every caller GROUPS BY ORDINAL, and that is required rather than tidy
+ *
+ * `Prisma.sql` turns an interpolated value into a BIND PARAMETER, so repeating
+ * this fragment in a `GROUP BY` emits a second set of placeholders — `$1..$5`
+ * in the SELECT and `$6..$10` in the GROUP BY. Postgres compares grouping
+ * expressions syntactically, decides the two are different, and refuses with
+ * `42803: column "CostEntry.currency" must appear in the GROUP BY clause`.
+ * Which reads like the fold was never applied, when in fact it was applied
+ * twice and the copies did not match.
+ *
+ * `GROUP BY 1, 2` names the select-list position instead, so the expression
+ * exists ONCE per query. That is also the stronger shape: two copies of a
+ * CASE in one statement is a thing that can drift, and `byMonth` was already
+ * grouping by ordinal for its `to_char` for the same reason.
+ */
+const CANONICAL_CURRENCY = Prisma.sql`
+    CASE
+        WHEN upper(btrim("currency")) = ''
+          OR upper(btrim("currency")) IN (${Prisma.join(
+              EURO_SPELLINGS_LIST.map((c) => Prisma.sql`${c}`),
+          )})
+        THEN 'EUR'
+        ELSE upper(btrim("currency"))
+    END`;
+
 export async function getCostSummary(
     ctx: RequestContext,
     filter: CostSummaryFilter = {},
@@ -122,34 +182,34 @@ export async function getCostSummary(
         const byType = await db.$queryRaw<
             { category: CostCategory; currency: string; totalMinor: bigint; count: bigint }[]
         >`
-            SELECT "category", "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
+            SELECT "category", ${CANONICAL_CURRENCY} AS "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
-            GROUP BY "category", "currency"
+            GROUP BY 1, 2
             ORDER BY (SUM("amount") * 100)::bigint DESC
         `;
 
         const byMonth = await db.$queryRaw<
             { month: string; currency: string; totalMinor: bigint; count: bigint }[]
         >`
-            SELECT to_char("incurredOn", 'YYYY-MM') AS "month", "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
+            SELECT to_char("incurredOn", 'YYYY-MM') AS "month", ${CANONICAL_CURRENCY} AS "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
-            GROUP BY 1, "currency"
+            GROUP BY 1, 2
             ORDER BY 1 ASC
         `;
 
         const byTypeAndMonth = await db.$queryRaw<
             { category: CostCategory; month: string; currency: string; totalMinor: bigint; count: bigint }[]
         >`
-            SELECT "category", to_char("incurredOn", 'YYYY-MM') AS "month", "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
+            SELECT "category", to_char("incurredOn", 'YYYY-MM') AS "month", ${CANONICAL_CURRENCY} AS "currency", ${TOTAL_MINOR}, COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
-            GROUP BY "category", 2, "currency"
+            GROUP BY 1, 2, 3
             ORDER BY 2 ASC
         `;
 
         const currencies = await db.$queryRaw<{ currency: string; count: bigint }[]>`
-            SELECT "currency", COUNT(*) AS "count"
+            SELECT ${CANONICAL_CURRENCY} AS "currency", COUNT(*) AS "count"
             FROM "CostEntry" WHERE ${where}
-            GROUP BY "currency"
+            GROUP BY 1
             ORDER BY COUNT(*) DESC
         `;
 
