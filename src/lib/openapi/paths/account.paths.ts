@@ -1033,6 +1033,53 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
     });
 
     op(registry, {
+        method: 'get',
+        path: '/api/account/assistant-conversations/{id}',
+        operationId: 'getPastConversation',
+        summary: 'Read one past exchange',
+        description:
+            'The turns of a single exchange, oldest first \u2014 a transcript reads forward.\n\n'
+            + '**Person-scoped ACROSS farms**, like the list: a person opening their own '
+            + 'history is asking a question no single farm\u2019s context can answer.\n\n'
+            + 'Refusal code: `CONVERSATION_NOT_FOUND` \u2014 unknown id, already deleted, or '
+            + 'somebody else\u2019s. The three are deliberately indistinguishable, exactly as '
+            + 'for the delete: a distinct refusal would let a caller learn that an id exists.\n\n'
+            + '`truncated` is true when the exchange is longer than the returned turns. The '
+            + 'cap drops the OLDEST turns, so the end of the transcript always agrees with '
+            + '`lastTurnAt`.',
+        tags: ['Account'],
+        params: z.object({
+            id: z.string().openapi({
+                param: { name: 'id', in: 'path' },
+                description: 'The exchange to read, from `listPastConversations`.',
+            }),
+        }),
+        success: {
+            status: 200,
+            description: 'The exchange.',
+            schema: z
+                .object({
+                    id: z.string(),
+                    startedAt: z.string(),
+                    lastTurnAt: z.string(),
+                    turns: z
+                        .number()
+                        .int()
+                        .describe('Total turns on the exchange, which may exceed `items.length`.'),
+                    items: z.array(
+                        z.object({
+                            role: z.enum(['user', 'assistant']),
+                            text: z.string(),
+                            at: z.string(),
+                        }),
+                    ),
+                    truncated: z.boolean(),
+                })
+                .openapi('PastConversationDetail'),
+        },
+    });
+
+    op(registry, {
         method: 'delete',
         path: '/api/account/assistant-conversations/{id}',
         operationId: 'deletePastConversation',

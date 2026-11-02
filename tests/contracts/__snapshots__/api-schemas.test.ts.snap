@@ -14221,6 +14221,64 @@ exports[`API contract — per-schema snapshots schema: PastConversation 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PastConversationDetail 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "startedAt": {
+      "type": "string"
+    },
+    "lastTurnAt": {
+      "type": "string"
+    },
+    "turns": {
+      "type": "integer",
+      "description": "Total turns on the exchange, which may exceed \`items.length\`."
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "text",
+          "at"
+        ]
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "startedAt",
+    "lastTurnAt",
+    "turns",
+    "items",
+    "truncated"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: PastConversationList 1`] = `
 "{
   "type": "object",
