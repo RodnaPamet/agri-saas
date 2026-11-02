@@ -540,7 +540,8 @@
         },
         "leaseExpiring": {
             "title": "Lease expiring",
-            "body": "The lease for “{parcel}” with {lessor} expires on {date} (days remaining: {days})."
+            "body": "The lease for “{parcel}” with {lessor} expires on {date} (days remaining: {days}).",
+            "unknownLessor": "an unnamed lessor"
         },
         "contractDeliveryWindow": {
             "overdueTitle": "Overdue delivery window",
