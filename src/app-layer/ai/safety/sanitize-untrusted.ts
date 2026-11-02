@@ -116,10 +116,13 @@ const INJECTION_LINE_PATTERNS: RegExp[] = [
  *
  * `  system: drip` and `developer: Netafim` match the STRICT anchor too — the
  * old `^\s*` already skipped indentation. So the config-block damage above
- * shipped long before this change and is untouched by it. Tracked separately
- * rather than folded in, because narrowing the role list or demanding
- * non-key-value context is a product decision about the corpus, not a fix to
- * the anchor.
+ * shipped long before this change and is untouched by it. **#2730** holds it,
+ * with the five options and why none is obviously right: narrowing the role
+ * list or demanding non-key-value context is a product decision about what
+ * this corpus contains, not a fix to where the check starts looking.
+ *
+ * The test asserting that damage is deliberate, so #2730 has a line to flip
+ * rather than a surprise to discover.
  */
 const ROLE_SPOOF_PREFIX = /^(system|assistant|developer|tool)\s*:/i;
 
