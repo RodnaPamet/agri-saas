@@ -57,6 +57,7 @@ import { buildCalculatorPayload } from '@/lib/grain/calculator-payload';
 import { resolveRequestLocale } from '@/lib/i18n/request-locale';
 import { TREND_CHARTABLE, TrendRange } from '@/app-layer/schemas/trends.schemas';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
+import { enumLabel } from '@/lib/assistant/enum-labels';
 import { neutraliseFence } from '@/app-layer/usecases/assistant-conversation';
 import {
     RECALL_MAX_EXCERPTS,
@@ -116,6 +117,48 @@ export interface ToolOutcome {
      * see `propose.ts` and the guard that holds it.
      */
     readonly proposal: AssistantProposal | null;
+}
+
+/*
+ * The serialiser row shapes, DECLARED (#2691).
+ *
+ * These exist to make `tsc` able to see a dropped `await`. `enumLabel` is
+ * ASYNC — `translateFor` loads a catalogue bundle — and the maps below ran
+ * through `(rows as Array<Record<string, unknown>>)`, which throws away the
+ * type and leaves the mapped object literal declaring nothing. Measured by
+ * agrent backend-1: against a TYPED target tsc reports
+ * `Type 'Promise<string | null>' is not assignable to type 'string'`; through
+ * that cast it reports nothing at all, and `[object Promise]` reaches the
+ * model once PER ROW.
+ *
+ * So the fix for #2691 is not only resolving the labels — it is removing the
+ * cast that would have let the resolution silently fail. Same cast, same file,
+ * as the one that produced #2680's `.rows`-vs-`.items` defect.
+ */
+interface TaskRow {
+    id: unknown;
+    title: unknown;
+    /** The farmer's word, never `ACTIVITY`. `null` when unresolvable. */
+    status: string | null;
+    priority: unknown;
+    dueDate: unknown;
+}
+
+interface JournalRow {
+    id: unknown;
+    title: unknown;
+    type: string | null;
+    status: string | null;
+    occurredAt: unknown;
+}
+
+interface CostRow {
+    id: unknown;
+    category: string | null;
+    amountCents: unknown;
+    currency: unknown;
+    incurredOn: unknown;
+    note: string | undefined;
 }
 
 interface AssistantTool {
@@ -394,14 +437,32 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // stops at 20, and until this nothing in the payload said whether a
             // 21st existed: a farm with 50 blocks was told about twenty, and the
             // model could not disclose what it had not been given.
+            /*
+             * The READER's language. `resolveRequestLocale` reads `uiLanguage`
+             * off the request context and falls back to `bg` — not a cookie,
+             * which a bearer client never sends.
+             *
+             * Resolved ONCE per call rather than per row: it cannot change
+             * inside a single tool run, and per-row would be a catalogue load
+             * for every row.
+             */
+            const locale = resolveRequestLocale();
             return {
-                rows: (rows as Array<Record<string, unknown>>).map((r) => ({
-                id: r.id,
-                title: r.title,
-                status: r.status,
-                priority: r.priority,
-                dueDate: r.dueDate,
-            })),
+                // `Promise.all`, because `enumLabel` is async and these are
+                // ROWS: a dropped await would put `[object Promise]` in every
+                // one of them, which the model would then summarise with
+                // complete confidence.
+                rows: await Promise.all(
+                    (rows as Array<Record<string, unknown>>).map(
+                        async (r): Promise<TaskRow> => ({
+                            id: r.id,
+                            title: r.title,
+                            status: await enumLabel('taskStatus', r.status as string, locale),
+                            priority: r.priority,
+                            dueDate: r.dueDate,
+                        }),
+                    ),
+                ),
                 hasMore: probed.length > 20,
             };
         },
@@ -545,14 +606,28 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // stops at 20, and until this nothing in the payload said whether a
             // 21st existed: a farm with 50 blocks was told about twenty, and the
             // model could not disclose what it had not been given.
+            /*
+             * The READER's language. `resolveRequestLocale` reads `uiLanguage`
+             * off the request context and falls back to `bg` — not a cookie,
+             * which a bearer client never sends.
+             *
+             * Resolved ONCE per call rather than per row: it cannot change
+             * inside a single tool run, and per-row would be a catalogue load
+             * for every row.
+             */
+            const locale = resolveRequestLocale();
             return {
-                rows: (rows as Array<Record<string, unknown>>).map((r) => ({
-                id: r.id,
-                title: r.title,
-                type: r.type,
-                status: r.status,
-                occurredAt: r.occurredAt,
-            })),
+                rows: await Promise.all(
+                    (rows as Array<Record<string, unknown>>).map(
+                        async (r): Promise<JournalRow> => ({
+                            id: r.id,
+                            title: r.title,
+                            type: await enumLabel('logType', r.type as string, locale),
+                            status: await enumLabel('logStatus', r.status as string, locale),
+                            occurredAt: r.occurredAt,
+                        }),
+                    ),
+                ),
                 // Read, not asserted — the sibling `list_blocks` already does
                 // `page.pageInfo?.hasNextPage` with no cast, and this line is
                 // what made the defect above diagnosable: the shape was KNOWN
@@ -609,15 +684,29 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
             // stops at 20, and until this nothing in the payload said whether a
             // 21st existed: a farm with 50 blocks was told about twenty, and the
             // model could not disclose what it had not been given.
+            /*
+             * The READER's language. `resolveRequestLocale` reads `uiLanguage`
+             * off the request context and falls back to `bg` — not a cookie,
+             * which a bearer client never sends.
+             *
+             * Resolved ONCE per call rather than per row: it cannot change
+             * inside a single tool run, and per-row would be a catalogue load
+             * for every row.
+             */
+            const locale = resolveRequestLocale();
             return {
-                rows: (rows as Array<Record<string, unknown>>).map((r) => ({
-                id: r.id,
-                category: r.category,
-                amountCents: r.amountCents ?? r.amount,
-                currency: r.currency,
-                incurredOn: r.incurredOn ?? r.incurredAt,
-                note: typeof r.note === 'string' ? r.note.slice(0, 120) : undefined,
-            })),
+                rows: await Promise.all(
+                    (rows as Array<Record<string, unknown>>).map(
+                        async (r): Promise<CostRow> => ({
+                            id: r.id,
+                            category: await enumLabel('costCategory', r.category as string, locale),
+                            amountCents: r.amountCents ?? r.amount,
+                            currency: r.currency,
+                            incurredOn: r.incurredOn ?? r.incurredAt,
+                            note: typeof r.note === 'string' ? r.note.slice(0, 120) : undefined,
+                        }),
+                    ),
+                ),
                 hasMore: page.truncated === true || (typeof page.totalCount === 'number' && page.totalCount > rows.length),
             };
         },
