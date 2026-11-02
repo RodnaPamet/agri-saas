@@ -50,6 +50,25 @@ jest.mock('@/app-layer/context', () => ({
 // a double nobody checks cannot tell "the route stopped recording turns" from
 // "the mock worked".
 const resolveConversation = jest.fn<Promise<string>, unknown[]>(async () => 'conv-1');
+/*
+ * The profile block (#2671). Mocked wholesale: this suite tests the ROUTE, and
+ * how a profile is built is `memory-profile`'s own suite.
+ *
+ * Not mocking it broke every test in this file, and the failure named nothing:
+ * the route HALTED instead of answering, because the `@/lib/feature-flags`
+ * mock above exports only `assertFeatureEnabled`, so `isFeatureEnabled` was
+ * `undefined` and calling it threw inside the stream. A new import in a route
+ * whose suite mocks its dependencies is a broken suite until the double
+ * arrives — the shape agrent backend-1 hit with the conversation module.
+ */
+const buildProfileBlock = jest.fn<Promise<string | null>, unknown[]>(async () => null);
+jest.mock('@/app-layer/ai/memory-profile', () => ({
+    buildProfileBlock: (...a: unknown[]) => buildProfileBlock(...a),
+    // A STUB, so the assertion below is about the route including the rule
+    // rather than about the rule's wording, which `memory-profile`'s suite owns.
+    PROFILE_PROMPT_RULE: 'PROFILE_RULE_STUB',
+}));
+
 const loadWindow = jest.fn<Promise<unknown[]>, unknown[]>(async () => []);
 const renderWindow = jest.fn<string, unknown[]>(() => '');
 const recordTurn = jest.fn<Promise<void>, unknown[]>(async () => undefined);
@@ -314,6 +333,32 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         // And nothing was spent finding out — the flag gate runs before the
         // body is read and long before any model call.
         expect(completeWithRouting).not.toHaveBeenCalled();
+    });
+
+    it('the profile RULE is always in the system block, and the block only when there is one', async () => {
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+
+        // No profile: the rule still ships, because it is part of the CACHED
+        // prefix and must stay byte-identical for everyone.
+        buildProfileBlock.mockResolvedValueOnce(null);
+        await POST(...ask({ question: 'какво' }));
+        let [, , opts] = completeWithRouting.mock.calls[0] as [unknown, unknown, { messages: { role: string; content: string }[] }];
+        let system = opts.messages.find((m) => m.role === 'system')?.content ?? '';
+        expect(system).toContain('PROFILE_RULE_STUB');
+        expect(system).not.toContain('REMEMBERED_PROFILE_START');
+
+        // With one: it is appended to the SAME system message, not sent as a
+        // separate turn — that placement is what keeps it inside the cached
+        // block rather than paying full rate every message.
+        completeWithRouting.mockClear();
+        buildProfileBlock.mockResolvedValueOnce('REMEMBERED_PROFILE_START\n- Отглежда слънчоглед\nREMEMBERED_PROFILE_END');
+        await POST(...ask({ question: 'какво' }));
+        [, , opts] = completeWithRouting.mock.calls[0] as [unknown, unknown, { messages: { role: string; content: string }[] }];
+        system = opts.messages.find((m) => m.role === 'system')?.content ?? '';
+        expect(system).toContain('- Отглежда слънчоглед');
+        const nonSystem = opts.messages.filter((m) => m.role !== 'system').map((m) => m.content).join('\n');
+        expect(nonSystem).not.toContain('REMEMBERED_PROFILE_START');
     });
 
     it('the model is told the screen block is DATA, and the question is sanitised', async () => {
