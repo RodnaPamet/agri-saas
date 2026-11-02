@@ -5939,6 +5939,37 @@ exports[`API contract — per-schema snapshots schema: DataStreamReading 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: DeleteAllConversationsResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "deleted": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "deleted"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: DeleteConversationResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "enum": [
+        true
+      ]
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EditRememberedPointInput 1`] = `
 "{
   "type": "object",
@@ -14051,6 +14082,60 @@ exports[`API contract — per-schema snapshots schema: ParcelsByCrop 1`] = `
     "parcels"
   ],
   "description": "The parcels of one crop, farm-wide."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PastConversation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastTurnAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "turns": {
+      "type": "integer",
+      "description": "How many turns the exchange holds, the assistant’s answers included."
+    },
+    "opening": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The person’s OWN first question, so the row is recognisable. NOT a generated summary: their words need no model call, cannot drift from the exchange they label, and cannot assert something the conversation never said. \`null\` for an exchange abandoned before a question landed."
+    }
+  },
+  "required": [
+    "id",
+    "startedAt",
+    "lastTurnAt",
+    "turns",
+    "opening"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PastConversationList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "conversations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/PastConversation"
+      }
+    }
+  },
+  "required": [
+    "conversations"
+  ]
 }"
 `;
 

@@ -13,6 +13,7 @@ import { randomUUID } from 'crypto';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
+import { deletePastConversation } from '@/app-layer/usecases/assistant-conversations-control';
 import { makeRequestContext } from '../helpers/make-context';
 import {
     MAX_WINDOW_TURNS,
@@ -111,6 +112,44 @@ describeFn('assistant conversation window', () => {
         const inA = await resolveConversation(ctxFor(FARM_A, userOne), undefined);
         const inB = await resolveConversation(ctxFor(FARM_B, userOne), inA);
         expect(inB).not.toBe(inA);
+    });
+
+    it('§3b a DELETED conversation does not resolve — it starts a fresh one (#2695)', async () => {
+        /*
+         * The same silence §2 and §3 assert for a foreign id, and for the same
+         * reason: a refusal would confirm the id existed.
+         *
+         * Without this, somebody who deleted an exchange while still holding
+         * its id in a sheet session would keep appending to it — and the
+         * replay would keep quoting the conversation they deleted.
+         */
+        const ctx = ctxFor(FARM_A, userOne);
+        const id = await resolveConversation(ctx, undefined);
+        await recordTurn(ctx, id, 'user', 'преди изтриването');
+
+        await deletePastConversation(userOne, id);
+
+        const again = await resolveConversation(ctx, id);
+        expect(again).not.toBe(id);
+
+        // And the fresh conversation has no window: the deleted turns must not
+        // follow the person into it.
+        const window = await loadWindow(ctx, again);
+        expect(window).toEqual([]);
+    });
+
+    it('§3c a deleted conversation has NO window even when its id is passed directly', async () => {
+        // `loadWindow` is reached with an id the caller already holds, so it
+        // cannot rely on the resolver having refused: it filters the
+        // conversation's tombstone itself. Belt and braces, and the two paths
+        // are different files.
+        const ctx = ctxFor(FARM_A, userOne);
+        const id = await resolveConversation(ctx, undefined);
+        await recordTurn(ctx, id, 'user', 'нещо за забравяне');
+        expect(await loadWindow(ctx, id)).toHaveLength(1);
+
+        await deletePastConversation(userOne, id);
+        expect(await loadWindow(ctx, id)).toEqual([]);
     });
 
     it('§4 replays the last turns, oldest-first', async () => {

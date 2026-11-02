@@ -354,6 +354,24 @@ const AvatarUploadResultSchema = z
  * sentence a point was derived from invites "where did you get that" without
  * helping them decide whether to delete it.
  */
+const PastConversationSchema = z
+    .object({
+        id: z.string(),
+        startedAt: z.string().datetime({ offset: true }),
+        lastTurnAt: z.string().datetime({ offset: true }),
+        turns: z.number().int().openapi({
+            description: 'How many turns the exchange holds, the assistant\u2019s answers included.',
+        }),
+        opening: z.string().nullable().openapi({
+            description:
+                'The person\u2019s OWN first question, so the row is recognisable. NOT a generated '
+                + 'summary: their words need no model call, cannot drift from the exchange they '
+                + 'label, and cannot assert something the conversation never said. `null` for an '
+                + 'exchange abandoned before a question landed.',
+        }),
+    })
+    .openapi('PastConversation');
+
 const RememberedPointSchema = z
     .object({
         id: z.string(),
@@ -957,6 +975,89 @@ export function registerAccountPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'The corrected point.',
             schema: RememberedPointSchema,
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/account/assistant-conversations',
+        operationId: 'listPastConversations',
+        summary: 'The caller\u2019s past assistant exchanges',
+        description:
+            'The EXCHANGES half of \u00ab\u041a\u0430\u043a\u0432\u043e \u043f\u043e\u043c\u043d\u0438 \u0430\u0441\u0438\u0441\u0442\u0435\u043d\u0442\u044a\u0442\u00bb (#2695). The other half, '
+            + '`listRememberedPoints`, is the PROFILE \u2014 conclusions drawn from these '
+            + 'exchanges. Both are on one screen because \u201csee and delete\u201d has to cover '
+            + 'both or a person can delete a conclusion and leave the conversation it came '
+            + 'from.\n\n'
+            + '**Every exchange from every session, across every farm the person belongs to.** '
+            + 'That is the owner\u2019s scope, which is why `userId` is the load-bearing filter '
+            + 'here and `tenantId` appears nowhere: a tenant-scoped read would hide the '
+            + 'exchanges this person had in their other farms, and would hide them silently.\n\n'
+            + 'Nothing prunes these rows \u2014 they are kept while the account exists and go '
+            + 'with its erasure. Bounded and newest first.\n\n'
+            + 'FLAG-GATED on the same key as the profile half and 404s when off: one screen, '
+            + 'one switch, so an operator turning memory off cannot leave half of it live.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description:
+                'The caller\u2019s exchanges, newest first. An empty array means none, or that '
+                + 'every one has been deleted.',
+            schema: z
+                .object({ conversations: z.array(PastConversationSchema) })
+                .openapi('PastConversationList'),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/account/assistant-conversations',
+        operationId: 'deleteAllPastConversations',
+        summary: 'Delete every past exchange (\u00ab\u0418\u0437\u0442\u0440\u0438\u0439 \u0432\u0441\u0438\u0447\u043a\u043e\u00bb)',
+        description:
+            'Deletes every exchange the caller can see, across every farm.\n\n'
+            + 'A TOMBSTONE rather than an erasure, and the reason is that FOUR readers touch '
+            + 'these turns \u2014 the conversation replay, the id resolver, the memory-extraction '
+            + 'sweep and recall. A hard delete would be a claim about every one of them, '
+            + 'including readers not written yet; a column they each filter is checkable. The '
+            + 'rows go for good with account erasure.\n\n'
+            + 'Returns the COUNT, and it counts only what was VISIBLE \u2014 so the number matches '
+            + 'what the person was looking at. Reporting more than they could see is a worse '
+            + 'answer than reporting fewer.',
+        tags: ['Account'],
+        success: {
+            status: 200,
+            description: 'How many exchanges were deleted. Zero means there were none.',
+            schema: z.object({ deleted: z.number().int() }).openapi('DeleteAllConversationsResult'),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/account/assistant-conversations/{id}',
+        operationId: 'deletePastConversation',
+        summary: 'Delete one past exchange',
+        description:
+            'Deletes a single exchange. A TOMBSTONE, for the reason '
+            + '`deleteAllPastConversations` describes.\n\n'
+            + '**An exchange that is not the caller\u2019s answers NOT FOUND, never FORBIDDEN.** A '
+            + '403 would confirm the id exists, and these ids are about people.\n\n'
+            + 'Refusal code: `CONVERSATION_NOT_FOUND` \u2014 unknown id, already deleted, or '
+            + 'somebody else\u2019s. The three are deliberately indistinguishable.\n\n'
+            + 'Deleting an exchange does NOT delete the profile points learned from it: those '
+            + 'are separate rows with their own delete, because a person may want to forget a '
+            + 'conversation and keep the conclusion, or the reverse.',
+        tags: ['Account'],
+        params: z.object({
+            id: z.string().openapi({
+                param: { name: 'id', in: 'path' },
+                description: 'The exchange to delete, from `listPastConversations`.',
+            }),
+        }),
+        success: {
+            status: 200,
+            description: 'Deleted.',
+            schema: z.object({ ok: z.literal(true) }).openapi('DeleteConversationResult'),
         },
     });
 }

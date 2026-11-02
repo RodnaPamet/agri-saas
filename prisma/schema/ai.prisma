@@ -158,6 +158,17 @@ model AssistantConversation {
   /// `statement-dispatch`'s rule, for its reason: the queue IS the unstamped
   /// set, so leaving it unstamped is the retry.
   extractedAt DateTime?
+  /// Set when the PERSON deletes this exchange from «Какво помни асистентът»
+  /// (#2695). The row SURVIVES — rule 5's reason, one level up from a profile
+  /// point: a hard delete would let the next thing that reads turns bring the
+  /// conversation back, and there are four such readers.
+  ///
+  /// Every reader must filter it, and they are not in one place: the window
+  /// replay, the id resolver, the extraction sweep and recall. The sweep is
+  /// the one that is easy to miss — extracting from a deleted exchange would
+  /// learn a profile point from something the person asked to forget, which is
+  /// rule 5 violated through a side door.
+  deletedAt   DateTime?
 
   turns  AssistantTurn[]
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -165,6 +176,11 @@ model AssistantConversation {
   // Layer A (tenantId-leading). `userId` second because the only list query is
   // "this person's recent conversations in this farm".
   @@index([tenantId, userId, lastTurnAt])
+  // «Какво помни асистентът»'s conversation list: one PERSON's exchanges
+  // across every farm, newest first. `userId` leads and `tenantId` is absent
+  // on purpose — the owner's scope is "all sessions with a user", so the farm
+  // is the narrower case and a tenant-leading index cannot serve the list.
+  @@index([userId, deletedAt, lastTurnAt])
   // The extraction queue, and deliberately NOT tenant-leading: the sweep runs
   // ACROSS tenants (it has to find every idle conversation, not one farm's), so
   // a tenantId-leading index cannot serve it. `extractedAt` first because

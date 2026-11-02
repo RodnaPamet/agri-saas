@@ -265,6 +265,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             "listFarmClaims is the platform review queue: `WHERE status = 'PENDING' ORDER BY createdAt ASC`, and CROSS-tenant — a reviewer looks at every farm, and a collision is by definition two tenants. So `tenantId` does NOT lead here, unlike every other entry in this list: it is a column the query never mentions. `status` is the equality predicate, `createdAt` the sort key.",
     },
+    // ── AssistantConversation («Какво помни асистентът», #2695) ────
+    {
+        model: 'AssistantConversation',
+        fields: ['userId', 'deletedAt', 'lastTurnAt'],
+        justification:
+            "listPastConversations is the person's own history: `WHERE userId = ? AND deletedAt IS NULL ORDER BY lastTurnAt DESC`, capped at CONVERSATION_LIST_LIMIT. `userId` LEADS and `tenantId` is absent — the only entry in this list where a tenant column is deliberately not the prefix on a tenant-scoped model, and the owner's scope is why: \"all exchanges from all sessions with a user\" spans every farm that person belongs to, so a tenantId-leading index cannot serve the read at all. `deletedAt` is second because it is the equality term (IS NULL) and `lastTurnAt` third as the sort key. The sibling @@index([extractedAt, lastTurnAt]) serves the extraction sweep, which is a different question (every farm's idle conversations rather than one person's), and @@index([tenantId, userId, lastTurnAt]) serves #2694's per-farm resolver — three indexes because there are three genuinely different reads, not three spellings of one.",
+    },
     // ── FarmDocument («Документи», #2495) ──────────────────────────
     {
         model: 'FarmDocument',

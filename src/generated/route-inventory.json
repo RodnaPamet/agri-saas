@@ -30,6 +30,16 @@
   ],
   "routes": [
     {
+      "path": "/api/account/assistant-conversations",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/account/assistant-conversations/{id}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/account/assistant-memory",
       "status": "live",
       "documented": true

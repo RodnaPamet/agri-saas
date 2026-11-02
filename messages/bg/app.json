@@ -6915,6 +6915,7 @@
         "MEMBERSHIP_NOT_FOUND": "Членството не беше намерено или не е активно.",
         "MEMORY_POINT_EMPTY": "Записът не може да бъде празен.",
         "MEMORY_POINT_INVALID": "Този запис не е валиден.",
+        "CONVERSATION_NOT_FOUND": "Този разговор не беше намерен.",
         "MEMORY_POINT_NOT_FOUND": "Този запис не беше намерен.",
         "MESSAGE_EMPTY": "Напишете съобщение.",
         "MESSAGE_NOT_FOUND": "Съобщението не беше намерено.",
