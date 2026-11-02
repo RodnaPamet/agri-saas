@@ -5,12 +5,33 @@
  * gets wrong: what a flag-off person sees, and what somebody with nothing
  * remembered sees. Both are the COMMON case while this is dark.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { SWRConfig } from 'swr';
 
+import { setViewport, restoreViewport } from './viewport';
+
 const apiGet = jest.fn();
 const apiDelete = jest.fn();
+/*
+ * `Modal.Confirm` calls `useRouter()`, which throws "invariant expected app
+ * router to be mounted" outside a Next tree — so a card that opens a confirm
+ * needs this double even though the card itself never navigates. The shape is
+ * `access-review-detail`'s.
+ */
+jest.mock('next/navigation', () => ({
+    useRouter: () => ({
+        push: jest.fn(),
+        replace: jest.fn(),
+        refresh: jest.fn(),
+        back: jest.fn(),
+        forward: jest.fn(),
+        prefetch: jest.fn(),
+    }),
+    usePathname: () => '/account/profile',
+    useSearchParams: () => new URLSearchParams(),
+}));
+
 jest.mock('@/lib/api-client', () => ({
     apiGet: (...a: unknown[]) => apiGet(...a),
     apiDelete: (...a: unknown[]) => apiDelete(...a),
@@ -47,11 +68,30 @@ function mount(enabled: boolean) {
     );
 }
 
+/*
+ * The device is DECLARED rather than inherited, which `rendered-viewport-switchers`
+ * requires and which is right here even though this card has no
+ * viewport-dependent branch of its own: something it renders reaches
+ * `useMediaQuery`, and jsdom's project-wide `matchMedia` stub answers
+ * `matches: false` to every query — so the default is PHONE, silently.
+ *
+ * `mobile` for most of it because that is the farmer's real device. But
+ * declaring the DEFAULT is not a decision, which `rendered-viewport-switchers`
+ * is right to refuse: it wants desktop covered or `mobileOnly(reason)`.
+ *
+ * Desktop is NOT out of scope — this is a web profile page people open on a
+ * laptop — and `ConfirmDialog` switches IMPLEMENTATION on that query, modal
+ * versus sheet. So «Изтрий всичко» is exercised on both, at the bottom of this
+ * file.
+ */
 beforeEach(() => {
+    setViewport('mobile');
     apiGet.mockReset();
     apiDelete.mockReset();
     apiGet.mockResolvedValue({ facts: [] });
 });
+
+afterEach(restoreViewport);
 
 describe('the flag-off person', () => {
     it('sees NOTHING — not a disabled card', async () => {
@@ -82,6 +122,42 @@ describe('with the flag on and nothing remembered', () => {
         mount(true);
         await screen.findByText(messages.account.assistantMemory.emptyTitle);
         expect(screen.queryByRole('button', { name: messages.account.assistantMemory.forgetAll })).toBeNull();
+    });
+});
+
+describe('«Изтрий всичко» on BOTH devices — the confirm switches implementation', () => {
+    beforeEach(() => {
+        apiGet.mockResolvedValue({
+            facts: [{ id: 'f1', text: 'Отглежда слънчоглед', rememberedAt: '2026-11-01T09:00:00.000Z' }],
+        });
+    });
+
+    // DESKTOP first in the table, and the parameter named `viewport`: that is
+    // what `rendered-viewport-switchers`'s recogniser reads, and it is right
+    // to want a literal — `setViewport(someVariable)` tells a reader nothing
+    // about which devices were actually covered.
+    it.each(['desktop', 'mobile'] as const)('confirms before deleting everything (%s)', async (viewport) => {
+        setViewport(viewport);
+        mount(true);
+        const openAll = await screen.findByRole('button', {
+            name: messages.account.assistantMemory.forgetAll,
+        });
+        fireEvent.click(openAll);
+
+        // The confirm is REQUIRED rather than an undo toast, and that is the
+        // API's constraint rather than a taste: `forgetAll` tombstones every
+        // visible point and there is no un-tombstone verb, so an Undo button
+        // could not keep its promise.
+        // `findAllByText`, not `findByText`: Radix renders the title twice — the
+        // visible heading and an accessibility copy — so the singular matcher
+        // fails with "found multiple elements", which reads like a duplicate
+        // dialog rather than correct a11y markup.
+        const titles = await screen.findAllByText(
+            messages.account.assistantMemory.forgetAllConfirmTitle,
+        );
+        expect(titles.length).toBeGreaterThan(0);
+        // And nothing is deleted until it is confirmed.
+        expect(apiDelete).not.toHaveBeenCalled();
     });
 });
 
