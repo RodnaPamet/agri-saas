@@ -143,6 +143,23 @@ const PLATFORM_GATED: Readonly<Record<string, string>> = {
     // 10/min per IP, and slow is not bounded.
     'src/app-layer/ai/notice-scorer.ts':
         'Shadow scoring of DSA notices, person-scoped so no tenant RequestContext exists to assert against — the signed-in path sets no tenant and the anonymous Art 16 path has no user. Gated by the platform AI budget (#1423), same as the three above.',
+    // #2664 — reading a supplier promotion leaflet. The fifth of this family,
+    // and the first triggered by a PERSON with a file rather than a schedule
+    // or the public. `Promotion` is tenant-less (it is the GLOBAL feed curated
+    // by platform support), so there is no tenant to charge even though a
+    // signed-in operator started it — which is exactly the shape this map is
+    // for, and why reaching for `assertAiSpendAllowed(ctx)` here would charge
+    // the platform tenant for work done on every farm's behalf.
+    //
+    // It nearly went in `DELIBERATELY_UNGATED` with `invoice-reader`'s reason
+    // — the gate was in its one caller. That entry is defensible because it
+    // states the arrangement rather than assuming it, but it is still a claim
+    // nothing enforces in a guard whose population is derived from the
+    // filesystem precisely so a second caller cannot arrive ungated. Moving
+    // both halves beside the call is the stronger answer, so this file does
+    // what its four siblings do.
+    'src/app-layer/ai/promotion-leaflet-reader.ts':
+        'GLOBAL leaflet read for the platform-curated promotions feed (#2664). `Promotion` is tenant-less, so there is no tenant RequestContext to assert against — a signed-in operator starts it, but the work is for every farm. Gated by the platform AI budget and records to the platform ledger, both in this file. Records on an UNUSABLE read (the tokens were spent) and not on a refused one (they were not).',
 };
 
 /** The platform gate being CALLED, and the ledger write beside it. */

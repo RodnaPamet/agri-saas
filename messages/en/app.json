@@ -6878,6 +6878,10 @@
         "JOURNAL_ENTRY_NOT_SOFT_DELETED": "Journal entry must be soft-deleted before purging",
         "JOURNAL_FILE_LINK_NOT_FOUND": "Journal entry file link not found",
         "JOURNAL_TITLE_REQUIRED": "Title is required",
+        "LEAFLET_MEDIA_UNSUPPORTED": "The file is stored, but only a PDF or a photo can be read automatically. Type the offers in instead.",
+        "LEAFLET_NOT_RECOGNISED": "This does not look like a promotion leaflet. The file is stored — type the offers in.",
+        "LEAFLET_READER_UNAVAILABLE": "Reading leaflets is not set up on this installation.",
+        "LEAFLET_SCAN_INPUT_MISSING": "Send the leaflet file in the `file` field.",
         "LEASE_NOT_FOUND": "That lease was not found.",
         "LEASE_PAYMENT_NOT_FOUND": "Payment not found.",
         "LISTING_EXPIRED": "This listing has expired.",
@@ -6940,6 +6944,7 @@
             "location": "The farm’s plan allows up to {limit, plural, one {# location} other {# locations}}, and the limit is reached.",
             "user": "The farm’s plan allows up to {limit, plural, one {# user} other {# users}}, and the limit is reached."
         },
+        "PLATFORM_AI_BUDGET_EXCEEDED": "The platform's monthly AI budget is spent. Type the offers in, or raise the ceiling.",
         "PRODUCT_DOSE_REQUIRED": "A product dose and unit are required.",
         "PRODUCT_IS_SAMPLE_ARCHETYPE": "\"{product}\" is a sample product, not a registered one. The farm record requires a product’s trade name, so add your own product and select it before completing this operation.",
         "PRODUCT_NAME_REQUIRED": "A product name is required.",

@@ -15617,6 +15617,77 @@ exports[`API contract — per-schema snapshots schema: PriceOverrideWriteResult 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PromotionLeafletScanResult 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "fileId": {
+      "type": "string",
+      "description": "The stored leaflet. Attach it to the promotion the operator then creates, so the source document stays reachable from the row."
+    },
+    "companyName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "As printed on the leaflet, for the operator to match against \`Company\`. NOT resolved to a \`companyId\`: a near-match on a trading company name is the operator’s call."
+    },
+    "offers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/PromotionOfferDraft"
+      }
+    },
+    "unreadableOfferCount": {
+      "type": "integer",
+      "description": "Offers the model SAW and could not read. Surfaced rather than swallowed — a six-offer leaflet read as four is otherwise indistinguishable from a four-offer leaflet, and only the operator can open the PDF and check."
+    }
+  },
+  "required": [
+    "fileId",
+    "companyName",
+    "offers",
+    "unreadableOfferCount"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PromotionOfferDraft 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "productName": {
+      "type": "string"
+    },
+    "priceText": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The price EXACTLY as printed, including its unit and any condition — \\"от 1 200 лв./т\\", \\"-15% до изчерпване\\". A STRING and never a number: a leaflet price is routinely conditional, and a bare figure loses the condition that makes it true."
+    },
+    "validityText": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "note": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "productName",
+    "priceText",
+    "validityText",
+    "note"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: PublicFarmSearchHit 1`] = `
 "{
   "type": "object",

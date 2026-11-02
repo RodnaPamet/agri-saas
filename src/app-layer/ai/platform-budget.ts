@@ -78,6 +78,15 @@ export const PLATFORM_AI_JOBS = [
     // filed one on an unauthenticated endpoint. That is what makes a ceiling
     // load-bearing here rather than prudent.
     'notice-score',
+    // #2664 — reading a supplier's promotion leaflet. The fifth entry, and the
+    // second whose volume is set by a PERSON rather than a schedule: platform
+    // support uploads a leaflet when a trading company sends one. Unlike
+    // `notice-score`, that person holds `admin.manage` on the platform tenant,
+    // so the ceiling is about a stuck retry loop or a mistakenly large PDF
+    // rather than about an anonymous flood — but a document read is the most
+    // expensive call shape here (a whole PDF on every attempt), so it is the
+    // one where a few repeats cost the most.
+    'promotion-leaflet-read',
 ] as const;
 
 export type PlatformAiJob = (typeof PLATFORM_AI_JOBS)[number];
