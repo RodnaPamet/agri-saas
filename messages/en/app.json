@@ -5464,6 +5464,21 @@
             "forgetAllConfirmBody": "The assistant will forget every point below and start again. This cannot be undone. Your conversations are kept.",
             "forgetAllConfirm": "Delete everything"
         },
+        "assistantConversations": {
+            "title": "Past conversations",
+            "explainer": "Every conversation you have had with the assistant, across all your farms. They are kept while your account exists, and the assistant can look back through them when you ask about something from before. Deleting a conversation does not delete the points remembered from it — those are separate, above.",
+            "emptyTitle": "No conversations recorded",
+            "emptyBody": "When you talk to the assistant, the conversation will appear here and you will be able to delete it.",
+            "noOpening": "(conversation with no question)",
+            "meta": "{date} · {turns} turns",
+            "delete": "Delete",
+            "deleted": "Conversation deleted",
+            "undo": "Undo",
+            "deleteAll": "Delete all",
+            "deleteAllConfirmTitle": "Delete all conversations?",
+            "deleteAllConfirmBody": "The assistant will forget every conversation below and will not be able to look back through them. This cannot be undone. The remembered points are kept.",
+            "deleteAllConfirm": "Delete all"
+        },
         "security": {
             "title": "Account security"
         },

@@ -9,6 +9,7 @@ import { AvatarUploadField } from './AvatarUploadField';
 import { NameEditField } from './NameEditField';
 import { FeedbackPrefsCard } from './FeedbackPrefsCard';
 import { AssistantMemoryCard } from './AssistantMemoryCard';
+import { AssistantConversationsCard } from './AssistantConversationsCard';
 
 /**
  * Account → Profile. Avatar roadmap P3 — the first home for the
@@ -49,6 +50,11 @@ export default async function AccountProfilePage() {
                 <FeedbackPrefsCard />
 
                 <AssistantMemoryCard enabled={memoryEnabled} />
+
+                {/* The EXCHANGES half, below the conclusions drawn from them —
+                    one screen, two controls, because deleting a conversation
+                    and forgetting a point are different acts. */}
+                <AssistantConversationsCard enabled={memoryEnabled} />
         </div>
     );
 }
