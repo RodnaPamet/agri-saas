@@ -41,6 +41,7 @@
         "sectionPlatform": "Platform",
         "platformPromotions": "Manage promotions",
         "platformCompanies": "Manage suppliers",
+        "platformFeatures": "Features",
         "platformPrices": "Manage prices"
     },
     "common": {
@@ -3980,6 +3981,18 @@
             "messageRemoved": "Message deleted",
             "undo": "Undo"
         }
+    },
+    "featureFlagsAdmin": {
+        "title": "Features",
+        "propagationNote": "A change applies to every farm and reaches all requests within 30 seconds.",
+        "forcedOffTitle": "Every feature is force-disabled",
+        "forcedOffBody": "FEATURE_FLAGS_FORCE_OFF is set on the server, so every feature below is off for everyone whatever its switch shows. Clearing it is an action on the server — it cannot be done from this screen.",
+        "emptyTitle": "No features recorded",
+        "emptyBody": "The table is empty. A feature with no row is off — there is no unknown state.",
+        "maskedByForceOff": "masked by force-off",
+        "offForEveryone": "off for everyone",
+        "cohortsEveryone": "Everyone, once enabled",
+        "toggleAria": "Turn {key} on or off"
     },
     "grain": {
         "portfolio": {

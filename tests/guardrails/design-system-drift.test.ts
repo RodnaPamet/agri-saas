@@ -50,6 +50,15 @@ const MIGRATED_PAGES = [
     'admin/promotions/PromotionsAdminClient.tsx',
     'admin/companies/page.tsx',
     'admin/companies/CompaniesAdminClient.tsx',
+    // «Функции» (#2706) — the superuser flag switchboard, design-system-native
+    // from birth (ListPageShell / Switch / InlineNotice / StatusBadge /
+    // EmptyState / Heading + semantic tokens only; no raw colours, no legacy
+    // btn/badge). PROMOTED on arrival rather than parked in the unmigrated
+    // tally, so these two carry the raw-colour and legacy-class assertions
+    // from day one — which is the stronger position, and keeps the cap moving
+    // in the one direction it is allowed to move.
+    'admin/feature-flags/page.tsx',
+    'admin/feature-flags/FeatureFlagsAdminClient.tsx',
     // MECHANISATOR operator screen — design-system-native from birth
     // (Card / Button / Heading / Skeleton + semantic tokens only; no raw
     // colors, no legacy btn/badge).

@@ -44,6 +44,7 @@ import { registerTelemetryPaths } from './telemetry.paths';
 import { registerAccessReviewPaths } from './access-review.paths';
 import { registerModerationPaths } from './moderation.paths';
 import { registerPromotionsAdminPaths } from './promotions-admin.paths';
+import { registerFeatureFlagsAdminPaths } from './feature-flags-admin.paths';
 import { registerAdminMembersPaths } from './admin-members.paths';
 import { registerPppRegisterPaths } from './ppp-register.paths';
 import { registerFarmBrandPaths } from './farm-brand.paths';
@@ -93,6 +94,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerTelemetryPaths(registry);
     registerModerationPaths(registry);
     registerPromotionsAdminPaths(registry);
+    registerFeatureFlagsAdminPaths(registry);
     registerAdminMembersPaths(registry);
     registerPppRegisterPaths(registry);
     registerFarmBrandPaths(registry);
