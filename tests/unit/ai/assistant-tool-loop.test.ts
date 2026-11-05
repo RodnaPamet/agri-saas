@@ -616,3 +616,72 @@ describe('the PICKING rounds use their own call, the answer does not (#2670 item
         expect(out.timing.providerMs).toBeGreaterThanOrEqual(out.timing.toolSelectMs);
     });
 });
+
+describe('a PICKER must never write the answer (#2751)', () => {
+    it('THE DEFECT, pinned: a picking round that returns prose answers the turn', async () => {
+        /*
+         * This test documents the trap rather than a fix, and it is why the
+         * route no longer passes `completeForToolSelection`.
+         *
+         * The final tool-less `complete` call is guarded by
+         * `if (text === null)`, which runs only when the tool phase was cut
+         * short. On the NORMAL path a picking round returns no tool calls and
+         * its prose becomes the answer — so pointing the pickers at a cheaper
+         * model moved the farmer's answer onto it, which #2745's body said it
+         * had not.
+         *
+         * Asserted as the CURRENT behaviour, so #2751's eventual fix has a
+         * line to flip rather than a surprise to find. When the loop is fixed
+         * so a picker can only pick, this expectation inverts.
+         */
+        listTasks.mockResolvedValue([]);
+        const h = harness();
+        const seen: string[] = [];
+        const picker = jest.fn(async () => {
+            seen.push('picker');
+            return seen.filter((w) => w === 'picker').length === 1
+                ? { toolCalls: [call('list_farm_tasks')] }
+                : { text: 'BY THE PICKER' };
+        });
+        const answerer = jest.fn(async () => {
+            seen.push('answerer');
+            return { text: 'BY THE ANSWERER' };
+        });
+
+        const out = await runToolLoop(
+            { ctx, send: h.send, complete: answerer, completeForToolSelection: picker } as never,
+            [],
+        );
+
+        expect(seen).toEqual(['picker', 'picker']);
+        expect(out.text).toBe('BY THE PICKER');
+        expect(answerer).not.toHaveBeenCalled();
+    });
+
+    it('and why the two budget tests did not catch it', async () => {
+        /*
+         * The reason #2745 shipped with a false premise. Its mutation proof
+         * moved two PRE-EXISTING tests, and I read that as the premise being
+         * independently held — but both are CUT-SHORT tests, and the answerer
+         * runs only on that path. They confirmed the claim on the one branch
+         * where it is true.
+         *
+         * Here the picker never stops asking, so the budget ends the phase and
+         * the answerer DOES write the answer. Same doubles, opposite outcome,
+         * from the control flow alone.
+         */
+        listTasks.mockResolvedValue([]);
+        const h = harness();
+        const picker = jest.fn(async () => ({ toolCalls: [call('list_farm_tasks')] }));
+        const answerer = jest.fn(async () => ({ text: 'BY THE ANSWERER' }));
+
+        const out = await runToolLoop(
+            { ctx, send: h.send, complete: answerer, completeForToolSelection: picker } as never,
+            [],
+        );
+
+        expect(out.halt).toBe('ASSISTANT_TOOL_BUDGET');
+        expect(out.text).toBe('BY THE ANSWERER');
+        expect(answerer).toHaveBeenCalledTimes(1);
+    });
+});
