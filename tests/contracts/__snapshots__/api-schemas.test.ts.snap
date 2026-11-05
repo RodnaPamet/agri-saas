@@ -1046,6 +1046,73 @@ exports[`API contract — per-schema snapshots schema: AdminPromotion 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AdminPromotionLead 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "farm": {
+      "type": "string",
+      "description": "The inquiring farm’s name — a business, not a person."
+    },
+    "person": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Who sent it. PERSONAL DATA, present because \\"who asked\\" is the question this screen answers. Null for a person whose account has since been pseudonymised by an erasure."
+    },
+    "message": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "What the farmer wrote, IN FULL — its purpose is to be forwarded to the supplier, and a truncated one would send an operator to the database. \`null\` means the farm’s key could not be resolved; see above."
+    },
+    "consentedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "description": "PENDING | CONTACTED | CLOSED."
+    }
+  },
+  "required": [
+    "id",
+    "farm",
+    "person",
+    "message",
+    "consentedAt",
+    "createdAt",
+    "status"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AdminPromotionLeadsResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "leads": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AdminPromotionLead"
+      }
+    }
+  },
+  "required": [
+    "leads"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AdminPromotionsResponse 1`] = `
 "{
   "type": "object",

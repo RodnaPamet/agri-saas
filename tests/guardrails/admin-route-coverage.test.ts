@@ -59,6 +59,7 @@ const ADMIN_ONLY_ROUTES = [
     // Artwork upload/removal. Same two gates as its siblings, and the one most
     // worth having them: the bytes it accepts render in EVERY tenant's feed.
     'admin/promotions/[id]/image/route.ts',
+    'admin/promotions/[id]/leads/route.ts',
     // «Прочети брошура» (#2664) — upload a supplier leaflet and PROPOSE its
     // offers. Same two gates, and it earns them twice over: it stores bytes
     // AND spends platform AI budget, so one farm's admin reaching it would
