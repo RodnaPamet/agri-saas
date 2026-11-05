@@ -143,10 +143,35 @@ describe('a write to an encrypted tenant-keyed column binds a farm', () => {
         expect(models.length).toBeGreaterThan(10);
         expect(columnCount).toBeGreaterThan(20);
         expect(files.length).toBeGreaterThan(500);
-        // eslint-disable-next-line no-console
         console.log(
             `[encrypted-write-scan] ${models.length} tenant-keyed model(s), ${columnCount} column(s), ` +
                 `${files.length} file(s), ${ALLOWED.length} allowed`,
+        );
+    });
+
+    it('CONTROL — `clientProp` selects on the REAL population, not just on itself', () => {
+        /*
+         * `selector-teeth` flagged `clientProp()` as a dead selector, and it
+         * was right. The synthetic control below builds its fixture FROM
+         * `clientProp`, so if the derivation were wrong — a casing slip, a
+         * pluralisation — the fixture would be wrong in exactly the same way
+         * and still match. A control in the same method as the thing it
+         * checks proves the method is self-consistent, not that it is right.
+         *
+         * So this one goes the other way: at least one derived property name
+         * must actually occur as `prisma.<prop>.` in committed source. If the
+         * mapping stopped lining up with how this codebase spells a Prisma
+         * model accessor, every needle in the scan below would miss and the
+         * guard would pass over the whole repo while looking busy.
+         */
+        const corpus = files.map((f) => readFileSync(f, 'utf8')).join('\n');
+        const matched = models
+            .map(([model]) => clientProp(model))
+            .filter((prop) => corpus.includes(`prisma.${prop}.`));
+        expect(matched.length).toBeGreaterThan(0);
+        console.log(
+            `[encrypted-write-scan] clientProp control: ${matched.length} of ${models.length} ` +
+                `derived accessor(s) occur in source (e.g. prisma.${matched[0]}.)`,
         );
     });
 
