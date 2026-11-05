@@ -109,6 +109,33 @@ export type AssistantStreamEvent =
            * normal create path applies unchanged.
            */
           readonly proposal?: { readonly kind: string; readonly draft: Record<string, unknown> };
+          /**
+           * Supplier promotions, as a DISTINCT block the client renders apart
+           * from the answer text — #2665, owner ruling 2026-11-05 ("marked as
+           * a promotion and kept separate from its advice").
+           *
+           * Server-BUILT, never model-emitted, exactly like `links`: the model
+           * must not author advertising text, and the system prompt forbids it
+           * repeating any of these fields in prose. So the separation is
+           * structural rather than a request.
+           *
+           * `safetyWording` carries Reg. (EC) 1107/2009 Art 66's prescribed
+           * text for a plant protection product and is `null` otherwise. A
+           * client that renders the block MUST render that wording with it —
+           * a promotion whose disclosure could not be resolved is dropped
+           * server-side rather than sent without one, so a non-null value
+           * here is never optional to display.
+           *
+           * Absent rather than empty when there are none.
+           */
+          readonly promotions?: readonly {
+              readonly id: string;
+              readonly company: string;
+              readonly product: string;
+              readonly details: string | null;
+              readonly validTo: string | null;
+              readonly safetyWording: string | null;
+          }[];
       }
     | { readonly type: 'refusal'; readonly code: RefusalCode; readonly message: string }
     | { readonly type: 'halt'; readonly code: HaltCode; readonly message: string }

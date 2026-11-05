@@ -117,6 +117,42 @@ export interface ToolOutcome {
      * see `propose.ts` and the guard that holds it.
      */
     readonly proposal: AssistantProposal | null;
+    /**
+     * Promotions to render as a DISTINCT block beside the answer — #2665.
+     *
+     * Server-BUILT from the rows, exactly like `links` and for the same
+     * reason: the model must not author advertising text. Owner ruling
+     * 2026-11-05 — "marked as a promotion and kept separate from its advice"
+     * — and the separation is structural rather than a prompt request.
+     *
+     * Absent rather than empty when there are none, so a client need not
+     * distinguish the two.
+     */
+    readonly promotions?: readonly AssistantPromotionBlock[];
+}
+
+/**
+ * One promotion as the CLIENT renders it, carrying its own disclosure.
+ *
+ * Every field here exists because a regulation asks for it, not because it
+ * reads well:
+ *
+ *   · `company` is DSA Art 26's "on whose behalf" — the advertiser's legal
+ *     name, verbatim from `promotionDisclosures`, never the model's rendering
+ *     of it.
+ *   · `validTo` is the owner's "naming the company and the end date".
+ *   · `safetyWording` is Reg. (EC) 1107/2009 Art 66's prescribed text for a
+ *     plant protection product, and `null` for anything else — not an empty
+ *     string, because "no wording applies" and "the wording is missing" are
+ *     different states and only the second is a fault.
+ */
+export interface AssistantPromotionBlock {
+    readonly id: string;
+    readonly company: string;
+    readonly product: string;
+    readonly details: string | null;
+    readonly validTo: string | null;
+    readonly safetyWording: string | null;
 }
 
 /*
@@ -174,6 +210,15 @@ interface AssistantTool {
      * phone rather than failing in CI.
      */
     readonly link?: LinkShape;
+    /**
+     * This tool's rows become a server-built PROMOTIONS block (#2665).
+     *
+     * A boolean rather than a builder function, to match `link`'s precedent of
+     * DATA on the registry: a guard can read the mapping off the table, and
+     * the join that carries the disclosure lives in exactly one place
+     * (`runTool`) rather than once per tool that might grow one.
+     */
+    readonly buildsPromotionBlock?: boolean;
     /** A PROPOSE tool: its result becomes a draft on the answer. */
     /**
      * The per-tenant MODULE this tool's surface sits behind, asserted by
@@ -242,6 +287,60 @@ interface AssistantTool {
  * `a-number-that-does-not-move`, applied to a vocabulary.
  */
 const STATUS_VALUES = Object.values(WorkItemStatus);
+
+/**
+ * The ONLY argument `list_promotions` takes, and the omissions are the point.
+ *
+ * No `company`, no `limit`, no date range, no "include expired". Each would be
+ * a way for the model to widen an advertising read — and the three
+ * non-negotiable filters (reviewed, in-date, ПРЗ withheld while its wording is
+ * unconfigured) live in the usecase's `where` precisely so no argument can
+ * reach past them. A prompt is a request; a query is a guarantee.
+ */
+/**
+ * Join the usecase's rows to their disclosures, dropping any that cannot be
+ * disclosed — see the call site in `runTool` for why this is the second of two
+ * fail-closed steps.
+ *
+ * The advertiser's name comes from the DISCLOSURE, not from the row: DSA Art 26
+ * asks on whose behalf the advertisement is shown, and the disclosure module is
+ * the authority on that string. Taking it from the promotion's own join would
+ * be a second producer of one legally-named value.
+ */
+async function promotionBlockFromRows(result: unknown): Promise<AssistantPromotionBlock[]> {
+    const rows = (result as { rows?: unknown }).rows;
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+    const typed = rows as Array<{
+        id: string;
+        company: string;
+        product: string;
+        details: string | null;
+        validTo: string | null;
+    }>;
+    const { promotionDisclosures } = await import('@/app-layer/usecases/promotion-disclosure');
+    const disclosures = await promotionDisclosures(typed.map((r) => r.id));
+    const byId = new Map(disclosures.map((d) => [d.id, d]));
+    const out: AssistantPromotionBlock[] = [];
+    for (const row of typed) {
+        const d = byId.get(row.id);
+        // ABSENT means undisclosable. Skip it — never fall back to the row's
+        // own company name, which would show the advert and lose the control.
+        if (!d) continue;
+        out.push({
+            id: row.id,
+            company: d.advertiser,
+            product: row.product,
+            details: row.details,
+            validTo: row.validTo,
+            safetyWording: d.safetyWording,
+        });
+    }
+    return out;
+}
+
+const ListPromotionsArgs = z
+    .object({ product: z.string().trim().min(2).max(80).optional() })
+    .strict();
 
 const ListFarmTasksArgs = z
     .object({
@@ -387,6 +486,60 @@ const parseDay = (v: string | undefined): Date | undefined => {
 };
 
 export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
+    /*
+     * The ONE tool whose result is not tenant-scoped — #2665.
+     *
+     * `Promotion` is a platform-wide catalogue with no `tenantId`, so there is
+     * no RLS policy acting as a backstop behind the `where`. Worth saying out
+     * loud because every other tool in this file reads the farm's own rows,
+     * and a reader who assumes the usual arrangement would assume a safety net
+     * that is not there. `listPromotionsForAssistant` carries the argument in
+     * full.
+     *
+     * It is also the one tool that advertises, which is why the block it
+     * builds is server-built and why the system prompt forbids repeating its
+     * contents in prose.
+     */
+    list_promotions: {
+        def: {
+            name: 'list_promotions',
+            description:
+                'Current supplier promotions from the platform catalogue, already reviewed by '
+                + 'the operator. Call it when the question is about a product a supplier might '
+                + 'be promoting \u2014 a fertiliser, a seed, a machine. Returns at most five. '
+                + 'The promotion is shown to the farmer in its OWN block beside your answer, '
+                + 'with the company and the end date, so do NOT repeat its company, price, '
+                + 'dates or wording in your text and do not recommend it. If a product name '
+                + 'returns nothing, call it again with no product before concluding there are '
+                + 'none.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    product: {
+                        type: 'string',
+                        description:
+                            'Narrow to promotions whose title, body or category mentions this '
+                            + 'product. A lexical narrowing, not a relevance judgement.',
+                    },
+                },
+                additionalProperties: false,
+            },
+        },
+        args: ListPromotionsArgs,
+        isPartial: (r) => (r as { hasMore?: boolean }).hasMore === true,
+        // No `link`: the block carries its own call to action, and a link into
+        // a tenant-relative route would be wrong for a platform catalogue.
+        buildsPromotionBlock: true,
+        run: async (ctx, args) => {
+            const a = ListPromotionsArgs.parse(args);
+            const { listPromotionsForAssistant } = await import(
+                '@/app-layer/usecases/promotions'
+            );
+            return listPromotionsForAssistant(ctx, {
+                ...(a.product !== undefined ? { product: a.product } : {}),
+            });
+        },
+    },
     list_farm_tasks: {
         def: {
             name: 'list_farm_tasks',
@@ -1295,13 +1448,46 @@ export async function runTool(
         // Built from the ROWS, before serialising — so truncation below cannot
         // silently drop the links for records the model was still shown.
         const links = tool.link ? linksFromRows(tool.link, result) : [];
+        /*
+         * The PROMOTIONS block, joined to its disclosure here and nowhere else
+         * (#2665). Built from the ROWS, before serialising, for `links`'
+         * reason: truncation below must not be able to drop a block for a
+         * promotion the model was still shown.
+         *
+         * ## The join is a SECOND fail-closed step, not a formality
+         *
+         * `listPromotionsForAssistant` already excludes a ПРЗ whose Art 66
+         * wording is unconfigured, in its `where`. This join drops any row
+         * whose disclosure is ABSENT — and `promotionDisclosures` documents
+         * that it "returns FEWER rows than asked for", with the instruction
+         * that a missing id means "do not show this promotion", never "show it
+         * without the disclosure".
+         *
+         * Both steps are needed because they fail for different reasons: the
+         * `where` protects against the wording being unset at all, this join
+         * against a row whose disclosure cannot be resolved for any other
+         * reason. An advert reaching a farmer with no disclosure beside it is
+         * the one outcome neither step may permit, so neither is trusted to be
+         * the only one.
+         */
+        const promotions = tool.buildsPromotionBlock
+            ? await promotionBlockFromRows(result)
+            : undefined;
         // Computed from the RESULT OBJECT, before serialising. Re-reading it
         // out of `content` would be the `a-detector-reads-the-serialised-form`
         // problem, and would additionally have to survive truncation.
         const partial = tool.isPartial?.(result) === true;
         const full = JSON.stringify(result);
         if (full.length <= TOOL_RESULT_MAX_CHARS) {
-            return { ok: true, content: full, truncated: false, links, proposal, partial };
+            return {
+                ok: true,
+                content: full,
+                truncated: false,
+                links,
+                proposal,
+                partial,
+                ...(promotions && promotions.length > 0 ? { promotions } : {}),
+            };
         }
         // Truncated rather than dropped: a partial list is useful and the
         // `truncated` flag is what makes the answer's incompleteness
@@ -1313,6 +1499,7 @@ export async function runTool(
             partial,
             links,
             proposal,
+            ...(promotions && promotions.length > 0 ? { promotions } : {}),
         };
     } catch (err) {
         // Includes the usecase's own policy refusal. Reported to the model as
