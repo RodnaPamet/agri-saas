@@ -14,6 +14,7 @@ import { listActivePromotions, createPromotionLead, companyNameKey } from '@/app
 import { CreatePromotionSchema } from '@/app-layer/schemas/promotion-admin.schemas';
 import { makeRequestContext } from '../helpers/make-context';
 import { hashForLookup } from '@/lib/security/encryption';
+import { dayKeyToInstant } from '@/lib/calendar-day-key';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `off-${randomUUID().slice(0, 8)}`;
@@ -162,6 +163,102 @@ describeFn('#2725 — the offers feed and the lead window', () => {
             await expect(lead(`${TAG}-no-such-promotion`)).rejects.toMatchObject({
                 code: 'PROMOTION_NOT_FOUND',
             });
+        });
+    });
+
+    describe('#2752 — the feed honours the window as DAYS, through the real query', () => {
+        // These exercise `visibleWhere` by calling `listActivePromotions`, which
+        // the unit suite's agreement test deliberately does NOT: that one
+        // re-implements the predicate in memory, so it pins the two definitions
+        // against each other and cannot notice the query changing underneath.
+        // `agrent backend-2`'s #2745 is the cautionary case — a proof whose
+        // doubles all drove one branch read as several confirmations.
+        //
+        // `listActivePromotions` takes `now`, so the boundary is reachable
+        // without touching the clock.
+        const LAST_DAY = '2026-11-30';
+        const FIRST_DAY = '2026-11-02';
+
+        let windowed = '';
+        beforeAll(async () => {
+            if (!DB_AVAILABLE) return;
+            windowed = await makePromotion({
+                suffix: 'windowed',
+                publishedAt: new Date('2026-01-01T00:00:00Z'),
+                validFrom: dayKeyToInstant(FIRST_DAY),
+                validTo: dayKeyToInstant(LAST_DAY),
+            });
+        });
+
+        const idsAt = async (iso: string) =>
+            (await listActivePromotions(ctx(), { now: new Date(iso) })).map((o) => o.id);
+
+        it('is VISIBLE on the last minute of its last day — the defect', async () => {
+            expect(await idsAt('2026-11-30T23:59:00+02:00')).toContain(windowed);
+        });
+
+        it('is VISIBLE on the first minute of its first day', async () => {
+            expect(await idsAt('2026-11-02T00:01:00+02:00')).toContain(windowed);
+        });
+
+        it('is NOT visible the day before it starts', async () => {
+            expect(await idsAt('2026-11-01T23:30:00+02:00')).not.toContain(windowed);
+        });
+
+        it('is NOT visible the day after it ends', async () => {
+            expect(await idsAt('2026-12-01T00:01:00+02:00')).not.toContain(windowed);
+        });
+
+        it('ACCEPTS a lead consented to late on the last day — consumer 4', async () => {
+            // `createPromotionLead` is the fourth consumer of `visibleWhere`,
+            // and the only one that passes something other than `now`: it
+            // passes `consentedAt`. So #2752 changed ITS question too, from
+            // "was the offer live at the instant they consented" to "on the day
+            // they consented" — strictly more permissive, and wanted, because a
+            // farmer who can SEE an offer must be able to ask about it and
+            // those two disagreed for the last day of every campaign.
+            //
+            // Pinned here because that surface's semantics would otherwise be
+            // held by a comment alone. `agrent backend-2` identified the change
+            // in review; this is the half that makes it checkable.
+            const id = await makePromotion({
+                suffix: 'lastday-lead',
+                publishedAt: new Date('2026-01-01T00:00:00Z'),
+                validFrom: dayKeyToInstant('2026-11-02'),
+                validTo: dayKeyToInstant('2026-11-30'),
+            });
+            await expect(
+                createPromotionLead(
+                    ctx(),
+                    { promotionId: id, message: 'Още ли е валидна офертата?', consent: true },
+                    { now: new Date('2026-11-30T23:50:00+02:00') },
+                ),
+            ).resolves.toMatchObject({ id: expect.any(String) });
+        });
+
+        it('still REFUSES one consented to the day after it ends', async () => {
+            // The other side of the same boundary: more permissive by a day is
+            // the change, not open-ended.
+            const id = await makePromotion({
+                suffix: 'afterend-lead',
+                publishedAt: new Date('2026-01-01T00:00:00Z'),
+                validTo: dayKeyToInstant('2026-11-30'),
+            });
+            await expect(
+                createPromotionLead(
+                    ctx(),
+                    { promotionId: id, message: 'Още ли е валидна?', consent: true },
+                    { now: new Date('2026-12-01T00:10:00+02:00') },
+                ),
+            ).rejects.toMatchObject({ code: 'PROMOTION_NOT_AVAILABLE' });
+        });
+
+        it('serves the window back as the DAY KEYS it was given', async () => {
+            const rows = await listActivePromotions(ctx(), { now: new Date('2026-11-15T12:00:00+02:00') });
+            const row = rows.find((r) => r.id === windowed);
+            expect(row).toBeDefined();
+            expect(row!.validFrom).toBe(FIRST_DAY);
+            expect(row!.validTo).toBe(LAST_DAY);
         });
     });
 });

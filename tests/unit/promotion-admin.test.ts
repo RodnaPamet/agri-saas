@@ -145,8 +145,8 @@ describe('createPromotion', () => {
                 companyId: 'c-1',
                 title: 'X',
                 category: 'seeds',
-                validFrom: d('2026-09-01'),
-                validTo: d('2026-08-01'),
+                validFrom: '2026-09-01',
+                validTo: '2026-08-01',
             }),
         ).rejects.toThrow(/must not precede/i);
         expect(mockPromotion.create).not.toHaveBeenCalled();
@@ -166,12 +166,12 @@ describe('updatePromotion', () => {
     it('validates the window against the STORED value on a partial edit', async () => {
         mockPromotion.findUnique.mockResolvedValue({
             id: 'p-1',
-            validFrom: d('2026-09-01'),
+            validFrom: '2026-09-01',
             validTo: null,
         });
 
         // Only validTo is supplied; validFrom must come from the row.
-        await expect(updatePromotion(ctx, 'p-1', { validTo: d('2026-08-01') })).rejects.toThrow(
+        await expect(updatePromotion(ctx, 'p-1', { validTo: '2026-08-01' })).rejects.toThrow(
             /must not precede/i,
         );
         expect(mockPromotion.update).not.toHaveBeenCalled();

@@ -66,6 +66,41 @@ const STATUS_VARIANT: Record<PromotionRow['status'], 'neutral' | 'info' | 'succe
     EXPIRED: 'warning',
 };
 
+/**
+ * A `YYYY-MM-DD` day key as the Date the picker should SHOW for that day
+ * (#2752).
+ *
+ * Built from the key's PARTS as local midnight, not `new Date(key)` — that
+ * parses a bare day key as UTC midnight, which a browser east of the farm's
+ * zone renders as the previous day. The operator is in Bulgaria so the
+ * difference is theoretical today; building from parts removes the class
+ * rather than relying on where they sit.
+ *
+ * Tolerates a full instant, so a row not yet normalised or a response held in
+ * the client cache still opens on the right day.
+ */
+function dayKeyToPickerDate(v: string | null | undefined): Date | null {
+    if (!v) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if (!m) return isoToDate(v);
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+/**
+ * The calendar day the operator picked, read from the picker's LOCAL parts.
+ *
+ * This replaced `validFrom.toISOString()`, which was the client-side half of
+ * #2752: it produced local midnight, so «2 Nov» went to the server as
+ * `2026-11-01T22:00:00Z`. The conversion now happens nowhere — the wire
+ * carries the day the operator saw, and the server owns what instant labels
+ * it.
+ */
+function pickerDateToDayKey(d: Date): string {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 function isoToDate(v: string | null | undefined): Date | null {
     if (!v) return null;
     const d = new Date(v);
@@ -135,8 +170,8 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         setCategory(row.category);
         setCtaUrl(row.ctaUrl ?? '');
         setPppRegistrationNo(row.pppRegistrationNo ?? '');
-        setValidFrom(isoToDate(row.validFrom));
-        setValidTo(isoToDate(row.validTo));
+        setValidFrom(dayKeyToPickerDate(row.validFrom));
+        setValidTo(dayKeyToPickerDate(row.validTo));
         setMediaUrl(row.mediaUrl);
         setError(null);
         setOpen(true);
@@ -159,8 +194,8 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                 // `normalisePppRegistrationNo` server-side folds it anyway;
                 // sending null keeps the two ends agreeing on one spelling.
                 pppRegistrationNo: pppRegistrationNo.trim() ? pppRegistrationNo.trim() : null,
-                validFrom: validFrom ? validFrom.toISOString() : null,
-                validTo: validTo ? validTo.toISOString() : null,
+                validFrom: validFrom ? pickerDateToDayKey(validFrom) : null,
+                validTo: validTo ? pickerDateToDayKey(validTo) : null,
             };
             if (editing) {
                 await apiPatch(buildUrl(`/admin/promotions/${editing.id}`), payload);

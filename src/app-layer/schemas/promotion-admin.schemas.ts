@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { httpsUrl } from '@/lib/schemas/url';
+import { DAY_KEY_PATTERN } from '@/lib/calendar-day-key';
 
 /**
  * Platform-support write payloads for the global promotions feed (#12).
@@ -41,8 +42,19 @@ export const CreatePromotionSchema = z
         body: z.string().max(4000).nullable().optional(),
         category: PromotionCategorySchema.default('service'),
         ctaUrl: httpsUrl().nullable().optional(),
-        validFrom: z.coerce.date().nullable().optional(),
-        validTo: z.coerce.date().nullable().optional(),
+        /**
+         * A calendar DAY, `YYYY-MM-DD`, not an instant (#2752).
+         *
+         * `validTo` is the INCLUSIVE last day. It was `z.coerce.date()`, which
+         * accepted whatever each client chose to build — and the console built
+         * local midnight, so «2 Nov» arrived as `2026-11-01T22:00:00Z`. Every
+         * client producing that conversion independently is how one of them
+         * gets it wrong, which is the iOS session's argument for moving it
+         * here; the server stores the day's label and nothing has to agree
+         * about a zone.
+         */
+        validFrom: z.string().regex(DAY_KEY_PATTERN).nullable().optional(),
+        validTo: z.string().regex(DAY_KEY_PATTERN).nullable().optional(),
         /**
          * ЗЗР рег. № when this promotion advertises a plant protection
          * product, NULL when it does not.
@@ -75,6 +87,9 @@ export const CreatePromotionSchema = z
         message: 'Provide either an existing companyId or a new companyName, not both',
         path: ['companyName'],
     })
+    // Day keys compare as STRINGS — fixed-width and zero-padded, so
+    // lexicographic order IS calendar order, with no Date arithmetic to get
+    // wrong at a DST boundary. `farmToday`'s docblock makes the same point.
     .refine((v) => !v.validFrom || !v.validTo || v.validTo >= v.validFrom, {
         message: 'The campaign end date must not precede its start date',
         path: ['validTo'],
@@ -93,8 +108,19 @@ export const UpdatePromotionSchema = z
         body: z.string().max(4000).nullable().optional(),
         category: PromotionCategorySchema.optional(),
         ctaUrl: httpsUrl().nullable().optional(),
-        validFrom: z.coerce.date().nullable().optional(),
-        validTo: z.coerce.date().nullable().optional(),
+        /**
+         * A calendar DAY, `YYYY-MM-DD`, not an instant (#2752).
+         *
+         * `validTo` is the INCLUSIVE last day. It was `z.coerce.date()`, which
+         * accepted whatever each client chose to build — and the console built
+         * local midnight, so «2 Nov» arrived as `2026-11-01T22:00:00Z`. Every
+         * client producing that conversion independently is how one of them
+         * gets it wrong, which is the iOS session's argument for moving it
+         * here; the server stores the day's label and nothing has to agree
+         * about a zone.
+         */
+        validFrom: z.string().regex(DAY_KEY_PATTERN).nullable().optional(),
+        validTo: z.string().regex(DAY_KEY_PATTERN).nullable().optional(),
         /**
          * See `CreatePromotionSchema` for why this is a compliance input. On
          * the edit path it is how a promotion already published as "not a
