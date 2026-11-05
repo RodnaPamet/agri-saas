@@ -111,7 +111,10 @@ export async function runEvidenceRetentionNotifications(
         // KNOWN BUG: this create misses the required `createdByUserId`
         // field (Task.createdByUserId is NOT NULL). Background jobs have
         // no actor userId — a system-user sentinel is needed.
-        // Tracked in #BUG-retention-task-creator.
+        // Tracked in #2729. (This comment named `#BUG-retention-task-creator`,
+        // a string that appeared nowhere else in the repo — a known broken
+        // write recorded only in the comment that causes it, and the
+        // explanation is what made it look handled.)
         // `ev.title` is user-supplied and gets interpolated into
         // `Task.description`, an ENCRYPTED_FIELDS column. Encryption does not
         // protect the renderers that decrypt it, so sanitise the interpolated
