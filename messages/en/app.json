@@ -540,7 +540,8 @@
         },
         "leaseExpiring": {
             "title": "Lease expiring",
-            "body": "The lease for “{parcel}” with {lessor} expires on {date} (days remaining: {days})."
+            "body": "The lease for “{parcel}” with {lessor} expires on {date} (days remaining: {days}).",
+            "unknownLessor": "an unnamed lessor"
         },
         "contractDeliveryWindow": {
             "overdueTitle": "Overdue delivery window",
@@ -1489,6 +1490,9 @@
             "fieldBody": "Details",
             "fieldCategory": "Category",
             "fieldCtaUrl": "Link",
+            "fieldPppRegistrationNo": "PPP registration number",
+            "pppPlaceholder": "e.g. 01234-ПРЗ",
+            "pppRegistrationNoDesc": "Leave empty unless this offer advertises a plant protection product. Filling it in records the offer as a ПРЗ advertisement, which carries extra labelling duties.",
             "fieldValidFrom": "Runs from",
             "fieldValidTo": "Runs until",
             "createsDraftHint": "Saved as a draft — nothing is shown to farms until you publish it.",

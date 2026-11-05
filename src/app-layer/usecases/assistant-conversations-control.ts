@@ -36,106 +36,16 @@
  * future reader.
  */
 import { prisma } from '@/lib/prisma';
-import { withTenantDb, type PrismaTx } from '@/lib/db-context';
-import { logger } from '@/lib/observability';
+import { readContentPerTenant, readableOrNull } from '@/lib/db/per-tenant-content';
 import { codedNotFound } from '@/lib/errors/types';
 
-/** A value still carrying an envelope was never decrypted. */
-const CIPHERTEXT_ENVELOPE = /^v[12]:/;
-
-/**
- * Refuse to hand an ENVELOPE to a client, whatever went wrong upstream.
- *
- * `readContentPerTenant` makes the DEK resolvable, but it cannot make it
- * resolve: `resolveTenantDekPair` logs a warning and returns `NO_DEK_PAIR`
- * when the lookup fails, and the extension then passes the ciphertext through
- * — the same silent shape that caused this file's defect, reachable again for
- * an entirely different reason.
- *
- * So the boundary checks. `null` means "stored, and this server could not read
- * it", which is a degraded answer rather than a wrong one — an envelope
- * rendered as a person's own question is both wrong and a leak of our storage
- * format. The log line is how an operator finds out, since every caller
- * downstream of here sees only a missing value.
- *
- * Deliberately NOT a throw. On the list that would make one farm with an
- * unresolvable key break a person's whole cross-farm history; on a transcript
- * it would discard the turns that DID decrypt.
+/*
+ * `readContentPerTenant` and `readableOrNull` moved to
+ * `@/lib/db/per-tenant-content` when #2728 found the same shape in two jobs
+ * and #2724 in the Art 15 export. Four call sites of a rule that fails
+ * SILENTLY in both directions is not a thing to keep re-deriving; that module
+ * is where the rule and the code are the same thing.
  */
-function readableOrNull(value: string, where: string, conversationId: string): string | null {
-    if (!CIPHERTEXT_ENVELOPE.test(value)) return value;
-    logger.warn('assistant.ciphertext_reached_boundary', {
-        component: 'assistant-memory',
-        at: where,
-        conversationId,
-        // Never the value: it is a person's own words under an envelope we
-        // could not open, and the envelope is not the useful part anyway.
-        envelope: value.slice(0, 3),
-    });
-    return null;
-}
-
-/**
- * Read turn CONTENT for conversations that may span several farms.
- *
- * ## The defect this exists to fix, and why it was silent
- *
- * `AssistantTurn.content` is encrypted under the TENANT's DEK, and
- * `resolveTenantDekPair` takes the tenant from the AUDIT CONTEXT — not from
- * the row, which it cannot, since it needs the key before the row arrives. A
- * person-scoped read binds no tenant, so it resolved `NO_DEK_PAIR` and the
- * extension handed back the `v2:` ENVELOPE. No error, no log: the row looked
- * populated and the string was ciphertext.
- *
- * Measured 2026-11-02 against real rows. All three readers in this file were
- * affected, and each failed differently:
- *
- *   · the list showed `v2:8X18HAVp…` as every row's label;
- *   · recall compared the needle against ciphertext, so it matched NOTHING
- *     for every query, for ever — the one outcome its own docblock warns a
- *     farmer experiences as the assistant forgetting;
- *   · the detail reader (#2721) returned an envelope per turn.
- *
- * **The rule was already written down one file away.** `memory-extract.ts`
- * says it verbatim: a cross-tenant batch "would have to pick a single tenant
- * context and would silently return ciphertext — or nothing — for every other
- * farm in the batch. The read is per-tenant because the KEY is per-tenant."
- * The sweep obeys it; this file did not, and nothing connected the two.
- *
- * ## The shape
- *
- * Metadata (`id`, `tenantId`, the dates, the count) carries no encrypted
- * column, so it is read ONCE, person-scoped, across farms — which is the
- * question these verbs exist to answer. Content is then read one query per
- * distinct FARM, inside that farm's context, where the DEK resolves and RLS
- * additionally confines the rows.
- *
- * The loop is over farms, never over conversations: a person belongs to a
- * handful of farms and may hold fifty conversations.
- */
-async function readContentPerTenant<T>(
-    rows: ReadonlyArray<{ id: string; tenantId: string }>,
-    read: (db: PrismaTx, conversationIds: string[]) => Promise<T[]>,
-): Promise<T[]> {
-    const byTenant = new Map<string, string[]>();
-    for (const row of rows) {
-        const seen = byTenant.get(row.tenantId);
-        if (seen) seen.push(row.id);
-        else byTenant.set(row.tenantId, [row.id]);
-    }
-    const out: T[] = [];
-    for (const [tenantId, conversationIds] of byTenant) {
-        /*
-         * guardrail-allow: n+1 — one read per FARM, and it cannot be hoisted.
-         * The key is per tenant, so a single query would have to pick one
-         * context and return ciphertext for every other farm. Bounded by the
-         * caller's conversation cap, and in practice by how many farms one
-         * person belongs to.
-         */
-        out.push(...(await withTenantDb(tenantId, (db) => read(db, conversationIds))));
-    }
-    return out;
-}
 
 /** The most a person may see at once — the profile list's bound, same reason. */
 export const CONVERSATION_LIST_LIMIT = 50;

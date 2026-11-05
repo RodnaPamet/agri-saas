@@ -46,6 +46,7 @@ interface PromotionRow {
     mediaUrl: string | null;
     category: string;
     ctaUrl: string | null;
+    pppRegistrationNo: string | null;
     publishedAt: string | null;
     validFrom: string | null;
     validTo: string | null;
@@ -94,6 +95,7 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
     const [body, setBody] = useState('');
     const [category, setCategory] = useState<string>('service');
     const [ctaUrl, setCtaUrl] = useState('');
+    const [pppRegistrationNo, setPppRegistrationNo] = useState('');
     const [validFrom, setValidFrom] = useState<Date | null>(null);
     const [validTo, setValidTo] = useState<Date | null>(null);
     const [mediaUrl, setMediaUrl] = useState<string | null>(null);
@@ -116,6 +118,7 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         setBody('');
         setCategory('service');
         setCtaUrl('');
+        setPppRegistrationNo('');
         setValidFrom(null);
         setValidTo(null);
         setMediaUrl(null);
@@ -131,6 +134,7 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         setBody(row.body ?? '');
         setCategory(row.category);
         setCtaUrl(row.ctaUrl ?? '');
+        setPppRegistrationNo(row.pppRegistrationNo ?? '');
         setValidFrom(isoToDate(row.validFrom));
         setValidTo(isoToDate(row.validTo));
         setMediaUrl(row.mediaUrl);
@@ -151,6 +155,10 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                 body: body.trim() ? body.trim() : null,
                 category,
                 ctaUrl: ctaUrl.trim() ? ctaUrl.trim() : null,
+                // Empty means "not a ПРЗ" and must travel as null, never ''.
+                // `normalisePppRegistrationNo` server-side folds it anyway;
+                // sending null keeps the two ends agreeing on one spelling.
+                pppRegistrationNo: pppRegistrationNo.trim() ? pppRegistrationNo.trim() : null,
                 validFrom: validFrom ? validFrom.toISOString() : null,
                 validTo: validTo ? validTo.toISOString() : null,
             };
@@ -417,6 +425,24 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                                 value={ctaUrl}
                                 onChange={(e) => setCtaUrl(e.target.value)}
                                 placeholder={t('urlPlaceholder')}
+                            />
+                        </FormField>
+
+                        {/*
+                          * The review-time ПРЗ classification (#2664). Typed by
+                          * the reviewer and deliberately never prefilled from a
+                          * leaflet read: a misread registration number would
+                          * silently reclassify a pesticide as a fertiliser.
+                          */}
+                        <FormField
+                            label={t('fieldPppRegistrationNo')}
+                            description={t('pppRegistrationNoDesc')}
+                        >
+                            <Input
+                                id="promo-ppp-no"
+                                value={pppRegistrationNo}
+                                onChange={(e) => setPppRegistrationNo(e.target.value)}
+                                placeholder={t('pppPlaceholder')}
                             />
                         </FormField>
 
