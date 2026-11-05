@@ -459,7 +459,16 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // spec — which is what `documented()` measures and what the rule is for.
     // A baselined code that is documented is debt the list is lying about.
 
-    // `COMPANY_NAME_TAKEN` and `PROMOTION_LEAD_ALREADY_SENT` are new as of
+    // `PROMOTION_LEAD_ALREADY_SENT` LEFT this list in #2725, and the paragraph
+    // below is why: it was here because `/offers/leads` was not in the spec,
+    // and #2725 documented that route — the "larger change" named below —
+    // because the native client generates from the spec and could not see the
+    // route's body or its refusals at all. So the condition this entry was
+    // waiting on was met, and the reverse check removed it the same run.
+    // `COMPANY_NAME_TAKEN` stays: `/admin/companies/{id}` is still
+    // undocumented (tracked as #2727, the phone's promotions admin).
+    //
+    // `COMPANY_NAME_TAKEN` and `PROMOTION_LEAD_ALREADY_SENT` were new as of
     // #1391's 409 work and are here for a specific reason: their ROUTES are
     // not in the spec at all (`/admin/companies/{id}`, `/offers/leads`,
     // `/sso/entra/group-mappings` — three
@@ -677,7 +686,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'OPERATION_NOT_ASSIGNED_TO_YOU',
     'OPERATION_PARCEL_NOT_FOUND',
     'PARCELS_NOT_IN_LOCATION',
-    'PROMOTION_LEAD_ALREADY_SENT',
     'TASK_NOT_AWAITING_REVIEW',
     'THREAD_NOT_A_PARTY',
     'THREAD_NOT_FOUND',

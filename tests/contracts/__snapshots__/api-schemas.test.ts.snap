@@ -12211,6 +12211,23 @@ exports[`API contract — per-schema snapshots schema: NotificationStreamEvent 1
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: OffersResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "offers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/Promotion"
+      }
+    }
+  },
+  "required": [
+    "offers"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: OperationParcel 1`] = `
 "{
   "type": "object",
@@ -15862,6 +15879,98 @@ exports[`API contract — per-schema snapshots schema: PriceOverrideWriteResult 
   "required": [
     "written",
     "series"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: Promotion 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "company": {
+      "type": "string",
+      "description": "The supplier’s name as curated in \`Company\`, not as typed on a leaflet."
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "PLAIN TEXT, never HTML. Written through \`sanitizePlainText\` on both the create and the update, and the web renders it as text. Render it as text."
+    },
+    "mediaUrl": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "ROOT-RELATIVE, always — \`/api/promotions/{id}/image\` — or null when no image was uploaded.\\n\\n\`promotionImageServeUrl\` is its only producer, and the field is absent from both write schemas, so an operator cannot set an off-site URL. That matters to a native client specifically: it fetches this with the person’s bearer, and an external URL would carry that credential to a third party. **If an external image is ever allowed it must be proxied through that route rather than served as an absolute URL here.**"
+    },
+    "category": {
+      "type": "string",
+      "description": "One of \`culture\`, \`fertilizer\`, \`seeds\`, \`products\`, \`service\`. A \`String\` column validated against that curated set on write, so an unknown value means somebody wrote past the schema — render it as \\"other\\" rather than failing the decode."
+    },
+    "ctaUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "validFrom": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "example": "2026-11-02",
+      "description": "The campaign’s FIRST day, \`YYYY-MM-DD\`. See \`validTo\` for why this is a day and not an instant."
+    },
+    "validTo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "example": "2026-11-30",
+      "description": "The campaign’s LAST day, \`YYYY-MM-DD\`, **inclusive**.\\n\\nA day rather than an instant because a campaign window is a pair of days in the operator’s head; an instant on the wire makes every client decide which day it means and they will not all agree. Taken in the FARM timezone, which is the zone the web renders in, so this value and the web page always name the same day — a UTC day-key would be one day earlier, because the console’s picker writes local midnight."
+    },
+    "hasRequested": {
+      "type": "boolean",
+      "description": "Has the VIEWING FARM already sent a lead for this promotion? Viewer-relative, and it exists because \`@@unique([promotionId, inquirerTenantId])\` makes a second lead impossible — without it the UI invites someone to retype a message the database will refuse. Gate the «Поискай оферта» control on \`!hasRequested\`."
+    }
+  },
+  "required": [
+    "id",
+    "company",
+    "title",
+    "body",
+    "mediaUrl",
+    "category",
+    "ctaUrl",
+    "validFrom",
+    "validTo",
+    "hasRequested"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PromotionLeadCreated 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "status"
   ]
 }"
 `;

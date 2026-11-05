@@ -16,7 +16,7 @@
 import type { RequestContext } from '../types';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, badRequest } from '@/lib/errors/types';
+import { badRequest, codedNotFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { findOrCreateCompany } from './company';
 
@@ -156,7 +156,18 @@ export async function updatePromotion(
 ) {
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.promotion.findUnique({ where: { id } });
-        if (!existing) throw notFound('Promotion not found');
+        if (!existing) {
+            // Coded because `PROMOTION_NOT_FOUND` exists (#2725) and a bare
+            // `notFound` here would answer the SAME fact in a different shape
+            // from the farmer-facing lead route — which is the condition
+            // `a-bare-notfound-has-no-coded-twin` (#1712) holds, and it caught
+            // this the moment the code was added.
+            throw codedNotFound(
+                'PROMOTION_NOT_FOUND',
+                'No promotion exists under that id.',
+                { reference: 'promotionId' },
+            );
+        }
 
         // A partial edit may carry only one end of the window; the other has to
         // come from the stored row or an edit could invert it silently.
@@ -215,7 +226,18 @@ export async function setPromotionPublished(ctx: RequestContext, id: string, pub
             where: { id },
             include: { company: { select: { name: true } } },
         });
-        if (!existing) throw notFound('Promotion not found');
+        if (!existing) {
+            // Coded because `PROMOTION_NOT_FOUND` exists (#2725) and a bare
+            // `notFound` here would answer the SAME fact in a different shape
+            // from the farmer-facing lead route — which is the condition
+            // `a-bare-notfound-has-no-coded-twin` (#1712) holds, and it caught
+            // this the moment the code was added.
+            throw codedNotFound(
+                'PROMOTION_NOT_FOUND',
+                'No promotion exists under that id.',
+                { reference: 'promotionId' },
+            );
+        }
 
         if (published && !existing.title.trim()) {
             throw badRequest('A promotion needs a title before it can be published');
@@ -253,7 +275,18 @@ export async function deletePromotion(ctx: RequestContext, id: string) {
             where: { id },
             include: { company: { select: { name: true } }, _count: { select: { leads: true } } },
         });
-        if (!existing) throw notFound('Promotion not found');
+        if (!existing) {
+            // Coded because `PROMOTION_NOT_FOUND` exists (#2725) and a bare
+            // `notFound` here would answer the SAME fact in a different shape
+            // from the farmer-facing lead route — which is the condition
+            // `a-bare-notfound-has-no-coded-twin` (#1712) holds, and it caught
+            // this the moment the code was added.
+            throw codedNotFound(
+                'PROMOTION_NOT_FOUND',
+                'No promotion exists under that id.',
+                { reference: 'promotionId' },
+            );
+        }
 
         // Leads cascade with the promotion (onDelete: Cascade). Deleting a
         // campaign that captured enquiries would destroy the advertiser's

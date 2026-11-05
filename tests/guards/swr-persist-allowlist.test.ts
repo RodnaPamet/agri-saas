@@ -58,7 +58,14 @@ describe('the SWR persist allowlist', () => {
         // Raised to this branch's LIVE count, not to a round number with
         // headroom: slack in a shared cap is how the next addition arrives
         // without the decision this cap exists to force.
-        const MAX_PERSISTED_ENDPOINTS = 7;
+        // 7 -> 8 (#2725): `/offers`, the «Оферти» supplier feed. Owner
+        // directive 2026-11-02 put that screen on the phone, and the feed is
+        // commercial advertising copy every farm sees identically — no names,
+        // no contacts, no identifiers, nothing in ENCRYPTED_FIELDS. So this is
+        // the easy direction of this cap, and it is still a decision: the
+        // response sits on a device that may be lost or sold, which is the
+        // question `ParcelLease.lessorName` exists to force.
+        const MAX_PERSISTED_ENDPOINTS = 8;
         const list = allowlist();
         if (list.length > MAX_PERSISTED_ENDPOINTS) {
             throw new Error(

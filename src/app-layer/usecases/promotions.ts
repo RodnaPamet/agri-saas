@@ -13,11 +13,12 @@ import type { RequestContext } from '../types';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { notFound, codedConflict, badRequest } from '@/lib/errors/types';
+import { codedConflict, codedNotFound, badRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { DEFAULT_LOCALE, isLocale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
+import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import { Prisma } from '@prisma/client';
 
 export interface PromotionDto {
@@ -28,6 +29,28 @@ export interface PromotionDto {
     mediaUrl: string | null;
     category: string;
     ctaUrl: string | null;
+    /**
+     * The campaign window as CALENDAR DAYS, `YYYY-MM-DD`, with `validTo`
+     * INCLUSIVE — not instants (#2725, agrent-ios' ask).
+     *
+     * A campaign's window is a pair of days in the operator's head, and the
+     * columns are `DateTime` only because that is what the picker writes. An
+     * instant on the wire makes every client decide which day it means, and
+     * they will not all agree.
+     *
+     * ## It is `dayKeyInTz`, and `toISOString().slice(0, 10)` is WRONG here
+     *
+     * The console's `DatePicker` writes LOCAL midnight, so «2 Nov» stored from
+     * Sofia is `2026-11-01T22:00:00Z` — and the naive UTC slice yields
+     * `2026-11-01`, a day earlier than the web itself displays. Measured.
+     *
+     * The web is correct today because `formatDate` renders through
+     * `DISPLAY_TIME_ZONE` (= `FARM_TIME_ZONE`), so the day-key has to be taken
+     * in that same zone to agree with it. That is also why the five
+     * `toISOString().slice(0, 10)` sites elsewhere in this repo are not a
+     * precedent to copy: they build digest keys and idempotency keys, where UTC
+     * is the intended frame and nobody reads the value as a date.
+     */
     validFrom: string | null;
     validTo: string | null;
     /**
@@ -162,8 +185,8 @@ export async function listActivePromotions(
             mediaUrl: p.mediaUrl,
             category: p.category,
             ctaUrl: p.ctaUrl,
-            validFrom: p.validFrom ? p.validFrom.toISOString() : null,
-            validTo: p.validTo ? p.validTo.toISOString() : null,
+            validFrom: p.validFrom ? dayKeyInTz(p.validFrom, FARM_TIME_ZONE) : null,
+            validTo: p.validTo ? dayKeyInTz(p.validTo, FARM_TIME_ZONE) : null,
             hasRequested: requestedIds.has(p.id),
         }));
     });
@@ -217,11 +240,57 @@ export async function createPromotionLead(ctx: RequestContext, input: CreateProm
             where: { id: input.promotionId },
             include: { company: { select: { name: true } } },
         });
-        if (!promotion) throw notFound('Promotion not found');
-        // A draft or expired promotion must not accept leads — the card is
-        // gone from the feed, so a request against it can only come from a
-        // stale page or a hand-made call.
-        if (!promotion.publishedAt) throw notFound('Promotion not found');
+        if (!promotion) {
+            throw codedNotFound(
+                'PROMOTION_NOT_FOUND',
+                'No promotion exists under that id.',
+                { reference: 'promotionId' },
+            );
+        }
+
+        // THE SAME PREDICATE THE FEED USES, and the comment that stood here
+        // claimed a property the code did not have (#2725). It read "a draft or
+        // EXPIRED promotion must not accept leads" and then tested
+        // `publishedAt` alone — while `visibleWhere` tests three things:
+        // published, started, and not finished. So an expired campaign was off
+        // the feed and still accepting leads, and a farmer could be told their
+        // request had gone to a supplier about an offer that ended last month.
+        //
+        // Applied by the DATABASE rather than restated as a row predicate, so
+        // there is exactly one definition of "visible". `visibleWhere` already
+        // carries that reasoning for `hasVisiblePromotions` — "two copies of
+        // visible is how a nav link outlives the content it points at" — and a
+        // hand-written `p.validTo && p.validTo < now` here would be the second
+        // copy. Costs one indexed lookup by primary key.
+        //
+        // Evaluated at `consentedAt`, not at a fresh `new Date()`: that is the
+        // instant the person agreed to send this, which is the right frame for
+        // "was the offer live when they consented" and removes a race between
+        // the two reads.
+        const stillVisible = await db.promotion.findFirst({
+            where: { AND: [{ id: promotion.id }, visibleWhere(consentedAt)] },
+            select: { id: true },
+        });
+        if (!stillVisible) {
+            // A DISTINCT code from the genuine not-found, deliberately. The
+            // old collapse had a written reason — "the card is gone from the
+            // feed, so a request against it can only come from a stale page" —
+            // which is about WHO is calling, not about concealing existence.
+            // And it could not be about concealment: `Promotion` is one GLOBAL
+            // catalogue, so every tenant sees the same published set and there
+            // is nothing tenant-private to enumerate. So telling a farmer
+            // "this offer has ended" rather than "no such offer" leaks nothing
+            // and is the only one of the two that is true.
+            //
+            // It matters more after #2725 than before: `/offers` is now on
+            // `PERSISTABLE_PATHS`, so a phone holds the feed across launches
+            // and a stale card is the expected case rather than an odd one.
+            throw codedNotFound(
+                'PROMOTION_NOT_AVAILABLE',
+                'That offer is no longer running.',
+                { reference: 'promotionId' },
+            );
+        }
 
         let lead;
         try {

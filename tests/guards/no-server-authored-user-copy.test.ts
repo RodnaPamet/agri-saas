@@ -550,7 +550,19 @@ export function collectServerAuthoredCopy(root: string, dirs: string[] = ROOTS):
 // accumulated on main, sitting inside DRIFT_ALLOWANCE where the sentinel
 // tolerates it. Mine tipped the total past 15, which is the only reason the
 // slack became visible. Banking both.
-const CURRENT_BASELINE = 271;
+// 271 -> 255 (#2725). Three bare `notFound('Promotion not found')` sites in
+// `promotion-admin.ts` became `codedNotFound('PROMOTION_NOT_FOUND', ...)`,
+// which `a-bare-notfound-has-no-coded-twin` (#1712) demanded the moment the
+// code was added for the farmer-facing lead route — the code existing two
+// directories away is exactly the condition that guard holds.
+//
+// MEASURED, not subtracted: set to 0 and read the count the first assertion
+// prints (255), the way the #1712 block above re-counted rather than
+// arithmetic from the previous line. The drop is larger than the three
+// conversions because the sentinel had already been tolerating slack inside
+// DRIFT_ALLOWANCE; banking it here rather than leaving room for the next
+// uncoded string is the whole point of a downward ratchet.
+const CURRENT_BASELINE = 255;
 
 /** Slack tolerated before the sentinel demands the baseline be lowered. */
 const DRIFT_ALLOWANCE = 15;

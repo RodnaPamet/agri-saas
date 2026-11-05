@@ -6993,6 +6993,8 @@
         "PRODUCT_NAME_REQUIRED": "Необходимо е име на продукта.",
         "PRODUCT_NOT_FOUND": "Продуктът не беше намерен.",
         "PROMOTION_LEAD_ALREADY_SENT": "Вече сте поискали оферта за тази промоция.",
+        "PROMOTION_NOT_AVAILABLE": "Тази оферта вече не е активна. Възможно е да е изтекла или да е оттеглена.",
+        "PROMOTION_NOT_FOUND": "Тази оферта не беше намерена.",
         "REFERENCE_NOT_IN_TENANT": "Посоченият запис ({reference}) не беше намерен в това стопанство.",
         "REGISTER_EMPTY_FOR_PERIOD": "Няма записи за този период.",
         "SEASON_INVALID_DATE": "Началото и краят на сезона трябва да са валидни дати.",
