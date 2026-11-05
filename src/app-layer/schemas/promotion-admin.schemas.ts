@@ -43,6 +43,32 @@ export const CreatePromotionSchema = z
         ctaUrl: httpsUrl().nullable().optional(),
         validFrom: z.coerce.date().nullable().optional(),
         validTo: z.coerce.date().nullable().optional(),
+        /**
+         * ЗЗР рег. № when this promotion advertises a plant protection
+         * product, NULL when it does not.
+         *
+         * A COMPLIANCE INPUT, not a detail. Reg. (EC) 1107/2009 Art 66 puts
+         * specific requirements on advertising a ПРЗ — prescribed safety
+         * wording, prohibited claim types — and free text cannot tell a
+         * pesticide from a fertiliser, so the withhold-until-configured
+         * predicate #2664 proposes has nothing to read without this. The
+         * column has existed since #2673 and was reachable only by direct
+         * database access: absent here, and absent from the console form, so
+         * every promotion written through the console had it NULL — which a
+         * predicate reads as "not a plant protection product".
+         *
+         * Set at REVIEW time by the person publishing, never derived from the
+         * AI read of a supplier leaflet. `promotion-leaflet-reader.ts` has no
+         * slot for it at all, held by
+         * `tests/guards/promotion-read-proposes-no-ppp-number.test.ts`: a
+         * misread registration number would silently reclassify a pesticide
+         * as a fertiliser, which is the one error in this feature that
+         * matters.
+         *
+         * 120 chars to match `catalog.schemas.ts`, which carries the same
+         * number on `Item` for the same register.
+         */
+        pppRegistrationNo: z.string().trim().max(120).nullable().optional(),
     })
     .strip()
     .refine(exactlyOneCompany, {
@@ -69,6 +95,14 @@ export const UpdatePromotionSchema = z
         ctaUrl: httpsUrl().nullable().optional(),
         validFrom: z.coerce.date().nullable().optional(),
         validTo: z.coerce.date().nullable().optional(),
+        /**
+         * See `CreatePromotionSchema` for why this is a compliance input. On
+         * the edit path it is how a promotion already published as "not a
+         * ПРЗ" gets reclassified — explicit `null` clears it, and `undefined`
+         * (the field omitted) leaves the stored value alone, which is the
+         * distinction `updatePromotion` relies on for every other field here.
+         */
+        pppRegistrationNo: z.string().trim().max(120).nullable().optional(),
     })
     .strip()
     .refine((v) => !(v.companyId && v.companyName), {
