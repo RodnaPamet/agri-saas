@@ -18,6 +18,7 @@ import { enqueueEmail } from '../notifications/enqueue';
 import { isNotificationsEnabled } from '../notifications/settings';
 import { emitAutomationEvent } from '../automation';
 import type { RequestContext } from '../types';
+import { withTenantDb } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** Fire-and-forget automation trigger — never blocks the notification job. */
@@ -98,6 +99,14 @@ export async function runEvidenceRetentionNotifications(
                     },
                 },
             } satisfies Prisma.TaskWhereInput,
+            // An existence probe, so `id` and nothing else. Without a
+            // `select` this returned every column — including `description`,
+            // which is encrypted under the farm's DEK and comes back as a
+            // `v2:` envelope here because this job binds no tenant. Nothing
+            // reads it today, so that was latent rather than live; narrowing
+            // means the first person to reach for `existingTask.description`
+            // gets a type error instead of ciphertext (#2723).
+            select: { id: true },
         });
 
         if (existingTask) {
@@ -111,33 +120,58 @@ export async function runEvidenceRetentionNotifications(
         // KNOWN BUG: this create misses the required `createdByUserId`
         // field (Task.createdByUserId is NOT NULL). Background jobs have
         // no actor userId — a system-user sentinel is needed.
-        // Tracked in #BUG-retention-task-creator.
+        // Tracked in #2729. (This comment named `#BUG-retention-task-creator`,
+        // a string that appeared nowhere else in the repo — a known broken
+        // write recorded only in the comment that causes it, and the
+        // explanation is what made it look handled.)
         // `ev.title` is user-supplied and gets interpolated into
         // `Task.description`, an ENCRYPTED_FIELDS column. Encryption does not
         // protect the renderers that decrypt it, so sanitise the interpolated
         // value at the write — this job runs without a request context, so
         // there is no upstream usecase to have done it.
         const safeTitle = sanitizePlainText(ev.title);
-        const task = await prisma.task.create({
-            data: {
-                tenantId: ev.tenantId,
-                type: 'IMPROVEMENT',
-                title: `Refresh expiring evidence: ${safeTitle}`,
-                description: `Evidence "${safeTitle}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
-                status: 'OPEN',
-                priority: daysLeft <= 7 ? 'HIGH' : 'MEDIUM',
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- createdByUserId missing: background job has no actor; requires system-user id (tracked #BUG-retention-task-creator)
-            } as any,
-        });
-
-        // Create task link to evidence
-        await prisma.taskLink.create({
-            data: {
-                taskId: task.id,
-                tenantId: ev.tenantId,
-                entityType: 'EVIDENCE',
-                entityId: ev.id,
-            },
+        /*
+         * INSIDE the farm's context, and that is about the KEY (#2723).
+         *
+         * `Task.description` is in `ENCRYPTED_FIELDS`. With no tenant bound,
+         * `resolveTenantDekPair` returns `NO_DEK_PAIR` — which on the WRITE
+         * path is not "no key", it is the `v1:` GLOBAL-KEK fallback. Measured:
+         * the same row written bound comes out `v2:`, unbound `v1:`.
+         *
+         * It reads back perfectly either way, because the extension dispatches
+         * per value on the envelope — so nothing ever looked wrong. What was
+         * lost is per-tenant key isolation, the property `GLOBAL_KEK_MODELS`
+         * exists to protect and whose own comment says a tenant-scoped model
+         * must not join that set "precisely because it would throw that
+         * isolation away". This threw it away by accident, one row at a time.
+         *
+         * `withTenantDb` opens a transaction, so the task and its link now
+         * commit together — previously a failure between them left a task with
+         * no evidence link, which is the state the idempotence probe above
+         * cannot see.
+         */
+        const task = await withTenantDb(ev.tenantId, async (db) => {
+            const created = await db.task.create({
+                data: {
+                    tenantId: ev.tenantId,
+                    type: 'IMPROVEMENT',
+                    title: `Refresh expiring evidence: ${safeTitle}`,
+                    description: `Evidence "${safeTitle}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
+                    status: 'OPEN',
+                    priority: daysLeft <= 7 ? 'HIGH' : 'MEDIUM',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- createdByUserId missing: background job has no actor; requires system-user id (tracked in #2729)
+                } as any,
+                select: { id: true },
+            });
+            await db.taskLink.create({
+                data: {
+                    taskId: created.id,
+                    tenantId: ev.tenantId,
+                    entityType: 'EVIDENCE',
+                    entityId: ev.id,
+                },
+            });
+            return created;
         });
 
         // Enqueue EVIDENCE_EXPIRING email to tenant admins/editors

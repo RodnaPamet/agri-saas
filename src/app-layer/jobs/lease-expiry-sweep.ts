@@ -18,6 +18,7 @@
  * @module app-layer/jobs/lease-expiry-sweep
  */
 import prisma from '@/lib/prisma';
+import { readContentPerTenant, readableOrNull } from '@/lib/db/per-tenant-content';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
@@ -72,10 +73,16 @@ export async function runLeaseExpirySweep(
                     endDate: { gte: now, lte: windowEnd },
                     ...(options.tenantId ? { tenantId: options.tenantId } : {}),
                 },
+                // `lessorName` is deliberately ABSENT. It is encrypted under
+                // the FARM's DEK, and this query is cross-tenant by design
+                // (see `tenantIds` below), so no single context can decrypt
+                // it — a context-less read returns the `v2:` envelope with no
+                // error and no log, and that envelope was being interpolated
+                // into the notification a farmer reads (#2728). It is fetched
+                // per farm after this, via `readContentPerTenant`.
                 select: {
                     id: true,
                     tenantId: true,
-                    lessorName: true,
                     endDate: true,
                     // locationId drives the notification deep-link into the
                     // location-scoped Rent view.
@@ -83,6 +90,27 @@ export async function runLeaseExpirySweep(
                 },
                 take: 10000,
             });
+
+            /*
+             * The lessor names, one read per FARM, because the key is per
+             * farm. `null` for a lease whose key could not be resolved —
+             * `readableOrNull` refuses to hand an envelope to a reader, and
+             * the copy below falls back rather than printing one.
+             */
+            const lessorNames = new Map<string, string | null>();
+            if (leases.length > 0) {
+                for (const row of await readContentPerTenant(leases, (db, ids) =>
+                    db.parcelLease.findMany({
+                        where: { id: { in: ids } },
+                        select: { id: true, lessorName: true },
+                    }),
+                )) {
+                    lessorNames.set(
+                        row.id,
+                        readableOrNull(row.lessorName, 'lease-expiry-sweep', row.id),
+                    );
+                }
+            }
 
             let notified = 0;
 
@@ -150,7 +178,17 @@ export async function runLeaseExpirySweep(
                             title: await translateFor(r.locale, 'notifications.leaseExpiring.title'),
                             message: await translateFor(r.locale, 'notifications.leaseExpiring.body', {
                                 parcel: lease.parcel.name,
-                                lessor: lease.lessorName,
+                                // An unreadable name degrades to the
+                                // catalogue's own placeholder rather than to
+                                // an envelope. `leaseExpiring.body` already
+                                // takes a `lessor` param, so this keeps one
+                                // sentence rather than branching the copy.
+                                lessor:
+                                    lessorNames.get(lease.id) ??
+                                    (await translateFor(
+                                        r.locale,
+                                        'notifications.leaseExpiring.unknownLessor',
+                                    )),
                                 date: endYmd,
                                 // AFTER a label in the copy, never before a noun.
                                 // `translateFor` is a simple interpolate with NO

@@ -540,7 +540,8 @@
         },
         "leaseExpiring": {
             "title": "Изтичащ договор за наем",
-            "body": "Договорът за „{parcel}“ с {lessor} изтича на {date} (остават дни: {days})."
+            "body": "Договорът за „{parcel}“ с {lessor} изтича на {date} (остават дни: {days}).",
+            "unknownLessor": "непосочен арендодател"
         },
         "contractDeliveryWindow": {
             "overdueTitle": "Просрочен срок за доставка",
