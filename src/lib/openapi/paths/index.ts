@@ -45,6 +45,7 @@ import { registerAccessReviewPaths } from './access-review.paths';
 import { registerModerationPaths } from './moderation.paths';
 import { registerPromotionsAdminPaths } from './promotions-admin.paths';
 import { registerOffersPaths } from './offers.paths';
+import { registerPromotionsConsolePaths } from './promotions-console.paths';
 import { registerFeatureFlagsAdminPaths } from './feature-flags-admin.paths';
 import { registerAdminMembersPaths } from './admin-members.paths';
 import { registerPppRegisterPaths } from './ppp-register.paths';
@@ -96,6 +97,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerModerationPaths(registry);
     registerPromotionsAdminPaths(registry);
     registerOffersPaths(registry);
+    registerPromotionsConsolePaths(registry);
     registerFeatureFlagsAdminPaths(registry);
     registerAdminMembersPaths(registry);
     registerPppRegisterPaths(registry);

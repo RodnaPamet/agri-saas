@@ -663,12 +663,12 @@
     {
       "path": "/api/t/{tenantSlug}/admin/companies",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/companies/{id}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/farm-profile",
@@ -813,7 +813,7 @@
     {
       "path": "/api/t/{tenantSlug}/admin/promotions",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/promotions/leaflet-scan",
@@ -823,12 +823,12 @@
     {
       "path": "/api/t/{tenantSlug}/admin/promotions/{id}",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/promotions/{id}/image",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/admin/roles",

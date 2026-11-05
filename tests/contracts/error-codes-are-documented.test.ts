@@ -465,8 +465,10 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // because the native client generates from the spec and could not see the
     // route's body or its refusals at all. So the condition this entry was
     // waiting on was met, and the reverse check removed it the same run.
-    // `COMPANY_NAME_TAKEN` stays: `/admin/companies/{id}` is still
-    // undocumented (tracked as #2727, the phone's promotions admin).
+    // `COMPANY_NAME_TAKEN` has now LEFT too (#2727): `/admin/companies/{id}` is
+    // documented, which was the only thing it was waiting on. Both codes named
+    // in this paragraph are gone, three days apart, each when its route was
+    // described — which is the paragraph working rather than rotting.
     //
     // `COMPANY_NAME_TAKEN` and `PROMOTION_LEAD_ALREADY_SENT` were new as of
     // #1391's 409 work and are here for a specific reason: their ROUTES are
@@ -628,7 +630,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     'API_KEY_FAMILY_NOT_ENABLED',
     'API_KEY_WRONG_SURFACE',
     'BLOCK_SELLER_ONLY',
-    'COMPANY_NAME_TAKEN',
     'CROP_SEASON_YEAR_INVALID',
     'CROP_TYPE_INVALID',
     'DOSE_UNIT_NOT_FOUND',

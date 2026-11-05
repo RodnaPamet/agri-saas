@@ -674,6 +674,81 @@
         ],
         "description": "A moderation decision on a notice. The moderator is taken from the verified platform key and is never read from this body; the subject is denormalised from the notice.\n\n`suspendUserId` is REQUIRED when `actionKind` is `ACCOUNT_SUSPENDED` or `ACCOUNT_TERMINATED`, and rejected as `SUSPEND_TARGET_REQUIRED` otherwise. It is supplied rather than derived for the same reason `recipientUserId` is on a statement: a notice names CONTENT, a reported listing belongs to a farm, and which member to lock out is a judgement rather than a lookup."
       },
+      "AdminCompaniesResponse": {
+        "type": "object",
+        "properties": {
+          "companies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCompany"
+            }
+          }
+        },
+        "required": [
+          "companies"
+        ]
+      },
+      "AdminCompany": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "eik": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "websiteUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactEmail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactPhone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "promotionCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "eik",
+          "websiteUrl",
+          "contactName",
+          "contactEmail",
+          "contactPhone",
+          "notes",
+          "promotionCount"
+        ]
+      },
       "AdminMember": {
         "type": "object",
         "properties": {
@@ -854,6 +929,121 @@
           "updatedAt",
           "user",
           "activeSessionCount"
+        ]
+      },
+      "AdminPromotion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "companyId": {
+            "type": "string"
+          },
+          "companyName": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mediaUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Root-relative `/api/promotions/{id}/image`, or null. Written ONLY by the image upload below — it is absent from both write schemas, so it cannot be set to an off-site URL."
+          },
+          "category": {
+            "type": "string",
+            "description": "One of `culture`, `fertilizer`, `seeds`, `products`, `service`."
+          },
+          "ctaUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pppRegistrationNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "ЗЗР рег. № when this advertises a plant protection product, null when it does not (#2664, settable since #2733).\n\n**A compliance input, not a detail.** Reg. (EC) 1107/2009 Art 66 puts specific requirements on advertising a ПРЗ, and free text cannot tell a pesticide from a fertiliser. Set at REVIEW time by the person publishing, resolved against the БАБХ register — never proposed by the leaflet read, which has no slot for it at all, because a misread registration number would silently reclassify a pesticide as a fertiliser.\n\nAn empty string is normalised to null on write, so `null` means exactly \"not a ПРЗ\" and never \"nobody could record it\"."
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Null means DRAFT — nothing reaches a farm until it is set. Publishing IS the review act, which is what lets the Art 66 predicate read `publishedAt != null && pppRegistrationNo == null` as \"reviewed, not a ПРЗ\".\n\n**An INSTANT, and not part of the day-key mismatch below.** This is a moment — when support published — not a campaign day, so there is nothing here to reconcile with the feed, which does not expose the field at all."
+          },
+          "validFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "An ISO-8601 INSTANT today, unlike the farmer-facing feed, where `GET /offers` serves this same column as a `YYYY-MM-DD` day key in the farm timezone (#2725).\n\n**This is changing to a day key, read AND write, in a follow-up** — agreed with the iOS session 2026-11-05, and their argument is the write side rather than the read. An instant on the wire makes every client produce \"local midnight in the farm zone\", which is exactly the conversion that put «2 Nov» on the 1st; a day key moves it to the server, where `dayKeyInTz` already lives. It is a separate PR because it changes the web console that writes this field, and that does not belong in a documentation change. Build against day keys if you are starting now."
+          },
+          "validTo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "An ISO-8601 INSTANT today, unlike the farmer-facing feed, where `GET /offers` serves this same column as a `YYYY-MM-DD` day key in the farm timezone (#2725).\n\n**This is changing to a day key, read AND write, in a follow-up** — agreed with the iOS session 2026-11-05, and their argument is the write side rather than the read. An instant on the wire makes every client produce \"local midnight in the farm zone\", which is exactly the conversion that put «2 Nov» on the 1st; a day key moves it to the server, where `dayKeyInTz` already lives. It is a separate PR because it changes the web console that writes this field, and that does not belong in a documentation change. Build against day keys if you are starting now."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "LIVE",
+              "EXPIRED"
+            ],
+            "description": "DERIVED from `publishedAt` and the window together, so a client does not recompute the two gates and disagree with the server about which rows a farm can see."
+          },
+          "leadCount": {
+            "type": "integer",
+            "description": "Enquiries captured. It rides along because it is the number support works from, and because a non-zero count REFUSES deletion — see `DELETE` below."
+          }
+        },
+        "required": [
+          "id",
+          "companyId",
+          "companyName",
+          "title",
+          "body",
+          "mediaUrl",
+          "category",
+          "ctaUrl",
+          "pppRegistrationNo",
+          "publishedAt",
+          "validFrom",
+          "validTo",
+          "status",
+          "leadCount"
+        ]
+      },
+      "AdminPromotionsResponse": {
+        "type": "object",
+        "properties": {
+          "promotions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPromotion"
+            }
+          }
+        },
+        "required": [
+          "promotions"
         ]
       },
       "AgDashboardAchievements": {
@@ -3076,6 +3266,17 @@
         ],
         "description": "What create and update answer with — the id, name and category ONLY, because both carry a narrow `select`. A client needing the whole item must re-read it."
       },
+      "CompanyUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
       "Contract": {
         "type": "object",
         "properties": {
@@ -4774,6 +4975,71 @@
         "required": [
           "observedAt",
           "weeds"
+        ]
+      },
+      "CreatePromotionBody": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "companyName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4000
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "culture",
+              "fertilizer",
+              "seeds",
+              "products",
+              "service"
+            ],
+            "default": "service"
+          },
+          "ctaUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validFrom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pppRegistrationNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "title"
         ]
       },
       "CreateTaskWeedObservation": {
@@ -15147,6 +15413,28 @@
           "hasRequested"
         ]
       },
+      "PromotionCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "PromotionImageUploaded": {
+        "type": "object",
+        "properties": {
+          "mediaUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mediaUrl"
+        ]
+      },
       "PromotionLeadCreated": {
         "type": "object",
         "properties": {
@@ -15167,7 +15455,7 @@
         "properties": {
           "fileId": {
             "type": "string",
-            "description": "The stored leaflet. Attach it to the promotion the operator then creates, so the source document stays reachable from the row."
+            "description": "The stored leaflet’s `FileRecord` id. The bytes are kept, allowlisted, MIME-reconciled and AV-scanned before this returns.\n\n**It cannot currently be attached to the promotion**, and this field’s description said it could until #2750 — \"attach it to the promotion the operator then creates, so the source document stays reachable from the row\". `Promotion` has no column for it and `POST /admin/promotions` accepts no `fileId`, so there was nowhere for that to land: a documented mechanism with no implementation, found by the iOS session building against this spec.\n\nWhat it IS good for today: correlating this response with the `leafletFileId` the 415 and 422 refusals carry, so a client can tell an operator *which* stored file could not be read. Linking it to the promotion row is tracked on #2750."
           },
           "companyName": {
             "type": [
@@ -15225,6 +15513,36 @@
           "priceText",
           "validityText",
           "note"
+        ]
+      },
+      "PromotionPublishState": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "publishedAt"
+        ]
+      },
+      "PromotionUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
         ]
       },
       "PublicFarmSearchHit": {
@@ -15975,6 +16293,17 @@
         },
         "required": [
           "order"
+        ]
+      },
+      "SetPromotionPublishedBody": {
+        "type": "object",
+        "properties": {
+          "published": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "published"
         ]
       },
       "SoilProfile": {
@@ -18175,6 +18504,58 @@
           }
         }
       },
+      "UpdateCompanyBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "eik": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 40
+          },
+          "websiteUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contactName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "contactEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320,
+            "format": "email"
+          },
+          "contactPhone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 60
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4000
+          }
+        }
+      },
       "UpdateFarmDocumentSettings": {
         "type": "object",
         "properties": {
@@ -18319,6 +18700,68 @@
               "null"
             ],
             "maxLength": 200
+          }
+        }
+      },
+      "UpdatePromotionBody": {
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "companyName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4000
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "culture",
+              "fertilizer",
+              "seeds",
+              "products",
+              "service"
+            ],
+            "default": "service"
+          },
+          "ctaUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validFrom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "validTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pppRegistrationNo": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 120
           }
         }
       },
@@ -61814,6 +62257,1171 @@
           },
           "409": {
             "description": "`PROMOTION_LEAD_ALREADY_SENT` — this farm has already asked about this promotion.\n\n**NOT a stale-edit 409.** There is no version to re-read and nothing to merge: the row already exists and a second one is impossible by `@@unique([promotionId, inquirerTenantId])`. Re-reading the feed is still the right response, because `hasRequested` will come back true and the control should then be hidden rather than retried."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/promotions": {
+      "get": {
+        "operationId": "listAdminPromotions",
+        "summary": "Every promotion in the global catalogue, drafts included",
+        "description": "The curation view: 500 newest by creation, drafts and expired rows included, each with its derived `status` and `leadCount`. Unlike `GET /offers`, which applies both visibility gates, this deliberately shows everything — a reviewer needs to see the draft they are about to publish.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The catalogue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromotionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAdminPromotion",
+        "summary": "Create a promotion — always as a DRAFT",
+        "description": "`publishedAt` is written null unconditionally, so a half-finished ad typed from an email cannot reach a farm by accident. Publishing is a separate, deliberate call (`PUT …/{id}`).\n\nIdentify the supplier by EITHER `companyId` (picked from `GET /admin/companies`) OR `companyName` (typed fresh, then find-or-created) — **exactly one**, because accepting both would let a create-if-missing path silently ignore a picked company.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromotionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created as a draft. Returns the id only; re-read the list for the row.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither or both of `companyId`/`companyName`; an inverted campaign window (`validTo` before `validFrom`); or a field past its length cap."
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/promotions/{id}": {
+      "patch": {
+        "operationId": "updateAdminPromotion",
+        "summary": "Edit a promotion",
+        "description": "A PARTIAL edit: an omitted field is left alone, and that distinction is load-bearing for `pppRegistrationNo` — an explicit `null` RECLASSIFIES a promotion as not a ПРЗ, while omitting it preserves the classification. Writing null on omission would silently declassify a plant protection product whenever somebody fixed a typo in the title.\n\nThe campaign window is re-checked against the STORED row, because a payload may carry only one end of the span.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePromotionBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionUpdated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No fields to update, both company refs, or an inverted window."
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setAdminPromotionPublished",
+        "summary": "Publish or unpublish — the editorial gate",
+        "description": "The ONLY way a promotion becomes visible to farms. A separate verb from `PATCH` on purpose: publication is an editorial act with a different audit shape (`status_change`, not a field diff), and collapsing it into the edit would make every title correction a potential publish.\n\nRe-publishing PRESERVES the original `publishedAt` rather than re-stamping it, so the first-published date survives an unpublish/republish cycle. Unpublishing clears it and does NOT touch the campaign window.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPromotionPublishedBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new state. `publishedAt` is null after unpublishing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionPublishState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminPromotion",
+        "summary": "Delete a promotion that captured no enquiries",
+        "description": "**Refused with 400 when `leadCount > 0`**, naming the count and saying to unpublish instead. A farm’s enquiry is its record of having asked a supplier, and deleting the promotion would take it with them; unpublishing removes the ad and keeps the enquiries. So a client should offer unpublish — not delete — on any row whose `leadCount` is non-zero, rather than surfacing the refusal.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "400": {
+            "description": "The promotion has captured enquiries. Unpublish it instead — the message names how many."
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/promotions/{id}/image": {
+      "post": {
+        "operationId": "uploadAdminPromotionImage",
+        "summary": "Upload the promotion image",
+        "description": "`multipart/form-data` with one `file` field. The bytes are processed and stored, and the response carries the root-relative `mediaUrl` the feed will serve — the field cannot be set any other way.\n\nRecord-LESS: there is no `FileRecord` and so no download gate to defer to, which is why the AV scan runs at INGEST and the write does not happen unless it passes.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The image."
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored. `mediaUrl` is root-relative.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionImageUploaded"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No `file` field, a `file` field sent as TEXT rather than a file, or an image past the byte cap. The size is refused on the DECLARED size before the bytes are buffered, so an oversized upload is not read into memory first — the real check still runs on the buffer, because that header is client-supplied."
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminPromotionImage",
+        "summary": "Remove the promotion image",
+        "description": "Clears `mediaUrl` and deletes the stored bytes. The promotion itself stays.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/companies": {
+      "get": {
+        "operationId": "listAdminCompanies",
+        "summary": "The supplier directory",
+        "description": "500 suppliers by name, each with `promotionCount`. This is the picker behind a promotion’s `companyId`.\n\n**Internal by the platform gate, not by its content.** It carries supplier contact details, so do not reuse this shape on a tenant-facing surface — `listActivePromotions` deliberately exposes only the company NAME.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCompaniesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/companies/{id}": {
+      "patch": {
+        "operationId": "updateAdminCompany",
+        "summary": "Edit a supplier",
+        "description": "A partial edit. Renaming recomputes the normalised dedup key, so a rename onto an existing supplier’s name is refused rather than creating a second row that the picker shows twice.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCompanyBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyUpdated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No fields to update, or a field past its length cap."
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "409": {
+            "description": "`COMPANY_NAME_TAKEN` — another supplier already uses that name, compared on the normalised key (lowercased, trimmed, internal whitespace collapsed). **NOT a stale-edit 409**: there is no version to re-read, the collision is with a different row, and the remedy is a different name."
           },
           "426": {
             "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
