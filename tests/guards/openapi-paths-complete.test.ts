@@ -191,7 +191,16 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 //
 // COUNTED from the file, not subtracted from the line above — the comment
 // block's own instruction after #2578 left this one too high.
-const UNDOCUMENTED_CEILING = 215;
+// 215 → 210 (#2727): the five promotions-console families are documented now —
+// `admin/promotions` (list + create), `admin/promotions/{id}` (edit, publish,
+// delete), `admin/promotions/{id}/image` (upload + remove), `admin/companies`
+// and `admin/companies/{id}`. Ten operations. They predate the describe-new-paths
+// rule; the phone's admin screen (agrent-ios #529) is what made the gap bite,
+// because it generates from this spec and could see none of them.
+//
+// COUNTED from the file, not subtracted — the instruction this block gives after
+// #2578, and the reason the previous value was once one too high.
+const UNDOCUMENTED_CEILING = 210;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

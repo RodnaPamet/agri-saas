@@ -674,6 +674,87 @@ exports[`API contract — per-schema snapshots schema: ActOnNotice 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AdminCompaniesResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "companies": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AdminCompany"
+      }
+    }
+  },
+  "required": [
+    "companies"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AdminCompany 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "eik": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "websiteUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contactName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contactEmail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contactPhone": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "promotionCount": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "eik",
+    "websiteUrl",
+    "contactName",
+    "contactEmail",
+    "contactPhone",
+    "notes",
+    "promotionCount"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AdminMember 1`] = `
 "{
   "type": "object",
@@ -855,6 +936,127 @@ exports[`API contract — per-schema snapshots schema: AdminMember 1`] = `
     "updatedAt",
     "user",
     "activeSessionCount"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AdminPromotion 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "companyId": {
+      "type": "string"
+    },
+    "companyName": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mediaUrl": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Root-relative \`/api/promotions/{id}/image\`, or null. Written ONLY by the image upload below — it is absent from both write schemas, so it cannot be set to an off-site URL."
+    },
+    "category": {
+      "type": "string",
+      "description": "One of \`culture\`, \`fertilizer\`, \`seeds\`, \`products\`, \`service\`."
+    },
+    "ctaUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "ЗЗР рег. № when this advertises a plant protection product, null when it does not (#2664, settable since #2733).\\n\\n**A compliance input, not a detail.** Reg. (EC) 1107/2009 Art 66 puts specific requirements on advertising a ПРЗ, and free text cannot tell a pesticide from a fertiliser. Set at REVIEW time by the person publishing, resolved against the БАБХ register — never proposed by the leaflet read, which has no slot for it at all, because a misread registration number would silently reclassify a pesticide as a fertiliser.\\n\\nAn empty string is normalised to null on write, so \`null\` means exactly \\"not a ПРЗ\\" and never \\"nobody could record it\\"."
+    },
+    "publishedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Null means DRAFT — nothing reaches a farm until it is set. Publishing IS the review act, which is what lets the Art 66 predicate read \`publishedAt != null && pppRegistrationNo == null\` as \\"reviewed, not a ПРЗ\\".\\n\\n**An INSTANT, and not part of the day-key mismatch below.** This is a moment — when support published — not a campaign day, so there is nothing here to reconcile with the feed, which does not expose the field at all."
+    },
+    "validFrom": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "An ISO-8601 INSTANT today, unlike the farmer-facing feed, where \`GET /offers\` serves this same column as a \`YYYY-MM-DD\` day key in the farm timezone (#2725).\\n\\n**This is changing to a day key, read AND write, in a follow-up** — agreed with the iOS session 2026-11-05, and their argument is the write side rather than the read. An instant on the wire makes every client produce \\"local midnight in the farm zone\\", which is exactly the conversion that put «2 Nov» on the 1st; a day key moves it to the server, where \`dayKeyInTz\` already lives. It is a separate PR because it changes the web console that writes this field, and that does not belong in a documentation change. Build against day keys if you are starting now."
+    },
+    "validTo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "An ISO-8601 INSTANT today, unlike the farmer-facing feed, where \`GET /offers\` serves this same column as a \`YYYY-MM-DD\` day key in the farm timezone (#2725).\\n\\n**This is changing to a day key, read AND write, in a follow-up** — agreed with the iOS session 2026-11-05, and their argument is the write side rather than the read. An instant on the wire makes every client produce \\"local midnight in the farm zone\\", which is exactly the conversion that put «2 Nov» on the 1st; a day key moves it to the server, where \`dayKeyInTz\` already lives. It is a separate PR because it changes the web console that writes this field, and that does not belong in a documentation change. Build against day keys if you are starting now."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "DRAFT",
+        "SCHEDULED",
+        "LIVE",
+        "EXPIRED"
+      ],
+      "description": "DERIVED from \`publishedAt\` and the window together, so a client does not recompute the two gates and disagree with the server about which rows a farm can see."
+    },
+    "leadCount": {
+      "type": "integer",
+      "description": "Enquiries captured. It rides along because it is the number support works from, and because a non-zero count REFUSES deletion — see \`DELETE\` below."
+    }
+  },
+  "required": [
+    "id",
+    "companyId",
+    "companyName",
+    "title",
+    "body",
+    "mediaUrl",
+    "category",
+    "ctaUrl",
+    "pppRegistrationNo",
+    "publishedAt",
+    "validFrom",
+    "validTo",
+    "status",
+    "leadCount"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: AdminPromotionsResponse 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "promotions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/AdminPromotion"
+      }
+    }
+  },
+  "required": [
+    "promotions"
   ]
 }"
 `;
@@ -3226,6 +3428,20 @@ exports[`API contract — per-schema snapshots schema: CatalogItemWriteAck 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: CompanyUpdated 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: Contract 1`] = `
 "{
   "type": "object",
@@ -4994,6 +5210,74 @@ exports[`API contract — per-schema snapshots schema: CreateParcelWeedObservati
   "required": [
     "observedAt",
     "weeds"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: CreatePromotionBody 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "companyName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4000
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "culture",
+        "fertilizer",
+        "seeds",
+        "products",
+        "service"
+      ],
+      "default": "service"
+    },
+    "ctaUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "validFrom": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "validTo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120
+    }
+  },
+  "required": [
+    "title"
   ]
 }"
 `;
@@ -15957,6 +16241,34 @@ exports[`API contract — per-schema snapshots schema: Promotion 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PromotionCreated 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PromotionImageUploaded 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "mediaUrl": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "mediaUrl"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: PromotionLeadCreated 1`] = `
 "{
   "type": "object",
@@ -16042,6 +16354,42 @@ exports[`API contract — per-schema snapshots schema: PromotionOfferDraft 1`] =
     "priceText",
     "validityText",
     "note"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PromotionPublishState 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "publishedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "publishedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: PromotionUpdated 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
   ]
 }"
 `;
@@ -16849,6 +17197,20 @@ exports[`API contract — per-schema snapshots schema: SetBottomTabOrderRequest 
   },
   "required": [
     "order"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SetPromotionPublishedBody 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "published": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "published"
   ]
 }"
 `;
@@ -19177,6 +19539,61 @@ exports[`API contract — per-schema snapshots schema: UpdateAdminMemberRequest 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: UpdateCompanyBody 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "eik": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 40
+    },
+    "websiteUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contactName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "contactEmail": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 320,
+      "format": "email"
+    },
+    "contactPhone": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 60
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4000
+    }
+  }
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: UpdateFarmDocumentSettings 1`] = `
 "{
   "type": "object",
@@ -19328,6 +19745,71 @@ exports[`API contract — per-schema snapshots schema: UpdateMemberCertificatesR
         "null"
       ],
       "maxLength": 200
+    }
+  }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdatePromotionBody 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "companyId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "companyName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "body": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4000
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "culture",
+        "fertilizer",
+        "seeds",
+        "products",
+        "service"
+      ],
+      "default": "service"
+    },
+    "ctaUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "validFrom": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "validTo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pppRegistrationNo": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 120
     }
   }
 }"
