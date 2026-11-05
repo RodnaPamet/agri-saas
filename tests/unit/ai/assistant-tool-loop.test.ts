@@ -363,3 +363,151 @@ describe('the assistant tool loop (#2578)', () => {
         expect(String(h.events()[0].message)).toMatch(/[Ѐ-ӿ]/);
     });
 });
+
+describe('one round runs its tools in PARALLEL, and folds them in order (#2670)', () => {
+    /** Resolve after `ms` of REAL time, so overlap is observable. */
+    const after = <T,>(ms: number, value: T): Promise<T> =>
+        new Promise((resolve) => setTimeout(() => resolve(value), ms));
+
+    it('two tools in one round OVERLAP — the round is not the sum of its tools', async () => {
+        /*
+         * The measurement, not a proxy for it. Each tool sleeps 60ms, so a
+         * sequential round takes ≥120ms and a parallel one ≈60ms. The bound
+         * below (100ms) sits between them, which is what makes this fail if
+         * the `Promise.all` is reverted to a `for … await` — and that is the
+         * mutation it was written against.
+         *
+         * Real timers deliberately: a fake-timer version would assert that
+         * `Promise.all` was called, which is the implementation rather than
+         * the property.
+         */
+        listTasks.mockImplementation(() => after(60, []));
+        analyzeBlockRisk.mockImplementation(() => after(60, { blocks: [] }));
+
+        const h = harness();
+        const complete = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: [call('list_farm_tasks'), call('analyze_block_risk', '{"locationId":"loc-1"}')] })
+            .mockResolvedValueOnce({ text: 'готово' });
+
+        const started = Date.now();
+        const out = await runToolLoop({ ctx, send: h.send, complete } as never, []);
+        const elapsed = Date.now() - started;
+
+        expect(out.toolCallsMade).toBe(2);
+        /*
+         * CONTROL, and it is load-bearing. The first version of this test used
+         * `list_tasks` — not a real tool — so `runTool` returned `{ ok: false }`
+         * without calling either mock. Neither world slept, the timing bound
+         * passed in both, and reverting the `Promise.all` left all 21 tests
+         * green. A probe with the same reading in both worlds.
+         *
+         * Asserting the mocks RAN is what makes the bound below mean
+         * something: a renamed tool now fails here rather than silently
+         * disarming the measurement.
+         */
+        expect(listTasks).toHaveBeenCalledTimes(1);
+        expect(analyzeBlockRisk).toHaveBeenCalledTimes(1);
+        expect(elapsed).toBeLessThan(100);
+        // And the loop's own figure agrees with the wall clock, so the
+        // reported `toolPhaseMs` is the slowest tool rather than the sum.
+        expect(out.timing.toolPhaseMs).toBeLessThan(100);
+    });
+
+    it('the FOLD is in the model’s call order, not completion order', async () => {
+        /*
+         * The correctness half. The second tool finishes FIRST, so a fold in
+         * completion order would reverse the `tool` messages and make
+         * `proposal` first-wins instead of last-wins.
+         *
+         * `tool_result` event order is the observable, since the messages are
+         * internal — and the events are what the phone renders.
+         */
+        listTasks.mockImplementation(() => after(80, []));
+        analyzeBlockRisk.mockImplementation(() => after(10, { blocks: [] }));
+
+        const h = harness();
+        const complete = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: [call('list_farm_tasks'), call('analyze_block_risk', '{"locationId":"loc-1"}')] })
+            .mockResolvedValueOnce({ text: 'готово' });
+
+        await runToolLoop({ ctx, send: h.send, complete } as never, []);
+
+        const results = h
+            .events()
+            .filter((e) => e.type === 'tool_result')
+            .map((e) => e.name);
+        expect(results).toEqual(['list_farm_tasks', 'analyze_block_risk']);
+    });
+
+    it('every tool_call is named BEFORE any result arrives', async () => {
+        // Better for the phone than it was: it can name both tools it is
+        // reading at once rather than one at a time. Still never a result
+        // before its own call.
+        listTasks.mockResolvedValue([]);
+        analyzeBlockRisk.mockResolvedValue({ blocks: [] });
+
+        const h = harness();
+        const complete = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: [call('list_farm_tasks'), call('analyze_block_risk', '{"locationId":"loc-1"}')] })
+            .mockResolvedValueOnce({ text: 'готово' });
+
+        await runToolLoop({ ctx, send: h.send, complete } as never, []);
+
+        const types = h.types();
+        const lastCall = types.lastIndexOf('tool_call');
+        const firstResult = types.indexOf('tool_result');
+        expect(lastCall).toBeGreaterThanOrEqual(0);
+        expect(firstResult).toBeGreaterThan(lastCall);
+    });
+
+    it('the BUDGET still bounds a round that asks for more than is left', async () => {
+        /*
+         * The bound moved from "break mid-loop" to "decide the admitted set
+         * before anything runs", so it needs its own assertion. A round asking
+         * for more calls than remain must run only the remainder and halt —
+         * the same outcome as before, reached differently.
+         */
+        listTasks.mockResolvedValue([]);
+        analyzeBlockRisk.mockResolvedValue({ blocks: [] });
+
+        const h = harness();
+        const many = Array.from({ length: MAX_TOOL_CALLS + 2 }, (_, i) =>
+            call(i % 2 === 0 ? 'list_farm_tasks' : 'analyze_block_risk',
+                i % 2 === 0 ? '{}' : '{"locationId":"loc-1"}'),
+        ).map((c, i) => ({ ...c, id: `c-${i}` }));
+        const complete = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: many })
+            .mockResolvedValueOnce({ text: 'частично' });
+
+        const out = await runToolLoop({ ctx, send: h.send, complete } as never, []);
+
+        expect(out.toolCallsMade).toBe(MAX_TOOL_CALLS);
+        expect(out.halt).toBe('ASSISTANT_TOOL_BUDGET');
+        // The final tool-less call still happened, so the halt has an answer
+        // to be incomplete about — this suite's founding assertion.
+        expect(out.text).toBe('частично');
+    });
+
+    it('the reported stages add up to the total', async () => {
+        // The figure #2670 needed and `AiUsageEvent` never stored. Without
+        // this the three numbers could drift from the clock and nobody would
+        // know which to trust.
+        listTasks.mockResolvedValue([]);
+        const h = harness();
+        const complete = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: [call('list_farm_tasks')] })
+            .mockResolvedValueOnce({ text: 'готово' });
+
+        const out = await runToolLoop({ ctx, send: h.send, complete } as never, []);
+
+        expect(out.timing.providerCalls).toBe(2);
+        expect(out.timing.totalMs).toBeGreaterThanOrEqual(
+            out.timing.providerMs + out.timing.toolPhaseMs,
+        );
+    });
+});

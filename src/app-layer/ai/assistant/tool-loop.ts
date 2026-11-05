@@ -40,6 +40,7 @@ import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import type { HaltCode } from '../safety/refusal-codes';
 import type { AiCompletion, AiMessage } from '../provider/types';
 import type { RequestContext } from '@/app-layer/types';
+import { logger } from '@/lib/observability';
 
 /** At most four tool calls for one question. */
 export const MAX_TOOL_CALLS = 4;
@@ -66,6 +67,19 @@ export interface ToolLoopResult {
     /** The halt to report after the answer, if the tool phase was cut short. */
     readonly halt: HaltCode | null;
     readonly toolCallsMade: number;
+    /**
+     * Where the time went (#2670). Returned as well as logged, so a test can
+     * assert the stages add up without reading a log line — and so a future
+     * caller can report it rather than re-deriving it.
+     */
+    readonly timing: {
+        readonly totalMs: number;
+        /** Summed across every provider call in the turn, including the final one. */
+        readonly providerMs: number;
+        readonly providerCalls: number;
+        /** Wall-clock of the tool rounds, which is now the SLOWEST tool per round. */
+        readonly toolPhaseMs: number;
+    };
 }
 
 export interface ToolLoopDeps {
@@ -95,13 +109,32 @@ export async function runToolLoop(
     let proposal: AssistantProposal | null = null;
     let halt: HaltCode | null = null;
     let text: string | null = null;
+    /*
+     * Per-stage timings (#2670), because no figure existed.
+     *
+     * `AiUsageEvent` has no latency column and `recordAiCompletion` computes a
+     * `latencyMs` it never stores, so until now any claim about where an
+     * answer's 20–30s goes was a reading of the source. That matters more than
+     * it sounds: the first optimisation would otherwise be credited with
+     * whatever the next question happened to cost.
+     *
+     * Three accumulators, because they are the three things that can be
+     * changed independently — the model calls that pick tools, the tool reads
+     * themselves, and the final call that writes the answer.
+     */
+    let providerMs = 0;
+    let toolPhaseMs = 0;
+    let providerCalls = 0;
 
     for (let round = 0; round < MAX_TOOL_CALLS; round++) {
         if (now() - started > TOOL_PHASE_BUDGET_MS) {
             halt = 'ASSISTANT_TIME_BUDGET';
             break;
         }
+        const callStarted = now();
         const completion = await deps.complete(messages, toolDefs());
+        providerMs += now() - callStarted;
+        providerCalls += 1;
         const calls = completion.toolCalls ?? [];
         if (calls.length === 0) {
             text = completion.text ?? '';
@@ -121,16 +154,58 @@ export async function runToolLoop(
             content: completion.text ?? '',
             toolCalls: calls,
         } as AiMessage);
-        for (const call of calls) {
-            if (toolCallsMade >= MAX_TOOL_CALLS) {
-                halt = 'ASSISTANT_TOOL_BUDGET';
-                break;
-            }
-            toolCallsMade++;
+        /*
+         * One round's tools run in PARALLEL, and the fold is sequential (#2670).
+         *
+         * These are independent READS — each goes through the usecase that
+         * guards its own subject — so there is no ordering dependency between
+         * them. Running them one at a time made a two-tool question pay both
+         * latencies, which is the shape the owner actually asked about.
+         *
+         * `Promise.all` is safe here for a specific reason rather than a
+         * hopeful one: `runTool` catches everything, including a usecase's
+         * policy refusal, and returns `{ ok: false }` — it never throws. So no
+         * rejection can discard a sibling's completed result. If that contract
+         * ever changes, this needs `allSettled` and a decision about what a
+         * thrown tool means for the round.
+         *
+         * ## What must NOT change, and how each is held
+         *
+         * The BUDGET still bounds the round, so the admitted set is decided
+         * BEFORE anything runs rather than by breaking mid-loop. Admitting
+         * fewer calls than the model asked for is the same halt it was.
+         *
+         * The FOLD runs in the model's original call order, not completion
+         * order, so every derived value is bit-identical to the sequential
+         * version: `proposal` is still last-call-wins, `linkGroups` still
+         * merge in call order, and the `tool` messages are still pushed in the
+         * order the assistant turn listed them. Only the WAITING is parallel.
+         *
+         * `tool_call` events are all emitted up front — still before any
+         * result, which is what justifies the wait to the person watching, and
+         * better for the phone than before: it can name every tool it is
+         * reading at once rather than one at a time.
+         */
+        const room = Math.max(0, MAX_TOOL_CALLS - toolCallsMade);
+        const admitted = calls.slice(0, room);
+        const overBudget = admitted.length < calls.length;
+        toolCallsMade += admitted.length;
+
+        for (const call of admitted) {
             // Named BEFORE the result arrives. That is what justifies the wait
             // to the person watching; a bare spinner does not.
             emit({ type: 'tool_call', name: call.name });
-            const outcome = await runTool(deps.ctx, call.name, call.arguments ?? '');
+        }
+
+        const roundStarted = now();
+        const outcomes = await Promise.all(
+            admitted.map((call) => runTool(deps.ctx, call.name, call.arguments ?? '')),
+        );
+        toolPhaseMs += now() - roundStarted;
+
+        for (let i = 0; i < admitted.length; i++) {
+            const call = admitted[i] as (typeof admitted)[number];
+            const outcome = outcomes[i] as (typeof outcomes)[number];
             if (outcome.truncated) truncatedAny = true;
             if (outcome.partial) partialAny = true;
             if (outcome.links.length > 0) linkGroups.push([...outcome.links]);
@@ -147,6 +222,11 @@ export async function runToolLoop(
                 toolCallId: call.id,
             } as AiMessage);
         }
+
+        if (overBudget) {
+            halt = 'ASSISTANT_TOOL_BUDGET';
+            break;
+        }
         if (halt !== null) break;
         if (toolCallsMade >= MAX_TOOL_CALLS) {
             halt = 'ASSISTANT_TOOL_BUDGET';
@@ -159,7 +239,10 @@ export async function runToolLoop(
         // until the cap. One final call with NO tools, so the model answers
         // from what it has and the halt has an answer to be incomplete about.
         if (halt === null) halt = 'ASSISTANT_TOOL_BUDGET';
+        const finalStarted = now();
         const final = await deps.complete(messages, undefined);
+        providerMs += now() - finalStarted;
+        providerCalls += 1;
         text = final.text ?? '';
     }
 
@@ -176,7 +259,36 @@ export async function runToolLoop(
     // and the narrower one is more useful.
     if (halt === null && partialAny) halt = 'ASSISTANT_PARTIAL_DATA';
 
-    return { text, links: mergeLinks(linkGroups), proposal, truncatedAny, partialAny, halt, toolCallsMade };
+    const totalMs = now() - started;
+    /*
+     * ONE line per answered question, so a change to any stage is judgeable
+     * from the production log rather than from a stopwatch on somebody's
+     * phone. `otherMs` is the residual — route checks, the prompt build, the
+     * egress scan, the emits — and it is reported rather than itemised so the
+     * three figures above stay the ones that add up.
+     */
+    logger.info('assistant.stage_timing', {
+        component: 'assistant',
+        tenantId: deps.ctx.tenantId,
+        totalMs,
+        providerMs,
+        providerCalls,
+        toolPhaseMs,
+        otherMs: Math.max(0, totalMs - providerMs - toolPhaseMs),
+        toolCallsMade,
+        halt,
+    });
+
+    return {
+        text,
+        links: mergeLinks(linkGroups),
+        proposal,
+        truncatedAny,
+        partialAny,
+        halt,
+        toolCallsMade,
+        timing: { totalMs, providerMs, providerCalls, toolPhaseMs },
+    };
 }
 
 /** Emit the halt, if there is one. Separate so the caller controls ordering. */
