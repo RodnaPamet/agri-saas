@@ -198,6 +198,128 @@ export async function listActivePromotions(
  * migration; the `Company.nameKey` unique index is the actual guarantee, this
  * is just how callers compute the value to look up or insert.
  */
+/**
+ * One current promotion as the ASSISTANT sees it — no disclosure strings.
+ *
+ * NO `price`, and that is a schema fact rather than an omission (#2665).
+ * `Promotion` has no price column: its fields are `title`, `body`,
+ * `category`, `pppRegistrationNo`, `ctaUrl` and the two dates. #2664's field
+ * request named "company, product, price, end date", and a price would have to
+ * be a new column populated at review time — the figure currently lives inside
+ * the free-text `body` that the owner reviewed.
+ *
+ * So `details` carries that reviewed free text and is NOT labelled a price.
+ * Returning a `price` read out of prose would be a number the client renders
+ * as fact and nobody verified, which is the same defect class as a
+ * paraphrased safety phrase: it would look authoritative.
+ */
+export interface AssistantPromotion {
+    id: string;
+    company: string;
+    product: string;
+    /** The reviewed free text. May mention a price; is not a price FIELD. */
+    details: string | null;
+    validTo: string | null;
+}
+
+/**
+ * Current promotions for the assistant's `list_promotions` tool — #2665.
+ *
+ * ════════════════════════════════════════════════════════════════════════
+ *  THE `where` CLAUSE IS THE ENTIRE CONTROL HERE. There is no RLS behind it.
+ * ════════════════════════════════════════════════════════════════════════
+ *
+ * `Promotion` is a PLATFORM-wide catalogue with no `tenantId`, so unlike every
+ * other read the assistant performs there is no tenant-isolation policy acting
+ * as a backstop — `runTool`'s `assertCanRead` answers "may this person read at
+ * all", and `assertModuleEnabled` has no per-tenant module to match. A dropped
+ * condition here is not caught one layer down. It is the inverted arrangement
+ * `/api/account/export` carries a comment about, for the same reason.
+ *
+ * THREE conditions, and the third is the one a reader will not expect:
+ *
+ * 1. `publishedAt IS NOT NULL` — via the shared `visibleWhere`. The owner's
+ *    review of an AI read of a supplier leaflet is the whole safeguard in
+ *    #2664, and a tool that quoted an unreviewed row would silently undo it.
+ * 2. `validTo` in the future or unset — also `visibleWhere`. "Expired ones are
+ *    never used" is the owner's wording. Unset is not expired.
+ * 3. **A ПРЗ is withheld while its safety wording is unconfigured.** Reg. (EC)
+ *    1107/2009 Art 66 puts prescribed wording on plant protection advertising,
+ *    and `promotionDisclosures` refuses to return a row it cannot disclose. If
+ *    this tool returned such a promotion anyway, the model would have a product
+ *    to talk about and the client would have nothing to render beside it — an
+ *    advert with no disclosure, reached by omission. Fail CLOSED: a missing
+ *    value costs a feature, not a breach.
+ *
+ * Condition 3 is why this is NOT `listActivePromotions`. The public promotions
+ * PAGE shows ПРЗ rows and renders their own disclosure; the assistant cannot,
+ * because its disclosure travels on a separate frame. Two surfaces, one
+ * visibility predicate shared, one extra condition where the surfaces differ —
+ * stated here so the next reader does not "unify" them.
+ */
+export async function listPromotionsForAssistant(
+    ctx: RequestContext,
+    opts: { product?: string; limit?: number; now?: Date } = {},
+): Promise<{ rows: AssistantPromotion[]; hasMore: boolean }> {
+    assertCanRead(ctx);
+    // FIVE by default (owner framing: "mention a current promotion", singular;
+    // a block listing more than about three stops reading as a disclosure and
+    // starts reading as an advert). Over-read by one to answer `hasMore`
+    // without a second COUNT.
+    const limit = Math.min(Math.max(opts.limit ?? 5, 1), 10);
+    const now = opts.now ?? new Date();
+    const { isPppDisclosureConfigured } = await import('./promotion-disclosure');
+    const pppAllowed = isPppDisclosureConfigured();
+    const product = opts.product?.trim();
+
+    return runInTenantContext(ctx, async (db) => {
+        const rows = await db.promotion.findMany({
+            where: {
+                AND: [
+                    visibleWhere(now),
+                    // Condition 3. An env-configured single string, so this
+                    // collapses to "exclude every ПРЗ" rather than a per-row
+                    // join — and it is expressed as a `where` rather than a
+                    // post-filter so the `take` below cannot silently return
+                    // fewer rows than it claims.
+                    ...(pppAllowed ? [] : [{ pppRegistrationNo: null }]),
+                    // A LEXICAL narrowing, offered because the model may know
+                    // the product name. Deliberately not the relevance
+                    // decision: the model is better at that than a `contains`,
+                    // so an empty narrowed result means "ask again without a
+                    // product", which the tool description says.
+                    ...(product
+                        ? [
+                              {
+                                  OR: [
+                                      { title: { contains: product, mode: 'insensitive' as const } },
+                                      { body: { contains: product, mode: 'insensitive' as const } },
+                                      { category: { contains: product, mode: 'insensitive' as const } },
+                                  ],
+                              },
+                          ]
+                        : []),
+                ],
+            },
+            orderBy: { createdAt: 'desc' },
+            take: limit + 1,
+            include: { company: { select: { name: true } } },
+        });
+
+        const page = rows.slice(0, limit);
+        return {
+            rows: page.map((p) => ({
+                id: p.id,
+                company: p.company.name,
+                product: p.title,
+                details: p.body ?? null,
+                validTo: p.validTo ? p.validTo.toISOString() : null,
+            })),
+            hasMore: rows.length > limit,
+        };
+    });
+}
+
 export function companyNameKey(name: string): string {
     return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }

@@ -167,11 +167,68 @@ describeFn('assistant list tools see a seeded farm', () => {
         expect(viaTool.length).toBe(directCount);
     });
 
+    it('list_promotions sees the PLATFORM catalogue — its own case, and why', async () => {
+        /*
+         * Not in the `it.each` above, and the reason is the suite's premise.
+         *
+         * Those cases assert that a tool sees the SEEDED FARM. `Promotion` has
+         * no `tenantId` — it is a platform-wide catalogue — so its rows are not
+         * the farm's and could not be seeded by this suite's tenant fixture.
+         * Adding it to that list would have asserted something the setup
+         * cannot arrange, and the honest fix is a case that arranges its own.
+         *
+         * Also distinct in what it proves: the other tools fail by returning
+         * nothing (#2680). This one can fail by returning TOO MUCH — an
+         * unreviewed or ПРЗ promotion — which `assistant-promotions-
+         * withholding` covers against real rows. Here the question is only
+         * whether the registry's wiring reaches the catalogue at all.
+         */
+        const tag = `seeded-promo-${randomUUID().slice(0, 8)}`;
+        const { companyNameKey } = await import('@/app-layer/usecases/promotions');
+        const company = await prisma.company.create({
+            data: { name: tag, nameKey: companyNameKey(tag) },
+            select: { id: true },
+        });
+        const promo = await prisma.promotion.create({
+            data: {
+                companyId: company.id,
+                title: tag,
+                category: 'fertilizer',
+                // Reviewed and in date, so the three withholding conditions
+                // admit it. A row missing either would make this test pass for
+                // the wrong reason.
+                publishedAt: new Date('2026-01-01T00:00:00Z'),
+                validTo: new Date('2099-01-01T00:00:00Z'),
+            },
+            select: { id: true },
+        });
+        try {
+            const rows = rowsOf(await ASSISTANT_TOOLS.list_promotions.run(ctx(), {}));
+            expect(rows.length).toBeGreaterThan(0);
+            // Scoped to the row this test created, so another suite's leftover
+            // promotion cannot satisfy it.
+            expect(rows.some((r) => (r as { product?: string }).product === tag)).toBe(true);
+        } finally {
+            await prisma.promotion.deleteMany({ where: { id: promo.id } });
+            await prisma.company.deleteMany({ where: { id: company.id } });
+        }
+    });
+
     it('every list tool in the registry is covered by the cases above', () => {
         // Stops the named list silently falling behind the registry — the
         // failure that lets a new tool ship untested while this file looks
-        // thorough.
-        const covered = ['list_farm_tasks', 'list_journal_entries', 'list_cost_entries', 'list_blocks', 'list_exchange_listings'];
+        // thorough. It caught `list_promotions` on the PR that added it, which
+        // is the whole point of deriving the population.
+        const covered = [
+            'list_farm_tasks',
+            'list_journal_entries',
+            'list_cost_entries',
+            'list_blocks',
+            'list_exchange_listings',
+            // Covered by its own case above rather than the `it.each`, because
+            // its rows are platform-wide and not the seeded farm's.
+            'list_promotions',
+        ];
         expect(listTools.sort()).toEqual(covered.sort());
     });
 });

@@ -35,7 +35,7 @@
 import { endingEvent } from './endings';
 import { mergeLinks, type AssistantLink } from './links';
 import type { AssistantProposal } from './propose';
-import { runTool, toolDefs } from './tools';
+import { runTool, toolDefs, type AssistantPromotionBlock } from './tools';
 import { sseFormat, type AssistantStreamEvent } from './stream-events';
 import type { HaltCode } from '../safety/refusal-codes';
 import type { AiCompletion, AiMessage } from '../provider/types';
@@ -67,6 +67,11 @@ export interface ToolLoopResult {
     /** The halt to report after the answer, if the tool phase was cut short. */
     readonly halt: HaltCode | null;
     readonly toolCallsMade: number;
+    /**
+     * Server-built promotion blocks — #2665. Empty when the tool was not
+     * called, which is the common case.
+     */
+    readonly promotions: readonly AssistantPromotionBlock[];
     /**
      * Where the time went (#2670). Returned as well as logged, so a test can
      * assert the stages add up without reading a log line — and so a future
@@ -130,6 +135,15 @@ export async function runToolLoop(
     let partialAny = false;
     let toolCallsMade = 0;
     const linkGroups: AssistantLink[][] = [];
+    /*
+     * Promotions, collected like links and for the same reason (#2665): built
+     * by the server from the rows, never authored by the model.
+     *
+     * A flat list rather than groups: `mergeLinks` exists to dedupe routes
+     * across tools, and only one tool produces promotions, so there is nothing
+     * to merge.
+     */
+    const promotions: AssistantPromotionBlock[] = [];
     let proposal: AssistantProposal | null = null;
     let halt: HaltCode | null = null;
     let text: string | null = null;
@@ -244,6 +258,9 @@ export async function runToolLoop(
             if (outcome.truncated) truncatedAny = true;
             if (outcome.partial) partialAny = true;
             if (outcome.links.length > 0) linkGroups.push([...outcome.links]);
+            if (outcome.promotions && outcome.promotions.length > 0) {
+                promotions.push(...outcome.promotions);
+            }
             if (outcome.proposal !== null) proposal = outcome.proposal;
             emit({
                 type: 'tool_result',
@@ -324,6 +341,7 @@ export async function runToolLoop(
         partialAny,
         halt,
         toolCallsMade,
+        promotions,
         timing: { totalMs, providerMs, providerCalls, toolSelectMs, toolPhaseMs },
     };
 }

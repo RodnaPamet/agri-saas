@@ -274,6 +274,40 @@ export const POST = withApiErrorHandling(
                                         + 'farmer uses. If a tool ever hands you one, say what it '
                                         + 'means in their language instead, and never print it in '
                                         + 'brackets beside the words.\n\n'
+                                        /*
+                                         * #2665 — the advertising separation,
+                                         * stated to the model as well as built
+                                         * structurally.
+                                         *
+                                         * The promotion travels on its own
+                                         * frame, server-built from the rows,
+                                         * so this rule is a BACKSTOP against
+                                         * the model duplicating it in prose
+                                         * rather than the control itself. That
+                                         * ordering matters: DSA Art 26 wants a
+                                         * recipient to be able to tell an
+                                         * advertisement apart clearly, and a
+                                         * prompt is a request while a separate
+                                         * frame is a guarantee.
+                                         *
+                                         * It also forbids RECOMMENDING one,
+                                         * which is the Art 66 half: an
+                                         * assistant that advises a treatment
+                                         * and recommends a discounted
+                                         * pesticide in one breath is doing the
+                                         * thing that article is about.
+                                         *
+                                         * Constant, so it stays in the cached
+                                         * prefix.
+                                         */
+                                        + 'If you call list_promotions, the promotion is shown '
+                                        + 'to the person in its own separate block beside your '
+                                        + 'answer, with the company and the end date. Do NOT '
+                                        + 'repeat the company, the price, the dates or the '
+                                        + 'promotional wording in your own text, and never '
+                                        + 'recommend a promoted product as your advice. Give '
+                                        + 'your agronomic answer as if the promotion were not '
+                                        + 'there.\n\n'
                                         // The RULE is constant, so it stays in the
                                         // cached prefix for everybody. The profile
                                         // itself is appended below only when there
@@ -300,6 +334,14 @@ export const POST = withApiErrorHandling(
                         const answered = await emitAnswer(send, loop.text, {
                             tenantId: ctx.tenantId,
                             links: loop.links,
+                            /*
+                             * The promotions block (#2665). Absent rather than
+                             * empty, so a client need not distinguish the two
+                             * — the same convention `links` uses.
+                             */
+                            ...(loop.promotions.length > 0
+                                ? { promotions: loop.promotions }
+                                : {}),
                             proposal: loop.proposal,
                         });
                         // The halt comes AFTER the answer, because it says the
