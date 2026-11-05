@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { companyNameKey, listPromotionsForAssistant } from '@/app-layer/usecases/promotions';
+import { dayKeyToInstant, farmToday } from '@/lib/calendar-day-key';
 import { makeRequestContext } from '../helpers/make-context';
 
 const raw = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -154,5 +155,60 @@ describeFn('the assistant promotions read withholds what it must', () => {
 
         expect(mine(narrowed.rows)).toEqual([]);
         expect(mine(wide.rows).length).toBeGreaterThan(0);
+    });
+    it('§5 a campaign is live for the WHOLE of its last day, in the FARM zone', async () => {
+        /*
+         * The fourth consumer of #2752's floor, and the only one that speaks
+         * to a farmer in prose rather than rendering a feed.
+         *
+         * `validTo` is a calendar DAY stored as its UTC-midnight label, and
+         * until #2756 it was compared against the INSTANT — so a campaign
+         * whose last day was today was withheld from the assistant for the
+         * whole of that day, while the admin console still called it ACTIVE.
+         * The three instants below are the three readings that differed:
+         *
+         *   03:00 Sofia on the last day  old: WITHHELD   new: live
+         *   23:59 Sofia on the last day  old: WITHHELD   new: live
+         *   00:01 Sofia the day after    old: WITHHELD   new: WITHHELD
+         *
+         * The last two are two minutes apart in wall time and straddle the
+         * boundary, which is what makes the pair worth more than either: a
+         * floor computed in UTC rather than in the farm zone gives both the
+         * SAME day label, so the refuse case fails under it. It is therefore
+         * a control on the ZONE as well as on the comparison.
+         */
+        const lastDay = '2026-06-15';
+        await promo({ title: 'lastday', validTo: dayKeyToInstant(lastDay) });
+        // The positive control, open-ended, so "withheld" and "the read is
+        // broken" stay distinguishable at every one of the three instants.
+        await promo({ title: 'alwayson', validTo: null });
+
+        const earlyOnLastDay = new Date('2026-06-15T00:00:01Z');
+        const lateOnLastDay = new Date('2026-06-15T20:59:00Z');
+        const justAfter = new Date('2026-06-15T21:01:00Z');
+
+        // The premise, asserted rather than assumed: these instants only mean
+        // what the comment says while the farm is on Sofia time. A zone change
+        // must fail here, not silently re-aim the test at a different pair.
+        expect(farmToday(earlyOnLastDay)).toBe(lastDay);
+        expect(farmToday(lateOnLastDay)).toBe(lastDay);
+        expect(farmToday(justAfter)).toBe('2026-06-16');
+
+        const ctx = makeRequestContext('EDITOR', { tenantId, userId: 'u1' });
+        const early = await listPromotionsForAssistant(ctx, { limit: 10, now: earlyOnLastDay });
+        const late = await listPromotionsForAssistant(ctx, { limit: 10, now: lateOnLastDay });
+        const after = await listPromotionsForAssistant(ctx, { limit: 10, now: justAfter });
+
+        // Live for the whole of the last day — both ends of it.
+        expect(mine(early.rows)).toContain('lastday');
+        expect(mine(late.rows)).toContain('lastday');
+        // And gone the moment the farm's day turns over.
+        expect(mine(after.rows)).not.toContain('lastday');
+
+        // Controls: the read itself works at all three instants, so the single
+        // absence above is about the window and not about the query.
+        expect(mine(early.rows)).toContain('alwayson');
+        expect(mine(late.rows)).toContain('alwayson');
+        expect(mine(after.rows)).toContain('alwayson');
     });
 });
