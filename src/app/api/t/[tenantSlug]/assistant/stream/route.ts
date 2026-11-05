@@ -233,19 +233,36 @@ export const POST = withApiErrorHandling(
                                         signal: controller.signal,
                                     }),
                                 /*
-                                 * The picking rounds run on the cheaper task
-                                 * (#2670 item 2). Same entitlement tier, so
-                                 * `assertAiTierAllowed` is unchanged — see
-                                 * `copilot-tool-select` in `routing.ts` for
-                                 * why that is a task rather than a per-call
-                                 * model override.
+                                 * `completeForToolSelection` is deliberately
+                                 * NOT passed — #2751.
+                                 *
+                                 * #2670 item 2 pointed the picking rounds at
+                                 * `copilot-tool-select` (Haiku), on the
+                                 * premise that the ANSWER still came from
+                                 * `complete` on Sonnet. That premise is false:
+                                 * the final tool-less `complete` call is
+                                 * guarded by `if (text === null)`, which its
+                                 * own comment explains runs only when "the
+                                 * tool phase was cut short, or the model kept
+                                 * asking for tools until the cap". On the
+                                 * normal path a picking round returns no tool
+                                 * calls and ITS prose becomes the answer — so
+                                 * Haiku was writing the agronomic answer, and
+                                 * #2745's body told the reader it was not.
+                                 *
+                                 * Measured with two doubles: `picker ->
+                                 * picker`, answer text from the picker, the
+                                 * answerer never called.
+                                 *
+                                 * So the loop falls back to `complete` for
+                                 * every call, which is the pre-#2745
+                                 * behaviour. #2751 holds the decision about
+                                 * what to do instead, and it wants the
+                                 * production `assistant.stage_timing` figures
+                                 * that #2670 added for exactly this purpose.
+                                 * Do not re-add this without fixing the loop
+                                 * so a picker can never answer.
                                  */
-                                completeForToolSelection: (messages, tools) =>
-                                    completeWithRouting(ctx, 'copilot-tool-select', {
-                                        messages,
-                                        ...(tools ? { tools } : {}),
-                                        signal: controller.signal,
-                                    }),
                             },
                             [
                                 {
