@@ -34,9 +34,28 @@
  * faithful the whole time, which is what made it invisible.
  *
  * So: a client MUST continue to `done` after a `halt`, and a new client is
- * wrong if it treats `halt` as terminal. Said here rather than in a guard
- * because the web assistant does not exist yet and a guard over absent code
- * would be a gate narrow enough to always pass.
+ * wrong if it treats `halt` as terminal.
+ *
+ * **This paragraph used to end "said here rather than in a guard, because the
+ * web assistant does not exist yet and a guard over absent code would be a
+ * gate narrow enough to always pass." That was my own call and it was wrong.**
+ * The repo already had the answer: `social-routes-flag-gated` has a population
+ * of ZERO until P2 and is deliberately built for it — it prints its
+ * denominator, proves its detector against synthetic sources, and defends its
+ * own roots, so it becomes a gate the moment a real surface appears rather
+ * than a tick over nothing.
+ *
+ * `tests/guards/assistant-stream-consumers-read-disclosures.test.ts` is that
+ * shape, and the objection is answered rather than ignored. The failure this
+ * is really about is a web assistant built months from now by somebody who
+ * reads the paragraph above, reasonably believes the disclosure is handled,
+ * and ships a client that stops at `halt`. A note is read by whoever looks; a
+ * guard fires on the diff that creates the problem.
+ *
+ * Its field list also covers `answer.promotions[].safetyWording` (#2665),
+ * which fails in the OTHER direction: rendering that block without the
+ * wording shows an advert with no legally required text beside it, where
+ * missing `truncatedAny` merely says nothing.
  *
  * **`error` is deliberately NOT a member.** Every terminal state a person
  * should see is `refusal`, `halt` or `done`. An `error` event would be a
