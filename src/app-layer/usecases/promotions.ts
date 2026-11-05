@@ -18,7 +18,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { translateFor } from '@/lib/i18n/server-messages';
 import { DEFAULT_LOCALE, isLocale } from '@/lib/i18n/locales';
 import { logger } from '@/lib/observability/logger';
-import { dayKeyInTz, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
+import { dayKeyInTz, farmTodayFloor, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import { Prisma } from '@prisma/client';
 
 export interface PromotionDto {
@@ -99,11 +99,25 @@ async function globalDb() {
  * empty too.
  */
 function visibleWhere(now: Date): Prisma.PromotionWhereInput {
+    // DAY TO DAY, not day to moment (#2752).
+    //
+    // These two columns are calendar DAYS — the picker picks days, the operator
+    // thinks in days — stored in `DateTime`. Comparing them against `now` loses
+    // the rest of the current day at both ends, and at the `validTo` end that
+    // meant a campaign was invisible for ALL of the last day the operator chose
+    // for it: stored as local midnight, `validTo >= now` expired it at 00:00
+    // Sofia on that very day. #2725's spec called `validTo` the "inclusive last
+    // day", which was a description of the field's meaning and not of this
+    // query. It is true now.
+    //
+    // `farmTodayFloor` is the instant LABELLING today in the farm's zone, so a
+    // row whose day label is today satisfies both bounds for the whole of it.
+    const today = farmTodayFloor(now);
     return {
         AND: [
             { publishedAt: { not: null } },
-            { OR: [{ validFrom: null }, { validFrom: { lte: now } }] },
-            { OR: [{ validTo: null }, { validTo: { gte: now } }] },
+            { OR: [{ validFrom: null }, { validFrom: { lte: today } }] },
+            { OR: [{ validTo: null }, { validTo: { gte: today } }] },
         ],
     };
 }
@@ -346,7 +360,21 @@ export interface CreatePromotionLeadInput {
  * notification is written for the requesting user — fail-open, so a
  * notification error can never roll back the lead.
  */
-export async function createPromotionLead(ctx: RequestContext, input: CreatePromotionLeadInput) {
+export async function createPromotionLead(
+    ctx: RequestContext,
+    input: CreatePromotionLeadInput,
+    /**
+     * `now` is injectable for the same reason `listActivePromotions` takes it:
+     * the window boundary is otherwise unreachable without touching the clock,
+     * and #2752 changed what this function asks AT that boundary.
+     *
+     * ONE clock, not two. It overrides `consentedAt`, which IS this function's
+     * notion of now — the recorded consent time and the instant the window is
+     * evaluated at are deliberately the same value, so a seam that moved only
+     * one of them would be testing an arrangement production never has.
+     */
+    opts: { now?: Date } = {},
+) {
     assertCanWrite(ctx);
     // No lead without recorded consent. This is a lawfulness gate, not
     // validation: the row is contact PII that exists to be forwarded to a
@@ -354,7 +382,7 @@ export async function createPromotionLead(ctx: RequestContext, input: CreateProm
     if (input.consent !== true) {
         throw badRequest('Consent is required before a request can be sent to the supplier');
     }
-    const consentedAt = new Date();
+    const consentedAt = opts.now ?? new Date();
     const sanitizedMessage = sanitizePlainText(input.message);
 
     const { lead, promotion } = await runInTenantContext(ctx, async (db) => {
@@ -386,9 +414,24 @@ export async function createPromotionLead(ctx: RequestContext, input: CreateProm
         // copy. Costs one indexed lookup by primary key.
         //
         // Evaluated at `consentedAt`, not at a fresh `new Date()`: that is the
-        // instant the person agreed to send this, which is the right frame for
-        // "was the offer live when they consented" and removes a race between
+        // instant the person agreed to send this, and it removes a race between
         // the two reads.
+        //
+        // AND THE QUESTION IT ASKS CHANGED WITH #2752, so the paragraph above
+        // no longer reaches it. `visibleWhere` now compares DAY to day, so this
+        // asks "was the offer live on the DAY they consented", not "at the
+        // instant". That is strictly more permissive at both ends: a lead
+        // consented to at 23:50 on the campaign's last day is now ACCEPTED,
+        // where the instant comparison refused it.
+        //
+        // Which is wanted — it is the same property the read side gained, that
+        // a campaign is live for the whole of its last day, applied to the
+        // write. A farmer who can SEE an offer must be able to ask about it,
+        // and the two were inconsistent for the last day of every campaign.
+        // But it is a different question from the one the race argument
+        // settles, so it is written down rather than inherited. Pinned by the
+        // boundary cases in `offers-feed-and-lead-window`; without them the
+        // only thing holding this surface's semantics would be this comment.
         const stillVisible = await db.promotion.findFirst({
             where: { AND: [{ id: promotion.id }, visibleWhere(consentedAt)] },
             select: { id: true },

@@ -72,6 +72,54 @@ export function farmToday(now: Date = new Date()): string {
  * output as `YYYY-MM-DD` directly — see the identical use in
  * `task-due.ts`.
  */
+/** A `YYYY-MM-DD` day key, anchored so a partial match cannot pass. */
+export const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The instant that LABELS a calendar day: `YYYY-MM-DD` at UTC midnight.
+ *
+ * The inverse of `dayKeyInTz` for this codebase's storage convention, and the
+ * convention is already everywhere — `query-params.ts`,
+ * `calendar-google-sync.ts`, `news-event-extraction.ts`,
+ * `support-scheme-extraction.ts` and `JournalRepository.ts` all store a day as
+ * `T00:00:00Z`.
+ *
+ * ## Why UTC midnight and not LOCAL midnight
+ *
+ * Local midnight encodes the zone in the stored instant, and then every reader
+ * and every writer has to agree about which zone — which is how «2 Nov» came
+ * to be stored as `2026-11-01T22:00:00Z` and read back as the 1st (#2725).
+ * UTC midnight is a LABEL: `dayKeyInTz` recovers the same key for any zone at
+ * a non-negative offset, so the round trip is exact for `FARM_TIME_ZONE`
+ * (always +2 or +3) and there is no arithmetic left for a client to get wrong.
+ *
+ * Throws on a malformed key rather than returning an Invalid Date, which would
+ * propagate into a Prisma comparison as a silent never-match.
+ */
+export function dayKeyToInstant(dayKey: string): Date {
+    if (!DAY_KEY_PATTERN.test(dayKey)) {
+        throw new Error(`Not a YYYY-MM-DD day key: ${JSON.stringify(dayKey)}`);
+    }
+    const d = new Date(`${dayKey}T00:00:00.000Z`);
+    if (Number.isNaN(d.getTime())) {
+        throw new Error(`Not a real calendar day: ${JSON.stringify(dayKey)}`);
+    }
+    return d;
+}
+
+/**
+ * Today, as the comparable instant that labels it — the floor for comparing a
+ * DAY-valued column against the present.
+ *
+ * `validTo >= farmTodayFloor(now)` is live THROUGH the whole of its last day,
+ * where `validTo >= now` expired it at the start of that day (#2752). The
+ * asymmetry is the bug: a day-valued column compared against a moment loses
+ * the rest of the day.
+ */
+export function farmTodayFloor(now: Date = new Date()): Date {
+    return dayKeyToInstant(farmToday(now));
+}
+
 export function dayKeyInTz(date: Date | string, tz: string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
     return new Intl.DateTimeFormat('en-CA', {

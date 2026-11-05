@@ -14,6 +14,7 @@
  * @module app-layer/usecases/promotion-admin
  */
 import type { RequestContext } from '../types';
+import { farmTodayFloor, dayKeyInTz, dayKeyToInstant, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, codedNotFound } from '@/lib/errors/types';
@@ -27,9 +28,24 @@ export function derivePromotionStatus(
     p: { publishedAt: Date | null; validFrom: Date | null; validTo: Date | null },
     now: Date = new Date(),
 ): PromotionStatus {
+    // DAY TO DAY, on the SAME floor `visibleWhere` uses (#2752).
+    //
+    // This is the second definition of "the window is open" in the codebase,
+    // and the two must agree: this one labels a row in the console, that one
+    // decides whether a farm can see it. They were both wrong in the same
+    // direction — `validTo < now` with a local-midnight value reports EXPIRED
+    // from 00:00 Sofia on the campaign's own last day — so they agreed by
+    // accident. Fixing only `visibleWhere` would have made the console say
+    // EXPIRED about a promotion the feed was still serving, which is worse
+    // than both being wrong, and would have falsified the `status` field's own
+    // description in the spec.
+    //
+    // They cannot share one expression — four states against a boolean — so
+    // they share the FLOOR instead, which is the part that was wrong.
+    const today = farmTodayFloor(now);
     if (!p.publishedAt) return 'DRAFT';
-    if (p.validFrom && p.validFrom > now) return 'SCHEDULED';
-    if (p.validTo && p.validTo < now) return 'EXPIRED';
+    if (p.validFrom && p.validFrom > today) return 'SCHEDULED';
+    if (p.validTo && p.validTo < today) return 'EXPIRED';
     return 'LIVE';
 }
 
@@ -45,6 +61,7 @@ export interface AdminPromotionDto {
     /** ЗЗР рег. № when this advertises a ПРЗ, null when it does not (#2664). */
     pppRegistrationNo: string | null;
     publishedAt: string | null;
+    /** The campaign window as calendar DAYS, `YYYY-MM-DD`, `validTo` inclusive (#2752). */
     validFrom: string | null;
     validTo: string | null;
     status: PromotionStatus;
@@ -81,8 +98,8 @@ export async function listAllPromotions(ctx: RequestContext): Promise<AdminPromo
             ctaUrl: p.ctaUrl,
             pppRegistrationNo: p.pppRegistrationNo,
             publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
-            validFrom: p.validFrom ? p.validFrom.toISOString() : null,
-            validTo: p.validTo ? p.validTo.toISOString() : null,
+            validFrom: p.validFrom ? dayKeyInTz(p.validFrom, FARM_TIME_ZONE) : null,
+            validTo: p.validTo ? dayKeyInTz(p.validTo, FARM_TIME_ZONE) : null,
             status: derivePromotionStatus(p, now),
             leadCount: p._count.leads,
         }));
@@ -103,8 +120,9 @@ export interface PromotionWriteInput {
      * `CreatePromotionSchema` for the Art 66 reasoning.
      */
     pppRegistrationNo?: string | null;
-    validFrom?: Date | null;
-    validTo?: Date | null;
+    /** Calendar DAYS, `YYYY-MM-DD` — converted to their labelling instant here (#2752). */
+    validFrom?: string | null;
+    validTo?: string | null;
 }
 
 /**
@@ -127,7 +145,7 @@ function normalisePppRegistrationNo(v: string | null | undefined): string | null
     return clean === '' ? null : clean;
 }
 
-function assertWindowOrdered(from: Date | null | undefined, to: Date | null | undefined) {
+function assertWindowOrdered(from: string | null | undefined, to: string | null | undefined) {
     if (from && to && to < from) {
         throw badRequest('The campaign end date must not precede its start date');
     }
@@ -154,8 +172,8 @@ export async function createPromotion(ctx: RequestContext, input: PromotionWrite
                 category: input.category,
                 ctaUrl: input.ctaUrl ?? null,
                 pppRegistrationNo: normalisePppRegistrationNo(input.pppRegistrationNo),
-                validFrom: input.validFrom ?? null,
-                validTo: input.validTo ?? null,
+                validFrom: input.validFrom ? dayKeyToInstant(input.validFrom) : null,
+                validTo: input.validTo ? dayKeyToInstant(input.validTo) : null,
                 publishedAt: null,
             },
             include: { company: { select: { name: true } } },
@@ -200,8 +218,17 @@ export async function updatePromotion(
 
         // A partial edit may carry only one end of the window; the other has to
         // come from the stored row or an edit could invert it silently.
-        const from = input.validFrom === undefined ? existing.validFrom : input.validFrom;
-        const to = input.validTo === undefined ? existing.validTo : input.validTo;
+        //
+        // The stored ends are converted to DAY KEYS first (#2752), because that
+        // is the unit the incoming ones are in and the unit the comparison
+        // means. Comparing a day key against a stored instant would be the
+        // day-versus-moment confusion this change exists to remove, one level
+        // up — and `assertWindowOrdered` compares strings, so it would have
+        // been a type error rather than a silent one. tsc caught exactly this.
+        const storedFrom = existing.validFrom ? dayKeyInTz(existing.validFrom, FARM_TIME_ZONE) : null;
+        const storedTo = existing.validTo ? dayKeyInTz(existing.validTo, FARM_TIME_ZONE) : null;
+        const from = input.validFrom === undefined ? storedFrom : input.validFrom;
+        const to = input.validTo === undefined ? storedTo : input.validTo;
         assertWindowOrdered(from, to);
 
         const companyId =
@@ -221,8 +248,12 @@ export async function updatePromotion(
         if (input.pppRegistrationNo !== undefined) {
             data.pppRegistrationNo = normalisePppRegistrationNo(input.pppRegistrationNo);
         }
-        if (input.validFrom !== undefined) data.validFrom = input.validFrom;
-        if (input.validTo !== undefined) data.validTo = input.validTo;
+        if (input.validFrom !== undefined) {
+            data.validFrom = input.validFrom ? dayKeyToInstant(input.validFrom) : null;
+        }
+        if (input.validTo !== undefined) {
+            data.validTo = input.validTo ? dayKeyToInstant(input.validTo) : null;
+        }
 
         const promotion = await db.promotion.update({
             where: { id },

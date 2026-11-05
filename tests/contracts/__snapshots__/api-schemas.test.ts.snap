@@ -992,23 +992,25 @@ exports[`API contract — per-schema snapshots schema: AdminPromotion 1`] = `
         "null"
       ],
       "format": "date-time",
-      "description": "Null means DRAFT — nothing reaches a farm until it is set. Publishing IS the review act, which is what lets the Art 66 predicate read \`publishedAt != null && pppRegistrationNo == null\` as \\"reviewed, not a ПРЗ\\".\\n\\n**An INSTANT, and not part of the day-key mismatch below.** This is a moment — when support published — not a campaign day, so there is nothing here to reconcile with the feed, which does not expose the field at all."
+      "description": "Null means DRAFT — nothing reaches a farm until it is set. Publishing IS the review act, which is what lets the Art 66 predicate read \`publishedAt != null && pppRegistrationNo == null\` as \\"reviewed, not a ПРЗ\\".\\n\\n**An INSTANT, and the only one here.** This is a moment — when support published — not a campaign day, which is why it stayed an instant when \`validFrom\`/\`validTo\` became day keys in #2752. The feed does not expose it at all."
     },
     "validFrom": {
       "type": [
         "string",
         "null"
       ],
-      "format": "date-time",
-      "description": "An ISO-8601 INSTANT today, unlike the farmer-facing feed, where \`GET /offers\` serves this same column as a \`YYYY-MM-DD\` day key in the farm timezone (#2725).\\n\\n**This is changing to a day key, read AND write, in a follow-up** — agreed with the iOS session 2026-11-05, and their argument is the write side rather than the read. An instant on the wire makes every client produce \\"local midnight in the farm zone\\", which is exactly the conversion that put «2 Nov» on the 1st; a day key moves it to the server, where \`dayKeyInTz\` already lives. It is a separate PR because it changes the web console that writes this field, and that does not belong in a documentation change. Build against day keys if you are starting now."
+      "format": "date",
+      "example": "2026-11-02",
+      "description": "A calendar DAY, \`YYYY-MM-DD\` in the farm timezone — the SAME shape \`GET /offers\` serves (#2725), read and write (#2752).\\n\\nIt was an ISO instant until #2752, and the reason it is not is the WRITE side rather than the read: an instant on the wire makes every client produce \\"local midnight in the farm zone\\", which is exactly the conversion that stored «2 Nov» as \`2026-11-01T22:00:00Z\`. Now the wire carries the day the operator picked and the server owns which instant labels it, so there is no conversion left for a client to get wrong. An instant is REFUSED on write, deliberately — accepting one would let that conversion back in silently.\\n\\n\`validTo\` is the INCLUSIVE last day, and as of #2752 that is true of the query as well as of the field: the window is compared day to day, so a campaign is live for the whole of its last day. Before that it was invisible for all of it."
     },
     "validTo": {
       "type": [
         "string",
         "null"
       ],
-      "format": "date-time",
-      "description": "An ISO-8601 INSTANT today, unlike the farmer-facing feed, where \`GET /offers\` serves this same column as a \`YYYY-MM-DD\` day key in the farm timezone (#2725).\\n\\n**This is changing to a day key, read AND write, in a follow-up** — agreed with the iOS session 2026-11-05, and their argument is the write side rather than the read. An instant on the wire makes every client produce \\"local midnight in the farm zone\\", which is exactly the conversion that put «2 Nov» on the 1st; a day key moves it to the server, where \`dayKeyInTz\` already lives. It is a separate PR because it changes the web console that writes this field, and that does not belong in a documentation change. Build against day keys if you are starting now."
+      "format": "date",
+      "example": "2026-11-30",
+      "description": "A calendar DAY, \`YYYY-MM-DD\` in the farm timezone — the SAME shape \`GET /offers\` serves (#2725), read and write (#2752).\\n\\nIt was an ISO instant until #2752, and the reason it is not is the WRITE side rather than the read: an instant on the wire makes every client produce \\"local midnight in the farm zone\\", which is exactly the conversion that stored «2 Nov» as \`2026-11-01T22:00:00Z\`. Now the wire carries the day the operator picked and the server owns which instant labels it, so there is no conversion left for a client to get wrong. An instant is REFUSED on write, deliberately — accepting one would let that conversion back in silently.\\n\\n\`validTo\` is the INCLUSIVE last day, and as of #2752 that is true of the query as well as of the field: the window is compared day to day, so a campaign is live for the whole of its last day. Before that it was invisible for all of it."
     },
     "status": {
       "type": "string",
@@ -5260,13 +5262,17 @@ exports[`API contract — per-schema snapshots schema: CreatePromotionBody 1`] =
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date",
+      "example": "2026-11-02"
     },
     "validTo": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date",
+      "example": "2026-11-30"
     },
     "pppRegistrationNo": {
       "type": [
@@ -19796,13 +19802,17 @@ exports[`API contract — per-schema snapshots schema: UpdatePromotionBody 1`] =
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date",
+      "example": "2026-11-02"
     },
     "validTo": {
       "type": [
         "string",
         "null"
-      ]
+      ],
+      "format": "date",
+      "example": "2026-11-30"
     },
     "pppRegistrationNo": {
       "type": [
