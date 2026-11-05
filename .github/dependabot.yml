@@ -30,6 +30,36 @@ updates:
     # both).
     groups:
       # ── Version updates (weekly cadence) ──
+      # The @aws-sdk pair moves as ONE UNIT, in its OWN PR.
+      #
+      # These two are a COUPLED SET. `getSignedUrl(client, command)` takes
+      # `@aws-sdk/client-s3`'s client as
+      # `Client<any, ServiceInputTypes, MetadataBearer, any>`, a structural type
+      # the presigner resolves through its own dependency tree. Move one and not
+      # the other and that parameter stops accepting our `S3Client` — a
+      # typecheck failure in src/lib/storage/s3-provider.ts, with nothing in the
+      # install complaining. Same shape as the typescript-eslint family below,
+      # but it fails at COMPILE time rather than at ERESOLVE, which is strictly
+      # harder to read: `npm ci` succeeds and the error names a generic.
+      #
+      # ISOLATED for the reason the `next` exclusion is: #2731 bundled 21
+      # production deps and 3.1157 -> 3.1160 broke that parameter type, so 19
+      # unrelated bumps were held by it (#2758). Grouped-and-alone, an AWS
+      # incompatibility reddens its own PR and the weekly batch flows.
+      #
+      # TWO mechanisms hold this, deliberately, because they fail differently.
+      # `exclude-patterns` on `production` below is the ORDER-INDEPENDENT half:
+      # even if this group is moved, AWS packages cannot rejoin the big batch.
+      # Position above `production` is the half that survives somebody deleting
+      # the exclusion — a dependency joins the FIRST group whose patterns match,
+      # and `production` matches by `dependency-type` with no patterns, so it
+      # would otherwise swallow these.
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
+        update-types:
+          - minor
+          - patch
       # Production deps — review carefully
       #
       # `next` is deliberately EXCLUDED so it lands as its own PR.
@@ -54,6 +84,23 @@ updates:
         dependency-type: production
         exclude-patterns:
           - "next"
+          # `stripe` lands as its own PR: it is the only dependency whose bump
+          # carries a DATED API VERSION into source. `src/lib/stripe.ts` pins
+          # `apiVersion` and the SDK types that string as a literal union, so a
+          # bump makes the pin un-assignable and `stripe-billing-wiring` fails
+          # by design ("the pin matches the INSTALLED SDK, so an upgrade fails
+          # loudly"). The one-line edit that clears it is an ADOPTION of a new
+          # Stripe API version — a behaviour change for webhooks and billing
+          # objects — which should be reviewed on its own and not inside a
+          # 21-package diff where CI going green is the only signal (#2758).
+          #
+          # Exact, no wildcard, for the `next` / `next-auth` reason above: there
+          # is no `@stripe/*` dependency today, and if one arrives it must be
+          # decided on rather than swept in by a pattern written now.
+          - "stripe"
+          # The @aws-sdk pair has its own group ABOVE. Listed here too so the
+          # separation survives a reordering — see that group's comment.
+          - "@aws-sdk/*"
         update-types:
           - minor
           - patch
