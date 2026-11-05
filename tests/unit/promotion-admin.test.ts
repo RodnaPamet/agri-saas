@@ -299,3 +299,88 @@ describe('deletePromotion', () => {
         expect(mockPromotion.delete).toHaveBeenCalledWith({ where: { id: 'p-1' } });
     });
 });
+
+describe('the review-time ПРЗ classification (#2664)', () => {
+    // `Promotion.pppRegistrationNo` has existed since #2673 with a docblock
+    // saying it is "Set by the owner at REVIEW time" — and until this change
+    // nothing could set it: absent from `promotion-admin.schemas.ts` and from
+    // the console form, so every promotion written through the console had it
+    // NULL, reachable only by direct database access.
+    //
+    // That matters because the predicate #2664 proposes — withhold ПРЗ
+    // promotions until the Reg. (EC) 1107/2009 Art 66 wording is configured —
+    // reads this column, and `NULL` is indistinguishable from "nobody could
+    // record it". A fertiliser and a pesticide looked identical.
+
+    it('stores a typed registration number, sanitised', async () => {
+        await createPromotion(ctx, {
+            companyId: 'c-1',
+            title: 'Offer',
+            category: 'products',
+            pppRegistrationNo: '  01234-ПРЗ  ',
+        });
+        expect(mockPromotion.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ pppRegistrationNo: '01234-ПРЗ' }),
+            }),
+        );
+    });
+
+    it("stores '' as NULL, because '' == null is FALSE", async () => {
+        // THE LOAD-BEARING ONE. The predicate tests `pppRegistrationNo == null`.
+        // An empty string is not null, so it would be read as "this IS a plant
+        // protection product" and withhold a fertiliser — while the console
+        // shows an empty box either way, so nobody could see why. Two spellings
+        // of one fact, which is the collapse #2697 was.
+        await createPromotion(ctx, {
+            companyId: 'c-1',
+            title: 'Offer',
+            category: 'fertilizer',
+            pppRegistrationNo: '',
+        });
+        const { data } = mockPromotion.create.mock.calls[0][0];
+        expect(data.pppRegistrationNo).toBeNull();
+    });
+
+    it('stores whitespace-only as NULL — sanitise BEFORE testing emptiness', async () => {
+        // `sanitizePlainText` trims (#1825), so three spaces are truthy as
+        // given and empty once cleaned. Testing the raw value first — the
+        // obvious `v ? sanitize(v) : null` — stores '' and reintroduces the
+        // case above.
+        await createPromotion(ctx, {
+            companyId: 'c-1',
+            title: 'Offer',
+            category: 'fertilizer',
+            pppRegistrationNo: '   ',
+        });
+        const { data } = mockPromotion.create.mock.calls[0][0];
+        expect(data.pppRegistrationNo).toBeNull();
+    });
+
+    it('is NULL when the reviewer says nothing', async () => {
+        await createPromotion(ctx, { companyId: 'c-1', title: 'Offer', category: 'seeds' });
+        const { data } = mockPromotion.create.mock.calls[0][0];
+        expect(data.pppRegistrationNo).toBeNull();
+    });
+
+    it('an explicit null on edit RECLASSIFIES — this was a ПРЗ, it is not now', async () => {
+        mockPromotion.findUnique.mockResolvedValue({
+            id: 'p-1', publishedAt: null, validFrom: null, validTo: null,
+        });
+        await updatePromotion(ctx, 'p-1', { pppRegistrationNo: null });
+        const { data } = mockPromotion.update.mock.calls[0][0];
+        expect(data).toHaveProperty('pppRegistrationNo', null);
+    });
+
+    it('an omitted field leaves the stored classification ALONE', async () => {
+        // The distinction every other field here relies on: `undefined` means
+        // "not part of this edit". Writing null on omission would silently
+        // declassify a ПРЗ whenever somebody fixed a typo in the title.
+        mockPromotion.findUnique.mockResolvedValue({
+            id: 'p-1', publishedAt: null, validFrom: null, validTo: null,
+        });
+        await updatePromotion(ctx, 'p-1', { title: 'Corrected title' });
+        const { data } = mockPromotion.update.mock.calls[0][0];
+        expect(data).not.toHaveProperty('pppRegistrationNo');
+    });
+});

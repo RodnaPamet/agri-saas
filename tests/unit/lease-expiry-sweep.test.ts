@@ -39,6 +39,22 @@ const mockPublish = jest.fn();
 
 const mockLogger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn(), fatal: jest.fn(), child: jest.fn().mockReturnThis() };
 
+/**
+ * Every farm a lessor-name read ran under, in order (#2728).
+ *
+ * `lessorName` is encrypted under the FARM's DEK and this sweep is
+ * cross-tenant by design, so the name is fetched per farm through
+ * `withTenantDb` rather than selected on the cross-tenant query — which
+ * previously returned the `v2:` envelope and interpolated it into the
+ * notification a farmer reads.
+ *
+ * The seam has to be mocked here because the suite's `prisma` double is a
+ * plain object with no `$transaction`, and `withTenantDb` opens one. Recording
+ * the farm turns that necessity into the assertion the suite was missing.
+ */
+const tenantContexts: string[] = [];
+const mockLessorFindMany = jest.fn();
+
 beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
@@ -74,10 +90,25 @@ beforeEach(() => {
         runJob: jest.fn(async (_n: string, fn: () => Promise<unknown>) => fn()),
     }));
     jest.mock('@/lib/observability/logger', () => ({ logger: mockLogger }));
+    jest.mock('@/lib/db-context', () => ({
+        withTenantDb: async (tenantId: string, cb: (db: unknown) => Promise<unknown>) => {
+            tenantContexts.push(tenantId);
+            return cb({
+                parcelLease: { findMany: (...a: unknown[]) => mockLessorFindMany(...a) },
+            });
+        },
+    }));
 
     mockMembershipFindMany.mockResolvedValue([{ tenantId: 't1', userId: 'u1', tenant: { slug: 'acme' } }]);
     mockNotifFindMany.mockResolvedValue([]);
     mockNotifCreateMany.mockResolvedValue({ count: 1 });
+    tenantContexts.length = 0;
+    // Default: echo back a readable name for whatever ids are asked for, so
+    // every existing test keeps a plaintext lessor without restating it.
+    mockLessorFindMany.mockImplementation(
+        async (args: { where: { id: { in: string[] } } }) =>
+            args.where.id.in.map((id) => ({ id, lessorName: 'Иван Петров' })),
+    );
 });
 
 async function run(opts: Record<string, unknown> = {}) {
@@ -234,6 +265,66 @@ describe('runLeaseExpirySweep — the copy follows the recipient (#2511)', () =>
             expect(row.message).toContain('Нива 3');
             expect(row.message).toContain('Иван Петров');
             expect(row.message).toContain('2026-07-01');
+        }
+    });
+});
+
+describe('runLeaseExpirySweep — the lessor name is per-FARM (#2728)', () => {
+    /** A lease as the cross-tenant metadata query returns it: no `lessorName`. */
+    const lease = (id: string, tenantId: string) => ({
+        id,
+        tenantId,
+        endDate: new Date('2026-07-01T00:00:00Z'),
+        parcel: { name: 'Нива 1', locationId: 'loc-9' },
+    });
+
+    test('the cross-tenant query does NOT select lessorName', async () => {
+        mockLeaseFindMany.mockResolvedValue([lease('l1', 't1')]);
+        await run();
+        const args = mockLeaseFindMany.mock.calls[0][0] as { select: Record<string, unknown> };
+        /*
+         * The whole defect. `lessorName` is encrypted under the FARM's DEK and
+         * this query spans farms by construction, so selecting it here returns
+         * the `v2:` envelope — with no error and no log — and that envelope
+         * was interpolated into the notification a farmer opens.
+         */
+        expect(args.select).not.toHaveProperty('lessorName');
+        expect(args.select).toHaveProperty('tenantId');
+    });
+
+    test('one context per FARM, not one per lease', async () => {
+        mockLeaseFindMany.mockResolvedValue([
+            lease('a1', 't1'),
+            lease('a2', 't1'),
+            lease('b1', 't2'),
+        ]);
+        mockMembershipFindMany.mockResolvedValue([
+            { tenantId: 't1', userId: 'u1', tenant: { slug: 'acme' } },
+            { tenantId: 't2', userId: 'u2', tenant: { slug: 'beta' } },
+        ]);
+        await run();
+        // Two farms, three leases, two contexts. A context per lease would be
+        // an N+1 over the larger number; a single context would hand back
+        // ciphertext for whichever farm it did not pick.
+        expect(tenantContexts).toEqual(['t1', 't2']);
+    });
+
+    test('an UNREADABLE name degrades to the placeholder, never to an envelope', async () => {
+        mockLeaseFindMany.mockResolvedValue([lease('l1', 't1')]);
+        // A farm whose DEK could not be resolved: `resolveTenantDekPair` logs
+        // and returns NO_DEK_PAIR, so the extension passes the ciphertext on.
+        // `readableOrNull` is what stops it reaching a reader.
+        mockLessorFindMany.mockResolvedValue([
+            { id: 'l1', lessorName: 'v2:GnxO1vf/3MkC4orNu07tftzwnlxBD99pB5hqmN1pwds' },
+        ]);
+        await run();
+        const rows = (mockNotifCreateMany.mock.calls[0][0] as { data: Array<{ message: string }> }).data;
+        expect(rows.length).toBeGreaterThan(0);
+        for (const row of rows) {
+            expect(row.message).not.toMatch(/v[12]:/);
+            // The catalogue's own placeholder, so the sentence stays one
+            // sentence rather than branching the copy.
+            expect(row.message).toContain('непосочен');
         }
     });
 });

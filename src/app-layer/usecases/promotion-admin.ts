@@ -42,6 +42,8 @@ export interface AdminPromotionDto {
     mediaUrl: string | null;
     category: string;
     ctaUrl: string | null;
+    /** ЗЗР рег. № when this advertises a ПРЗ, null when it does not (#2664). */
+    pppRegistrationNo: string | null;
     publishedAt: string | null;
     validFrom: string | null;
     validTo: string | null;
@@ -77,6 +79,7 @@ export async function listAllPromotions(ctx: RequestContext): Promise<AdminPromo
             mediaUrl: p.mediaUrl,
             category: p.category,
             ctaUrl: p.ctaUrl,
+            pppRegistrationNo: p.pppRegistrationNo,
             publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
             validFrom: p.validFrom ? p.validFrom.toISOString() : null,
             validTo: p.validTo ? p.validTo.toISOString() : null,
@@ -95,8 +98,33 @@ export interface PromotionWriteInput {
     body?: string | null;
     category: string;
     ctaUrl?: string | null;
+    /**
+     * ЗЗР рег. № — set at REVIEW time, never from the leaflet read. See
+     * `CreatePromotionSchema` for the Art 66 reasoning.
+     */
+    pppRegistrationNo?: string | null;
     validFrom?: Date | null;
     validTo?: Date | null;
+}
+
+/**
+ * '' and null must not both mean "not a ПРЗ" (#2664).
+ *
+ * The predicate this field exists for reads `pppRegistrationNo == null`, and
+ * `'' == null` is FALSE — so an empty string would be read as "this IS a plant
+ * protection product" and withhold a fertiliser from the assistant, with the
+ * console showing a blank box either way. Two spellings of one fact is the
+ * collapse that produced #2697's second half, in the other direction.
+ *
+ * Sanitise BEFORE testing emptiness, not after: `sanitizePlainText` trims
+ * (#1825), so a value of three spaces is truthy as given and empty once
+ * cleaned. Testing the raw value first stores `''`, which is the case this
+ * function exists to prevent.
+ */
+function normalisePppRegistrationNo(v: string | null | undefined): string | null {
+    if (v == null) return null;
+    const clean = sanitizePlainText(v);
+    return clean === '' ? null : clean;
 }
 
 function assertWindowOrdered(from: Date | null | undefined, to: Date | null | undefined) {
@@ -125,6 +153,7 @@ export async function createPromotion(ctx: RequestContext, input: PromotionWrite
                 body: input.body ? sanitizePlainText(input.body) : null,
                 category: input.category,
                 ctaUrl: input.ctaUrl ?? null,
+                pppRegistrationNo: normalisePppRegistrationNo(input.pppRegistrationNo),
                 validFrom: input.validFrom ?? null,
                 validTo: input.validTo ?? null,
                 publishedAt: null,
@@ -189,6 +218,9 @@ export async function updatePromotion(
         }
         if (input.category !== undefined) data.category = input.category;
         if (input.ctaUrl !== undefined) data.ctaUrl = input.ctaUrl;
+        if (input.pppRegistrationNo !== undefined) {
+            data.pppRegistrationNo = normalisePppRegistrationNo(input.pppRegistrationNo);
+        }
         if (input.validFrom !== undefined) data.validFrom = input.validFrom;
         if (input.validTo !== undefined) data.validTo = input.validTo;
 
