@@ -43,6 +43,7 @@
  *     the blocked party's context, so the API is what withholds it. Exporting
  *     "who has blocked you" would defeat the silence P5.2b exists to provide.
  */
+import { readContentPerTenant, readableOrNull } from '@/lib/db/per-tenant-content';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { EXPORTED_MODELS } from '@/lib/privacy/personal-data-registry';
@@ -263,10 +264,24 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             orderBy: { createdAt: 'desc' },
             take,
         }),
+        /*
+         * `requestMessage` is deliberately ABSENT here and fetched below.
+         *
+         * It is encrypted under the INQUIRING FARM's DEK — `promotions.prisma`
+         * says so on the column itself: "A reader outside that tenant (the
+         * future digest job) must therefore resolve each lead's tenant context
+         * to decrypt." This export IS that reader, and it runs privileged and
+         * tenantless by design, so `resolveTenantDekPair` found no farm and
+         * handed back the `v2:` envelope (#2724).
+         *
+         * Art 15 then delivered bytes the person cannot read, with no sign
+         * anything was wrong — worse than a named omission, because it looks
+         * like data.
+         */
         prisma.promotionLead.findMany({
             where: { inquirerUserId: userId },
             select: {
-                id: true, promotionId: true, requestMessage: true,
+                id: true, promotionId: true, inquirerTenantId: true,
                 consentedAt: true, status: true, createdAt: true,
             },
             orderBy: { createdAt: 'desc' },
@@ -314,6 +329,38 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         exportedModels: EXPORTED_MODELS.length,
     });
 
+    /*
+     * The lead messages, one read per INQUIRING FARM, because the key is per
+     * farm. The grouping key is `inquirerTenantId` — a plain FK rather than an
+     * RLS `tenantId` column, which is why this read cannot inherit a context
+     * from the caller and why the export's own tenantless design was not the
+     * mistake.
+     *
+     * `null` for a message whose key could not be resolved: `readableOrNull`
+     * refuses to hand an envelope to a reader, and a person is better told a
+     * field is unavailable than handed bytes they cannot read.
+     */
+    const leadMessages = new Map<string, string | null>();
+    if (promotionLeads.length > 0) {
+        for (const row of await readContentPerTenant(
+            promotionLeads.map((l) => ({ id: l.id, tenantId: l.inquirerTenantId })),
+            (db, ids) =>
+                db.promotionLead.findMany({
+                    where: { id: { in: ids } },
+                    select: { id: true, requestMessage: true },
+                }),
+        )) {
+            leadMessages.set(
+                row.id,
+                readableOrNull(row.requestMessage, 'personalDataExport.promotionLeads', row.id),
+            );
+        }
+    }
+    const promotionLeadsWithMessage = promotionLeads.map((lead) => ({
+        ...lead,
+        requestMessage: leadMessages.get(lead.id) ?? null,
+    }));
+
     return {
         exportedAt: new Date().toISOString(),
         notIncluded: NOT_INCLUDED,
@@ -328,7 +375,7 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         exchangeInquiries: collection(inquiries as Record<string, unknown>[]),
         exchangeMessages: collection(messages as Record<string, unknown>[]),
         insuranceLeads: collection(insuranceLeads as Record<string, unknown>[]),
-        promotionLeads: collection(promotionLeads as Record<string, unknown>[]),
+        promotionLeads: collection(promotionLeadsWithMessage as Record<string, unknown>[]),
         assistantMemory: collection(assistantMemory as Record<string, unknown>[]),
         organisationMemberships: collection(orgMemberships as Record<string, unknown>[]),
         featureCohorts: collection(cohorts as Record<string, unknown>[]),
