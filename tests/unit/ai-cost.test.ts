@@ -49,3 +49,60 @@ describe('estimateCostMicros', () => {
         expect(Number.isInteger(micros)).toBe(true);
     });
 });
+
+describe('the three input rates (#2669)', () => {
+    /** A usage row carrying cache figures, as #2674 now maps them. */
+    const cached = (prompt: number, read: number, write: number): AiUsage => ({
+        promptTokens: prompt,
+        completionTokens: 0,
+        totalTokens: prompt,
+        cacheReadTokens: read,
+        cacheWriteTokens: write,
+    });
+
+    it('a cache READ is charged at 0.1x input, not at zero', () => {
+        /*
+         * The defect. `promptTokens` EXCLUDES the cached portion on Anthropic,
+         * and nothing else looked at the cache fields — so a cached token cost
+         * nothing. Sonnet input is $3/Mtok, so 1M cache reads are $0.30.
+         */
+        expect(estimateCostMicros('claude-sonnet-4-6', cached(0, 1_000_000, 0))).toBe(300_000);
+    });
+
+    it('a cache WRITE is charged at 1.25x input', () => {
+        expect(estimateCostMicros('claude-sonnet-4-6', cached(0, 0, 1_000_000))).toBe(3_750_000);
+    });
+
+    it('the three classes ADD — a realistic row is the sum of its parts', () => {
+        // 100k full-rate + 900k cached read + 50k cache write, Sonnet.
+        //   100_000 * 3   =   300_000
+        //   900_000 * 0.3 =   270_000
+        //    50_000 * 3.75=   187_500
+        const micros = estimateCostMicros('claude-sonnet-4-6', cached(100_000, 900_000, 50_000));
+        expect(micros).toBe(300_000 + 270_000 + 187_500);
+    });
+
+    it('REGRESSION CONTROL — the uncached arithmetic is unchanged', () => {
+        /*
+         * The real row #2669 was diagnosed from: 372 prompt / 163 completion
+         * recorded 3,561 µ$, and `372*3 + 163*15 = 3,561` exactly. A row with
+         * no cache measurement must still price identically, or this change
+         * would have silently restated every historical figure.
+         */
+        expect(estimateCostMicros('claude-sonnet-4-6', usage(372, 163))).toBe(3_561);
+    });
+
+    it('an ABSENT cache figure costs nothing; an absent MULTIPLIER costs FULL rate', () => {
+        /*
+         * Two different defaults, on purpose. No measurement means no charge.
+         * But a vendor whose discount we have not priced charges full rate —
+         * the conservative direction, because over-counting refuses a question
+         * while under-counting lets a ceiling be passed silently (#2666).
+         *
+         * `llama-3.3-70b` has no multipliers in the table, so its cache reads
+         * are charged at its full input rate of $0.59/Mtok.
+         */
+        expect(estimateCostMicros('claude-sonnet-4-6', usage(1000, 0))).toBe(3_000);
+        expect(estimateCostMicros('llama-3.3-70b', cached(0, 1_000_000, 0))).toBe(590_000);
+    });
+});
