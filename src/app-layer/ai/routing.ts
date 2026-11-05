@@ -71,6 +71,8 @@ import { env } from '@/env';
  * The set of routable tasks. Each maps to a tier in `TASK_TIER`.
  *
  *   copilot-chat      — interactive assistant chat (default reasoning).
+ *   copilot-tool-select — the assistant's TOOL-PICKING rounds only (#2670).
+ *                       Same tier as `copilot-chat`, cheaper model.
  *   spray-explanation — explain a spray/treatment recommendation.
  *   dosage-calc       — compute a chemical dosage (load-bearing: wrong
  *                       numbers are dangerous → premium tier).
@@ -80,6 +82,7 @@ import { env } from '@/env';
  */
 export type AiTask =
     | 'copilot-chat'
+    | 'copilot-tool-select'
     | 'spray-explanation'
     | 'dosage-calc'
     | 'regulatory'
@@ -148,6 +151,58 @@ const ROUTES: Record<AiTask, AiRoute> = {
         failover: [
             { backend: 'openrouter', model: OPENROUTER_SONNET },
             { backend: 'claude', model: CLAUDE_HAIKU },
+        ],
+    },
+    /*
+     * The assistant's TOOL-PICKING rounds — #2670 item 2.
+     *
+     * One answered question is two provider calls: the first picks a tool and
+     * emits ~160 completion tokens, the second does the reasoning and emits
+     * ~500. Running the picker on Haiku is the issue's biggest single lever.
+     *
+     * ## Why a TASK and not a per-call model override
+     *
+     * `tier` gates entitlements — `completeWithRouting` runs
+     * `assertAiTierAllowed(ctx, tier)` so a FREE tenant cannot reach a
+     * premium model by naming a premium task. A per-call override would put a
+     * second model-choosing mechanism beside the one that carries the tier,
+     * and the cheap path is exactly where a bypass would not be noticed.
+     *
+     * This keeps `tier: 'standard'` — identical to `copilot-chat` — so the
+     * gate is unchanged BY CONSTRUCTION rather than by remembering to apply
+     * it. Nothing about who may use the assistant moves; only which model
+     * reads the question to decide which tool to call.
+     *
+     * ## The failover is INVERTED relative to copilot-chat, deliberately
+     *
+     * `copilot-chat` degrades Sonnet -> OpenRouter Sonnet -> Haiku. This one
+     * escalates Haiku -> Sonnet, because a tool-picking round that Haiku
+     * cannot complete is better answered by the stronger model than refused:
+     * the whole turn depends on getting a tool call out of it, and the
+     * fallback costs one question's latency rather than the answer.
+     *
+     * ## What is NOT measured, stated rather than implied
+     *
+     * Whether Haiku picks the SAME tools as Sonnet. There is no eval harness
+     * for tool choice in this repo, so the quality axis is unverified — and a
+     * wrongly chosen tool can produce a confidently wrong answer rather than a
+     * visible failure. Two things bound that risk: the ANSWER still runs on
+     * Sonnet, so reasoning quality is untouched and only the choice moves; and
+     * reverting is this one table entry plus the route's wiring, which is why
+     * it is shaped as a single declarative entry.
+     */
+    'copilot-tool-select': {
+        tier: 'standard',
+        backend: 'claude',
+        model: CLAUDE_HAIKU,
+        // Lower than `copilot-chat`'s 4096: this call emits a tool call, not
+        // prose. Measured at ~160 completion tokens.
+        maxTokens: 1024,
+        timeoutMs: 30_000,
+        retries: 1,
+        failover: [
+            { backend: 'claude', model: CLAUDE_SONNET },
+            { backend: 'openrouter', model: OPENROUTER_SONNET },
         ],
     },
     // Spray explanation — cheap/standard; Haiku is plenty, fail over to

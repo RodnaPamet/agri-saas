@@ -77,6 +77,12 @@ export interface ToolLoopResult {
         /** Summed across every provider call in the turn, including the final one. */
         readonly providerMs: number;
         readonly providerCalls: number;
+        /**
+         * Of `providerMs`, the part spent PICKING tools (#2670 item 2) — the
+         * figure that should fall when that round moves to a cheaper model.
+         * `providerMs - toolSelectMs` is the answer call.
+         */
+        readonly toolSelectMs: number;
         /** Wall-clock of the tool rounds, which is now the SLOWEST tool per round. */
         readonly toolPhaseMs: number;
     };
@@ -85,6 +91,24 @@ export interface ToolLoopResult {
 export interface ToolLoopDeps {
     readonly ctx: RequestContext;
     readonly complete: (
+        messages: AiMessage[],
+        tools: ReturnType<typeof toolDefs> | undefined,
+    ) => Promise<AiCompletion>;
+    /**
+     * The call that PICKS tools, if it should differ from the one that writes
+     * the answer (#2670 item 2).
+     *
+     * One answered question is two provider calls with very different jobs:
+     * this one emits a tool call (~160 completion tokens), `complete` does the
+     * reasoning (~500). The production route points this at
+     * `copilot-tool-select` — same entitlement tier, cheaper model.
+     *
+     * OPTIONAL, falling back to `complete`, which is the pre-#2670 behaviour.
+     * That keeps the change additive for the ~20 tests that drive this loop
+     * with one function, and the fallback is the slow-but-correct direction
+     * rather than a silent downgrade.
+     */
+    readonly completeForToolSelection?: (
         messages: AiMessage[],
         tools: ReturnType<typeof toolDefs> | undefined,
     ) => Promise<AiCompletion>;
@@ -125,6 +149,13 @@ export async function runToolLoop(
     let providerMs = 0;
     let toolPhaseMs = 0;
     let providerCalls = 0;
+    /*
+     * Split out of `providerMs` once the picking rounds moved to their own
+     * model (#2670 item 2), because the whole point of that change is a figure
+     * that moves. `providerMs` still totals every call, so the two stay
+     * reconcilable: `providerMs - toolSelectMs` is the answer call.
+     */
+    let toolSelectMs = 0;
 
     for (let round = 0; round < MAX_TOOL_CALLS; round++) {
         if (now() - started > TOOL_PHASE_BUDGET_MS) {
@@ -132,8 +163,12 @@ export async function runToolLoop(
             break;
         }
         const callStarted = now();
-        const completion = await deps.complete(messages, toolDefs());
-        providerMs += now() - callStarted;
+        // The PICKER, not the answerer — see `completeForToolSelection`.
+        const pick = deps.completeForToolSelection ?? deps.complete;
+        const completion = await pick(messages, toolDefs());
+        const pickMs = now() - callStarted;
+        providerMs += pickMs;
+        toolSelectMs += pickMs;
         providerCalls += 1;
         const calls = completion.toolCalls ?? [];
         if (calls.length === 0) {
@@ -273,6 +308,8 @@ export async function runToolLoop(
         totalMs,
         providerMs,
         providerCalls,
+        toolSelectMs,
+        answerMs: Math.max(0, providerMs - toolSelectMs),
         toolPhaseMs,
         otherMs: Math.max(0, totalMs - providerMs - toolPhaseMs),
         toolCallsMade,
@@ -287,7 +324,7 @@ export async function runToolLoop(
         partialAny,
         halt,
         toolCallsMade,
-        timing: { totalMs, providerMs, providerCalls, toolPhaseMs },
+        timing: { totalMs, providerMs, providerCalls, toolSelectMs, toolPhaseMs },
     };
 }
 
