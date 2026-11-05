@@ -511,3 +511,108 @@ describe('one round runs its tools in PARALLEL, and folds them in order (#2670)'
         );
     });
 });
+
+describe('the PICKING rounds use their own call, the answer does not (#2670 item 2)', () => {
+    it('tool rounds go to the picker; the FINAL tool-less call goes to `complete`', async () => {
+        /*
+         * The split is the whole change. One answered question is two provider
+         * calls with different jobs — pick a tool (~160 completion tokens) and
+         * write the answer (~500) — and only the first moves to a cheaper
+         * model.
+         *
+         * Asserted by which FUNCTION each call lands on, not by a model name:
+         * the model is `routing.ts`'s business, and a test naming it would go
+         * stale the next time the route table moves.
+         */
+        listTasks.mockResolvedValue([]);
+        const h = harness();
+        const picker = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValue({ toolCalls: [call('list_farm_tasks')] });
+        const answerer = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValue({ text: 'готово' });
+
+        const out = await runToolLoop(
+            { ctx, send: h.send, complete: answerer, completeForToolSelection: picker } as never,
+            [],
+        );
+
+        // The picker ran the rounds — until the budget stopped it, since this
+        // double always asks for another tool.
+        expect(picker).toHaveBeenCalled();
+        // The answerer ran exactly once: the final tool-less call.
+        expect(answerer).toHaveBeenCalledTimes(1);
+        expect(answerer.mock.calls[0]?.[1]).toBeUndefined();
+        expect(out.text).toBe('готово');
+    });
+
+    it('the picker is given the TOOL DEFINITIONS; the answerer is not', async () => {
+        // The reason the split is safe: the answering call has no tools, so a
+        // cheaper picker cannot change what the answer is allowed to do.
+        listTasks.mockResolvedValue([]);
+        const h = harness();
+        const picker = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: [call('list_farm_tasks')] })
+            .mockResolvedValue({ text: '' });
+        const answerer = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValue({ text: 'готово' });
+
+        await runToolLoop(
+            { ctx, send: h.send, complete: answerer, completeForToolSelection: picker } as never,
+            [],
+        );
+
+        expect(picker.mock.calls[0]?.[1]).toBeDefined();
+    });
+
+    it('OMITTING the picker falls back to `complete` — the pre-#2670 behaviour', async () => {
+        /*
+         * `completeForToolSelection` is optional so the change stays additive
+         * for every caller that drives this loop with one function. The
+         * fallback must be the slow-but-correct direction, never a silently
+         * different model.
+         */
+        listTasks.mockResolvedValue([]);
+        const h = harness();
+        const only = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: [call('list_farm_tasks')] })
+            .mockResolvedValueOnce({ text: 'готово' });
+
+        const out = await runToolLoop({ ctx, send: h.send, complete: only } as never, []);
+
+        expect(only).toHaveBeenCalledTimes(2);
+        expect(out.text).toBe('готово');
+    });
+
+    it('`toolSelectMs` is reported separately, so the lever has a figure that moves', async () => {
+        /*
+         * #2670's item 3 exists so item 2 can be judged. Without the split,
+         * moving the picking round to a cheaper model would change
+         * `providerMs` and nobody could say which half moved.
+         *
+         * `providerMs` still totals every call, so the two reconcile:
+         * `providerMs - toolSelectMs` is the answer call.
+         */
+        listTasks.mockResolvedValue([]);
+        const h = harness();
+        const picker = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValueOnce({ toolCalls: [call('list_farm_tasks')] })
+            .mockResolvedValue({ text: '' });
+        const answerer = jest
+            .fn<Promise<{ text?: string; toolCalls?: unknown[] }>, unknown[]>()
+            .mockResolvedValue({ text: 'готово' });
+
+        const out = await runToolLoop(
+            { ctx, send: h.send, complete: answerer, completeForToolSelection: picker } as never,
+            [],
+        );
+
+        expect(out.timing.toolSelectMs).toBeGreaterThanOrEqual(0);
+        expect(out.timing.providerMs).toBeGreaterThanOrEqual(out.timing.toolSelectMs);
+    });
+});

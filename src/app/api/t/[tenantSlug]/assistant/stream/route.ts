@@ -232,6 +232,20 @@ export const POST = withApiErrorHandling(
                                         ...(tools ? { tools } : {}),
                                         signal: controller.signal,
                                     }),
+                                /*
+                                 * The picking rounds run on the cheaper task
+                                 * (#2670 item 2). Same entitlement tier, so
+                                 * `assertAiTierAllowed` is unchanged — see
+                                 * `copilot-tool-select` in `routing.ts` for
+                                 * why that is a task rather than a per-call
+                                 * model override.
+                                 */
+                                completeForToolSelection: (messages, tools) =>
+                                    completeWithRouting(ctx, 'copilot-tool-select', {
+                                        messages,
+                                        ...(tools ? { tools } : {}),
+                                        signal: controller.signal,
+                                    }),
                             },
                             [
                                 {
