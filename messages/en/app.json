@@ -6997,6 +6997,8 @@
         "PRODUCT_NAME_REQUIRED": "A product name is required.",
         "PRODUCT_NOT_FOUND": "That product was not found.",
         "PROMOTION_LEAD_ALREADY_SENT": "You have already requested an offer for this promotion.",
+        "PROMOTION_NOT_AVAILABLE": "That offer is not currently running. It may have ended, been withdrawn, or not started yet.",
+        "PROMOTION_NOT_FOUND": "That offer could not be found.",
         "REFERENCE_NOT_IN_TENANT": "The referenced {reference} was not found in this farm.",
         "REGISTER_EMPTY_FOR_PERIOD": "Nothing was recorded for this block in this period.",
         "SEASON_INVALID_DATE": "Season start and end must be valid dates.",

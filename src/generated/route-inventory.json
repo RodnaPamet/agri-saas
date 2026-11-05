@@ -1931,9 +1931,14 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/offers",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/offers/leads",
       "status": "live",
-      "documented": false
+      "documented": true
     },
     {
       "path": "/api/t/{tenantSlug}/onboarding/finish",

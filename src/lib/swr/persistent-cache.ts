@@ -157,6 +157,12 @@ const PERSISTABLE_PATHS: readonly string[] = [
     '/items',
     '/units',
     '/parcels/by-crop',
+    // #2725 — the «Оферти» feed. Supplier advertising copy: commercial content
+    // every farm sees the same of, with no personal data in it, so this is the
+    // easy direction of this allowlist. Decided rather than defaulted, because
+    // adding an entry means accepting the response on a phone that may be lost
+    // or sold — the question `ParcelLease.lessorName` exists to force.
+    '/offers',
 ];
 
 /**

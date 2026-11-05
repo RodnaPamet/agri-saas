@@ -179,7 +179,19 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 // less honestly than the baseline does. Re-derived from the file, not
 // incremented: two branches each lowering this by one is how it ended up
 // one too high before (#2578).
-const UNDOCUMENTED_CEILING = 216;
+// 216 → 215 (#2725): `/api/t/{tenantSlug}/offers/leads` is documented now,
+// so its baseline entry went with it. It shipped with #12, before the rule
+// that a new path is described, and it is documented now because the native
+// client generates from this spec and could not see the route's request body
+// or its refusal codes at all — `PROMOTION_LEAD_ALREADY_SENT`,
+// `WRITE_FORBIDDEN_FOR_ROLE`, and the two 404s #2725 separates.
+//
+// Its new sibling `GET /api/t/{tenantSlug}/offers` never joined the baseline:
+// it is described from birth, so the list route costs this ceiling nothing.
+//
+// COUNTED from the file, not subtracted from the line above — the comment
+// block's own instruction after #2578 left this one too high.
+const UNDOCUMENTED_CEILING = 215;
 // Lowered 246 -> 245 by #1376: `/api/auth/register` was retired, so its
 // baseline entry went with it. The ceiling tracks the baseline exactly —
 // leaving slack is how a shrink-only ratchet quietly becomes a denylist with

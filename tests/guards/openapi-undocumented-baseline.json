@@ -201,7 +201,6 @@
     "/api/t/{tenantSlug}/me/interests",
     "/api/t/{tenantSlug}/notification-settings",
     "/api/t/{tenantSlug}/notification-settings/run-job",
-    "/api/t/{tenantSlug}/offers/leads",
     "/api/t/{tenantSlug}/onboarding/finish",
     "/api/t/{tenantSlug}/onboarding/metrics",
     "/api/t/{tenantSlug}/onboarding/restart",

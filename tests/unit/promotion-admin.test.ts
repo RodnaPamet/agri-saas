@@ -177,9 +177,20 @@ describe('updatePromotion', () => {
         expect(mockPromotion.update).not.toHaveBeenCalled();
     });
 
-    it('404s on a missing promotion', async () => {
+    it('404s on a missing promotion, with the CODE not the prose', async () => {
+        // Pinned to `code`, not to the English sentence. This asserted
+        // `/not found/i` and went red when #2725 gave the throw a code — the
+        // message became "No promotion exists under that id." and the test
+        // read like a regression while the behaviour had improved.
+        //
+        // The code is the contract; the message is displayed copy a client
+        // translates from `errors.PROMOTION_NOT_FOUND` in both locales. A test
+        // pinned to server prose breaks on every copy edit and passes on a
+        // wrong code, which is the wrong way round.
         mockPromotion.findUnique.mockResolvedValue(null);
-        await expect(updatePromotion(ctx, 'nope', { title: 'X' })).rejects.toThrow(/not found/i);
+        await expect(updatePromotion(ctx, 'nope', { title: 'X' })).rejects.toMatchObject({
+            code: 'PROMOTION_NOT_FOUND',
+        });
     });
 });
 
