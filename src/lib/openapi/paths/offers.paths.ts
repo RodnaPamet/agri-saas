@@ -162,10 +162,17 @@ export function registerOffersPaths(registry: OpenAPIRegistry): void {
                 description:
                     'TWO distinct codes, and they mean different things.\n\n'
                     + '`PROMOTION_NOT_FOUND` — no promotion exists under that id.\n\n'
-                    + '`PROMOTION_NOT_AVAILABLE` — it exists and is no longer running: withdrawn, '
-                    + 'not yet started, or past its last day. The expected case for a card held in '
-                    + 'a client cache, so show «Тази оферта вече не е активна» and refresh the feed '
-                    + 'rather than reporting a missing record. These were ONE uncoded 404 until '
+                    + '`PROMOTION_NOT_AVAILABLE` — it exists and is not currently running: '
+                    + 'withdrawn, not yet started, or past its last day. The expected case for a '
+                    + 'card held in a client cache, so show the `errors.PROMOTION_NOT_AVAILABLE` '
+                    + 'string and refresh the feed rather than reporting a missing record.\n\n'
+                    + '**One code for all three states, deliberately** — agrent-ios ruling '
+                    + '2026-11-05. A not-yet-started refusal only ever reaches a CACHED card, '
+                    + 'because the feed filters future campaigns out, and the list reloads anyway; '
+                    + 'a fourth code would add a case the client never otherwise shows. The copy '
+                    + 'says "not currently running" rather than "no longer running" for that '
+                    + 'reason: the latter asserts it WAS running, which is false for a campaign '
+                    + 'that has not opened. These were ONE uncoded 404 until '
                     + '#2725; separating them leaks nothing, because `Promotion` is a global '
                     + 'catalogue every farm sees identically.',
             },

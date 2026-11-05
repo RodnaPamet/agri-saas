@@ -287,7 +287,11 @@ export async function createPromotionLead(ctx: RequestContext, input: CreateProm
             // and a stale card is the expected case rather than an odd one.
             throw codedNotFound(
                 'PROMOTION_NOT_AVAILABLE',
-                'That offer is no longer running.',
+                // NOT "no longer running": that asserts it WAS running, which is
+                // false for a campaign whose `validFrom` has not arrived — one of
+                // the three states this single code covers. agrent-ios ruled on
+                // the wording rather than taking a fourth code, 2026-11-05.
+                'That offer is not currently running.',
                 { reference: 'promotionId' },
             );
         }
