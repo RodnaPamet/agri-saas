@@ -23,6 +23,14 @@ import { withTenantDb } from '@/lib/db-context';
 import { prisma as extended } from '@/lib/prisma';
 import { readContentPerTenant, readableOrNull } from '@/lib/db/per-tenant-content';
 import { runLeaseExpirySweep } from '@/app-layer/jobs/lease-expiry-sweep';
+import {
+    __resetAuditStreamForTests,
+    __setStreamPost,
+    __setTenantStreamConfigResolver,
+    flushAllAuditStreams,
+    streamAuditEvent,
+} from '@/app-layer/events/audit-stream';
+import { computeHmacSha256 } from '@/app-layer/integrations/webhook-crypto';
 
 /** RAW, so a read of stored bytes is not decrypted on the way out. */
 const raw = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
@@ -215,5 +223,88 @@ describeFn('the lease-expiry sweep names the lessor, not an envelope (#2728)', (
         // OWNER opens on their phone.
         expect(texts).toContain('Георги Димитров');
         expect(texts).not.toMatch(/v[12]:/);
+    });
+});
+
+describeFn('the audit-stream signing key is the SECRET, not the envelope (#2738)', () => {
+    // An HMAC key this suite invents, writes to a throwaway test tenant and
+    // compares a signature against. It authenticates nothing anywhere.
+    const SECRET = 'super-secret-hmac-key'; // pragma: allowlist secret -- test-only fixture key
+
+    beforeEach(() => {
+        __resetAuditStreamForTests();
+        // null restores the DEFAULT resolver, which is the subject — a stubbed
+        // resolver would hand back whatever secret the stub was given and the
+        // test would grade nothing.
+        __setTenantStreamConfigResolver(null);
+    });
+
+    afterEach(() => {
+        __setStreamPost(null);
+        __resetAuditStreamForTests();
+    });
+
+    it('§6 the outbound signature verifies against the PLAINTEXT secret', async () => {
+        await withTenantDb(FARM_B, (db) =>
+            db.tenantSecuritySettings.upsert({
+                where: { tenantId: FARM_B },
+                update: {
+                    auditStreamUrl: 'https://siem.example.test/ingest',
+                    auditStreamSecretEncrypted: SECRET,
+                },
+                create: {
+                    tenantId: FARM_B,
+                    auditStreamUrl: 'https://siem.example.test/ingest',
+                    auditStreamSecretEncrypted: SECRET,
+                },
+                select: { tenantId: true },
+            }),
+        );
+
+        let seenBody: string | null = null;
+        let seenHeaders: Record<string, string> = {};
+        __setStreamPost(async (_url, body, headers) => {
+            seenBody = body;
+            seenHeaders = headers;
+            return { ok: true, status: 200 };
+        });
+
+        // The full `StreamedAuditEvent`. A partial one cast through `as never`
+        // let `deliverBatch` build an undefined body and throw inside the
+        // flush's own catch — which logged and returned, so the test saw "no
+        // post" and would have read as the defect it is checking for.
+        streamAuditEvent({
+            id: 'audit-row-1',
+            entryHash: 'h1',
+            previousHash: null,
+            tenantId: FARM_B,
+            userId: ownerA,
+            actorType: 'SYSTEM',
+            entity: 'Task',
+            entityId: 'e1',
+            action: 'TEST_EVENT',
+            detailsJson: { ok: true },
+            metadataJson: {},
+            requestId: 'req-1',
+            occurredAt: new Date('2026-11-05T10:00:00Z').toISOString(),
+        });
+        await flushAllAuditStreams();
+
+        expect(seenBody).not.toBeNull();
+        /*
+         * The whole point. Before the fix the resolver returned the `v2:`
+         * envelope and the signer HMAC'd with THAT, so the receiving SIEM
+         * would reject every signature while our side saw a clean delivery.
+         *
+         * Recomputing the expected digest from the plaintext secret is what
+         * makes this a test of the KEY rather than of the plumbing: asserting
+         * "a signature header exists" passes with any key at all.
+         */
+        const expected = computeHmacSha256(seenBody as unknown as string, SECRET, 'hex');
+        const sent = Object.entries(seenHeaders).find(([k]) =>
+            k.toLowerCase().includes('signature'),
+        );
+        expect(sent).toBeDefined();
+        expect(sent?.[1]).toContain(expected);
     });
 });

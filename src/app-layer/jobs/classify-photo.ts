@@ -27,10 +27,11 @@
  */
 import { Readable } from 'stream';
 import prisma from '@/lib/prisma';
+import { readableOrNull } from '@/lib/db/per-tenant-content';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
 import { getProviderByName } from '@/lib/storage';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, withTenantDb } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
 import { publishFreshNotifications } from '@/app-layer/notifications/publish-fresh';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -192,18 +193,41 @@ export async function runClassifyPhoto(payload: ClassifyPhotoPayload): Promise<C
                 where: { id: fileId, tenantId },
                 select: { pathKey: true, mimeType: true, storageProvider: true },
             });
-            const logEntry = await prisma.logEntry.findFirst({
-                where: { id: logEntryId, tenantId },
-                select: {
-                    title: true,
-                    notes: true,
-                    attributesJson: true,
-                    // Ported from the deleted photo-pest-id twin: notify the
-                    // uploader when their photo has been analysed.
-                    createdByUserId: true,
-                    tenant: { select: { slug: true } },
-                },
-            });
+            /*
+             * INSIDE the farm's context, because `LogEntry.notes` is encrypted
+             * under this FARM's DEK (#2739).
+             *
+             * This read used to sit on the global client. `runJob` above opens
+             * an observability context and binds NO tenant, and the farm
+             * context in this function opens later — for the `update` that
+             * writes the result. So "does this file use runInTenantContext?"
+             * answered yes and was irrelevant to this read, which returned the
+             * `v2:` ENVELOPE with no error and no log.
+             *
+             * It then went to the model: `contextNote` below joins `title` and
+             * `notes` and passes them to `groundRecommendation`. `notes` is the
+             * farmer's own description of the photo — the single most useful
+             * context for identifying a pest — and the model was receiving
+             * base64. Tokens spent on it are also billed against `ai_tokens`.
+             *
+             * Latent rather than live: zero rows carried an
+             * `attributesJson.pestId` in production when this was measured, so
+             * the classifier has never produced a result there.
+             */
+            const logEntry = await withTenantDb(tenantId, (db) =>
+                db.logEntry.findFirst({
+                    where: { id: logEntryId, tenantId },
+                    select: {
+                        title: true,
+                        notes: true,
+                        attributesJson: true,
+                        // Ported from the deleted photo-pest-id twin: notify
+                        // the uploader when their photo has been analysed.
+                        createdByUserId: true,
+                        tenant: { select: { slug: true } },
+                    },
+                }),
+            );
 
             const isImage = file?.mimeType?.startsWith('image/');
             if (file && logEntry && isImage) {
@@ -272,8 +296,23 @@ export async function runClassifyPhoto(payload: ClassifyPhotoPayload): Promise<C
 
                     if (identification) {
                         const lowConfidence = identification.confidence < LOW_CONFIDENCE_THRESHOLD;
+                        /*
+                         * `readableOrNull` on `notes`, so a value that still
+                         * cannot be read becomes an ABSENT context slot rather
+                         * than an opaque string. The prompt has no way to
+                         * explain an envelope, and an unbounded opaque value in
+                         * a context slot is worse than a missing one.
+                         */
+                        const readableNotes =
+                            logEntry.notes === null
+                                ? null
+                                : readableOrNull(
+                                      logEntry.notes,
+                                      'classifyPhoto.logEntry.notes',
+                                      logEntryId,
+                                  );
                         const contextNote =
-                            [logEntry.title, logEntry.notes].filter(Boolean).join(' — ') || null;
+                            [logEntry.title, readableNotes].filter(Boolean).join(' — ') || null;
 
                         let recommendation: string;
                         if (lowConfidence) {

@@ -40,11 +40,27 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
-// runInTenantContext just runs the callback with a stub db exposing the
-// logEntry.update we assert on.
+/**
+ * Every farm the entry READ ran under, in order (#2739).
+ *
+ * `LogEntry.notes` is encrypted under the farm's DEK, and this read used to sit
+ * on the global client — so it returned the `v2:` envelope and fed it to the
+ * model as the farmer's description of the photo. The farm context this file
+ * already opened was for the UPDATE, later in the same function, which is why
+ * "does this file use runInTenantContext?" answered yes and said nothing about
+ * the read.
+ */
+const tenantContexts: string[] = [];
+// `runInTenantContext` runs the callback with a stub db exposing the
+// `logEntry.update` we assert on. `withTenantDb` wraps the READ, and records
+// the farm so the property above is checkable rather than merely unblocked.
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) =>
         cb({ logEntry: { update: (...a: unknown[]) => updateMock(...a) } }),
+    withTenantDb: (tenantId: string, cb: (db: unknown) => unknown) => {
+        tenantContexts.push(tenantId);
+        return cb({ logEntry: { findFirst: (...a: unknown[]) => findFirstEntry(...a) } });
+    },
 }));
 
 import { runClassifyPhoto, PEST_ID_DISCLAIMER } from '@/app-layer/jobs/classify-photo';
@@ -57,6 +73,7 @@ beforeEach(() => {
     findFirstEntry.mockResolvedValue({ title: 'Leaf', notes: 'yellowing', attributesJson: { costAmount: 5 } });
     readStreamMock.mockImplementation(() => Readable.from(Buffer.from('imgbytes')));
     assertAiBudgetMock.mockResolvedValue({ used: 0, limit: null, remaining: null, softWarn: false });
+    tenantContexts.length = 0;
 });
 
 describe('runClassifyPhoto — confident result', () => {
@@ -249,5 +266,44 @@ describe('runClassifyPhoto — the AI budget seam (#2596)', () => {
         await runClassifyPhoto(PAYLOAD);
 
         expect(recordAiUsageMock).not.toHaveBeenCalled();
+    });
+});
+
+describe('the entry read runs in the farm that holds the key (#2739)', () => {
+    test('the read is bound to the payload tenant', async () => {
+        await runClassifyPhoto(PAYLOAD);
+        // Without this the read returns ciphertext, silently, and the model is
+        // handed base64 where the farmer's description should be.
+        expect(tenantContexts).toEqual([PAYLOAD.tenantId]);
+    });
+
+    test('the farmer’s notes reach the grounding step as PLAINTEXT', async () => {
+        await runClassifyPhoto(PAYLOAD);
+        // `contextNote` joins title and notes and goes to `groundRecommendation`,
+        // which asks the knowledge base. The fixture's notes are 'yellowing'.
+        expect(askKnowledgeBaseMock).toHaveBeenCalled();
+        const asked = JSON.stringify(askKnowledgeBaseMock.mock.calls);
+        expect(asked).toContain('yellowing');
+        expect(asked).not.toMatch(/v[12]:/);
+    });
+
+    test('an UNREADABLE note becomes an ABSENT context slot, not an opaque string', async () => {
+        /*
+         * `withTenantDb` makes the key resolvable; it cannot make it resolve.
+         * A failed DEK lookup logs and returns NO_DEK_PAIR, so the extension
+         * passes the ciphertext on — and the prompt has no way to explain an
+         * envelope. `readableOrNull` drops it instead: an unbounded opaque
+         * value in a context slot is worse than a missing one.
+         */
+        findFirstEntry.mockResolvedValue({
+            title: 'Leaf',
+            notes: 'v2:GnxO1vf/3MkC4orNu07tftzwnlxBD99pB5hqmN1pwds',
+            attributesJson: {},
+        });
+        await runClassifyPhoto(PAYLOAD);
+        const asked = JSON.stringify(askKnowledgeBaseMock.mock.calls);
+        expect(asked).not.toMatch(/v[12]:/);
+        // The title survives — only the unreadable half is dropped.
+        expect(asked).toContain('Leaf');
     });
 });

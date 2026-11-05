@@ -125,23 +125,64 @@ export interface TenantStreamConfig {
 async function defaultResolveTenantStreamConfig(
     tenantId: string,
 ): Promise<TenantStreamConfig | null> {
-    const { prisma } = await import('@/lib/prisma');
-    const settings = await prisma.tenantSecuritySettings.findUnique({
-        where: { tenantId },
-        select: {
-            auditStreamUrl: true,
-            auditStreamSecretEncrypted: true,
-        },
-    });
+    const { withTenantDb } = await import('@/lib/db-context');
+    const { readableOrNull } = await import('@/lib/db/per-tenant-content');
+    /*
+     * INSIDE the farm's context, and that is about the KEY (#2738).
+     *
+     * `auditStreamSecretEncrypted` is in `ENCRYPTED_FIELDS` and
+     * `TenantSecuritySettings` is NOT in `GLOBAL_KEK_MODELS`, so the value is
+     * protected by this FARM's DEK. `resolveTenantDekPair` takes the farm from
+     * the audit context — it has to, since it needs the key before the row
+     * arrives — and this resolver runs from a flush timer, which binds none.
+     *
+     * So the read returned the `v2:` ENVELOPE, and the comment that used to
+     * sit here said the opposite: "Field-encryption middleware decrypts on
+     * read, so the value here is already plaintext." The manifest reference
+     * was right and the conclusion did not follow — the extension decrypts
+     * when it can resolve a key.
+     *
+     * Measured with a positive control, same row, same column:
+     *   bound   -> "super-secret-hmac-key"
+     *   unbound -> "v2:JJY54+XaIvx1ps7tJ3D5d5qVHZ8e4voDpZl1CFvm6xF9…"
+     *
+     * This value is a SIGNING key. `buildOutboundHeaders` HMACs the payload
+     * with it, so the envelope would have become the key: every signature the
+     * receiving SIEM verifies fails, while our side sees a delivery attempt
+     * that looked fine. The audit row is already committed by then and this
+     * writer is fail-safe by design (#1269), so the failure is silent on both
+     * ends — and a customer configures forwarding precisely for completeness.
+     *
+     * Latent rather than live: `TenantSecuritySettings` held 0 rows in
+     * production when this was measured, which is the same single premise the
+     * #2091 tripwire below rests on.
+     */
+    const settings = await withTenantDb(tenantId, (db) =>
+        db.tenantSecuritySettings.findUnique({
+            where: { tenantId },
+            select: {
+                auditStreamUrl: true,
+                auditStreamSecretEncrypted: true,
+            },
+        }),
+    );
     if (!settings?.auditStreamUrl || !settings.auditStreamSecretEncrypted) {
         return null;
     }
-    // Field-encryption middleware decrypts on read, so the value here
-    // is already plaintext. (See `encrypted-fields.ts` manifest.)
-    return {
-        url: settings.auditStreamUrl,
-        secret: settings.auditStreamSecretEncrypted,
-    };
+    /*
+     * And if the key still cannot be read, send NOTHING rather than sign with
+     * an envelope. `readableOrNull` logs and returns null, so this resolves to
+     * "no stream configured" — which is the better failure for a signing key:
+     * an absent stream looks like what it is, while a rejected one looks like
+     * a delivery problem somebody will chase at the SIEM end.
+     */
+    const secret = readableOrNull(
+        settings.auditStreamSecretEncrypted,
+        'auditStream.resolveTenantStreamConfig',
+        tenantId,
+    );
+    if (secret === null) return null;
+    return { url: settings.auditStreamUrl, secret };
 }
 
 /**
