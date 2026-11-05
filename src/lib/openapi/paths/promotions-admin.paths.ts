@@ -33,8 +33,18 @@ const LeafletScanResultSchema = z
     .object({
         fileId: z.string().openapi({
             description:
-                'The stored leaflet. Attach it to the promotion the operator then creates, so the '
-                + 'source document stays reachable from the row.',
+                'The stored leaflet\u2019s `FileRecord` id. The bytes are kept, allowlisted, '
+                + 'MIME-reconciled and AV-scanned before this returns.\n\n'
+                + '**It cannot currently be attached to the promotion**, and this field\u2019s '
+                + 'description said it could until #2750 \u2014 "attach it to the promotion the '
+                + 'operator then creates, so the source document stays reachable from the row". '
+                + '`Promotion` has no column for it and `POST /admin/promotions` accepts no '
+                + '`fileId`, so there was nowhere for that to land: a documented mechanism with '
+                + 'no implementation, found by the iOS session building against this spec.\n\n'
+                + 'What it IS good for today: correlating this response with the `leafletFileId` '
+                + 'the 415 and 422 refusals carry, so a client can tell an operator *which* '
+                + 'stored file could not be read. Linking it to the promotion row is tracked on '
+                + '#2750.',
         }),
         companyName: z.string().nullable().openapi({
             description:
