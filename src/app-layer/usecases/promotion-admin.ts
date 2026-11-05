@@ -15,6 +15,8 @@
  */
 import type { RequestContext } from '../types';
 import { farmTodayFloor, dayKeyInTz, dayKeyToInstant, FARM_TIME_ZONE } from '@/lib/calendar-day-key';
+import { readContentPerTenant, readableOrNull } from '@/lib/db/per-tenant-content';
+import prisma from '@/lib/prisma';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, codedNotFound } from '@/lib/errors/types';
@@ -395,6 +397,135 @@ export interface AdminCompanyDto {
  * the decrypted contact fields — that is the point of the console, and the
  * platform-tenant gate is what keeps it internal.
  */
+
+/** One farm's enquiry about a promotion, for «кой е питал» (#2727). */
+export interface PromotionLeadDto {
+    id: string;
+    /** The inquiring FARM's name — a business, not a person. */
+    farm: string;
+    /** The person who sent it. Personal data; see the usecase docblock. */
+    person: string | null;
+    /**
+     * What the farmer wrote, or NULL when the envelope reached the boundary.
+     *
+     * Never a `v2:` string: `readableOrNull` refuses to hand an envelope to a
+     * reader, because an operator shown ciphertext would copy it to a supplier.
+     */
+    message: string | null;
+    consentedAt: string;
+    createdAt: string;
+    status: string;
+}
+
+/**
+ * The farms that asked about one promotion (#2727).
+ *
+ * ## The metadata read is PRIVILEGED, and the `where` clause IS the control
+ *
+ * `PromotionLead`'s RLS is symmetric own-tenant on `inquirerTenantId`, so a
+ * read under the PLATFORM tenant's context returns zero rows of any other
+ * farm's leads — which is every row this surface exists to show. The same
+ * inversion `personal-data-export` documents: RLS is normally the backstop,
+ * and here a dropped `where` clause would read every promotion's enquiries
+ * instead of one's. `promotionId` is that control and there is nothing behind
+ * it.
+ *
+ * ## The MESSAGE cannot be read the same way
+ *
+ * `PromotionLead.requestMessage` is encrypted under the INQUIRING farm's DEK,
+ * not the global KEK — the column's own schema note says a reader outside that
+ * tenant must resolve each lead's tenant context. A platform read is by
+ * definition outside it, so a naive privileged read returns `v2:` envelopes
+ * with no error and no log. That is #2724, where the Art 15 export did exactly
+ * this, and this view would have been the third instance of #2723's class.
+ *
+ * So the message goes through `readContentPerTenant`, which groups by farm and
+ * reads each group inside that farm's context. TWO halves are needed and the
+ * grouping alone is not the fix: it makes the DEK RESOLVABLE, not resolved, so
+ * a farm whose key lookup genuinely fails still yields an envelope.
+ * `readableOrNull` is the second half and turns that into a null plus one log
+ * line naming the SURFACE — `promotionLeads.list`, not the function — because
+ * what the log is for is knowing which screen showed an operator a hole.
+ *
+ * ## Indexed by id, never by position
+ *
+ * `readContentPerTenant` returns a FLAT array in FARM order — order of first
+ * appearance among the rows handed to it — which is not in general the order of
+ * those rows. So the messages are collected into a Map and the original rows
+ * mapped through it.
+ *
+ * HERE that is DEFENSIVE rather than load-bearing, and saying so is the honest
+ * version: `@@unique([promotionId, inquirerTenantId])` allows one lead per farm
+ * per promotion, so farm order and row order always coincide for this query and
+ * a positional join would give the same answer. A mutation to positional
+ * reddened nothing, which is how I found that out rather than by reasoning.
+ * Kept indexed because the uniqueness is what makes it safe, not the code — and
+ * `promotion-leads-decrypt-per-farm` pins that constraint so the day it changes,
+ * this stops being a matter of taste.
+ *
+ * ## What is disclosed, and to whom
+ *
+ * Platform support only — the same two gates as the rest of the console. The
+ * message is shown IN FULL because its entire purpose is to be forwarded to
+ * the supplier, and a truncated one would send an operator to the database to
+ * do their job. The person's name is personal data and is here because "who
+ * asked" is the question; the farm name is a business.
+ */
+export async function listPromotionLeads(
+    ctx: RequestContext,
+    promotionId: string,
+): Promise<PromotionLeadDto[]> {
+    const leads = await prisma.promotionLead.findMany({
+        where: { promotionId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+        select: {
+            id: true,
+            inquirerTenantId: true,
+            consentedAt: true,
+            createdAt: true,
+            status: true,
+            inquirerUserId: true,
+        },
+    });
+    if (leads.length === 0) return [];
+
+    const [tenants, users, messages] = await Promise.all([
+        prisma.tenant.findMany({
+            where: { id: { in: [...new Set(leads.map((l) => l.inquirerTenantId))] } },
+            select: { id: true, name: true },
+        }),
+        prisma.user.findMany({
+            where: { id: { in: [...new Set(leads.map((l) => l.inquirerUserId))] } },
+            select: { id: true, name: true },
+        }),
+        readContentPerTenant(
+            leads.map((l) => ({ id: l.id, tenantId: l.inquirerTenantId })),
+            (db, ids) =>
+                db.promotionLead.findMany({
+                    where: { id: { in: ids } },
+                    select: { id: true, requestMessage: true },
+                }),
+        ),
+    ]);
+
+    const farmById = new Map(tenants.map((t) => [t.id, t.name]));
+    const personById = new Map(users.map((u) => [u.id, u.name]));
+    const messageById = new Map(
+        messages.map((m) => [m.id, readableOrNull(m.requestMessage, 'promotionLeads.list', m.id)]),
+    );
+
+    return leads.map((l) => ({
+        id: l.id,
+        farm: farmById.get(l.inquirerTenantId) ?? '',
+        person: personById.get(l.inquirerUserId) ?? null,
+        message: messageById.get(l.id) ?? null,
+        consentedAt: l.consentedAt.toISOString(),
+        createdAt: l.createdAt.toISOString(),
+        status: l.status,
+    }));
+}
+
 export async function listCompanies(ctx: RequestContext): Promise<AdminCompanyDto[]> {
     return runInTenantContext(ctx, async (db) => {
         const rows = await db.company.findMany({

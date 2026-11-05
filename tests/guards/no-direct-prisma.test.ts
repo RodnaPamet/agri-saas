@@ -180,6 +180,35 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
     // through `runInTenantContext` so `UsageEvent`'s FORCED insert policy
     // applies. Reads being cross-tenant does not make writes so.
     'usage-insights.ts',
+    // #2727 — `promotion-admin.ts`'s `listPromotionLeads` is «кой е питал», one
+    // promotion's enquiries across every farm that sent one. Cross-tenant by
+    // CONSTRUCTION rather than by preference: `PromotionLead`'s RLS is
+    // symmetric own-tenant on `inquirerTenantId`, so a read under the PLATFORM
+    // tenant's context returns zero rows of any other farm's leads — which is
+    // every row this surface exists to show. It cannot name a single tenant,
+    // the same category as `usage-insights.ts` above.
+    //
+    // What stands in for tenant scoping is NOT the shape — unlike
+    // `usage-insights.ts` this returns ROWS, and one field is personal data.
+    // It is:
+    //
+    //   * the two gates. `requirePermission('admin.manage')` plus
+    //     `assertPlatformSupport`, so the surface exists only on the platform
+    //     tenant and 404s everywhere else.
+    //   * `where: { promotionId }`, which IS the control. With RLS unable to
+    //     help, a dropped clause reads every promotion's enquiries instead of
+    //     one's — the same inversion `personal-data-export` documents, and the
+    //     reason `promotion-leads-decrypt-per-farm` asserts that a different
+    //     promotion's id returns `[]`.
+    //
+    // THE ENCRYPTED COLUMN IS NOT READ THIS WAY, and that is the point of the
+    // split. `requestMessage` is under the inquiring farm's DEK, so it goes
+    // through `readContentPerTenant`, which binds each farm in turn — a
+    // privileged read of it would return `v2:` envelopes with no error and no
+    // log (#2724, #2723). So this exemption covers METADATA only; the content
+    // is per-tenant, and `readableOrNull` is what stops an envelope reaching an
+    // operator if a farm's key cannot be resolved.
+    'promotion-admin.ts',
     // #2664 — `promotion-disclosure.ts` reads PLATFORM promotions, which are
     // tenantless by design: the owner loads them once for every farm, so
     // `Promotion` carries no tenantId and there is no RLS arm to run under.

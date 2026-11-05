@@ -1034,6 +1034,67 @@
           "leadCount"
         ]
       },
+      "AdminPromotionLead": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "farm": {
+            "type": "string",
+            "description": "The inquiring farm’s name — a business, not a person."
+          },
+          "person": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who sent it. PERSONAL DATA, present because \"who asked\" is the question this screen answers. Null for a person whose account has since been pseudonymised by an erasure."
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the farmer wrote, IN FULL — its purpose is to be forwarded to the supplier, and a truncated one would send an operator to the database. `null` means the farm’s key could not be resolved; see above."
+          },
+          "consentedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "description": "PENDING | CONTACTED | CLOSED."
+          }
+        },
+        "required": [
+          "id",
+          "farm",
+          "person",
+          "message",
+          "consentedAt",
+          "createdAt",
+          "status"
+        ]
+      },
+      "AdminPromotionLeadsResponse": {
+        "type": "object",
+        "properties": {
+          "leads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPromotionLead"
+            }
+          }
+        },
+        "required": [
+          "leads"
+        ]
+      },
       "AdminPromotionsResponse": {
         "type": "object",
         "properties": {
@@ -63145,6 +63206,138 @@
         "responses": {
           "204": {
             "description": "Removed."
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks `admin.manage`. A role refusal, audited as `AUTHZ_DENIED`."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/promotions/{id}/leads": {
+      "get": {
+        "operationId": "listAdminPromotionLeads",
+        "summary": "The farms that asked about this promotion",
+        "description": "«Кой е питал» — one promotion’s enquiries, newest first, 500 max.\n\n**`message` can be `null`, and that is a FAULT rather than an absence.** The enquiry text is encrypted under the INQUIRING farm’s key, not the global one, so this read groups by farm and opens each group inside that farm’s context. When a farm’s key cannot be resolved the server returns `null` instead of the envelope and logs `encryption.ciphertext_reached_boundary` naming this surface — because an operator shown a `v2:` string would forward it to a supplier. Render a null as \"unavailable\", never as an empty message, and treat it as worth reporting.\n\n`consentedAt` is NOT NULL on every row by construction: a lead without recorded consent may not lawfully be forwarded, so the column is the enforcement point and not a flag.\n\nReturns `[]` for a promotion nobody has asked about — which is also what a promotion with a non-zero `leadCount` and an unreadable farm would NOT do, since the row is still listed with a null message.",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The enquiries. `farm` is a business name; `person` is personal data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromotionLeadsResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Invalid request body or query parameters.",

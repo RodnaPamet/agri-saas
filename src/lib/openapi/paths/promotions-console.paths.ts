@@ -357,6 +357,65 @@ export function registerPromotionsConsolePaths(registry: OpenAPIRegistry): void 
 
     op(registry, {
         method: 'get',
+        path: '/api/t/{tenantSlug}/admin/promotions/{id}/leads',
+        operationId: 'listAdminPromotionLeads',
+        summary: 'The farms that asked about this promotion',
+        description:
+            '«Кой е питал» — one promotion\u2019s enquiries, newest first, 500 max.\n\n'
+            + '**`message` can be `null`, and that is a FAULT rather than an absence.** The '
+            + 'enquiry text is encrypted under the INQUIRING farm\u2019s key, not the global one, '
+            + 'so this read groups by farm and opens each group inside that farm\u2019s context. '
+            + 'When a farm\u2019s key cannot be resolved the server returns `null` instead of the '
+            + 'envelope and logs `encryption.ciphertext_reached_boundary` naming this surface — '
+            + 'because an operator shown a `v2:` string would forward it to a supplier. Render a '
+            + 'null as "unavailable", never as an empty message, and treat it as worth reporting.\n\n'
+            + '`consentedAt` is NOT NULL on every row by construction: a lead without recorded '
+            + 'consent may not lawfully be forwarded, so the column is the enforcement point and '
+            + 'not a flag.\n\n'
+            + 'Returns `[]` for a promotion nobody has asked about — which is also what a '
+            + 'promotion with a non-zero `leadCount` and an unreadable farm would NOT do, since '
+            + 'the row is still listed with a null message.',
+        tags: ['Promotions'],
+        params: PromotionIdParams,
+        success: {
+            status: 200,
+            description: 'The enquiries. `farm` is a business name; `person` is personal data.',
+            schema: z
+                .object({
+                    leads: z.array(
+                        z
+                            .object({
+                                id: z.string(),
+                                farm: z.string().openapi({
+                                    description: 'The inquiring farm\u2019s name — a business, not a person.',
+                                }),
+                                person: z.string().nullable().openapi({
+                                    description:
+                                        'Who sent it. PERSONAL DATA, present because "who asked" is '
+                                        + 'the question this screen answers. Null for a person whose '
+                                        + 'account has since been pseudonymised by an erasure.',
+                                }),
+                                message: z.string().nullable().openapi({
+                                    description:
+                                        'What the farmer wrote, IN FULL — its purpose is to be '
+                                        + 'forwarded to the supplier, and a truncated one would send '
+                                        + 'an operator to the database. `null` means the farm\u2019s '
+                                        + 'key could not be resolved; see above.',
+                                }),
+                                consentedAt: z.string().datetime(),
+                                createdAt: z.string().datetime(),
+                                status: z.string().openapi({ description: 'PENDING | CONTACTED | CLOSED.' }),
+                            })
+                            .openapi('AdminPromotionLead'),
+                    ),
+                })
+                .openapi('AdminPromotionLeadsResponse'),
+        },
+        extraResponses: PLATFORM_404,
+    });
+
+    op(registry, {
+        method: 'get',
         path: '/api/t/{tenantSlug}/admin/companies',
         operationId: 'listAdminCompanies',
         summary: 'The supplier directory',
