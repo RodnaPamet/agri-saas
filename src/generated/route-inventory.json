@@ -541,6 +541,11 @@
       "documented": true
     },
     {
+      "path": "/api/public/farms/{handle}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/public/media/{hash}",
       "status": "live",
       "documented": true

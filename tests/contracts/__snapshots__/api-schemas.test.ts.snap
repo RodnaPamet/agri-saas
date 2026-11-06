@@ -16484,6 +16484,68 @@ exports[`API contract — per-schema snapshots schema: PromotionUpdated 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: PublicFarmProfile 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "handle": {
+      "type": "string"
+    },
+    "displayName": {
+      "type": "string"
+    },
+    "tagline": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "about": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "oblast": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "crops": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "logoUrl": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "ROOT-RELATIVE \`/api/public/media/{hash}\`, or null. A URL and not the hash it contains — decided with agrent-ios (2026-10-20) on their own argument: the server owns the path shape, so correcting it never needs a client release, and the phone already follows a server-given root-relative path for \`/me\`’s \`avatarUrl\`. The hash is recoverable from the URL and is deliberately not also returned."
+    },
+    "photoUrls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Root-relative gallery URLs, in display order."
+    }
+  },
+  "required": [
+    "handle",
+    "displayName",
+    "tagline",
+    "about",
+    "oblast",
+    "crops",
+    "logoUrl",
+    "photoUrls"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: PublicFarmSearchHit 1`] = `
 "{
   "type": "object",

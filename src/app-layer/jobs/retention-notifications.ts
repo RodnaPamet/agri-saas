@@ -19,6 +19,7 @@ import { isNotificationsEnabled } from '../notifications/settings';
 import { emitAutomationEvent } from '../automation';
 import type { RequestContext } from '../types';
 import { withTenantDb } from '@/lib/db-context';
+import { resolveSystemUserId } from '@/lib/auth/system-user';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** Fire-and-forget automation trigger — never blocks the notification job. */
@@ -117,13 +118,14 @@ export async function runEvidenceRetentionNotifications(
         // Create Task + link
         // retentionUntil is non-null: the where clause filters `retentionUntil: { not: null }`
         const daysLeft = Math.ceil((new Date(ev.retentionUntil!).getTime() - Date.now()) / 86_400_000);
-        // KNOWN BUG: this create misses the required `createdByUserId`
-        // field (Task.createdByUserId is NOT NULL). Background jobs have
-        // no actor userId — a system-user sentinel is needed.
-        // Tracked in #2729. (This comment named `#BUG-retention-task-creator`,
-        // a string that appeared nowhere else in the repo — a known broken
-        // write recorded only in the comment that causes it, and the
-        // explanation is what made it look handled.)
+        // FIXED in #2729 — the create below now supplies `createdByUserId`
+        // from `resolveSystemUserId`. The history is kept because the FAILURE
+        // MODE is the reusable part: this comment once named
+        // `#BUG-retention-task-creator`, a string that appeared nowhere else
+        // in the repo — a known broken write recorded only in the comment
+        // that caused it, where the careful explanation is precisely what
+        // made it look handled. Scope left out is tracked only if it is an
+        // OPEN ISSUE; a prose tracker is not one.
         // `ev.title` is user-supplied and gets interpolated into
         // `Task.description`, an ENCRYPTED_FIELDS column. Encryption does not
         // protect the renderers that decrypt it, so sanitise the interpolated
@@ -150,6 +152,19 @@ export async function runEvidenceRetentionNotifications(
          * no evidence link, which is the state the idempotence probe above
          * cannot see.
          */
+        /*
+         * #2729 — resolved BEFORE `withTenantDb`, and the ordering is the
+         * whole point.
+         *
+         * `resolveSystemUserId` reads (and on first use writes) through the
+         * GLOBAL client. Called inside the transaction below it would want a
+         * SECOND pool connection while the first is held, which is #1191's
+         * P0.8 deadlock: unreachable at low concurrency and guaranteed at
+         * `PG_POOL_MAX`, surfacing as Prisma's `P2028` naming no pool. Same
+         * ordering `prewarmTenantKeys` exists to guarantee for the DEK.
+         */
+        const systemUserId = await resolveSystemUserId(ev.tenantId);
+
         const task = await withTenantDb(ev.tenantId, async (db) => {
             const created = await db.task.create({
                 data: {
@@ -158,9 +173,31 @@ export async function runEvidenceRetentionNotifications(
                     title: `Refresh expiring evidence: ${safeTitle}`,
                     description: `Evidence "${safeTitle}" expires in ${daysLeft} days (${formatDate(ev.retentionUntil)}). Please upload refreshed evidence or extend the retention date.`,
                     status: 'OPEN',
-                    priority: daysLeft <= 7 ? 'HIGH' : 'MEDIUM',
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- createdByUserId missing: background job has no actor; requires system-user id (tracked in #2729)
-                } as any,
+                    /*
+                     * #2729 — `'HIGH'`/`'MEDIUM'` were NOT members of
+                     * `WorkItemPriority` (`P0|P1|P2|P3`), so Prisma would have
+                     * rejected this payload at runtime. The any-cast that hid
+                     * the missing `createdByUserId` suppressed checking on the
+                     * WHOLE object, so it hid this too — one cast, two
+                     * defects, and `tsc` reported the second one the moment
+                     * the cast came off.
+                     *
+                     * P1/P2 rather than P0 (owner, 2026-11-06): the two bands
+                     * preserve the original urgent-versus-not intent, and P0
+                     * stays for emergencies rather than being spent on a
+                     * seven-day warning.
+                     */
+                    priority: daysLeft <= 7 ? 'P1' : 'P2',
+                    /*
+                     * The column is `String` NOT NULL with an FK to `User`, so
+                     * the `userId: 'system'` sentinel the sibling jobs use in
+                     * their `RequestContext` cannot satisfy it — that string
+                     * names no row. Omitting it was cast past the compiler
+                     * with a blanket any-cast, which is why this never failed
+                     * to typecheck and would have failed at runtime instead.
+                     */
+                    createdByUserId: systemUserId,
+                },
                 select: { id: true },
             });
             await db.taskLink.create({
