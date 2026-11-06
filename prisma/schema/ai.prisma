@@ -280,3 +280,76 @@ model AssistantMemoryFact {
   /// The live profile read: this person's undeleted points, newest first.
   @@index([userId, deletedAt, sourceAt])
 }
+
+/// ONE row per answered assistant question — #2751.
+///
+/// `assistant.stage_timing` has been emitted since #2670 and is read by
+/// nobody: `docker logs` holds only the CURRENT container's output, and
+/// Watchtower prunes the old one on every deploy. Measured 2026-11-06 on
+/// production: **zero rows available**, for a surface with ~20 answered
+/// questions all-time. So the figures #2751 needs in order to decide which
+/// model each round should run on do not merely need gathering — they are
+/// destroyed faster than they accumulate.
+///
+/// Persisted rather than exported because this deployment runs no
+/// Prometheus pipeline: `recordJobMetrics` and the OTel reporters have no
+/// collector behind them, which is the same reason `AuditRowLost` is a
+/// declared alerting rule that fires for nobody.
+///
+/// NOT folded into `AiUsageEvent`, and the reason is granularity rather than
+/// tidiness. That table is written per PROVIDER CALL inside
+/// `completeWithRouting`, and one answered question makes two or more
+/// (`providerCalls` below). A timing column there would record the whole
+/// question's total against each call, so every row would overstate it.
+///
+/// ## NO retention sweep, and that is a decision rather than an omission
+///
+/// `usage-event-retention` exists because `UsageEvent` is PERSONAL DATA —
+/// declared to App Privacy as Product Interaction linked to the user, so
+/// without a sweep its "90-day retention" is a sentence in a privacy notice
+/// with nothing enforcing it. That duty does not reach here: this table
+/// carries no `userId`, no content and no text — a tenant id, nine integers
+/// and a halt code. It says how long one FARM's assistant took, not what
+/// anybody asked.
+///
+/// So it follows its closest sibling `AiUsageEvent`, which has no sweep
+/// either, rather than `UsageEvent`, whose sweep is a privacy obligation
+/// misread as size management. If volume ever makes size the issue, a chunked
+/// sweep on `@@index([tenantId, createdAt])` is the lever and
+/// `usage-event-retention` is the pattern — including its per-run cap, which
+/// is what keeps the first sweep after an outage from being the
+/// longest-running statement on the box.
+model AssistantStageTiming {
+  id             String   @id @default(cuid())
+  tenantId       String
+  /// Wall clock for the whole answered question.
+  totalMs        Int
+  /// Summed time inside provider calls.
+  providerMs     Int
+  /// How many provider calls this one answer took — 2+ in the normal case,
+  /// which is why this cannot live on a per-call row.
+  providerCalls  Int
+  /// The tool-PICKING round(s).
+  toolSelectMs   Int
+  /// `providerMs - toolSelectMs` — the answering round, stored rather than
+  /// derived so a later change to either stage cannot silently redefine a
+  /// historical row.
+  answerMs       Int
+  /// Running the tools themselves.
+  toolPhaseMs    Int
+  /// The residual: route checks, prompt build, egress scan, emits. Reported
+  /// rather than itemised so the three stages above stay the ones that add up.
+  otherMs        Int
+  toolCallsMade  Int
+  /// The halt code when the turn was cut short (tool budget, time budget,
+  /// partial data), NULL on a clean answer. A timing is only comparable
+  /// against others that halted the same way.
+  halt           String?
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Layer A (tenantId-leading), and the shape every read wants: one farm's
+  // timings over a window.
+  @@index([tenantId, createdAt])
+}

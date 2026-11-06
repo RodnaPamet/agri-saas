@@ -75,3 +75,51 @@ export const CreateTaskWeedObservationSchema = z
     .strip()
     .openapi('CreateTaskWeedObservation');
 export type CreateTaskWeedObservationBody = z.infer<typeof CreateTaskWeedObservationSchema>;
+
+/**
+ * Partial corrections (owner ruling 2026-11-06).
+ *
+ * ## Every field `.optional()`, and only the nullable ones `.nullable()`
+ *
+ * That pairing IS the contract: omitted leaves the stored value alone, explicit
+ * `null` clears a nullable field. `year`, `cropType`, `observedAt` and `weeds`
+ * are optional and NOT nullable, so a client cannot send `null` to "clear" a
+ * required column — the schema refuses it before the usecase has to.
+ *
+ * ## No `.refine()` for "at least one field", deliberately
+ *
+ * The usecase answers `NO_FIELDS_TO_UPDATE`, which is a coded refusal a client
+ * can switch on, where a schema refinement produces a generic
+ * `VALIDATION_ERROR`. It also keeps these as plain objects: a refined schema is
+ * a `ZodEffects` and registering an `.openapi()` refId on one is how a
+ * component quietly stops appearing under its name.
+ */
+export const UpdateCropSeasonSchema = z
+    .object({
+        year: z.number().int().optional(),
+        cropType: z.string().min(1).optional(),
+        sownAt: z.string().datetime().nullable().optional(),
+        harvestedAt: z.string().datetime().nullable().optional(),
+        notes: z.string().nullable().optional(),
+    })
+    .strip()
+    .openapi('UpdateParcelCropSeason');
+export type UpdateCropSeasonBody = z.infer<typeof UpdateCropSeasonSchema>;
+
+export const UpdateWeedObservationSchema = z
+    .object({
+        observedAt: z.string().datetime().optional(),
+        /**
+         * Replaces the list WHOLE when present — the server re-partitions it
+         * into catalogue keys and free text, so both stored columns move
+         * together. `.min(1)` because emptying an observation in place would
+         * leave it asserting that somebody looked and found nothing, which is a
+         * different agronomic claim; DELETE is the remedy for "should not
+         * exist" and it leaves a tombstone.
+         */
+        weeds: z.array(z.string()).min(1).optional(),
+        notes: z.string().nullable().optional(),
+    })
+    .strip()
+    .openapi('UpdateParcelWeedObservation');
+export type UpdateWeedObservationBody = z.infer<typeof UpdateWeedObservationSchema>;

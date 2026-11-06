@@ -376,6 +376,120 @@ export async function createParcelCropSeason(ctx: RequestContext, input: CropSea
     });
 }
 
+/**
+ * Correct a crop season in place (owner ruling 2026-11-06).
+ *
+ * ## Partial, and `undefined` is not `null`
+ *
+ * A field OMITTED leaves the stored value alone; an explicit `null` clears a
+ * nullable one. That distinction is the house convention across this API and
+ * the phone sends only what changed, so collapsing the two would silently blank
+ * every field a client did not mention.
+ *
+ * The non-nullable fields — `year`, `cropType` — therefore refuse an explicit
+ * `null` rather than accepting it as "clear": there is no empty crop season, and
+ * a nullable-looking type on a required column is how a required field quietly
+ * becomes optional.
+ *
+ * ## `parcelId` is NOT updatable, and that is the point of the omission
+ *
+ * Moving a season to a different parcel is not a correction — it is two
+ * operations (delete here, record there) with two audit entries, and this is an
+ * agronomic record that feeds the БАБХ register. An edit that relocated one
+ * would leave the receiving parcel with a season nobody recorded against it.
+ *
+ * ## The edit is AUDITED, not silent
+ *
+ * `logEvent` with the canonical `UPDATE` verb, which is right here because this
+ * genuinely is a field update of the row and `changedFields` says what moved —
+ * exactly the distinction `docs/app-layer.md` draws against a domain verb. The
+ * owner chose a tracked correction over a silent one; without the entry, an
+ * edited dose or date would leave no trace of what it said before.
+ */
+export async function updateParcelCropSeason(
+    ctx: RequestContext,
+    id: string,
+    input: {
+        year?: number;
+        cropType?: string;
+        sownAt?: Date | null;
+        harvestedAt?: Date | null;
+        notes?: string | null;
+    },
+) {
+    assertCanWrite(ctx);
+
+    const data: Record<string, unknown> = {};
+    const changed: string[] = [];
+
+    if (input.year !== undefined) {
+        assertYear(input.year);
+        data.year = input.year;
+        changed.push('year');
+    }
+    if (input.cropType !== undefined) {
+        const cropType = sanitizePlainText(input.cropType).trim();
+        if (!cropType || cropType.length > MAX_CROP_TYPE_LENGTH) {
+            throw codedBadRequest('CROP_TYPE_INVALID', 'A crop is required.');
+        }
+        data.cropType = cropType;
+        changed.push('cropType');
+    }
+    if (input.sownAt !== undefined) {
+        data.sownAt = input.sownAt;
+        changed.push('sownAt');
+    }
+    if (input.harvestedAt !== undefined) {
+        data.harvestedAt = input.harvestedAt;
+        changed.push('harvestedAt');
+    }
+    if (input.notes !== undefined) {
+        data.notes = cleanNotes(input.notes);
+        changed.push('notes');
+    }
+
+    // Refused rather than treated as a no-op. A request that changes nothing is
+    // a client bug, and answering 200 to it would hide the bug AND write an
+    // audit entry claiming an edit that did not happen.
+    if (changed.length === 0) {
+        throw codedBadRequest('NO_FIELDS_TO_UPDATE', 'No fields to update.');
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        const existing = await db.parcelCropSeason.findFirst({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, parcelId: true, year: true, cropType: true },
+        });
+        if (!existing) throw codedNotFound('CROP_SEASON_NOT_FOUND', 'That crop season was not found.');
+
+        const row = await db.parcelCropSeason.update({ where: { id }, data });
+        await logEvent(db, ctx, {
+            action: 'UPDATE',
+            entityType: 'ParcelCropSeason',
+            entityId: id,
+            details: `Crop season corrected on parcel ${existing.parcelId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'ParcelCropSeason',
+                operation: 'updated',
+                // INSIDE detailsJson, not at the top level — `changedFields` is
+                // not on `AuditEventPayload` and tsc caught me inventing it
+                // there. `contract.ts:500` is the canonical shape.
+                changedFields: changed,
+                // BEFORE and AFTER for the two identifying fields only. The
+                // notes are free text on an encrypted-adjacent surface and
+                // `details` is dropped by the audit stream anyway — the point
+                // of the pair is that a reader can tell WHICH season this was
+                // and what it became, not to mirror the row.
+                before: { year: existing.year, cropType: existing.cropType },
+                after: { year: row.year, cropType: row.cropType },
+                summary: 'Parcel crop season corrected',
+            },
+        });
+        return row;
+    });
+}
+
 /** Soft-delete a crop season. */
 export async function deleteParcelCropSeason(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
@@ -574,6 +688,99 @@ export async function createParcelWeedObservation(
 }
 
 /** Soft-delete a weed observation. */
+/**
+ * Correct a weed observation in place (owner ruling 2026-11-06).
+ *
+ * Same partial-update contract as `updateParcelCropSeason`: omitted leaves a
+ * value alone, explicit `null` clears a nullable one, and the non-nullable
+ * fields refuse `null`.
+ *
+ * ## `weeds` replaces the list WHOLE, and cannot empty it
+ *
+ * The client sends one list and the server partitions it into catalogue keys
+ * and free text, exactly as on create — so an update carrying `weeds` replaces
+ * both stored columns together. They are two halves of one field and updating
+ * one without the other would leave a row whose `weedKeys` and `otherWeeds`
+ * came from different submissions.
+ *
+ * An empty list is refused with the same `WEEDS_REQUIRED` as create. The
+ * remedy for "this observation should not exist" is DELETE, which keeps a
+ * soft-delete tombstone; emptying it in place would leave an observation
+ * asserting that somebody looked at a parcel and found nothing, which is a
+ * different agronomic claim.
+ *
+ * ## `clientMutationId` is untouched
+ *
+ * It is the create path's idempotency key, scoped unique per (tenant, parcel).
+ * An update must not rewrite it: the key identifies the SUBMISSION that made
+ * the row, not the row's current contents, and clearing or reusing it would
+ * make a later replay of the original create return this edited row.
+ */
+export async function updateParcelWeedObservation(
+    ctx: RequestContext,
+    id: string,
+    input: { observedAt?: Date; weeds?: string[]; notes?: string | null },
+) {
+    assertCanWrite(ctx);
+
+    const data: Record<string, unknown> = {};
+    const changed: string[] = [];
+
+    if (input.observedAt !== undefined) {
+        data.observedAt = input.observedAt;
+        changed.push('observedAt');
+    }
+    if (input.weeds !== undefined) {
+        const { weedKeys, otherWeeds } = partitionWeeds(input.weeds);
+        if (weedKeys.length === 0 && otherWeeds.length === 0) {
+            throw codedBadRequest('WEEDS_REQUIRED', 'Record at least one weed.');
+        }
+        data.weedKeys = weedKeys;
+        data.otherWeeds = otherWeeds;
+        changed.push('weeds');
+    }
+    if (input.notes !== undefined) {
+        data.notes = cleanNotes(input.notes);
+        changed.push('notes');
+    }
+
+    if (changed.length === 0) {
+        throw codedBadRequest('NO_FIELDS_TO_UPDATE', 'No fields to update.');
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        const existing = await db.parcelWeedObservation.findFirst({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, parcelId: true, observedAt: true },
+        });
+        if (!existing) {
+            throw codedNotFound('WEED_OBSERVATION_NOT_FOUND', 'That observation was not found.');
+        }
+
+        const row = await db.parcelWeedObservation.update({ where: { id }, data });
+        await logEvent(db, ctx, {
+            action: 'UPDATE',
+            entityType: 'ParcelWeedObservation',
+            entityId: id,
+            details: `Weed observation corrected on parcel ${existing.parcelId}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'ParcelWeedObservation',
+                operation: 'updated',
+                changedFields: changed,
+                // The DATE is the identifying fact for an observation, so the
+                // before/after pair carries it. The weed list itself is not
+                // mirrored here: it is the content, and `changedFields` already
+                // says it moved.
+                before: { observedAt: existing.observedAt.toISOString() },
+                after: { observedAt: row.observedAt.toISOString() },
+                summary: 'Parcel weed observation corrected',
+            },
+        });
+        return row;
+    });
+}
+
 export async function deleteParcelWeedObservation(ctx: RequestContext, id: string) {
     assertCanWrite(ctx);
     return runInTenantContext(ctx, async (db) => {

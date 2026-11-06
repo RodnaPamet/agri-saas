@@ -6812,6 +6812,7 @@
         "CROP_SEASON_NOT_FOUND": "Този сезон не беше намерен.",
         "CROP_SEASON_YEAR_INVALID": "Годината на прибиране трябва да е между {min} и {max}.",
         "CROP_TYPE_INVALID": "Необходима е култура.",
+        "NO_FIELDS_TO_UPDATE": "Няма променени полета.",
         "CROP_TYPE_NAME_REQUIRED": "Необходимо е име на културата.",
         "DELIVERY_NOT_FOUND": "Доставката не беше намерена.",
         "DOCUMENT_DELETE_NOT_ALLOWED": "Нямате право да изтриете този документ.",
