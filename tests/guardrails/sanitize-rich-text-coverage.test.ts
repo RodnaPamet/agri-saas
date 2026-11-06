@@ -339,6 +339,23 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
     // RICH_TEXT_COVERAGE. Claiming coverage would be false and claiming "not
     // user rich text" would be worse, because both columns ARE user-authored
     // free text and the exemption would outlive the gap.
+    // ── P8.1 direct messages (#2795) ──
+    //
+    // The same construction, a third time, and the P5.1 note above is the
+    // whole justification: #2795 ships these tables one release BEFORE any
+    // writer, so there is no usecase to name in RICH_TEXT_COVERAGE.
+    // `DirectMessage.body` IS user-authored free text — a farmer typing to
+    // another farmer — so NON_RICH_TEXT_MODELS would exempt it permanently,
+    // and claiming coverage would be false.
+    DirectMessage:
+        'DirectMessage.body is a farmer-written message, encrypted under the ' +
+        'global KEK, with no write path yet — P8.1 is schema only. Ratchet ' +
+        'target: #2796 (P8.2) adds the send usecase and must move this entry ' +
+        'into RICH_TEXT_COVERAGE in the same diff. The C.5 reason applies with ' +
+        'full force here rather than by analogy: a DM body is read back by the ' +
+        'counterparty, by the P5.2 report snapshot if somebody reports it, and ' +
+        'by the Art 15 export — three renderers, which is exactly why ' +
+        'sanitisation belongs at the usecase and not at one of them.',
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -456,31 +473,70 @@ const fileExists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 const readFile = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
 /**
- * Source files that mention `needle`. Used to tell a KNOWN_UNCOVERED entry
- * with a live writer from one whose table nothing touches yet.
+ * Prisma operations that can put UNSANITISED text into a column.
  *
- * Collection goes through `collectSourceFiles` rather than a local directory
- * walk, which `file-collection-is-not-silently-empty` requires and which CI
- * caught me skipping: a hand-rolled collector can be gutted to return `[]`
- * with every assertion built on it still green. The `floor` is the part that
- * matters here — an empty corpus would report every entry as having no writer,
- * which is the exact direction this check must not fail in.
- *
- * A plain substring search on the Prisma accessor (`.contentReport`),
- * deliberately broad: a false POSITIVE costs someone a look at a guard
- * failure, while a false negative would let a live unsanitised write path hide
- * inside the raised cap.
+ * `delete`/`deleteMany` are absent deliberately: removing a row writes no
+ * content. So are the reads.
  */
-function sourceFilesReferencing(needle: string): string[] {
+const PRISMA_WRITE_OPS = [
+    'createManyAndReturn', 'createMany', 'create',
+    'updateManyAndReturn', 'updateMany', 'update',
+    'upsert',
+] as const;
+
+/**
+ * Files that WRITE through a model accessor, as opposed to merely naming it.
+ *
+ * This REPLACED a broad `sourceFilesReferencing`, which matched any mention
+ * of the accessor. The live-writer assertion was its only caller, and the
+ * assertion asks a narrower question than that helper answered: its own
+ * rationale is "an unsanitised column nothing WRITES is not the same risk as
+ * one a route writes today", and a READ cannot create unsanitised content.
+ *
+ * I first kept both, with a comment saying the broad one "stays for its other
+ * callers". It had none — the narrowing left it with zero — and the
+ * `Selector teeth` gate reported it within the hour: with no caller, gutting
+ * it to `return []` broke no assertion, which is precisely what a dead
+ * selector is. Deleted rather than kept, because a helper in a guard file
+ * reads as a live mechanism.
+ *
+ * P8.1 (#2795) is what exposed the difference. It ships `DirectMessage` with
+ * no write path — the table arrives one release before its writer — and then
+ * adds `prisma.directMessage.findMany` to the Art 15 export, because the
+ * privacy registry classifies the column `ERASE_AND_EXPORT` and an export must
+ * cover whatever the registry erases. Under the broad detector that read
+ * registered as a live writer and the assertion failed, reporting a
+ * sanitisation gap that cannot exist: nothing can put text into that column
+ * yet.
+ *
+ * KNOWN LIMIT, stated rather than papered over: a write performed through
+ * another model's NESTED relation (`prisma.evidence.update({ data: { reviews:
+ * { create: … } } })`) never names this accessor and is invisible here. The
+ * broad detector only caught such a case when the file happened to mention the
+ * accessor for some other reason, so this is a narrower version of a gap that
+ * was already there rather than a new one. The floor below is what keeps an
+ * empty scan from reading as "no writers".
+ */
+function sourceFilesWritingVia(accessor: string): string[] {
+    // Collection goes through `collectSourceFiles` rather than a local
+    // directory walk, which `file-collection-is-not-silently-empty` requires
+    // and which CI caught being skipped: a hand-rolled collector can be gutted
+    // to return `[]` with every assertion built on it still green. The `floor`
+    // is the part that matters here — an empty corpus would report every entry
+    // as having no writer, which is the exact direction this check must not
+    // fail in.
     const files = collectSourceFiles({
         roots: ['src'],
         extensions: ['.ts', '.tsx'],
         exclude: (rel) => rel.startsWith('src/generated/'),
         // ~2100 at the time of writing; a floor well below it separates
-        // "nothing references this" from "nothing was examined".
+        // "nothing writes this" from "nothing was examined".
         floor: 1500,
     });
-    return files.filter((full) => fs.readFileSync(full, 'utf8').includes(needle));
+    const pattern = new RegExp(
+        `\\.${accessor}\\s*\\.\\s*(?:${PRISMA_WRITE_OPS.join('|')})\\s*\\(`,
+    );
+    return files.filter((full) => pattern.test(fs.readFileSync(full, 'utf8')));
 }
 
 describe('rich-text sanitiser coverage — structural completeness', () => {
@@ -580,7 +636,15 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // writer. Lowered in the same diff rather than left at 2, because
         // slack a later regression can spend is the thing a ratchet exists to
         // refuse.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
+        //
+        // 2 since P8.1 (#2795), and this is the conversation the note at the
+        // top asks for. `DirectMessage` is the P5.1 KIND — a table shipped one
+        // release before any writer — so it adds no slack a regression could
+        // spend: the live-writer assertion below is what will trip the moment
+        // #2796 adds a send usecase, which is the same mechanism that moved
+        // ContentReport, AssistantMemoryFact and AssistantTurn out. Raised by
+        // exactly one, for one named entry, rather than to a round number.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(2);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {
@@ -601,9 +665,13 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // live count becomes 2 and this fails until the entry moves to
         // RICH_TEXT_COVERAGE with its sanitiser. Which is exactly when that
         // work should be forced.
+        // WRITES, not references — see `sourceFilesWritingVia`. A read of an
+        // unsanitised column (P8.1's Art 15 export of `DirectMessage`) is not
+        // the risk this assertion is about, and counting it reported a gap
+        // that cannot exist while nothing can write the column.
         const withLiveWriter = Object.keys(KNOWN_UNCOVERED).filter((model) => {
             const accessor = model.charAt(0).toLowerCase() + model.slice(1);
-            return sourceFilesReferencing(`.${accessor}`).length > 0;
+            return sourceFilesWritingVia(accessor).length > 0;
         });
 
         // A positive control, because an empty result here would otherwise be

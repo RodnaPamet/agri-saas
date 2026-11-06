@@ -233,6 +233,66 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
             'The conversation this person opened. Overwritten rather than deleted, '
             + 'because the counterparty farm retains its side of a negotiation.',
     },
+    // ── P8.1 (#2795) — direct messages ──
+    //
+    // The `ExchangeThread`/`ExchangeMessage` pair above, one axis over: the
+    // second owner of a direct conversation is another PERSON rather than a
+    // farm. That difference is why `every PSEUDONYMISE target is a row with a
+    // SECOND owner` had to widen — it proved "somebody else owns this too" by
+    // looking for a `*TenantId` column, which was sufficient while every
+    // conversation in this product was commercial.
+    {
+        model: 'Conversation',
+        columns: ['initiatedByUserId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
+        reason:
+            'The conversation this person opened. Overwritten rather than deleted, '
+            + 'because the counterparty is a person who retains their side of it — '
+            + 'the ExchangeThread reasoning with a person in place of the farm. '
+            + 'Exported because which conversations they started is information '
+            + 'about them.',
+    },
+    {
+        model: 'ConversationParticipant',
+        columns: ['userId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
+        reason:
+            'This person\'s side of a shared conversation, including their read '
+            + 'cursor. Deleting the row would orphan the thread for the '
+            + 'counterparty — a conversation with one participant is not a '
+            + 'conversation — so the membership survives with its person column '
+            + 'overwritten. The pseudonym must be per-user and random: '
+            + '@@unique([conversationId, userId]) means two erased people in one '
+            + 'conversation would collide on a shared sentinel, which is the '
+            + 'ExchangeThread collision exactly.',
+    },
+    {
+        model: 'DirectMessage',
+        columns: ['senderUserId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
+        reason:
+            'Messages this person sent. The body is encrypted and belongs to a '
+            + 'conversation whose counterparty also has rights over it, so the body '
+            + 'is retained while the authorship column is overwritten — the '
+            + 'ExchangeMessage shape verbatim. Exported because the words are theirs.',
+    },
+    {
+        model: 'MessageReaction',
+        columns: ['userId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
+        reason:
+            'A reaction is a statement BY this person on somebody else\'s message, '
+            + 'and it is the whole row — so deleting it destroys no second owner\'s '
+            + 'record, exactly as AssistantMemoryFact does not. Pseudonymising would '
+            + 'be worse than useless: @@unique([messageId, userId, emoji]) would '
+            + 'force a per-user random id, leaving an anonymous reaction nobody can '
+            + 'remove and the counterparty cannot interpret. Exported because which '
+            + 'messages they reacted to is information about them.',
+    },
     {
         model: 'FeatureFlag',
         columns: ['updatedByUserId'],

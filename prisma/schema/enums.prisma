@@ -1053,3 +1053,18 @@ enum DeletionInitiator {
   /// says the account was closed.
   MODERATION
 }
+
+/// Whether a direct conversation has been accepted by the person who did not
+/// open it. P8.1 (#2795).
+///
+/// `REQUEST` is the state a conversation between strangers starts in, and it
+/// is the state the `direct_message_insert` WITH CHECK reads: a request allows
+/// exactly ONE message, so a stranger cannot fill somebody's inbox before
+/// being let in. `DECLINED` is kept rather than deleted — a decline that
+/// removed the row would let the same person re-open the same request, and the
+/// point of declining is that it stays declined.
+enum ConversationState {
+  REQUEST
+  ACCEPTED
+  DECLINED
+}

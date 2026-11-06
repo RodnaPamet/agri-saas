@@ -498,3 +498,181 @@ model NoticeScore {
   @@unique([reportId])
   @@index([createdAt])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P8.1 (#2795) — direct messages. SCHEMA ONLY.
+//
+// P8's standing rule is that tables ship one release before the code that
+// writes them, so these four models arrive with their policies and their
+// encryption classification and with no route, usecase, UI or flag. P5.1
+// (#1553) is the worked precedent.
+//
+// ── These are PERSON-scoped, and that single fact shapes everything ──
+//
+// Two people in a direct conversation may share no farm, so there is no
+// `tenantId` on any of these tables and every policy keys on
+// `app.user_id` — the variable `runInUserContext` sets. NOT
+// `app.actor_user_id`, which `runInTenantContext` sets alongside a tenant.
+//
+// Picking the wrong one does not error. The unset variable yields NULL, the
+// policy arm matches nothing, and a read returns zero rows — which is
+// indistinguishable from having no messages. That is #1664 verbatim:
+// `UserBlock`'s SELECT policy keyed on `app.user_id` while the enforcement ran
+// under `app.actor_user_id`, so blocking somebody had no effect on any thread
+// path, always, and nothing reported it. So a test for these tables must run
+// in the context the PRODUCTION caller will run in, which is why P8.2 puts the
+// routes under `/api/social/` and not under `/api/t/[tenantSlug]/`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A direct conversation between people. P8.1 (#2795).
+///
+/// Access is by PARTICIPATION: `conversation_select` admits a row only when the
+/// caller holds a `ConversationParticipant` row for it. There is deliberately
+/// no `app_user` INSERT, UPDATE or DELETE policy — opening a conversation
+/// writes the OTHER person's participant row too, which a caller must not be
+/// able to forge, so every write runs on the privileged path with the usecase
+/// as the control (the P5.2a posture).
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// REQUEST until the other person accepts. Read by the
+  /// `direct_message_insert` WITH CHECK, which is what makes the one-message
+  /// request rule a database rule and not only a usecase rule.
+  state ConversationState @default(REQUEST)
+
+  /// Who opened it. Stored rather than derived from "the first message",
+  /// because a declined request keeps its row and may hold no readable
+  /// message, and because the one-message allowance belongs to the opener.
+  initiatedByUserId String
+
+  /// Denormalised for the inbox sort (P8.5), which must answer across a
+  /// person's conversations without joining messages. Null until the first
+  /// message — a REQUEST that was opened and never written to.
+  ///
+  /// IT ALSO CARRIES A SECURITY RULE, which is why this is not merely a cache.
+  /// `direct_message_insert`'s WITH CHECK bounds a REQUEST to one message by
+  /// testing `lastMessageAt IS NULL`, because the obvious form — counting the
+  /// conversation's existing messages — is refused by Postgres with `infinite
+  /// recursion detected in policy for relation "DirectMessage"` (a policy on a
+  /// table may not query that table, whatever the command). So the write that
+  /// sends a message MUST stamp this column, and a change that stopped
+  /// stamping it would silently let a stranger send without limit.
+  lastMessageAt DateTime?
+
+  participants ConversationParticipant[]
+  messages     DirectMessage[]
+
+  /// The inbox read: a person's conversations, newest activity first.
+  @@index([lastMessageAt])
+  @@index([initiatedByUserId])
+}
+
+/// One person's membership of one conversation, and their read cursor.
+/// P8.1 (#2795).
+///
+/// `conversation_participant_select` admits the caller's OWN row only, and
+/// that narrowness is deliberate rather than an oversight. A policy admitting
+/// "every participant of a conversation I am in" has to ask this same table
+/// whether I am in it, and Postgres refuses a self-referential policy with
+/// `infinite recursion detected in policy for relation`.
+///
+/// Nothing needs the wider policy: P5.2b already derives the counterparty from
+/// the messages — "the thread payload names people only on messages, so the
+/// counterparty is the sender of the first message that is not mine" — and
+/// `DirectMessage` rows ARE readable to every participant. So the counterparty
+/// comes from a message, exactly as it does on the exchange.
+///
+/// The consequence to know about is in the migration: because SQL here cannot
+/// name the other participant, a BLOCK cannot be enforced in a WITH CHECK. It
+/// is enforced in the usecase (P8.2) with `personBlockExists`.
+model ConversationParticipant {
+  id             String @id @default(cuid())
+  conversationId String
+  userId         String
+
+  joinedAt DateTime @default(now())
+
+  /// "Read up to a point" (P8.2). NULL means never read, which is not the same
+  /// as read-nothing-since: the «Нови съобщения» divider needs to tell a
+  /// never-opened conversation from one caught up at its first message.
+  lastReadAt DateTime?
+
+  /// Set when this person leaves or archives. The row STAYS so their history
+  /// still resolves and so a re-add does not violate the unique below.
+  leftAt DateTime?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// One membership per person per conversation.
+  @@unique([conversationId, userId])
+  /// "Which conversations is this person in" — the inbox and every policy
+  /// subquery.
+  @@index([userId])
+}
+
+/// One direct message. P8.1 (#2795).
+///
+/// `body` is encrypted under the GLOBAL KEK, not a per-tenant DEK, and the
+/// precedent is `ExchangeMessage` in this same domain: a two-party row under
+/// either party's DEK is unreadable by the other — measured on production,
+/// where the recipient of the only live thread saw `v2:…` where the text
+/// should be. There is no per-tenant key that works, and these rows have no
+/// tenant at all. See `GLOBAL_KEK_MODELS` in
+/// `src/lib/db/encryption-middleware.ts`.
+model DirectMessage {
+  id             String @id @default(cuid())
+  conversationId String
+  senderUserId   String
+
+  /// ENCRYPTED (global KEK). Declared in
+  /// `src/lib/security/encrypted-fields.ts` — and note that narrowing stops
+  /// DECRYPTION too, so a later change that drops this declaration makes
+  /// every stored message unreadable to everyone, with no error and no log.
+  body String
+
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+
+  /// Soft delete. A deleted message keeps its row because the conversation is
+  /// two people's record, and because P5.3's rule — a deleted message has
+  /// nothing to capture, so it is not reportable — needs the row to say so.
+  deletedAt DateTime?
+
+  /// The sender's idempotency key, so a replayed send is one message. Scoped
+  /// to `senderUserId` rather than to a tenant the row does not have — the
+  /// same scoping `ExchangeMessage` uses, for the same reason.
+  idempotencyKey String?
+
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  reactions    MessageReaction[]
+
+  /// Postgres treats NULLs as distinct, so messages without a key do not
+  /// collide. A key is therefore optional without being a silent no-op.
+  @@unique([senderUserId, idempotencyKey])
+  /// The timeline read: one conversation, in order.
+  @@index([conversationId, createdAt])
+}
+
+/// A reaction on a direct message. P8.1 (#2795).
+///
+/// `emoji` is a short symbol and NOT free text, deliberately: a reaction is
+/// delivered by push, and `push-payload-carries-no-free-text` (#1999) exists
+/// because a task assignment put a farmer's own prose into `aps.alert.body`,
+/// which Apple reads. A reaction that could carry prose would reintroduce
+/// that by a side door.
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  /// One of each reaction per person per message; pressing twice removes
+  /// rather than duplicating.
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}

@@ -241,6 +241,11 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
             AssistantMemoryFact: out.assistantMemory,
             OrgMembership: out.organisationMemberships,
             FeatureFlagCohortMember: out.featureCohorts,
+            // P8.1 (#2795) — four more, empty until P8.2 ships a writer.
+            Conversation: out.conversationsIOpened,
+            ConversationParticipant: out.conversationMemberships,
+            DirectMessage: out.directMessages,
+            MessageReaction: out.messageReactions,
         };
 
         const unrepresented = EXPORTED_MODELS.filter((m) => !(m in collections));
