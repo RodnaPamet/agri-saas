@@ -57,11 +57,39 @@ describe('the route is reachable without a session', () => {
         expect(isPublicPath('/api/public/farms')).toBe(true);
     });
 
-    it('a NEIGHBOURING path is not opened by it', () => {
-        // The exact-vs-prefix distinction, and only a child or a sibling can
-        // show it. An entry spelled as a prefix would have opened both.
-        expect(isPublicPath('/api/public/farms/secret')).toBe(false);
+    it('a SIBLING is not opened by it', () => {
+        // The segment-bounding property, and only a sibling can show it.
+        //
+        // CHANGED IN #2774, and deliberately rather than to make a suite pass.
+        // This test used to assert `/api/public/farms/secret` was GATED too,
+        // as the discriminator for "the entry is EXACT, not a prefix" — the
+        // comment said so: "an entry spelled as a prefix would have opened
+        // both". That premise expired when `/api/public/farms/{handle}` became
+        // a real route: children ARE Edge-open now, via a deliberate
+        // `'/api/public/farms/'` prefix added alongside the surviving exact
+        // entry for the bare list path.
+        //
+        // What is NOT weakened is the property this test exists for. A sibling
+        // must still be refused, because `matchesPublicPrefix` segment-bounds —
+        // that is the assertion below and it is unchanged. And the risk the old
+        // `farms/secret` line stood for is covered by the OTHER half of the
+        // pair: `public-routes-self-authenticate` requires every route behind a
+        // public prefix to verify a credential or carry a written exemption, so
+        // a future `/api/public/farms/secret` cannot be anonymous by accident —
+        // it has to argue for itself in that guard's EXEMPT map.
         expect(isPublicPath('/api/public/farmsomething')).toBe(false);
+        expect(isPublicPath('/api/public/farmsX')).toBe(false);
+    });
+
+    it('its CHILD route is open, which is the #2774 change stated as a fact', () => {
+        // Asserted positively rather than left as the absence of the old line,
+        // so the widening is a thing the suite claims rather than a thing it
+        // merely stopped denying.
+        expect(isPublicPath('/api/public/farms/pobeda')).toBe(true);
+        // And the bare list path still matches, via the exact entry — a
+        // trailing-slash prefix does NOT cover it, so replacing the exact entry
+        // with the prefix would have broken this route while opening children.
+        expect(isPublicPath('/api/public/farms')).toBe(true);
     });
 
     it('is covered by the public-read rate limit — P6.10 asks for exactly this', () => {

@@ -71,6 +71,27 @@ export const PUBLIC_PATH_PREFIXES = [
     // that is the whole defence, and it is why the route must not grow a
     // mutating export without a different gate.
     '/api/public/media/',
+
+    // P6.9 (#2774) — one published profile by handle, `/api/public/farms/{handle}`,
+    // the JSON the native screen reads.
+    //
+    // A PREFIX, and the sibling EXACT entry for `/api/public/farms` stays. That
+    // entry's own note says a prefix was avoided because "a prefix would have
+    // opened anything added beneath it later" — this route is that thing, so
+    // the narrow claim is no longer available and the two forms now coexist:
+    // exact for the bare list path, prefix for children.
+    //
+    // Measured against the live predicate before adding it: `/api/public/farms`
+    // OPEN, `/api/public/farms/pobeda` GATED, `/api/public/farmsomething` GATED.
+    // The last one is why the prefix is safe — `matchesPublicPrefix`
+    // segment-bounds, so a sibling cannot ride along. What the trailing slash
+    // decides here is only that the BARE path does not match this entry, which
+    // is harmless because the exact entry already covers it.
+    //
+    // The widening is real and bounded by the OTHER half: every future child of
+    // this prefix is Edge-open, and `public-routes-self-authenticate` is what
+    // requires each such handler to be deliberately anonymous.
+    '/api/public/farms/',
     '/f',
     '/invite/',          // Invite preview page (tenant + org) — public so unauthenticated users can see invite details
     '/api/auth',         // Auth.js callbacks, session, csrf, providers

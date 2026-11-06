@@ -33,6 +33,24 @@ const FarmSearchHitSchema = z
     })
     .openapi('PublicFarmSearchHit');
 
+const PublicFarmProfileSchema = z
+    .object({
+        handle: z.string(),
+        displayName: z.string(),
+        tagline: z.string().nullable(),
+        about: z.string().nullable(),
+        oblast: z.string().nullable(),
+        crops: z.array(z.string()),
+        logoUrl: z.string().nullable().openapi({
+            description:
+                'ROOT-RELATIVE `/api/public/media/{hash}`, or null. A URL and not the hash it contains — decided with agrent-ios (2026-10-20) on their own argument: the server owns the path shape, so correcting it never needs a client release, and the phone already follows a server-given root-relative path for `/me`’s `avatarUrl`. The hash is recoverable from the URL and is deliberately not also returned.',
+        }),
+        photoUrls: z.array(z.string()).openapi({
+            description: 'Root-relative gallery URLs, in display order.',
+        }),
+    })
+    .openapi('PublicFarmProfile');
+
 export function registerPublicFarmsPaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -55,6 +73,55 @@ export function registerPublicFarmsPaths(registry: OpenAPIRegistry): void {
             status: 200,
             description: 'Matching farms, best match first. A BARE ARRAY.',
             schema: z.array(FarmSearchHitSchema),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/public/farms/{handle}',
+        operationId: 'getPublicFarmProfile',
+        // Anonymous by design — see NO_AUTH (#1843).
+        security: NO_AUTH,
+        summary: 'One public farm profile, by handle',
+        description:
+            'ANONYMOUS. The JSON behind `/f/{handle}`, for the native profile screen — the page and '
+            + 'this route share `readPublicFarmProfile`, so they cannot disagree about what a '
+            + 'published profile contains.\n\n'
+            + '**A hidden field is `null` or `[]`, never accompanied by a flag.** The projection row '
+            + 'IS the allowlisted shape, so per-field visibility is applied where the row is '
+            + 'written rather than filtered again on read. There is no `visible` boolean to '
+            + 'interpret and no field that arrives empty-but-present meaning "withheld".\n\n'
+            + '**Images are root-relative URLs, not hashes** — see `logoUrl`.\n\n'
+            + '`indexable` and `projectedAt` are on the server-side view and deliberately NOT '
+            + 'exposed: the first drives robots and the sitemap, the second would be a second '
+            + 'caching mechanism beside the ETag.\n\n'
+            + '**Refusal codes: one, and it discloses nothing.** A malformed handle, a farm that '
+            + 'never existed and one that has withdrawn its profile all answer the SAME `404` with '
+            + '`{ "error": "NOT_FOUND" }`. That is structural rather than three branches kept in '
+            + 'step: a row exists in the projection only while the farm is published, and '
+            + 'withdrawal DELETES it instead of flagging it, so "not published" and "never existed" '
+            + 'are one absence. Do not treat the 404 as evidence a handle is free.\n\n'
+            + 'The handle is trimmed and lower-cased before lookup, so a trailing space pasted from '
+            + 'a shared link or read off printed A6 paper does not read as a missing farm.',
+        tags: ['Public'],
+        params: z.object({
+            handle: z.string().openapi({
+                param: { name: 'handle', in: 'path' },
+                example: 'pobeda',
+                description: 'The farm’s public address, as it appears in `/f/{handle}`.',
+            }),
+        }),
+        success: {
+            status: 200,
+            description: 'The published profile. Carries a weak ETag; honours `If-None-Match` with a 304.',
+            schema: PublicFarmProfileSchema,
+        },
+        extraResponses: {
+            404: {
+                description:
+                    '`{ "error": "NOT_FOUND" }` — no published profile at that handle. Identical for '
+                    + 'a malformed handle, an unpublished farm and a nonexistent one, by design.',
+            },
         },
     });
 }
