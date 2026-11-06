@@ -680,7 +680,6 @@ const UNDOCUMENTED_BASELINE: readonly string[] = [
     // refusals into real codes: three of them were passed as the MESSAGE
     // field, so `code` read BAD_REQUEST and there was nothing coherent to
     // document.
-    'MESSAGE_NOT_FOUND',
     'NOTES_TOO_LONG',
     'NOT_A_FIELD_OPERATION_TASK',
     'OPERATION_NOT_ASSIGNED_TO_YOU',

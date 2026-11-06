@@ -1644,6 +1644,78 @@ export const PersonBlockSchema = z.object({
         + 'caller and cannot be supplied.',
 });
 
+// ─── Direct messages (P8.2, #2796) ───
+//
+// What these bodies do NOT accept is the point. No `senderUserId` — the sender
+// is always the session user, and `direct_message_insert`'s WITH CHECK refuses
+// a forged one with 42501 even if a future caller tried. No `conversationId`
+// in a message body either: it is a path parameter, so a client cannot post
+// into one conversation while naming another.
+//
+// `.strip()` rather than `.strict()`, following `FileReportSchema`: a
+// client-supplied extra field is DROPPED rather than rejected, so a caller
+// cannot learn from an error message which fields exist.
+
+export const OpenConversationSchema = z.object({
+    // A farm handle, not a user id. A user id in the body would let a caller
+    // address anybody by guessing, where a handle is a farm's own published
+    // identifier — and the resolution to a person happens server-side, which
+    // is what keeps the farm's owner from being enumerable.
+    handle: z.string().min(1, 'handle is required').max(100),
+}).strip().openapi('OpenConversation', {
+    description:
+        'The farm handle to open a conversation with. The recipient is '
+        + 'resolved server-side to that farm\'s active owner and cannot be '
+        + 'supplied.',
+});
+
+export const SendDirectMessageSchema = z.object({
+    body: z.string().min(1, 'body is required').max(4000),
+    // Optional, and the same key on a replay is what makes a re-send one
+    // message — `outboxHeaders()` is the producer. Absent is allowed because
+    // a web composer that is online has nothing to replay.
+    idempotencyKey: z.string().min(1).max(200).optional(),
+}).strip().openapi('SendDirectMessage', {
+    description:
+        'A message to send. The sender is the authenticated caller. Repeating '
+        + 'a request with the same idempotencyKey returns the message the '
+        + 'first attempt created rather than sending a second.',
+});
+
+export const RespondToConversationSchema = z.object({
+    decision: z.enum(['ACCEPT', 'DECLINE']),
+}).strip().openapi('RespondToConversation', {
+    description:
+        'Accept or decline a conversation request. Only the party who did NOT '
+        + 'open it may answer, and a decision is final.',
+});
+
+export const EditDirectMessageSchema = z.object({
+    body: z.string().min(1, 'body is required').max(4000),
+}).strip().openapi('EditDirectMessage', {
+    description: 'Replacement text for a message the caller sent.',
+});
+
+export const MarkConversationReadSchema = z.object({
+    // An instant, not a message id: the cursor is a time so a client that has
+    // read to the bottom does not need to name the last message, and so two
+    // clients cannot disagree about ordering.
+    readAt: z.string().datetime({ offset: true }),
+}).strip().openapi('MarkConversationRead', {
+    description:
+        'Move the caller\'s read cursor to this instant. Forward only — a '
+        + 'cursor already at or past it is left alone.',
+});
+
+export const MessageReactionSchema = z.object({
+    // Short on purpose. A reaction is delivered by push, and a field long
+    // enough for prose would put a farmer's words into APNs — the exposure
+    // `push-payload-carries-no-free-text` exists to prevent.
+    emoji: z.string().min(1, 'emoji is required').max(16),
+}).strip().openapi('MessageReaction', {
+    description: 'A short reaction symbol. Not free text.',
+});
+
 // ─── Moderation console (P5.4a, #1595) ───
 //
 // Platform-admin bodies. Note what they do NOT accept: `moderatorRef`,

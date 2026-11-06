@@ -39,6 +39,7 @@ import { registerFarmProfilePaths } from './farm-profile.paths';
 import { registerMeFarmsPaths } from './me-farms.paths';
 import { registerMeNewsPreferencesPaths } from './me-news-preferences.paths';
 import { registerMeStreamPaths } from './me-stream.paths';
+import { registerDirectMessagePaths } from './direct-messages.paths';
 import { registerTrustSafetyPaths } from './trust-safety.paths';
 import { registerTelemetryPaths } from './telemetry.paths';
 import { registerAccessReviewPaths } from './access-review.paths';
@@ -92,6 +93,7 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerMeFarmsPaths(registry);
     registerMeNewsPreferencesPaths(registry);
     registerMeStreamPaths(registry);
+    registerDirectMessagePaths(registry);
     registerTrustSafetyPaths(registry);
     registerTelemetryPaths(registry);
     registerModerationPaths(registry);

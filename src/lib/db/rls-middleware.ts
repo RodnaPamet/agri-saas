@@ -131,6 +131,37 @@ export type RlsBypassReason =
      */
     | 'public-media-read'
     /**
+     * Resolving a farm HANDLE to the person who should receive a direct
+     * message — P8.2 (#2796), `POST /api/social/conversations`.
+     *
+     * The caller is a signed-in person who is NOT a member of the farm they
+     * are writing to, so there is no tenant context to enter with: a DM is
+     * person-scoped and the two people may share no farm. `runInUserContext`
+     * sets `app.user_id` and no tenant, and neither `FarmBrand` nor
+     * `TenantMembership` has an `app_user` arm that admits a non-member.
+     *
+     * What bounds it is the ORDER of the reads and the SHAPE of what comes
+     * back, not the table — `public-media-read`'s argument, because the tables
+     * here are tenant-scoped and so the "bounded by the table" claim that
+     * covers `public-projection-read` does not cover this.
+     *
+     *   1. a PUBLISHED `PublicFarmProfile` must exist for the handle, which is
+     *      the farm's own decision to be publicly reachable;
+     *   2. only then is `FarmBrand` read, by that same handle, for its
+     *      `tenantId`;
+     *   3. only then is that tenant's oldest ACTIVE OWNER membership read, for
+     *      its `userId` and nothing else.
+     *
+     * The function returns a bare `userId`. No tenant id, no slug, no
+     * membership row and no farm identity crosses the boundary — which
+     * matters because P6 deliberately kept `tenantId` OFF the public
+     * projection so that reading a public page cannot teach anyone the
+     * internal tenant identifier. Reversing steps 1 and 2 would turn this
+     * into a handle→tenant oracle for UNPUBLISHED farms, which is why the
+     * order has its own assertion rather than only this comment.
+     */
+    | 'dm-recipient-resolution'
+    /**
      * Request-time read across the tenants of ONE organization, for the
      * Epic O-3 portfolio summary. Reads aggregate `ComplianceSnapshot` rows
      * and tenant metadata (id/slug/name) only — never per-tenant business
@@ -347,6 +378,7 @@ const REASON_REGISTRY: Record<RlsBypassReason, true> = {
     'org-portfolio-read': true,
     'module-availability': true,
     'org-tenant-bootstrap': true,
+    'dm-recipient-resolution': true,
 };
 
 const KNOWN_REASONS: ReadonlySet<string> = new Set(Object.keys(REASON_REGISTRY));
