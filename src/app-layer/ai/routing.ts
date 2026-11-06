@@ -87,7 +87,9 @@ export type AiTask =
     | 'dosage-calc'
     | 'regulatory'
     | 'long-horizon'
-    | 'cheap-bulk';
+    | 'cheap-bulk'
+    | 'rag-answer'
+    | 'memory-extract';
 
 /** One backend+model target in a route's primary/failover chain. */
 export interface AiRouteTarget {
@@ -139,6 +141,69 @@ const GROQ_FAST = 'llama-3.3-70b-versatile';
  * provider boundaries.
  */
 const ROUTES: Record<AiTask, AiRoute> = {
+    /*
+     * The two routes below exist because `getAiProvider()` was a SECOND AI
+     * path beside this one (#2765). Both callers gated their spend and neither
+     * RECORDED it: `recordAiUsage` is reached only from `completeWithRouting`,
+     * so their tokens never entered `AiUsageEvent` — the table
+     * `getAiTokensUsedThisMonth` sums, which is the total their own gate
+     * compares against. A gate reading a counter its own path never
+     * increments. Routing them fixes the ledger and gains failover with it.
+     *
+     * `tier: 'cheap'` on both, DELIBERATELY, and not because the work is
+     * cheap. The tier is the ENTITLEMENT, gated by `assertAiTierAllowed`
+     * against `PLAN_AI_TIER_CEILING`, where FREE's ceiling is 'cheap' and
+     * every other plan's is 'premium'. Neither caller is tier-gated today, so
+     * 'standard' — the semantically tidy label — would NEWLY refuse a FREE
+     * tenant who can use RAG right now. The model is chosen separately, which
+     * is what lets the entitlement stay open while the model stays good.
+     *
+     * The `ollama` failover is what keeps a SELF-HOSTED install working, and
+     * it is not decoration. `providerForTarget`'s claude branch THROWS without
+     * `ANTHROPIC_API_KEY`, and `memory-extractor`'s docblock chose
+     * `getAiProvider()` precisely so that a deployment with no Anthropic key
+     * still gets memory — "self-hosted is the deployment that ships".
+     * `baseUrlForBackend` falls back to `env.AI_BASE_URL` for that backend, so
+     * a keyless install hard-fails the primary and lands on its own host with
+     * its own `AI_MODEL`. The property the docblock protects is preserved by
+     * the chain rather than by the second path.
+     */
+    'rag-answer': {
+        tier: 'cheap',
+        backend: 'claude',
+        model: CLAUDE_SONNET,
+        maxTokens: 2048,
+        timeoutMs: 60_000,
+        retries: 1,
+        failover: [
+            { backend: 'claude', model: CLAUDE_HAIKU },
+            { backend: 'ollama', model: env.AI_MODEL },
+        ],
+    },
+    /*
+     * Memory extraction — unattended, every 15 minutes, over ended
+     * conversations. Haiku on the primary: it is background work with a
+     * structured output and no reader waiting, which is the owner's call
+     * (2026-11-06) on the two-tier split. Sonnet sits in the failover chain so
+     * a Haiku refusal or outage degrades to the better model rather than to
+     * nothing.
+     *
+     * 45s rather than the chat 60s: a run processes conversations in a loop
+     * and a slow one should yield the slot, since the row stays UNSTAMPED and
+     * the next quarter-hour picks it up.
+     */
+    'memory-extract': {
+        tier: 'cheap',
+        backend: 'claude',
+        model: CLAUDE_HAIKU,
+        maxTokens: 1024,
+        timeoutMs: 45_000,
+        retries: 1,
+        failover: [
+            { backend: 'claude', model: CLAUDE_SONNET },
+            { backend: 'ollama', model: env.AI_MODEL },
+        ],
+    },
     // Interactive chat — standard reasoning on Sonnet, fail over to
     // OpenRouter's Sonnet, then Haiku.
     'copilot-chat': {
