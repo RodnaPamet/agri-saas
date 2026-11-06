@@ -25,6 +25,8 @@ import { TaskListItemDTOSchema } from '@/lib/dto/task.dto';
 import {
     CreateCropSeasonSchema,
     CreateWeedObservationSchema,
+    UpdateCropSeasonSchema,
+    UpdateWeedObservationSchema,
 } from '@/app-layer/schemas/parcel-history.schemas';
 // DERIVED from the Prisma enum rather than respelled — this list was
 // hand-written in three places before `catalog.schemas.ts` owned it.
@@ -267,6 +269,63 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             seasonId: z.string().openapi({ param: { name: 'seasonId', in: 'path' } }),
         }),
         success: { status: 200, description: 'Removed.', schema: z.object({ ok: z.boolean() }) },
+    });
+
+    op(registry, {
+        method: 'patch',
+        path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons/{seasonId}',
+        operationId: 'updateParcelCropSeason',
+        summary: 'Correct a crop season',
+        description:
+            'Correct a season in place (#541).\n\n' + 'Partial: a field OMITTED leaves the stored value alone, an explicit `null` clears a nullable one. Send only what changed.\n\n**The required fields refuse `null`.** They are optional-but-not-nullable in the schema, so `null` is a `VALIDATION_ERROR` rather than a silent clear of a column that cannot be empty.\n\n**A body that changes nothing is refused** with **400 `NO_FIELDS_TO_UPDATE`** rather than answering 200. A no-op success would hide a client bug AND write an audit entry claiming an edit that did not happen.\n\n**The edit is AUDITED.** `UPDATE` with `changedFields`, because this is an agronomic record that feeds the БАБХ register and a correction that left no trace of the previous value would be worse than no correction. Owner ruling 2026-11-06, choosing a tracked edit over a silent one.\n\n`parcelId` is NOT in the body and cannot be changed: moving a record to another parcel is not a correction, it is a delete here and a create there, and it would leave the receiving parcel with a row nobody recorded against it.\n\n' +
+            'A season that is already soft-deleted answers **404 `CROP_SEASON_NOT_FOUND`** — the ' +
+            'same code the delete uses, because a tombstone is not editable.',
+        tags: ['Parcel history'],
+        params: ParcelParams.extend({
+            seasonId: z.string().openapi({ param: { name: 'seasonId', in: 'path' } }),
+        }),
+        body: UpdateCropSeasonSchema,
+        success: { status: 200, description: 'Corrected.', schema: z.object({ id: z.string() }) },
+        extraResponses: {
+            400: {
+                description:
+                    '`NO_FIELDS_TO_UPDATE` — the body changed nothing. `CROP_TYPE_INVALID` — an ' +
+                    'empty or over-long crop. `VALIDATION_ERROR` — a `null` on a required field.',
+            },
+            404: { description: '`CROP_SEASON_NOT_FOUND`' },
+        },
+    });
+
+    op(registry, {
+        method: 'patch',
+        path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/weed-observations/{observationId}',
+        operationId: 'updateParcelWeedObservation',
+        summary: 'Correct a weed observation',
+        description:
+            'Correct an observation in place (#541).\n\n' + 'Partial: a field OMITTED leaves the stored value alone, an explicit `null` clears a nullable one. Send only what changed.\n\n**The required fields refuse `null`.** They are optional-but-not-nullable in the schema, so `null` is a `VALIDATION_ERROR` rather than a silent clear of a column that cannot be empty.\n\n**A body that changes nothing is refused** with **400 `NO_FIELDS_TO_UPDATE`** rather than answering 200. A no-op success would hide a client bug AND write an audit entry claiming an edit that did not happen.\n\n**The edit is AUDITED.** `UPDATE` with `changedFields`, because this is an agronomic record that feeds the БАБХ register and a correction that left no trace of the previous value would be worse than no correction. Owner ruling 2026-11-06, choosing a tracked edit over a silent one.\n\n`parcelId` is NOT in the body and cannot be changed: moving a record to another parcel is not a correction, it is a delete here and a create there, and it would leave the receiving parcel with a row nobody recorded against it.\n\n' +
+            '**`weeds` replaces the list WHOLE and cannot empty it.** The server re-partitions ' +
+            'it into catalogue keys and free text, so both stored halves move together — ' +
+            'updating one without the other would leave a row whose two columns came from ' +
+            'different submissions. An empty list is **400 `WEEDS_REQUIRED`**, the same as on ' +
+            'create: an emptied observation would assert that somebody looked at a parcel and ' +
+            'found nothing, which is a different agronomic claim. DELETE is the remedy for an ' +
+            'observation that should not exist, and it leaves a tombstone.\n\n' +
+            'The create path\u2019s idempotency key is untouched by an edit: it identifies the ' +
+            'SUBMISSION that made the row, not the row\u2019s current contents.',
+        tags: ['Parcel history'],
+        params: ParcelParams.extend({
+            observationId: z.string().openapi({ param: { name: 'observationId', in: 'path' } }),
+        }),
+        body: UpdateWeedObservationSchema,
+        success: { status: 200, description: 'Corrected.', schema: z.object({ id: z.string() }) },
+        extraResponses: {
+            400: {
+                description:
+                    '`NO_FIELDS_TO_UPDATE` — the body changed nothing. `WEEDS_REQUIRED` — an ' +
+                    'empty `weeds` list. `VALIDATION_ERROR` — a `null` on a required field.',
+            },
+            404: { description: '`WEED_OBSERVATION_NOT_FOUND`' },
+        },
     });
 
     op(registry, {

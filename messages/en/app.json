@@ -6811,6 +6811,7 @@
         "CROP_SEASON_NOT_FOUND": "That crop season was not found.",
         "CROP_SEASON_YEAR_INVALID": "That harvest year is out of range — it must be between {min} and {max}.",
         "CROP_TYPE_INVALID": "A crop is required.",
+        "NO_FIELDS_TO_UPDATE": "No fields to update.",
         "CROP_TYPE_NAME_REQUIRED": "A crop name is required.",
         "DELIVERY_NOT_FOUND": "That delivery was not found.",
         "DOCUMENT_DELETE_NOT_ALLOWED": "Only the person who uploaded this document, or an administrator, may delete it.",

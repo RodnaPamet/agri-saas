@@ -19885,6 +19885,66 @@ exports[`API contract — per-schema snapshots schema: UpdateMemberCertificatesR
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: UpdateParcelCropSeason 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "year": {
+      "type": "integer"
+    },
+    "cropType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sownAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "harvestedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: UpdateParcelWeedObservation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "weeds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: UpdatePromotionBody 1`] = `
 "{
   "type": "object",
