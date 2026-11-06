@@ -41,6 +41,7 @@ import type { HaltCode } from '../safety/refusal-codes';
 import type { AiCompletion, AiMessage } from '../provider/types';
 import type { RequestContext } from '@/app-layer/types';
 import { logger } from '@/lib/observability';
+import { recordStageTiming } from './stage-timing-store';
 
 /** At most four tool calls for one question. */
 export const MAX_TOOL_CALLS = 4;
@@ -319,9 +320,7 @@ export async function runToolLoop(
      * egress scan, the emits — and it is reported rather than itemised so the
      * three figures above stay the ones that add up.
      */
-    logger.info('assistant.stage_timing', {
-        component: 'assistant',
-        tenantId: deps.ctx.tenantId,
+    const stageTiming = {
         totalMs,
         providerMs,
         providerCalls,
@@ -331,7 +330,29 @@ export async function runToolLoop(
         otherMs: Math.max(0, totalMs - providerMs - toolPhaseMs),
         toolCallsMade,
         halt,
+    };
+
+    logger.info('assistant.stage_timing', {
+        component: 'assistant',
+        tenantId: deps.ctx.tenantId,
+        ...stageTiming,
     });
+
+    /*
+     * ...and PERSISTED, because the log line above is read by nobody (#2751).
+     * `docker logs` holds only the current container's output and Watchtower
+     * prunes the old one on every deploy — measured on production, ZERO rows
+     * available against ~20 answered questions all-time. The figures the
+     * per-round model decision needs were being destroyed faster than they
+     * accumulated.
+     *
+     * AWAITED rather than fired and forgotten: an un-awaited promise that
+     * rejects after the handler returns is an unhandled rejection, which kills
+     * a jest worker and is a process-level risk in production.
+     * `recordStageTiming` never throws, so awaiting it costs one insert and
+     * cannot fail the answer — the bargain the audit extension already strikes.
+     */
+    await recordStageTiming(deps.ctx.tenantId, stageTiming);
 
     return {
         text,
