@@ -35,7 +35,7 @@ import {
     MAX_COST_BATCH_LINES,
     type CreateCostEntryInput,
 } from '@/app-layer/schemas/grain.schemas';
-import { normaliseCostToEur } from '@/lib/grain/currencies';
+import { isStoredAsEuro } from '@/lib/grain/currencies';
 import { ingestUploadedFile } from '@/lib/upload/ingest';
 import { FileRepository } from '@/app-layer/repositories/FileRepository';
 import { runInTenantContext } from '@/lib/db-context';
@@ -135,35 +135,52 @@ function toProposedLine(
     draft: InvoiceLineDraft,
     invoiceFileId: string,
 ): { line: CreateCostEntryInput } | { skip: string } {
-    const { eur, refusal } = normaliseCostToEur(draft.amount, draft.currency);
-    if (refusal === 'FOREIGN') {
-        // The EUR-only ruling named euro spellings, blanks and lev. A dollar
-        // invoice needs a market quote this product does not have, and
-        // relabelling it as euro would misstate money by whatever the rate is.
+    /**
+     * The SAVE path's predicate, not the rollup's (#2539).
+     *
+     * This used to call `normaliseCostToEur`, which CONVERTS lev at the fixed
+     * peg and refuses only genuinely foreign currencies. That is the right
+     * predicate for a rollup — a lev row is addable to a euro total — and the
+     * wrong one here, for a reason that outlives the EUR-only ruling: a scan
+     * produces lines to be SAVED, and the save path refuses anything that is
+     * not already euro (`COST_ENTRY_CURRENCY_NOT_EUR`). Converting here
+     * proposed a line the farmer could accept and the server would then
+     * refuse — or, worse, accept at a silently different figure.
+     *
+     * `isStoredAsEuro` is the save path's own question — "is this ALREADY
+     * euro, as opposed to merely convertible" — and it says NO to lev. Its
+     * docblock already drew that distinction; nothing was using it here.
+     *
+     * So a lev line is now REFUSED rather than converted. Combined with
+     * dropping the `12.34 лв. · ` description prefix below, that is the whole
+     * of the owner's "no trace of conversion" for this path. Dropping the
+     * prefix ALONE would have been worse than leaving both: the conversion
+     * would still happen and would no longer say so.
+     */
+    if (!isStoredAsEuro(draft.currency)) {
         return { skip: 'INVOICE_LINE_FOREIGN_CURRENCY' };
     }
-    if (eur == null) return { skip: 'INVOICE_LINE_AMOUNT_UNREADABLE' };
+    const eur = draft.amount;
+    if (eur == null || !Number.isFinite(eur)) return { skip: 'INVOICE_LINE_AMOUNT_UNREADABLE' };
 
     /**
-     * The original lev figure goes in `description`, because there is no
-     * column for it.
+     * The description is the invoice's own text and NOTHING ELSE (#2539,
+     * owner ruling 2026-11-06: "any trace of conversion is uprooted — only EUR
+     * should remain everywhere").
      *
-     * Checked against the schema and the model: no `originalAmount`,
-     * `amountOriginal` or `sourceAmount` exists. `amount` is EUR and
-     * `currency` is `'EUR'` — the save path REFUSES anything else
-     * (`COST_ENTRY_CURRENCY_NOT_EUR`), so there is nowhere else for it to go.
+     * It used to carry a `12.34 лв. · ` prefix when a line was converted from
+     * lev, because there is no column for an original amount. That was the
+     * weakest part of the #482 contract and it was flagged as such when the
+     * contract was sent — but it is worse than weak, because it wrote a
+     * conversion trace into STORED DATA rather than into a view. A description
+     * is prose: nothing could compute on it, and nothing could remove it
+     * either without parsing prose back out.
      *
-     * This is the weakest part of the #482 contract and it was flagged as such
-     * when the contract was sent: a description is prose, so nothing can
-     * compute on it later. If the original belongs in a FIELD — for a VAT
-     * report, say — that is a migration and an owner decision, not something
-     * to add on my own judgement.
+     * A lev line is no longer converted at all — it is refused above, like any
+     * other non-euro currency — so there is no original to preserve and no
+     * prefix to write.
      */
-    const isLev = eur !== draft.amount;
-    const prefix = isLev
-        ? `${draft.amount.toFixed(2)} лв. · `
-        : '';
-    const description = `${prefix}${draft.description ?? ''}`.trim() || null;
+    const description = draft.description?.trim() || null;
 
     return {
         line: {
