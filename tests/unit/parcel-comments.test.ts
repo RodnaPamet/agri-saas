@@ -7,7 +7,12 @@
  * batching is asserted on the CALLS, because "two queries regardless of queue
  * length" is the property that makes the field worth having at all.
  */
-const mockDb = { parcel: { findFirst: jest.fn() } };
+const mockDb = {
+    parcel: { findFirst: jest.fn() },
+    parcelComment: {
+        findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn(),
+    },
+};
 
 const linksByTasksMock = jest.fn();
 const linesByTasksMock = jest.fn();
@@ -51,7 +56,7 @@ jest.mock('@/app-layer/repositories/ParcelRepository', () => {
     };
 });
 
-import { attachParcelIds, listParcelComments } from '@/app-layer/usecases/task';
+import { addParcelComment, attachParcelIds, deleteParcelComment, listParcelComments } from '@/app-layer/usecases/task';
 import type { RequestContext } from '@/app-layer/types';
 
 const ctx = {
@@ -88,6 +93,10 @@ function resolution(taskId: string, at: string | null, over: Record<string, unkn
 }
 
 beforeEach(() => {
+    mockDb.parcelComment.findMany.mockResolvedValue([]);
+    mockDb.parcelComment.findFirst.mockResolvedValue(null);
+    mockDb.parcelComment.create.mockImplementation(({ data }: never) => ({ id: 'pc1', ...(data as object) }));
+    mockDb.parcelComment.updateMany.mockResolvedValue({ count: 1 });
     jest.clearAllMocks();
     mockDb.parcel.findFirst.mockResolvedValue({ id: 'p1' });
     linksByTasksMock.mockResolvedValue([]);
@@ -263,5 +272,279 @@ describe('listParcelComments — the parcel history (#2474)', () => {
         expect(first).toEqual(again);
         // Descending by id within the identical timestamp.
         expect(first).toEqual(['resolution:t3', 'resolution:t2', 'resolution:t1']);
+    });
+});
+
+/**
+ * Notes about the FIELD, tied to no task (owner ruling 2026-11-06).
+ *
+ * The properties worth pinning are the ones a reader of the merged list could
+ * get wrong: that a `PARCEL` row carries no task, and that it is NOT filtered
+ * by the task set — which is the whole reason the kind exists.
+ */
+describe('a note about the parcel itself', () => {
+    const note = (id: string, at: string) => ({
+        id,
+        body: `note ${id}`,
+        createdAt: new Date(at),
+        createdByUserId: 'u7',
+        createdBy: { id: 'u7', name: 'Петър', email: 'p@example.test' },
+    });
+
+    it('appears as kind PARCEL with NO task fields', async () => {
+        mockDb.parcel.findFirst.mockResolvedValue({ id: 'p1' });
+        taskIdsByParcelMock.mockResolvedValue([]);
+        opTaskIdsForParcelMock.mockResolvedValue([]);
+        commentsByTasksMock.mockResolvedValue([]);
+        resolutionsByIdsMock.mockResolvedValue([]);
+        mockDb.parcelComment.findMany.mockResolvedValue([note('n1', '2026-05-01T10:00:00Z')]);
+
+        const res = await listParcelComments(ctx, 'p1');
+        expect(res.rows).toHaveLength(1);
+        const row = res.rows[0];
+        expect(row.kind).toBe('PARCEL');
+        // NULL, not '' — an empty taskKey would render as a task whose key
+        // nobody set, which is a different claim from "there is no task".
+        expect(row.taskId).toBeNull();
+        expect(row.taskKey).toBeNull();
+        expect(row.taskTitle).toBeNull();
+        expect(row.body).toBe('note n1');
+    });
+
+    it('is NOT filtered by the task set — a parcel with no tasks still has notes', async () => {
+        // The reason the kind exists. The other two sources are keyed on the
+        // parcel's task ids; this one is keyed on the PARCEL.
+        mockDb.parcel.findFirst.mockResolvedValue({ id: 'p1' });
+        taskIdsByParcelMock.mockResolvedValue([]);
+        opTaskIdsForParcelMock.mockResolvedValue([]);
+        commentsByTasksMock.mockResolvedValue([]);
+        resolutionsByIdsMock.mockResolvedValue([]);
+        mockDb.parcelComment.findMany.mockResolvedValue([note('n1', '2026-05-01T10:00:00Z')]);
+
+        const res = await listParcelComments(ctx, 'p1');
+        expect(res.rows).toHaveLength(1);
+        const where = mockDb.parcelComment.findMany.mock.calls[0][0].where;
+        expect(where).toMatchObject({ tenantId: 't1', parcelId: 'p1' });
+        // And emphatically NOT by task id.
+        expect(where).not.toHaveProperty('taskId');
+    });
+
+    it('is read on the TENANT client, so the encrypted body decrypts', async () => {
+        // `body` is in ENCRYPTED_FIELDS. A privileged read would hand back a
+        // `v2:` envelope with no error and no log (#2723), so the assertion is
+        // that this read happens on the client `runInTenantContext` provided.
+        mockDb.parcel.findFirst.mockResolvedValue({ id: 'p1' });
+        taskIdsByParcelMock.mockResolvedValue([]);
+        opTaskIdsForParcelMock.mockResolvedValue([]);
+        commentsByTasksMock.mockResolvedValue([]);
+        resolutionsByIdsMock.mockResolvedValue([]);
+        await listParcelComments(ctx, 'p1');
+        expect(mockDb.parcelComment.findMany).toHaveBeenCalled();
+    });
+
+    it('sorts into the SAME chronological list as the other two kinds', async () => {
+        mockDb.parcel.findFirst.mockResolvedValue({ id: 'p1' });
+        taskIdsByParcelMock.mockResolvedValue(['t1']);
+        opTaskIdsForParcelMock.mockResolvedValue([]);
+        commentsByTasksMock.mockResolvedValue([comment('c1', 't1', '2026-05-02T10:00:00Z')]);
+        resolutionsByIdsMock.mockResolvedValue([]);
+        mockDb.parcelComment.findMany.mockResolvedValue([note('n1', '2026-05-03T10:00:00Z')]);
+
+        const res = await listParcelComments(ctx, 'p1');
+        // Newest first, across kinds — one history, not three lists.
+        expect(res.rows.map((r) => r.kind)).toEqual(['PARCEL', 'COMMENT']);
+    });
+});
+
+describe('writing a note', () => {
+    const wctx = {
+        ...ctx,
+        role: 'EDITOR',
+        permissions: { canRead: true, canWrite: true, canAdmin: false },
+    } as unknown as RequestContext;
+
+    beforeEach(() => {
+        mockDb.parcel.findFirst.mockResolvedValue({ id: 'p1' });
+    });
+
+    it('stores a sanitised body', async () => {
+        await addParcelComment(wctx, 'p1', '  Северният ъгъл се подмокря  ');
+        const { data } = mockDb.parcelComment.create.mock.calls[0][0];
+        expect(data.body).toBe('Северният ъгъл се подмокря');
+        expect(data.parcelId).toBe('p1');
+        expect(data.createdByUserId).toBe('u1');
+    });
+
+    it('refuses a body that is blank AFTER sanitising', async () => {
+        // `sanitizePlainText` trims, so three spaces reach the check as ''. The
+        // order matters: checking before sanitising would store '   '.
+        await expect(addParcelComment(wctx, 'p1', '   ')).rejects.toMatchObject({
+            code: 'PARCEL_COMMENT_EMPTY',
+        });
+        expect(mockDb.parcelComment.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an over-long body and names the ceiling', async () => {
+        await expect(
+            addParcelComment(wctx, 'p1', 'x'.repeat(2_001)),
+        ).rejects.toMatchObject({ code: 'PARCEL_COMMENT_TOO_LONG' });
+    });
+
+    it('returns the ORIGINAL note on an idempotent replay', async () => {
+        mockDb.parcelComment.findFirst.mockResolvedValue({ id: 'pc-original' });
+        const res = await addParcelComment(wctx, 'p1', 'again', 'key-1');
+        expect(res).toMatchObject({ id: 'pc-original' });
+        // The point: no second row.
+        expect(mockDb.parcelComment.create).not.toHaveBeenCalled();
+        // And the lookup is keyed on the CALLER's key. The assertion above is
+        // satisfied by a pre-read on any key at all, because a double returns
+        // its row whatever the `where` says — so the key has to be read back.
+        expect(mockDb.parcelComment.findFirst.mock.calls[0][0].where).toMatchObject({
+            tenantId: 't1',
+            parcelId: 'p1',
+            clientMutationId: 'key-1',
+        });
+    });
+
+    it('does NOT pre-read when the caller sent no key', async () => {
+        await addParcelComment(wctx, 'p1', 'once');
+        expect(mockDb.parcelComment.findFirst).not.toHaveBeenCalled();
+        expect(mockDb.parcelComment.create).toHaveBeenCalled();
+    });
+
+    it('404s on a parcel that is not this farm\u2019s', async () => {
+        mockDb.parcel.findFirst.mockResolvedValue(null);
+        await expect(addParcelComment(wctx, 'nope', 'hi')).rejects.toMatchObject({
+            code: 'PARCEL_NOT_FOUND',
+        });
+        expect(mockDb.parcelComment.create).not.toHaveBeenCalled();
+    });
+});
+
+describe('removing a note', () => {
+    const member = (role: string, userId: string, canAdmin: boolean) =>
+        ({
+            ...ctx,
+            userId,
+            role,
+            permissions: { canRead: true, canWrite: true, canAdmin },
+        }) as unknown as RequestContext;
+
+    const author = member('EDITOR', 'u-author', false);
+    const other = member('EDITOR', 'u-other', false);
+    const admin = member('ADMIN', 'u-admin', true);
+
+    const held = { id: 'pc9', createdByUserId: 'u-author' };
+
+    it('lets the AUTHOR remove their own note, as a SOFT delete', async () => {
+        mockDb.parcelComment.findFirst.mockResolvedValue(held);
+        await deleteParcelComment(author, 'p1', 'pc9');
+
+        // An UPDATE, not a delete: nothing in this usecase may call `delete`.
+        expect(mockDb.parcelComment.updateMany).toHaveBeenCalled();
+        const call = mockDb.parcelComment.updateMany.mock.calls[0][0];
+        expect(call.data.deletedAt).toBeInstanceOf(Date);
+        // Conditional on it still being live, so two concurrent deletes cannot
+        // both claim the removal and write two audit entries for one act.
+        expect(call.where).toMatchObject({ id: 'pc9', tenantId: 't1', deletedAt: null });
+    });
+
+    it('lets an ADMIN remove someone ELSE\u2019s note', async () => {
+        mockDb.parcelComment.findFirst.mockResolvedValue(held);
+        await deleteParcelComment(admin, 'p1', 'pc9');
+        expect(mockDb.parcelComment.updateMany).toHaveBeenCalled();
+    });
+
+    it('refuses a non-admin member removing someone else\u2019s note', async () => {
+        mockDb.parcelComment.findFirst.mockResolvedValue(held);
+        await expect(deleteParcelComment(other, 'p1', 'pc9')).rejects.toMatchObject({
+            code: 'PARCEL_COMMENT_NOT_FOUND',
+        });
+        expect(mockDb.parcelComment.updateMany).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The property is INDISTINGUISHABILITY, not "it was refused".
+     *
+     * Four causes must produce one observable, or the 404 confirms that a note
+     * exists at an id the caller may not read. Asserting a 404 four times over
+     * would pass just as happily on four different codes or messages, so this
+     * runs all four and compares what came back.
+     */
+    it('answers all four refusals IDENTICALLY', async () => {
+        const capture = async (prep: () => void, call: () => Promise<unknown>) => {
+            jest.clearAllMocks();
+            mockDb.parcelComment.updateMany.mockResolvedValue({ count: 1 });
+            prep();
+            try {
+                await call();
+                return { threw: false };
+            } catch (e) {
+                const err = e as { code?: string; status?: number; message?: string };
+                return { threw: true, code: err.code, status: err.status, message: err.message };
+            }
+        };
+
+        const missing = await capture(
+            () => mockDb.parcelComment.findFirst.mockResolvedValue(null),
+            () => deleteParcelComment(author, 'p1', 'nope'),
+        );
+        const alreadyGone = await capture(
+            // The read filters `deletedAt: null`, so an already-removed note is
+            // the same `null` the missing one produces.
+            () => mockDb.parcelComment.findFirst.mockResolvedValue(null),
+            () => deleteParcelComment(author, 'p1', 'pc9'),
+        );
+        const notMine = await capture(
+            () => mockDb.parcelComment.findFirst.mockResolvedValue(held),
+            () => deleteParcelComment(other, 'p1', 'pc9'),
+        );
+        const lostTheRace = await capture(
+            () => {
+                mockDb.parcelComment.findFirst.mockResolvedValue(held);
+                mockDb.parcelComment.updateMany.mockResolvedValue({ count: 0 });
+            },
+            () => deleteParcelComment(author, 'p1', 'pc9'),
+        );
+
+        expect(missing.threw).toBe(true);
+        expect(missing.code).toBe('PARCEL_COMMENT_NOT_FOUND');
+        // Every observable, not just the code.
+        expect(alreadyGone).toEqual(missing);
+        expect(notMine).toEqual(missing);
+        expect(lostTheRace).toEqual(missing);
+    });
+
+    it('refuses a READER outright, before any read', async () => {
+        const reader = member('READER', 'u-author', false);
+        await expect(deleteParcelComment(reader, 'p1', 'pc9')).rejects.toBeDefined();
+        expect(mockDb.parcelComment.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('scopes the lookup to the PARCEL in the path, not just the id', async () => {
+        // Otherwise a note id from another parcel is removable by anyone who
+        // can comment on this one.
+        mockDb.parcelComment.findFirst.mockResolvedValue(held);
+        await deleteParcelComment(author, 'p1', 'pc9');
+        expect(mockDb.parcelComment.findFirst.mock.calls[0][0].where).toMatchObject({
+            id: 'pc9', parcelId: 'p1', tenantId: 't1', deletedAt: null,
+        });
+    });
+});
+
+describe('a removed note', () => {
+    it('is filtered out of the list by deletedAt', async () => {
+        // Named explicitly: ParcelComment is NOT in SOFT_DELETE_TARGETS, so no
+        // extension injects this and a dropped clause would resurrect every
+        // removed note silently.
+        mockDb.parcel.findFirst.mockResolvedValue({ id: 'p1' });
+        taskIdsByParcelMock.mockResolvedValue([]);
+        opTaskIdsForParcelMock.mockResolvedValue([]);
+        commentsByTasksMock.mockResolvedValue([]);
+        resolutionsByIdsMock.mockResolvedValue([]);
+        await listParcelComments(ctx, 'p1');
+        expect(mockDb.parcelComment.findMany.mock.calls[0][0].where).toMatchObject({
+            tenantId: 't1', parcelId: 'p1', deletedAt: null,
+        });
     });
 });

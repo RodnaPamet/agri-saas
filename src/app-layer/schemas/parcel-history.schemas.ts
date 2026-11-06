@@ -138,3 +138,24 @@ export const UpdateWeedObservationSchema = z
     .strip()
     .openapi('UpdateParcelWeedObservation');
 export type UpdateWeedObservationBody = z.infer<typeof UpdateWeedObservationSchema>;
+
+/**
+ * A note about a parcel (owner ruling 2026-11-06).
+ *
+ * Its own schema rather than reusing `AddTaskCommentSchema`, even though the
+ * shape is identical today: `request-body-declared-once` caps a second
+ * DECLARATION of one body, not two bodies that happen to match. These are
+ * different surfaces with different authorisation and different storage, and
+ * sharing a schema would mean a field added for task comments silently arriving
+ * on this route.
+ *
+ * The length cap lives in the usecase, which answers the coded
+ * `PARCEL_COMMENT_TOO_LONG` with the ceiling in `params.max` — a client can act
+ * on that, where a schema `.max()` produces a generic `VALIDATION_ERROR`. The
+ * schema's job here is the TYPE.
+ */
+export const AddParcelCommentSchema = z
+    .object({ body: z.string().min(1) })
+    .strip()
+    .openapi('AddParcelComment');
+export type AddParcelCommentBody = z.infer<typeof AddParcelCommentSchema>;
