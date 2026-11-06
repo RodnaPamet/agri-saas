@@ -22,14 +22,13 @@
  * you which" — which is the provenance question a reviewer is asking.
  */
 import { randomUUID } from 'crypto';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
-import { dirname, join } from 'path';
 import { DB_AVAILABLE } from './db-helper';
 import { prisma } from '@/lib/prisma';
 import { downloadPromotionSource, listAllPromotions, createPromotion } from '@/app-layer/usecases/promotion-admin';
 import { companyNameKey } from '@/app-layer/usecases/promotions';
 import { makeRequestContext } from '../helpers/make-context';
 import { hashForLookup } from '@/lib/security/encryption';
+import { getStorageProvider } from '@/lib/storage';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `psrc-${randomUUID().slice(0, 8)}`;
@@ -38,7 +37,7 @@ let platformTenantId = '';
 let platformUserId = '';
 let companyId = '';
 
-const writtenPaths: string[] = [];
+const writtenKeys: string[] = [];
 
 const platformCtx = () =>
     makeRequestContext('ADMIN', {
@@ -53,15 +52,22 @@ async function makeFile(
     opts: { scanStatus?: string; status?: string; tenantId?: string } = {},
 ) {
     const tenantId = opts.tenantId ?? platformTenantId;
-    // Real bytes on disk. The local provider opens the file when the stream is
-    // created, so a row alone gives ENOENT — and a test that accepted that
-    // would be asserting the gate while never reaching the thing the gate
-    // guards.
+    // Real bytes, written THROUGH THE PROVIDER. The local provider opens the
+    // file when the stream is created, so a row alone gives ENOENT — and a test
+    // that accepted that would assert the gate while never reaching the thing
+    // the gate guards.
+    //
+    // `provider.write` and not a filesystem path, because the root is
+    // configuration: `FILE_STORAGE_ROOT || UPLOAD_DIR || '/tmp/uploads'`. An
+    // earlier version hardcoded `join(process.cwd(), 'uploads', key)`, which
+    // passed locally (`.env` has `UPLOAD_DIR="./uploads"`) and failed in CI,
+    // where it is `/tmp/ci-uploads` — a test restating a path the code derives,
+    // green by coincidence on one machine. Writing through the provider means
+    // the write and the read resolve the root the same way, so they cannot
+    // disagree again.
     const key = `tenants/${tenantId}/promotions/${TAG}-${suffix}.pdf`;
-    const onDisk = join(process.cwd(), 'uploads', key);
-    mkdirSync(dirname(onDisk), { recursive: true });
-    writeFileSync(onDisk, Buffer.from('%PDF-1.4 fixture\n'));
-    writtenPaths.push(onDisk);
+    await getStorageProvider().write(key, Buffer.from('%PDF-1.4 fixture\n'));
+    writtenKeys.push(key);
 
     const row = await prisma.fileRecord.create({
         data: {
@@ -122,7 +128,7 @@ describeFn('#2750 — a promotion remembers the leaflet it was read from', () =>
         await prisma.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, platformTenantId).catch(() => {});
         await prisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE id = $1`, platformTenantId).catch(() => {});
         await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE id = $1`, platformUserId).catch(() => {});
-        for (const f of writtenPaths) rmSync(f, { force: true });
+        for (const k of writtenKeys) await getStorageProvider().delete(k).catch(() => {});
     });
 
     describe('the three 404s are distinct, which is why the column has no FK', () => {
