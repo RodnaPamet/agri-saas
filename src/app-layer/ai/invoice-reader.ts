@@ -87,7 +87,12 @@ const InvoiceLineDraftSchema = z.object({
         .string()
         .min(1)
         .max(8)
-        .describe('The currency as printed: "BGN" for лв/лева, "EUR" for €/евро. Do not convert.'),
+        // The model still REPORTS what it sees — a lev invoice is a real thing
+        // that exists on paper, and a reader that cannot name it would hand back
+        // a euro figure for a lev total. What changed (#2539) is what happens
+        // NEXT: a non-euro line is refused rather than converted, so this field
+        // is now a refusal input rather than a conversion input.
+        .describe('The currency code as printed on the invoice, e.g. "EUR" for €/евро. Report what is printed; do not convert and do not guess.'),
     incurredOn: z
         .string()
         .describe('The invoice date in YYYY-MM-DD. Use the document date, not today, and not a due date.'),

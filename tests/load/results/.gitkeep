@@ -1,0 +1,3 @@
+k6's handleSummary writes into this directory and cannot create it, so the
+directory is tracked while its contents are ignored. See the reasoning beside
+the `tests/load/results/*` entry in .gitignore. Do not delete this file.
