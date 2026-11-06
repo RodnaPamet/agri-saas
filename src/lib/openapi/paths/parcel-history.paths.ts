@@ -47,6 +47,27 @@ const CropSeason = z
         sownAt: z.string().datetime().nullable(),
         harvestedAt: z.string().datetime().nullable(),
         notes: z.string().nullable(),
+        yieldKgPerDca: z.string().nullable().openapi({
+            description:
+                'What this parcel yielded that year, in **kilograms per decare**, as a '
+                + 'STRING — the column is `Decimal(10,2)` and the wire carries the exact '
+                + 'value, where a float would round. Null when not recorded.\n\n'
+                + '**This is NOT `YieldRecord` and must not be summed into one.** '
+                + '`YieldRecord` is the production record: gross mass in metric TONNES, '
+                + 'scoped to a Location (блок), carrying an idempotency key, reconciled '
+                + 'against inventory, and summed by the net-worth and portfolio rollups. '
+                + 'This is a history note at PARCEL granularity — the farmer\u2019s own '
+                + 'memory of what came off each field. The two are deliberately NOT '
+                + 'reconciled: a farm may record 10 t off a block and per-parcel rates that '
+                + 'do not multiply back to it, because one is a weighbridge figure and the '
+                + 'other is a recollection. No rollup reads this and no financial total '
+                + 'includes it.\n\n'
+                + '**Per DECARE, while `Parcel.areaHa` is in HECTARES** — 1 ha = 10 дка. '
+                + 'Stored as a RATE rather than a total so it is invariant to '
+                + 're-measurement: a corrected area would make a stored total silently '
+                + 'imply a different rate, changing the figure\u2019s meaning with nobody '
+                + 'editing it.',
+        }),
     })
     .openapi('ParcelCropSeason', {
         description:
@@ -290,7 +311,11 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             400: {
                 description:
                     '`NO_FIELDS_TO_UPDATE` — the body changed nothing. `CROP_TYPE_INVALID` — an ' +
-                    'empty or over-long crop. `VALIDATION_ERROR` — a `null` on a required field.',
+                    'empty or over-long crop. `YIELD_OUT_OF_RANGE` — a yield outside 0-100000 ' +
+                    'kg/дка, with the ceiling in `params.max`; a NEGATIVE one is refused rather ' +
+                    'than clamped, because a negative yield is a mis-keyed figure and clamping ' +
+                    'it to zero would record a crop failure nobody reported. ' +
+                    '`VALIDATION_ERROR` — a `null` on a required field, or a non-numeric yield.',
             },
             404: { description: '`CROP_SEASON_NOT_FOUND`' },
         },
