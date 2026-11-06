@@ -20,6 +20,34 @@
 #   2  a required context is RED
 #   3  the gate could not be READ, so this script has no answer
 #   4  every required context passes, but a NON-REQUIRED one is RED
+#   5  every required context passes, but the base is STALE against its branch
+#
+# ## 5 exists because `strict` is false, so GitHub never says BEHIND
+#
+# Branch protection here has `required_status_checks.strict = false` (measured
+# 2026-11-06), which means GitHub does NOT require a branch to be up to date and
+# therefore never reports `mergeStateStatus: BEHIND`. So the header line below
+# reads `MERGEABLE/CLEAN` for a PR whose base is fifty commits behind main, with
+# every required context green against a tree nobody will merge.
+#
+# `agrent backend-2` hit exactly that: a watcher reported `10/10 required
+# passing` on a head whose base predated a merge — no error, no absent check,
+# the right answer to a question they had not meant to ask. Freshness is
+# therefore checked FIRST in the reading order (freshness, then presence, then
+# value), and it gets its own code rather than exit 2, because a stale base is
+# not a failed check — it is a green answer about the wrong tree, and the fix is
+# `npm run merge:main`, not a re-run.
+#
+# It is NOT exit 1: outstanding means "wait", and waiting does not make a stale
+# base fresh.
+#
+# ## The config half of this script lives in a test
+#
+# `tests/guards/required-checks-always-report.test.ts` pins the same required
+# contexts and asserts each has a producing job in `ci.yml` that no path filter
+# can skip. That guard answers "can this check ever report?"; this script
+# answers "did it report, on this PR, now". Neither referenced the other until
+# #2777, which is most of why both get rebuilt from scratch.
 #
 # ## 4 exists because scoring only the required set made me blind
 #
@@ -74,8 +102,32 @@ if [ "${#REQUIRED[@]}" -eq 0 ] || [ -z "${REQUIRED[0]}" ]; then
     exit 3
 fi
 
-ROLLUP=$(gh pr view "$PR" --repo "$REPO" --json mergeable,mergeStateStatus,statusCheckRollup)
+ROLLUP=$(gh pr view "$PR" --repo "$REPO" \
+    --json mergeable,mergeStateStatus,statusCheckRollup,baseRefName,baseRefOid,headRefOid)
 echo "#$PR  $(jq -r '"\(.mergeable)/\(.mergeStateStatus)"' <<<"$ROLLUP")"
+
+# FRESHNESS, before presence and value. See the header: `strict` is false, so
+# nothing in `mergeStateStatus` carries this and it has to be asked separately.
+# Non-fatal on a failed lookup — UNKNOWN is printed as its own state, because
+# "could not ask" must never render as "fresh".
+stale=0
+BASE_REF=$(jq -r '.baseRefName // empty' <<<"$ROLLUP")
+BASE_OID=$(jq -r '.baseRefOid // empty' <<<"$ROLLUP")
+if [ -z "$BASE_REF" ] || [ -z "$BASE_OID" ]; then
+    printf '  %-38s %s\n' "base freshness" "UNKNOWN — PR has no base ref in the payload"
+else
+    TIP=$(gh api "repos/$REPO/git/ref/heads/$BASE_REF" -q '.object.sha' 2>/dev/null) || TIP=""
+    if [ -z "$TIP" ]; then
+        printf '  %-38s %s\n' "base freshness" "UNKNOWN — could not read $BASE_REF's tip"
+    elif [ "$TIP" = "$BASE_OID" ]; then
+        printf '  %-38s %s\n' "base freshness" "FRESH ($BASE_REF @ ${BASE_OID:0:9})"
+    else
+        BEHIND=$(gh api "repos/$REPO/compare/$BASE_OID...$TIP" -q '.ahead_by' 2>/dev/null) || BEHIND="?"
+        printf '  %-38s %s\n' "base freshness" \
+            "STALE — base ${BASE_OID:0:9}, $BASE_REF now ${TIP:0:9} (behind by $BEHIND)"
+        stale=1
+    fi
+fi
 
 green=0; bad=0; waiting=0
 for ctx in "${REQUIRED[@]}"; do
@@ -121,7 +173,15 @@ if [ "$other_bad" -gt 0 ]; then
     echo "     this way, with the required set at 9/9."
 fi
 
+if [ "$stale" -gt 0 ]; then
+    echo "  ── the base is STALE, so every result above was computed against a tree that"
+    echo "     is no longer $BASE_REF. Green here does not mean green after merging."
+    echo "     Fix with \`npm run merge:main\`, then re-read — do NOT re-run CI, which"
+    echo "     replays the same stale merge commit."
+fi
+
 [ "$bad" -gt 0 ] && exit 2
 [ "$waiting" -gt 0 ] && exit 1
 [ "$other_bad" -gt 0 ] && exit 4
+[ "$stale" -gt 0 ] && exit 5
 exit 0
