@@ -12,7 +12,7 @@
  * but the window hasn't opened) → LIVE → EXPIRED. See
  * `derivePromotionStatus`.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -31,7 +31,8 @@ import { FormField } from '@/components/ui/form-field';
 import { Combobox } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus } from '@/components/ui/icons/nucleo';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { Plus, ScanText } from '@/components/ui/icons/nucleo';
 import { useToast } from '@/components/ui/hooks';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 import { PROMOTION_CATEGORIES } from '@/app-layer/schemas/promotion-admin.schemas';
@@ -52,6 +53,21 @@ interface PromotionRow {
     validTo: string | null;
     status: 'DRAFT' | 'SCHEDULED' | 'LIVE' | 'EXPIRED';
     leadCount: number;
+}
+
+/** One offer the reader proposed. Never saved as-is — see `acceptOffer`. */
+interface LeafletOffer {
+    productName: string;
+    priceText: string | null;
+    validityText: string | null;
+    note: string | null;
+}
+
+interface LeafletScan {
+    fileId: string;
+    companyName: string | null;
+    offers: LeafletOffer[];
+    unreadableOfferCount: number;
 }
 
 interface CompanyRow {
@@ -131,6 +147,16 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
     const [category, setCategory] = useState<string>('service');
     const [ctaUrl, setCtaUrl] = useState('');
     const [pppRegistrationNo, setPppRegistrationNo] = useState('');
+
+    // «Прочети брошура» (#2664). The read creates NOTHING — it returns a
+    // proposal, the operator accepts one into the form, saving writes a DRAFT,
+    // and publishing is a third action. That chain is the whole safety
+    // argument: a misread price or end date would otherwise be repeated to
+    // farmers as fact by the assistant.
+    const leafletInputRef = useRef<HTMLInputElement>(null);
+    const [scanBusy, setScanBusy] = useState(false);
+    const [scan, setScan] = useState<LeafletScan | null>(null);
+    const [scanError, setScanError] = useState<string | null>(null);
     const [validFrom, setValidFrom] = useState<Date | null>(null);
     const [validTo, setValidTo] = useState<Date | null>(null);
     const [mediaUrl, setMediaUrl] = useState<string | null>(null);
@@ -174,6 +200,82 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         setValidTo(dayKeyToPickerDate(row.validTo));
         setMediaUrl(row.mediaUrl);
         setError(null);
+        setOpen(true);
+    };
+
+    /**
+     * Read a leaflet. Multipart, so a raw `fetch` rather than `apiPost` — the
+     * same shape `PromotionImageField` uses, and for the same reason: there is
+     * no generic upload endpoint in this repo.
+     *
+     * The refusal shows the SERVER's message, which is this repo's web idiom —
+     * `PromotionImageField` does the same three components away, and for the
+     * same reason: those sentences distinguish outcomes an operator must act on
+     * differently. A 415 means the file is STORED and the offers must be typed
+     * in; a 422 means it is stored and was not a leaflet; a 503 means try later
+     * or raise a ceiling. A single local string would collapse all three.
+     *
+     * NOT rendered from the `code` via the `errors` catalogue, deliberately.
+     * All five codes have entries there from #2664a — but that namespace holds
+     * 329 keys and NOTHING in the web app reads it by key; it is maintained for
+     * the native client, which filters non-Cyrillic server prose. Making this
+     * its first web consumer is a mechanism change, not a feature, and it does
+     * not belong in this PR.
+     */
+    const runScan = async (file: File) => {
+        setScanBusy(true);
+        setScanError(null);
+        setScan(null);
+        try {
+            const body = new FormData();
+            body.append('file', file);
+            const res = await fetch(buildUrl('/admin/promotions/leaflet-scan'), {
+                method: 'POST',
+                body,
+            });
+            if (!res.ok) {
+                const detail = (await res.json().catch(() => null)) as
+                    | { error?: string }
+                    | null;
+                setScanError(detail?.error ?? t('leafletReadFailed'));
+                return;
+            }
+            setScan((await res.json()) as LeafletScan);
+        } catch {
+            setScanError(t('leafletReadFailed'));
+        } finally {
+            setScanBusy(false);
+            // So picking the SAME file again re-reads it. Without this a
+            // retry after a transient 503 silently does nothing, because the
+            // input's value has not changed.
+            if (leafletInputRef.current) leafletInputRef.current.value = '';
+        }
+    };
+
+    /**
+     * Carry one proposed offer into the create form. It SAVES NOTHING.
+     *
+     * `pppRegistrationNo` is deliberately left EMPTY. The reader has no slot
+     * for it — held by `promotion-read-proposes-no-ppp-number` — because a
+     * misread registration number would silently reclassify a pesticide as a
+     * fertiliser, and that is the one error in this feature that matters. The
+     * reviewer types it, against the БАБХ register, looking at the leaflet.
+     * Prefilling anything here would be the start of that error.
+     */
+    const acceptOffer = (offer: LeafletOffer) => {
+        setEditing(null);
+        setCompanyId(null);
+        setCompanyName(scan?.companyName ?? null);
+        setTitle(offer.productName);
+        setBody([offer.priceText, offer.validityText, offer.note].filter(Boolean).join(' — '));
+        setCategory('products');
+        setCtaUrl('');
+        setPppRegistrationNo('');
+        setValidFrom(null);
+        setValidTo(null);
+        setMediaUrl(null);
+        setError(null);
+        setScan(null);
         setOpen(true);
     };
 
@@ -348,15 +450,51 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                         <Heading level={1}>{t('title')}</Heading>
                         <p className="text-sm text-content-muted">{t('description')}</p>
                     </div>
-                    <Button
-                        variant="primary"
-                        icon={<Plus />}
-                        onClick={openCreate}
-                        id="new-promotion-btn"
-                    >
-                        {t('entity')}
-                    </Button>
+                    <div className="flex items-center gap-default">
+                        {/*
+                          * «Прочети брошура» (#2664). The read route shipped in
+                          * #2709 with ZERO client callers — built, gated,
+                          * tested, in the spec, and unreachable. This is the
+                          * half that makes it a feature.
+                          */}
+                        <input
+                            ref={leafletInputRef}
+                            type="file"
+                            accept="application/pdf,image/*,.xlsx,.xls"
+                            className="hidden"
+                            onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) void runScan(f);
+                            }}
+                        />
+                        <Button
+                            variant="secondary"
+                            icon={<ScanText />}
+                            disabled={scanBusy}
+                            onClick={() => leafletInputRef.current?.click()}
+                            id="read-leaflet-btn"
+                        >
+                            {scanBusy ? t('leafletReading') : t('leafletRead')}
+                        </Button>
+                        <Button
+                            variant="primary"
+                            icon={<Plus />}
+                            onClick={openCreate}
+                            id="new-promotion-btn"
+                        >
+                            {t('entity')}
+                        </Button>
+                    </div>
                 </div>
+                {scanError && (
+                    <InlineNotice
+                        variant="error"
+                        id="leaflet-scan-error"
+                        onDismiss={() => setScanError(null)}
+                    >
+                        {scanError}
+                    </InlineNotice>
+                )}
             </ListPageShell.Header>
 
             <ListPageShell.Body>
@@ -540,6 +678,81 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                         {editing ? t('saveChanges') : t('createDraft')}
                     </Button>
                 </Modal.Actions>
+            </Modal>
+
+            {/*
+              * The PROPOSAL, which is not a promotion. Accepting one fills the
+              * form; saving writes a DRAFT; publishing is a third action. The
+              * modal says so, because an operator who thinks this created
+              * something will not look for the draft.
+              */}
+            <Modal
+                showModal={scan !== null}
+                setShowModal={(v) => {
+                    if (!v) setScan(null);
+                }}
+                className="max-w-2xl"
+            >
+                <Modal.Header
+                    title={t('leafletProposalTitle')}
+                    description={t('leafletProposalDescription')}
+                />
+                <Modal.Body>
+                    <div className="space-y-default">
+                        {scan?.companyName && (
+                            <p className="text-sm text-content-muted">
+                                {t('leafletCompanyRead', { company: scan.companyName })}
+                            </p>
+                        )}
+
+                        {/*
+                          * SURFACED, not swallowed. The read reports offers it
+                          * SAW and could not parse, because a six-offer leaflet
+                          * read as four is otherwise indistinguishable from a
+                          * four-offer leaflet — and the operator is the only
+                          * one who can open the file and check.
+                          */}
+                        {!!scan?.unreadableOfferCount && (
+                            <InlineNotice variant="warning" id="leaflet-unreadable">
+                                {t('leafletUnreadable', { count: scan.unreadableOfferCount })}
+                            </InlineNotice>
+                        )}
+
+                        {scan?.offers.length === 0 ? (
+                            <p className="text-sm text-content-muted">{t('leafletNoOffers')}</p>
+                        ) : (
+                            <ul className="space-y-compact">
+                                {scan?.offers.map((offer, i) => (
+                                    <li
+                                        key={`${offer.productName}-${i}`}
+                                        className="flex items-start justify-between gap-default rounded-md border border-border-subtle p-default"
+                                    >
+                                        <div className="min-w-0">
+                                            <p className="truncate font-[560]">{offer.productName}</p>
+                                            {offer.priceText && (
+                                                <p className="text-sm text-content-muted">{offer.priceText}</p>
+                                            )}
+                                            {offer.validityText && (
+                                                <p className="text-xs text-content-muted">{offer.validityText}</p>
+                                            )}
+                                            {offer.note && (
+                                                <p className="text-xs text-content-muted">{offer.note}</p>
+                                            )}
+                                        </div>
+                                        <Button
+                                            variant="secondary"
+                                            size="xs"
+                                            id={`accept-offer-${i}`}
+                                            onClick={() => acceptOffer(offer)}
+                                        >
+                                            {t('leafletAccept')}
+                                        </Button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                </Modal.Body>
             </Modal>
 
             <ConfirmDialog

@@ -54,7 +54,20 @@ import { ingestUploadedFile } from '@/lib/upload/ingest';
 const LEAFLET_DOMAIN = 'promotion-leaflet' as const;
 
 export interface LeafletScanResult {
-    /** The stored source document, so the console can attach it to the row it creates. */
+    /**
+     * The stored source document's `FileRecord` id.
+     *
+     * It CANNOT be attached to the promotion, and this comment said it could
+     * until #2750 — "so the console can attach it to the row it creates".
+     * `Promotion` has no column for a file and neither write schema accepts
+     * one. I corrected the same sentence in the OpenAPI description and left
+     * this one standing, which is its own small lesson: the claim existed in
+     * two places and fixing one made the other look reviewed.
+     *
+     * What it is for today: correlating this result with the `leafletFileId`
+     * the 415 and 422 refusals carry, so a client can say WHICH stored file
+     * could not be read. Linking it to the row is #2750.
+     */
     fileId: string;
     /** As printed on the leaflet, for the operator to match against `Company`. */
     companyName: string | null;

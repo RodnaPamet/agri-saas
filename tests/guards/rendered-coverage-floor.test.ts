@@ -342,7 +342,17 @@ const ROOT = path.resolve(__dirname, '../..');
 // delete-all copy says the PROFILE POINTS survive — two controls on one
 // screen with different scopes, and the copy is the only thing that tells
 // them apart.
-const RENDERED_TEST_FLOOR = 273;
+// 273 -> 274 (#2664): `promotions-leaflet-read.test.tsx` — the console
+// half of the leaflet read. The route shipped in #2709 with zero client
+// callers, so the four cases are the first coverage of that flow at all:
+// the control exists, the unreadable-offer count reaches the screen,
+// accepting a proposal leaves `pppRegistrationNo` EMPTY, and the server's
+// refusal is shown rather than collapsed into one local string.
+//
+// Banked here because this ratchet is UPWARD and I had assumed it was a
+// floor that adding only helps. It is not: a gain left unbanked is a gain
+// that can silently regress, which is the whole point of the staging.
+const RENDERED_TEST_FLOOR = 274;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
