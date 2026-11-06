@@ -208,6 +208,45 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
         ['memory_fact_owner_read_user', 'memory_fact_owner_read_actor',
          'superuser_bypass'],
     ],
+    // ── P8.1 (#2795) — direct messages ──
+    //
+    // Party-scoped in the `ExchangeThread` sense rather than the `UserBlock`
+    // sense: the parties are PEOPLE, and access is by PARTICIPATION rather
+    // than by a column naming them. Keyed on `app.user_id`, which
+    // `runInUserContext` sets — a direct conversation is between people who
+    // may share no farm, so there is no tenant to key on even in principle.
+    //
+    // Writes to `Conversation` and `ConversationParticipant` are PRIVILEGED,
+    // so neither carries an `app_user` INSERT arm: opening a conversation
+    // writes the OTHER person's participant row, and a caller able to insert
+    // it directly could add themselves to a stranger's conversation. That is
+    // `ContentReport`'s arrangement, one axis over.
+    ['Conversation', ['conversation_select']],
+    // The caller's OWN row only, and that narrowness is load-bearing: a policy
+    // admitting "every participant of a conversation I am in" must ask this
+    // same table whether I am in it, which Postgres refuses with `infinite
+    // recursion detected in policy for relation`. Nothing needs it wider —
+    // the counterparty is read off a message, as P5.2b reads it off an
+    // exchange thread.
+    [
+        'ConversationParticipant',
+        ['conversation_participant_select', 'conversation_participant_update'],
+    ],
+    // `direct_message_insert` is where the REQUEST rule lives — P8's phase
+    // note requires "one message until accepted" in a WITH CHECK and not only
+    // in a usecase, because the usecase is the layer a refactor removes.
+    [
+        'DirectMessage',
+        ['direct_message_select', 'direct_message_insert', 'direct_message_update'],
+    ],
+    // SPLIT per command for `ExchangeBlock`'s reason: a participant must be
+    // able to SEE a reaction they did not write without being able to DELETE
+    // it, and one USING clause would govern both.
+    [
+        'MessageReaction',
+        ['message_reaction_select', 'message_reaction_insert',
+         'message_reaction_delete'],
+    ],
 ]);
 
 // Models reached ONLY through a platform-admin surface, with RLS that no

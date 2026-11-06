@@ -339,6 +339,23 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
     // RICH_TEXT_COVERAGE. Claiming coverage would be false and claiming "not
     // user rich text" would be worse, because both columns ARE user-authored
     // free text and the exemption would outlive the gap.
+    // ── P8.1 direct messages (#2795) ──
+    //
+    // The same construction, a third time, and the P5.1 note above is the
+    // whole justification: #2795 ships these tables one release BEFORE any
+    // writer, so there is no usecase to name in RICH_TEXT_COVERAGE.
+    // `DirectMessage.body` IS user-authored free text — a farmer typing to
+    // another farmer — so NON_RICH_TEXT_MODELS would exempt it permanently,
+    // and claiming coverage would be false.
+    DirectMessage:
+        'DirectMessage.body is a farmer-written message, encrypted under the ' +
+        'global KEK, with no write path yet — P8.1 is schema only. Ratchet ' +
+        'target: #2796 (P8.2) adds the send usecase and must move this entry ' +
+        'into RICH_TEXT_COVERAGE in the same diff. The C.5 reason applies with ' +
+        'full force here rather than by analogy: a DM body is read back by the ' +
+        'counterparty, by the P5.2 report snapshot if somebody reports it, and ' +
+        'by the Art 15 export — three renderers, which is exactly why ' +
+        'sanitisation belongs at the usecase and not at one of them.',
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -580,7 +597,15 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // writer. Lowered in the same diff rather than left at 2, because
         // slack a later regression can spend is the thing a ratchet exists to
         // refuse.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
+        //
+        // 2 since P8.1 (#2795), and this is the conversation the note at the
+        // top asks for. `DirectMessage` is the P5.1 KIND — a table shipped one
+        // release before any writer — so it adds no slack a regression could
+        // spend: the live-writer assertion below is what will trip the moment
+        // #2796 adds a send usecase, which is the same mechanism that moved
+        // ContentReport, AssistantMemoryFact and AssistantTurn out. Raised by
+        // exactly one, for one named entry, rather than to a round number.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(2);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {
