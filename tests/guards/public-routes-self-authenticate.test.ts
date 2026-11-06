@@ -194,6 +194,28 @@ describe('credential-verifying routes are reachable, and public routes verify', 
                 + 'PUBLIC_MEDIA_LIMIT (300/min/IP) rather than PUBLIC_READ_LIMIT, '
                 + 'because a profile page is a logo plus a few photos and 60/min would '
                 + 'break images, silently, around the ninth profile a visitor opened.',
+            '/api/public/farms/[handle]':
+                'P6.9 (#2774) — one published profile by handle, the JSON behind `/f/{handle}`, '
+                + 'for the native screen. Anonymous for exactly the reason the sibling directory '
+                + 'and `/f/{handle}` itself are: a stranger with a shared link or a printed QR '
+                + 'code reaches it with no session, and a profile whose JSON 401s is not a public '
+                + 'profile.\n\n'
+                + 'It verifies no credential and discloses nothing a credential would gate. The '
+                + 'disclosure bound is the TABLE, not this route: `readPublicFarmProfile` reads '
+                + '`PublicFarmProfile`, which carries no PII columns and no `tenantId` — ЕГН, '
+                + 'ЕИК, address and settlement live on `FarmProfile` with no counterpart there — '
+                + 'so there is nothing to join through even by accident. A row exists only while '
+                + 'the farm is published, because withdrawal DELETES it rather than flagging it, '
+                + 'so every row reachable here belongs to a farm that chose to publish.\n\n'
+                + 'It is also not an enumeration oracle. A malformed handle, a farm that never '
+                + 'existed and one that withdrew all answer the SAME 404 body, and that is '
+                + 'structural rather than three branches kept in step — there is one absence, not '
+                + 'three. So a 404 is not evidence that a handle is free, and '
+                + 'tests/integration/public-farm-profile-by-handle.test.ts asserts the two '
+                + 'refusals are byte-identical rather than merely both refusals.\n\n'
+                + 'Flag-gated on `social.public-profile` via `assertFeatureEnabled`, which 404s '
+                + 'rather than 403s, so a dark-launched endpoint stays undiscoverable.',
+
             '/api/public/farms':
                 'P6.8 — anonymous by design, and the design IS the product: a stranger '
                 + 'holding a shared link or scanning a printed QR code browses the directory '
