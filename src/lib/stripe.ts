@@ -28,8 +28,24 @@ let _stripe: Stripe | null = null;
  * this constant stops compiling the moment a future SDK ships a different
  * version. That is the point: the upgrade becomes a compile error and a
  * deliberate decision, instead of a silent one.
+ *
+ * WHAT THIS PIN DOES NOT GOVERN: inbound webhooks. This module only verifies
+ * signatures (`stripe.webhooks.constructEvent`) and never creates an endpoint,
+ * and Stripe sends an event in the version set at ENDPOINT CREATION or, absent
+ * that, the ACCOUNT's default version from Workbench. So this constant decides
+ * the shape of what we SEND and of the objects we read back from our own
+ * calls; it has no effect on the shape of what arrives. Moving it therefore
+ * carries far less risk than it looks, and conversely: tightening it is not a
+ * way to control webhook payloads.
+ *
+ * 2026-10-28.endive was adopted deliberately (#2758). Stripe's release process
+ * puts breaking changes only in the FIRST version of a named generation —
+ * `2026-09-30.endive` here — and every later version in that generation is
+ * additive, which the per-release table confirms row by row. The breaking
+ * Treasury rows dated 2026-10-28 belong to `2026-10-28.preview`, a different
+ * version string on the preview channel that this pin does not select.
  */
-const STRIPE_API_VERSION = '2026-09-30.endive';
+const STRIPE_API_VERSION = '2026-10-28.endive';
 
 export function getStripe(): Stripe {
     if (_stripe) return _stripe;

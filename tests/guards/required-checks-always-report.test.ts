@@ -15,6 +15,22 @@
  *
  * This guard pins the relationship so the split cannot be undone by
  * someone renaming a job or adding a path filter to the wrong one.
+ *
+ * ## The reading half is `scripts/pr-gate-status.sh` (`npm run pr:gate <PR>`)
+ *
+ * This guard answers "can this check ever report?" — a config question, from
+ * `ci.yml`. It cannot answer "did it report, on this PR, now", because a test
+ * reaches no API. That is the script's job: it reads branch protection live and
+ * prints ABSENT as a state distinct from pending and from failing, which is the
+ * distinction this whole class of mistake turns on.
+ *
+ * They were written for the same defect and referenced each other from nowhere
+ * until #2777, which is most of why a worse version of the script kept getting
+ * rebuilt by hand — eight times across two sessions, with notes open that said
+ * not to. If you change the pinned context list below, the script needs no
+ * edit (it derives from the API), but the reverse is not true: a required
+ * context added to protection must be added HERE in the same PR or this guard
+ * goes blind to it.
  */
 import * as fs from 'fs';
 import * as path from 'path';
