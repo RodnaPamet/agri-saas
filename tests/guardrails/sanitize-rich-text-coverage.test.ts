@@ -473,34 +473,6 @@ const fileExists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 const readFile = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 
 /**
- * Source files that mention `needle`. Used to tell a KNOWN_UNCOVERED entry
- * with a live writer from one whose table nothing touches yet.
- *
- * Collection goes through `collectSourceFiles` rather than a local directory
- * walk, which `file-collection-is-not-silently-empty` requires and which CI
- * caught me skipping: a hand-rolled collector can be gutted to return `[]`
- * with every assertion built on it still green. The `floor` is the part that
- * matters here — an empty corpus would report every entry as having no writer,
- * which is the exact direction this check must not fail in.
- *
- * A plain substring search on the Prisma accessor (`.contentReport`),
- * deliberately broad: a false POSITIVE costs someone a look at a guard
- * failure, while a false negative would let a live unsanitised write path hide
- * inside the raised cap.
- */
-function sourceFilesReferencing(needle: string): string[] {
-    const files = collectSourceFiles({
-        roots: ['src'],
-        extensions: ['.ts', '.tsx'],
-        exclude: (rel) => rel.startsWith('src/generated/'),
-        // ~2100 at the time of writing; a floor well below it separates
-        // "nothing references this" from "nothing was examined".
-        floor: 1500,
-    });
-    return files.filter((full) => fs.readFileSync(full, 'utf8').includes(needle));
-}
-
-/**
  * Prisma operations that can put UNSANITISED text into a column.
  *
  * `delete`/`deleteMany` are absent deliberately: removing a row writes no
@@ -515,11 +487,18 @@ const PRISMA_WRITE_OPS = [
 /**
  * Files that WRITE through a model accessor, as opposed to merely naming it.
  *
- * Separate from `sourceFilesReferencing` above, which stays deliberately
- * broad, because the live-writer assertion asks a narrower question than any
- * other caller: its own rationale is "an unsanitised column nothing WRITES is
- * not the same risk as one a route writes today", and a READ cannot create
- * unsanitised content.
+ * This REPLACED a broad `sourceFilesReferencing`, which matched any mention
+ * of the accessor. The live-writer assertion was its only caller, and the
+ * assertion asks a narrower question than that helper answered: its own
+ * rationale is "an unsanitised column nothing WRITES is not the same risk as
+ * one a route writes today", and a READ cannot create unsanitised content.
+ *
+ * I first kept both, with a comment saying the broad one "stays for its other
+ * callers". It had none — the narrowing left it with zero — and the
+ * `Selector teeth` gate reported it within the hour: with no caller, gutting
+ * it to `return []` broke no assertion, which is precisely what a dead
+ * selector is. Deleted rather than kept, because a helper in a guard file
+ * reads as a live mechanism.
  *
  * P8.1 (#2795) is what exposed the difference. It ships `DirectMessage` with
  * no write path — the table arrives one release before its writer — and then
@@ -539,10 +518,19 @@ const PRISMA_WRITE_OPS = [
  * empty scan from reading as "no writers".
  */
 function sourceFilesWritingVia(accessor: string): string[] {
+    // Collection goes through `collectSourceFiles` rather than a local
+    // directory walk, which `file-collection-is-not-silently-empty` requires
+    // and which CI caught being skipped: a hand-rolled collector can be gutted
+    // to return `[]` with every assertion built on it still green. The `floor`
+    // is the part that matters here — an empty corpus would report every entry
+    // as having no writer, which is the exact direction this check must not
+    // fail in.
     const files = collectSourceFiles({
         roots: ['src'],
         extensions: ['.ts', '.tsx'],
         exclude: (rel) => rel.startsWith('src/generated/'),
+        // ~2100 at the time of writing; a floor well below it separates
+        // "nothing writes this" from "nothing was examined".
         floor: 1500,
     });
     const pattern = new RegExp(
