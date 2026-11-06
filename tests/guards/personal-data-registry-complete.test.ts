@@ -255,6 +255,15 @@ describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () =
             // let them delete it.
             'AssistantMemoryFact',
             'AuthSession', 'FeatureFlagCohortMember',
+            // P8.1 (#2795) — a reaction on a direct message. It passes the
+            // criterion on its face, like AssistantMemoryFact: a reaction is a
+            // statement BY the person and IS the whole row, so deleting it
+            // destroys no second owner's record — the message it sits on
+            // survives untouched. Pseudonymising would be worse than useless:
+            // @@unique([messageId, userId, emoji]) forces a per-user random id,
+            // which leaves an anonymous reaction nobody can remove and the
+            // counterparty cannot read.
+            'MessageReaction',
             'OrgMembership', 'PasswordResetToken',
             // P6.1 — a person's own public identity. It passes this test's own
             // criterion exactly: nobody else owns it, so deleting it destroys
@@ -269,13 +278,40 @@ describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () =
 
     it('every PSEUDONYMISE target is a row with a SECOND owner', () => {
         // The complement of the above, asserted by a property rather than a
-        // list: each of these carries a tenant column, which is what makes it
-        // somebody else's record too.
+        // list: the row must belong to somebody else too, which is what makes
+        // overwriting the person column the right act and deleting the row the
+        // wrong one.
+        //
+        // A SECOND OWNER IS A FARM **OR** ANOTHER PERSON. This property tested
+        // only for a farm — a `*TenantId` column — and that was sufficient for
+        // as long as every shared row in this product was commercial: a
+        // listing, an exchange thread, a message between two farms.
+        //
+        // P8.1 (#2795) is the first case where it is not. A direct
+        // conversation's counterparty is a PERSON, named in
+        // `ConversationParticipant` rather than in a tenant column, and these
+        // tables have no tenant at all by design (two people in a conversation
+        // may share no farm). Under the narrow property the only way to
+        // classify them was DELETE_ROW, which the test above calls out by name
+        // as destroying "a counterparty's conversation" — so the narrow
+        // property would have forced exactly the mistake its sibling forbids.
+        //
+        // The widening is DERIVED, not an allowlist: a model qualifies by
+        // hanging off `Conversation` (or being it), which is a shared object by
+        // construction. A new tenantless table with a person column and no
+        // conversation still fails, which is the regression this exists for.
+        const conversationGraph = (
+            model: { readonly name: string; readonly fields: readonly { readonly name: string }[] },
+        ): boolean =>
+            model.name === 'Conversation'
+            || model.fields.some((f) => f.name === 'conversationId');
+
         for (const entry of PERSONAL_DATA_REGISTRY) {
             if (entry.action !== 'PSEUDONYMISE_COLUMN') continue;
             const model = Prisma.dmmf.datamodel.models.find((m) => m.name === entry.model)!;
-            const hasOtherOwner = model.fields.some((f) => /TenantId$/.test(f.name));
-            expect(hasOtherOwner).toBe(true);
+            const ownedByAFarm = model.fields.some((f) => /TenantId$/.test(f.name));
+            const ownedByAnotherPerson = conversationGraph(model);
+            expect(ownedByAFarm || ownedByAnotherPerson).toBe(true);
         }
     });
 });

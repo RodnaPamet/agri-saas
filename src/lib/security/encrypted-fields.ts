@@ -167,6 +167,18 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  row two tenants must read cannot live under either one's DEK.
     ExchangeMessage: ['body'],
 
+    //  P8.1 (#2795) — a direct message between people. Business free text a
+    //  farmer wrote, so it is encrypted for the same reason
+    //  `ExchangeMessage.body` above is, and the KEY is the same separate
+    //  half: `DirectMessage` is in `GLOBAL_KEK_MODELS`, because a row two
+    //  PEOPLE must read cannot live under either one's farm's DEK — and
+    //  these rows have no tenant at all.
+    //
+    //  Narrowing stops DECRYPTION too: dropping this declaration later
+    //  makes every stored message unreadable to everyone, with no error and
+    //  no log. Measure with `npm run preflight:fanout` before any change.
+    DirectMessage: ['body'],
+
     PromotionLead: ['requestMessage'],
 
     // ─── Tenant security settings ──────────────────────

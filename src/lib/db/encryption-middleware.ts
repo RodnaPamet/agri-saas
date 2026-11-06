@@ -208,6 +208,13 @@ export const GLOBAL_KEK_MODELS: ReadonlySet<string> = new Set([
     // be the mistake this set's docblock warns about.
     'AssistantMemoryFact',
     'Company',
+    // P8.1 (#2795). A direct message between PEOPLE. The `ExchangeMessage`
+    // case one axis over: a two-party row under either party's DEK is
+    // unreadable by the other — measured on production, where the recipient
+    // of the only live exchange thread saw `v2:…` where the text should be.
+    // These rows additionally have no `tenantId` at all, so they satisfy the
+    // rule on its face as well as by the reader count.
+    'DirectMessage',
     'ExchangeMessage',
     // #1222. No `tenantId`, and every reader is a platform admin rather than a
     // tenant — so by the rule above, no single tenant's key can serve them.

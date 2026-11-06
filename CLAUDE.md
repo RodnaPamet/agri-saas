@@ -3083,6 +3083,72 @@ make visible.
   agreement, put the number AFTER a label ("спешни: 1") — grammatical at any
   count in both languages, and the only option this interpolator supports.
 
+### P8.1 — direct messages, and the policy rule that costs a whole feature to learn
+
+Four tenantless models (#2795): `Conversation`, `ConversationParticipant`,
+`DirectMessage`, `MessageReaction`. Schema only — P8's rule ships tables one
+release before the code that writes them, so no route, usecase, UI or flag
+lands with them.
+
+**A POLICY ON A TABLE MAY NOT QUERY THAT TABLE.** The request rule — a stranger
+gets one message until accepted — was first written as
+`NOT EXISTS (SELECT 1 FROM "DirectMessage" ...)` inside
+`direct_message_insert`'s WITH CHECK, reasoning that a WITH CHECK resolves its
+own table through the SELECT policy and therefore does not recurse. Postgres
+answers `ERROR: infinite recursion detected in policy for relation
+"DirectMessage"` and refuses **every** insert, whatever the command. The same
+rule is why `conversation_participant_select` admits the caller's OWN row only:
+a policy admitting "every participant of a conversation I am in" must ask that
+table whether I am in it.
+
+So the invariant lives on `Conversation.lastMessageAt` — a REQUEST admits a
+message while that column is NULL, and the sending write stamps it. **That
+column carries a security property, not just the inbox sort**, and its docblock
+says so, because a change that stopped stamping it would silently let a
+stranger send without limit.
+
+**What caught the recursion was a POSITIVE control.** All three `REFUSES …`
+cases passed while the rule enforced nothing, because nothing could insert at
+all. A suite of only-negatives would have shipped it green — the standing
+reason every refusal here is paired with the same operation by somebody
+entitled to it.
+
+**A block is therefore NOT enforced in SQL.** With the participant policy
+narrowed to the caller's own row, SQL cannot name the counterparty, so a WITH
+CHECK asking "has the counterparty blocked me" is **vacuous** — the subquery
+returns only the caller. A vacuously-true clause that reads as a control is
+worse than none, so there is none; blocks are enforced in the usecase with
+`personBlockExists`, and the silence is kept by the 404.
+
+**A SECOND OWNER IS A FARM *OR* ANOTHER PERSON.**
+`personal-data-registry-complete` proved "somebody else owns this row too" by
+looking for a `*TenantId` column, which was sufficient while every shared row
+in this product was commercial. A direct conversation's counterparty is a
+person, named in `ConversationParticipant`, and these tables have no tenant at
+all. Under the narrow property the only available classification was
+`DELETE_ROW` — which the sibling assertion calls out by name as destroying "a
+counterparty's conversation", so the narrow property would have forced exactly
+the mistake its neighbour forbids. The widening is derived (a model qualifies
+by hanging off `Conversation`), not an allowlist.
+
+Erasure and export are both **driven by the registry** —
+`account-erasure.ts` iterates it and resolves a delegate by camelCasing the
+model name — so a registry entry wires both consumers with no code change.
+That is the reason a new tenantless table holding a person id must be
+classified in the same diff as its migration.
+
+**`DirectMessage.body` is under the GLOBAL KEK**, with `ExchangeMessage` as the
+precedent one axis over: a two-party row under either party's DEK is
+unreadable by the other.
+
+**Editing an already-applied migration does nothing locally.** `globalSetup`
+runs `prisma migrate deploy` against a per-checkout base database and the
+per-worker clone is TEMPLATE-copied from it, so a corrected migration whose
+name is already in `_prisma_migrations` is skipped and the clone keeps the old
+objects. Drop the objects and the migration row, then let globalSetup
+re-apply — which is also a check that the file applies from scratch the way CI
+will apply it.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

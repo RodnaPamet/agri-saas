@@ -116,6 +116,14 @@ export interface PersonalDataExport {
     readonly assistantMemory: ExportCollection<Record<string, unknown>>;
     readonly organisationMemberships: ExportCollection<Record<string, unknown>>;
     readonly featureCohorts: ExportCollection<Record<string, unknown>>;
+    /**
+     * Direct messages — P8.1 (#2795). Four collections, one per registry
+     * entry, EMPTY until P8.2 ships a writer.
+     */
+    readonly conversationsIOpened: ExportCollection<Record<string, unknown>>;
+    readonly conversationMemberships: ExportCollection<Record<string, unknown>>;
+    readonly directMessages: ExportCollection<Record<string, unknown>>;
+    readonly messageReactions: ExportCollection<Record<string, unknown>>;
 }
 
 const NOT_INCLUDED: readonly string[] = [
@@ -168,6 +176,10 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         assistantMemory,
         orgMemberships,
         cohorts,
+        conversationsIOpened,
+        conversationMemberships,
+        directMessages,
+        messageReactions,
     ] = await Promise.all([
         // At most one row — `userId` is `@unique` — but returned as a
         // collection so the envelope has one shape for every model and a
@@ -313,6 +325,58 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             orderBy: { createdAt: 'desc' },
             take,
         }),
+        // ── P8.1 (#2795) — direct messages ──
+        //
+        // Four collections because the registry classifies four models
+        // `ERASE_AND_EXPORT`, and the export must cover whatever the registry
+        // says it erases: a column erased but not exported is data destroyed
+        // without ever being shown. They are EMPTY until P8.2 ships a writer,
+        // which is the honest state and not a reason to leave them out — the
+        // alternative is relying on somebody remembering to add them in the PR
+        // that first writes a row.
+        prisma.conversation.findMany({
+            // Conversations they OPENED. Not every conversation they are in:
+            // `initiatedByUserId` is the column the registry classifies, and
+            // the membership read below is what covers the rest.
+            where: { initiatedByUserId: userId },
+            select: {
+                id: true, state: true, createdAt: true, lastMessageAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            take,
+        }),
+        prisma.conversationParticipant.findMany({
+            where: { userId },
+            // Their own side of each conversation, read cursor included. The
+            // counterparty's participant row is NOT here — it is somebody
+            // else's membership, and the RLS policy would not admit it either.
+            select: {
+                id: true, conversationId: true, joinedAt: true,
+                lastReadAt: true, leftAt: true,
+            },
+            orderBy: { joinedAt: 'desc' },
+            take,
+        }),
+        prisma.directMessage.findMany({
+            where: { senderUserId: userId },
+            // The body is theirs — they wrote it. The counterparty's replies
+            // are NOT here, the `ExchangeMessage` rule above verbatim: the
+            // other side of a conversation is somebody else's words.
+            select: {
+                id: true, conversationId: true, body: true,
+                createdAt: true, editedAt: true, deletedAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
+            take,
+        }),
+        prisma.messageReaction.findMany({
+            where: { userId },
+            // Which messages they reacted to is information about them. The
+            // message itself is not included — it may be somebody else's.
+            select: { id: true, messageId: true, emoji: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take,
+        }),
     ]);
 
     logger.info('personal-data-export.produced', {
@@ -374,6 +438,12 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         exchangeThreads: collection(threads as Record<string, unknown>[]),
         exchangeInquiries: collection(inquiries as Record<string, unknown>[]),
         exchangeMessages: collection(messages as Record<string, unknown>[]),
+        conversationsIOpened: collection(conversationsIOpened as Record<string, unknown>[]),
+        conversationMemberships: collection(
+            conversationMemberships as Record<string, unknown>[],
+        ),
+        directMessages: collection(directMessages as Record<string, unknown>[]),
+        messageReactions: collection(messageReactions as Record<string, unknown>[]),
         insuranceLeads: collection(insuranceLeads as Record<string, unknown>[]),
         promotionLeads: collection(promotionLeadsWithMessage as Record<string, unknown>[]),
         assistantMemory: collection(assistantMemory as Record<string, unknown>[]),
