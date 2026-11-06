@@ -534,3 +534,102 @@ describe('a weed observation correction replaces the list whole', () => {
         expect(data).not.toHaveProperty('clientMutationId');
     });
 });
+
+/**
+ * The per-parcel yield (owner ruling 2026-11-06).
+ *
+ * Two properties carry the design and neither is about storage working:
+ * the wire gets a STRING rather than a Decimal, and the figure is a RATE that
+ * no rollup reads.
+ */
+describe('the crop row carries a yield', () => {
+    it('stores it on create', async () => {
+        await createParcelCropSeason(ctx, {
+            parcelId: 'p1', year: 2026, cropType: 'Пшеница', yieldKgPerDca: 520.5,
+        });
+        const { data } = mockPrisma.parcelCropSeason.create.mock.calls[0][0];
+        expect(data.yieldKgPerDca).toBe(520.5);
+    });
+
+    it('defaults to null rather than zero when not given', async () => {
+        // Zero is a crop failure the farmer reported; absent is no figure at
+        // all. Conflating them would invent a reported total loss.
+        await createParcelCropSeason(ctx, { parcelId: 'p1', year: 2026, cropType: 'Пшеница' });
+        const { data } = mockPrisma.parcelCropSeason.create.mock.calls[0][0];
+        expect(data.yieldKgPerDca).toBeNull();
+    });
+
+    it('REFUSES a negative yield rather than clamping it', async () => {
+        await expect(
+            createParcelCropSeason(ctx, {
+                parcelId: 'p1', year: 2026, cropType: 'Пшеница', yieldKgPerDca: -1,
+            }),
+        ).rejects.toMatchObject({ code: 'YIELD_OUT_OF_RANGE' });
+        expect(mockPrisma.parcelCropSeason.create).not.toHaveBeenCalled();
+    });
+
+    it('REFUSES an absurd yield — the unit-mistake case', async () => {
+        // A farmer typing a TOTAL in kg where a rate belongs is the realistic
+        // error, and it lands far above any real rate.
+        await expect(
+            createParcelCropSeason(ctx, {
+                parcelId: 'p1', year: 2026, cropType: 'Пшеница', yieldKgPerDca: 250_000,
+            }),
+        ).rejects.toMatchObject({ code: 'YIELD_OUT_OF_RANGE' });
+    });
+
+    it('admits a greenhouse rate, which is what the ceiling is sized for', async () => {
+        await createParcelCropSeason(ctx, {
+            parcelId: 'p1', year: 2026, cropType: 'Домати', yieldKgPerDca: 80_000,
+        });
+        expect(mockPrisma.parcelCropSeason.create).toHaveBeenCalled();
+    });
+
+    it('a correction can SET it, and an explicit null CLEARS it', async () => {
+        await updateParcelCropSeason(ctx, 'cs1', { yieldKgPerDca: 610 });
+        expect(mockPrisma.parcelCropSeason.update.mock.calls[0][0].data).toEqual({
+            yieldKgPerDca: 610,
+        });
+
+        mockPrisma.parcelCropSeason.update.mockClear();
+        await updateParcelCropSeason(ctx, 'cs1', { yieldKgPerDca: null });
+        expect(mockPrisma.parcelCropSeason.update.mock.calls[0][0].data).toEqual({
+            yieldKgPerDca: null,
+        });
+    });
+
+    it('a correction validates the range too, not only create', async () => {
+        await expect(
+            updateParcelCropSeason(ctx, 'cs1', { yieldKgPerDca: -5 }),
+        ).rejects.toMatchObject({ code: 'YIELD_OUT_OF_RANGE' });
+    });
+
+    it('the history serves it as a STRING, not a Decimal object', async () => {
+        // The property that matters on the wire. A Prisma Decimal serialises as
+        // an object, so a passthrough would send `{}` to the phone — and the
+        // crop-season rows WERE passed through until this column arrived,
+        // because every other field on them is a primitive.
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue([
+            {
+                id: 'cs1', year: 2026, cropType: 'Пшеница',
+                sownAt: null, harvestedAt: null, notes: null,
+                // Simulating Prisma's Decimal: an object with toString().
+                yieldKgPerDca: { toString: () => '520.50' },
+            },
+        ]);
+        const res = await getParcelHistory(ctx, 'p1', {});
+        expect(res.cropSeasons[0].yieldKgPerDca).toBe('520.50');
+        expect(typeof res.cropSeasons[0].yieldKgPerDca).toBe('string');
+    });
+
+    it('serves null as null, not as the string "null"', async () => {
+        mockPrisma.parcelCropSeason.findMany.mockResolvedValue([
+            {
+                id: 'cs1', year: 2026, cropType: 'Пшеница',
+                sownAt: null, harvestedAt: null, notes: null, yieldKgPerDca: null,
+            },
+        ]);
+        const res = await getParcelHistory(ctx, 'p1', {});
+        expect(res.cropSeasons[0].yieldKgPerDca).toBeNull();
+    });
+});

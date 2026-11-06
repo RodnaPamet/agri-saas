@@ -62,6 +62,15 @@ export interface ParcelHistoryCropSeason {
     sownAt: Date | null;
     harvestedAt: Date | null;
     notes: string | null;
+    /**
+     * Kilograms per decare, as a STRING, or null.
+     *
+     * A string for the reason `doseValue` is one: the column is
+     * `Decimal(10,2)` and the wire carries the exact value, where a float
+     * would round. See the schema comment for why this is NOT `YieldRecord`
+     * and must never be summed into one.
+     */
+    yieldKgPerDca: string | null;
 }
 
 export interface ParcelHistoryOperation {
@@ -131,6 +140,32 @@ async function requireParcel(db: PrismaTx, ctx: RequestContext, parcelId: string
     });
     if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found.');
     return parcel;
+}
+
+/**
+ * A yield in kg/дка must be non-negative and not absurd.
+ *
+ * `MAX_YIELD_KG_PER_DCA` is 100 000 — derived, not rounded. Field crops sit
+ * around 300-1200 kg/дка and intensive greenhouse production reaches roughly
+ * 50-100 kg/m², which is 50 000-100 000 kg/дка, so the ceiling admits the
+ * highest real case and refuses a figure that can only be a typo or a unit
+ * mistake (a total in kg entered where a rate belongs).
+ *
+ * NEGATIVE is refused rather than clamped: a negative yield is not a small
+ * harvest, it is a mis-keyed one, and clamping to zero would record a crop
+ * failure the farmer did not report.
+ */
+const MAX_YIELD_KG_PER_DCA = 100_000;
+
+function assertYieldKgPerDca(value: number | null): void {
+    if (value === null) return;
+    if (!Number.isFinite(value) || value < 0 || value > MAX_YIELD_KG_PER_DCA) {
+        throw codedBadRequest(
+            'YIELD_OUT_OF_RANGE',
+            'A yield must be between 0 and 100000 kg per decare.',
+            { max: MAX_YIELD_KG_PER_DCA },
+        );
+    }
 }
 
 function assertYear(year: number): void {
@@ -235,6 +270,7 @@ export async function getParcelHistory(
                 select: {
                     id: true, year: true, cropType: true,
                     sownAt: true, harvestedAt: true, notes: true,
+                    yieldKgPerDca: true,
                 },
             }),
             db.operationParcel.findMany({
@@ -285,7 +321,20 @@ export async function getParcelHistory(
 
         return {
             parcel,
-            cropSeasons: seasonsPage,
+            // Mapped rather than passed through, which it was until
+            // `yieldKgPerDca` arrived: every other field on this row is a
+            // primitive, so the raw rows were already wire-shaped. A Decimal is
+            // not — it would serialise as an object — so the seam is explicit
+            // now, like the operation rows' `doseValue` below.
+            cropSeasons: seasonsPage.map((r) => ({
+                id: r.id,
+                year: r.year,
+                cropType: r.cropType,
+                sownAt: r.sownAt,
+                harvestedAt: r.harvestedAt,
+                notes: r.notes,
+                yieldKgPerDca: r.yieldKgPerDca?.toString() ?? null,
+            })),
             cropSeasonsCursor:
                 seasonsMore && lastSeason
                     ? encodeNumericCursor({ n: lastSeason.year, id: lastSeason.id })
@@ -333,6 +382,8 @@ export interface CropSeasonInput {
     sownAt?: Date | null;
     harvestedAt?: Date | null;
     notes?: string | null;
+    /** kg per decare — the farmer's own figure, NOT `YieldRecord`. */
+    yieldKgPerDca?: number | null;
 }
 
 /** Record what a parcel grew in a given harvest year. */
@@ -344,6 +395,7 @@ export async function createParcelCropSeason(ctx: RequestContext, input: CropSea
         throw codedBadRequest('CROP_TYPE_INVALID', 'A crop is required.');
     }
     const notes = cleanNotes(input.notes);
+    assertYieldKgPerDca(input.yieldKgPerDca ?? null);
 
     return runInTenantContext(ctx, async (db) => {
         await requireParcel(db, ctx, input.parcelId);
@@ -356,6 +408,7 @@ export async function createParcelCropSeason(ctx: RequestContext, input: CropSea
                 sownAt: input.sownAt ?? null,
                 harvestedAt: input.harvestedAt ?? null,
                 notes,
+                yieldKgPerDca: input.yieldKgPerDca ?? null,
                 createdByUserId: ctx.userId,
             },
         });
@@ -415,6 +468,7 @@ export async function updateParcelCropSeason(
         sownAt?: Date | null;
         harvestedAt?: Date | null;
         notes?: string | null;
+        yieldKgPerDca?: number | null;
     },
 ) {
     assertCanWrite(ctx);
@@ -446,6 +500,11 @@ export async function updateParcelCropSeason(
     if (input.notes !== undefined) {
         data.notes = cleanNotes(input.notes);
         changed.push('notes');
+    }
+    if (input.yieldKgPerDca !== undefined) {
+        assertYieldKgPerDca(input.yieldKgPerDca);
+        data.yieldKgPerDca = input.yieldKgPerDca;
+        changed.push('yieldKgPerDca');
     }
 
     // Refused rather than treated as a no-op. A request that changes nothing is

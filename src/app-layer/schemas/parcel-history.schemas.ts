@@ -23,6 +23,19 @@ export const CreateCropSeasonSchema = z
         sownAt: z.string().datetime().nullable().optional(),
         harvestedAt: z.string().datetime().nullable().optional(),
         notes: z.string().nullable().optional(),
+        /**
+         * kg per DECARE, the farmer's own per-parcel figure.
+         *
+         * Bounded here as well as in the usecase, because the two refusals
+         * differ usefully: the schema answers `VALIDATION_ERROR` for a type
+         * error (a string, an object), the usecase answers the coded
+         * `YIELD_OUT_OF_RANGE` for a number that is the wrong SIZE. A client
+         * can act on the second and only log the first.
+         *
+         * NOT `YieldRecord` — see the schema comment on the column. Nothing
+         * sums this into a production total.
+         */
+        yieldKgPerDca: z.number().nonnegative().max(100000).nullable().optional(),
     })
     .strip()
     .openapi('CreateParcelCropSeason');
@@ -101,6 +114,8 @@ export const UpdateCropSeasonSchema = z
         sownAt: z.string().datetime().nullable().optional(),
         harvestedAt: z.string().datetime().nullable().optional(),
         notes: z.string().nullable().optional(),
+        /** kg per decare; `null` clears it. See `CreateCropSeasonSchema`. */
+        yieldKgPerDca: z.number().nonnegative().max(100000).nullable().optional(),
     })
     .strip()
     .openapi('UpdateParcelCropSeason');
@@ -123,3 +138,24 @@ export const UpdateWeedObservationSchema = z
     .strip()
     .openapi('UpdateParcelWeedObservation');
 export type UpdateWeedObservationBody = z.infer<typeof UpdateWeedObservationSchema>;
+
+/**
+ * A note about a parcel (owner ruling 2026-11-06).
+ *
+ * Its own schema rather than reusing `AddTaskCommentSchema`, even though the
+ * shape is identical today: `request-body-declared-once` caps a second
+ * DECLARATION of one body, not two bodies that happen to match. These are
+ * different surfaces with different authorisation and different storage, and
+ * sharing a schema would mean a field added for task comments silently arriving
+ * on this route.
+ *
+ * The length cap lives in the usecase, which answers the coded
+ * `PARCEL_COMMENT_TOO_LONG` with the ceiling in `params.max` — a client can act
+ * on that, where a schema `.max()` produces a generic `VALIDATION_ERROR`. The
+ * schema's job here is the TYPE.
+ */
+export const AddParcelCommentSchema = z
+    .object({ body: z.string().min(1) })
+    .strip()
+    .openapi('AddParcelComment');
+export type AddParcelCommentBody = z.infer<typeof AddParcelCommentSchema>;

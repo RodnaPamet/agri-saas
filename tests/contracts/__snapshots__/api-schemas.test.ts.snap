@@ -674,6 +674,21 @@ exports[`API contract — per-schema snapshots schema: ActOnNotice 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AddParcelComment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "body"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AdminCompaniesResponse 1`] = `
 "{
   "type": "object",
@@ -5253,6 +5268,14 @@ exports[`API contract — per-schema snapshots schema: CreateParcelCropSeason 1`
         "string",
         "null"
       ]
+    },
+    "yieldKgPerDca": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100000
     }
   },
   "required": [
@@ -13415,7 +13438,11 @@ exports[`API contract — per-schema snapshots schema: ParcelCommentRow 1`] = `
       "description": "Stable across refreshes so a client can key a list on it: the comment’s own id for \`COMMENT\`, and \`resolution:<taskId>\` for \`RESOLUTION\`, which has no row of its own to borrow an id from."
     },
     "taskId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Null on a \`PARCEL\` row, which belongs to no task."
     },
     "taskKey": {
       "type": [
@@ -13425,13 +13452,17 @@ exports[`API contract — per-schema snapshots schema: ParcelCommentRow 1`] = `
       "description": "Nullable because \`Task.key\` is. Not coerced to a placeholder — an invented key would be indistinguishable from a real one."
     },
     "taskTitle": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "kind": {
       "type": "string",
       "enum": [
         "COMMENT",
-        "RESOLUTION"
+        "RESOLUTION",
+        "PARCEL"
       ]
     },
     "body": {
@@ -13674,6 +13705,13 @@ exports[`API contract — per-schema snapshots schema: ParcelCropSeason 1`] = `
         "string",
         "null"
       ]
+    },
+    "yieldKgPerDca": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "What this parcel yielded that year, in **kilograms per decare**, as a STRING — the column is \`Decimal(10,2)\` and the wire carries the exact value, where a float would round. Null when not recorded.\\n\\n**This is NOT \`YieldRecord\` and must not be summed into one.** \`YieldRecord\` is the production record: gross mass in metric TONNES, scoped to a Location (блок), carrying an idempotency key, reconciled against inventory, and summed by the net-worth and portfolio rollups. This is a history note at PARCEL granularity — the farmer’s own memory of what came off each field. The two are deliberately NOT reconciled: a farm may record 10 t off a block and per-parcel rates that do not multiply back to it, because one is a weighbridge figure and the other is a recollection. No rollup reads this and no financial total includes it.\\n\\n**Per DECARE, while \`Parcel.areaHa\` is in HECTARES** — 1 ha = 10 дка. Stored as a RATE rather than a total so it is invariant to re-measurement: a corrected area would make a stored total silently imply a different rate, changing the figure’s meaning with nobody editing it."
     }
   },
   "required": [
@@ -13682,7 +13720,8 @@ exports[`API contract — per-schema snapshots schema: ParcelCropSeason 1`] = `
     "cropType",
     "sownAt",
     "harvestedAt",
-    "notes"
+    "notes",
+    "yieldKgPerDca"
   ],
   "description": "\`year\` is the HARVEST year. Do not derive it from \`sownAt\`: wheat sown in October 2025 is the 2026 harvest, so deriving would misfile most autumn cropping by one year. \`sownAt\` is optional — a back-filled season is often remembered without the drilling date."
 }"
@@ -20040,6 +20079,14 @@ exports[`API contract — per-schema snapshots schema: UpdateParcelCropSeason 1`
         "string",
         "null"
       ]
+    },
+    "yieldKgPerDca": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100000
     }
   }
 }"

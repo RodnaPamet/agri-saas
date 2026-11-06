@@ -70,6 +70,7 @@ export const PATCH = withApiErrorHandling(
                 patch.harvestedAt = body.harvestedAt === null ? null : new Date(body.harvestedAt);
             }
             if (body.notes !== undefined) patch.notes = body.notes;
+            if (body.yieldKgPerDca !== undefined) patch.yieldKgPerDca = body.yieldKgPerDca;
 
             const row = await updateParcelCropSeason(ctx, params.seasonId, patch);
             return jsonResponse({ id: row.id });

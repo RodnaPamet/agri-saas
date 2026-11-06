@@ -1243,19 +1243,24 @@ export interface ParcelCommentRow {
      * no row of its own to borrow an id from.
      */
     id: string;
-    taskId: string;
+    /**
+     * The task this belongs to, or NULL for a `PARCEL` note — which is about
+     * the field itself and has no task. Nullable since #2474+parcel notes; a
+     * client switching on `kind` never reads it for that kind.
+     */
+    taskId: string | null;
     /**
      * NULLABLE, because `Task.key` is. Not coerced to a placeholder: a client
      * showing "—" where there is no key is honest, and inventing one would
      * make an absent key indistinguishable from a real one.
      */
     taskKey: string | null;
-    taskTitle: string;
+    taskTitle: string | null;
     /**
      * `COMMENT` is a task comment; `RESOLUTION` is the note left when the task
      * was closed (`Task.resolution`).
      */
-    kind: 'COMMENT' | 'RESOLUTION';
+    kind: 'COMMENT' | 'RESOLUTION' | 'PARCEL';
     body: string;
     /**
      * ONE field for both kinds, so a client sorts and renders one key: the
@@ -1327,9 +1332,29 @@ export async function listParcelComments(
 
         const { ids, truncated: idsTruncated } = await parcelTaskIds(db, ctx, parcelId);
 
-        const [comments, resolutions] = await Promise.all([
+        const [comments, resolutions, notes] = await Promise.all([
             TaskCommentRepository.listByTasks(db, ctx, ids, PARCEL_COMMENT_ROWS),
             WorkItemRepository.listResolutionsByIds(db, ctx, ids, PARCEL_COMMENT_ROWS),
+            // The third source (owner ruling 2026-11-06): notes about the
+            // PARCEL, tied to no task. Read on `db` with the others so the
+            // encrypted `body` decrypts under the farm's DEK — a privileged
+            // read would hand back a `v2:` envelope with no error (#2723).
+            //
+            // NOT filtered by the task set: that is the whole point of these.
+            // A parcel with no tasks at all still has its notes, which is why
+            // this read takes `parcelId` and not `ids`.
+            db.parcelComment.findMany({
+                // `deletedAt: null` is named EXPLICITLY. `ParcelComment` is not
+                // in `SOFT_DELETE_TARGETS`, so no extension injects it, and the
+                // partial index is on exactly this predicate.
+                where: { tenantId: ctx.tenantId, parcelId, deletedAt: null },
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                take: PARCEL_COMMENT_ROWS,
+                select: {
+                    id: true, body: true, createdAt: true, createdByUserId: true,
+                    createdBy: { select: { id: true, name: true, email: true } },
+                },
+            }),
         ]);
 
         const rows: ParcelCommentRow[] = [
@@ -1344,6 +1369,22 @@ export async function listParcelComments(
                 createdByUserId: c.createdByUserId,
                 createdBy: c.createdBy
                     ? { id: c.createdBy.id, name: c.createdBy.name, email: c.createdBy.email }
+                    : null,
+            })),
+            ...notes.map((n) => ({
+                id: n.id,
+                // No task, and that is the kind's meaning rather than missing
+                // data — so null, not an empty string. An empty string would
+                // sort and render as a task whose key nobody set.
+                taskId: null,
+                taskKey: null,
+                taskTitle: null,
+                kind: 'PARCEL' as const,
+                body: n.body,
+                createdAt: n.createdAt.toISOString(),
+                createdByUserId: n.createdByUserId,
+                createdBy: n.createdBy
+                    ? { id: n.createdBy.id, name: n.createdBy.name, email: n.createdBy.email }
                     : null,
             })),
             ...resolutions.map((t) => ({
@@ -1378,7 +1419,13 @@ export async function listParcelComments(
 
         return {
             rows: rows.slice(0, PARCEL_COMMENTS_PAGE),
-            truncated: idsTruncated || rows.length > PARCEL_COMMENTS_PAGE,
+            // The third source can cap too, and a client inferring completeness
+            // from the row count would be wrong for the same reason as the
+            // other two.
+            truncated:
+                idsTruncated
+                || notes.length >= PARCEL_COMMENT_ROWS
+                || rows.length > PARCEL_COMMENTS_PAGE,
         };
     });
 }
@@ -1833,6 +1880,193 @@ export async function addTaskComment(
     }
     await bumpEntityCacheVersion(ctx, 'task');
     return result;
+}
+
+/** A note is free text; the cap stops one request storing an essay. */
+const MAX_PARCEL_COMMENT_LENGTH = 2_000;
+
+/**
+ * Add a note to a PARCEL, tied to no task (owner ruling 2026-11-06).
+ *
+ * «Коментари» on the parcel history page. It appears in
+ * `listParcelComments` as `kind: 'PARCEL'` alongside task comments and
+ * closing notes, which is why it lives here rather than in
+ * `parcel-history.ts`: the list that reads it is here, and splitting the
+ * writer from the reader is how the two drift about what a row means.
+ *
+ * ## The same idempotency shape as `addTaskComment`, including its race
+ *
+ * The phone queues notes offline and replays them with the outbox item id as
+ * the key. The pre-read is cheap; the catch is the backstop for two replays
+ * arriving together, and it opens a FRESH `runInTenantContext` deliberately —
+ * the loser's INSERT aborted its transaction, and a caught JS error does not
+ * un-poison an aborted Postgres transaction. Catching outside the transaction
+ * is what makes the recovery legal.
+ *
+ * ## `assertCanCommentOnTasks`, reused rather than invented
+ *
+ * A farm member who may comment on a task may comment on a field. Minting a
+ * second permission for this would let the two drift, and there is no case
+ * where the answers should differ.
+ */
+export async function addParcelComment(
+    ctx: RequestContext,
+    parcelId: string,
+    body: string,
+    idempotencyKey?: string | null,
+) {
+    assertCanCommentOnTasks(ctx);
+
+    // Sanitise BEFORE the blank check, because `sanitizePlainText` trims: a
+    // body of three spaces must be refused rather than stored as ''.
+    const safeBody = sanitizePlainText(body);
+    if (!safeBody) {
+        throw codedBadRequest('PARCEL_COMMENT_EMPTY', 'A note cannot be empty.');
+    }
+    if (safeBody.length > MAX_PARCEL_COMMENT_LENGTH) {
+        throw codedBadRequest('PARCEL_COMMENT_TOO_LONG', 'That note is too long.', {
+            max: MAX_PARCEL_COMMENT_LENGTH,
+        });
+    }
+
+    if (idempotencyKey) {
+        const existing = await runInTenantContext(ctx, (db) =>
+            db.parcelComment.findFirst({
+                where: { tenantId: ctx.tenantId, parcelId, clientMutationId: idempotencyKey },
+            }),
+        );
+        if (existing) return existing;
+    }
+
+    try {
+        return await runInTenantContext(ctx, async (db) => {
+            // The 404 belongs to the PARCEL, as everywhere else in this
+            // archive. Checked INSIDE the transaction so the existence read and
+            // the write share one tenant binding.
+            const parcel = await db.parcel.findFirst({
+                where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
+                select: { id: true },
+            });
+            if (!parcel) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found.');
+
+            const note = await db.parcelComment.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    parcelId,
+                    body: safeBody,
+                    createdByUserId: ctx.userId,
+                    clientMutationId: idempotencyKey || null,
+                },
+            });
+            await logEvent(db, ctx, {
+                action: 'PARCEL_COMMENT_ADDED',
+                entityType: 'Parcel',
+                entityId: parcelId,
+                details: 'Note added to parcel',
+                detailsJson: { category: 'custom', event: 'parcel_comment_added' },
+                // The note's id, NOT its body: `details` is dropped by the
+                // audit stream and the body is an encrypted column.
+                metadata: { commentId: note.id },
+            });
+            return note;
+        });
+    } catch (err) {
+        if (idempotencyKey && isUniqueViolation(err)) {
+            const winner = await runInTenantContext(ctx, (db) =>
+                db.parcelComment.findFirst({
+                    where: { tenantId: ctx.tenantId, parcelId, clientMutationId: idempotencyKey },
+                }),
+            );
+            if (winner) return winner;
+        }
+        throw err;
+    }
+}
+
+/**
+ * Remove a note from a parcel — the AUTHOR, or a farm ADMIN/OWNER.
+ *
+ * Owner ruling 2026-11-06. The ask was "author or farm ADMIN", chosen over
+ * author-only with the consequence named: one member can erase another's field
+ * observation, so the audit entry is part of the ruling rather than a trimming.
+ *
+ * ## Soft, and explicitly so
+ *
+ * The row is RETAINED with a `deletedAt`; {@link listParcelComments} filters it
+ * out. That keeps a removal recoverable by hand and leaves the
+ * `PARCEL_COMMENT_DELETED` audit entry pointing at a row that still exists —
+ * an audit trail whose subject has been hard-deleted records that something
+ * happened to something.
+ *
+ * `ParcelComment` is deliberately absent from `SOFT_DELETE_TARGETS`, so the
+ * column is applied here rather than by the extension (the
+ * `LocationRepository` precedent). Joining that registry enrols the model in
+ * `retention-purge`, which HARD deletes after a retention window — a schedule
+ * nobody has chosen for a farmer's field notes, and not a decision to make as
+ * a side effect of wanting one `delete()` to become an `update()`.
+ *
+ * ## One 404 for four different refusals
+ *
+ * Missing, already deleted, another parcel's, or somebody else's note with a
+ * non-admin caller all answer the same contentless `PARCEL_COMMENT_NOT_FOUND`.
+ * A distinct "that is not yours" would confirm a note exists at an id the
+ * caller may not read — the existence-hiding rule this archive applies to
+ * every other negative. It is the SAME code and status in all four cases, not
+ * merely a 404 each: the tests assert that as a comparison.
+ *
+ * The authorisation read and the write share one transaction and one tenant
+ * binding, so a note cannot be re-owned between the check and the update.
+ */
+export async function deleteParcelComment(
+    ctx: RequestContext,
+    parcelId: string,
+    commentId: string,
+) {
+    // The same gate as writing one: a member who may comment may manage their
+    // own note. ADMIN is checked separately below, for OTHER people's notes.
+    assertCanCommentOnTasks(ctx);
+
+    await runInTenantContext(ctx, async (db) => {
+        const note = await db.parcelComment.findFirst({
+            where: { id: commentId, parcelId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, createdByUserId: true },
+        });
+        // Contentless, and deliberately indistinguishable from the refusal
+        // below — see the docblock.
+        if (!note) throw codedNotFound('PARCEL_COMMENT_NOT_FOUND', 'Note not found.');
+
+        const isAuthor = note.createdByUserId === ctx.userId;
+        if (!isAuthor && !ctx.permissions.canAdmin) {
+            throw codedNotFound('PARCEL_COMMENT_NOT_FOUND', 'Note not found.');
+        }
+
+        // Conditional on `deletedAt: null`, so two concurrent deletes do not
+        // both claim the removal and write two audit entries for one act.
+        const claimed = await db.parcelComment.updateMany({
+            where: { id: commentId, tenantId: ctx.tenantId, deletedAt: null },
+            data: { deletedAt: new Date() },
+        });
+        if (claimed.count === 0) {
+            throw codedNotFound('PARCEL_COMMENT_NOT_FOUND', 'Note not found.');
+        }
+
+        await logEvent(db, ctx, {
+            // A domain verb, matching `PARCEL_COMMENT_ADDED` next door. A
+            // canonical `SOFT_DELETE` on `entityType: 'Parcel'` would read as
+            // the PARCEL having been deleted, which is a different and alarming
+            // claim — the audit-verb rule's "the row-level shape understates
+            // the event", in the direction that matters.
+            action: 'PARCEL_COMMENT_DELETED',
+            entityType: 'Parcel',
+            entityId: parcelId,
+            details: 'Note removed from parcel',
+            detailsJson: { category: 'custom', event: 'parcel_comment_deleted' },
+            // The note's id and WHICH rule allowed it — never the body, which
+            // is an encrypted column, and never the author's id, which would
+            // put a second person in a record of this person's act.
+            metadata: { commentId, deletedOwn: isAuthor },
+        });
+    });
 }
 
 // ─── Metrics ───

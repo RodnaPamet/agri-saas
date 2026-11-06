@@ -966,6 +966,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/comments/{commentId}",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/agro/parcels/{parcelId}/crop-seasons",
       "status": "live",
       "documented": true

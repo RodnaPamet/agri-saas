@@ -23,6 +23,7 @@ import { TaskListItemDTOSchema } from '@/lib/dto/task.dto';
 // happened to agree — and the sync hook could not have caught a drift, because
 // it compares the generated file to THIS module rather than to the validator.
 import {
+    AddParcelCommentSchema,
     CreateCropSeasonSchema,
     CreateWeedObservationSchema,
     UpdateCropSeasonSchema,
@@ -39,6 +40,10 @@ const ParcelParams = TenantParams.extend({
     parcelId: z.string().openapi({ param: { name: 'parcelId', in: 'path' } }),
 });
 
+const ParcelCommentParams = ParcelParams.extend({
+    commentId: z.string().openapi({ param: { name: 'commentId', in: 'path' } }),
+});
+
 const CropSeason = z
     .object({
         id: z.string(),
@@ -47,6 +52,27 @@ const CropSeason = z
         sownAt: z.string().datetime().nullable(),
         harvestedAt: z.string().datetime().nullable(),
         notes: z.string().nullable(),
+        yieldKgPerDca: z.string().nullable().openapi({
+            description:
+                'What this parcel yielded that year, in **kilograms per decare**, as a '
+                + 'STRING — the column is `Decimal(10,2)` and the wire carries the exact '
+                + 'value, where a float would round. Null when not recorded.\n\n'
+                + '**This is NOT `YieldRecord` and must not be summed into one.** '
+                + '`YieldRecord` is the production record: gross mass in metric TONNES, '
+                + 'scoped to a Location (блок), carrying an idempotency key, reconciled '
+                + 'against inventory, and summed by the net-worth and portfolio rollups. '
+                + 'This is a history note at PARCEL granularity — the farmer\u2019s own '
+                + 'memory of what came off each field. The two are deliberately NOT '
+                + 'reconciled: a farm may record 10 t off a block and per-parcel rates that '
+                + 'do not multiply back to it, because one is a weighbridge figure and the '
+                + 'other is a recollection. No rollup reads this and no financial total '
+                + 'includes it.\n\n'
+                + '**Per DECARE, while `Parcel.areaHa` is in HECTARES** — 1 ha = 10 дка. '
+                + 'Stored as a RATE rather than a total so it is invariant to '
+                + 're-measurement: a corrected area would make a stored total silently '
+                + 'imply a different rate, changing the figure\u2019s meaning with nobody '
+                + 'editing it.',
+        }),
     })
     .openapi('ParcelCropSeason', {
         description:
@@ -290,7 +316,11 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             400: {
                 description:
                     '`NO_FIELDS_TO_UPDATE` — the body changed nothing. `CROP_TYPE_INVALID` — an ' +
-                    'empty or over-long crop. `VALIDATION_ERROR` — a `null` on a required field.',
+                    'empty or over-long crop. `YIELD_OUT_OF_RANGE` — a yield outside 0-100000 ' +
+                    'kg/дка, with the ceiling in `params.max`; a NEGATIVE one is refused rather ' +
+                    'than clamped, because a negative yield is a mis-keyed figure and clamping ' +
+                    'it to zero would record a crop failure nobody reported. ' +
+                    '`VALIDATION_ERROR` — a `null` on a required field, or a non-numeric yield.',
             },
             404: { description: '`CROP_SEASON_NOT_FOUND`' },
         },
@@ -425,10 +455,18 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
             + 'Over the same task set as `listParcelTasks` — both resolve it the same way — so '
             + 'the history and the task list on one screen cannot disagree about which tasks '
             + 'touched the parcel.\n\n'
-            + '**Two kinds in one list.** `COMMENT` is a task comment; `RESOLUTION` is the note '
-            + 'left when the task was closed. They are merged server-side because the screen is '
-            + 'one chronological history, and a client assembling it from two lists would have '
-            + 'to re-derive an ordering the server already knows.\n\n'
+            + '**THREE kinds in one list.** `COMMENT` is a task comment; `RESOLUTION` is the '
+            + 'note left when the task was closed; `PARCEL` is a note about the FIELD ITSELF, '
+            + 'tied to no task (owner ruling 2026-11-06) — a farmer recording that the north '
+            + 'corner floods is describing the land, not a job. They are merged server-side '
+            + 'because the screen is one chronological history, and a client assembling it '
+            + 'from three lists would have to re-derive an ordering the server already '
+            + 'knows.\n\n'
+            + '**On a `PARCEL` row, `taskId`, `taskKey` and `taskTitle` are ALL null.** That '
+            + 'is the kind\u2019s meaning rather than missing data, which is why they are null '
+            + 'and not empty strings — an empty `taskKey` would render as a task whose key '
+            + 'nobody set. A `PARCEL` row is also NOT filtered by the task set: a parcel with '
+            + 'no tasks at all still has its notes.\n\n'
             + '`createdAt` is ONE field for both kinds — the comment’s own time, or the task’s '
             + 'close time for a resolution — so a client sorts and renders a single key.\n\n'
             + '`createdBy` is **null on a RESOLUTION**, and that is a statement about the data '
@@ -460,15 +498,18 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
                                         + '`resolution:<taskId>` for `RESOLUTION`, which has no '
                                         + 'row of its own to borrow an id from.',
                                 }),
-                                taskId: z.string(),
+                                taskId: z.string().nullable().openapi({
+                                    description:
+                                        'Null on a `PARCEL` row, which belongs to no task.',
+                                }),
                                 taskKey: z.string().nullable().openapi({
                                     description:
                                         'Nullable because `Task.key` is. Not coerced to a '
                                         + 'placeholder — an invented key would be '
                                         + 'indistinguishable from a real one.',
                                 }),
-                                taskTitle: z.string(),
-                                kind: z.enum(['COMMENT', 'RESOLUTION']),
+                                taskTitle: z.string().nullable(),
+                                kind: z.enum(['COMMENT', 'RESOLUTION', 'PARCEL']),
                                 body: z.string(),
                                 createdAt: z.string().openapi({
                                     format: 'date-time',
@@ -507,6 +548,78 @@ export function registerParcelHistoryPaths(registry: OpenAPIRegistry): void {
                     + 'with nothing recorded answers `200` with an empty `rows`, so an untouched '
                     + 'field is distinguishable from a wrong id.',
             }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/comments',
+        operationId: 'addParcelComment',
+        summary: 'Add a note about this parcel',
+        description:
+            'A note about the FIELD ITSELF, tied to no task (owner ruling 2026-11-06). It comes '
+            + 'back from the GET above as `kind: \'PARCEL\'`, with `taskId`, `taskKey` and '
+            + '`taskTitle` all null.\n\n'
+            + '**Honours `Idempotency-Key`.** Send one, minted BEFORE the first attempt and reused '
+            + 'on every retry of the same note. A note typed in a field is replayed from the '
+            + 'outbox with its item id as the key, so a re-send over flaky rural LTE returns the '
+            + 'ORIGINAL note rather than posting it twice.\n\n'
+            + '`body` is sanitised server-side and **encrypted at rest**, like a task comment. '
+            + 'Sanitising happens BEFORE the blank check, because the sanitiser trims — a body of '
+            + 'three spaces is `PARCEL_COMMENT_EMPTY` rather than a stored empty string.\n\n'
+            + 'There is **no edit**, matching every other comment surface here. There IS a '
+            + 'delete \u2014 see `DELETE .../comments/{commentId}` below \u2014 which makes this the '
+            + 'first removable comment on the API; task comments remain permanent.',
+        tags: ['Parcel history', 'Tasks'],
+        params: ParcelParams,
+        body: AddParcelCommentSchema,
+        success: {
+            status: 201,
+            description: 'Created. Returns the note\u2019s id.',
+            schema: z.object({ id: z.string() }),
+        },
+        extraResponses: {
+            400: {
+                description:
+                    '`PARCEL_COMMENT_EMPTY` — blank after trimming. '
+                    + '`PARCEL_COMMENT_TOO_LONG` — over the cap, which is in `params.max`.',
+            },
+            404: { description: '`PARCEL_NOT_FOUND`' },
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/comments/{commentId}',
+        operationId: 'deleteParcelComment',
+        summary: 'Remove a note about this parcel',
+        description:
+            'Removes a note \u2014 the **author**, or a farm **ADMIN/OWNER** (owner ruling '
+            + '2026-11-06). Permission to post a note is "not READER"; permission to remove '
+            + 'SOMEBODY ELSE\u2019S is `admin`.\n\n'
+            + '**Soft.** The row is retained with a `deletedAt` and simply stops appearing in the '
+            + 'GET above, so a client needs no reconciliation beyond a refresh, and the '
+            + '`PARCEL_COMMENT_DELETED` audit entry still points at a row that exists.\n\n'
+            + '**Every refusal is the same contentless 404.** Missing, already deleted, a note on '
+            + 'a different parcel, or another member\u2019s note with a non-admin caller all answer '
+            + 'an identical `PARCEL_COMMENT_NOT_FOUND`. Telling those apart would confirm that a '
+            + 'note exists at an id the caller may not read.\n\n'
+            + 'Answers `{ ok: true }` at 200 rather than a 204, matching the two sibling '
+            + 'sub-resources on this path (`crop-seasons/{seasonId}`, '
+            + '`weed-observations/{observationId}`). There is no PATCH: a note is not editable.',
+        tags: ['Parcel history', 'Tasks'],
+        params: ParcelCommentParams,
+        success: {
+            status: 200,
+            description: 'Removed.',
+            schema: z.object({ ok: z.boolean() }),
+        },
+        extraResponses: {
+            404: {
+                description:
+                    '`PARCEL_COMMENT_NOT_FOUND` — missing, already removed, not this '
+                    + 'parcel\u2019s, or not yours and you are not an admin. Deliberately one code.',
+            },
         },
     });
 }
