@@ -181,13 +181,53 @@ const NEUTRALISED = '[removed: untrusted directive]';
  */
 export function sanitizeUntrusted(text: string): string {
     if (!text) return '';
-    return text
-        .split(/\r?\n/)
-        .map((line) => {
+    const lines = text.split(/\r?\n/);
+
+    /*
+     * The role check runs on the BLOCK BOUNDARY only — #2730, owner decision
+     * 2026-11-06.
+     *
+     * It used to run on every line, and the false-positive population was
+     * nearly identical to the population where a false positive HURTS. The
+     * four role words are ENGLISH, so in a Bulgarian agronomy corpus they
+     * essentially only lead a line inside quoted technical material — a
+     * config block, a spec table, a machine manual. A farmer asking about a
+     * sprayer setting was told something mangled about the exact value they
+     * were trying to change:
+     *
+     *     irrigation:
+     *       system: drip          ->  [role] drip
+     *       tool: boom-sprayer    ->  [role] boom-sprayer
+     *
+     * Role-spoofing works by appearing to START A NEW TURN, and only the
+     * first content line of an untrusted block is in a position to do that.
+     * A `system:` line with a parent key above it reads as a value, not as a
+     * turn marker.
+     *
+     * WHAT THIS DOES NOT FIX, stated so it is not mistaken for complete: an
+     * input whose FIRST content line is itself a role word — a bare
+     * `developer: Netafim` with nothing above it — still defangs, because
+     * that line IS the boundary. The nested case above is fixed; the
+     * top-level single-line case is not, and narrowing further would mean
+     * deciding which role WORDS to drop rather than where to look.
+     *
+     * `INJECTION_LINE_PATTERNS` deliberately does NOT narrow. Those are the
+     * substantive defence — "ignore all previous instructions" and friends —
+     * they are word-bounded and unanchored, and they keep running on every
+     * line. Only the POSITIONAL heuristic, the one with the bad population,
+     * is restricted.
+     */
+    const boundary = lines.findIndex(
+        (line) => line.slice(skipLeadingMarkup(line)).trim().length > 0,
+    );
+
+    return lines
+        .map((line, index) => {
             if (INJECTION_LINE_PATTERNS.some((p) => p.test(line))) return NEUTRALISED;
+            if (index !== boundary) return line;
             // Look PAST leading whitespace and markup — see
-            // `skipLeadingMarkup`. A role marker only impersonates a role
-            // when it leads, and one HTML tag used to be enough to hide it.
+            // `skipLeadingMarkup`. One HTML tag used to be enough to hide a
+            // role marker that WAS in the spoofing position.
             const rest = line.slice(skipLeadingMarkup(line));
             if (ROLE_SPOOF_PREFIX.test(rest)) {
                 // Defang the role prefix so it reads as plain text. The
