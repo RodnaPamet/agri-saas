@@ -11,8 +11,25 @@
  * the rules exist for the case where the model ignores them.
  */
 const mockComplete = jest.fn();
-jest.mock('@/app-layer/ai/provider', () => ({
-    getAiProvider: () => ({ complete: mockComplete }),
+/*
+ * The seam moved to `completeWithRouting` (#2765), so the mock moved with it.
+ *
+ * This suite is about the extraction RULES, not about how a provider is
+ * resolved — so mocking the one call the subject now makes is both simpler and
+ * more honest than filling in routing's gates. The previous partial mock of
+ * `@/app-layer/ai/budget` is gone for the same reason: routing asserts the
+ * budget itself, and a partial barrel mock breaks the moment the subject
+ * reaches an export the double does not carry, which is exactly how this
+ * suite failed with `assertAiBudget is not a function`.
+ *
+ * `opts` is forwarded as mockComplete's FIRST argument so the existing
+ * `mock.calls[0][0].messages` assertions keep meaning what they meant.
+ */
+jest.mock('@/app-layer/ai/routing', () => ({
+    completeWithRouting: (_ctx: unknown, task: unknown, opts: unknown) => {
+        mockRoutedTask(task);
+        return mockComplete(opts);
+    },
 }));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
@@ -22,10 +39,8 @@ jest.mock('@/lib/observability/logger', () => ({
 // guards. Mocked here because this suite is about the RULES; that the gate is
 // present at all is held by `ai-spend-gate-covers-embeddings`, whose
 // population is derived from the filesystem.
-const mockAssertSpend = jest.fn();
-jest.mock('@/app-layer/ai/budget', () => ({
-    assertAiSpendAllowed: (...a: unknown[]) => mockAssertSpend(...a),
-}));
+/** Which route target the subject asked for — pinned below. */
+const mockRoutedTask = jest.fn();
 
 import { extractMemoryPoints, MAX_NEW_POINTS, type ExistingPoint, type UserTurn } from '@/app-layer/ai/memory-extractor';
 import { makeRequestContext } from '../../helpers/make-context';
@@ -45,8 +60,35 @@ const CTX = makeRequestContext();
 
 beforeEach(() => {
     mockComplete.mockReset();
-    mockAssertSpend.mockReset();
-    mockAssertSpend.mockResolvedValue({ ok: true });
+    mockRoutedTask.mockReset();
+});
+
+describe('#2765 — the extraction goes through the ROUTER', () => {
+    it('asks for the memory-extract route, not a bare provider', async () => {
+        /*
+         * The point of #2765 is the usage LEDGER: this path spent tokens that
+         * never reached `recordAiUsage`, so the monthly total its own budget
+         * gate reads was understated by its own consumption. `recordAiUsage`
+         * is reached only from `completeWithRouting`, so the fix IS the call,
+         * and the task name is what selects Haiku plus the ollama failover
+         * that keeps a self-hosted install working.
+         *
+         * Without this assertion the change is invisible to the suite: every
+         * other test here mocks the seam and would pass against a bare
+         * provider call just as happily.
+         */
+        answers([{ text: 'Отглежда слънчоглед', sourceQuote: 'Отглеждам слънчоглед' }]);
+        await extractMemoryPoints(CTX, TURNS, []);
+        expect(mockRoutedTask).toHaveBeenCalledWith('memory-extract');
+    });
+
+    it('does not reach the router when there is nothing to read', async () => {
+        // The early return must still spend nothing — a run with no turns is
+        // not refused for being over budget, and now is not routed either.
+        await extractMemoryPoints(CTX, [], []);
+        expect(mockRoutedTask).not.toHaveBeenCalled();
+        expect(mockComplete).not.toHaveBeenCalled();
+    });
 });
 
 describe('rule 3 — only the person’s own words, as a CHECK', () => {
