@@ -500,6 +500,57 @@ function sourceFilesReferencing(needle: string): string[] {
     return files.filter((full) => fs.readFileSync(full, 'utf8').includes(needle));
 }
 
+/**
+ * Prisma operations that can put UNSANITISED text into a column.
+ *
+ * `delete`/`deleteMany` are absent deliberately: removing a row writes no
+ * content. So are the reads.
+ */
+const PRISMA_WRITE_OPS = [
+    'createManyAndReturn', 'createMany', 'create',
+    'updateManyAndReturn', 'updateMany', 'update',
+    'upsert',
+] as const;
+
+/**
+ * Files that WRITE through a model accessor, as opposed to merely naming it.
+ *
+ * Separate from `sourceFilesReferencing` above, which stays deliberately
+ * broad, because the live-writer assertion asks a narrower question than any
+ * other caller: its own rationale is "an unsanitised column nothing WRITES is
+ * not the same risk as one a route writes today", and a READ cannot create
+ * unsanitised content.
+ *
+ * P8.1 (#2795) is what exposed the difference. It ships `DirectMessage` with
+ * no write path — the table arrives one release before its writer — and then
+ * adds `prisma.directMessage.findMany` to the Art 15 export, because the
+ * privacy registry classifies the column `ERASE_AND_EXPORT` and an export must
+ * cover whatever the registry erases. Under the broad detector that read
+ * registered as a live writer and the assertion failed, reporting a
+ * sanitisation gap that cannot exist: nothing can put text into that column
+ * yet.
+ *
+ * KNOWN LIMIT, stated rather than papered over: a write performed through
+ * another model's NESTED relation (`prisma.evidence.update({ data: { reviews:
+ * { create: … } } })`) never names this accessor and is invisible here. The
+ * broad detector only caught such a case when the file happened to mention the
+ * accessor for some other reason, so this is a narrower version of a gap that
+ * was already there rather than a new one. The floor below is what keeps an
+ * empty scan from reading as "no writers".
+ */
+function sourceFilesWritingVia(accessor: string): string[] {
+    const files = collectSourceFiles({
+        roots: ['src'],
+        extensions: ['.ts', '.tsx'],
+        exclude: (rel) => rel.startsWith('src/generated/'),
+        floor: 1500,
+    });
+    const pattern = new RegExp(
+        `\\.${accessor}\\s*\\.\\s*(?:${PRISMA_WRITE_OPS.join('|')})\\s*\\(`,
+    );
+    return files.filter((full) => pattern.test(fs.readFileSync(full, 'utf8')));
+}
+
 describe('rich-text sanitiser coverage — structural completeness', () => {
     it('every encrypted-content model is classified (the completeness guarantee)', () => {
         // A new rich-text field forces its model into ENCRYPTED_FIELDS
@@ -626,9 +677,13 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // live count becomes 2 and this fails until the entry moves to
         // RICH_TEXT_COVERAGE with its sanitiser. Which is exactly when that
         // work should be forced.
+        // WRITES, not references — see `sourceFilesWritingVia`. A read of an
+        // unsanitised column (P8.1's Art 15 export of `DirectMessage`) is not
+        // the risk this assertion is about, and counting it reported a gap
+        // that cannot exist while nothing can write the column.
         const withLiveWriter = Object.keys(KNOWN_UNCOVERED).filter((model) => {
             const accessor = model.charAt(0).toLowerCase() + model.slice(1);
-            return sourceFilesReferencing(`.${accessor}`).length > 0;
+            return sourceFilesWritingVia(accessor).length > 0;
         });
 
         // A positive control, because an empty result here would otherwise be
