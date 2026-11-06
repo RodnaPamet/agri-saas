@@ -78,6 +78,22 @@ const AdminPromotionSchema = z
                 + 'An empty string is normalised to null on write, so `null` means exactly "not a '
                 + 'ПРЗ" and never "nobody could record it".',
         }),
+        sourceFileId: z.string().nullable().openapi({
+            description:
+                'The `FileRecord` id of the supplier leaflet this was read from, or null (#2750).\n\n'
+                + 'It answers *where did this text come from?* — the question a reviewer has when a '
+                + 'published promotion turns out to carry a wrong dose, price or end date, and the '
+                + 'only artefact that settles whether the leaflet said it or the reader did.\n\n'
+                + '**ADMIN-ONLY.** The farmer-facing feed does not expose it: that feed is '
+                + 'advertising copy and a supplier\u2019s source PDF is internal. RLS enforces the '
+                + 'same boundary independently — the file is stored under the PLATFORM tenant, so a '
+                + 'farm\u2019s context reads zero rows for it whatever a DTO says.\n\n'
+                + '**A non-null id may still point at nothing, and that is deliberate.** There is no '
+                + 'FK constraint, so a retention-swept leaflet leaves the id in place. `null` means '
+                + '"never read from a leaflet"; a dangling id means "it WAS read and the source is '
+                + 'no longer held". `GET .../source` reports those as '
+                + '`PROMOTION_SOURCE_NOT_RECORDED` and `PROMOTION_SOURCE_NOT_HELD` respectively.',
+        }),
         publishedAt: z.string().datetime().nullable().openapi({
             description:
                 'Null means DRAFT — nothing reaches a farm until it is set. Publishing IS the '
@@ -142,6 +158,15 @@ const CreatePromotionBody = z
         validFrom: z.string().nullable().optional().openapi({ format: 'date', example: '2026-11-02' }),
         validTo: z.string().nullable().optional().openapi({ format: 'date', example: '2026-11-30' }),
         pppRegistrationNo: PPP,
+        sourceFileId: z.string().min(1).max(64).nullable().optional().openapi({
+            description:
+                'The leaflet\u2019s `FileRecord` id, as returned by `leaflet-scan` (#2750). The '
+                + 'console carries it through its accept-this-proposal action so the source document '
+                + 'stays reachable from the row it produced.\n\n'
+                + 'A pass-through id, NOT validated against the file table on write: a bad id is a '
+                + 'dangling pointer, which is the same state a retention sweep produces and which '
+                + 'the read path already renders as "source no longer held".',
+        }),
     })
     .openapi('CreatePromotionBody');
 
@@ -463,6 +488,47 @@ export function registerPromotionsConsolePaths(registry: OpenAPIRegistry): void 
                     + 'the normalised key (lowercased, trimmed, internal whitespace collapsed). '
                     + '**NOT a stale-edit 409**: there is no version to re-read, the collision is '
                     + 'with a different row, and the remedy is a different name.',
+            },
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/admin/promotions/{id}/source',
+        operationId: 'getAdminPromotionSource',
+        summary: 'Open the supplier leaflet a promotion was read from',
+        description:
+            'The stored source document, inline, for a reviewer comparing the leaflet against the '
+            + 'form beside it (#2750).\n\n'
+            + '**The AV gate runs before any byte is served.** The leaflet was written to disk '
+            + 'before its scan resolved — which `ingestUploadedFile` is allowed to do precisely '
+            + 'because every read asks `isDownloadAllowed` first — so this answers 403 '
+            + '`FILE_SCAN_PENDING` while a scan is outstanding and 403 `FILE_SCAN_REJECTED` if it '
+            + 'came back infected. Those are separate codes because they mean opposite things: '
+            + 'wait and retry, versus this file is not coming.\n\n'
+            + '**Three distinct 404s, which is the point of the column.** `PROMOTION_NOT_FOUND`, '
+            + '`PROMOTION_SOURCE_NOT_RECORDED` (null — never read from a leaflet) and '
+            + '`PROMOTION_SOURCE_NOT_HELD` (an id that no longer resolves — it WAS read, and the '
+            + 'source is gone). Collapsing the last two would answer "was this taken from a '
+            + 'document?" with "no" where the honest answer is "yes, and we can no longer show you '
+            + 'which".',
+        tags: ['Promotions'],
+        params: TenantParams.extend({
+            id: z.string().openapi({ param: { name: 'id', in: 'path' } }),
+        }),
+        success: {
+            status: 200,
+            description:
+                'The leaflet bytes, `Content-Disposition: inline`, `Cache-Control: no-store` — a '
+                + 'supplier’s internal document must never reach a shared cache.',
+            content: { 'application/octet-stream': z.string().openapi({ format: 'binary' }) },
+        },
+        extraResponses: {
+            ...PLATFORM_404,
+            403: {
+                description:
+                    '`FILE_SCAN_PENDING` — still being scanned, retry. `FILE_SCAN_REJECTED` — '
+                    + 'antivirus flagged it and it will not be served.',
             },
         },
     });

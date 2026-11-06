@@ -81,6 +81,19 @@ export const CreatePromotionSchema = z
          * number on `Item` for the same register.
          */
         pppRegistrationNo: z.string().trim().max(120).nullable().optional(),
+        /**
+         * The `FileRecord` id of the supplier leaflet this was read from
+         * (#2750) — carried through by the console's accept-this-proposal
+         * action so the source document stays reachable from the row.
+         *
+         * A pass-through id, deliberately NOT validated against the file
+         * table here: a bad id is a dangling pointer, which is the same
+         * state a retention-swept source leaves and which the read path
+         * already has to render as "source no longer held". Validating it
+         * would buy a nicer error for a case the UI cannot produce, at the
+         * cost of a second query on every write.
+         */
+        sourceFileId: z.string().trim().min(1).max(64).nullable().optional(),
     })
     .strip()
     .refine(exactlyOneCompany, {
@@ -129,6 +142,19 @@ export const UpdatePromotionSchema = z
          * distinction `updatePromotion` relies on for every other field here.
          */
         pppRegistrationNo: z.string().trim().max(120).nullable().optional(),
+        /**
+         * The `FileRecord` id of the supplier leaflet this was read from
+         * (#2750) — carried through by the console's accept-this-proposal
+         * action so the source document stays reachable from the row.
+         *
+         * A pass-through id, deliberately NOT validated against the file
+         * table here: a bad id is a dangling pointer, which is the same
+         * state a retention-swept source leaves and which the read path
+         * already has to render as "source no longer held". Validating it
+         * would buy a nicer error for a case the UI cannot produce, at the
+         * cost of a second query on every write.
+         */
+        sourceFileId: z.string().trim().min(1).max(64).nullable().optional(),
     })
     .strip()
     .refine((v) => !(v.companyId && v.companyName), {

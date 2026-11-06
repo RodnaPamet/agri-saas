@@ -836,6 +836,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/promotions/{id}/source",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/roles",
       "status": "live",
       "documented": false
