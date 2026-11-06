@@ -29,6 +29,7 @@ export const POST = withApiErrorHandling(
                 sownAt: body.sownAt ? new Date(body.sownAt) : null,
                 harvestedAt: body.harvestedAt ? new Date(body.harvestedAt) : null,
                 notes: body.notes ?? null,
+                yieldKgPerDca: body.yieldKgPerDca ?? null,
             });
             return jsonResponse({ id: row.id }, { status: 201 });
         },

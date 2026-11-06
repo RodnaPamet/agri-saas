@@ -588,6 +588,39 @@ model ParcelCropSeason {
   sownAt          DateTime?
   harvestedAt     DateTime?
   notes           String?
+  /// What this parcel yielded that year, in KILOGRAMS PER DECARE.
+  ///
+  /// The farmer's own per-parcel memory — «2026 · Пшеница · 520 кг/дка» on the
+  /// parcel history page. Owner ruling 2026-11-06.
+  ///
+  /// ## It is NOT `YieldRecord`, and must never be summed into one
+  ///
+  /// `YieldRecord` is the production record: gross mass in metric TONNES,
+  /// scoped to a Location (блок), carrying an idempotency key, reconciled
+  /// against `InventoryLot`/`StockTransaction` through `logEntryId`, and summed
+  /// by the net-worth and portfolio rollups. This column is none of that. It is
+  /// a history note at PARCEL granularity, and the two are deliberately not
+  /// reconciled: a farm may record 10 t off a block and per-parcel rates that
+  /// do not multiply back to it, because one is a weighbridge figure and the
+  /// other is what the farmer remembers coming off each field.
+  ///
+  /// So: no rollup reads this, nothing joins it to `YieldRecord`, and it is
+  /// absent from every financial total. If a future change wants a single yield
+  /// of record, that is a migration and a product decision — not something to
+  /// arrive at by starting to SUM this column.
+  ///
+  /// ## Why kg/дка and not a total
+  ///
+  /// It is INVARIANT to re-measurement. `Parcel.areaHa` is corrected when a
+  /// parcel is re-surveyed, and a stored total would then silently imply a
+  /// different rate per decare — the figure would change meaning without
+  /// anybody editing it. A stored rate stays true. The phone converts a typed
+  /// total using the parcel's area, which is its own choice to make because it
+  /// knows what the farmer typed.
+  ///
+  /// Note the unit mismatch that conversion has to cross: `Parcel.areaHa` is
+  /// HECTARES and this is per DECARE. 1 ha = 10 дка.
+  yieldKgPerDca   Decimal?  @db.Decimal(10, 2)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   createdByUserId String?

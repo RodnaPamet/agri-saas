@@ -1,0 +1,20 @@
+-- ParcelCropSeason.yieldKgPerDca — the farmer's per-parcel yield memory.
+--
+-- Additive and nullable: every existing row reads NULL, which is correct for
+-- them. Nothing backfills from `YieldRecord`, deliberately — that table holds
+-- gross TONNES per Location, and spreading it over a block's parcels would
+-- invent a per-parcel figure the farmer never recorded, which is exactly the
+-- false precision this column exists to avoid.
+--
+-- Decimal(10,2): kg per decare. Field crops sit around 300-1200; the width
+-- allows a greenhouse rate without truncating, and two decimals because a
+-- farmer may type 520.5.
+--
+-- No index. It is read as part of a parcel's crop-season list, which is already
+-- served by @@index([tenantId, parcelId, year]); nothing filters or sorts on
+-- the yield, and no rollup reads this column at all.
+--
+-- No rollback script: the previous image neither reads nor writes it, so an
+-- image-only rollback is safe, and destructive-migration-has-inverse does not
+-- select an ADD COLUMN.
+ALTER TABLE "ParcelCropSeason" ADD COLUMN "yieldKgPerDca" DECIMAL(10,2);

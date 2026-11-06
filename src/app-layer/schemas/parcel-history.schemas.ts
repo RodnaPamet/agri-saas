@@ -23,6 +23,19 @@ export const CreateCropSeasonSchema = z
         sownAt: z.string().datetime().nullable().optional(),
         harvestedAt: z.string().datetime().nullable().optional(),
         notes: z.string().nullable().optional(),
+        /**
+         * kg per DECARE, the farmer's own per-parcel figure.
+         *
+         * Bounded here as well as in the usecase, because the two refusals
+         * differ usefully: the schema answers `VALIDATION_ERROR` for a type
+         * error (a string, an object), the usecase answers the coded
+         * `YIELD_OUT_OF_RANGE` for a number that is the wrong SIZE. A client
+         * can act on the second and only log the first.
+         *
+         * NOT `YieldRecord` — see the schema comment on the column. Nothing
+         * sums this into a production total.
+         */
+        yieldKgPerDca: z.number().nonnegative().max(100000).nullable().optional(),
     })
     .strip()
     .openapi('CreateParcelCropSeason');
@@ -101,6 +114,8 @@ export const UpdateCropSeasonSchema = z
         sownAt: z.string().datetime().nullable().optional(),
         harvestedAt: z.string().datetime().nullable().optional(),
         notes: z.string().nullable().optional(),
+        /** kg per decare; `null` clears it. See `CreateCropSeasonSchema`. */
+        yieldKgPerDca: z.number().nonnegative().max(100000).nullable().optional(),
     })
     .strip()
     .openapi('UpdateParcelCropSeason');
