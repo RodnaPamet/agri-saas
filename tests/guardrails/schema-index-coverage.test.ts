@@ -170,6 +170,11 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'Task.createdByUserId': R_ACTOR,
     'Task.reviewerUserId': R_ACTOR,
     'TaskComment.createdByUserId': R_ACTOR,
+    // Same column, same kind of row, same answer as its TaskComment
+    // sibling above: nothing lists a person's notes, and the erasure path
+    // pseudonymises the User row rather than deleting it, so even the
+    // cascade direction is not a hot path.
+    'ParcelComment.createdByUserId': R_ACTOR,
     'TaskWatcher.userId': R_ACTOR,
     'Asset.ownerUserId': R_ACTOR,
     'Evidence.fileRecordId': R_ONE_TO_ONE,
@@ -507,6 +512,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'Epic P5-PR-A version-history list: filtered by (tenantId, processMapId) which is covered by the model\'s leading `@@index([tenantId, processMapId, version])`. Capped at 200 rows in the repo (`take: 200`); no curated composite index needed.',
     TaskComment:
         'fetched per task via a leading-indexed FK; Layers A/B cover its query shapes; no curated composite index needed today.',
+    ParcelComment:
+        'fetched per PARCEL via the leading `@@index([tenantId, parcelId])` '
+        + 'and capped in the usecase (`take: PARCEL_COMMENT_ROWS`), so the '
+        + 'createdAt ordering is over one parcel\u2019s notes rather than the '
+        + 'table \u2014 the TenantEntraGroupMapping posture. Layers A/B cover its '
+        + 'query shapes; no curated composite index needed today.',
     TenantApiKey:
         'filtered only by tenantId plus leading-indexed FK / status columns — Layers A/B cover its query shapes; no curated composite index needed today.',
     TenantCustomRole:
