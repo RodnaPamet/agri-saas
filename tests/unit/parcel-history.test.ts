@@ -504,7 +504,11 @@ describe('a correction is audited, not silent', () => {
 
 describe('a weed observation correction replaces the list whole', () => {
     it('re-partitions into BOTH columns together', async () => {
-        const known = WEED_OPTIONS[0].key;
+        // `.value`, not `.key` — the option type has no `key`, so the first
+        // version of this read `undefined` and the content assertions below
+        // compared undefined to undefined. They PASSED, vacuously; `tsc` is
+        // what caught it, which jest could not.
+        const known = WEED_OPTIONS[0].value;
         await updateParcelWeedObservation(ctx, 'wo1', { weeds: [known, 'some weed nobody catalogued'] });
 
         const { data } = mockPrisma.parcelWeedObservation.update.mock.calls[0][0];
