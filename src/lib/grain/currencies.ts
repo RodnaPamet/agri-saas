@@ -19,18 +19,7 @@ import { bgnToEur } from '@/lib/exchange/currency';
 
 /** Code + the symbol/name shown beside it in the picker. */
 export const CONTRACT_CURRENCIES: ReadonlyArray<{ code: string; symbol: string }> = [
-    { code: 'BGN', symbol: 'лв.' },
     { code: 'EUR', symbol: '€' },
-    { code: 'USD', symbol: '$' },
-    { code: 'GBP', symbol: '£' },
-    { code: 'RON', symbol: 'lei' },
-    { code: 'PLN', symbol: 'zł' },
-    { code: 'HUF', symbol: 'Ft' },
-    { code: 'CHF', symbol: 'CHF' },
-    { code: 'UAH', symbol: '₴' },
-    { code: 'TRY', symbol: '₺' },
-    { code: 'CAD', symbol: 'CA$' },
-    { code: 'AUD', symbol: 'A$' },
 ];
 
 const KNOWN = new Set(CONTRACT_CURRENCIES.map((c) => c.code));

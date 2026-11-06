@@ -10,10 +10,14 @@
  *     later test would notice because the number would be perfectly plausible.
  *   - **`lines` is the batch body's shape, so it posts back unchanged.** The
  *     whole flow dies at the last tap otherwise.
- *   - **Lev is converted at the fixed peg and the original stays visible.**
- *     The save path refuses a non-EUR currency, so a line that kept `BGN`
- *     would 400 on save; and the original figure has no column, so it is
- *     prefixed to the description.
+ *   - **A non-euro line is REFUSED, not converted** (#2539, owner ruling
+ *     2026-11-06). It used to convert lev at the fixed peg and prefix the
+ *     original to the description. That proposed a line the save path would
+ *     then refuse — it accepts only what is ALREADY euro — and it wrote a
+ *     conversion trace into stored data, where nothing could compute on it and
+ *     nothing could remove it without parsing prose. The scan now asks the
+ *     save path's own question, `isStoredAsEuro`, so what it proposes is
+ *     exactly what can be saved.
  *   - **Attribution is NULL, always.** The model cannot know which planting a
  *     drum of diesel belongs to.
  *   - **An overflow is REPORTED.** Silently dropping 15 lines of a farmer's
@@ -87,7 +91,12 @@ function draft(over: Record<string, unknown> = {}) {
     return {
         category: 'FUEL',
         amount: 250,
-        currency: 'BGN',
+        // EUR by default (#2539). It was `BGN`, which encoded the old
+        // convert-at-the-peg behaviour into every test in this file — once a
+        // lev line is refused, a BGN fixture makes `res.lines` empty and nine
+        // unrelated assertions fail for a reason that has nothing to do with
+        // what they test. The refusal cases below pass `currency` explicitly.
+        currency: 'EUR',
         incurredOn: '2026-10-15',
         supplier: 'Петрол АД',
         description: 'Дизел',
@@ -156,23 +165,58 @@ describe('the input is exactly one of file / fileId', () => {
 });
 
 describe('the proposal', () => {
-    it('converts лев at the fixed peg and keeps the original visible', async () => {
-        const res = await scanInvoice(ctx(), { file: aFile() });
-        expect(res.lines).toHaveLength(1);
-        const line = res.lines[0];
-        // 250 / 1.95583 = 127.82…
-        expect(line.amount).toBeCloseTo(127.82, 2);
-        expect(line.currency).toBe('EUR');
-        // The original has no column, so it is prefixed to the description.
-        expect(line.description).toContain('250.00 лв.');
-        expect(line.description).toContain('Дизел');
+    it('REFUSES a lev line rather than converting it', async () => {
+        // It used to come back as €127.82 with `250.00 лв. ·` prefixed to the
+        // description. Now the line is skipped — and because it was the only
+        // line, the scan REFUSES the invoice rather than answering with an
+        // empty sheet. That is the right shape: an empty `lines` would look
+        // like a successful scan of an invoice with nothing on it.
+        readInvoiceMock.mockResolvedValue(okRead([draft({ currency: 'BGN', amount: 250 })]));
+        await expect(scanInvoice(ctx(), { file: aFile() })).rejects.toMatchObject({
+            code: 'INVOICE_NO_USABLE_LINES',
+        });
     });
 
-    it('leaves a EUR invoice alone, with no lev prefix', async () => {
-        readInvoiceMock.mockResolvedValue(okRead([draft({ currency: 'EUR', amount: 100 })]));
+    it('refuses lev through the SAME path as a dollar line', async () => {
+        // One refusal, not two. The old code converted lev and refused USD,
+        // which made "can this be totalled in euro" and "may this be stored"
+        // look like one question answered inconsistently. Asserted as a
+        // COMPARISON, because "it was refused" is not the property — "the two
+        // are refused identically" is.
+        readInvoiceMock.mockResolvedValue(okRead([draft({ currency: 'USD', amount: 100 })]));
+        const usd = await scanInvoice(ctx(), { file: aFile() }).catch((e) => e);
+        readInvoiceMock.mockResolvedValue(okRead([draft({ currency: 'BGN', amount: 100 })]));
+        const bgn = await scanInvoice(ctx(), { file: aFile() }).catch((e) => e);
+        expect(bgn.code).toBe(usd.code);
+        expect(bgn.message).toBe(usd.message);
+    });
+
+    it('a MIXED invoice keeps the euro lines and drops the lev one', async () => {
+        // The per-LINE property, which the all-refused case above cannot show:
+        // one bad line costs the farmer that line, not the invoice.
+        readInvoiceMock.mockResolvedValue(
+            okRead([
+                draft({ currency: 'EUR', amount: 100, description: 'Дизел' }),
+                draft({ currency: 'BGN', amount: 250, description: 'Масло' }),
+            ]),
+        );
         const res = await scanInvoice(ctx(), { file: aFile() });
+        expect(res.lines).toHaveLength(1);
         expect(res.lines[0].amount).toBe(100);
-        expect(res.lines[0].description).not.toContain('лв.');
+        expect(res.lines[0].description).toBe('Дизел');
+    });
+
+    it('accepts every euro SPELLING, and a blank currency', async () => {
+        // The save path accepts these, so the scan must too — refusing them
+        // would make a legitimate invoice unscannable.
+        for (const currency of ['EUR', 'EURO', 'EUROS', '€', 'E', '']) {
+            readInvoiceMock.mockResolvedValue(okRead([draft({ currency, amount: 100 })]));
+            const res = await scanInvoice(ctx(), { file: aFile() });
+            expect(res.lines).toHaveLength(1);
+            expect(res.lines[0].amount).toBe(100);
+            // And NO conversion trace in the description, whatever the spelling.
+            expect(res.lines[0].description ?? '').not.toContain('лв');
+        }
     });
 
     it('returns every attribution field NULL', async () => {
