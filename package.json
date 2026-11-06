@@ -39,6 +39,7 @@
         "seed:demo": "tsx scripts/seed-demo.ts",
         "verify:stock-chain": "tsx scripts/verify-stock-chain.ts",
         "verify:changed": "node scripts/verify-changed.mjs",
+        "pr:gate": "bash scripts/pr-gate-status.sh",
         "test": "jest",
         "test:e2e": "playwright test",
         "test:a11y": "playwright test tests/e2e/a11y.spec.ts",
