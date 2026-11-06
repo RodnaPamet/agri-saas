@@ -11,10 +11,15 @@
  * that way.
  *
  * `Cache-Control` is spelled exactly. `web-platform-identifiers` exists
- * because a project-wide rename silently turned 39 `Cache-Control` headers
- * into `Cache-Practice` — dropping `no-store` on evidence downloads — and the
- * whole suite stayed green, since every one of them is a string literal
- * TypeScript cannot check.
+ * because a project-wide rename silently rewrote 39 of these headers to a
+ * mangled name — dropping `no-store` on evidence downloads — and the whole
+ * suite stayed green, since every one of them is a string literal TypeScript
+ * cannot check.
+ *
+ * That guard reads the mangled spelling as a HIT wherever it appears, comments
+ * included, so this paragraph describes the defect without writing it down.
+ * A comment that names the banned token is the `a-scar-is-not-a-wound` shape:
+ * prose about a removed thing consuming the budget meant for the thing.
  *
  * ## The idempotency key arrives in the BODY, not the header
  *

@@ -44,6 +44,7 @@ import {
 } from '@/app-layer/usecases/direct-messages';
 
 import { DB_AVAILABLE } from './db-helper';
+import { hardDeleteTenants } from '../helpers/db';
 
 /**
  * The EXTENDED client, not a bare `PrismaClient`.
@@ -145,8 +146,15 @@ describeFn('P8.2 — direct messages (#2796)', () => {
         );
         await globalPrisma.$executeRawUnsafe(`DELETE FROM "PublicFarmProfile" WHERE "handle" = $1`, HANDLE);
         await globalPrisma.$executeRawUnsafe(`DELETE FROM "FarmBrand" WHERE "tenantId" = $1`, TENANT);
-        await globalPrisma.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
-        await globalPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, TENANT);
+        // Through `hardDeleteTenants`, not a DELETE of my own. A tenant with an
+        // active OWNER cannot be hard-deleted — `tenant_membership_last_owner_guard`
+        // is BEFORE UPDATE OR DELETE, so the row can be neither demoted,
+        // deactivated nor removed, and `TenantMembership.tenantId` is not
+        // ON DELETE CASCADE so the tenant delete then fails on the FK too.
+        // That is the trigger working as Epic 1 designed; the helper takes the
+        // documented fixture escape (`SET LOCAL session_replication_role` inside
+        // a transaction, which cannot leak the way DISABLE TRIGGER would).
+        await hardDeleteTenants(globalPrisma as never, [TENANT]);
         await globalPrisma.$executeRawUnsafe(
             `DELETE FROM "User" WHERE "id" = ANY($1::text[])`,
             [OWNER, VISITOR, OUTSIDER],

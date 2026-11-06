@@ -60616,27 +60616,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "handle": {
-                        "def": {
-                          "type": "string",
-                          "checks": [
-                            {},
-                            {}
-                          ]
-                        },
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 100,
-                        "format": null
-                      }
-                    }
-                  },
-                  "type": "object"
-                }
+                "$ref": "#/components/schemas/OpenConversation"
               }
             }
           }
@@ -61047,46 +61027,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "body": {
-                        "def": {
-                          "type": "string",
-                          "checks": [
-                            {},
-                            {}
-                          ]
-                        },
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 4000,
-                        "format": null
-                      },
-                      "idempotencyKey": {
-                        "def": {
-                          "type": "optional",
-                          "innerType": {
-                            "def": {
-                              "type": "string",
-                              "checks": [
-                                {},
-                                {}
-                              ]
-                            },
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200,
-                            "format": null
-                          }
-                        },
-                        "type": "optional"
-                      }
-                    }
-                  },
-                  "type": "object"
-                }
+                "$ref": "#/components/schemas/SendDirectMessage"
               }
             }
           }
@@ -61281,32 +61222,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "decision": {
-                        "def": {
-                          "type": "enum",
-                          "entries": {
-                            "ACCEPT": "ACCEPT",
-                            "DECLINE": "DECLINE"
-                          }
-                        },
-                        "type": "enum",
-                        "enum": {
-                          "ACCEPT": "ACCEPT",
-                          "DECLINE": "DECLINE"
-                        },
-                        "options": [
-                          "ACCEPT",
-                          "DECLINE"
-                        ]
-                      }
-                    }
-                  },
-                  "type": "object"
-                }
+                "$ref": "#/components/schemas/RespondToConversation"
               }
             }
           }
@@ -61467,37 +61383,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "readAt": {
-                        "def": {
-                          "type": "string",
-                          "checks": [
-                            {
-                              "def": {
-                                "type": "string",
-                                "format": "datetime",
-                                "check": "string_format",
-                                "offset": true,
-                                "local": false,
-                                "precision": null,
-                                "pattern": {}
-                              },
-                              "type": "string"
-                            }
-                          ]
-                        },
-                        "type": "string",
-                        "minLength": null,
-                        "maxLength": null,
-                        "format": "datetime"
-                      }
-                    }
-                  },
-                  "type": "object"
-                }
+                "$ref": "#/components/schemas/MarkConversationRead"
               }
             }
           }
@@ -61638,27 +61524,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "body": {
-                        "def": {
-                          "type": "string",
-                          "checks": [
-                            {},
-                            {}
-                          ]
-                        },
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 4000,
-                        "format": null
-                      }
-                    }
-                  },
-                  "type": "object"
-                }
+                "$ref": "#/components/schemas/EditDirectMessage"
               }
             }
           }
@@ -61931,27 +61797,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "emoji": {
-                        "def": {
-                          "type": "string",
-                          "checks": [
-                            {},
-                            {}
-                          ]
-                        },
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 16,
-                        "format": null
-                      }
-                    }
-                  },
-                  "type": "object"
-                }
+                "$ref": "#/components/schemas/MessageReaction"
               }
             }
           }
@@ -62090,27 +61936,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "schema": {
-                  "def": {
-                    "type": "object",
-                    "shape": {
-                      "emoji": {
-                        "def": {
-                          "type": "string",
-                          "checks": [
-                            {},
-                            {}
-                          ]
-                        },
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 16,
-                        "format": null
-                      }
-                    }
-                  },
-                  "type": "object"
-                }
+                "$ref": "#/components/schemas/MessageReaction"
               }
             }
           }

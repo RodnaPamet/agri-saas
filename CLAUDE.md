@@ -3149,6 +3149,66 @@ objects. Drop the objects and the migration row, then let globalSetup
 re-apply — which is also a check that the file applies from scratch the way CI
 will apply it.
 
+### P8.2 — the DM API, and a trigger that works for the wrong reason
+
+Nine operations over seven routes under `/api/social/` (#2796), gated on
+`social.direct-messages`. The schema is P8.1 above.
+
+**A message to a farm reaches that farm's ACTIVE OWNER** (owner ruling
+2026-11-06). A handle names a FARM and a DM targets a PERSON; the tie-break
+when a farm has several owners is the oldest membership, then id. Measured
+2026-11-06: 4 farms have an active owner, none has more than one — so the
+tie-break is for a shape the schema permits, not one the data shows.
+
+**The resolution's bound is the ORDER of its reads**, and it has its own
+`runWithoutRls` reason (`dm-recipient-resolution`). The PUBLISHED projection is
+asked first, so an unpublished farm never resolves to a tenant at all —
+reversing the first two reads turns it into a handle→tenant oracle for farms
+that never chose to be public, which is exactly the coupling P6 kept `tenantId`
+off `PublicFarmProfile` to avoid. Only a bare `userId` comes back.
+
+**SENDING IS PRIVILEGED, AND A `SECURITY DEFINER` TRIGGER IS THE TRAP HERE.**
+The WITH CHECK already encodes the request rule, so inserting under user
+context looks right — but it cannot stamp `Conversation.lastMessageAt`, which
+the rule reads, and a privileged write inside an open user-context transaction
+is #1191's deadlock. A trigger solves that and **works for a reason not to rely
+on**: the `role` GUC does NOT change inside a `SECURITY DEFINER` function
+(measured — `current_user` becomes the definer, role GUC stays `app_user`), so
+`superuser_bypass`'s `current_setting('role') != 'app_user'` never applies and
+the write crosses RLS purely on the definer's `rolsuper`/`rolbypassrls`. The
+test role is `super=true bypassrls=true`; production's app role is a superuser
+too. So the mechanism depends on the app running as a superuser and breaks
+SILENTLY when that is hardened — leaving a stranger able to send without limit.
+
+Do not reach for a `SECURITY DEFINER` trigger to cross an RLS boundary in this
+repo. The bypass predicate reads a GUC the function does not change, so what
+actually carries the write is a role attribute nobody declared.
+
+**A block is enforced in the usecase, and SQL could not do it.**
+`conversation_participant_select` admits the caller's own row only (forced by
+the recursion rule in P8.1 above), so SQL cannot name the counterparty and a
+WITH CHECK asking whether they blocked the sender would be **vacuously true** —
+worse than no clause, because it reads as a control.
+
+**`DM_OPEN_LIMIT` is 5 per HOUR, and the window is the lever.** The abusable
+act is opening threads with people who never asked. `API_MUTATION_LIMIT`'s
+60/min covers "one sender messaging 100 strangers" — P8's own criterion — in
+under two minutes; slow mode's 15/min in about seven. A per-minute cap of any
+size is defeated by patience. It bounds the CALLER rather than being a
+`getBucket`: the harm is spread across 100 unrelated people, so there is no
+shared resource to key on.
+
+**Typing is deliberately absent (#2809).** The realtime bus addresses a
+(tenant, person) or the whole deployment, and a DM has no tenant. A typing
+indicator is pure transport, so what cannot be delivered cannot be built. The
+same gap is what P8.9's "a block cuts the stream within 1s" will need.
+
+**The block predicates live in `person-blocks.ts`**, moved there from
+`exchange-messaging.ts` by this phase because that module owns `UserBlock`.
+They work in both session contexts only because `UserBlock` carries an arm for
+each — `user_block_select` and #1664's `user_block_select_actor` — so removing
+the second as "redundant" now breaks TWO features, silently.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

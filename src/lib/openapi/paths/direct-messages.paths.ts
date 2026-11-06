@@ -107,7 +107,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         description:
             'Resolves a farm HANDLE to the person who should receive the message — that farm\'s active owner — and returns the conversation, creating it if there is none. Idempotent: pressing it twice returns the same conversation, which is also what makes a REQUEST unrepeatable, since there is no second thread to open. Limited to 5 per hour per caller: the abusable act in a DM system is opening threads with people who never asked, and the default 60/min mutation tier does not bound that.',
         tags: TAGS,
-        body: { schema: OpenConversationSchema },
+        body: OpenConversationSchema,
         extraResponses: rawErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY or DM_SELF — the body was unreadable, the handle was missing, or the handle resolves to the caller.',
             404: 'CONVERSATION_NOT_FOUND. One code for every disclosing cause: no such handle, a farm that has not published, a farm with no active owner, or a block in either direction. Telling them apart would disclose the block.',
@@ -145,7 +145,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
             'Sends into a conversation the caller participates in. While the conversation is a REQUEST, exactly ONE message is allowed until the other person accepts — so a second send answers 400 DM_REQUEST_AWAITING_REPLY rather than queueing. Repeating a request with the same idempotencyKey returns the first attempt\'s message with `deduplicated: true` and status 200.',
         tags: TAGS,
         params: ConversationIdParam,
-        body: { schema: SendDirectMessageSchema },
+        body: SendDirectMessageSchema,
         extraResponses: {
             ...rawErrorResponses({
                 400: 'INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), or DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation).',
@@ -168,7 +168,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
             'Only the party who did NOT open the request may answer it, and only while it is still a REQUEST. A decline is final and keeps its row, so the same person cannot re-open the same request.',
         tags: TAGS,
         params: ConversationIdParam,
-        body: { schema: RespondToConversationSchema },
+        body: RespondToConversationSchema,
         extraResponses: rawErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY, or DM_REQUEST_ALREADY_ANSWERED.',
             404: 'CONVERSATION_NOT_FOUND — no such conversation, not a participant, or the caller is the one who opened it.',
@@ -189,7 +189,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
             'Forward only. A cursor already at or past the given instant is left alone and the call still answers 204 — a client that double-taps has not done anything wrong.',
         tags: TAGS,
         params: ConversationIdParam,
-        body: { schema: MarkConversationReadSchema },
+        body: MarkConversationReadSchema,
         extraResponses: rawErrorResponses({
             400: 'INVALID_JSON or INVALID_BODY — readAt must be an ISO instant with an offset.',
         }),
@@ -203,7 +203,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         summary: 'Edit a message the caller sent',
         tags: TAGS,
         params: MessageIdParam,
-        body: { schema: EditDirectMessageSchema },
+        body: EditDirectMessageSchema,
         extraResponses: rawErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED or DM_BODY_TOO_LONG.',
             404: 'MESSAGE_NOT_FOUND — no such message, it was sent by somebody else, or it is deleted. A deleted message is not editable: the row is kept as a record, not as a draft.',
@@ -235,7 +235,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
             'Idempotent — the same reaction twice is one row. The emoji field is short on purpose: a reaction is delivered by push, and a field long enough for prose would put a farmer\'s words into APNs.',
         tags: TAGS,
         params: MessageIdParam,
-        body: { schema: MessageReactionSchema },
+        body: MessageReactionSchema,
         extraResponses: rawErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY, DM_REACTION_REQUIRED or DM_REACTION_TOO_LONG.',
             404: 'MESSAGE_NOT_FOUND — no such message, or the caller cannot see it.',
@@ -250,7 +250,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         summary: 'Remove the caller\'s reaction',
         tags: TAGS,
         params: MessageIdParam,
-        body: { schema: MessageReactionSchema },
+        body: MessageReactionSchema,
         extraResponses: rawErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY or DM_REACTION_REQUIRED.',
             404: 'MESSAGE_NOT_FOUND — the caller has no such reaction on that message.',
