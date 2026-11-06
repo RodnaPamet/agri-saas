@@ -488,6 +488,7 @@ model Parcel {
   plantings            Planting[]
   cropPlans            CropPlan[]
   leases               ParcelLease[]
+  comments           ParcelComment[]
   cropSeasons          ParcelCropSeason[]
   weedObservations     ParcelWeedObservation[]
   costEntryAllocations CostEntryAllocationParcel[]
@@ -637,6 +638,68 @@ model ParcelCropSeason {
   @@index([tenantId, parcelId, year])
   /// "Which parcels grew wheat in 2024" — rotation questions across the farm.
   @@index([tenantId, year, cropType])
+}
+
+/// A note about a PARCEL, tied to no task (owner ruling 2026-11-06).
+///
+/// «Коментари» on the parcel history page. The owner asked for "a comment
+/// living only in the history page of a parcel" — free text about the field
+/// itself, which has no task to hang off: a farmer noting that the north corner
+/// floods is describing the land, not a job.
+///
+/// ## Why a model of its own rather than a nullable `TaskComment.taskId`
+///
+/// `TaskComment` is about a task: it cascades from one, is indexed by
+/// `(tenantId, taskId)`, and every reader joins through the task for its key
+/// and title. Making that column nullable would make all of those optional for
+/// the sake of one case, and `listParcelComments` already merges two sources
+/// into one list — a third is the shape it is built for.
+///
+/// Same reasoning as `ParcelCropSeason` and `ParcelWeedObservation`: the parcel
+/// archive gets parcel-scoped models.
+///
+/// ## `body` is ENCRYPTED at rest
+///
+/// Declared in `ENCRYPTED_FIELDS`, exactly like `TaskComment.body`, and for the
+/// same reason: it is farmer-authored free text that can name people, prices or
+/// disputes. That makes the read per-tenant by necessity — the DEK comes from
+/// the ALS tenant context — which is why `listParcelComments` reads it inside
+/// `runInTenantContext` with the rest, and never through a privileged client
+/// (#2723).
+///
+/// ## `clientMutationId` for the same reason `TaskComment` has one
+///
+/// The phone queues writes offline and replays them with the outbox item id as
+/// the `Idempotency-Key`. Without the column a lost response followed by a
+/// retry posts the note twice, and nothing would refuse it.
+model ParcelComment {
+  id               String   @id @default(cuid())
+  tenantId         String
+  parcelId         String
+  /// ENCRYPTED — see the model docblock.
+  body             String
+  createdByUserId  String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  /// Soft delete (owner ruling 2026-11-06: author or farm ADMIN may remove a
+  /// note). The row is RETAINED and the list read filters it out, so a removal
+  /// is recoverable and the audit chain's `PARCEL_COMMENT_DELETED` entry still
+  /// has a row to point at.
+  ///
+  /// `ParcelComment` is deliberately NOT in `SOFT_DELETE_TARGETS`, so this
+  /// column is applied EXPLICITLY — the `LocationRepository` precedent. Joining
+  /// that registry would enrol field notes in `retention-purge`, which HARD
+  /// deletes on a schedule nobody chose for them, and would auto-filter 1 read
+  /// to save naming the column in 1 place.
+  deletedAt        DateTime?
+  clientMutationId String?
+
+  createdBy User   @relation("ParcelCommentCreator", fields: [createdByUserId], references: [id])
+  parcel    Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, clientMutationId])
+  @@index([tenantId, parcelId])
 }
 
 /// Weeds identified in a parcel on a date.

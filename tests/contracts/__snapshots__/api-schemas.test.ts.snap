@@ -674,6 +674,21 @@ exports[`API contract — per-schema snapshots schema: ActOnNotice 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: AddParcelComment 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "body"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: AdminCompaniesResponse 1`] = `
 "{
   "type": "object",
@@ -13356,7 +13371,11 @@ exports[`API contract — per-schema snapshots schema: ParcelCommentRow 1`] = `
       "description": "Stable across refreshes so a client can key a list on it: the comment’s own id for \`COMMENT\`, and \`resolution:<taskId>\` for \`RESOLUTION\`, which has no row of its own to borrow an id from."
     },
     "taskId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Null on a \`PARCEL\` row, which belongs to no task."
     },
     "taskKey": {
       "type": [
@@ -13366,13 +13385,17 @@ exports[`API contract — per-schema snapshots schema: ParcelCommentRow 1`] = `
       "description": "Nullable because \`Task.key\` is. Not coerced to a placeholder — an invented key would be indistinguishable from a real one."
     },
     "taskTitle": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "kind": {
       "type": "string",
       "enum": [
         "COMMENT",
-        "RESOLUTION"
+        "RESOLUTION",
+        "PARCEL"
       ]
     },
     "body": {

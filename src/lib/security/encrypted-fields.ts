@@ -232,6 +232,13 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  checkable. `text` is model-extracted and constrained; the quote is raw.
     AssistantMemoryFact: ['text', 'sourceQuote'],
     TaskComment: ['body'],
+    // Farmer-authored free text about a field, exactly like the line above and
+    // for the same reason: it can name people, prices or disputes. Tenant-scoped,
+    // so it decrypts under the farm's own DEK — which is why every read of it
+    // happens inside `runInTenantContext` and never through a privileged client
+    // (#2723). Deliberately NOT in `GLOBAL_KEK_MODELS`: exactly one farm writes
+    // and reads these.
+    ParcelComment: ['body'],
 
     // ─── Agriculture — БАБХ farm-record ────────────────
     //  ЕИК (company ID) + УРН on the one-per-tenant farm profile. Sensitive

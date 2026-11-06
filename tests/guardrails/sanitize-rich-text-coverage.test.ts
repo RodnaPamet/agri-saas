@@ -143,6 +143,25 @@ const RICH_TEXT_COVERAGE: Readonly<
         usecases: ['src/app-layer/usecases/task.ts'],
         sanitizer: 'sanitizePlainText',
     },
+    // `ParcelComment.body` (2026-11-06) — a note about the FIELD, tied to no
+    // task. Same shape as its `TaskComment` sibling directly above and written
+    // by the same file: `addParcelComment` does `sanitizePlainText(body)`
+    // before the insert, and it sanitises BEFORE the blank check, because the
+    // sanitiser trims and a body of three spaces must be refused rather than
+    // stored as ''.
+    //
+    // RICH_TEXT_COVERAGE rather than NON_RICH_TEXT_MODELS: this is
+    // user-supplied free text reaching a sanitiser at the usecase, which is
+    // exactly what this registry tracks. The other bucket is for an encrypted
+    // value that is not user text at all — a generated secret, or a filename
+    // label like `FarmDocument.name`.
+    //
+    // There is ONE write seam and it is the only one there can be: the POST
+    // route is the single caller, and the delete does not touch `body`.
+    ParcelComment: {
+        usecases: ['src/app-layer/usecases/task.ts'],
+        sanitizer: 'sanitizePlainText',
+    },
     // `ExchangeMessage.body` (#1222) — chat between two farms, and the single
     // write seam is `sendThreadMessage`, which does
     // `sanitizePlainText(body).trim()` before the insert. Sanitisation matters

@@ -125,6 +125,7 @@ model Tenant {
   reminderHistories        ReminderHistory[]
   tasks                    Task[]
   taskComments             TaskComment[]
+  parcelComments             ParcelComment[]
   taskLinks                TaskLink[]
   taskWatchers             TaskWatcher[]
   identityProviders        TenantIdentityProvider[]
@@ -850,6 +851,7 @@ model User {
   createdTasks                  Task[]                       @relation("TaskCreator")
   reviewingTasks                Task[]                       @relation("TaskReviewer")
   taskCommentsCreated           TaskComment[]                @relation("TaskCommentCreator")
+  parcelCommentsCreated           ParcelComment[]                @relation("ParcelCommentCreator")
   taskWatches                   TaskWatcher[]
   invitesSent                   TenantInvite[]
   invitedMemberships            TenantMembership[]           @relation("MembershipInviter")

@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
 import { getTenantCtx } from '@/app-layer/context';
-import { listParcelComments } from '@/app-layer/usecases/task';
+import { addParcelComment, listParcelComments } from '@/app-layer/usecases/task';
+import { AddParcelCommentSchema } from '@/app-layer/schemas/parcel-history.schemas';
+import { withValidatedBody } from '@/lib/validation/route';
+import { jsonResponse } from '@/lib/api-response';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonWithETag } from '@/lib/http/etag';
 
@@ -50,4 +53,33 @@ export const GET = withApiErrorHandling(
         const ctx = await getTenantCtx(params, req);
         return jsonWithETag(req, await listParcelComments(ctx, params.parcelId));
     },
+);
+
+/**
+ * POST /api/t/{slug}/agro/parcels/{parcelId}/comments
+ *
+ * A note about the PARCEL, tied to no task (owner ruling 2026-11-06). It comes
+ * back from the GET above as `kind: 'PARCEL'`, with `taskId`, `taskKey` and
+ * `taskTitle` all null — that is the kind's meaning, not missing data.
+ *
+ * Honours `Idempotency-Key` for the same reason the task-comment POST does: a
+ * note typed in a field is replayed from the outbox with its item id as the
+ * key, so a re-send over flaky rural LTE returns the original note rather than
+ * posting it twice.
+ */
+export const POST = withApiErrorHandling(
+    withValidatedBody(
+        AddParcelCommentSchema,
+        async (
+            req,
+            { params: paramsPromise }: { params: Promise<{ tenantSlug: string; parcelId: string }> },
+            body,
+        ) => {
+            const params = await paramsPromise;
+            const ctx = await getTenantCtx(params, req);
+            const idempotencyKey = req.headers.get('Idempotency-Key') || undefined;
+            const note = await addParcelComment(ctx, params.parcelId, body.body, idempotencyKey);
+            return jsonResponse({ id: note.id }, { status: 201 });
+        },
+    ),
 );

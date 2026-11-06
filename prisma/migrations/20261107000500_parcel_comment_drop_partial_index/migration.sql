@@ -1,0 +1,21 @@
+-- Removes a partial index added by 20261106212500_parcel_comment_soft_delete,
+-- which I should not have created.
+--
+-- `(tenantId, parcelId) WHERE "deletedAt" IS NULL` cannot be expressed in the
+-- Prisma schema, so it would live in the database and in no schema file — an
+-- UNDECLARED divergence on top of the 18 this repo carries deliberately, and
+-- the kind `prisma migrate diff` reports forever with nobody able to say
+-- whether it was meant.
+--
+-- It bought close to nothing: `@@index([tenantId, parcelId])` is declared on
+-- the model and serves the same filter, with `deletedAt` evaluated from the
+-- row. Notes per parcel are few and the read is capped at
+-- PARCEL_COMMENT_ROWS, so a smaller index is not worth a divergence.
+--
+-- A third migration rather than an edit to the second, and the earlier
+-- migration is deliberately left byte-for-byte alone: it may already be
+-- applied, and editing an applied migration changes its checksum, after which
+-- `prisma migrate` refuses to run at all. IF EXISTS so this is correct both on
+-- a fresh database (where it drops what the second migration just created) and
+-- anywhere the second has not run.
+DROP INDEX IF EXISTS "ParcelComment_tenantId_parcelId_live_idx";
