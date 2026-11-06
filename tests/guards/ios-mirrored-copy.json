@@ -32,7 +32,7 @@
         "ag.map.fieldOp.notFound": "Земеделската операция не е намерена.",
         "grain.calculator.costPerDcaNoArea": "Няма парцел, записан с тази култура, затова разходът на декар не се изчислява. Укажете културата върху парцелите, където е засета.",
         "grain.calculator.perAreaNoArea": "Няма площ с прогноза за добив, затова стойността и маржът на декар не се изчисляват.",
-        "grain.calculator.refusal.COST_PRICE_CURRENCY_MISMATCH": "Разходите са в {costCurrency}, а пазарната цена е в {priceCurrency}; не се извършва конвертиране на валута.",
+        "grain.calculator.refusal.COST_PRICE_CURRENCY_MISMATCH": "Разходите са в {costCurrency}, а пазарната цена е в {priceCurrency} — двете не са в една валута, затова резултатът не може да бъде изчислен.",
         "grain.calculator.refusal.MIXED_COST_CURRENCY": "Разходите са записани в повече от една валута; смесването им в нетната стойност би изкривило общата сума.",
         "grain.calculator.refusal.NO_MARKET_PRICE": "Няма налична пазарна цена за {commodity}.",
         "grain.calculator.refusal.RENT_CURRENCY_UNRECORDED": "Договорът за аренда не записва валута за рентата, затова тя не може да се съчетае с активи, оценени по пазарна цена, без да се измисли такава."

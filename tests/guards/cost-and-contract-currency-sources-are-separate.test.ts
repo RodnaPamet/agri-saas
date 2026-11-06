@@ -3,15 +3,26 @@
  *
  * ## The asymmetry, which is the whole reason this is delicate
  *
- * Costs are euro-only. Grain contracts are NOT: grain here is genuinely
- * contracted in USD, RON and PLN, so `ContractFormModal` must keep all twelve
- * `CONTRACT_CURRENCIES`. The two surfaces therefore need DIFFERENT answers from
- * the same module, and the tempting fix — narrowing `currencyOptions` itself —
- * would quietly break contract pricing while every cost test went green.
+ * Costs are euro-only, and SINCE 2026-11-06 so are grain contracts —
+ * `CONTRACT_CURRENCIES` holds one entry. This docblock used to read "grain here
+ * is genuinely contracted in USD, RON and PLN, so `ContractFormModal` must keep
+ * all twelve", which was the standing design (#2398) and is no longer: the owner
+ * ruled EUR everywhere for the farm's own money, and the `Contract` table was
+ * measured EMPTY in production, so nothing real was narrowed.
  *
- * That is why the change belonged in the cost form and not in the shared
- * helper, and why this guard asserts the separation rather than trusting the
- * note in #2398 to be read.
+ * ## The separation still matters, for a different reason than it was built for
+ *
+ * It was built because the two surfaces needed DIFFERENT answers. They now want
+ * the same one, so the guard could look pointless — and it is not. The two
+ * surfaces ask different QUESTIONS: the cost form asks whether a currency IS
+ * euro (`isStoredAsEuro`), the contract form renders a MENU
+ * (`currencyOptions`). That is what keeps the cost form from growing a picker
+ * the day the menu grows a second entry, which is exactly how the euro-only
+ * cost rule would be undone by a change that looked like it was about
+ * contracts.
+ *
+ * So the assertion is unchanged and the reasoning is rewritten. Narrowing
+ * `currencyOptions` itself remains the wrong fix for a cost-side problem.
  *
  * ## It is a both-branches check by construction
  *
@@ -34,7 +45,7 @@ const REPO_ROOT = process.cwd();
 /** The euro-only surface. Nothing under here may offer a currency choice. */
 const COST_SURFACE = 'src/app/t/[tenantSlug]/(app)/grain/costs';
 
-/** The multi-currency surface, which must stay a consumer. */
+/** The MENU surface, which must stay a consumer of the choice helper. */
 const CONTRACT_FORM = 'src/app/t/[tenantSlug]/(app)/grain/contracts/ContractFormModal.tsx';
 
 /**
@@ -95,9 +106,28 @@ describe('cost and contract currency sources stay separate (#2398)', () => {
         expect(blankNonCode(form)).toMatch(/isStoredAsEuro/);
     });
 
-    it('the contract form still offers all twelve, because grain really is foreign-priced', () => {
+    it('the contract form still reads the MENU helper, so the partition has two sides', () => {
+        // The name used to say "offers all twelve, because grain really is
+        // foreign-priced" while the body only checked the import — a name
+        // asserting a cause its body never tested, and it became false when the
+        // list narrowed to one. What this actually pins is the positive half of
+        // the partition: without a consumer on this side the population empties
+        // and the cost-side assertion holds over nothing (#2377).
         const contract = blankNonCode(readFileSync(CONTRACT_FORM, 'utf8'));
         expect(contract).toMatch(/currencyOptions/);
+    });
+
+    it('the menu itself is EUR-only, which is the claim the name above used to make', () => {
+        // Asserted on the DATA rather than left implied by a test name, so the
+        // narrowing cannot be silently undone.
+        const src = blankNonCode(
+            readFileSync(`${REPO_ROOT}/src/lib/grain/currencies.ts`, 'utf8'),
+        );
+        const block = src.slice(src.indexOf('CONTRACT_CURRENCIES'));
+        const codes = [...block.slice(0, block.indexOf('];')).matchAll(/code: '([A-Z]{3})'/g)].map(
+            (m) => m[1],
+        );
+        expect(codes).toEqual(['EUR']);
     });
 });
 
