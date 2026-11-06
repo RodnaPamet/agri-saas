@@ -1376,6 +1376,16 @@ Three things it does not do, stated so they are not assumed:
 - It does not run `npm run typecheck` (two `tsc` invocations, ~8 minutes). Gate
   that on its **exit code**, never on a grep: a bare `npx tsc` on this repo dies
   at exit 134 (OOM) and prints zero errors.
+- It says nothing about whether a PR is **mergeable**. That is
+  **`npm run pr:gate <PR>`** (`scripts/pr-gate-status.sh`), which reads branch
+  protection LIVE, scores the PR against the required contexts BY NAME, and
+  prints **`ABSENT`** as its own state — distinct from a failure and from
+  pending, which is the distinction the whole problem turns on. It also refuses
+  a STALE head, because a green rollup on a base that is behind main is the
+  right answer to a question you did not mean to ask. Reach for it before
+  hand-rolling a `gh pr view --json statusCheckRollup` filter: two agents
+  rebuilt a worse version of it six times between them, every time with this
+  rule written down somewhere neither of them was reading (#2777, #2778).
 
 - **Unit tests**: Mock dependencies with `jest.mock()` declared **before** imports. Use `makeRequestContext(role?, overrides?)` from `tests/helpers/make-context.ts` to construct test contexts. Note `jest.clearAllMocks()` clears CALLS but not IMPLEMENTATIONS — a test that installs a throwing `mockImplementation` poisons every later test in the file unless the mock is `mockReset()` in `beforeEach`.
 - **Integration tests**: Use `prismaTestClient()` and `resetDatabase()` from `tests/helpers/db.ts`. Hit a real DB — do not mock Prisma in integration tests.
