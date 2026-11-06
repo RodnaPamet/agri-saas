@@ -16,8 +16,21 @@ const mockComplete = jest.fn();
 jest.mock('@/app-layer/ai/rag/retrieve', () => ({
     retrieve: (...args: unknown[]) => mockRetrieve(...args),
 }));
-jest.mock('@/app-layer/ai/provider', () => ({
-    getAiProvider: () => ({ complete: mockComplete }),
+/*
+ * The seam moved to `completeWithRouting` (#2765): this path spent tokens that
+ * never reached `recordAiUsage`, so the monthly total its own
+ * `assertAiSpendAllowed` gate read was understated by its own consumption.
+ * Routing it fixes the ledger and gains failover; the mock follows the subject.
+ *
+ * `opts` is forwarded as mockComplete's FIRST argument so the existing
+ * assertions keep meaning what they meant.
+ */
+const mockRoutedTask = jest.fn();
+jest.mock('@/app-layer/ai/routing', () => ({
+    completeWithRouting: (_ctx: unknown, task: unknown, opts: unknown) => {
+        mockRoutedTask(task);
+        return mockComplete(opts);
+    },
 }));
 
 import { askKnowledgeBase } from '@/app-layer/usecases/rag';
@@ -83,8 +96,23 @@ describe('askKnowledgeBase — no-sources path', () => {
 
         expect(result.answer).toBe(NO_SOURCES_ANSWER);
         expect(result.sources).toEqual([]);
-        // The model is NOT called when there is nothing to ground on.
+        // The model is NOT called when there is nothing to ground on — and
+        // now the ROUTER is not reached either, so nothing is charged.
         expect(mockComplete).not.toHaveBeenCalled();
+        expect(mockRoutedTask).not.toHaveBeenCalled();
+    });
+
+    it('#2765 — asks for the rag-answer route rather than a bare provider', async () => {
+        /*
+         * Without this the change is invisible to the suite: every other test
+         * here mocks the seam and would pass against a direct provider call.
+         * The task name is what selects Sonnet, the usage ledger, and the
+         * ollama failover that keeps a self-hosted install answering.
+         */
+        mockRetrieve.mockResolvedValueOnce([chunk()]);
+        mockComplete.mockResolvedValueOnce({ text: 'answer [1]' });
+        await askKnowledgeBase(makeRequestContext('READER'), 'q');
+        expect(mockRoutedTask).toHaveBeenCalledWith('rag-answer');
     });
 
     it('grounds the model + returns the answer with sources when retrieve hits', async () => {

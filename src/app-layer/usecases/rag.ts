@@ -11,8 +11,7 @@
  * `runInTenantContext` (inside `retrieve`), so RLS isolates the tenant's
  * private chunks while still exposing the GLOBAL catalog.
  */
-import { getAiProvider } from '@/app-layer/ai/provider';
-import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
+import { completeWithRouting } from '@/app-layer/ai/routing';
 import { retrieve, type RetrievedChunk } from '@/app-layer/ai/rag/retrieve';
 import { buildContext, NO_SOURCES_ANSWER } from '@/app-layer/ai/rag/build-context';
 import { assertCanRead } from '../policies/common';
@@ -82,9 +81,7 @@ export async function askKnowledgeBase(
     // understated by whatever RAG has consumed. Filed separately rather than
     // widened into here, because routing takes a task tier this caller has no
     // obvious value for.
-    await assertAiSpendAllowed(ctx);
-
-    const completion = await getAiProvider().complete({
+    const completion = await completeWithRouting(ctx, 'rag-answer', {
         messages: [
             { role: 'system', content: system },
             { role: 'user', content: query },

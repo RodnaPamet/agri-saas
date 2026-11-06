@@ -38,8 +38,7 @@
  */
 import { z } from 'zod';
 
-import { getAiProvider } from '@/app-layer/ai/provider';
-import { assertAiSpendAllowed } from '@/app-layer/ai/budget';
+import { completeWithRouting } from '@/app-layer/ai/routing';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { REMEMBERED_POINT_MAX_CHARS } from '@/lib/schemas/assistant-memory-limits';
@@ -281,11 +280,20 @@ export async function extractMemoryPoints(
 
     if (turns.length === 0) return { points: [], discarded };
 
-    // AFTER the early return: a run with nothing to read spends nothing, so it
-    // must not be refused for being over budget either.
-    await assertAiSpendAllowed(ctx);
-
-    const completion = await getAiProvider().complete({
+    /*
+     * AFTER the early return: a run with nothing to read spends nothing, so it
+     * must not be refused for being over budget either. `completeWithRouting`
+     * is called here for that reason, and it asserts the budget itself — the
+     * explicit `assertAiSpendAllowed(ctx)` that stood here was the same check
+     * (it is a thin delegation to `assertAiBudget`) and would have run the
+     * query twice. `ai-spend-gate-covers-embeddings` accepts
+     * `completeWithRouting` as a gate by design, so no exemption is needed.
+     *
+     * Routed rather than direct since #2765: this path spent tokens that never
+     * reached `recordAiUsage`, so its own budget gate read a total it was
+     * understating.
+     */
+    const completion = await completeWithRouting(ctx, 'memory-extract', {
         messages: [
             { role: 'system', content: buildPrompt(turns, existing) },
             { role: 'user', content: 'Extract the profile points, or none.' },
