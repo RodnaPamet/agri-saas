@@ -48,6 +48,8 @@ interface PromotionRow {
     category: string;
     ctaUrl: string | null;
     pppRegistrationNo: string | null;
+    /** The leaflet this was read from, or null — never read from one (#2750). */
+    sourceFileId: string | null;
     publishedAt: string | null;
     validFrom: string | null;
     validTo: string | null;
@@ -154,6 +156,14 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
     // argument: a misread price or end date would otherwise be repeated to
     // farmers as fact by the assistant.
     const leafletInputRef = useRef<HTMLInputElement>(null);
+    /**
+     * The leaflet a draft was read from (#2750), carried from the scan into
+     * the write so the source stays reachable from the row it produced.
+     *
+     * Separate from `scan`, which is cleared the moment a proposal is
+     * accepted — the id has to outlive the modal that proposed it.
+     */
+    const [sourceFileId, setSourceFileId] = useState<string | null>(null);
     const [scanBusy, setScanBusy] = useState(false);
     const [scan, setScan] = useState<LeafletScan | null>(null);
     const [scanError, setScanError] = useState<string | null>(null);
@@ -180,6 +190,10 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         setCategory('service');
         setCtaUrl('');
         setPppRegistrationNo('');
+        // Typed from scratch, so there is no source document. NOT '' — null is
+        // "never read from a leaflet", which the read path tells apart from a
+        // source that was held and has since been swept.
+        setSourceFileId(null);
         setValidFrom(null);
         setValidTo(null);
         setMediaUrl(null);
@@ -196,6 +210,7 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         setCategory(row.category);
         setCtaUrl(row.ctaUrl ?? '');
         setPppRegistrationNo(row.pppRegistrationNo ?? '');
+        setSourceFileId(row.sourceFileId);
         setValidFrom(dayKeyToPickerDate(row.validFrom));
         setValidTo(dayKeyToPickerDate(row.validTo));
         setMediaUrl(row.mediaUrl);
@@ -271,6 +286,10 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
         setCategory('products');
         setCtaUrl('');
         setPppRegistrationNo('');
+        // The one thing the read DOES contribute beyond the form fields.
+        // Read from `scan` here, before `setScan(null)` below — the state is
+        // cleared when the proposals modal closes and the id must survive it.
+        setSourceFileId(scan?.fileId ?? null);
         setValidFrom(null);
         setValidTo(null);
         setMediaUrl(null);
@@ -296,6 +315,7 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                 // `normalisePppRegistrationNo` server-side folds it anyway;
                 // sending null keeps the two ends agreeing on one spelling.
                 pppRegistrationNo: pppRegistrationNo.trim() ? pppRegistrationNo.trim() : null,
+                sourceFileId,
                 validFrom: validFrom ? pickerDateToDayKey(validFrom) : null,
                 validTo: validTo ? pickerDateToDayKey(validTo) : null,
             };
@@ -618,6 +638,34 @@ export function PromotionsAdminClient({ tenantSlug }: { tenantSlug: string }) {
                                 placeholder={t('pppPlaceholder')}
                             />
                         </FormField>
+
+                        {/*
+                          * «Виж брошурата» (#2750). Shown only when a source is
+                          * recorded, because it is the artefact that answers
+                          * "where did this text come from?" while the reviewer
+                          * is typing the ПРЗ number above against it.
+                          *
+                          * A plain link rather than a fetch: the response is
+                          * bytes with `Content-Disposition: inline`, so the
+                          * browser previews a PDF or an image itself. A
+                          * swept source answers 404 with
+                          * `PROMOTION_SOURCE_NOT_HELD` — handled by the browser
+                          * rather than swallowed here, which keeps "it WAS read
+                          * and the file is gone" visible instead of silent.
+                          */}
+                        {sourceFileId ? (
+                            <p className="text-sm">
+                                <a
+                                    id="promo-open-source"
+                                    className="text-content-link underline"
+                                    href={buildUrl(`/admin/promotions/${editing?.id ?? ''}/source`)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    {t('openLeaflet')}
+                                </a>
+                            </p>
+                        ) : null}
 
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField label={t('fieldValidFrom')}>

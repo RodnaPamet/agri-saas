@@ -39,6 +39,25 @@ export async function getTenantSecuritySettings(
 ): Promise<TenantSecuritySettingsResult> {
     const settings = await prisma.tenantSecuritySettings.findUnique({
         where: { tenantId: ctx.tenantId },
+        // SELECT is explicit, and narrow on purpose (#2723).
+        //
+        // `TenantSecuritySettings.auditStreamSecretEncrypted` is in
+        // `ENCRYPTED_FIELDS` and the model is NOT in `GLOBAL_KEK_MODELS`, so it
+        // decrypts under the TENANT's DEK — which `resolveTenantDekPair` takes
+        // from the ALS audit context. Nothing in this file binds one, so an
+        // unnarrowed read fetches that column as a `v2:` envelope with no error
+        // and no log.
+        //
+        // That was never a live defect here: every call site below uses
+        // `mfaPolicy` and `sessionMaxAgeMinutes` and never touches the secret.
+        // It was one edit away from being one — somebody adding a field to a
+        // returned object, which is not a change that invites suspicion. Same
+        // shape `retention-notifications.ts` had before it was narrowed to
+        // `select: { id: true }`, and the same fix.
+        //
+        // It also stops pulling a secret's ciphertext into process memory for
+        // a read that wants a policy enum.
+        select: { mfaPolicy: true, sessionMaxAgeMinutes: true },
     });
 
     return {
@@ -105,6 +124,9 @@ export async function updateTenantMfaPolicy(
             mfaPolicy: input.mfaPolicy as MfaPolicy,
             sessionMaxAgeMinutes: input.sessionMaxAgeMinutes ?? null,
         },
+        // An upsert RETURNS the row, so it decrypts like any read — see the
+        // note on the findUnique above. Narrowed for the same reason.
+        select: { mfaPolicy: true, sessionMaxAgeMinutes: true },
     });
 
     return {
@@ -135,6 +157,9 @@ export async function getUserMfaStatus(
         }),
         prisma.tenantSecuritySettings.findUnique({
             where: { tenantId: ctx.tenantId },
+            // Only the policy is read here. Narrowed for the reason on the
+            // first read in this file.
+            select: { mfaPolicy: true },
         }),
     ]);
 

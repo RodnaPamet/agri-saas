@@ -65,7 +65,13 @@ function currentSeasonWindow(): { from: string; to: string } {
 async function warnOnGaps(tenantId: string): Promise<void> {
     try {
         const [profile, certMember] = await Promise.all([
-            prisma.farmProfile.findUnique({ where: { tenantId }, select: { eik: true, producerName: true } }),
+            // `eik` is in `ENCRYPTED_FIELDS` and this gap check only reads
+            // `producerName`, which is not — so selecting it fetched an
+            // envelope nobody looked at (#2723). The PDF's own read is at
+            // `farm-record-diary.ts:1203`, INSIDE `runInTenantContext`, and
+            // decrypts correctly; this one had no tenant bound and no need of
+            // the column.
+            prisma.farmProfile.findUnique({ where: { tenantId }, select: { producerName: true } }),
             prisma.tenantMembership.findFirst({
                 where: { tenantId, status: 'ACTIVE', applicatorCertNo: { not: null } },
                 select: { id: true },

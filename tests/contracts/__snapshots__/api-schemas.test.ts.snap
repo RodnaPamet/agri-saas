@@ -986,6 +986,13 @@ exports[`API contract — per-schema snapshots schema: AdminPromotion 1`] = `
       ],
       "description": "ЗЗР рег. № when this advertises a plant protection product, null when it does not (#2664, settable since #2733).\\n\\n**A compliance input, not a detail.** Reg. (EC) 1107/2009 Art 66 puts specific requirements on advertising a ПРЗ, and free text cannot tell a pesticide from a fertiliser. Set at REVIEW time by the person publishing, resolved against the БАБХ register — never proposed by the leaflet read, which has no slot for it at all, because a misread registration number would silently reclassify a pesticide as a fertiliser.\\n\\nAn empty string is normalised to null on write, so \`null\` means exactly \\"not a ПРЗ\\" and never \\"nobody could record it\\"."
     },
+    "sourceFileId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The \`FileRecord\` id of the supplier leaflet this was read from, or null (#2750).\\n\\nIt answers *where did this text come from?* — the question a reviewer has when a published promotion turns out to carry a wrong dose, price or end date, and the only artefact that settles whether the leaflet said it or the reader did.\\n\\n**ADMIN-ONLY.** The farmer-facing feed does not expose it: that feed is advertising copy and a supplier’s source PDF is internal. RLS enforces the same boundary independently — the file is stored under the PLATFORM tenant, so a farm’s context reads zero rows for it whatever a DTO says.\\n\\n**A non-null id may still point at nothing, and that is deliberate.** There is no FK constraint, so a retention-swept leaflet leaves the id in place. \`null\` means \\"never read from a leaflet\\"; a dangling id means \\"it WAS read and the source is no longer held\\". \`GET .../source\` reports those as \`PROMOTION_SOURCE_NOT_RECORDED\` and \`PROMOTION_SOURCE_NOT_HELD\` respectively."
+    },
     "publishedAt": {
       "type": [
         "string",
@@ -1037,6 +1044,7 @@ exports[`API contract — per-schema snapshots schema: AdminPromotion 1`] = `
     "category",
     "ctaUrl",
     "pppRegistrationNo",
+    "sourceFileId",
     "publishedAt",
     "validFrom",
     "validTo",
@@ -5347,6 +5355,15 @@ exports[`API contract — per-schema snapshots schema: CreatePromotionBody 1`] =
         "null"
       ],
       "maxLength": 120
+    },
+    "sourceFileId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "The leaflet’s \`FileRecord\` id, as returned by \`leaflet-scan\` (#2750). The console carries it through its accept-this-proposal action so the source document stays reachable from the row it produced.\\n\\nA pass-through id, NOT validated against the file table on write: a bad id is a dangling pointer, which is the same state a retention sweep produces and which the read path already renders as \\"source no longer held\\"."
     }
   },
   "required": [
@@ -20009,6 +20026,15 @@ exports[`API contract — per-schema snapshots schema: UpdatePromotionBody 1`] =
         "null"
       ],
       "maxLength": 120
+    },
+    "sourceFileId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "The leaflet’s \`FileRecord\` id, as returned by \`leaflet-scan\` (#2750). The console carries it through its accept-this-proposal action so the source document stays reachable from the row it produced.\\n\\nA pass-through id, NOT validated against the file table on write: a bad id is a dangling pointer, which is the same state a retention sweep produces and which the read path already renders as \\"source no longer held\\"."
     }
   }
 }"

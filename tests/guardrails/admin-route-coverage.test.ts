@@ -60,6 +60,13 @@ const ADMIN_ONLY_ROUTES = [
     // worth having them: the bytes it accepts render in EVERY tenant's feed.
     'admin/promotions/[id]/image/route.ts',
     'admin/promotions/[id]/leads/route.ts',
+    // The supplier leaflet a promotion was read from (#2750). It earns both
+    // gates for the same reason the image route does — the row it hangs off is
+    // global, so `admin.manage` alone would let any tenant's OWNER read another
+    // supplier's source document — and it carries a THIRD: it serves bytes, so
+    // `downloadPromotionSource` owns the AV egress gate and is registered in
+    // `USECASE_SEAMS` in `download-route-gate-reachability`.
+    'admin/promotions/[id]/source/route.ts',
     // «Прочети брошура» (#2664) — upload a supplier leaflet and PROPOSE its
     // offers. Same two gates, and it earns them twice over: it stores bytes
     // AND spends platform AI budget, so one farm's admin reaching it would

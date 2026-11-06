@@ -79,6 +79,39 @@ model Promotion {
   /// fertiliser, which is the one error in this feature that matters.
   pppRegistrationNo String?
   ctaUrl      String?
+  /// The supplier leaflet this promotion was read from — a `FileRecord` id.
+  ///
+  /// It answers one question a reviewer cannot otherwise answer: *where did
+  /// this text come from?* `pppRegistrationNo` is typed by a human at review
+  /// time precisely because a misread registration number reclassifies a
+  /// pesticide as a fertiliser, so when a published promotion turns out to
+  /// carry a wrong dose, price or end date, the only artefact that settles
+  /// whether the leaflet said it or the reader did is the source document.
+  ///
+  /// ## A plain scalar, with NO `@relation` and no FK constraint
+  ///
+  /// `Promotion` is TENANTLESS and `FileRecord` is tenant-scoped under RLS —
+  /// `promotion-image.ts` states the same crossing as "a promotion belongs to
+  /// every tenant". The leaflet is stored under the PLATFORM tenant by
+  /// `leaflet-scan`, and only the platform console reads it, which runs in
+  /// that tenant's context. A farmer's context cannot read that row at all, so
+  /// keeping this off the farmer-facing DTO is enforced by RLS as well as by
+  /// the DTO.
+  ///
+  /// A `@relation` would invite `include`, which crosses that boundary
+  /// silently. The precedent is `PromotionLead.inquirerTenantId` — a plain FK
+  /// for the same reason. Layer B derives foreign keys from
+  /// `@relation(fields:)`, so a plain scalar is correctly outside its
+  /// population: this column is read BY id from one row, never scanned.
+  ///
+  /// And no `onDelete`, because **a dangling id carries information that
+  /// SetNull would destroy.** Retention may sweep the `FileRecord`; the
+  /// promotion must survive it. With no constraint what remains is an id
+  /// pointing at nothing, which reads as "there WAS a source and it is no
+  /// longer held". `SetNull` collapses that into NULL — which already means
+  /// "never read from a leaflet". Two different facts about provenance, and
+  /// telling them apart is why the column exists.
+  sourceFileId String?
   /// Editorial gate — null means draft. Set when support publishes.
   publishedAt DateTime?
   validFrom   DateTime?
