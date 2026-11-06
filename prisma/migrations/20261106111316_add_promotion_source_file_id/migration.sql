@@ -1,0 +1,25 @@
+-- Promotion.sourceFileId — the supplier leaflet a promotion was read from.
+--
+-- Additive and nullable, so every existing row reads NULL, which is the
+-- correct answer for them: the owner has confirmed no promotions are
+-- published yet, and any draft that exists was typed rather than read.
+--
+-- DELIBERATELY NO FOREIGN KEY CONSTRAINT, and that is a provenance decision
+-- rather than a shortcut. `FileRecord` is tenant-scoped and may be swept by
+-- retention; `Promotion` is tenantless and must survive that. With no
+-- constraint, a swept source leaves an id pointing at nothing — which reads
+-- as "there WAS a source and it is no longer held". An FK with ON DELETE SET
+-- NULL would collapse that into NULL, which already means "never read from a
+-- leaflet". The column exists to tell those two apart, so a constraint that
+-- merges them would defeat it.
+--
+-- NO INDEX. The column is read BY id from a single promotion row, never
+-- scanned or reverse-queried ("which promotions came from this file" is not a
+-- view this product has). Layer B of schema-index-coverage derives its
+-- population from `@relation(fields:)`, so a plain scalar is correctly
+-- outside it rather than exempted from it.
+--
+-- No rollback script: the previous image neither reads nor writes this
+-- column, so an image-only rollback is safe and
+-- destructive-migration-has-inverse does not select an ADD COLUMN.
+ALTER TABLE "Promotion" ADD COLUMN "sourceFileId" TEXT;

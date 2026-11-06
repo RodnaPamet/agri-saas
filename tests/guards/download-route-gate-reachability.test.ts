@@ -64,6 +64,12 @@ const USECASE_SEAMS: ReadonlyArray<{ fn: string; file: string; reason: string }>
             'Owns the purge-tombstone 404, the STORED check, the INFECTED refusal ahead of the gate, `isDownloadAllowed(scanStatus)` with NO default, and assertTenantKey on the RESOLVED pathKey. #2495 step 2.',
     },
     {
+        fn: 'downloadPromotionSource',
+        file: 'src/app-layer/usecases/promotion-admin.ts',
+        reason:
+            'Owns the STORED check, the INFECTED refusal ahead of the gate, `isDownloadAllowed(scanStatus)` with NO default, and assertTenantKey on the RESOLVED pathKey. #2750. The key check matters more here than in the siblings: `Promotion.sourceFileId` is an unvalidated pass-through on the write path, so the id in the column is whatever a console request supplied.',
+    },
+    {
         fn: 'downloadEvidenceFile',
         file: 'src/app-layer/usecases/evidence.ts',
         reason:

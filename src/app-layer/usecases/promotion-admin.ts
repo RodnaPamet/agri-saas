@@ -19,7 +19,10 @@ import { readContentPerTenant, readableOrNull } from '@/lib/db/per-tenant-conten
 import prisma from '@/lib/prisma';
 import { logEvent } from '../events/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, codedNotFound } from '@/lib/errors/types';
+import { badRequest, codedForbidden, codedNotFound } from '@/lib/errors/types';
+import { FileRepository } from '../repositories/FileRepository';
+import { isDownloadAllowed } from '@/lib/storage/av-scan';
+import { assertTenantKey, getStorageProvider } from '@/lib/storage';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { findOrCreateCompany } from './company';
 
@@ -62,6 +65,16 @@ export interface AdminPromotionDto {
     ctaUrl: string | null;
     /** ЗЗР рег. № when this advertises a ПРЗ, null when it does not (#2664). */
     pppRegistrationNo: string | null;
+    /**
+     * The supplier leaflet this was read from, or null (#2750).
+     *
+     * ADMIN-ONLY. It is absent from the farmer-facing DTO in
+     * `usecases/promotions.ts` on purpose — the feed is advertising copy and a
+     * supplier's source PDF is internal. RLS enforces the same boundary
+     * independently: the `FileRecord` lives under the PLATFORM tenant, so a
+     * farm's context reads zero rows for it whatever a DTO exposes.
+     */
+    sourceFileId: string | null;
     publishedAt: string | null;
     /** The campaign window as calendar DAYS, `YYYY-MM-DD`, `validTo` inclusive (#2752). */
     validFrom: string | null;
@@ -99,6 +112,7 @@ export async function listAllPromotions(ctx: RequestContext): Promise<AdminPromo
             category: p.category,
             ctaUrl: p.ctaUrl,
             pppRegistrationNo: p.pppRegistrationNo,
+            sourceFileId: p.sourceFileId,
             publishedAt: p.publishedAt ? p.publishedAt.toISOString() : null,
             validFrom: p.validFrom ? dayKeyInTz(p.validFrom, FARM_TIME_ZONE) : null,
             validTo: p.validTo ? dayKeyInTz(p.validTo, FARM_TIME_ZONE) : null,
@@ -122,6 +136,8 @@ export interface PromotionWriteInput {
      * `CreatePromotionSchema` for the Art 66 reasoning.
      */
     pppRegistrationNo?: string | null;
+    /** The leaflet's `FileRecord` id, from the read the operator accepted (#2750). */
+    sourceFileId?: string | null;
     /** Calendar DAYS, `YYYY-MM-DD` — converted to their labelling instant here (#2752). */
     validFrom?: string | null;
     validTo?: string | null;
@@ -174,6 +190,7 @@ export async function createPromotion(ctx: RequestContext, input: PromotionWrite
                 category: input.category,
                 ctaUrl: input.ctaUrl ?? null,
                 pppRegistrationNo: normalisePppRegistrationNo(input.pppRegistrationNo),
+                sourceFileId: input.sourceFileId ?? null,
                 validFrom: input.validFrom ? dayKeyToInstant(input.validFrom) : null,
                 validTo: input.validTo ? dayKeyToInstant(input.validTo) : null,
                 publishedAt: null,
@@ -250,6 +267,7 @@ export async function updatePromotion(
         if (input.pppRegistrationNo !== undefined) {
             data.pppRegistrationNo = normalisePppRegistrationNo(input.pppRegistrationNo);
         }
+        if (input.sourceFileId !== undefined) data.sourceFileId = input.sourceFileId;
         if (input.validFrom !== undefined) {
             data.validFrom = input.validFrom ? dayKeyToInstant(input.validFrom) : null;
         }
@@ -544,5 +562,111 @@ export async function listCompanies(ctx: RequestContext): Promise<AdminCompanyDt
             notes: c.notes,
             promotionCount: c._count.promotions,
         }));
+    });
+}
+
+/**
+ * Open the supplier leaflet a promotion was read from (#2750).
+ *
+ * THIS IS THE AV EGRESS GATE for promotion sources, and it is registered in
+ * `USECASE_SEAMS` in `download-route-gate-reachability` for that reason.
+ * `leaflet-scan` goes through `ingestUploadedFile`, which writes bytes before
+ * the scan resolves; the argument that makes that safe is this function asking
+ * `isDownloadAllowed` before serving them.
+ *
+ * ## THREE distinct 404s, which is the entire point of the column
+ *
+ * `Promotion.sourceFileId` has no FK constraint so that a retention-swept
+ * source leaves a dangling id rather than a NULL — see the schema comment.
+ * That design buys nothing unless the two states are observably different
+ * here, so they are:
+ *
+ *   - `PROMOTION_NOT_FOUND`            — no such promotion
+ *   - `PROMOTION_SOURCE_NOT_RECORDED`  — NULL: never read from a leaflet
+ *   - `PROMOTION_SOURCE_NOT_HELD`      — id present, file gone: it WAS read,
+ *                                        and the source is no longer stored
+ *
+ * Collapsing the last two would answer "was this text taken from a document?"
+ * with "no" in a case where the honest answer is "yes, and we can no longer
+ * show you which" — which is the provenance question a reviewer is asking.
+ *
+ * ## The promotion read happens BEFORE the tenant transaction opens
+ *
+ * `Promotion` is tenantless so it comes off the global client, and doing that
+ * read first means no second pool connection is wanted while one is held —
+ * the #1191 P0.8 deadlock. The `FileRecord` then resolves inside the caller's
+ * tenant context, which for this route is the PLATFORM tenant, because that is
+ * where `leaflet-scan` stored it.
+ */
+export async function downloadPromotionSource(ctx: RequestContext, promotionId: string) {
+    const promotion = await prisma.promotion.findUnique({
+        where: { id: promotionId },
+        select: { id: true, title: true, sourceFileId: true },
+    });
+    if (!promotion) throw codedNotFound('PROMOTION_NOT_FOUND', 'Promotion not found');
+    const sourceFileId = promotion.sourceFileId;
+    if (!sourceFileId) {
+        throw codedNotFound(
+            'PROMOTION_SOURCE_NOT_RECORDED',
+            'This promotion was not read from a leaflet, so there is no source document.',
+        );
+    }
+
+    return runInTenantContext(ctx, async (db) => {
+        const fileRecord = await FileRepository.getByIdForTenant(db, ctx.tenantId, sourceFileId);
+        if (!fileRecord) {
+            throw codedNotFound(
+                'PROMOTION_SOURCE_NOT_HELD',
+                'The source leaflet is no longer stored. The promotion was read from one.',
+            );
+        }
+        // Cross-tenant key guard, on the RESOLVED pathKey rather than the id,
+        // and it is load-bearing here for a reason the sibling seams do not
+        // have: `sourceFileId` is an UNVALIDATED pass-through on the write
+        // path, so the id in the column is whatever a console request supplied.
+        // `getByIdForTenant` already scopes by tenant and would return nothing
+        // for another farm's file; this is the second check on the key that
+        // actually resolved, which is the convention
+        // `download-route-gate-reachability` requires of every seam.
+        //
+        // An earlier version of this function skipped it and argued in the
+        // seam's `reason` that a tenantless `Promotion` made it meaningless.
+        // The guard refused, and the guard was right: tenantless is the SUBJECT,
+        // not the file, and the file is exactly where a supplied id could point
+        // somewhere it should not.
+        assertTenantKey(fileRecord.pathKey, ctx.tenantId);
+
+        if (fileRecord.status !== 'STORED') {
+            throw codedNotFound(
+                'PROMOTION_SOURCE_NOT_HELD',
+                'The source leaflet is no longer stored. The promotion was read from one.',
+            );
+        }
+
+        // INFECTED ahead of the gate, as `ingest.ts` and `downloadFarmDocument`
+        // both do it: the gate answers "may this be served", and an infected
+        // file deserves its own refusal rather than the generic one.
+        if (fileRecord.scanStatus === 'INFECTED') {
+            throw codedForbidden(
+                'FILE_SCAN_REJECTED',
+                'That leaflet was flagged by antivirus scanning and cannot be opened.',
+            );
+        }
+        // NO DEFAULT on this argument. `isDownloadAllowed('SKIPPED')` is true in
+        // every `AV_SCAN_MODE`, so `?? 'SKIPPED'` would turn "never scanned"
+        // into "serve it".
+        if (!isDownloadAllowed(fileRecord.scanStatus)) {
+            throw codedForbidden(
+                'FILE_SCAN_PENDING',
+                'That leaflet is still being scanned. Please try again shortly.',
+            );
+        }
+
+        return {
+            stream: getStorageProvider().readStream(fileRecord.pathKey),
+            contentType: fileRecord.mimeType ?? 'application/octet-stream',
+            sizeBytes: fileRecord.sizeBytes ?? null,
+            name: fileRecord.originalName ?? 'leaflet',
+        };
     });
 }

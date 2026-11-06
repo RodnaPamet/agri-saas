@@ -976,6 +976,13 @@
             ],
             "description": "ЗЗР рег. № when this advertises a plant protection product, null when it does not (#2664, settable since #2733).\n\n**A compliance input, not a detail.** Reg. (EC) 1107/2009 Art 66 puts specific requirements on advertising a ПРЗ, and free text cannot tell a pesticide from a fertiliser. Set at REVIEW time by the person publishing, resolved against the БАБХ register — never proposed by the leaflet read, which has no slot for it at all, because a misread registration number would silently reclassify a pesticide as a fertiliser.\n\nAn empty string is normalised to null on write, so `null` means exactly \"not a ПРЗ\" and never \"nobody could record it\"."
           },
+          "sourceFileId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The `FileRecord` id of the supplier leaflet this was read from, or null (#2750).\n\nIt answers *where did this text come from?* — the question a reviewer has when a published promotion turns out to carry a wrong dose, price or end date, and the only artefact that settles whether the leaflet said it or the reader did.\n\n**ADMIN-ONLY.** The farmer-facing feed does not expose it: that feed is advertising copy and a supplier’s source PDF is internal. RLS enforces the same boundary independently — the file is stored under the PLATFORM tenant, so a farm’s context reads zero rows for it whatever a DTO says.\n\n**A non-null id may still point at nothing, and that is deliberate.** There is no FK constraint, so a retention-swept leaflet leaves the id in place. `null` means \"never read from a leaflet\"; a dangling id means \"it WAS read and the source is no longer held\". `GET .../source` reports those as `PROMOTION_SOURCE_NOT_RECORDED` and `PROMOTION_SOURCE_NOT_HELD` respectively."
+          },
           "publishedAt": {
             "type": [
               "string",
@@ -1027,6 +1034,7 @@
           "category",
           "ctaUrl",
           "pppRegistrationNo",
+          "sourceFileId",
           "publishedAt",
           "validFrom",
           "validTo",
@@ -5103,6 +5111,15 @@
               "null"
             ],
             "maxLength": 120
+          },
+          "sourceFileId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "The leaflet’s `FileRecord` id, as returned by `leaflet-scan` (#2750). The console carries it through its accept-this-proposal action so the source document stays reachable from the row it produced.\n\nA pass-through id, NOT validated against the file table on write: a bad id is a dangling pointer, which is the same state a retention sweep produces and which the read path already renders as \"source no longer held\"."
           }
         },
         "required": [
@@ -18892,6 +18909,15 @@
               "null"
             ],
             "maxLength": 120
+          },
+          "sourceFileId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "The leaflet’s `FileRecord` id, as returned by `leaflet-scan` (#2750). The console carries it through its accept-this-proposal action so the source document stays reachable from the row it produced.\n\nA pass-through id, NOT validated against the file table on write: a bad id is a dangling pointer, which is the same state a retention sweep produces and which the read path already renders as \"source no longer held\"."
           }
         }
       },
@@ -63684,6 +63710,139 @@
           },
           "409": {
             "description": "`COMPANY_NAME_TAKEN` — another supplier already uses that name, compared on the normalised key (lowercased, trimmed, internal whitespace collapsed). **NOT a stale-edit 409**: there is no version to re-read, the collision is with a different row, and the remedy is a different name."
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/t/{tenantSlug}/admin/promotions/{id}/source": {
+      "get": {
+        "operationId": "getAdminPromotionSource",
+        "summary": "Open the supplier leaflet a promotion was read from",
+        "description": "The stored source document, inline, for a reviewer comparing the leaflet against the form beside it (#2750).\n\n**The AV gate runs before any byte is served.** The leaflet was written to disk before its scan resolved — which `ingestUploadedFile` is allowed to do precisely because every read asks `isDownloadAllowed` first — so this answers 403 `FILE_SCAN_PENDING` while a scan is outstanding and 403 `FILE_SCAN_REJECTED` if it came back infected. Those are separate codes because they mean opposite things: wait and retry, versus this file is not coming.\n\n**Three distinct 404s, which is the point of the column.** `PROMOTION_NOT_FOUND`, `PROMOTION_SOURCE_NOT_RECORDED` (null — never read from a leaflet) and `PROMOTION_SOURCE_NOT_HELD` (an id that no longer resolves — it WAS read, and the source is gone). Collapsing the last two would answer \"was this taken from a document?\" with \"no\" where the honest answer is \"yes, and we can no longer show you which\".",
+        "tags": [
+          "Promotions"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme"
+            },
+            "required": true,
+            "name": "tenantSlug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The leaflet bytes, `Content-Disposition: inline`, `Cache-Control: no-store` — a supplier’s internal document must never reach a shared cache.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or query parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`FILE_SCAN_PENDING` — still being scanned, retry. `FILE_SCAN_REJECTED` — antivirus flagged it and it will not be served."
+          },
+          "404": {
+            "description": "`assertPlatformSupport` refused — this is not the platform-support tenant, or `PLATFORM_TENANT_SLUG` is unset. **404 and not 403 deliberately**, so the console does not announce itself; it is therefore indistinguishable from a nonexistent path. Decide whether to show this screen from `platformAdmin` on `/api/auth/me`, not by probing.\n\nOn the `{id}` routes this status ALSO carries `PROMOTION_NOT_FOUND` for an id naming nothing — a coded refusal, so the two are distinguishable by `code` even though they share the status."
           },
           "426": {
             "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
