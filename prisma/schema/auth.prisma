@@ -118,6 +118,7 @@ model Tenant {
   notifications            Notification[]
   pushSubscriptions        PushSubscription[]
   aiUsageEvents            AiUsageEvent[]
+  assistantStageTimings    AssistantStageTiming[]
   assistantConversations   AssistantConversation[]
   assistantTurns           AssistantTurn[]
   notificationOutbox       NotificationOutbox[]
