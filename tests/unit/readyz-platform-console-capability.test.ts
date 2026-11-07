@@ -155,7 +155,7 @@ describe('GET /api/readyz — capabilities.platformConsole is REPORTED, never GA
         //
         // This is an exact-set assertion, so ADDING a capability lands here by
         // design — `featureFlags` (#2291) was the first to do so and
-        // `documentStorage` (#2495) the second. That is the ratchet working: a
+        // `documentStorage` (#2495) the second and `worker` (#2825) the third. That is the ratchet working: a
         // new reading on the endpoint the uptime check probes should cost a
         // visible line, not arrive unnoticed.
         const { body } = await probe();
@@ -170,6 +170,7 @@ describe('GET /api/readyz — capabilities.platformConsole is REPORTED, never GA
                 'mailCanary',
                 'platformConsole',
                 'satellite',
+                'worker',
             ]);
     });
 });
