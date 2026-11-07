@@ -94,6 +94,16 @@ const EXEMPT = new Map(DELIBERATELY_UNSTRIPPED);
  */
 const DELIBERATELY_UNSTRIPPED_PDF: ReadonlyArray<[file: string, why: string]> = [
     [
+        'src/app-layer/usecases/direct-message-photos.ts',
+        'Accepts PHOTOGRAPHS only. The allowlist is checked against a magic-number '
+            + 'sniff rather than the declared content-type, and it holds exactly '
+            + 'image/jpeg, image/png and image/webp — so a PDF is refused with '
+            + 'UPLOAD_UNSUPPORTED_TYPE before any byte is stripped, scanned or '
+            + 'stored, and there is no PDF here to strip. A document attachment in a '
+            + 'direct message would be a new surface and would have to answer this '
+            + 'question again, which is what keeps the exemption honest.',
+    ],
+    [
         'src/app-layer/usecases/spatial-import.ts',
         'Stages a shapefile/KML/GeoJSON bundle and rejects anything else by '
             + 'extension before the bytes are read, so a PDF cannot reach storage '
