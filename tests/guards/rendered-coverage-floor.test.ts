@@ -352,7 +352,17 @@ const ROOT = path.resolve(__dirname, '../..');
 // Banked here because this ratchet is UPWARD and I had assumed it was a
 // floor that adding only helps. It is not: a gain left unbanked is a gain
 // that can silently regress, which is the whole point of the staging.
-const RENDERED_TEST_FLOOR = 274;
+//
+// 274 -> 275 (#2797): `chat-primitives.test.tsx` — P8.3's day pill, bubble,
+// divider, timeline and composer, 38 cases. The ones worth banking are not
+// the renders: the Europe/Sofia day cut asserted with an instant whose UTC
+// and Sofia days DIFFER (a `toISOString().slice(0, 10)` rewrite passes every
+// other case in the file), the ≤30-node budget re-asserted after three
+// prepends of 200 rows because a chat timeline is the only surface here that
+// grows at the TOP, and the long-press gesture driven under a coarse
+// `matchMedia` — a branch jsdom's always-false stub leaves dead, which is how
+// the #449 tooltip touch regression shipped green.
+const RENDERED_TEST_FLOOR = 275;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
