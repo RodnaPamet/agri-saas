@@ -260,6 +260,38 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // The anonymous path has no session at all, which is the Art 16 duty
         // and the reason a tenant- or person-bound client cannot serve it.
         'trust-safety.ts',
+        // P8.2 (#2796) — direct messages. The same shape as `trust-safety.ts`
+        // above and for the same kind of reason: there IS RLS, parts of it are
+        // deliberately write-denying, and the global handle is how the
+        // privileged writer satisfies it.
+        //
+        // SIX of the nine operations use `runInUserContext` and the database is
+        // their authority — the edits, the delete, the read, the read cursor and
+        // both reaction verbs. Three cannot:
+        //
+        //   * OPENING writes the OTHER person's `ConversationParticipant` row.
+        //     A caller able to insert that directly could add themselves to a
+        //     stranger's conversation.
+        //   * RESPONDING writes `Conversation.state`, which has no `app_user`
+        //     UPDATE arm and must not get one — the arm would let the person who
+        //     OPENED a request accept it themselves.
+        //   * SENDING must stamp `Conversation.lastMessageAt` ATOMICALLY with
+        //     the message, because that column is what the request rule's WITH
+        //     CHECK reads. Inserting under user context and stamping afterwards
+        //     needs a second pool connection while holding one, which is #1191's
+        //     P0.8 deadlock; a `SECURITY DEFINER` trigger avoids that and works
+        //     only because the definer is a superuser (the `role` GUC does not
+        //     change inside one, so `superuser_bypass` never applies), which
+        //     breaks silently the day the app role is hardened.
+        //
+        // What stands in for tenant scoping is that `senderUserId`,
+        // `initiatedByUserId` and every participant id come from the verified
+        // session or from a server-side handle resolution — never from a request
+        // body. A write here that took a user id from a request would be the
+        // defect this exemption could hide, and it is the thing to check in
+        // review. `OpenConversationSchema` accepts a HANDLE for exactly that
+        // reason.
+        'direct-messages.ts',
         // P5.4a (#1595) — the moderation console. Every table it touches
         // denies `app_user` for every command (`ModerationAction`,
         // `StatementOfReasons`) or admits only a reporter reading their own

@@ -175,7 +175,32 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // whichever tenant published that image. Reversed, it is a
         // cross-tenant file lookup by hash — so the order is asserted by a
         // test rather than left to this comment.
-        expect(callers.length).toBeLessThanOrEqual(5);
+        //
+        // SIX since P8.2 (#2796), and saying it out loud as this ceiling is
+        // for. `direct-messages.ts` resolves a farm HANDLE to the person who
+        // should receive a message, and the caller is a signed-in stranger who
+        // is NOT a member of that farm — so there is no tenant context to
+        // enter with, and neither `FarmBrand` nor `TenantMembership` has an
+        // `app_user` arm that admits a non-member.
+        //
+        // It carries its own reason, `dm-recipient-resolution`, rather than
+        // borrowing one, and the two nearest were checked rather than assumed:
+        // `farm-handle-availability` selects `handle` only and could not reach
+        // a membership, and `exchange-farm-attribution` goes the OTHER
+        // direction — profiles for tenant ids the caller already holds — so
+        // neither safety argument transfers.
+        //
+        // What bounds the new one is the ORDER of three reads and the SHAPE of
+        // the answer, the `public-media-read` pattern: the PUBLISHED profile is
+        // asked first, so an unpublished farm never resolves to a tenant at
+        // all, and a bare `userId` is all that comes back. Reversed, it is a
+        // handle→tenant oracle for farms that never chose to be public — which
+        // is the coupling P6 kept `tenantId` off the projection to avoid — so
+        // the order is asserted by a test rather than left to this comment.
+        //
+        // Raised by exactly one, for one named caller, rather than to a round
+        // number.
+        expect(callers.length).toBeLessThanOrEqual(6);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -227,7 +252,16 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // purpose — they read different classes of table and the reason has to
         // name which, so collapsing them would leave one reason describing a
         // read it does not govern.
-        expect(sites.length).toBeLessThanOrEqual(12);
+        //
+        // 12 → 13 by P8.2 (#2796): ONE site in `direct-messages.ts`, holding
+        // all three of the handle→tenant→owner reads inside a single
+        // `runWithoutRls` block. One block rather than three on purpose, and
+        // the opposite choice from P6.3's above — there the two reads needed
+        // separate reasons because they touch different classes of table, while
+        // here the three reads ARE the safety argument: it is their ORDER that
+        // bounds the bypass, and splitting them would let a future edit reorder
+        // them across block boundaries without any one reason looking wrong.
+        expect(sites.length).toBeLessThanOrEqual(13);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

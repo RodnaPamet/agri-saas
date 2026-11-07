@@ -339,6 +339,39 @@ export const PUBLIC_NOTICE_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * Opening a direct conversation — P8.2 (#2796). 5 per hour per caller.
+ *
+ * The abusable act in a DM system is not SENDING, it is opening a thread with
+ * somebody who never asked. P8's hardening criterion says so in those terms:
+ * "one sender messaging 100 strangers stops at the limits".
+ *
+ * The DEFAULT mutation tier does not stop that. `API_MUTATION_LIMIT` is 60/min
+ * keyed on (IP, userId), so 100 strangers is under two minutes of ordinary
+ * use — a bound that exists without binding. Slow mode (P5.5a) narrows a NEW
+ * or unverified account to 15/min, which is better and still ~7 minutes.
+ *
+ * 5 per HOUR is the number because the window is what matters here, not the
+ * rate. A real farmer opening conversations does it a handful of times a week
+ * after reading a profile; an abuser needs volume. A per-minute cap of any
+ * size is defeated by patience, and patience is free.
+ *
+ * It bounds the CALLER rather than the recipient, deliberately — not a
+ * `getBucket`. A bucket REPLACES the per-caller key to cap a shared resource,
+ * which is right when the cost lands on one other party (a listing's seller).
+ * Here the harm is spread across 100 different people who have nothing in
+ * common, so there is no shared resource to key on; the thing to bound is the
+ * sender.
+ *
+ * Sending INTO an accepted conversation keeps the default tier: once somebody
+ * has accepted, the counterparty can block, and a tight cap would make a real
+ * conversation feel broken.
+ */
+export const DM_OPEN_LIMIT: RateLimitConfig = {
+    maxAttempts: 5,
+    windowMs: 60 * 60 * 1000,
+};
+
+/**
  * SCIM provisioning: 300/min per bearer, 600/min per IP.
  *
  * `/api/scim/` is in `PUBLIC_PATH_PREFIXES`, so these requests are NOT

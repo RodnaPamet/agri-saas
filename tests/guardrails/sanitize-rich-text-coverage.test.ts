@@ -279,6 +279,22 @@ const RICH_TEXT_COVERAGE: Readonly<
     },
     Location: { usecases: ['src/app-layer/usecases/location.ts'], sanitizer: 'sanitizePlainText' },
     FeatureFlag: { usecases: ['src/app-layer/usecases/feature-flag-admin.ts'], sanitizer: 'sanitizePlainText' },
+    // P8.2 (#2796) — direct messages. Moved out of KNOWN_UNCOVERED by the PR
+    // that gave the column a writer, which is what that bucket's
+    // self-expiring design is for: the live-writer assertion went red on
+    // `prisma.directMessage.create` the same run this route landed, exactly
+    // as it did for ContentReport, AssistantMemoryFact and AssistantTurn.
+    //
+    // `sanitizePlainText` rather than `sanitizeRichTextHtml`: a DM is a
+    // farmer's typed message, not markup, and the plain-text sanitiser also
+    // TRIMS since #1825 — so a whitespace-only message is refused rather than
+    // stored, which is the repo's standard blank check.
+    //
+    // Sanitised at the USECASE and not at a renderer, per C.5, and here the
+    // reason is concrete rather than by analogy: the stored row is read back
+    // by the counterparty, by a P5.2 report snapshot if somebody reports the
+    // message, and by the Art 15 export. Three readers.
+    DirectMessage: { usecases: ['src/app-layer/usecases/direct-messages.ts'], sanitizer: 'sanitizePlainText' },
 };
 
 /**
@@ -358,23 +374,6 @@ const KNOWN_UNCOVERED: Readonly<Record<string, string>> = {
     // RICH_TEXT_COVERAGE. Claiming coverage would be false and claiming "not
     // user rich text" would be worse, because both columns ARE user-authored
     // free text and the exemption would outlive the gap.
-    // ── P8.1 direct messages (#2795) ──
-    //
-    // The same construction, a third time, and the P5.1 note above is the
-    // whole justification: #2795 ships these tables one release BEFORE any
-    // writer, so there is no usecase to name in RICH_TEXT_COVERAGE.
-    // `DirectMessage.body` IS user-authored free text — a farmer typing to
-    // another farmer — so NON_RICH_TEXT_MODELS would exempt it permanently,
-    // and claiming coverage would be false.
-    DirectMessage:
-        'DirectMessage.body is a farmer-written message, encrypted under the ' +
-        'global KEK, with no write path yet — P8.1 is schema only. Ratchet ' +
-        'target: #2796 (P8.2) adds the send usecase and must move this entry ' +
-        'into RICH_TEXT_COVERAGE in the same diff. The C.5 reason applies with ' +
-        'full force here rather than by analogy: a DM body is read back by the ' +
-        'counterparty, by the P5.2 report snapshot if somebody reports it, and ' +
-        'by the Art 15 export — three renderers, which is exactly why ' +
-        'sanitisation belongs at the usecase and not at one of them.',
     EvidenceReview:
         'EvidenceReview.comment (reviewer rationale) is encrypted at ' +
         'rest but its write path is not yet registered with a ' +
@@ -663,7 +662,14 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // #2796 adds a send usecase, which is the same mechanism that moved
         // ContentReport, AssistantMemoryFact and AssistantTurn out. Raised by
         // exactly one, for one named entry, rather than to a round number.
-        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(2);
+        //
+        // And back to 1 one PR later, which is the mechanism reporting its own
+        // success: #2796 added `prisma.directMessage.create`, the live-writer
+        // assertion went red on that exact call the same run, and the entry
+        // moved into RICH_TEXT_COVERAGE against the usecase. Lowered in the
+        // same diff rather than left at 2, because slack a later regression
+        // can spend is the thing a ratchet exists to refuse.
+        expect(Object.keys(KNOWN_UNCOVERED).length).toBeLessThanOrEqual(1);
     });
 
     it('no KNOWN_UNCOVERED entry has a LIVE writer — the teeth the cap lost', () => {

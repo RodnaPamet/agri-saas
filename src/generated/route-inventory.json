@@ -596,6 +596,41 @@
       "documented": true
     },
     {
+      "path": "/api/social/conversations",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/conversations/{conversationId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/conversations/{conversationId}/messages",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/conversations/{conversationId}/read",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/conversations/{conversationId}/respond",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/messages/{messageId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/messages/{messageId}/reactions",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/reports",
       "status": "live",
       "documented": true

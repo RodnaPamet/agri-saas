@@ -112,6 +112,20 @@ export const REFERENCED_FLAG_KEYS = [
     'assistant.memory',
     'integrations.google',
     'notifications.sse',
+    // Direct messages (P8.2, #2796). Dark by default, and expected to stay
+    // dark until P8.3/P8.4 ship a UI: the nine routes answer 404 while the
+    // flag is off, which is the designed pre-launch state rather than a fault.
+    //
+    // A SEPARATE key from `social.person-blocks`, which gates the ability to
+    // block. Collapsing them would mean the only way to stop DMs is to stop
+    // people blocking each other, which is the control you least want to
+    // remove when you are turning messaging off.
+    //
+    // `feature-flags-capability` will report it in `missingRows` until an
+    // operator inserts the row — the correct reading, as for the three keys
+    // above, because a key gating routes with no row is what that capability
+    // exists to surface.
+    'social.direct-messages',
     'social.farm-media',
     'social.farm-registration',
     'social.person-blocks',

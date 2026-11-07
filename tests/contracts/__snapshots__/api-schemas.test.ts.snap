@@ -6367,6 +6367,23 @@ exports[`API contract — per-schema snapshots schema: DeleteConversationResult 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: EditDirectMessage 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    }
+  },
+  "required": [
+    "body"
+  ],
+  "description": "Replacement text for a message the caller sent."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: EditRememberedPointInput 1`] = `
 "{
   "type": "object",
@@ -11952,6 +11969,22 @@ exports[`API contract — per-schema snapshots schema: MachineryDepreciation 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MarkConversationRead 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "readAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "readAt"
+  ],
+  "description": "Move the caller's read cursor to this instant. Forward only — a cursor already at or past it is left alone."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: MarketReference 1`] = `
 "{
   "type": "object",
@@ -12040,6 +12073,23 @@ exports[`API contract — per-schema snapshots schema: MeStreamProbeAck 1`] = `
     "id"
   ],
   "description": "The id published to the caller’s own realtime channel. No row was written, so a client that receives it and refetches will find nothing new — the point is the transport, not the content."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: MessageReaction 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "emoji": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16
+    }
+  },
+  "required": [
+    "emoji"
+  ],
+  "description": "A short reaction symbol. Not free text."
 }"
 `;
 
@@ -12622,6 +12672,23 @@ exports[`API contract — per-schema snapshots schema: OffersResponse 1`] = `
   "required": [
     "offers"
   ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: OpenConversation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "handle": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    }
+  },
+  "required": [
+    "handle"
+  ],
+  "description": "The farm handle to open a conversation with. The recipient is resolved server-side to that farm's active owner and cannot be supplied."
 }"
 `;
 
@@ -17125,6 +17192,25 @@ exports[`API contract — per-schema snapshots schema: RentRoll 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: RespondToConversation 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": [
+        "ACCEPT",
+        "DECLINE"
+      ]
+    }
+  },
+  "required": [
+    "decision"
+  ],
+  "description": "Accept or decline a conversation request. Only the party who did NOT open it may answer, and a decision is final."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RiskLevel 1`] = `
 "{
   "type": "string",
@@ -17357,6 +17443,28 @@ exports[`API contract — per-schema snapshots schema: SeasonRecap 1`] = `
     "activityCount"
   ],
   "description": "A season’s headline figures. GROSS and moisture-standardised tonnage are both reported and are not interchangeable; costPerHa is null when nothing carried a cost, which a client must not render as zero."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: SendDirectMessage 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "body"
+  ],
+  "description": "A message to send. The sender is the authenticated caller. Repeating a request with the same idempotencyKey returns the message the first attempt created rather than sending a second."
 }"
 `;
 

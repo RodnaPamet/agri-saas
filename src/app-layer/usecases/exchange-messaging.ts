@@ -38,6 +38,11 @@ import { RECIPIENT_FALLBACK_LOCALE } from '@/lib/email/recipient-locale';
 import { logger } from '@/lib/observability/logger';
 import { codedBadRequest, codedForbidden, codedNotFound, internal } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import {
+    personBlockExists,
+    amIBlockedByAnyOf,
+    whoHasBlockedMe,
+} from '@/app-layer/usecases/person-blocks';
 
 /**
  * A message body longer than this is a document, not a message.
@@ -288,76 +293,6 @@ async function isBlocked(
  * a person, not a farm."
  */
 
-/**
- * Is there a block in EITHER direction between these two people?
- *
- * Governs CONTACT — opening a thread and sending a message. Either direction,
- * because blocking somebody is mutual silence: a person who blocked you is not
- * someone you should be able to write to either, and the alternative lets the
- * blocker keep messaging into a conversation the other party cannot see.
- */
-async function personBlockExists(
-    db: PrismaTx,
-    between: { aUserId: string; bUserId: string },
-): Promise<boolean> {
-    if (between.aUserId === between.bUserId) return false;
-    const row = await db.userBlock.findFirst({
-        where: {
-            OR: [
-                { blockerUserId: between.aUserId, blockedUserId: between.bUserId },
-                { blockerUserId: between.bUserId, blockedUserId: between.aUserId },
-            ],
-        },
-        select: { id: true },
-    });
-    return row !== null;
-}
-
-/**
- * Have the people in `blockerUserIds` blocked ME, specifically?
- *
- * Governs VISIBILITY, and is ONE-directional on purpose: the blocked party
- * loses sight of the conversation, the blocker keeps their history. Owner
- * ruling 2026-10-10 — hiding it is what makes the block SILENT, because a
- * thread that stays visible while its composer refuses tells the blocked party
- * exactly as much as an error message would.
- *
- * Returns the set rather than a boolean so `listExchangeThreads` can put it in
- * a `where` clause. Filtering the page AFTER the query would corrupt
- * pagination: that query takes `limit + 1` rows to learn whether another page
- * exists, so dropping rows afterwards shrinks the page and makes `hasMore`
- * wrong.
- */
-/**
- * Has any of `candidates` blocked ME? One-directional, for VISIBILITY.
- *
- * Targeted rather than `whoHasBlockedMe(...).includes(...)` because a person
- * with many blockers would have the whole set fetched to answer a two-element
- * question. The self-pair is filtered out, so a caller may pass its own id
- * among the candidates without knowing its own role yet — which is what lets
- * this run in `requireParty` before the inquirer/seller split.
- */
-async function amIBlockedByAnyOf(
-    db: PrismaTx,
-    meUserId: string,
-    candidates: readonly string[],
-): Promise<boolean> {
-    const others = candidates.filter((c) => c && c !== meUserId);
-    if (others.length === 0) return false;
-    const row = await db.userBlock.findFirst({
-        where: { blockedUserId: meUserId, blockerUserId: { in: others } },
-        select: { id: true },
-    });
-    return row !== null;
-}
-
-async function whoHasBlockedMe(db: PrismaTx, meUserId: string): Promise<string[]> {
-    const rows = await db.userBlock.findMany({
-        where: { blockedUserId: meUserId },
-        select: { blockerUserId: true },
-    });
-    return rows.map((r) => r.blockerUserId);
-}
 
 /**
  * Refuse further contact from the other party to this thread.
