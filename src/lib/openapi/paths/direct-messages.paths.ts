@@ -161,9 +161,16 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         query: z.object({
             limit: z.string().optional().openapi({ description: 'Positive integer, clamped to 20.' }),
             cursor: z.string().optional().openapi({ description: 'Opaque. From a previous response\'s nextCursor.' }),
+            source: z
+                .string()
+                .optional()
+                .openapi({
+                    description:
+                        'Comma-separated subset of `dm,exchange`. Absent returns both. `dm` exists because this endpoint is PERSON-scoped: its exchange half admits the caller only as the inquirer or the listing\'s seller, so a tenant-scoped screen that shows an owner their colleagues\' threads must keep its own query for that half and take only `dm` from here. An unrecognised value is a 400, never a silent fallback to both — that would add person-scoped exchange rows beside tenant-scoped ones and show the same thread twice from two audiences.',
+                }),
         }),
         extraResponses: codedErrorResponses({
-            400: 'INVALID_LIMIT (not a positive integer) or INVALID_CURSOR (unreadable). A broken cursor is refused rather than treated as a first page, because silently restarting a scroll looks like duplicated rows.',
+            400: 'INVALID_LIMIT (not a positive integer), INVALID_CURSOR (unreadable) or INVALID_SOURCE (not a subset of dm,exchange). A broken cursor is refused rather than treated as a first page, because silently restarting a scroll looks like duplicated rows.',
         }),
         success: {
             status: 200,
