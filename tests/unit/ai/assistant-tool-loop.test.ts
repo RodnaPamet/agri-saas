@@ -17,6 +17,34 @@ jest.mock('@/app-layer/usecases/task', () => ({
     listTasks: (...a: unknown[]) => listTasks(...a),
 }));
 
+/**
+ * The stage-timing store is MOCKED, and that is load-bearing for this suite
+ * rather than tidiness (#2803).
+ *
+ * `runToolLoop` awaits `recordStageTiming`, which INSERTS a row. This suite's
+ * context is `tenantId: 't1'`, which exists in no database, so the insert went
+ * to the per-worker test DB through the global client and failed an FK
+ * constraint — and the store is best-effort by design, so it logged and
+ * swallowed and nothing failed. Measured 32ms / 61ms / 541ms on three
+ * consecutive turns, against assertions below whose budgets are tens of
+ * milliseconds; a 541ms excursion is enough to invert "the round is not the
+ * sum of its tools". The suite passed alone and failed roughly one run in two
+ * under full-root parallelism, which is the signature of a real round trip to
+ * Postgres on a connection a unit test never asked for.
+ *
+ * Nothing is lost by mocking it here: the store's own behaviour is covered by
+ * `assistant-stage-timing-is-best-effort.test.ts` (including a positive
+ * control) and by `tests/integration/assistant-stage-timing-rls.test.ts`.
+ *
+ * The general rule this cost us: a unit suite that reaches Postgres is a unit
+ * suite whose timing belongs to the machine. An awaited best-effort write is
+ * the dangerous shape, because its failure path is silent.
+ */
+const recordStageTiming = jest.fn<Promise<void>, unknown[]>();
+jest.mock('@/app-layer/ai/assistant/stage-timing-store', () => ({
+    recordStageTiming: (...a: unknown[]) => recordStageTiming(...a),
+}));
+
 import {
     emitHalt,
     MAX_TOOL_CALLS,
@@ -49,6 +77,29 @@ describe('the assistant tool loop (#2578)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         listTasks.mockResolvedValue([{ id: 't1', title: 'Пръскане', status: 'OPEN' }]);
+    });
+
+    /**
+     * The control for the mock above, and the reason it is a test rather than
+     * a comment: "the mock did not apply" is SILENT. If the module path is
+     * renamed, or the store grows a second export and the factory stops
+     * matching, jest hands back the REAL module, `runToolLoop` goes back to
+     * inserting a row for a tenant that does not exist, and this suite returns
+     * to flaking about one run in two — with every assertion below still
+     * green. Asserting the double was CALLED is what makes that loud.
+     *
+     * It also pins that the loop still records a timing at all: a future
+     * refactor that drops the `recordStageTiming` call would make the stage
+     * figures stop being written in production, which no timing assertion
+     * below would notice, because they all read the RETURNED value.
+     */
+    it('records a stage timing through the mocked store, never the database', async () => {
+        const h = harness();
+        const complete = jest.fn().mockResolvedValue({ text: 'Нищо спешно.' });
+        await runToolLoop({ ctx, complete, send: h.send }, []);
+        expect(recordStageTiming).toHaveBeenCalledTimes(1);
+        // The tenant is the first argument — the FK that had no row.
+        expect(recordStageTiming.mock.calls[0][0]).toBe('t1');
     });
 
     it('no tool calls: one answer, no halt, no tool events', async () => {
