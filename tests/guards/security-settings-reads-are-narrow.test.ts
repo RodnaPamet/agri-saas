@@ -33,6 +33,7 @@
 
 import * as fs from 'fs';
 import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
 import * as path from 'path';
 
 const SCANNED = collectSourceFiles({ roots: ['src'], floor: 1000 });
@@ -42,8 +43,36 @@ const rel = (p: string) => path.relative(REPO_ROOT, p);
 /** `prisma.tenantSecuritySettings.findX(` / `.upsert(` and friends. */
 const READ = /\b(?:prisma|db|tx)\.tenantSecuritySettings\.(find\w+|aggregate)\s*\(/g;
 
-function stripComments(code: string): string {
-    return code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+/**
+ * `blankNonCode`, not a local stripper — `comment-stripper-order` caught the
+ * hand-rolled one I wrote first, and the reason is specific rather than
+ * stylistic: it removed BLOCK comments before LINE comments, so a line comment
+ * containing a block-open marker (nine files under src/ have one, each naming
+ * a glob) opens a block that runs to the next close marker and deletes real
+ * code in between. Measured there: the wrong order kept 130 of
+ * src/middleware.ts's 326 code lines. The helper also preserves character
+ * POSITIONS, which the bounded tail-slice below depends on.
+ */
+
+
+/**
+ * The text between a call's opening parenthesis and its match.
+ *
+ * `open` is the index OF the `(`. Returns '' if the parenthesis never closes,
+ * which reports as "not narrowed" — the safe direction for a guard: an
+ * unparseable call is flagged rather than waved through.
+ */
+function argsOf(code: string, open: number): string {
+    let depth = 0;
+    for (let i = open; i < code.length; i += 1) {
+        const ch = code[i];
+        if (ch === '(') depth += 1;
+        else if (ch === ')') {
+            depth -= 1;
+            if (depth === 0) return code.slice(open + 1, i);
+        }
+    }
+    return '';
 }
 
 interface Site {
@@ -54,14 +83,24 @@ interface Site {
 function sites(): Site[] {
     const out: Site[] = [];
     for (const abs of SCANNED) {
-        const code = stripComments(fs.readFileSync(abs, 'utf8'));
+        const code = blankNonCode(fs.readFileSync(abs, 'utf8'));
         READ.lastIndex = 0;
         let m: RegExpExecArray | null;
         while ((m = READ.exec(code)) !== null) {
-            // The call's own argument object, bounded so a later unrelated
-            // `select:` cannot vouch for this read.
-            const tail = code.slice(m.index + m[0].length, m.index + m[0].length + 400);
-            out.push({ file: rel(abs), narrow: /\bselect\s*:/.test(tail) });
+            // The call's OWN argument list, found by matching the parenthesis
+            // the regex consumed — not a fixed character window.
+            //
+            // A window was the first version and it broke on the switch to
+            // `blankNonCode`: that helper preserves character POSITIONS, so
+            // `mfa.ts`'s 17-line docblock became ~900 characters of blanks
+            // between the call and its `select:`, and a 400-char tail reported
+            // a correctly narrowed read as unnarrowed. Widening the number
+            // would have been a guess that the next long comment invalidates;
+            // the argument list is a bound the source actually has.
+            out.push({
+                file: rel(abs),
+                narrow: /\bselect\s*:/.test(argsOf(code, m.index + m[0].length - 1)),
+            });
         }
     }
     return out;
