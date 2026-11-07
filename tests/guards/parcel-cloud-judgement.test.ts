@@ -224,6 +224,38 @@ describe('the judgement is opt-in, and opted in exactly where it was decided', (
 });
 
 describe('the scene-selection version moved with the rules', () => {
+    it('SCENE_SELECTION_VERSION is declared exactly ONCE', () => {
+        /*
+         * This one is here because the guard missed it. Relocating the
+         * constant's block upward in this branch, then merging a main that had
+         * squashed the version-1 copy at its ORIGINAL site, made git's
+         * three-way auto-merge keep both: two `export const` declarations in
+         * one module, version 2 at the top and version 1 at the bottom.
+         *
+         * The version assertion below uses a non-global `.match`, so it read
+         * the FIRST declaration, saw 2, and passed. CI's `Typecheck` caught it
+         * — "Cannot redeclare block-scoped variable" — which is the right
+         * backstop but says nothing about WHICH value wins, and the duplicate
+         * sat in a file the merge reported as auto-merged cleanly.
+         *
+         * A count, not a `.match`: the failure mode is a second declaration,
+         * and no assertion about one declaration's value can see it.
+         */
+        const decls = CODE.match(/export const SCENE_SELECTION_VERSION\b/g) ?? [];
+        if (decls.length !== 1) {
+            throw new Error(
+                `Expected exactly 1 declaration of SCENE_SELECTION_VERSION in ${REL}, ` +
+                    `found ${decls.length}.\n\n` +
+                    'More than one is almost always a merge artefact: the block was moved ' +
+                    'in one branch and squashed at its old site in another, so a clean ' +
+                    'three-way auto-merge keeps both. Which value the module exports then ' +
+                    'depends on declaration order, and a watermark comparison against the ' +
+                    'wrong one silently stops re-searching.',
+            );
+        }
+        expect(decls.length).toBe(1);
+    });
+
     it('SCENE_SELECTION_VERSION is at least 2', () => {
         /*
          * The constant is what invalidates every stored coverage watermark
