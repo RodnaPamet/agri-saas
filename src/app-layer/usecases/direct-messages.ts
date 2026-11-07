@@ -84,6 +84,7 @@ import { runInUserContext, type PrismaTx } from '@/lib/db-context';
 import { encodeCursor, decodeCursor, keysetBefore } from '@/lib/exchange/cursor';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import prisma from '@/lib/prisma';
+import { getStorageProvider } from '@/lib/storage';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { publishPersonEvent } from '@/lib/notifications/notification-bus';
 import { logger } from '@/lib/observability/logger';
@@ -642,14 +643,59 @@ export async function editDirectMessage(
  * capture failure).
  */
 export async function deleteDirectMessage(ctx: UserContext, messageId: string): Promise<void> {
+    // Read the key BEFORE the update clears it, so the object can be removed
+    // afterwards. Under user context, so a non-participant reads nothing and
+    // the update below then affects zero rows — the refusal stays the
+    // database's.
+    const existing = await runInUserContext(ctx, async (db) =>
+        db.directMessage.findUnique({
+            where: { id: messageId },
+            select: { attachmentKey: true },
+        }),
+    );
+
     const count = await runInUserContext(ctx, async (db) => {
         const { count: n } = await db.directMessage.updateMany({
             where: { id: messageId, deletedAt: null },
-            data: { deletedAt: new Date(), body: '' },
+            // `body: ''` destroys the plaintext while keeping the row. The
+            // attachment columns go in the SAME statement, and P8.6's schema
+            // stage shaped the CHECK (`deletedAt IS NOT NULL OR body IS NOT
+            // NULL OR attachmentKey IS NOT NULL`) with its `deletedAt` arm
+            // precisely so this clearing is PERMITTED: a retracted photo-only
+            // message has nothing left, and without that arm the database
+            // would refuse the update and the DELETION would fail rather than
+            // the photograph stopping.
+            data: {
+                deletedAt: new Date(),
+                body: '',
+                attachmentKey: null,
+                attachmentMime: null,
+                attachmentBytes: null,
+                attachmentSha256: null,
+            },
         });
         return n;
     });
     if (count === 0) messageNotThere();
+
+    // The stored OBJECT is removed AFTER the row, and best-effort.
+    //
+    // Order matters: the row no longer resolves a key, and `readDirectPhoto`
+    // only ever reaches an object through a row — so the photograph has
+    // already stopped being servable. A failed object delete therefore leaves
+    // unreachable garbage rather than a readable photo. Throwing here would
+    // turn a successful retraction into an error the caller retries, and the
+    // retry would find the message already deleted.
+    if (existing?.attachmentKey) {
+        try {
+            await getStorageProvider().delete(existing.attachmentKey);
+        } catch (err) {
+            logger.warn('dm.photo_object_delete_failed', {
+                component: 'direct-messages',
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
 }
 
 /**
