@@ -26,10 +26,16 @@
  */
 import * as React from 'react';
 
-import { SendHorizontal } from 'lucide-react';
-
 import { Button } from '@/components/ui/button';
 import { useEnterSubmit } from '@/components/ui/hooks';
+// `PaperPlane` from the nucleo set. The legacy icon package is on a
+// shrink-only allowlist (`no-lucide`), so importing from it adds an entry to
+// a list whose whole purpose is to empty — and nucleo already ships this
+// icon. My first pass concluded it did not, from a grep for a capitalised
+// component name against a barrel whose entries are kebab-case paths.
+// The package name is not spelled in this comment on purpose: three times
+// this session a banned token in my own prose tripped the sweep for it.
+import { PaperPlane } from '@/components/ui/icons/nucleo';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/cn';
 
@@ -131,7 +137,7 @@ export function MessageComposer({
             <Button
                 type="button"
                 variant="primary"
-                icon={<SendHorizontal />}
+                icon={<PaperPlane />}
                 aria-label={sendLabel}
                 disabled={!canSend}
                 onClick={send}

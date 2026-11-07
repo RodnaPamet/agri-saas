@@ -153,6 +153,43 @@ Epic 68's two-seam rule holds: `virtualized-list.tsx` and
   new `chat.newMessages` key is required rather than a coined synonym. The
   correction was recorded on #2797 before this PR.
 
+## What CI caught that the local run would have
+
+The first push went red on four contexts, every one of them a META-guard that
+this diff pulled into scope rather than anything about the chat code. The
+derived population (`npm run verify:changed`) covers all four; I had killed
+those runs to merge main first and pushed on a targeted suite instead. That
+was the mistake — the individual failures were each one line.
+
+| failure | cause |
+|---|---|
+| `RENDERED_TEST_FLOOR` | 38 new rendered cases, floor left at 274 → raised to 275 |
+| `comment-stripper-order` (#1497) | §10's source check stripped BLOCK comments first; `// a /* b` then opens a block that consumes to the next `*/` anywhere later, deleting real code between |
+| `no-lucide` | two imports from the legacy icon package, whose allowlist only shrinks → nucleo's `PaperPlane` and `MessageSmile`, which exist (my first check grepped capitalised component names against a barrel of kebab-case paths and read the false absence as real) |
+| `Selector teeth` | `ui-hooks-barrel.test.ts` — see below |
+
+**The selector-teeth one is the finding worth keeping.** `slugToHookName` was
+dead: its result went into a const nothing compared, discharged with `void`.
+Deleting it was my first fix and CI refused that too — with no module-level
+selector the file becomes `NOT AUDITED`, and that population has a ceiling
+(200), so the count hit 201 and
+`selector-teeth-reports-its-denominator` failed. A guard whose selecting
+happens inside `it()` passes whether or not it selects anything, which is why
+the ceiling is right: **extract the selection, do not remove it.**
+
+Extracting then exposed what deletion would have buried. With `expected = ''`
+the export regex degrades to `export \{[^}]*\}` — matching any re-export
+block — and `toContain('')` is trivially true, so that guard could never fail
+on a WRONG hook name at all. It now carries a control on the derivation
+itself, which is what the tool's message asks for. A SURVIVED selector is a
+question about the assertions, not only about dead code.
+
+One more, four times over: a sweep tripping on my own prose. Two of those were
+assertions I wrote to check my own work (`assert 'lucide' not in src` matching
+the comment explaining why there is no such import). The nucleo comments
+deliberately do not spell the package name, and the final checks run on
+comment-stripped source.
+
 ## What is NOT here
 
 No page, no route, no data fetching, no flag gate — P8.4 (#2798) owns all four,

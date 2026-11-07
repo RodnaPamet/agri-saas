@@ -23,9 +23,33 @@ const HOOKS_DIR = path.resolve(
 
 const BARREL = path.join(HOOKS_DIR, 'index.ts');
 
-/** Convert `use-local-storage` → `useLocalStorage`. */
-function slugToHookName(slug: string): string {
-    return slug.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+/**
+ * `use-long-press.ts` → `useLongPress`. The single derivation this guard
+ * stands on, at module level ON PURPOSE.
+ *
+ * It replaces a `slugToHookName` that sat here computing into a const which
+ * was never compared to anything and was then discharged with a `void`, so
+ * mutating it to return an empty string changed no assertion — `Selector
+ * teeth` reported it SURVIVED the moment a PR touching the hooks barrel pulled
+ * this guard into the audit population (#2797). It had been dead since
+ * somebody added a "simpler path" inline beside it and left the original.
+ *
+ * Deleting it outright was the first fix and was WORSE: with no module-level
+ * selector the file becomes NOT AUDITED, which pushed the repo's unauditable
+ * guard count from 200 to 201 and broke that ceiling. A guard whose selecting
+ * happens inside `it()` passes whether or not it selects anything, so the
+ * ceiling is the right thing to respect — extract the selection, do not
+ * remove it.
+ */
+export function expectedHookName(file: string): string {
+    const slug = file.replace(/\.tsx?$/, '').replace(/^use-/, '');
+    return (
+        'use' +
+        slug
+            .split('-')
+            .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+            .join('')
+    );
 }
 
 describe('Epic 60 — ui/hooks barrel completeness', () => {
@@ -49,14 +73,16 @@ describe('Epic 60 — ui/hooks barrel completeness', () => {
     test.each(files)(
         '%s: file exports the expected hook and the barrel re-exports it',
         (file) => {
-            const slug = file.replace(/\.tsx?$/, '').replace(/^use-/, '');
-            const hookName = `use${slugToHookName('-' + slug).replace(/^./, (c) => c.toUpperCase())}`;
-            // slugToHookName was written for `use-foo` (not `foo`);
-            // simpler path: construct from slug directly.
-            const expected = 'use' + slug
-                .split('-')
-                .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
-                .join('');
+            const expected = expectedHookName(file);
+
+            // A CONTROL on the derivation, and it is load-bearing rather than
+            // decorative. With an empty `expected` the export regex below
+            // degrades to `export \{[^}]*\}`, which matches any re-export
+            // block, and `toContain('')` is trivially true — so the guard
+            // could not fail on a WRONG hook name at all. Measured: mutating
+            // `expectedHookName` to `return ''` left all 28 cases green, which
+            // is what `Selector teeth` reported as SURVIVED (#2797).
+            expect(expected).toMatch(/^use[A-Z][A-Za-z0-9]*$/);
 
             const content = fs.readFileSync(path.join(HOOKS_DIR, file), 'utf-8');
             // The file must export the hook (named export, no default).
@@ -73,9 +99,6 @@ describe('Epic 60 — ui/hooks barrel completeness', () => {
             );
             expect(barrelLine.test(barrelSrc)).toBe(true);
             expect(barrelSrc).toContain(expected);
-
-            // Unused variables discharged for eslint peace.
-            void hookName;
         },
     );
 });

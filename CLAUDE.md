@@ -3396,6 +3396,27 @@ TOP"; #2826 tracks it as a P8.4 prerequisite.
 existing values are «Съобщения»; measured 2026-11-07. Before reusing a string
 on a phase note's word, grep the catalogues for the exact value.
 
+**A DEAD module-level selector is EXTRACTED, not deleted.** `Selector teeth`
+reported `ui-hooks-barrel.test.ts`'s `slugToHookName() → return '' SURVIVED`
+when P8.3 touched the hooks barrel and pulled that guard into the audit
+population. Deleting the dead function was the obvious fix and CI refused it
+too: with **no** module-level selector a file becomes `NOT AUDITED`, and that
+population has a CEILING — the count went 200 → 201 and
+`selector-teeth-reports-its-denominator` failed, naming the rule ("a guard
+whose selecting happens inline inside `it()` cannot be mutation-audited, so it
+passes whether or not it selects anything").
+
+Extracting the derivation instead exposed what deletion would have buried: with
+`expected = ''` the export regex degrades to `export \{[^}]*\}`, which matches
+any re-export block, and `toContain('')` is trivially true — so that guard
+could never fail on a WRONG hook name. It carries a control on the derivation
+now (`expect(expected).toMatch(/^use[A-Z][A-Za-z0-9]*$/)`), which is the
+"control proving its selector can select" the tool's own message asks for.
+**A SURVIVED selector is a question about the ASSERTIONS, not only about dead
+code**: ask what the assertion would say if the selector returned nothing, and
+if the answer is "still pass", the teeth are missing whether or not the
+function is reachable.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

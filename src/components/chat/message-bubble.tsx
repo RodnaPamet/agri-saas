@@ -49,12 +49,15 @@
  * send. P8's rule ships schema a release ahead of the code that writes it, so
  * that column is a later phase, not a thing to work around in a component.
  */
-import { SmilePlus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import * as React from 'react';
 
 import { useLongPress } from '@/components/ui/hooks';
 import { IconAction } from '@/components/ui/icon-action';
+// nucleo, not the legacy icon package — see the note in
+// `message-composer.tsx`. `MessageSmile` rather than `FaceSmile`: the
+// control reacts to THIS message.
+import { MessageSmile } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 
@@ -183,7 +186,7 @@ export function MessageBubble({
                         // hover or focus so a thread is not a wall of buttons.
                         // `opacity-0` keeps it focusable — `hidden` would not.
                         <IconAction
-                            icon={<SmilePlus />}
+                            icon={<MessageSmile />}
                             label={reactionsLabel ?? t('addReaction')}
                             variant="ghost"
                             onClick={onRequestReactions}

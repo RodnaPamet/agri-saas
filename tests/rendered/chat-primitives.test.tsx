@@ -588,7 +588,19 @@ describe('the windowed branch MEASURES its rows', () => {
             path.join(process.cwd(), 'src/components/chat/message-timeline.tsx'),
             'utf8',
         );
-        const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        // LINE comments FIRST, then block (#1497). A block-first stripper is
+        // capped by `tests/guards/comment-stripper-order.test.ts`, and the
+        // reason is that `// a /* b` opens a block comment that was never
+        // opened: block-first consumes from there to the next `*/` anywhere
+        // later in the file, deleting real code in between. This file's first
+        // draft had it the wrong way round and that guard caught it.
+        // LINE comments FIRST, then block (#1497, capped by
+        // `comment-stripper-order`). Block-first is the hazard: `// a /* b`
+        // opens a block that was never meant to open, and the block pass then
+        // consumes everything to the next `*/` anywhere later in the file,
+        // deleting real code in between. This file's first draft had it the
+        // wrong way round and that guard caught it in CI.
+        const code = source.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
         expect(code).toContain('dynamicRowHeight={{');
         expect(code).not.toMatch(/\bitemSize\s*=/);
