@@ -116,6 +116,57 @@ describe('VM-Redis rate-limit counter', () => {
     /** Every case needs this: an unavailable Redis must not assert on undefined. */
     const skipIfNoRedis = (): boolean => !redisAvailable;
 
+    /**
+     * Turn a `null` from the limiter into a diagnosis — #2714.
+     *
+     * `null` is the limiter's DEGRADED signal, not a verdict. `redisBucket`
+     * is documented as fail-to-local on a Redis error and never fail-open, so
+     * `null` means the Redis call did not succeed — and the limiter swallows
+     * the underlying error in order to degrade, which is correct for
+     * production and leaves a test with nothing to read.
+     *
+     * `expect(r).not.toBeNull()` therefore reports the same two words,
+     * `Received: null`, for two opposite situations: a limiter defect, and an
+     * environment where Redis went away mid-suite. That happened on MAIN at
+     * `b0261b63f` (run 41374257522, shard 3/6) — it failed on the FIRST
+     * iteration with `Redis connection closed` logged immediately after, the
+     * next main commit passed, and the auto-filed issue self-closed with
+     * "CI is green again", leaving no record of the cause. A second occurrence
+     * would have been indistinguishable from a first.
+     *
+     * The suite's own `redisAvailable` probe cannot cover this: it runs ONCE
+     * in `beforeAll`, and the failure is Redis becoming unreachable AFTER it.
+     *
+     * So on a `null` this re-probes through the suite's tracked client and
+     * says which world we are in. It is the `uniform-failure-shape` fix this
+     * repo has applied twice elsewhere, at the only place in this file that
+     * reads a limiter result for non-nullness.
+     */
+    async function limiterAnswer(
+        r: Awaited<ReturnType<typeof checkRateLimitRedis>>,
+        where: string,
+    ): Promise<NonNullable<typeof r>> {
+        if (r !== null && r !== undefined) return r;
+
+        let redisSays: string;
+        try {
+            redisSays = await probe.ping();
+        } catch (e) {
+            redisSays = `unreachable (${(e as Error).message})`;
+        }
+        const verdict =
+            redisSays === 'PONG'
+                ? 'Redis answers PONG right now, so this is a LIMITER defect — '
+                  + 'the Lua or the key shape, not the environment.'
+                : 'Redis does NOT answer, so this is the ENVIRONMENT: the service '
+                  + 'went away after beforeAll probed it. See #2714 — do not read '
+                  + 'this as a limit being wrong.';
+        throw new Error(
+            `${where}: the limiter returned null, which is its DEGRADED signal `
+                + `rather than a verdict. Redis probe: ${redisSays}. ${verdict}`,
+        );
+    }
+
     const cfg = (over: Partial<RateLimitConfig> = {}): RateLimitConfig => ({
         maxAttempts: 3,
         windowMs: 60_000,
@@ -126,16 +177,65 @@ describe('VM-Redis rate-limit counter', () => {
         return `test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     }
 
+    /**
+     * The control for the diagnosis above. Without it `limiterAnswer` could
+     * print one sentence for both worlds and nobody would know — which is the
+     * defect it exists to fix, one level up.
+     */
+    describe('a null SAYS WHICH WORLD it is in (#2714)', () => {
+        it('blames the LIMITER when Redis answers', async () => {
+            if (skipIfNoRedis()) return;
+            // Redis is genuinely up here — the suite would not have got this
+            // far otherwise — so a null can only be the limiter's own fault.
+            await expect(limiterAnswer(null, 'synthetic')).rejects.toThrow(
+                /LIMITER defect/,
+            );
+        });
+
+        it('blames the ENVIRONMENT when Redis does not answer', async () => {
+            if (skipIfNoRedis()) return;
+            // The failure mode #2714 actually saw: Redis reachable at
+            // `beforeAll` and gone by the time the limiter ran. Simulated by
+            // making the probe itself fail, because the real thing needs the
+            // service to die mid-suite.
+            const realPing = probe.ping.bind(probe);
+            (probe as unknown as { ping: () => Promise<string> }).ping = () =>
+                Promise.reject(new Error('connection closed'));
+            try {
+                const err = await limiterAnswer(null, 'synthetic').catch((e) => e);
+                expect(String(err)).toMatch(/ENVIRONMENT/);
+                expect(String(err)).toMatch(/#2714/);
+                // And it must NOT blame the limiter in this world, or the two
+                // messages are interchangeable and the split is cosmetic.
+                expect(String(err)).not.toMatch(/LIMITER defect/);
+            } finally {
+                (probe as unknown as { ping: () => Promise<string> }).ping = realPing;
+            }
+        });
+
+        it('passes a real answer straight through', async () => {
+            if (skipIfNoRedis()) return;
+            // The negative control: a helper that threw unconditionally would
+            // satisfy both assertions above and fail every other test here.
+            const r = await checkRateLimitRedis(key(), cfg());
+            await expect(limiterAnswer(r, 'synthetic')).resolves.toMatchObject({
+                allowed: true,
+            });
+        });
+    });
+
     it('allows up to maxAttempts and blocks the next', async () => {
         if (skipIfNoRedis()) return;
         const k = key();
         for (let i = 1; i <= 3; i++) {
-            const r = await checkRateLimitRedis(k, cfg());
-            expect(r).not.toBeNull();
-            expect(r!.allowed).toBe(true);
+            const r = await limiterAnswer(
+                await checkRateLimitRedis(k, cfg()),
+                `attempt ${i} of 3`,
+            );
+            expect(r.allowed).toBe(true);
             // Remaining counts DOWN, so an off-by-one shows here rather than
             // only at the boundary.
-            expect(r!.remaining).toBe(3 - i);
+            expect(r.remaining).toBe(3 - i);
         }
         const blocked = await checkRateLimitRedis(k, cfg());
         expect(blocked!.allowed).toBe(false);
