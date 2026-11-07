@@ -3496,6 +3496,77 @@ about the subject by design, so the reporter cannot tell that from success.
 заявки», so a DM request bucket cannot take that noun. The row carries a
 phrase («Чака Вашия отговор») instead, and a named bucket needs a ruling.
 
+### P8.6 schema stage — a nullable `body`, one photo, and the guard that moved the link cards
+
+Schema only (#2800), P8.1's rule. `DirectMessage.body` is **nullable** and the
+table carries `attachmentKey` / `attachmentMime` / `attachmentBytes` /
+`attachmentSha256`, a CHECK and a partial index. Two owner rulings
+(2026-11-07): **a photo alone is a complete message**, and **one photo per
+message** — so columns, not a link model, because several photos are several
+messages.
+
+**NULL and `''` now mean different things in `body`, by accident of history.**
+`deleteDirectMessage` writes `''` to destroy the plaintext while keeping the
+row, so NULL means "photo-only" and `''` means "retracted". **Read
+`deletedAt`, never the emptiness of the field.** The widening is safe because
+`encryption-middleware` returns early on null on the encrypt path AND both
+decrypt paths — checked, not assumed — and because `DirectMessageView.body`
+was already `string | null` for a deleted message.
+
+**A DM photo is the RECORD-LESS upload class, and `FileRecord` is why.**
+`LogEntryFile` is the in-repo attachment precedent and it links to
+`FileRecord`, whose `tenantId` is NOT NULL — a direct message has no tenant.
+Inventing one (the sender's farm) would file a person-scoped photo as a farm
+record and then hide it from a recipient in a different tenant, because
+`FileRecord` is RLS-scoped by tenant. So: `scanOrRefuse` BEFORE the write (no
+download gate to defer to) and an egress route that authorises by
+**participation**.
+
+**The CHECK's `deletedAt` arm is load-bearing.** The code stage must clear
+`attachmentKey` on delete so a retracted photo stops being served, and a
+deleted photo-only message then has nothing left — without that arm the
+database would refuse the clearing and the DELETION would fail rather than the
+photo stopping.
+
+**DECLARING A FIELD ENCRYPTED CREATES A SANITISATION OBLIGATION, so the
+link-card columns moved out of this stage.** They were here, with `linkTitle`
+/ `linkDescription` in `ENCRYPTED_FIELDS`. `sanitize-rich-text-coverage`
+refused it: a declared field must be sanitised BY NAME at its write path, and
+`RICH_TEXT_COVERAGE` points `DirectMessage` at `direct-messages.ts`, which P8.2
+made a live writer — a schema-only stage has no write path to sanitise in, and
+`SEAM_COVERED` verifies a seam that exists rather than promising one. Shipping
+the columns unencrypted "for now" is worse in the direction that matters, so
+they land WITH their writer. **That is a deliberate weakening of
+schema-a-release-ahead**: the rule exists so a NEW TABLE precedes its writer
+and a rollback stays safe, and an additive nullable column on an existing table
+carries neither risk.
+
+**`attachmentKey` is credential-SHAPED and excused, not redacted.**
+`audit-redaction-covers-the-schema` flags any `*Key` column. It got its own
+entry rather than joining `pathKey` / `storageKey`, whose stated reason is "a
+stable slug chosen by the tenant" and describes neither: this is a generated
+locator that authenticates nothing, because the egress route authorises by
+participation rather than by possession of the key.
+
+**Every new column on these tables needs a counterparty-safety note.**
+`conversation-columns-are-counterparty-safe` (#2807) fired on all four
+attachment columns, which is exactly its job: the policy is ROW-level, so the
+other party reads every column of the row.
+
+**Two false negatives from this stage, both worth knowing:**
+
+- **Probing `DATABASE_URL_TEST` reported the CHECK constraint ABSENT while the
+  suite asserting its refusal was passing with SQLSTATE 23514.** jest's base is
+  a per-checkout `agri_saas_test_<hash>`; three such databases existed and only
+  one had the migration. **The contradiction is what caught it** — a single
+  ABSENT reading, believed, sends you to debug a migration that applied fine.
+  See [[agri-saas-test-db-reader-writer-split]].
+- **A fixture wrote through `new PrismaClient(...)` and asserted its own
+  plaintext.** That client carries no `$extends` encryption layer, so nothing
+  was encrypted and the failure read as a broken MANIFEST rather than a broken
+  fixture. An at-rest assertion needs two clients: the extended one writes, a
+  bare one reads the column back.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

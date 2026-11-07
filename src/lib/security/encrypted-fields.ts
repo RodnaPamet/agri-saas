@@ -177,6 +177,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  Narrowing stops DECRYPTION too: dropping this declaration later
     //  makes every stored message unreadable to everyone, with no error and
     //  no log. Measure with `npm run preflight:fanout` before any change.
+    // `body` only. `linkTitle` / `linkDescription` will join it in the code
+    // stage that writes them and NOT before: declaring a field here creates a
+    // `sanitize-rich-text-coverage` obligation to sanitise it by name at its
+    // write path, and P8.6's schema stage has no write path to satisfy that in
+    // (`SEAM_COVERED` verifies a seam that exists; it does not promise one).
+    //
+    // `attachmentKey` is absent on its own merits and stays absent: an opaque
+    // storage key is not content, which is the call `FileRecord.pathKey`
+    // already makes, and encrypting it would make the egress route decrypt on
+    // every byte served.
     DirectMessage: ['body'],
 
     PromotionLead: ['requestMessage'],
