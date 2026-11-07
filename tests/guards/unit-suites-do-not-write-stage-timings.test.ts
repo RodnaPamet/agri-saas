@@ -95,6 +95,32 @@ describe('unit suites do not write stage timings to the database', () => {
         );
     });
 
+    /**
+     * The control for `rel()`, demanded by `scripts/selector-teeth.mjs` and
+     * right to demand it.
+     *
+     * `rel()` is only reached when there IS a violation or an exemption, and
+     * today there is neither — so gutting it to `''` / `[]` / `null` left this
+     * whole guard green. That is the #1454 shape: a dead selector merged with
+     * the required set passing. The harness found it on the first run.
+     *
+     * So this exercises the selector against the population the guard actually
+     * scans, which is the only thing that can tell a working selector from one
+     * that happens never to be called.
+     */
+    it('rel() maps the real population to repo-relative paths', () => {
+        const rels = reaching.map(rel);
+        expect(rels).toContain('tests/unit/ai/assistant-tool-loop.test.ts');
+        expect(rels).toContain('tests/unit/ai/assistant-stream-route.test.ts');
+        // Repo-relative, not absolute: the exemption map is keyed on these, so
+        // an absolute path would make every key miss and every exemption
+        // silently inert.
+        for (const r of rels) {
+            expect(path.isAbsolute(r)).toBe(false);
+            expect(r.startsWith('tests/unit/')).toBe(true);
+        }
+    });
+
     it('every unit suite reaching the tool loop mocks the stage-timing store', () => {
         const unmocked = reaching
             .filter((p) => !(rel(p) in MUST_NOT_MOCK))
