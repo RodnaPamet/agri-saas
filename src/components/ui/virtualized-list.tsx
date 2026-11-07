@@ -63,6 +63,7 @@
 import * as React from "react";
 import {
     List,
+    useDynamicRowHeight,
     type ListImperativeAPI,
     type RowComponentProps,
 } from "react-window";
@@ -82,10 +83,13 @@ export interface VirtualizedListProps {
      * function `(index) => number` for variable rows. react-window v2's
      * `List` accepts both forms via its `rowHeight` prop. The function
      * form is suitable when row heights vary by index but are
-     * deterministic; for dynamically-measured rows use react-window's
-     * `useDynamicRowHeight` directly.
+     * deterministic. For rows that have to be MEASURED, pass
+     * `dynamicRowHeight` instead of this prop — see below. Do not reach for
+     * react-window's `useDynamicRowHeight` at a call site: Epic 68's point is
+     * that this file and `virtual-table-body.tsx` are the only two importers
+     * of the windowing engine.
      */
-    itemSize: number | ((index: number) => number);
+    itemSize?: number | ((index: number) => number);
     /** Render the row at `index`. Spread `style` onto the outer element. */
     renderItem: (args: VirtualizedListRenderArgs) => React.ReactNode;
     /**
@@ -106,6 +110,36 @@ export interface VirtualizedListProps {
      * user scrolls them into view.
      */
     overscanCount?: number;
+    /**
+     * Measure each row instead of being told its height — P8.3 (#2797).
+     *
+     * `itemSize` covers fixed rows and rows whose height is a DETERMINISTIC
+     * function of their index. A chat bubble is neither: its height depends on
+     * how its text wraps at the current width, and an estimate there is not a
+     * near-miss but a broken layout — react-window absolute-positions rows
+     * from the size it is given, so a wrong number makes rows overlap or leave
+     * gaps.
+     *
+     * When set, `rowHeight` becomes the `DynamicRowHeight` from react-window's
+     * `useDynamicRowHeight`, which `List` measures through
+     * `observeRowElements` on the row elements it already owns. So this changes
+     * NOTHING about the `renderItem` contract — a consumer still spreads
+     * `style` and nothing else.
+     *
+     * `defaultRowHeight` is the pre-measurement estimate: the height assumed
+     * for rows not yet rendered, which decides how nearly-right the scrollbar
+     * is before the reader gets to them.
+     *
+     * It lives HERE rather than in the consumer because Epic 68 allows exactly
+     * two files to import react-window, and this is one of them. A chat
+     * timeline calling `useDynamicRowHeight` itself would be a third seam and
+     * would make a windowing-engine swap a three-file change.
+     *
+     * react-window's own note, worth repeating: dynamic heights are less
+     * efficient than predetermined ones. Pass `itemSize` where the height is
+     * knowable.
+     */
+    dynamicRowHeight?: { defaultRowHeight: number };
     /**
      * Stable per-index key for React reconciliation.
      *
@@ -165,6 +199,7 @@ export const VirtualizedList = React.forwardRef<
         height,
         width,
         overscanCount = 2,
+        dynamicRowHeight,
         // itemKey intentionally destructured-and-ignored: kept on the
         // public props for API stability but not forwarded (v2 keys by
         // index). See VirtualizedListProps.itemKey.
@@ -211,13 +246,25 @@ export const VirtualizedList = React.forwardRef<
     // whichever the consumer supplied. The function form is wrapped so
     // react-window's `(index, rowProps)` signature collapses to the
     // `(index)` shape our consumers expect.
-    const rowHeight = React.useMemo(
-        () =>
-            typeof itemSize === "function"
-                ? (index: number) => itemSize(index)
-                : itemSize,
-        [itemSize],
-    );
+    // The hook is called UNCONDITIONALLY — React admits no branch around a
+    // hook — and its result is used only when the consumer asked for it. The
+    // fallback keeps it valid for the fixed-size callers that never read it.
+    const dynamic = useDynamicRowHeight({
+        defaultRowHeight: dynamicRowHeight?.defaultRowHeight ?? 48,
+    });
+
+    const rowHeight = React.useMemo(() => {
+        if (dynamicRowHeight) return dynamic;
+        if (typeof itemSize === "function") return (index: number) => itemSize(index);
+        if (typeof itemSize === "number") return itemSize;
+        // Neither given. Thrown rather than defaulted: a silent fallback
+        // height renders a list that looks plausible and positions every row
+        // wrongly, which is the failure this primitive exists to prevent.
+        throw new Error(
+            "VirtualizedList: pass `itemSize` or `dynamicRowHeight` — " +
+                "without one, row positions cannot be computed.",
+        );
+    }, [itemSize, dynamicRowHeight, dynamic]);
 
     const hasExplicitHeight = typeof height === "number";
     const hasExplicitWidth = typeof width !== "undefined";

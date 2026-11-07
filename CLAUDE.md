@@ -3278,6 +3278,124 @@ opened — waiting for an answer is not owing one — and `null` on an exchange
 row, because the exchange has no request state and `false` there would read as
 "already answered".
 
+### P8.3 — the chat primitives, and the row list that makes windowing possible
+
+Five components under `src/components/chat/`, one hook, and one optional prop
+added to the Epic 68 primitive (#2797). Presentational only — P8.4 mounts them.
+
+**`MessageTimeline` FLATTENS messages into a row list**, and that is the shape
+everything else follows from. react-window addresses rows by INDEX, so a nested
+"day → messages" tree has no index to address; day pills and the «Нови
+съобщения» divider therefore become rows alongside the bubbles, and the plain
+and windowed branches render the identical list. `buildTimelineRows` is
+exported so the grouping and divider rules — the actual deliverable — are
+asserted on the row shape rather than inferred from the DOM, where "grouped"
+and "the sender label happened to be undefined" look the same.
+
+**`VirtualizedList` gained `dynamicRowHeight`, and `itemSize` became
+optional.** A chat bubble's height is neither fixed nor a deterministic
+function of its index — it depends on how its text wraps at the current
+width — and react-window absolute-positions rows from the height it is given,
+so an estimate is not a near-miss but overlapping rows. It stayed INSIDE the
+primitive because `react-window@2.5.3` exports `useDynamicRowHeight`, `List`'s
+`rowHeight` accepts the object it returns directly, and that object measures
+through `observeRowElements`, which `List` owns — so the extension forwards one
+value and changes nothing about the `renderItem` contract. Epic 68's two-seam
+rule therefore holds: `virtualized-list.tsx` and `virtual-table-body.tsx` are
+still the only importers of the engine. Do not reach for `useDynamicRowHeight`
+at a call site.
+
+**ONE threshold, mirroring `DataTable`'s raised 1000** (owner ruling
+2026-11-07) — `virtualize?: boolean | { threshold: number }`. A farm with
+1,200 messages in a thread and a farm with 1,200 journal rows are the same
+problem, and two thresholds is how one of them drifts. Below it the rows are
+plain DOM, which keeps find-in-page working on every normal thread.
+
+**The divider's position is a PROP the caller holds still.** If the timeline
+derived `firstUnreadId` from `lastReadAt`, marking the thread read while the
+operator is looking at it would make the divider vanish under their eyes.
+
+**Grouping is by (sender, day), and the day half is not redundant.** A day pill
+sits between two messages either side of Sofia midnight, and a grouped bubble
+renders with no sender label and tight spacing — so grouping across a visible
+date boundary would read as one continuous run. The divider breaks a run for
+the same reason. `chatDayKey` pins `Europe/Sofia` explicitly, so the one test
+that would catch a `toISOString().slice(0, 10)` rewrite uses an instant whose
+UTC day and Sofia day DIFFER; every other case in the suite passes either way.
+
+**`modifier: 'auto'` means ⌘/Ctrl+Enter sends on EVERY device.** It does not
+branch on the pointer, and an earlier docblock here claimed it did. A phone's
+return key carries no modifier, so on a phone the send BUTTON is the only way
+to send — which is why it is always rendered and merely `disabled` while the
+body is blank, rather than appearing on the first keystroke and moving the
+layout under the thumb that is typing.
+
+**`useKeyboardInset` is the repo's first and should stay its only
+`visualViewport` reader.** The LAYOUT viewport does not shrink when the soft
+keyboard opens; the VISUAL one does, so the inset is `innerHeight -
+(vv.height + vv.offsetTop)` and nothing in CSS reports it —
+`env(safe-area-inset-bottom)` is the home indicator, not the keyboard, and
+conflating them puts the composer 34px up on a device with no keyboard open. A
+second listener computing its own answer is how two parts of one screen
+disagree about where the keyboard is. Absent API ⇒ zero inset, which is the
+safe direction: a missing inset leaves the composer where every desktop
+browser puts it, a wrong one puts it mid-screen.
+
+**Two mutations survived a green suite here, and both are the same class.**
+Removing the negative-inset clamp reddened nothing, because CSS forbids
+negative padding and jsdom's CSSOM DROPS the declaration — the assertion was
+grading the browser's sanitisation, and it reads the hook's value now. And a
+fixed `itemSize` in place of `dynamicRowHeight` produces byte-identical DOM
+under jsdom, which has no layout engine, so that one property is asserted on
+the SOURCE (the `take: limit + 1` precedent from P8.2). **When a rendered
+assertion passes through a DOM or CSS layer that can normalise your value, ask
+what the assertion would say if the code were absent.**
+
+**Calling `onSend` inside a `setState` updater fires it TWICE.** The first
+draft read the body inside `setBody((current) => …)` to dodge a stale closure.
+There is no stale closure — every keystroke re-renders and re-attaches
+`onKeyDown` — and React 19 invokes updaters twice precisely to surface that
+impurity.
+
+**The long-press reaction gesture is on the BUBBLE, and it is never the only
+way in.** A long press targets one message, so putting it on the scroll
+container would mean hit-testing to find out which bubble was held.
+`useLongPress` (new, in the Epic 60 barrel beside `usePullToRefresh`) attaches
+on `(hover: none), (pointer: coarse)` — the SAME query string as
+`tooltip.tsx`, so one answer governs every touch affordance rather than two
+that can disagree — cancels on drift, release, pointer-cancel or scroll, and
+calls `preventDefault()` NOWHERE, because #449 put it on a tooltip trigger's
+`onPointerDown` and made every wrapped link inert on touch.
+
+`<SwipeRow>`'s rule comes with it and is the part to keep: **a gesture is an
+enhancement over a control, never the control.** A gesture is invisible to a
+keyboard and to a screen reader, so the same callback also sits on an
+`<IconAction>` that is in the DOM whether or not anybody pressed anything —
+`opacity-0` and revealed on hover or focus, because `hidden` is not tabbable.
+A new gesture in this product owes its rendered test a coarse `matchMedia` AND
+an assertion that the keyboard path exists.
+
+**Swipe-to-reply is absent because the SCHEMA has no reply target.**
+`DirectMessage` carries no `replyToMessageId`, and P8 ships schema a release
+ahead of the code that writes it, so that is a later phase rather than
+something to work around in a component (#2829).
+
+**A chat timeline is the only surface in the product that grows at the TOP, and
+that is where `<VirtualizedList>`'s rule 4 runs out.** react-window v2's
+measurement cache is keyed by INDEX (`getRowHeight(index)` /
+`setRowHeight(index, size)`) and v2 REMOVED `itemKey` — the primitive still
+accepts the prop and ignores it — so prepending older messages re-points every
+cached height at a different message. The NODE BUDGET survives (measured: 1,200
+rows paged up three times by 200, ≤30 rendered nodes every time), but the
+estimated extent of the content above the viewport is wrong until it has been
+scrolled through, so a prepending caller owes its own scroll anchoring. See
+`docs/list-virtualization.md` → "Measured heights and a list that grows at the
+TOP"; #2826 tracks it as a P8.4 prerequisite.
+
+**«Нови съобщения» did NOT already exist**, though #2797 says it did. The four
+existing values are «Съобщения»; measured 2026-11-07. Before reusing a string
+on a phase note's word, grep the catalogues for the exact value.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on
@@ -4339,7 +4457,7 @@ decision tree. Never use raw `<svg>`, `<polyline>`, or inline
 
 Import shared hooks from `@/components/ui/hooks` (barrel): `useLocalStorage`,
 `useOptimisticUpdate`, `useEnterSubmit`, `useInputFocused`, `useScroll`,
-`useScrollProgress`, `useInViewport`, etc. Use the polish primitives
+`useScrollProgress`, `useInViewport`, `useLongPress`, etc. Use the polish primitives
 `<Accordion>`, `<TabSelect>`, `<ToggleGroup>`, `<Slider>`,
 `<NumberStepper>` for dense interaction areas. Never hand-roll a tab
 bar, segmented filter row, `localStorage` cache, Enter-submit handler,
@@ -4426,8 +4544,11 @@ under `tests/guards/`).
 
 Two platform files import `react-window` v2's `List`, and feature code
 imports neither. `src/components/ui/virtualized-list.tsx`
-(`<VirtualizedList>`) is the general primitive — `<Combobox>`'s
-`virtualized-options.tsx` is its one consumer.
+(`<VirtualizedList>`) is the general primitive, and it has TWO consumers
+now: `<Combobox>`'s `virtualized-options.tsx` and, since P8.3,
+`src/components/chat/message-timeline.tsx` — which is the first to use the
+`dynamicRowHeight` mode, because a chat bubble's height has to be measured
+rather than declared.
 `src/components/ui/table/virtual-table-body.tsx` (`<VirtualTable>`) is a
 sibling implementation that `<DataTable>` routes to directly,
 deliberately NOT built on the primitive: it renders `display: grid` divs
@@ -4472,6 +4593,7 @@ DOM-count invariant AND a wall-clock budget (1000 options + open in
 
 See `docs/list-virtualization.md` for the rollout decision tree
 (when to use the primitive directly vs reach for `<DataTable>` /
-`<Combobox>`), the four `VirtualizedList` contract rules, the
+`<Combobox>`), the six `VirtualizedList` contract rules — rule 6 is
+`dynamicRowHeight` for rows that must be MEASURED (P8.3) — the
 DataTable + Combobox preserved/dropped feature lists, and the test
 layout.

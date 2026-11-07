@@ -54,6 +54,55 @@ Rules:
    For static lists the index-keyed default is fine.
 5. **Don't import `react-window` directly.** The primitive is the
    single seam — replacing the engine later is a one-file change.
+6. **Rows that must be MEASURED take `dynamicRowHeight`, not `itemSize`**
+   (P8.3, #2797). `itemSize` covers a fixed height and a deterministic
+   function of the index; a chat bubble is neither, because its height
+   depends on how its text wraps at the current width. react-window
+   absolute-positions rows from the height it is given, so an estimate
+   there is not a near-miss but overlapping rows.
+
+   ```tsx
+   <VirtualizedList
+     itemCount={rows.length}
+     dynamicRowHeight={{ defaultRowHeight: 64 }}   // first paint only
+     height={600}
+     renderItem={({ index, style }) => <div style={style}>…</div>}
+   />
+   ```
+
+   `defaultRowHeight` is the pre-measurement estimate and decides nothing
+   after the first frame. Pass `dynamicRowHeight` OR `itemSize`; passing
+   neither throws, because without one row positions cannot be computed
+   and silently defaulting would produce a broken layout with nothing
+   failing.
+
+## Measured heights and a list that grows at the TOP
+
+A chat timeline is the one surface here that grows at the top while the
+viewport is pinned to the bottom, and it is worth knowing what that costs
+before building a second one.
+
+**react-window v2's measurement cache is keyed by INDEX**, not by row
+identity — `DynamicRowHeight` is `getRowHeight(index)` /
+`setRowHeight(index, size)` — and v2 **removed `itemKey`** (rule 4 above;
+`<VirtualizedList>` still accepts the prop and ignores it, with the reason
+in its docblock). So prepending a page of older rows re-points every
+cached height at a different row. The visible window corrects itself —
+`observeRowElements` re-measures what is on screen — but the rows above
+keep heights that now belong to their neighbours, so the estimated extent
+of the content above the viewport is wrong until it has been scrolled
+through.
+
+**What that does NOT break: the node budget.** Measured 2026-11-07 on a
+1,200-row timeline paged up three times by 200 — ≤30 rendered row nodes
+after every prepend
+(`tests/rendered/chat-primitives.test.tsx` → "keeps the node budget after
+PREPENDING older pages").
+
+**What it does mean for a caller:** a surface that prepends owes its own
+scroll anchoring — hold the previously-top row and restore to it after the
+rerender, rather than trusting the scroll offset. That is the page's job,
+not the primitive's, and it is tracked separately.
 
 ## Rolled-out surfaces
 
