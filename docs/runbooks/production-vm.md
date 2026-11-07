@@ -115,6 +115,60 @@ gcloud compute ssh agrent --zone europe-west1-b --command \
 applies a migration. This is the single most important fact in this
 runbook and it is why [Rollback](#2-rollback) is a section and not a row.
 
+**Watchtower will NOT update a container that is not running (#2831).** It
+skips non-running containers, so a crash-looping container never receives a
+fixed image — the deploy path is disabled by exactly the failure it would
+repair. Merging the fix is not enough, and waiting does not help.
+
+Measured during the #2825 worker outage, from Watchtower's own log:
+
+```
+09:41:04  Session done  Failed=0  Scanned=2  Updated=0
+09:46:01  Session done  Failed=0  Scanned=1  Updated=0      <- worker gone
+09:55:42  Found new …:latest image … Stopping /agrent-app
+09:55:44  Session done  Failed=0  Scanned=1  Updated=1      <- app only
+```
+
+`Scanned` goes 2 → 1 and never returns. `agrent-worker` left the scan set
+when it entered `Restarting`, so when the fixed image arrived Watchtower
+updated `agrent-app` alone — while the worker kept running the broken bundle
+through ~380 crash cycles with the correct image already pulled onto the host.
+
+So when a container is crash-looping, recover it by hand:
+
+```bash
+# Confirm the state first — "Restarting" is the tell, and `docker ps` alone
+# can catch it mid-cycle looking Up.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker ps -a --filter name=agrent- --format '{{.Names}}\t{{.Status}}'
+   sudo docker inspect agrent-worker --format 'restarts={{.RestartCount}} exit={{.State.ExitCode}}'"
+
+# Recreate ONLY that service, from the image Watchtower has already fetched.
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "cd /opt/agrent && sudo docker compose -f docker-compose.vm.yml up -d --no-deps worker"
+```
+
+`--no-deps` matters: without it compose restarts the service's dependencies
+too, which on this host means `redis` and a brief app-visible blip for a
+problem confined to one container.
+
+Then verify the fix actually took, rather than that the container started:
+
+```bash
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker inspect agrent-worker --format 'health={{.State.Health.Status}} restarts={{.RestartCount}}'"
+```
+
+For the worker specifically, `health=healthy` is the strong signal: the
+container healthcheck reads a Redis key refreshed from BullMQ's `completed`
+event, so a pass means a job was pulled, run and returned — not merely that
+the process is alive. Several consecutive passes is the confirmation.
+
+**Nothing alerts on this.** The GCP uptime check probes `/api/readyz` on the
+app tier, which stays green while the worker is dead, and a failing container
+healthcheck pages nobody — it restarts the container. The outage above ran
+13–18 hours before anyone looked. See #2825.
+
 ### 1b. Structural deploy
 
 ```bash
