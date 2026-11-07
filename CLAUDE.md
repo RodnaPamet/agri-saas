@@ -3222,10 +3222,13 @@ size is defeated by patience. It bounds the CALLER rather than being a
 `getBucket`: the harm is spread across 100 unrelated people, so there is no
 shared resource to key on.
 
-**Typing is deliberately absent (#2809).** The realtime bus addresses a
-(tenant, person) or the whole deployment, and a DM has no tenant. A typing
-indicator is pure transport, so what cannot be delivered cannot be built. The
-same gap is what P8.9's "a block cuts the stream within 1s" will need.
+**Typing was deliberately absent until #2809 shipped the person channel.** The
+bus addressed a (tenant, person) or the whole deployment, and a DM has no
+tenant — a typing indicator is pure transport, so what cannot be delivered
+cannot be built. `person:<userId>` is now that address, and live DM delivery
+rides it. Typing itself is still unbuilt (it needs an ephemeral event the bus
+does not persist, which is a product decision rather than a transport one), and
+P8.9's "a block cuts the stream within 1s" now has the channel it needs.
 
 **The block predicates live in `person-blocks.ts`**, moved there from
 `exchange-messaging.ts` by this phase because that module owns `UserBlock`.
@@ -3566,6 +3569,115 @@ other party reads every column of the row.
   was encrypted and the failure read as a broken MANIFEST rather than a broken
   fixture. An at-rest assertion needs two clients: the extended one writes, a
   bare one reads the column back.
+
+### A shipped page nobody can FIND — `pages-are-reachable`
+
+`/admin/public-profile` shipped with P6: route resolving, flag on, robots
+allowing `/f/`, sitemap rendering, **linked from nowhere**. Measured
+2026-11-07: **zero `FarmBrand` rows in production**, so not one farm had ever
+started a brand, because the only path was typing a URL nobody had seen
+(#2844). #2782 framed P6's problem as adoption; it was construction, in the one
+place nothing looked.
+
+**Every P6 check asked whether the surface was REACHABLE, and it was. None
+asked whether a person could FIND it.** `tests/guards/pages-are-reachable.test.ts`
+now derives that from the filesystem: every `page.tsx` under `(app)` must be
+linked by a string literal in some OTHER directory under `src/`, or sit in
+`DELIBERATELY_UNLINKED` with a reason. It found four — two real defects
+(`/admin/public-profile`, and `/admin/usage`, which the platform operator could
+not reach either) and two deliberate bookmark-catching redirects
+(`/issues/[issueId]`, `/grain/payroll`).
+
+**Three things count as a mention and are NOT a way in.** The guard was useless
+twice before it worked, and each version passed its own tests:
+
+- **`src/lib/assistant/generated/page-routes.ts`** is a generated inventory of
+  EVERY route, so a naive scan finds every page linked and the guard can never
+  fail. It is also the one path that did work for `/admin/public-profile` —
+  asking the assistant to navigate — which is not how a farmer finds a screen.
+- **`src/lib/nav/canonical-parents.ts`** maps a page to its BREADCRUMB PARENT.
+  It says where you came from, not that anything takes you there.
+- **COMMENTS.** `/admin/public-profile` is named in two docblocks, and that was
+  enough to keep the guard green with the hub pill deleted. The first version's
+  own comment waved this away as "a known looseness… the alternative is
+  stripping comments from 2,389 files", and that reasoning WAS the bug. Blank
+  with the shared `blankNonCode` (`strings: false` — a link target IS a string
+  literal). **Nobody can click a docblock.**
+
+**Blank ONCE into a cache, not inside the per-route loop** — 78 routes × 2,387
+files took 53s; cached it is 3.8s. A slow guard is one somebody eventually
+moves out of the default population.
+
+**A loosening is INVISIBLE while every page is linked**, so proving a
+protection means pairing it with a real defect: remove the hub pill AND the
+protection, and watch the suite go green again. That is how all three
+exclusions above were shown to be load-bearing rather than decorative — and
+two further protections (the own-directory rule, the pattern's terminator) are
+recorded as defensive and UNPROVEN, because nothing in the repo depends on them
+yet.
+
+**When you add a screen, link it in the same diff.** `nav-vocabulary.md`
+governs what a surface is CALLED; this guard governs whether anything offers
+it.
+
+### The realtime bus has THREE addresses, and the third is disjoint by prefix
+
+`notif:<tenantId>:<userId>` per farm, the global `listings` tick, and — since
+#2809 — **`person:<userId>`**. A direct message has no tenant (P8.1's four DM
+tables carry none, because two people in a conversation may share no farm), so
+there was no channel to publish one on.
+
+**It is a third address, not a nullable tenant.** `channelFor(tenantId,
+userId)` has no tenant to be given, and a null through it yields
+`notif:null:<userId>` — a real channel silently shared by every tenantless
+publisher. Two distinct functions, for #1664's reason: `app.user_id` and
+`app.actor_user_id` look alike, are keyed differently, and reading the wrong
+one cost a silently unenforced block. `subscribeToPersonEvents` cannot be
+confused with `subscribeToNotifications`; `subscribe({ tenantId: null, … })`
+could.
+
+**`person:` carries NO `notif:` prefix, deliberately.** The first draft used
+`notif:person:<userId>`, which a tenant whose id is literally `person`
+collides with — and the only assertion available was "zero or one", vacuously
+true and therefore no test. Disjoint prefixes make the impostor receive
+NOTHING, which is an assertion that can fail.
+
+**Both pairs go through one `subscribeToChannel` / `publishToChannel`.** A
+second copy of the per-channel bookkeeping is how a leak gets fixed on one path
+and not the other, and P7.10's "10k connect/abort cycles leave 0 subscribers"
+is what that bookkeeping is for.
+
+**The FRAME carries a sentinel `tenantId`, which is the contract and not an
+exception.** `stream-frame.ts` requires that field on every kind, because a
+phone in several farms filters on it before refetching. `dm` carries
+`'person'` — not a farm, not displayable, **not a filter**: a client that
+filtered `dm` frames against its memberships would drop every one of them.
+
+**A third `StreamEventKind` was safe BY DESIGN.** `kind` is a FIELD rather than
+a named SSE `event:` line precisely so a later kind cannot be silently dropped
+by a client that registered no listener — an unknown value reaches the single
+`onmessage` handler and is visibly ignored, and iOS decodes it into an enum
+with an `unknown` case. That was decided in #2085 for this moment; `dm` is its
+first use. **A `dm` frame carries no `id:` line**, so it cannot move
+`Last-Event-ID` — which is also why it bypasses the replay buffer like
+`listing` does. The first draft called `flush()` in that handler, which would
+have drained the buffer early and sent replayed ids out of order.
+
+**The frame's `id` is the CONVERSATION id**, never the message id and never
+content: a client with a message id still has to work out where to put it, and
+`readConversation` is keyed by conversation. The body is encrypted at rest, and
+a channel carrying prose would push it through Redis and APNs.
+
+**Publish AFTER the transaction, directly — `afterCommit` does not work
+here.** `sendDirectMessage` uses a bare `prisma.$transaction`, which opens no
+`db-context` scope, so `afterCommit` fires `void runEffect(...)` un-awaited.
+#1619 verbatim.
+
+**A `!deduplicated` guard at the publish site is DEAD.** The only
+`deduplicated: true` is an early return before the transaction, so the branch
+is unreachable — found by a mutation that changed nothing when forced true. The
+behaviour is still worth a test, and that test now guards the ORDERING: moving
+the publish above the early return reddens it.
 
 ## Failing tests
 

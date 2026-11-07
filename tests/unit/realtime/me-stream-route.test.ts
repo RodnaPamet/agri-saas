@@ -28,6 +28,11 @@ const getUserCtxMock = jest.fn();
 const getLegacyCtxMock = jest.fn();
 const getTokenMock = jest.fn();
 const subscribeMock = jest.fn();
+// Typed explicitly. `jest.fn(() => () => {})` infers a ZERO-ARG signature, so
+// the spread in the mock factory below and `mock.calls[0][0]` in the
+// assertions are both type errors — which CI's Typecheck found and my own cold
+// run did not, because that run predated these cases.
+const subscribePersonMock = jest.fn<() => void, [unknown]>(() => () => {});
 const acquireMock = jest.fn();
 const replayMock = jest.fn();
 const verifySessionMock = jest.fn();
@@ -56,9 +61,20 @@ jest.mock('next-auth/jwt', () => ({
     __esModule: true,
     getToken: (...a: unknown[]) => getTokenMock(...a),
 }));
+// A PARTIAL mock, and the new export had to be added here deliberately: the
+// route gained `subscribeToPersonEvents` (#2809) and every case in this file
+// failed with "is not a function" until this line existed. That is the
+// barrel-mock trap — a partial mock cannot report that the module grew, so the
+// failure arrives as a TypeError in unrelated cases rather than as a missing
+// assertion.
 jest.mock('@/lib/notifications/notification-bus', () => ({
     __esModule: true,
     subscribeToNotifications: (...a: unknown[]) => subscribeMock(...a),
+    // One named parameter, not a spread: the mock is typed `[unknown]`, and a
+    // spread of `unknown[]` into it is not assignable — `unknown[]` has no
+    // length known to the compiler.
+    subscribeToPersonEvents: (sub: unknown) => subscribePersonMock(sub),
+    PERSON_SCOPE_SENTINEL: 'person',
 }));
 jest.mock('@/lib/realtime/stream-slots', () => ({
     __esModule: true,
@@ -532,6 +548,39 @@ describe('GET /api/me/stream', () => {
         expect(subscribeMock.mock.calls[0][0]).toMatchObject({
             tenantId: 't-1',
             userId: 'u-1',
+        });
+    });
+
+    describe('the PERSON channel — a third address (#2809)', () => {
+        it('subscribes ONCE, with no tenant term', async () => {
+            await GET(request());
+
+            // Once, not once per farm: a direct message has no tenant, so
+            // there is no (farm, person) pair to subscribe with. Publishing to
+            // every farm instead would deliver nothing to a person with no
+            // farm and three copies to a person in three.
+            expect(subscribePersonMock).toHaveBeenCalledTimes(1);
+            const arg = subscribePersonMock.mock.calls[0][0] as Record<string, unknown>;
+            // 'u-1' is the id the suite's default ctx mock resolves.
+            expect(arg.userId).toBe('u-1');
+            // No tenant term at all — not even the sentinel. The sentinel
+            // belongs in the FRAME, which the contract requires to carry
+            // `tenantId` on every kind; the SUBSCRIPTION is keyed on the
+            // person alone.
+            expect(arg).not.toHaveProperty('tenantId');
+        });
+
+        it('releases it on disconnect, alongside the farm subscriptions', async () => {
+            const release = jest.fn();
+            subscribePersonMock.mockReturnValueOnce(release);
+
+            const res = await GET(request());
+            await res.body?.cancel();
+
+            // The leak P7.10's "10k connect/abort cycles leave 0 subscribers"
+            // criterion exists to catch. A third subscription that nothing
+            // released would reintroduce it on the one channel per person.
+            expect(release).toHaveBeenCalled();
         });
     });
 

@@ -1460,6 +1460,8 @@
             "farmProfile": "Farm profile",
             "securityMfa": "Security & MFA",
             "riskAppetite": "Risk Appetite",
+            "usage": "Usage",
+            "publicProfile": "Public profile",
             "notifications": "Notifications",
             "ledgerIntegrity": "Ledger Integrity"
         },

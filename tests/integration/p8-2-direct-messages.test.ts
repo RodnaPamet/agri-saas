@@ -27,6 +27,8 @@
  * usecase, which chooses its own runner.
  */
 import { randomUUID } from 'crypto';
+
+import { subscribeToPersonEvents } from '@/lib/notifications/notification-bus';
 import { readFileSync } from 'node:fs';
 
 import prisma from '@/lib/prisma';
@@ -590,6 +592,139 @@ describeFn('P8.2 — direct messages (#2796)', () => {
                 readConversation(ctxFor(VISITOR), convId, { before: 'not-a-cursor' }),
             );
             expect(refusal.code).toBe('INVALID_CURSOR');
+        });
+    });
+
+    describe('live delivery to the other party (#2809)', () => {
+        /**
+         * The transport is unit-tested in `notification-bus.test.ts`. What is
+         * asserted HERE is the thing only a real send can show: WHO gets told,
+         * and when nobody does.
+         *
+         * The bus runs in-process in tests (no `REDIS_URL`), so a subscriber
+         * registered here receives what a publish delivers — which is exactly
+         * what makes this observable without a Redis.
+         */
+        /**
+         * OUTSIDER opens, OWNER accepts — the suite's established pair.
+         *
+         * `openConversationFromHandle` is IDEMPOTENT: pressing it twice
+         * returns the SAME conversation, which is what makes a REQUEST
+         * unrepeatable. So the second case to call this gets an
+         * already-ACCEPTED conversation, and answering it again throws
+         * «This request has already been answered» — which is what the first
+         * draft of this helper did, failing all four cases on a refusal that
+         * had nothing to do with delivery.
+         */
+        async function accepted(): Promise<string> {
+            const opened = await openConversationFromHandle(ctxFor(OUTSIDER), HANDLE);
+            if (opened.state === 'REQUEST') {
+                await respondToConversation(ctxFor(OWNER), opened.conversationId, 'ACCEPT');
+            }
+            return opened.conversationId;
+        }
+
+        it('tells the RECIPIENT, carrying the conversation id and nothing else', async () => {
+            const conv = await accepted();
+            const toOwner: string[] = [];
+            const release = subscribeToPersonEvents({
+                userId: OWNER,
+                send: (e) => toOwner.push(e.id),
+            });
+
+            try {
+                await sendDirectMessage(ctxFor(OUTSIDER), {
+                    conversationId: conv,
+                    body: 'Имате ли свободен комбайн?',
+                });
+            } finally {
+                release();
+            }
+
+            // The conversation id, not the message id: a client receiving a
+            // message id would still have to work out which conversation to
+            // put it in, and `readConversation` is keyed by conversation.
+            expect(toOwner).toEqual([conv]);
+        });
+
+        it('does NOT tell the sender', async () => {
+            const conv = await accepted();
+            const toSender: string[] = [];
+            const release = subscribeToPersonEvents({
+                userId: OUTSIDER,
+                send: (e) => toSender.push(e.id),
+            });
+
+            try {
+                await sendDirectMessage(ctxFor(OUTSIDER), { conversationId: conv, body: 'здравейте' });
+            } finally {
+                release();
+            }
+
+            // The sender already has the message in the response. Telling them
+            // would make their own send look like an incoming one.
+            expect(toSender).toEqual([]);
+        });
+
+        it('tells NOBODY on a deduplicated re-send', async () => {
+            const conv = await accepted();
+            const key = `idem-${randomUUID()}`;
+            await sendDirectMessage(ctxFor(OUTSIDER), {
+                conversationId: conv,
+                body: 'веднъж',
+                idempotencyKey: key,
+            });
+
+            const toOwner: string[] = [];
+            const release = subscribeToPersonEvents({
+                userId: OWNER,
+                send: (e) => toOwner.push(e.id),
+            });
+            try {
+                const again = await sendDirectMessage(ctxFor(OUTSIDER), {
+                    conversationId: conv,
+                    body: 'веднъж',
+                    idempotencyKey: key,
+                });
+                expect(again.deduplicated).toBe(true);
+            } finally {
+                release();
+            }
+
+            // The message already existed, so the recipient was already told.
+            // Re-announcing it would make a retried request — which the outbox
+            // replays under the same key — look like a second message
+            // arriving.
+            //
+            // What makes this hold is the EARLY RETURN in `sendDirectMessage`:
+            // the replay path returns before the transaction, so it never
+            // reaches the publish at all. A `!deduplicated` guard at the
+            // publish site would be unreachable, which a mutation proved —
+            // forcing it true changed nothing here. This case is therefore a
+            // regression test on that ORDERING: it fails if the publish moves
+            // above the early return, or if a second dedup path appears
+            // inside the transaction.
+            expect(toOwner).toEqual([]);
+        });
+
+        it('tells a third person nothing', async () => {
+            const conv = await accepted();
+            const toThirdParty: string[] = [];
+            const release = subscribeToPersonEvents({
+                userId: VISITOR,
+                send: (e) => toThirdParty.push(e.id),
+            });
+
+            try {
+                await sendDirectMessage(ctxFor(OUTSIDER), { conversationId: conv, body: 'лично' });
+            } finally {
+                release();
+            }
+
+            // The positive control for this zero is the first case above: the
+            // same send DOES reach Boris. Without it, a bus bound to nothing
+            // would satisfy this assertion.
+            expect(toThirdParty).toEqual([]);
         });
     });
 
