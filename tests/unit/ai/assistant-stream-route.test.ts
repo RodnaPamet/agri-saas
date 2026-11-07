@@ -15,6 +15,21 @@ import { NextRequest } from 'next/server';
 const completeWithRouting = jest.fn<Promise<{ text: string }>, unknown[]>();
 const assertFeatureEnabled = jest.fn<Promise<undefined>, unknown[]>(async () => undefined);
 
+/**
+ * Mocked for #2803's reason: `runToolLoop` awaits `recordStageTiming`, which
+ * INSERTS a row, and this suite's tenant exists in no database — so the write
+ * was a real round trip to Postgres that failed an FK and was swallowed,
+ * because the store is best-effort by design. Silent, and it put database
+ * latency inside a unit suite.
+ *
+ * The tool-loop suite was the one #2803 named; this is the same defect in a
+ * second place, found by counting FK-failure log lines per suite across
+ * tests/unit/ai rather than trusting the issue's population.
+ */
+jest.mock('@/app-layer/ai/assistant/stage-timing-store', () => ({
+    recordStageTiming: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@/app-layer/ai/routing', () => ({
     completeWithRouting: (...a: unknown[]) => completeWithRouting(...a),
 }));
