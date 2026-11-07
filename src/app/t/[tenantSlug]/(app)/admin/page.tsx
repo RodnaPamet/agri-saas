@@ -1,9 +1,12 @@
 import { getTranslations } from 'next-intl/server';
-import { Shield, CreditCard, KeyRound, ShieldCheck, ShieldPlus, Users, UserCog, CloudCog, Plug, Palette, Bell, ScrollText, ToggleLeft, Tractor } from 'lucide-react';
+import { Shield, CreditCard, KeyRound, ShieldCheck, ShieldPlus, Users, UserCog, CloudCog, Plug, Palette, Bell, ScrollText, ToggleLeft, Tractor, Globe } from 'lucide-react';
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getTenantCtx } from '@/app-layer/context';
+import { isPlatformTenant } from '@/lib/auth/platform-support';
+import { isFeatureEnabled } from '@/lib/feature-flags';
 import { LanguageSetting } from './LanguageSetting';
 
 export const dynamic = 'force-dynamic';
@@ -16,6 +19,20 @@ export const dynamic = 'force-dynamic';
  * (`/admin/audit-log`) reachable via the pill next to
  * Notifications. Policy templates were unused chrome and were
  * dropped entirely.
+ *
+ * ## This page is the ONLY way into most admin screens
+ *
+ * Which is a responsibility, not a description. `/admin/public-profile`
+ * shipped in P6 — flag on, route resolving, robots and sitemap ready — and was
+ * linked from NOWHERE: not here, not in `canonical-parents.ts`, not in the
+ * sidebar. Measured 2026-11-07: zero `FarmBrand` rows in production, so not
+ * one farm had ever started a brand, because the only path to the screen was
+ * typing a URL nobody had seen (#2844).
+ *
+ * Every P6 check asked whether the surface was REACHABLE, and it was. None
+ * asked whether a person could FIND it. `pages-are-reachable` now derives that
+ * question from the filesystem, so a new screen under `(app)` is covered the
+ * moment it exists.
  */
 export default async function AdminPage({
     params,
@@ -25,6 +42,29 @@ export default async function AdminPage({
     const { tenantSlug } = await params;
 
     const t = await getTranslations('admin');
+
+    // Resolved on the SERVER. There is no client-side flags hook in this
+    // codebase and adding one would be a second source of truth for a kill
+    // switch — the same reason `admin/public-profile/page.tsx` resolves it
+    // here rather than passing the key down.
+    //
+    // Absent rather than disabled when the flag is off: a disabled control
+    // advertises a feature that does not exist, which is the opposite of a
+    // dark launch. The page itself answers `notFound()` on the same flag, so
+    // the two halves agree.
+    const ctx = await getTenantCtx({ tenantSlug });
+    const publicProfile = await isFeatureEnabled('social.public-profile', ctx.userId);
+
+    // The platform-support usage console. Same conditions the page itself
+    // applies, so the tile and the screen agree — and gated SERVER-side, so
+    // another tenant is told nothing: that page answers `notFound()` rather
+    // than a denial precisely because a denial "would confirm there is a
+    // surface worth going to look for", and a tile that rendered for everyone
+    // would do exactly that.
+    //
+    // It was found by `pages-are-reachable`, not by design review: the
+    // platform operator had no discoverable path to their own console either.
+    const usageConsole = isPlatformTenant(tenantSlug) && ctx.permissions.canAdmin;
 
     const tenantHref = (path: string) => `/t/${tenantSlug}${path}`;
 
@@ -141,6 +181,26 @@ export default async function AdminPage({
                     <Tractor className="w-3.5 h-3.5" />
                     {t('hub.farmProfile')}
                 </Link>
+                {publicProfile ? (
+                    <Link
+                        href={tenantHref('/admin/public-profile')}
+                        className={buttonVariants({ variant: 'secondary' })}
+                        id="public-profile-pill-btn"
+                    >
+                        <Globe className="w-3.5 h-3.5" />
+                        {t('hub.publicProfile')}
+                    </Link>
+                ) : null}
+                {usageConsole ? (
+                    <Link
+                        href={tenantHref('/admin/usage')}
+                        className={buttonVariants({ variant: 'secondary' })}
+                        id="usage-pill-btn"
+                    >
+                        <ScrollText className="w-3.5 h-3.5" />
+                        {t('hub.usage')}
+                    </Link>
+                ) : null}
                 <Link
                     href={tenantHref('/admin/security')}
                     className={buttonVariants({ variant: 'secondary' })}
