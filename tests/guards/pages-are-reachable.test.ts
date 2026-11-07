@@ -105,6 +105,29 @@ function findPages(): PageRoute[] {
  *
  * Static: the whole path, then a closing quote or backtick. Dynamic: the
  * static prefix, then `${` or a quote.
+ *
+ * ## The escaping has no effect on today's routes, which is why it has a test
+ *
+ * `Selector teeth` reported the inner `escape` as SURVIVED, and it was right:
+ * no route in this repo contains a regex metacharacter. Dynamic segments are
+ * the only source of `[` and `]`, and they are sliced off before the escape
+ * runs — so `escape(route) === route` for all 78 of them and gutting it to
+ * `return ''` broke no assertion.
+ *
+ * Deleting it is the wrong fix, the same way it was wrong for
+ * `ui-hooks-barrel`'s derivation: a future page directory with a `.` or a `(`
+ * in its name would silently produce a pattern that matches the wrong thing,
+ * and a guard that fails toward "linked" is the one direction this must never
+ * fail in. So it stays, and the case below gives it teeth with an input the
+ * repo does not yet have.
+ *
+ * ## Do not run `selector-teeth.mjs` on this file locally
+ *
+ * It times out past ten minutes on a loaded machine and leaves `escape`
+ * mutated in the working tree — twice, while this guard was being written. CI's
+ * selector-teeth shard completes and is the signal to read; locally, the cost
+ * is a file you then have to notice is wrong. See
+ * [[mutation-runner-makes-the-tree-unsafe-to-stage]].
  */
 function linkPattern(route: string): RegExp {
     const firstDynamic = route.indexOf('/[');
@@ -222,6 +245,26 @@ describe('every tenant page is reachable from inside the product (#2844)', () =>
                     'indexable, and had ZERO users because no screen offered it (#2844).',
             );
         }
+    });
+
+    it('escapes a regex metacharacter in a route path', () => {
+        // The CONTROL for `escape`, which no real route exercises. Without it
+        // the helper can be gutted to `return ''` and nothing fails — then the
+        // static branch becomes /['"`]/, every file contains a quote, and
+        // every page reads as linked. A guard that fails toward "linked" is
+        // useless in exactly the direction that matters.
+        const literal = linkPattern('/reports/q1.summary');
+        expect(literal.source).toContain('q1\\.summary');
+        // Proof it is not merely present but DISCRIMINATING: the escaped dot
+        // must not match an arbitrary character in that position.
+        expect(literal.test(`'/reports/q1.summary'`)).toBe(true);
+        expect(literal.test(`'/reports/q1Xsummary'`)).toBe(false);
+
+        // And the dynamic branch escapes its prefix too.
+        const dynamic = linkPattern('/reports/q1.summary/[id]');
+        expect(dynamic.source).toContain('q1\\.summary');
+        expect(dynamic.test('`/reports/q1.summary/${x}`')).toBe(true);
+        expect(dynamic.test('`/reports/q1Xsummary/${x}`')).toBe(false);
     });
 
     it('records no stale exemption', () => {
