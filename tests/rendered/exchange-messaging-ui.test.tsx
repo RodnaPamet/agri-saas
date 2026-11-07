@@ -102,7 +102,7 @@ describe('inbox', () => {
                   lastMessageAt: '2026-09-19T08:00:00.000Z', closed: false, hasUnread: false },
             ],
         });
-        render(<ThreadsClient />);
+        render(<ThreadsClient exchange directMessages={false} />);
 
         expect(screen.getByText('Wheat')).toBeInTheDocument();
         expect(screen.getByText('Barley')).toBeInTheDocument();
@@ -130,7 +130,7 @@ describe('inbox', () => {
                   lastMessageAt: '2026-09-19T08:00:00.000Z', closed: false, hasUnread: false },
             ],
         });
-        render(<ThreadsClient />);
+        render(<ThreadsClient exchange directMessages={false} />);
 
         expect(screen.getByText(/Plovdiv/)).toBeInTheDocument();
         expect(screen.getByText(/Dobrich/)).toBeInTheDocument();
@@ -143,7 +143,7 @@ describe('inbox', () => {
 
     it('polls — an inbox that never refreshes is not an inbox', () => {
         swrReturns({ threads: [] });
-        render(<ThreadsClient />);
+        render(<ThreadsClient exchange directMessages={false} />);
         expect(swr).toHaveBeenCalledWith('/exchange/threads', { refreshInterval: 30_000 });
         expect(screen.getByText('inboxEmpty')).toBeInTheDocument();
     });

@@ -167,6 +167,13 @@ describe("EntityDetailLayout adoption — PR-4", () => {
       // (big touch targets, queue-and-sync). Intentionally NOT an
       // EntityDetailLayout chrome page; it renders the operator panel.
       "src/app/t/[tenantSlug]/(app)/field/[taskId]/page.tsx",
+      // A chat conversation (#2798). Full-height message surface with a
+      // composer pinned to the bottom and a keyboard inset — deliberately NOT
+      // EntityDetailLayout chrome, which is back-link + title + meta +
+      // actions + tabs over a scrolling body. Same call as `field/[taskId]`
+      // above and for the same reason: the shell would fight the layout
+      // rather than carry it.
+      "src/app/t/[tenantSlug]/(app)/exchange/threads/dm/[conversationId]/page.tsx",
     ]);
 
     function walk(dir: string, out: string[] = []): string[] {
