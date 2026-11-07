@@ -17,6 +17,41 @@ jest.mock('@/app-layer/usecases/task', () => ({
     listTasks: (...a: unknown[]) => listTasks(...a),
 }));
 
+/**
+ * The stage-timing store, mocked — #2803.
+ *
+ * `runToolLoop` awaits `recordStageTiming` at the end of every turn (#2791),
+ * and awaiting it is correct: an un-awaited rejection is an unhandled
+ * rejection that kills a jest worker. Unmocked, each simulated turn in this
+ * file therefore attempted a REAL insert against the per-worker test database
+ * and failed on `AssistantStageTiming_tenantId_fkey`, because this suite's
+ * `tenantId` is `'t1'` and no such tenant exists.
+ *
+ * The store is best-effort by design — it logs `stage_timing_write_failed` and
+ * swallows — so nothing failed and the write was invisible. What it cost was
+ * TIME: 32ms, 61ms and 541ms on three consecutive turns, measured from the
+ * swallowed log lines. This file's assertions are about time — "two tools in
+ * one round OVERLAP, the round is not the sum of its tools", "the reported
+ * stages add up to the total" — so a 541ms excursion against budgets measured
+ * in tens of milliseconds inverts them. It flaked roughly one run in two under
+ * full-root parallelism and passed alone and under `--verbose`, which is the
+ * tell for timing rather than logic.
+ *
+ * Nothing is lost by mocking it here: the store's own behaviour is covered by
+ * `assistant-stage-timing-is-best-effort.test.ts` (positive control, does not
+ * throw, REPORTS the failure, non-Error rejection) and by
+ * `assistant-stage-timing-rls.test.ts` against a real database.
+ *
+ * The general rule this is an instance of: a UNIT suite that reaches Postgres
+ * has borrowed the machine's timing. A new awaited best-effort write needs a
+ * mock at every unit call site, and this one slipped through precisely because
+ * its failure path is silent.
+ */
+const recordStageTiming = jest.fn<Promise<void>, unknown[]>().mockResolvedValue(undefined);
+jest.mock('@/app-layer/ai/assistant/stage-timing-store', () => ({
+    recordStageTiming: (...a: unknown[]) => recordStageTiming(...a),
+}));
+
 import {
     emitHalt,
     MAX_TOOL_CALLS,
@@ -361,6 +396,37 @@ describe('the assistant tool loop (#2578)', () => {
         expect(h.types()).toEqual(['halt']);
         expect(h.events()[0]).toMatchObject({ code: 'ASSISTANT_TOOL_BUDGET' });
         expect(String(h.events()[0].message)).toMatch(/[Ѐ-ӿ]/);
+    });
+});
+
+describe('the stage-timing store is MOCKED, and that is asserted (#2803)', () => {
+    it('is reached — so a mock that failed to apply cannot pass as a clean run', async () => {
+        // The control the mock needs, and it RUNS the loop rather than reading
+        // call history left by an earlier test: `beforeEach` above calls
+        // `jest.clearAllMocks()`, so a bare `toHaveBeenCalled()` in its own
+        // test sees nothing. (That is how the first version of this control
+        // failed, which is itself the point — a control has to be able to
+        // express the failing case AND the passing one.)
+        //
+        // Why a control at all: `recordStageTiming` is best-effort — it logs
+        // and swallows — so a mis-pathed `jest.mock` would leave the REAL
+        // store running, the real FK violation happening on
+        // `AssistantStageTiming_tenantId_fkey`, the real 32–541ms being paid,
+        // and every assertion in this file still passing, exactly as before
+        // #2803. "The mock did not apply" is silent whenever the real thing
+        // fails quietly.
+        //
+        // It asserts the double was reached and the tenant it was handed. NOT
+        // the payload: that belongs to
+        // `assistant-stage-timing-is-best-effort.test.ts`, and duplicating it
+        // here would couple this file to a shape it does not care about.
+        jest.clearAllMocks();
+        const h = harness();
+        const complete = jest.fn().mockResolvedValue({ text: 'Готово.' });
+        await runToolLoop({ ctx, complete, send: h.send }, []);
+
+        expect(recordStageTiming).toHaveBeenCalledTimes(1);
+        expect(recordStageTiming.mock.calls[0]?.[0]).toBe('t1');
     });
 });
 
