@@ -132,3 +132,11 @@ export {
     type UsePullToRefreshOptions,
     type UsePullToRefreshResult,
 } from "./use-pull-to-refresh";
+
+// ─── Long press (coarse-pointer secondary action) ─────────────────────
+export {
+    useLongPress,
+    LONG_PRESS_MS,
+    type UseLongPressOptions,
+    type UseLongPressResult,
+} from "./use-long-press";

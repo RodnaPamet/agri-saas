@@ -235,6 +235,94 @@ describe("VirtualizedList — variable size mode", () => {
     });
 });
 
+describe("VirtualizedList — dynamic row height (#2797)", () => {
+    it("renders with dynamicRowHeight and NO itemSize", () => {
+        // The mode a chat timeline needs: bubble height depends on how text
+        // wraps, which is not a deterministic function of the index. The
+        // `renderItem` contract is unchanged — spread `style`, nothing else —
+        // because `List` measures the row elements it already owns through
+        // `observeRowElements`.
+        render(
+            <VirtualizedList
+                itemCount={4}
+                dynamicRowHeight={{ defaultRowHeight: 40 }}
+                height={400}
+                width={400}
+                renderItem={({ index, style }) => (
+                    <div style={style} data-testid={`dyn-${index}`}>
+                        Row {index}
+                    </div>
+                )}
+            />,
+        );
+        expect(screen.getByTestId("dyn-0")).toBeInTheDocument();
+        expect(screen.getByTestId("dyn-3")).toBeInTheDocument();
+        // Positioned from the pre-measurement estimate under jsdom, which has
+        // no layout engine — so the assertion is that rows ARE positioned,
+        // not that they are measured. Measurement is a ResizeObserver path and
+        // belongs to a runtime test, the same caveat this file's header
+        // already records for the auto-fill branch.
+        expect(screen.getByTestId("dyn-1").style.transform).toBe("translateY(40px)");
+    });
+
+    it("still windows a large list in dynamic mode", () => {
+        render(
+            <VirtualizedList
+                itemCount={1000}
+                dynamicRowHeight={{ defaultRowHeight: 40 }}
+                height={200}
+                width={400}
+                renderItem={({ index, style }) => (
+                    <div style={style} data-testid={`dyn-big-${index}`}>
+                        Row {index}
+                    </div>
+                )}
+            />,
+        );
+        const rendered = screen.getAllByTestId(/^dyn-big-/);
+        expect(rendered.length).toBeGreaterThan(0);
+        expect(rendered.length).toBeLessThan(30);
+    });
+
+    it("THROWS when neither itemSize nor dynamicRowHeight is given", () => {
+        // Loud rather than defaulted. A fallback height renders a list that
+        // looks plausible and positions every row wrongly, which is precisely
+        // the failure this primitive exists to prevent — and it would be
+        // invisible in jsdom, where nothing measures.
+        const quiet = jest.spyOn(console, "error").mockImplementation(() => {});
+        expect(() =>
+            render(
+                <VirtualizedList
+                    itemCount={3}
+                    height={200}
+                    width={400}
+                    renderItem={({ index, style }) => <div style={style}>{index}</div>}
+                />,
+            ),
+        ).toThrow(/itemSize.*dynamicRowHeight|dynamicRowHeight.*itemSize/);
+        quiet.mockRestore();
+    });
+
+    it("a FIXED-size list is unaffected — the control", () => {
+        // The extension must be additive: `Combobox` passes a number and must
+        // keep behaving exactly as before.
+        render(
+            <VirtualizedList
+                itemCount={3}
+                itemSize={30}
+                height={200}
+                width={400}
+                renderItem={({ index, style }) => (
+                    <div style={style} data-testid={`fixed-${index}`}>
+                        Row {index}
+                    </div>
+                )}
+            />,
+        );
+        expect(screen.getByTestId("fixed-1").style.transform).toBe("translateY(30px)");
+    });
+});
+
 describe("VirtualizedList — overscan", () => {
     it("renders extra rows above/below the visible window per overscanCount", () => {
         // Viewport 60px / itemSize 30px → 2 visible rows. Overscan 5
