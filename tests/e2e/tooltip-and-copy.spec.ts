@@ -37,6 +37,8 @@ import {
     safeGoto,
     waitForHydration,
     readNavCounters,
+    instrumentRowGestures,
+    instrumentUrlChanges,
 } from './e2e-utils';
 
 const ADMIN_USER = { email: 'admin@acme.com', password: 'password123' };
@@ -199,6 +201,28 @@ test.describe('Epic 56 — tooltip + copy primitives', () => {
         // cumulative `SPA navigations` total cannot distinguish this click
         // navigating from the three navigations the test already made.
         const navBefore = await readNavCounters(page);
+        // The two instruments this spec was MISSING, added because its own
+        // failure capture said so in as many words (#1862, run 42378010288,
+        // 2026-11-07):
+        //
+        //     url changes : NOT INSTRUMENTED (call `await instrumentUrlChanges(page)` …)
+        //     row gestures: (not instrumented — call instrumentRowGestures …)
+        //
+        // That capture read `NAV DELTA: spa 3 -> 3 (+0)` — ZERO client
+        // navigations committed — which is the shape #1700 showed and the
+        // OPPOSITE of #1076's committed-then-rolled-back. With +0, the open
+        // question is whether the click was DISPATCHED at all, and on what:
+        // `instrumentRowGestures` records the event and the element, which
+        // separates "the Link was a no-op" from "the click landed and the
+        // router did nothing".
+        //
+        // `instrumentUrlChanges` is here too even though +0 implies nothing to
+        // record, and the empty list is the point: it distinguishes "no URL
+        // change was ever attempted" from "one was attempted and reverted".
+        // Those are different faults and the counters alone cannot tell them
+        // apart.
+        await instrumentRowGestures(page);
+        await instrumentUrlChanges(page);
         await firstTask.click();
 
         // `expectRouteTransition` rather than a bare `page.waitForURL` plus a
