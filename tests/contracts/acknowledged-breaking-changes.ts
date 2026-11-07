@@ -90,6 +90,31 @@ export interface AcknowledgedBreakingChange {
 export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [
     {
         kind: 'type-changed',
+        schema: 'GET /api/social/inbox -> 400',
+        property: 'error',
+        contractVersion: 3,
+        pr: 2822,
+        date: '2026-11-07',
+        why:
+            'A SPEC CORRECTION, not a contract change \u2014 which is the opposite of the '
+            + 'spatial-import entry below and the reason this one is cheap. The route has '
+            + 'always answered the `ErrorResponse` envelope: `parseLimitParam` and the inbox '
+            + 'usecase both raise through `codedBadRequest`, which produces '
+            + '`error: { code, message }`. P8.5 (#2819) declared it with `rawErrorResponses` '
+            + '\u2014 the bare `{ error: string }` form reserved for the native auth family '
+            + 'and the cadastre-import poll \u2014 so the DOCUMENT was wrong and no response '
+            + 'changes with this diff. A client that read actual responses sees nothing; a '
+            + 'client generated from the old spec was already wrong about this route.\n\n'
+            + 'Caught by this gate on the THIRD DM pull request, not the first: adding a 400 '
+            + 'to an operation that previously had none replaced `commonErrorResponses`\u2019 '
+            + 'envelope with the raw shape, which is a diff the gate can see. On #2810 and '
+            + '#2819 the override replaced an envelope with an envelope-shaped hole and '
+            + 'nothing compared the two. The whole module moves to `codedErrorResponses` in '
+            + 'this diff, so the lie is corrected everywhere rather than at the one path the '
+            + 'gate happened to notice.',
+    },
+    {
+        kind: 'type-changed',
         schema: 'POST /api/t/{tenantSlug}/locations/{id}/spatial-import -> 400',
         contractVersion: 3,
         // 1633, not 1630. Corrected in #1612's change: this entry was added in
