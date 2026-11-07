@@ -28,7 +28,11 @@ const getUserCtxMock = jest.fn();
 const getLegacyCtxMock = jest.fn();
 const getTokenMock = jest.fn();
 const subscribeMock = jest.fn();
-const subscribePersonMock = jest.fn(() => () => {});
+// Typed explicitly. `jest.fn(() => () => {})` infers a ZERO-ARG signature, so
+// the spread in the mock factory below and `mock.calls[0][0]` in the
+// assertions are both type errors — which CI's Typecheck found and my own cold
+// run did not, because that run predated these cases.
+const subscribePersonMock = jest.fn<() => void, [unknown]>(() => () => {});
 const acquireMock = jest.fn();
 const replayMock = jest.fn();
 const verifySessionMock = jest.fn();
@@ -66,7 +70,10 @@ jest.mock('next-auth/jwt', () => ({
 jest.mock('@/lib/notifications/notification-bus', () => ({
     __esModule: true,
     subscribeToNotifications: (...a: unknown[]) => subscribeMock(...a),
-    subscribeToPersonEvents: (...a: unknown[]) => subscribePersonMock(...a),
+    // One named parameter, not a spread: the mock is typed `[unknown]`, and a
+    // spread of `unknown[]` into it is not assignable — `unknown[]` has no
+    // length known to the compiler.
+    subscribeToPersonEvents: (sub: unknown) => subscribePersonMock(sub),
     PERSON_SCOPE_SENTINEL: 'person',
 }));
 jest.mock('@/lib/realtime/stream-slots', () => ({
