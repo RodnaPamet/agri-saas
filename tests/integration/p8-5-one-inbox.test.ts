@@ -328,6 +328,98 @@ describeFn('P8.5 — one inbox (#2799)', () => {
         });
     });
 
+    describe('the `sources` filter — a DISCLOSURE lever, not an optimisation (P8.4)', () => {
+        it('returns only DM rows for ["dm"], and the exchange row is ABSENT', async () => {
+            const dm = await makeDm(ME, PEER, t(5));
+            const ex = await makeExchangeThread({
+                sellerUserId: PEER, sellerTenantId: TENANT_B,
+                inquirerUserId: ME, inquirerTenantId: TENANT, at: t(4),
+            });
+
+            const both = await listInbox(ctxFor(ME));
+            // The positive control: unfiltered, BOTH are there. Without it an
+            // empty exchange half would satisfy the assertion below for the
+            // wrong reason — the fixture never having created one.
+            expect(both.items.map((i) => i.id)).toContain(dm);
+            expect(both.items.map((i) => i.id)).toContain(ex);
+
+            const dmOnly = await listInbox(ctxFor(ME), { sources: ['dm'] });
+            expect(dmOnly.items.map((i) => i.id)).toContain(dm);
+            expect(dmOnly.items.map((i) => i.id)).not.toContain(ex);
+            expect(dmOnly.items.every((i) => i.source === 'dm')).toBe(true);
+        });
+
+        it('returns only exchange rows for ["exchange"]', async () => {
+            const dm = await makeDm(ME, PEER, t(5));
+            const ex = await makeExchangeThread({
+                sellerUserId: PEER, sellerTenantId: TENANT_B,
+                inquirerUserId: ME, inquirerTenantId: TENANT, at: t(4),
+            });
+
+            const exOnly = await listInbox(ctxFor(ME), { sources: ['exchange'] });
+            expect(exOnly.items.map((i) => i.id)).toContain(ex);
+            expect(exOnly.items.map((i) => i.id)).not.toContain(dm);
+            expect(exOnly.items.every((i) => i.source === 'exchange')).toBe(true);
+        });
+
+        it('is the same as both when every source is named, and when none is', async () => {
+            await makeDm(ME, PEER, t(5));
+            await makeExchangeThread({
+                sellerUserId: PEER, sellerTenantId: TENANT_B,
+                inquirerUserId: ME, inquirerTenantId: TENANT, at: t(4),
+            });
+
+            const omitted = await listInbox(ctxFor(ME));
+            const named = await listInbox(ctxFor(ME), { sources: ['dm', 'exchange'] });
+            // P8.5's shape is unchanged for every existing caller — the filter
+            // is additive, and naming both must not reorder the merge either.
+            expect(named.items.map((i) => `${i.source}:${i.id}`)).toEqual(
+                omitted.items.map((i) => `${i.source}:${i.id}`),
+            );
+        });
+
+        it('still pages correctly with one half excluded', async () => {
+            // The cursor encodes `(lastMessageAt, id)` over the MERGE. With a
+            // half excluded the merge is narrower, so a cursor that assumed
+            // both halves would skip or repeat rows.
+            const ids = [
+                await makeDm(ME, PEER, t(9)),
+                await makeDm(ME, PEER, t(8)),
+                await makeDm(ME, PEER, t(7)),
+            ];
+            await makeExchangeThread({
+                sellerUserId: PEER, sellerTenantId: TENANT_B,
+                inquirerUserId: ME, inquirerTenantId: TENANT, at: t(6),
+            });
+
+            // Paged to EXHAUSTION rather than two pages deep. This describe
+            // block shares a database with its siblings and nothing cleans up
+            // between cases, so the rows are not only mine — the first draft
+            // asserted "every id seen is one of mine" and failed on a DM a
+            // neighbouring test had created.
+            const seen: string[] = [];
+            let cursor: string | null = null;
+            for (let page = 0; page < 20; page += 1) {
+                const got: Awaited<ReturnType<typeof listInbox>> = await listInbox(ctxFor(ME), {
+                    sources: ['dm'],
+                    limit: 2,
+                    cursor,
+                });
+                // The filter must hold on EVERY page, not just the first —
+                // a cursor is where a merge over two sources goes wrong.
+                expect(got.items.every((i) => i.source === 'dm')).toBe(true);
+                seen.push(...got.items.map((i) => i.id));
+                if (!got.hasMore || !got.nextCursor) break;
+                cursor = got.nextCursor;
+            }
+
+            // No repeats, and every DM this case created was reached — two
+            // properties a single-page assertion cannot separate.
+            expect(new Set(seen).size).toBe(seen.length);
+            for (const id of ids) expect(seen).toContain(id);
+        });
+    });
+
     describe('the preview is DECRYPTED, which is why this is not raw SQL', () => {
         it('reads as plaintext, not as an envelope', async () => {
             const id = await makeDm(ME, PEER, t(1));

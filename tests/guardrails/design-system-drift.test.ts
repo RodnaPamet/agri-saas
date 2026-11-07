@@ -20,6 +20,12 @@ const COMPONENTS_DIR = path.resolve(__dirname, '../../src/components');
  * These pages must NOT regress to raw color utilities.
  */
 const MIGRATED_PAGES = [
+    // P8.4 (#2798) — the DM conversation surface. Promoted on arrival:
+    // semantic tokens throughout, no raw colour utilities and no legacy
+    // btn/badge/glass-card classes, which the three assertions below check
+    // rather than take on trust.
+    'exchange/threads/dm/[conversationId]/page.tsx',
+    'exchange/threads/dm/[conversationId]/DmConversationClient.tsx',
     // #493 the superuser usage console — design-system-native from birth:
     // DataTable / EmptyState / Heading / PageBreadcrumbs and semantic tokens
     // only, no raw colours and no legacy btn/badge/glass-card.

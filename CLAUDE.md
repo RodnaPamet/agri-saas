@@ -3417,6 +3417,85 @@ code**: ask what the assertion would say if the selector returned nothing, and
 if the answer is "still pass", the teeth are missing whether or not the
 function is reachable.
 
+### P8.4 — direct messages live on the EXCHANGE messaging screen, and the gate is a disjunction
+
+Owner ruling 2026-11-07, two parts: **«Съобщения» stays with the exchange**
+("no need of a duplicate, only exchange stays") and **DMs go INTO that
+surface**. So there is **no `/messages` route and no new bottom-bar tab**, and
+`/t/{slug}/exchange/threads` is the one inbox (#2798). A DM conversation is
+`threads/dm/{conversationId}` — a STATIC segment beside the existing
+`[threadId]`, which Next resolves first, so neither route inspects the other's
+ids.
+
+**#2798's premise was WRONG and that is why the ruling was needed.** It says
+P8.5's merge dissolves the name collision. Measured: it does not.
+`listInbox` is person-scoped and deliberately does not reproduce
+`exchange_thread_audience`, so the tenant-scoped exchange inbox was always
+going to persist alongside it. Both surfaces exist; only one may carry the
+name.
+
+**THE PAGE GATE IS A DISJUNCTION, NOT `requireModule`.** It used to be
+`requireModule(ctx, 'EXCHANGE')`, which is right for exchange threads — the old
+docblock's reason was "a thread only exists because two farms are negotiating on
+the marketplace" — and **wrong for a direct message, which depends on no
+module**. Left alone, a farm that switched the marketplace off would lose its
+direct messages, and because the gate REDIRECTS the symptom is "my messages
+vanished" rather than an error. Measured on production first: **3 live tenants,
+0 with customised `TenantModuleSettings`, so 0 with EXCHANGE off** — it costs
+nobody today, which is why it would have shipped. Each half now gates on its
+own condition (`isModuleAvailable(EXCHANGE)` for threads, the
+`social.direct-messages` flag for DMs) and the original redirect fires only
+when NEITHER is available. Do not "simplify" it back, and do not relax the
+module gate wholesale instead — that opens exchange threads to a tenant whose
+plan excludes the marketplace.
+
+**`listInbox`'s exchange half must NOT back this screen.** Using it is the
+tidy-looking regression: it admits the caller only as the inquirer or the
+listing's `sellerUserId`, while `exchange_thread_audience` also admits either
+farm's OWNER/ADMIN — so an owner would silently STOP seeing a colleague's
+negotiation, on a change meant to add DMs. The screen keeps its own
+tenant-scoped query and takes `?source=dm` from the social inbox.
+
+**`?source` is a DISCLOSURE lever, so an unrecognised value is a 400.** A
+fallback to "both" would add person-scoped exchange rows beside the
+tenant-scoped ones the screen already fetched — the same thread twice, from two
+audiences that disagree about who may see it. `tests/unit/social-inbox-source-param.test.ts`
+asserts `listInbox` was NOT CALLED on a refusal, not merely the status.
+
+**A DM list is identical under every farm.** The route is `/t/{tenantSlug}/…`
+and a DM has no tenant, so a member of three farms sees the same conversations
+under all three. Raised before the ruling and chosen anyway — do not try to
+scope it, because the DM policies key on `app.user_id`, which
+`runInTenantContext` does not set (#1664).
+
+**The read cursor is FROZEN on the first payload.** The screen marks itself read
+on arrival, so a divider derived from live data vanishes under the reader a
+moment after they get there.
+
+**Two mutations survived that suite's first green run**, both on the properties
+its docblock argues hardest for, and the shapes recur:
+
+- *"marks read once per conversation"* — the rerender passed the SAME `data`
+  object, so `useEffect`'s `[data, path]` deps never changed and React did not
+  re-run it. **A rerender with an unchanged dependency does not exercise an
+  effect's guard.** A real poll parses new JSON; the fixture must too.
+- *"the divider is frozen"* — the suite never asserted the divider, and
+  `lastReadAt` never moved, so recomputing gave the same answer. It now moves
+  the cursor past the unread message between renders, with a control asserting
+  a caught-up reader gets NO divider — otherwise "always on" satisfies the
+  freeze.
+
+**Reporting a DM is NOT offered (#2833).** `captureSnapshot` resolves
+`MESSAGE` against `prisma.exchangeMessage`, so a notice about a direct message
+files with `SUBJECT_NOT_FOUND` evidence — and the response discloses nothing
+about the subject by design, so the reporter cannot tell that from success.
+`BlockPersonButton` ships; `ReportButton` waits for a resolver that can see
+`DirectMessage`.
+
+**«Заявки» is spoken for.** Owner kept `exchange.nav.myInterests` as «Моите
+заявки», so a DM request bucket cannot take that noun. The row carries a
+phrase («Чака Вашия отговор») instead, and a named bucket needs a ruling.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

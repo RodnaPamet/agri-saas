@@ -362,7 +362,16 @@ const ROOT = path.resolve(__dirname, '../..');
 // grows at the TOP, and the long-press gesture driven under a coarse
 // `matchMedia` — a branch jsdom's always-false stub leaves dead, which is how
 // the #449 tooltip touch regression shipped green.
-const RENDERED_TEST_FLOOR = 275;
+//
+// 275 -> 276 (#2798): `p8-4-dms-in-exchange-messaging.test.tsx` — the merged
+// inbox and the DM conversation, 20 cases. Two are banked for a reason beyond
+// the count: the DM half is asserted to be fetched with `?source=dm` (without
+// it the screen renders some exchange threads twice, from two audiences that
+// disagree about who may see a colleague's negotiation), and the read cursor
+// is asserted FROZEN across a poll whose `lastReadAt` has moved past the
+// unread message — with a control that a caught-up reader gets no divider, so
+// "always on" cannot satisfy the freeze.
+const RENDERED_TEST_FLOOR = 276;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre
