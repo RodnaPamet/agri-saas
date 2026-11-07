@@ -1382,7 +1382,19 @@ Three things it does not do, stated so they are not assumed:
   prints **`ABSENT`** as its own state — distinct from a failure and from
   pending, which is the distinction the whole problem turns on. It also refuses
   a STALE head, because a green rollup on a base that is behind main is the
-  right answer to a question you did not mean to ask. Reach for it before
+  right answer to a question you did not mean to ask.
+
+  **That freshness line means "this HEAD contains every commit on main", and it
+  did not until #2812.** The first implementation compared `baseRefOid` with
+  the base branch's tip — and `baseRefOid` IS the base branch's tip, measured
+  2026-11-07 on #2810: identical while the branch's merge-base was 27 commits
+  behind main (six of them files that PR also changed) and identical again
+  after `merge:main` made it current. So it compared main's tip with main's
+  tip, could essentially never report STALE, and printed `FRESH (main @
+  589f1ea35)` — a sentence that reads like a measurement of your branch and was
+  a measurement of main. It now asks `compare/<headRefOid>...<base>` for
+  `ahead_by`, and a non-numeric answer is UNKNOWN rather than zero. If you are
+  about to trust a FRESH line: it is only worth trusting since #2812. Reach for it before
   hand-rolling a `gh pr view --json statusCheckRollup` filter: two agents
   rebuilt a worse version of it six times between them, every time with this
   rule written down somewhere neither of them was reading (#2777, #2778).

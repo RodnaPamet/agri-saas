@@ -110,21 +110,44 @@ echo "#$PR  $(jq -r '"\(.mergeable)/\(.mergeStateStatus)"' <<<"$ROLLUP")"
 # nothing in `mergeStateStatus` carries this and it has to be asked separately.
 # Non-fatal on a failed lookup — UNKNOWN is printed as its own state, because
 # "could not ask" must never render as "fresh".
+# It asks how far the PR's OWN HEAD is behind the base, and that is the whole
+# content of #2812.
+#
+# The first version compared `baseRefOid` with the base branch's tip. Measured
+# 2026-11-07 on #2810: `baseRefOid` IS the base branch's tip — it was
+# `589f1ea35` both while the branch's merge-base was `155939fc7` (27 files
+# behind, six of them files the PR also changed) and after `merge:main` made
+# the branch current. So the comparison was main's tip against main's tip, and
+# the only window in which it could differ was main advancing between two API
+# calls milliseconds apart. It printed `FRESH (main @ 589f1ea35)`, which reads
+# like a measurement of the branch and was a measurement of main.
+#
+# `ahead_by` on `compare/<head>...<base>` is the number of base commits the
+# head does NOT contain: 0 for a current branch, non-zero for a stale one.
+# `headRefOid` is already in the payload above, so this costs no extra round
+# trip — it replaces the `git/ref` call rather than adding to it.
+#
+# Non-fatal on a failed lookup — UNKNOWN is printed as its own state, because
+# "could not ask" must never render as "fresh". And `ahead_by` of `0` is the
+# only value that reads as fresh: a non-numeric answer is UNKNOWN, not zero,
+# since `[ "$BEHIND" -eq 0 ]` on an empty string is a bash error and silence
+# would otherwise pass for currency.
 stale=0
 BASE_REF=$(jq -r '.baseRefName // empty' <<<"$ROLLUP")
-BASE_OID=$(jq -r '.baseRefOid // empty' <<<"$ROLLUP")
-if [ -z "$BASE_REF" ] || [ -z "$BASE_OID" ]; then
-    printf '  %-38s %s\n' "base freshness" "UNKNOWN — PR has no base ref in the payload"
+HEAD_OID=$(jq -r '.headRefOid // empty' <<<"$ROLLUP")
+if [ -z "$BASE_REF" ] || [ -z "$HEAD_OID" ]; then
+    printf '  %-38s %s\n' "base freshness" "UNKNOWN — PR has no head/base ref in the payload"
 else
-    TIP=$(gh api "repos/$REPO/git/ref/heads/$BASE_REF" -q '.object.sha' 2>/dev/null) || TIP=""
-    if [ -z "$TIP" ]; then
-        printf '  %-38s %s\n' "base freshness" "UNKNOWN — could not read $BASE_REF's tip"
-    elif [ "$TIP" = "$BASE_OID" ]; then
-        printf '  %-38s %s\n' "base freshness" "FRESH ($BASE_REF @ ${BASE_OID:0:9})"
-    else
-        BEHIND=$(gh api "repos/$REPO/compare/$BASE_OID...$TIP" -q '.ahead_by' 2>/dev/null) || BEHIND="?"
+    BEHIND=$(gh api "repos/$REPO/compare/$HEAD_OID...$BASE_REF" -q '.ahead_by' 2>/dev/null) || BEHIND=""
+    if ! [[ "$BEHIND" =~ ^[0-9]+$ ]]; then
         printf '  %-38s %s\n' "base freshness" \
-            "STALE — base ${BASE_OID:0:9}, $BASE_REF now ${TIP:0:9} (behind by $BEHIND)"
+            "UNKNOWN — could not compare ${HEAD_OID:0:9} against $BASE_REF"
+    elif [ "$BEHIND" -eq 0 ]; then
+        printf '  %-38s %s\n' "base freshness" \
+            "FRESH (head ${HEAD_OID:0:9} contains all of $BASE_REF)"
+    else
+        printf '  %-38s %s\n' "base freshness" \
+            "STALE — head ${HEAD_OID:0:9} is behind $BASE_REF by $BEHIND commit(s)"
         stale=1
     fi
 fi
