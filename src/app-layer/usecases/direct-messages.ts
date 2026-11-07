@@ -85,6 +85,7 @@ import { encodeCursor, decodeCursor, keysetBefore } from '@/lib/exchange/cursor'
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import prisma from '@/lib/prisma';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
+import { publishPersonEvent } from '@/lib/notifications/notification-bus';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
@@ -331,7 +332,7 @@ export async function sendDirectMessage(
         }
     }
 
-    return prisma.$transaction(async (tx) => {
+    const sent = await prisma.$transaction(async (tx) => {
         const conversation = await tx.conversation.findUnique({
             where: { id: input.conversationId },
             select: {
@@ -385,6 +386,74 @@ export async function sendDirectMessage(
 
         return { messageId: message.id, createdAt: message.createdAt, deduplicated: false };
     });
+
+    // ── live delivery to the OTHER party — #2809 ──
+    //
+    // AFTER the transaction resolves, and directly rather than through
+    // `afterCommit`. That helper only defers when a `db-context` scope is
+    // open, and this function uses a bare `prisma.$transaction`, which opens
+    // none — so `afterCommit` here would fire `void runEffect(...)`
+    // un-awaited, which is #1619 verbatim.
+    //
+    // Published to the RECIPIENTS, never to the sender: the sender already has
+    // the message in the response. Addressed per PERSON because a direct
+    // conversation has no tenant.
+    //
+    // The frame carries the CONVERSATION id and nothing else — a handle to
+    // refetch under the client's own authorisation. Never the body: it is
+    // encrypted at rest, and a channel carrying a farmer's prose would put it
+    // through Redis and, via push, through APNs.
+    //
+    // Best-effort by construction, like every other publish on this bus: the
+    // row is committed by the time this runs, a lost event degrades to the
+    // client's REST refetch, and `publishPersonEvent` returns void so this
+    // cannot become a new unhandled-rejection path.
+    //
+    // A DEDUPLICATED send publishes nothing, and the EARLY RETURN above is
+    // what achieves that — not a check here. There is exactly one
+    // `deduplicated: true` in this function and it returns before the
+    // transaction, so `sent.deduplicated` is always false by this line.
+    //
+    // The first draft guarded on it anyway. `Selector teeth`'s equivalent for
+    // behaviour — a mutation — showed the guard was dead: forcing it true
+    // changed nothing, because the branch is unreachable. A condition that
+    // cannot be false reads as a safeguard and is one more thing to keep
+    // true.
+    //
+    // The TEST for it stays, because the property is worth pinning even
+    // though this line no longer claims it: it fails if somebody moves this
+    // publish above the early return, or adds a second dedup path inside the
+    // transaction.
+    for (const userId of await otherParticipantIds(input.conversationId, ctx.userId)) {
+        publishPersonEvent(userId, { id: input.conversationId });
+    }
+
+    return sent;
+}
+
+/**
+ * Everybody in the conversation except the caller.
+ *
+ * PRIVILEGED, and it has to be: `conversation_participant_select` admits the
+ * caller's OWN row only — forced by P8.1's recursion rule, since a policy
+ * admitting "every participant of a conversation I am in" must ask that table
+ * whether I am in it. So a user-context read here returns exactly one row, the
+ * caller's, and the counterparty would never be told anything.
+ *
+ * It returns IDS ONLY, which is what keeps that privilege narrow: nothing here
+ * reads a message, a body or a profile.
+ */
+async function otherParticipantIds(conversationId: string, selfUserId: string): Promise<string[]> {
+    const rows = await prisma.conversationParticipant.findMany({
+        where: { conversationId, userId: { not: selfUserId }, leftAt: null },
+        select: { userId: true },
+        // A direct conversation has two participants. The bound is here
+        // because an unbounded `findMany` is an unbounded `findMany` whatever
+        // today's data says, and D2's budget scans repositories only — this is
+        // a usecase, which is the gap #2820 was filed for.
+        take: 10,
+    });
+    return rows.map((r) => r.userId);
 }
 
 /**
