@@ -3567,6 +3567,56 @@ other party reads every column of the row.
   fixture. An at-rest assertion needs two clients: the extended one writes, a
   bare one reads the column back.
 
+### A shipped page nobody can FIND — `pages-are-reachable`
+
+`/admin/public-profile` shipped with P6: route resolving, flag on, robots
+allowing `/f/`, sitemap rendering, **linked from nowhere**. Measured
+2026-11-07: **zero `FarmBrand` rows in production**, so not one farm had ever
+started a brand, because the only path was typing a URL nobody had seen
+(#2844). #2782 framed P6's problem as adoption; it was construction, in the one
+place nothing looked.
+
+**Every P6 check asked whether the surface was REACHABLE, and it was. None
+asked whether a person could FIND it.** `tests/guards/pages-are-reachable.test.ts`
+now derives that from the filesystem: every `page.tsx` under `(app)` must be
+linked by a string literal in some OTHER directory under `src/`, or sit in
+`DELIBERATELY_UNLINKED` with a reason. It found four — two real defects
+(`/admin/public-profile`, and `/admin/usage`, which the platform operator could
+not reach either) and two deliberate bookmark-catching redirects
+(`/issues/[issueId]`, `/grain/payroll`).
+
+**Three things count as a mention and are NOT a way in.** The guard was useless
+twice before it worked, and each version passed its own tests:
+
+- **`src/lib/assistant/generated/page-routes.ts`** is a generated inventory of
+  EVERY route, so a naive scan finds every page linked and the guard can never
+  fail. It is also the one path that did work for `/admin/public-profile` —
+  asking the assistant to navigate — which is not how a farmer finds a screen.
+- **`src/lib/nav/canonical-parents.ts`** maps a page to its BREADCRUMB PARENT.
+  It says where you came from, not that anything takes you there.
+- **COMMENTS.** `/admin/public-profile` is named in two docblocks, and that was
+  enough to keep the guard green with the hub pill deleted. The first version's
+  own comment waved this away as "a known looseness… the alternative is
+  stripping comments from 2,389 files", and that reasoning WAS the bug. Blank
+  with the shared `blankNonCode` (`strings: false` — a link target IS a string
+  literal). **Nobody can click a docblock.**
+
+**Blank ONCE into a cache, not inside the per-route loop** — 78 routes × 2,387
+files took 53s; cached it is 3.8s. A slow guard is one somebody eventually
+moves out of the default population.
+
+**A loosening is INVISIBLE while every page is linked**, so proving a
+protection means pairing it with a real defect: remove the hub pill AND the
+protection, and watch the suite go green again. That is how all three
+exclusions above were shown to be load-bearing rather than decorative — and
+two further protections (the own-directory rule, the pattern's terminator) are
+recorded as defensive and UNPROVEN, because nothing in the repo depends on them
+yet.
+
+**When you add a screen, link it in the same diff.** `nav-vocabulary.md`
+governs what a surface is CALLED; this guard governs whether anything offers
+it.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

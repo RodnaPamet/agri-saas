@@ -1460,6 +1460,8 @@
             "farmProfile": "Профил на стопанството",
             "securityMfa": "Сигурност и MFA",
             "riskAppetite": "Склонност към риск",
+            "usage": "Използване",
+            "publicProfile": "Публичен профил",
             "notifications": "Известия",
             "ledgerIntegrity": "Цялост на регистъра"
         },
