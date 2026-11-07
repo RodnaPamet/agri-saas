@@ -98,7 +98,53 @@ const ConversationSchema = z.object({
     messages: z.array(MessageSchema),
 });
 
+const InboxItemSchema = z.object({
+    source: z.enum(['dm', 'exchange']).openapi({
+        description: 'Which kind of conversation this row is. A client needs it to choose a destination — a DM opens at /api/social/conversations/{id}, an exchange thread at its own tenant route — and the two carry different fields below.',
+    }),
+    id: z.string(),
+    lastMessageAt: z.string().datetime({ offset: true }),
+    lastReadAt: z.string().datetime({ offset: true }).nullable().openapi({
+        description: "The CALLER's own read cursor, never the counterparty's. NULL means never opened, which is not the same as caught up at the first message.",
+    }),
+    unread: z.boolean(),
+    awaitingMyAnswer: z.boolean().nullable().openapi({
+        description: 'TRUE only when this is a DM request the caller has not answered. FALSE on a request the caller themselves opened — waiting for an answer is not owing one, and must not light the same badge. NULL on an exchange row, because the exchange has no request state and `false` there would read as "already answered".',
+    }),
+    title: z.string().nullable().openapi({
+        description: 'A row preview: the newest message for a DM, or commodity and region for an exchange thread. NULL when the newest message was deleted, so a client renders an absence rather than an empty string.',
+    }),
+});
+
+const InboxPageSchema = z.object({
+    items: z.array(InboxItemSchema),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+});
+
 export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
+    op(registry, {
+        method: 'get',
+        path: '/api/social/inbox',
+        operationId: 'listInbox',
+        summary: 'One inbox — direct messages and Борса deals',
+        description:
+            'Every conversation the caller is a PARTY to, newest activity first, across every farm. Person-scoped: it does not include a colleague\'s exchange thread even where the caller is an owner of that farm — the tenant-scoped exchange inbox is unchanged and remains the place for that. Ordering is a single total order over both sources, so `nextCursor` pages the merge rather than either half.',
+        tags: TAGS,
+        query: z.object({
+            limit: z.string().optional().openapi({ description: 'Positive integer, clamped to 20.' }),
+            cursor: z.string().optional().openapi({ description: 'Opaque. From a previous response\'s nextCursor.' }),
+        }),
+        extraResponses: rawErrorResponses({
+            400: 'INVALID_LIMIT (not a positive integer) or INVALID_CURSOR (unreadable). A broken cursor is refused rather than treated as a first page, because silently restarting a scroll looks like duplicated rows.',
+        }),
+        success: {
+            status: 200,
+            description: 'One page of the merged inbox.',
+            schema: InboxPageSchema,
+        },
+    });
+
     op(registry, {
         method: 'post',
         path: '/api/social/conversations',
