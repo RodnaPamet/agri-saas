@@ -672,6 +672,33 @@ export async function getIndexMeansForPolygon(
     return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
 }
 
+/**
+ * Which SCENE-SELECTION algorithm `adaptiveS2Collection` implements — #2837.
+ *
+ * Bump this whenever a change alters WHICH passes enter the collection: the
+ * tile-level cloud threshold, the masked classes, the window widening, the
+ * collection id. Stored readings record the version that produced them, and
+ * `getParcelRiskHistory` treats a parcel's coverage watermark as ABSENT when
+ * it does not match — so a bump re-searches every parcel automatically.
+ *
+ * That is the point of the constant rather than a migration that nulls the
+ * watermark: a selection change that admits MORE passes leaves every existing
+ * watermark claiming dates were searched when they were searched under rules
+ * that rejected the pass. Nothing would ever go back for them, the chart would
+ * silently keep the old answer, and no test would fail. Remembering to write
+ * the UPDATE is exactly the step that gets forgotten.
+ *
+ * It does NOT cover a change to the INDEX arithmetic (`bandFn`) or the
+ * reducer: those change a stored pass's VALUE, not whether the pass exists,
+ * and the recent-tail refresh plus the upsert handle a value change for the
+ * dates anybody is looking at. A wholesale re-read of history for a changed
+ * band formula is a backfill job, not a watermark reset.
+ *
+ * 1 — the original: `CLOUDY_PIXEL_PERCENTAGE < 60` at tile level, SCL classes
+ *     3/8/9/10/11 masked, scale 20.
+ */
+export const SCENE_SELECTION_VERSION = 1;
+
 /** One Sentinel-2 pass, reduced over a parcel. */
 export interface IndexPass {
     /** `YYYY-MM-DD` of the acquisition. */
