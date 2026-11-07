@@ -156,6 +156,13 @@ const NOT_A_CREDENTIAL: ReadonlyArray<[reason: string, columns: readonly string[
         ['idempotencyKey', 'dedupeKey'],
     ],
     [
+        // A SEPARATE entry rather than joining `pathKey` / `storageKey` above:
+        // that reason reads "a stable slug chosen by the tenant", and this is
+        // neither — it is a generated locator for private content.
+        'A generated object locator that authenticates NOTHING. The route serving these bytes authorises by conversation PARTICIPATION, not by possession of the key, so a key in an audit row grants a reader no access it did not already have. It is excused rather than redacted because an operator tracing "which photo did this message carry" has nothing else to go on — and because redacting it would not withhold much: the audit row names the message, and the key is derived from it.',
+        ['attachmentKey'],
+    ],
+    [
         'A domain or regulatory code a person reads off a document.',
         ['lotCode', 'measureCode', 'regionCode', 'reasonCode'],
     ],
