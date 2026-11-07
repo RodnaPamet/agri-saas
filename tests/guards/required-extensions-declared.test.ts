@@ -58,11 +58,23 @@ describe('the required-extensions declaration is usable', () => {
         }
     });
 
-    it('carries postgis_tiger_geocoder, the one that went missing', () => {
-        // Pinned by NAME because #2652 is the reason this file exists, and a
-        // future tidy-up that drops it must be a deliberate act with #2662's
-        // production change behind it — not a silent edit.
-        expect(names).toContain('postgis_tiger_geocoder');
+    it('carries the extensions the product itself uses', () => {
+        // This test used to pin `postgis_tiger_geocoder` by name, and it did
+        // its job: removing that line FAILED this guard, which is what forced
+        // the removal to be a deliberate act rather than a silent edit. It was
+        // then dropped from production under #2662 (owner-authorised
+        // 2026-11-07), so the pin is re-aimed rather than deleted.
+        //
+        // These two are the ones the product genuinely depends on — PostGIS
+        // for every geometry column and pgvector for the knowledge base — so
+        // dropping either from the declaration would make the drill stop
+        // asserting the thing that actually matters.
+        expect(names).toContain('postgis');
+        expect(names).toContain('vector');
+        // And the file must still record what left, so the next reader does
+        // not rediscover #2652 from scratch.
+        expect(text).toMatch(/postgis_tiger_geocoder/);
+        expect(text).toMatch(/#2662/);
     });
 
     it('the drill reads this file and dies when it cannot', () => {
