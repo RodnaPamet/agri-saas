@@ -357,18 +357,15 @@ export function withRateLimit<Args extends unknown[]>(
  * snapshot is captured at first import and wouldn't pick up per-test
  * flips.
  */
-export function isRateLimitBypassed(): boolean {
-    if (process.env.RATE_LIMIT_ENABLED === '0') return true;
-    if (process.env.AUTH_TEST_MODE === '1') return true;
-    if (process.env.NEXT_TEST_MODE === '1') return true;
-    if (
-        process.env.NODE_ENV === 'test' &&
-        process.env.RATE_LIMIT_ENABLED !== '1'
-    ) {
-        return true;
-    }
-    return false;
-}
+export { isRateLimitBypassed } from './rate-limit-bypass';
+//
+// MOVED, not deleted. The body is identical and now lives in
+// `./rate-limit-bypass`, because this module imports `next/server` and a
+// four-line env predicate was dragging that into the BullMQ worker bundle
+// via `aiRateLimit`. The worker crash-looped for ~12-17 hours on
+// ERR_MODULE_NOT_FOUND; see that file for the chain and the measurements.
+// Re-exported here so the ten route files and three rate-limit modules that
+// import it from this module are untouched.
 
 // ─── Re-exports ──────────────────────────────────────────────────────
 //

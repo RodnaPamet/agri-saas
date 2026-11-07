@@ -25,7 +25,12 @@ import { env } from '@/env';
 import type { RequestContext } from '@/app-layer/types';
 import { rateLimited } from '@/lib/errors/types';
 import { checkRateLimit } from '@/lib/security/rate-limit';
-import { isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
+// From `rate-limit-bypass`, NOT `rate-limit-middleware`: this module is
+// reachable from `scripts/worker.ts` (via ai/routing <- usecases/rag <-
+// jobs/classify-photo), and the middleware imports `next/server`, which the
+// worker bundle cannot resolve. That edge crash-looped the worker tier for
+// ~12-17 hours — see rate-limit-bypass.ts for the chain.
+import { isRateLimitBypassed } from '@/lib/security/rate-limit-bypass';
 import { logger } from '@/lib/observability/logger';
 
 /** Default per-(tenant,user) AI completions per minute. */
