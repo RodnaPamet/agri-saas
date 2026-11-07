@@ -45,9 +45,16 @@ jest.mock('@/app-layer/repositories/LocationRepository', () => ({
 
 const mockIsGeeConfigured = jest.fn<boolean, []>();
 const mockGetIndexMeansForPolygon = jest.fn();
+const mockGetIndexMeansPerPass = jest.fn();
 jest.mock('@/lib/agro/earth-engine', () => ({
     isGeeConfigured: () => mockIsGeeConfigured(),
     getIndexMeansForPolygon: (...a: unknown[]) => mockGetIndexMeansForPolygon(...a),
+    // Mocked although nothing in THIS file calls it. A partial barrel mock
+    // makes "untestable" indistinguishable from "untested": the member is
+    // `undefined`, so a future test here that reached `getParcelRiskHistory`
+    // would die on "is not a function" before any assertion ran, and the
+    // failure would read as a bug in the usecase.
+    getIndexMeansPerPass: (...a: unknown[]) => mockGetIndexMeansPerPass(...a),
 }));
 
 const redisGet = jest.fn<Promise<string | null>, [string]>();

@@ -14366,6 +14366,84 @@ exports[`API contract — per-schema snapshots schema: ParcelRisk 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ParcelRiskHistory 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcelId": {
+      "type": "string"
+    },
+    "days": {
+      "type": "integer"
+    },
+    "configured": {
+      "type": "boolean"
+    },
+    "passes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/ParcelRiskPass"
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "parcelId",
+    "days",
+    "configured",
+    "passes",
+    "truncated",
+    "generatedAt"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ParcelRiskPass 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string"
+    },
+    "ndvi": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "ndmi": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "vegetation": {
+      "$ref": "#/components/schemas/RiskLevel"
+    },
+    "moisture": {
+      "$ref": "#/components/schemas/RiskLevel"
+    },
+    "overall": {
+      "$ref": "#/components/schemas/RiskLevel"
+    }
+  },
+  "required": [
+    "date",
+    "ndvi",
+    "ndmi",
+    "vegetation",
+    "moisture",
+    "overall"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: ParcelSplitRequest 1`] = `
 "{
   "type": "object",

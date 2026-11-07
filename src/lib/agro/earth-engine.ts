@@ -506,6 +506,142 @@ export async function getIndexMeansForPolygon(
     return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
 }
 
+/** One Sentinel-2 pass, reduced over a parcel. */
+export interface IndexPass {
+    /** `YYYY-MM-DD` of the acquisition. */
+    date: string;
+    /** Field-mean NDVI for this pass, or null when the parcel was fully masked. */
+    ndvi: number | null;
+    ndmi: number | null;
+}
+
+/**
+ * Field-mean NDVI/NDMI for EACH cloud-masked pass in the window — #2837.
+ *
+ * ## One round trip, deliberately
+ *
+ * The `reduceRegion` happens INSIDE `map`, so it runs server-side per image
+ * and the whole series comes back from a single `evaluate`. The obvious
+ * alternative — ask `getIndexMeansForPolygon` once per pass — is ~12 round
+ * trips for a 60-day window and the same answer. Earth Engine calls are
+ * seconds each and metered, which is why `analyzeBlockRisk` already bounds
+ * itself to 24 parcels.
+ *
+ * ## Why this is not `getIndexMeansForPolygon` with a loop
+ *
+ * That function reduces a `median()` COMPOSITE of the window to one number.
+ * The composite is precisely what destroys the per-pass detail the owner asked
+ * for, so this cannot be built on it: a trend needs the images kept apart.
+ *
+ * The masking is identical (the same SCL classes, the same `adaptiveS2Collection`,
+ * the same scale 20), so a pass's mean and the composite's mean are comparable
+ * rather than two different measurements that happen to share a name.
+ *
+ * ## Nulls are real answers
+ *
+ * A pass can be in the collection and still be fully masked over one parcel —
+ * cloud over this field, clear over the next. Such a pass returns `null`, not
+ * 0: a chart plotting 0 for "we could not see" draws a cliff that never
+ * happened.
+ */
+export async function getIndexMeansPerPass(
+    geometry: unknown,
+    win: NdviWindow,
+    cap: number,
+): Promise<IndexPass[]> {
+    await initEarthEngine();
+
+    const region = new (ee.Geometry as unknown as { new (g: unknown): EeImage })(geometry);
+    const collection = adaptiveS2Collection(region, win);
+
+    const masked = collection.map((img: EeImage) => {
+        const scl = img.select('SCL');
+        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
+        return img.updateMask(keep);
+    });
+
+    const ndviBand = bandFn('ndvi');
+    const ndmiBand = bandFn('ndmi');
+
+    const withStats = masked.map((img: EeImage) => {
+        const both = (ndviBand(img) as EeImage).addBands(ndmiBand(img)).clip(region);
+        const stats = (
+            both as unknown as { reduceRegion: (a: Record<string, unknown>) => EeImage }
+        ).reduceRegion({
+            reducer: ee.Reducer.mean(),
+            geometry: region,
+            scale: 20,
+            maxPixels: 1e9,
+            bestEffort: true,
+        });
+        const imgX = img as unknown as {
+            set: (k: string, v: unknown) => EeImage;
+            date: () => { format: (f: string) => unknown };
+        };
+        const statsX = stats as unknown as { get: (k: string) => unknown };
+        return imgX
+            .set('passDate', imgX.date().format('YYYY-MM-dd'))
+            .set('passNdvi', statsX.get('NDVI'))
+            .set('passNdmi', statsX.get('NDMI'));
+    });
+
+    // `reduceColumns` over the three properties returns ONE list, so the whole
+    // series is a single `evaluate`.
+    const listed = (
+        withStats as unknown as {
+            reduceColumns: (r: unknown, cols: string[]) => {
+                get: (k: string) => {
+                    evaluate: (cb: (v: unknown, err?: unknown) => void) => void;
+                };
+            };
+        }
+    )
+        .reduceColumns(
+            (ee.Reducer as unknown as { toList: (n: number) => unknown }).toList(3),
+            ['passDate', 'passNdvi', 'passNdmi'],
+        )
+        .get('list');
+
+    const rows = await withEeDeadline<unknown[]>(
+        'EE per-pass reduceColumns',
+        EE_CALL_TIMEOUT_MS,
+        (resolve, reject) => {
+            listed.evaluate((value: unknown, err?: unknown) => {
+                if (err) {
+                    reject(new Error(`EE per-pass reduceColumns failed: ${String(err)}`));
+                    return;
+                }
+                resolve(Array.isArray(value) ? value : []);
+            });
+        },
+    );
+
+    const round3 = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
+
+    const passes: IndexPass[] = [];
+    // Sentinel-2 images the same ground from adjacent orbits on consecutive
+    // days, and two rows sharing a date would draw two points at one x on the
+    // chart. Deduped by date here rather than in EE: it is a handful of rows,
+    // and doing it server-side would cost a second grouping for nothing. The
+    // FIRST non-null reading for a date wins, so a clear pass is not discarded
+    // in favour of a masked one taken hours later.
+    const byDate = new Map<string, IndexPass>();
+    for (const row of rows) {
+        if (!Array.isArray(row) || typeof row[0] !== 'string') continue;
+        const date = row[0];
+        const pass: IndexPass = { date, ndvi: round3(row[1]), ndmi: round3(row[2]) };
+        const seen = byDate.get(date);
+        if (!seen || (seen.ndvi === null && pass.ndvi !== null)) byDate.set(date, pass);
+    }
+    for (const pass of byDate.values()) passes.push(pass);
+
+    // Oldest first: a trend reads left to right, and the caller should not have
+    // to sort to draw one.
+    passes.sort((a, b) => a.date.localeCompare(b.date));
+    return passes.slice(-cap);
+}
+
 // Per-index named exports — one per `/agro/<index>-tiles` route. Each is a
 // thin wrapper over `getIndexTileUrl` so a route (and its unit test) can
 // import + mock a single stable function.

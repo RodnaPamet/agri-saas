@@ -31,7 +31,7 @@ import { codedNotFound } from '@/lib/errors/types';
 import { getRedis } from '@/lib/redis';
 import { LocationRepository } from '../repositories/LocationRepository';
 import { ParcelRepository } from '../repositories/ParcelRepository';
-import { isGeeConfigured, getIndexMeansForPolygon } from '@/lib/agro/earth-engine';
+import { isGeeConfigured, getIndexMeansForPolygon, getIndexMeansPerPass } from '@/lib/agro/earth-engine';
 
 export type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown';
 
@@ -197,6 +197,171 @@ export const MAX_BATCH_PARCELS = 24;
 
 /** Parcels analysed concurrently. Bounded so a cold block is not 24 simultaneous EE calls. */
 const BATCH_CONCURRENCY = 4;
+
+/** One satellite pass, carrying the SAME reading shape as the card. */
+export interface ParcelRiskPass {
+    date: string;
+    ndvi: number | null;
+    ndmi: number | null;
+    vegetation: RiskLevel;
+    moisture: RiskLevel;
+    overall: RiskLevel;
+}
+
+export interface ParcelRiskHistoryResult {
+    parcelId: string;
+    days: number;
+    configured: boolean;
+    passes: ParcelRiskPass[];
+    /** The pass cap was hit — there is more history than this. */
+    truncated: boolean;
+    generatedAt: string;
+}
+
+/** Bound on the window a caller may ask for. */
+export const HISTORY_MIN_DAYS = 7;
+/**
+ * What a client gets when it names no window.
+ *
+ * 14, matching the phone's own default rather than the widest useful window
+ * (owner, relayed by `agrent-ios` 2026-11-07: "info based on a time period,
+ * like the past 14 days"). The two defaults agreeing is the point — a server
+ * default of 60 and a client default of 14 means the one caller that omits
+ * the parameter gets a different answer from every caller that sends it, and
+ * `days` is in the cache key, so it would also be its own cache entry that
+ * nothing else ever reads.
+ *
+ * Clients should still send `days` explicitly: the phone offers 14 / 30 / 60,
+ * and a default is a fallback, not a contract.
+ */
+export const HISTORY_DEFAULT_DAYS = 14;
+export const HISTORY_MAX_DAYS = 120;
+/**
+ * Pass cap. Sentinel-2 revisits every ~5 days and two orbits can both see a
+ * field, so 120 days is roughly 24-48 images; 60 leaves headroom without
+ * letting a pathological collection return an unbounded list.
+ */
+const HISTORY_PASS_CAP = 60;
+
+/**
+ * The per-pass NDVI/NDMI series for one parcel — #2837.
+ *
+ * ## Why a separate read rather than a field on `analyzeParcelRisk`
+ *
+ * Different cache lifetime. Today's reading changes when the DAY turns; a
+ * 60-day series changes when a PASS arrives. Folding them together would make
+ * every caller that wants only today's level pay for the series, and the
+ * existing response is fetched for the parcel card on every screen open.
+ *
+ * ## The levels come from the card's own functions
+ *
+ * `vegetationLevel` / `moistureLevel` / `worst`, not copies of their
+ * thresholds. `agrent-ios` caught the first draft of this inventing a second
+ * vocabulary (`ndviLevel: "GOOD"`, `"ADEQUATE"`) — words that exist nowhere in
+ * this codebase — and the fix is not just the right spelling but the shared
+ * function: two call sites cannot drift when somebody retunes `>= 0.6`.
+ *
+ * A pass is therefore structurally the card's reading minus the parcel
+ * identity, so the phone decodes one `RiskLevel` on both screens and no chart
+ * point can be coloured by a different scale from the card above it.
+ *
+ * ## Degrades, never throws, on an Earth Engine failure
+ *
+ * An empty `passes` with `configured: true` is the same shape as a parcel the
+ * satellite genuinely has not seen, which is deliberate: the caller's job is
+ * to draw what exists, and a 500 here would take out the «Риск» section over
+ * a chart. `configured: false` is the distinguishable case — Earth Engine is
+ * not set up, so there is nothing to wait for.
+ */
+export async function getParcelRiskHistory(
+    ctx: RequestContext,
+    parcelId: string,
+    days: number,
+    opts: { now?: Date } = {},
+): Promise<ParcelRiskHistoryResult> {
+    assertCanRead(ctx);
+
+    // A non-finite `days` (NaN from a bad query string that the route let
+    // through) must not become the cache key, so it resolves to the default
+    // before clamping rather than after.
+    const asked = Number.isFinite(days) ? Math.floor(days) : HISTORY_DEFAULT_DAYS;
+    const requested = Math.min(HISTORY_MAX_DAYS, Math.max(HISTORY_MIN_DAYS, asked));
+    const now = opts.now ?? new Date();
+    const date = ymd(now);
+    // `days` is IN the key: a 30-day and a 60-day request are different
+    // answers and must not share an entry.
+    const cacheKey = `parcel-risk-history:v1:${ctx.tenantId}:${parcelId}:${requested}:${date}`;
+
+    const redis = getRedis();
+    if (redis) {
+        try {
+            const cached = await redis.get(cacheKey);
+            if (cached) return JSON.parse(cached) as ParcelRiskHistoryResult;
+        } catch {
+            /* redis hiccup — regenerate */
+        }
+    }
+
+    const geometry = await runInTenantContext(ctx, async (db) => {
+        const p = await db.parcel.findFirst({
+            where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true },
+        });
+        if (!p) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
+        return ParcelRepository.geometryForParcel(db, ctx, parcelId);
+    });
+
+    const configured = isGeeConfigured();
+    let passes: ParcelRiskPass[] = [];
+    let truncated = false;
+
+    if (configured && geometry) {
+        const win = {
+            start: ymd(new Date(now.getTime() - requested * 86_400_000)),
+            end: date,
+        };
+        try {
+            const raw = await getIndexMeansPerPass(geometry, win, HISTORY_PASS_CAP);
+            truncated = raw.length >= HISTORY_PASS_CAP;
+            passes = raw.map((pass) => {
+                const vegetation = vegetationLevel(pass.ndvi);
+                const moisture = moistureLevel(pass.ndmi);
+                return {
+                    date: pass.date,
+                    ndvi: pass.ndvi,
+                    ndmi: pass.ndmi,
+                    vegetation,
+                    moisture,
+                    overall: worst(vegetation, moisture),
+                };
+            });
+        } catch {
+            /* degrade to an empty series — see the docblock */
+        }
+    }
+
+    const result: ParcelRiskHistoryResult = {
+        parcelId,
+        days: requested,
+        configured,
+        passes,
+        truncated,
+        generatedAt: now.toISOString(),
+    };
+
+    // Only cache a series that has something in it, for `analyzeParcelRisk`'s
+    // reason: caching an Earth Engine failure would hold the empty answer for
+    // the full TTL even after EE recovered.
+    if (redis && passes.length > 0) {
+        try {
+            await redis.set(cacheKey, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS);
+        } catch {
+            /* still returned, just uncached */
+        }
+    }
+
+    return result;
+}
 
 export interface BlockRiskResult {
     locationId: string;
