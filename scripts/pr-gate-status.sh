@@ -110,21 +110,55 @@ echo "#$PR  $(jq -r '"\(.mergeable)/\(.mergeStateStatus)"' <<<"$ROLLUP")"
 # nothing in `mergeStateStatus` carries this and it has to be asked separately.
 # Non-fatal on a failed lookup — UNKNOWN is printed as its own state, because
 # "could not ask" must never render as "fresh".
+# It asks how far the PR's OWN HEAD is behind the base, and that is the whole
+# content of #2812.
+#
+# The first version compared `baseRefOid` with the base branch's tip, which
+# asks a DIFFERENT and weaker question: "has the base moved since GitHub last
+# recorded it for this PR". That check is real — measured 2026-11-07, it
+# reported `STALE — base 589f1ea35, main now 5d927e25a (behind by 2)` on four
+# open PRs at once — and my first diagnosis of it, that it compared main's tip
+# with main's tip and could never fail, was WRONG.
+#
+# What it cannot see is the case that matters. `baseRefOid` tracks the base
+# branch's head, not the commit this branch forked from, so once it has caught
+# up to the base tip the comparison reads FRESH whether or not the BRANCH
+# contains the base. Measured on #2810: `baseRefOid` and main were both
+# `589f1ea35` while the branch's merge-base was `155939fc7` — 27 commits
+# behind, six of them files that PR also changed — and the line printed
+# `FRESH (main @ 589f1ea35)`.
+#
+# So the old check was INCOMPLETE, not vacuous, and this one is strictly
+# stronger in both directions: it catches a branch that is behind however
+# `baseRefOid` happens to be sitting, and it does NOT report a false STALE
+# after you have merged the base in while `baseRefOid` still lags.
+#
+# `ahead_by` on `compare/<head>...<base>` is the number of base commits the
+# head does NOT contain: 0 for a current branch, non-zero for a stale one.
+# `headRefOid` is already in the payload above, so this costs no extra round
+# trip — it replaces the `git/ref` call rather than adding to it.
+#
+# Non-fatal on a failed lookup — UNKNOWN is printed as its own state, because
+# "could not ask" must never render as "fresh". And `ahead_by` of `0` is the
+# only value that reads as fresh: a non-numeric answer is UNKNOWN, not zero,
+# since `[ "$BEHIND" -eq 0 ]` on an empty string is a bash error and silence
+# would otherwise pass for currency.
 stale=0
 BASE_REF=$(jq -r '.baseRefName // empty' <<<"$ROLLUP")
-BASE_OID=$(jq -r '.baseRefOid // empty' <<<"$ROLLUP")
-if [ -z "$BASE_REF" ] || [ -z "$BASE_OID" ]; then
-    printf '  %-38s %s\n' "base freshness" "UNKNOWN — PR has no base ref in the payload"
+HEAD_OID=$(jq -r '.headRefOid // empty' <<<"$ROLLUP")
+if [ -z "$BASE_REF" ] || [ -z "$HEAD_OID" ]; then
+    printf '  %-38s %s\n' "base freshness" "UNKNOWN — PR has no head/base ref in the payload"
 else
-    TIP=$(gh api "repos/$REPO/git/ref/heads/$BASE_REF" -q '.object.sha' 2>/dev/null) || TIP=""
-    if [ -z "$TIP" ]; then
-        printf '  %-38s %s\n' "base freshness" "UNKNOWN — could not read $BASE_REF's tip"
-    elif [ "$TIP" = "$BASE_OID" ]; then
-        printf '  %-38s %s\n' "base freshness" "FRESH ($BASE_REF @ ${BASE_OID:0:9})"
-    else
-        BEHIND=$(gh api "repos/$REPO/compare/$BASE_OID...$TIP" -q '.ahead_by' 2>/dev/null) || BEHIND="?"
+    BEHIND=$(gh api "repos/$REPO/compare/$HEAD_OID...$BASE_REF" -q '.ahead_by' 2>/dev/null) || BEHIND=""
+    if ! [[ "$BEHIND" =~ ^[0-9]+$ ]]; then
         printf '  %-38s %s\n' "base freshness" \
-            "STALE — base ${BASE_OID:0:9}, $BASE_REF now ${TIP:0:9} (behind by $BEHIND)"
+            "UNKNOWN — could not compare ${HEAD_OID:0:9} against $BASE_REF"
+    elif [ "$BEHIND" -eq 0 ]; then
+        printf '  %-38s %s\n' "base freshness" \
+            "FRESH (head ${HEAD_OID:0:9} contains all of $BASE_REF)"
+    else
+        printf '  %-38s %s\n' "base freshness" \
+            "STALE — head ${HEAD_OID:0:9} is behind $BASE_REF by $BEHIND commit(s)"
         stale=1
     fi
 fi
