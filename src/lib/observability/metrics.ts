@@ -37,6 +37,7 @@
  *   audit_stream.buffer.overflow_dropped — Counter
  *   audit_stream.buffer.depth      — Observable Gauge
  *   audit.write.failures           — Counter   (model, action)
+ *   encryption.ciphertext_egress   — Counter   (route)
  *     One delivery-outcome record per batch (after the retry loop).
  *     success + failures give the delivery success ratio; attempts
  *     shows retry pressure; buffer.depth + overflow_dropped show
@@ -575,6 +576,39 @@ function getAuditWriteFailures() {
  */
 export function recordAuditWriteFailure(attrs: { model: string; action: string }): void {
     getAuditWriteFailures().add(1, { model: attrs.model, action: attrs.action });
+}
+
+// ── Ciphertext egress (#2723) ────────────────────────────────────────
+
+let _ciphertextEgress: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+function getCiphertextEgress() {
+    if (!_ciphertextEgress) {
+        _ciphertextEgress = getMeter().createCounter('encryption.ciphertext_egress', {
+            description:
+                'API responses carrying a ciphertext ENVELOPE instead of plaintext — a '
+                + 'tenant-keyed encrypted column read with no ALS tenant context, which '
+                + 'the Prisma extension passes through silently. Any non-zero value is a '
+                + 'defect: the client is rendering our storage format as a person\u2019s '
+                + 'own words. See #2723.',
+            unit: '1',
+        });
+    }
+    return _ciphertextEgress;
+}
+
+/**
+ * An outgoing response carried a ciphertext envelope.
+ *
+ * ROUTE only, deliberately. The route is the low-cardinality axis that says
+ * which surface to fix; `tenantId` would make this per-tenant and unbounded,
+ * and the field PATHS are content-adjacent enough to belong on the log line
+ * rather than on a metric series. This is the number to alert on — the
+ * threshold is `> 0`, like `AuditRowLost`, because one leaked envelope is a
+ * correctness and disclosure fault rather than a rate to tolerate.
+ */
+export function recordCiphertextEgress(attrs: { route: string }): void {
+    getCiphertextEgress().add(1, { route: attrs.route });
 }
 
 // ── Auth verification-email delivery counters ─────────────────────────
