@@ -225,5 +225,49 @@ say "✓ role_table_grants: ${GRANTS} grants to app_user"
 RECENT="$(q "SELECT count(*) FROM \"AuditLog\" WHERE \"createdAt\" > now() - INTERVAL '14 days'")"
 say "ℹ AuditLog rows in the last 14 days: ${RECENT} (informational)"
 
+# Every extension production's PGDATA needs is PRESENT in the restored
+# cluster — #2661.
+#
+# The declared set lives in `deploy/postgres/required-extensions`, measured
+# from production rather than inferred from the Dockerfile's package list. That
+# list is a CLAIM about what a restore needs and nothing checked it: #974
+# stopped supplying `postgis_tiger_geocoder` while installing the two packages
+# the product uses explicitly, and the repo's image could not restore the
+# production backup for five weeks with every check green.
+#
+# This drill was the only thing that caught it, and it caught it as an opaque
+# `pg_restore` error with no connection to the diff responsible. Comparing
+# against a declared set turns that into a named missing extension.
+#
+# Asserted on the RESTORED cluster, not on the image's package list: a package
+# being installed does not mean the extension was created, and the restore is
+# the only place those two claims meet.
+EXT_FILE="$(dirname "$0")/../../deploy/postgres/required-extensions"
+if [ -r "$EXT_FILE" ]; then
+    # Comments and blanks stripped here rather than in the query, so the file
+    # can carry its reasoning.
+    DECLARED="$(grep -vE '^[[:space:]]*(#|$)' "$EXT_FILE" | tr -d '[:blank:]' | sort -u)"
+    [ -n "$DECLARED" ] || die "$EXT_FILE declares no extensions — an empty expectation asserts nothing"
+    RESTORED="$(q 'SELECT extname FROM pg_extension' | tr -d '[:blank:]' | sort -u)"
+    [ -n "$RESTORED" ] || die "could not read pg_extension from the restored cluster"
+    MISSING="$(comm -23 <(printf '%s\n' "$DECLARED") <(printf '%s\n' "$RESTORED") | tr '\n' ' ')"
+    EXTRA="$(comm -13 <(printf '%s\n' "$DECLARED") <(printf '%s\n' "$RESTORED") | tr '\n' ' ')"
+    # MISSING fails: production needs it and the restored cluster has not got
+    # it, which is #2652 exactly.
+    [ -z "$(printf '%s' "$MISSING" | tr -d '[:space:]')" ] \
+        || die "restored cluster is MISSING declared extension(s): ${MISSING}— the image's package set does not cover production's catalogue (see deploy/postgres/required-extensions, #2661)"
+    # EXTRA only warns. A cluster carrying more than the declaration is not a
+    # restore defect, and failing on it would make an ordinary addition break
+    # the drill before anyone could update the file.
+    if [ -n "$(printf '%s' "$EXTRA" | tr -d '[:space:]')" ]; then
+        say "⚠ restored cluster has extension(s) not declared: ${EXTRA}(update deploy/postgres/required-extensions)"
+    fi
+    say "✓ pg_extension: all $(printf '%s\n' "$DECLARED" | wc -l | tr -d '[:blank:]') declared extension(s) present"
+else
+    # A missing file must not read as a pass — that is the whole shape this
+    # repo keeps fixing.
+    die "$EXT_FILE is unreadable; the extension assertion cannot run (#2661)"
+fi
+
 echo "── RESTORE DRILL PASSED ──"
 say "restored $(basename "$DUMP") into a clean cluster: ${MIGRATIONS} migrations, ${POLICIES} policies, ${GRANTS} grants, ${TENANTS} tenants"

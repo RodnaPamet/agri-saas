@@ -1,0 +1,64 @@
+# Extensions production's PGDATA actually contains — #2661.
+#
+# This file is the EXPECTATION the monthly restore drill asserts against. It
+# exists because `deploy/postgres/Dockerfile`'s package list is a claim about
+# what a restore needs, and nothing checked it: #974 moved the base image off
+# expired bullseye and installed the two packages the product uses explicitly,
+# correctly — and with that silently stopped supplying
+# `postgis_tiger_geocoder`, which the old `postgis/postgis` base had bundled.
+# The repo's database image then could not restore the production backup for
+# five weeks, with every check green, because the only thing that reads the
+# package set against production's real catalogue is the drill, and it runs
+# monthly.
+#
+# MEASURED on agrent_production, 2026-11-07, owner-authorised read-only query:
+#
+#   SELECT extname, extversion FROM pg_extension ORDER BY extname;
+#
+# Not inferred from the Dockerfile. The Dockerfile installs two packages; the
+# cluster carries SEVEN extensions, and the gap is the whole defect — three of
+# these arrive as dependencies or as part of a bundle rather than by explicit
+# intent, which is exactly how one of them went missing without anyone
+# choosing to remove it.
+#
+# One name per line, `#` comments ignored. Versions are deliberately NOT pinned
+# here: a minor extension bump is routine and pinning would make the drill fail
+# on an upgrade that is fine. The property is PRESENCE — a restore that cannot
+# create an extension fails with an opaque pg_restore error, and that is what
+# this turns into a named comparison.
+#
+# Adding a line is a claim that production needs it. Removing one is a claim
+# that it does not.
+#
+# `postgis_tiger_geocoder` WAS here and is gone (#2662, owner-authorised
+# 2026-11-07). It was dropped from production first and this line second, in
+# that order, because the reverse makes the drill assert a set production does
+# not have. Pre-checked before the DDL: no other extension depended on it, and
+# all 8,148 rows in the tiger schemas were the extension's OWN shipped
+# reference data — the PAGC address lexicon (pagc_rules 4354, pagc_lex 2938,
+# pagc_gaz 835) plus loader defaults. The actual TIGER shapefile tables (addr,
+# edges, faces, featnames) were empty, so nobody had ever loaded US census
+# data and the drop destroyed nothing a person put there.
+#
+# `postgresql-16-postgis-tiger-geocoder` DELIBERATELY STAYS in the Dockerfile
+# (owner ruling). Every GCE snapshot in the 14-day retention window still
+# contains the extension, so a dump taken before the drop still emits
+# `CREATE EXTENSION … postgis_tiger_geocoder`, and an image that cannot provide
+# it cannot restore those backups — which is #2652 again, chosen this time.
+# Remove the package only after the window has passed.
+#
+# Restoring one of those older dumps now reports the extension as EXTRA, which
+# WARNS rather than fails. That asymmetry was a judgement call when the drill
+# assertion landed one commit earlier; this is the case it was for.
+#
+# `fuzzystrmatch` is now an orphan: it was here as a tiger dependency and
+# nothing in the product uses soundex or levenshtein — the fuzzy search that
+# exists is pg_trgm. It stays until somebody verifies no other extension or
+# function needs it. Tracked on #2662.
+
+fuzzystrmatch
+pg_trgm
+plpgsql
+postgis
+postgis_topology
+vector
