@@ -344,4 +344,59 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         }),
         success: { status: 204, description: 'The reaction is gone.' },
     });
+    op(registry, {
+        method: 'post',
+        path: '/api/social/conversations/{conversationId}/photos',
+        operationId: 'sendDirectPhoto',
+        summary: 'Send a photograph into a conversation',
+        description:
+            'A photograph, optionally with a caption. The caption is OPTIONAL because a photo alone is a complete message (owner ruling 2026-11-07) — `DirectMessage.body` is nullable and the CHECK accepts a row with an attachment and no text.\n\n'
+            + '**This is the record-less upload class**, which decides the ordering. There is no `FileRecord`, so nothing downstream carries a `scanStatus` and there is no download gate to defer to: the AV scan runs at INGEST, on the ORIGINAL bytes, before anything is stripped or stored. Stripping decodes caller bytes with libvips, so it cannot precede the scan.\n\n'
+            + 'Metadata is stripped server-side by re-encoding. The FORMAT IS PRESERVED — a JPEG is stored as a JPEG — so the response type of the read route is the sniffed type recorded at upload, not a fixed one. A farm photograph carries GPS, and a parcel location is exactly what must not travel.\n\n'
+            + '**Refusal codes.**\n'
+            + '- `INVALID_BODY` — no `photo` part, or it was not a file.\n'
+            + '- `FILE_TOO_LARGE`, `FILE_EMPTY` — the SHARED upload bounds, 4 MB here, mirroring the avatar ruling of 2026-10-16 (a phone photo is 1–3 MB). The same codes every other upload in the product reports, deliberately: a client should not have to learn a second vocabulary for the same refusal.\n'
+            + '- `FILE_TYPE_NOT_ALLOWED` — not a JPEG, PNG or WebP, checked on the MAGIC NUMBER rather than the declared type.\n'
+            + '- `DM_PHOTO_NEEDS_ACCEPTED` — the conversation is still a REQUEST. The request rule admits TEXT so a stranger can say who they are; an unsolicited image from an unknown person is what that state exists to hold back.\n'
+            + '- `CONVERSATION_NOT_FOUND` — no such conversation, or the caller is not a participant. One code, because telling them apart discloses which.',
+        tags: TAGS,
+        bodyContentType: 'multipart/form-data',
+        body: z.object({
+            photo: z.string().openapi({ format: 'binary' }),
+            body: z.string().optional().openapi({ description: 'Optional caption.' }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_BODY, FILE_TOO_LARGE, FILE_EMPTY, FILE_TYPE_NOT_ALLOWED or DM_PHOTO_NEEDS_ACCEPTED.',
+            404: 'CONVERSATION_NOT_FOUND — no such conversation, not a participant, or a block in either direction.',
+        }),
+        success: {
+            status: 201,
+            description: 'The message the photograph was sent as.',
+            schema: z.object({
+                messageId: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/social/messages/{messageId}/photo',
+        operationId: 'readDirectPhoto',
+        summary: 'Serve a conversation photograph',
+        description:
+            'Streams the stored image, as the type recorded at upload. **The gate is RLS, not a check in the route**: the storage key is resolved under a person context where `direct_message_select` admits a participant\'s rows and nobody else\'s, so a non-participant\'s lookup returns nothing and the empty result becomes the not-found. That is also what makes an orphaned object unreachable — the bytes are written before the row, and a key is only ever reached through a row.\n\n'
+            + '`no-store` and no ETag, unlike the avatar route: an avatar is low-sensitivity and shown across member lists, while a photograph sent privately must not sit in a shared cache on a phone that may be lost, sold or handed on.\n\n'
+            + 'A RETRACTED message serves nothing. Deleting clears the attachment columns and removes the object, in that order, so the key stops resolving before the bytes go.',
+        tags: TAGS,
+        extraResponses: codedErrorResponses({
+            404: 'CONVERSATION_NOT_FOUND. Four causes, one answer: no such message, not a participant, no photograph on it, or retracted.',
+        }),
+        success: {
+            status: 200,
+            description: 'The image bytes, as `image/jpeg`, `image/png` or `image/webp` — whichever the upload sniffed.',
+            schema: z.string().openapi({ format: 'binary' }),
+        },
+    });
+
 }
