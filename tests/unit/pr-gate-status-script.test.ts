@@ -33,6 +33,8 @@
  * with a red required check is not something a test may do.
  */
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -118,6 +120,88 @@ describe('§2 the classification does not fold ABSENT into pass', () => {
         // Red must win over waiting, or a red is reported as "not finished".
         const verdict = kinds.includes('red') ? 2 : kinds.includes('waiting') ? 1 : 0;
         expect(verdict).toBe(2);
+    });
+});
+
+describe('§2b freshness measures the BRANCH, not the base pointer (#2812)', () => {
+    /**
+     * Driven end to end against a stubbed `gh`, because the defect was
+     * invisible to every structural reading.
+     *
+     * The first version compared `baseRefOid` with the base branch's tip.
+     * Measured on #2810: `baseRefOid` IS the base branch's tip — identical
+     * while the branch's merge-base was 27 commits behind AND after a
+     * `merge:main` made it current. So the check was main's tip against main's
+     * tip, it could essentially never report STALE, and it printed
+     * `FRESH (main @ 589f1ea35)` — a sentence that reads like a measurement of
+     * the branch and was a measurement of main.
+     *
+     * A structural test ("does it call compare") would pass on a script that
+     * called compare and then ignored the answer, which is why this drives the
+     * real script and reads its verdict.
+     */
+    const ghStub = (aheadBy: string): string => `#!/usr/bin/env bash
+set -euo pipefail
+if [ "\${1:-}" = "pr" ]; then
+  cat <<'JSON'
+{"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","baseRefName":"main",
+ "baseRefOid":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+ "headRefOid":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "statusCheckRollup":[]}
+JSON
+  exit 0
+fi
+# gh api …
+for arg in "$@"; do
+  case "$arg" in
+    *branches/main/protection*)
+      echo '{"required_status_checks":{"contexts":["Build"]}}'; exit 0 ;;
+    *compare/*)
+      echo '${aheadBy}'; exit 0 ;;
+  esac
+done
+echo '{}'
+`;
+
+    function runWithStub(aheadBy: string): { stdout: string; status: number | null } {
+        const dir = mkdtempSync(path.join(tmpdir(), 'pr-gate-stub-'));
+        const bin = path.join(dir, 'gh');
+        writeFileSync(bin, ghStub(aheadBy), { mode: 0o755 });
+        const r = spawnSync('bash', [SCRIPT, '4242'], {
+            encoding: 'utf8',
+            env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ''}` },
+        });
+        rmSync(dir, { recursive: true, force: true });
+        return { stdout: `${r.stdout ?? ''}${r.stderr ?? ''}`, status: r.status };
+    }
+
+    it('reports STALE when the head is behind the base — the case #2812 missed', () => {
+        const { stdout } = runWithStub('7');
+        expect(stdout).toMatch(/base freshness\s+STALE/);
+        expect(stdout).toContain('behind main by 7 commit');
+    });
+
+    it('reports FRESH at zero — the control, so STALE is not unconditional', () => {
+        const { stdout } = runWithStub('0');
+        expect(stdout).toMatch(/base freshness\s+FRESH/);
+        expect(stdout).not.toMatch(/STALE/);
+    });
+
+    it('a non-numeric answer is UNKNOWN, never fresh', () => {
+        // `[ "$BEHIND" -eq 0 ]` on an empty string is a bash error, and
+        // silence must not pass for currency — "could not ask" is its own
+        // state, the same distinction §1 holds for the gate itself.
+        const { stdout } = runWithStub('');
+        expect(stdout).toMatch(/base freshness\s+UNKNOWN/);
+        expect(stdout).not.toMatch(/FRESH/);
+    });
+
+    it('no longer compares the base pointer against the base tip', () => {
+        // The old call. Kept as an assertion rather than deleted quietly,
+        // because re-adding it would restore a check that cannot fail while
+        // printing a value that reads like one that can.
+        const src = readFileSync(SCRIPT, 'utf8');
+        expect(src).not.toContain('git/ref/heads/');
     });
 });
 

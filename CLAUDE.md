@@ -1382,7 +1382,31 @@ Three things it does not do, stated so they are not assumed:
   prints **`ABSENT`** as its own state — distinct from a failure and from
   pending, which is the distinction the whole problem turns on. It also refuses
   a STALE head, because a green rollup on a base that is behind main is the
-  right answer to a question you did not mean to ask. Reach for it before
+  right answer to a question you did not mean to ask.
+
+  **That freshness line means "this HEAD contains every commit on main" only
+  since #2812.** Before that it compared `baseRefOid` with the base branch's
+  tip, which asks a weaker question — "has the base moved since GitHub last
+  recorded it for this PR" — and that check is real: measured 2026-11-07, it
+  reported STALE on four open PRs at once.
+
+  What it could not see is the case that matters. `baseRefOid` tracks the base
+  branch's head rather than the commit your branch forked from, so once it has
+  caught up to the tip the line reads FRESH whether or not your BRANCH contains
+  the base. Measured on #2810: `baseRefOid` and main were both `589f1ea35`
+  while the branch's merge-base was `155939fc7` — 27 commits behind, six of
+  them files that PR also changed — and it printed `FRESH (main @ 589f1ea35)`.
+
+  It now asks `compare/<headRefOid>...<base>` for `ahead_by`, which is strictly
+  stronger in both directions: it catches a behind branch however `baseRefOid`
+  happens to be sitting, and it does not report a false STALE after you have
+  merged the base in. A non-numeric answer is UNKNOWN rather than zero.
+
+  Worth knowing how I got this wrong, because the same shape will recur: I
+  measured `baseRefOid == tip` on ONE PR and concluded the comparison was
+  tautological. One observation of two values being equal does not establish
+  that they are always equal — and the old check reporting STALE an hour later
+  is what corrected it. Reach for it before
   hand-rolling a `gh pr view --json statusCheckRollup` filter: two agents
   rebuilt a worse version of it six times between them, every time with this
   rule written down somewhere neither of them was reading (#2777, #2778).
