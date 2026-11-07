@@ -1,0 +1,42 @@
+# Extensions production's PGDATA actually contains — #2661.
+#
+# This file is the EXPECTATION the monthly restore drill asserts against. It
+# exists because `deploy/postgres/Dockerfile`'s package list is a claim about
+# what a restore needs, and nothing checked it: #974 moved the base image off
+# expired bullseye and installed the two packages the product uses explicitly,
+# correctly — and with that silently stopped supplying
+# `postgis_tiger_geocoder`, which the old `postgis/postgis` base had bundled.
+# The repo's database image then could not restore the production backup for
+# five weeks, with every check green, because the only thing that reads the
+# package set against production's real catalogue is the drill, and it runs
+# monthly.
+#
+# MEASURED on agrent_production, 2026-11-07, owner-authorised read-only query:
+#
+#   SELECT extname, extversion FROM pg_extension ORDER BY extname;
+#
+# Not inferred from the Dockerfile. The Dockerfile installs two packages; the
+# cluster carries SEVEN extensions, and the gap is the whole defect — three of
+# these arrive as dependencies or as part of a bundle rather than by explicit
+# intent, which is exactly how one of them went missing without anyone
+# choosing to remove it.
+#
+# One name per line, `#` comments ignored. Versions are deliberately NOT pinned
+# here: a minor extension bump is routine and pinning would make the drill fail
+# on an upgrade that is fine. The property is PRESENCE — a restore that cannot
+# create an extension fails with an opaque pg_restore error, and that is what
+# this turns into a named comparison.
+#
+# Adding a line is a claim that production needs it. Removing one is a claim
+# that it does not, and `postgis_tiger_geocoder` is exactly that question —
+# tracked on #2662, which proposes dropping it from production first and the
+# package second. Do NOT drop the line here before the extension is gone from
+# production, or the drill starts asserting a set production does not have.
+
+fuzzystrmatch
+pg_trgm
+plpgsql
+postgis
+postgis_tiger_geocoder
+postgis_topology
+vector
