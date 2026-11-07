@@ -61071,7 +61071,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61225,7 +61225,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61255,7 +61255,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61323,7 +61323,8 @@
     "/api/social/conversations/{conversationId}": {
       "get": {
         "operationId": "readDirectConversation",
-        "summary": "Read a conversation and its messages",
+        "summary": "Read a conversation and one page of its messages",
+        "description": "Returns the NEWEST page of messages, oldest-first within the page, and a cursor for the page before it. Paged since #2820 — the first version returned the whole history and decrypted every row in one request.",
         "tags": [
           "Direct messages"
         ],
@@ -61346,6 +61347,26 @@
             "description": "The conversation. A cuid, which names no person — unlike a user id, which is why the block routes keep theirs in a body.",
             "name": "conversationId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Positive integer, clamped to 100."
+            },
+            "required": false,
+            "description": "Positive integer, clamped to 100.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque. From a previous response's olderCursor."
+            },
+            "required": false,
+            "description": "Opaque. From a previous response's olderCursor.",
+            "name": "before",
+            "in": "query"
           }
         ],
         "responses": {
@@ -61376,6 +61397,17 @@
                         "null"
                       ],
                       "format": "date-time"
+                    },
+                    "olderCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass back as `before` to fetch the page OLDER than this one, or null at the start of the conversation. There is no \"next\": a chat opens at the bottom and reads backwards."
+                    },
+                    "hasOlder": {
+                      "type": "boolean",
+                      "description": "Whether an older page exists. Computed from a `limit + 1` probe row rather than a second COUNT."
                     },
                     "lastReadAt": {
                       "type": [
@@ -61449,7 +61481,8 @@
                           "deletedAt",
                           "reactions"
                         ]
-                      }
+                      },
+                      "description": "ONE PAGE, oldest-first within the page even though the page returned first is the NEWEST — a client renders upward from the bottom. Capped at 100 (#2820); the first version of this endpoint returned every message and decrypted every one of them."
                     }
                   },
                   "required": [
@@ -61457,6 +61490,8 @@
                     "state",
                     "initiatedByUserId",
                     "lastMessageAt",
+                    "olderCursor",
+                    "hasOlder",
                     "lastReadAt",
                     "messages"
                   ]
@@ -61465,7 +61500,7 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "INVALID_LIMIT (not a positive integer) or INVALID_CURSOR (unreadable `before`). A broken cursor is refused rather than treated as the start of the conversation, because silently restarting a backwards scroll duplicates a page the client already has.",
             "content": {
               "application/json": {
                 "schema": {
@@ -61499,7 +61534,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61664,7 +61699,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61694,7 +61729,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61825,7 +61860,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61855,7 +61890,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -61967,7 +62002,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62108,7 +62143,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62138,7 +62173,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62269,7 +62304,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62381,7 +62416,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62411,7 +62446,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62520,7 +62555,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -62550,7 +62585,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RawErrorResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

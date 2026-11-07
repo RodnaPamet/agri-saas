@@ -27,6 +27,7 @@
  * usecase, which chooses its own runner.
  */
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'node:fs';
 
 import prisma from '@/lib/prisma';
 
@@ -36,6 +37,7 @@ import {
     sendDirectMessage,
     respondToConversation,
     readConversation,
+    DM_MESSAGE_PAGE_SIZE,
     editDirectMessage,
     deleteDirectMessage,
     markConversationRead,
@@ -479,6 +481,115 @@ describeFn('P8.2 — direct messages (#2796)', () => {
                 addReaction(ctxFor(OWNER), messageId, 'това не е реакция, а изречение'),
             );
             expect(refusal.code).toBe('DM_REACTION_TOO_LONG');
+        });
+    });
+
+    describe('the message read is PAGED (#2820)', () => {
+        let convId: string;
+
+        beforeAll(async () => {
+            const opened = await openConversationFromHandle(ctxFor(VISITOR), HANDLE);
+            convId = opened.conversationId;
+            if ((await globalPrisma.conversation.findUniqueOrThrow({
+                where: { id: convId }, select: { state: true },
+            })).state === 'REQUEST') {
+                await respondToConversation(ctxFor(OWNER), convId, 'ACCEPT');
+            }
+            // Seven messages, so a limit of 3 gives three pages and a
+            // boundary that is not also the end.
+            for (let i = 0; i < 7; i++) {
+                await sendDirectMessage(ctxFor(VISITOR), { conversationId: convId, body: `съобщение ${i}` });
+            }
+        });
+
+        it('returns at most `limit`, newest page first, in display order', async () => {
+            const view = await readConversation(ctxFor(VISITOR), convId, { limit: 3 });
+            expect(view.messages.length).toBe(3);
+            // Oldest-first WITHIN the page, even though the page is the newest
+            // three — a chat opens at the bottom and renders upward.
+            const times = view.messages.map((m) => m.createdAt.getTime());
+            expect([...times].sort((a, b) => a - b)).toEqual(times);
+            expect(view.hasOlder).toBe(true);
+            expect(view.olderCursor).toBeTruthy();
+        });
+
+        it('pages BACKWARDS to the start, with no repeats and nothing missed', async () => {
+            // The assertion that would have failed against the unbounded
+            // version: it returned everything on page one, so `hasOlder` was
+            // false and there was no second page to disagree with.
+            const seen: string[] = [];
+            let before: string | null = null;
+            for (let page = 0; page < 20; page++) {
+                const v = await readConversation(ctxFor(VISITOR), convId, { limit: 3, before });
+                // Prepended: each page is OLDER than the last.
+                seen.unshift(...v.messages.map((m) => m.id));
+                before = v.olderCursor;
+                if (!before) break;
+            }
+            expect(before).toBeNull();
+            expect(new Set(seen).size).toBe(seen.length);
+
+            const all = await globalPrisma.directMessage.findMany({
+                where: { conversationId: convId },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                select: { id: true },
+            });
+            expect(seen).toEqual(all.map((m) => m.id));
+        });
+
+        it('clamps a limit above the page size rather than honouring it', async () => {
+            const view = await readConversation(ctxFor(VISITOR), convId, { limit: 10_000 });
+            expect(view.messages.length).toBeLessThanOrEqual(DM_MESSAGE_PAGE_SIZE);
+        });
+
+        it('the QUERY is bounded — asserted on the source, because the output cannot say', () => {
+            // This one is structural on purpose, and the reason is the whole
+            // point of #2820.
+            //
+            // Removing `take: limit + 1` changes NOTHING observable: `hasOlder`
+            // is `rows.length > limit` and the page is `slice(0, limit)`, so an
+            // unbounded fetch returns an identical response. Measured — the
+            // mutation that deletes the `take` leaves all 31 cases green. The
+            // defect is the cost of the query and the per-row decrypt, and no
+            // assertion over the result can see it.
+            //
+            // So this reads the source, the way `stream-slots`' "uses SCAN,
+            // never KEYS" does and for the same stated reason: the observable
+            // would answer either way.
+            //
+            // It is NOT the general control. D2's unbounded-read budget scans
+            // `src/app-layer/repositories` only, and extending it to usecases
+            // means triaging 120 of 262 `findMany` calls — measured, and
+            // recorded on #2820 as its own decision rather than smuggled in
+            // here.
+            // Anchored on `const rows =`, not on `db.directMessage.findMany`.
+            // `readConversation` holds TWO reads of that table and the bare
+            // anchor hit the FIRST — the `distinct: ['senderUserId']` lookup
+            // for the block check, which legitimately has no `take` and never
+            // will. The first version of this test therefore failed against
+            // correct code while reporting the right-sounding thing, which is
+            // `positional-replace-hits-the-twin` aimed at an extraction.
+            const src = readFileSync('src/app-layer/usecases/direct-messages.ts', 'utf8');
+            const read = src.slice(src.indexOf('export async function readConversation'));
+            const anchor = 'const rows = await db.directMessage.findMany';
+            expect(read).toContain(anchor);
+            const block = read.slice(read.indexOf(anchor));
+            const query = block.slice(0, block.indexOf('});') + 3);
+
+            expect(query).toContain('take: limit + 1');
+            // The extraction selected the PAGED query and not its sibling, so
+            // a rename cannot make this pass over the wrong block — which is
+            // exactly how the first version failed.
+            expect(query).toContain("orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]");
+            expect(query).not.toContain("distinct: ['senderUserId']");
+            expect(query.length).toBeGreaterThan(120);
+        });
+
+        it('refuses an unreadable cursor rather than silently starting over', async () => {
+            const refusal = await refusalOf(() =>
+                readConversation(ctxFor(VISITOR), convId, { before: 'not-a-cursor' }),
+            );
+            expect(refusal.code).toBe('INVALID_CURSOR');
         });
     });
 

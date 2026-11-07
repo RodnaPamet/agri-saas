@@ -81,6 +81,7 @@
  */
 import type { UserContext } from '@/app-layer/types';
 import { runInUserContext, type PrismaTx } from '@/lib/db-context';
+import { encodeCursor, decodeCursor, keysetBefore } from '@/lib/exchange/cursor';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import prisma from '@/lib/prisma';
 import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
@@ -99,6 +100,15 @@ export const DM_MAX_BODY_LENGTH = 4000;
 /** What a reaction may be. Short enough that no prose fits — see the schema. */
 export const DM_MAX_EMOJI_LENGTH = 16;
 
+/**
+ * Messages per page of a conversation — #2820.
+ *
+ * The same 100 `getExchangeThread` uses. Not a new number: a DM timeline and
+ * an exchange thread are the same screen with different participants, and two
+ * page sizes would be a difference nobody chose.
+ */
+export const DM_MESSAGE_PAGE_SIZE = 100;
+
 export interface DirectMessageView {
     readonly id: string;
     readonly senderUserId: string;
@@ -115,7 +125,23 @@ export interface ConversationView {
     readonly initiatedByUserId: string;
     readonly lastMessageAt: Date | null;
     readonly lastReadAt: Date | null;
+    /**
+     * ONE PAGE, oldest-first for display — #2820.
+     *
+     * The first draft of this function had no `take` at all, so a long
+     * conversation was one unbounded query AND one decrypt per row, since
+     * `body` is in `ENCRYPTED_FIELDS`. CI was green because D2's unbounded-read
+     * budget scans `src/app-layer/repositories` only and this is a usecase —
+     * a real gate whose population my code sat one directory outside.
+     */
     readonly messages: readonly DirectMessageView[];
+    /**
+     * Pass back as `before` to fetch the page OLDER than this one, or null at
+     * the start of the conversation. A chat opens at the bottom and reads
+     * backwards, which is why there is no "next".
+     */
+    readonly olderCursor: string | null;
+    readonly hasOlder: boolean;
 }
 
 /** The one not-found every refusal in this module collapses to. */
@@ -420,6 +446,7 @@ export async function respondToConversation(
 export async function readConversation(
     ctx: UserContext,
     conversationId: string,
+    options: { limit?: number; before?: string | null } = {},
 ): Promise<ConversationView> {
     return runInUserContext(ctx, async (db) => {
         const conversation = await db.conversation.findUnique({
@@ -444,9 +471,35 @@ export async function readConversation(
             select: { lastReadAt: true },
         });
 
-        const messages = await db.directMessage.findMany({
-            where: { conversationId },
-            orderBy: { createdAt: 'asc' },
+        // `Number.isFinite`, not `??`: NaN is neither null nor undefined, and
+        // `take: NaN` is a Prisma 500. The same choke point every paged read
+        // in this layer carries.
+        const requested = Number.isFinite(options.limit)
+            ? (options.limit as number)
+            : DM_MESSAGE_PAGE_SIZE;
+        const limit = Math.min(Math.max(requested, 1), DM_MESSAGE_PAGE_SIZE);
+
+        const before = options.before ?? null;
+        const cursor = decodeCursor(before);
+        if (before && !cursor) {
+            // Refused rather than treated as "from the top". Silently
+            // restarting a backwards scroll duplicates the page a client
+            // already has, which reads as a render bug.
+            throw codedBadRequest('INVALID_CURSOR', 'That cursor is not readable.');
+        }
+
+        // Fetched NEWEST-first, because a chat opens at the bottom and reads
+        // backwards; reversed below so the page is in display order. `id` is
+        // in the order and is not decoration — `createdAt` alone is not a
+        // total order, so two messages sharing a timestamp straddle the page
+        // boundary and one is dropped while the other repeats.
+        const rows = await db.directMessage.findMany({
+            where: {
+                ...(cursor ? keysetBefore(cursor, 'createdAt') : {}),
+                conversationId,
+            },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: limit + 1,
             select: {
                 id: true,
                 senderUserId: true,
@@ -458,12 +511,22 @@ export async function readConversation(
             },
         });
 
+        const hasOlder = rows.length > limit;
+        const pageNewestFirst = hasOlder ? rows.slice(0, limit) : rows;
+        const oldestOnPage = pageNewestFirst.at(-1) ?? null;
+        const messages = [...pageNewestFirst].reverse();
+
         return {
             id: conversation.id,
             state: conversation.state,
             initiatedByUserId: conversation.initiatedByUserId,
             lastMessageAt: conversation.lastMessageAt,
             lastReadAt: mine?.lastReadAt ?? null,
+            olderCursor:
+                hasOlder && oldestOnPage
+                    ? encodeCursor({ at: oldestOnPage.createdAt, id: oldestOnPage.id })
+                    : null,
+            hasOlder,
             messages: messages.map((m) => ({
                 id: m.id,
                 senderUserId: m.senderUserId,

@@ -26,6 +26,25 @@
  * `MESSAGE_NOT_FOUND`, and that is the whole truth about what the server
  * sends.
  *
+ * ## `codedErrorResponses`, NOT `rawErrorResponses`
+ *
+ * Every 4xx here is the `ErrorResponse` ENVELOPE — `codedBadRequest` and
+ * `codedNotFound` produce `error: { code, message }`, and `error.code` is the
+ * field the spec tells clients to switch on.
+ *
+ * P8.2 and P8.5 shipped this module using `rawErrorResponses`, which declares
+ * the bare `{ error: string }` form reserved for the native auth family (RFC
+ * 6749 §5.2) and the cadastre-import poll. That documented a lie of exactly
+ * the kind #1391 is about: it told clients there is no `code` to switch on,
+ * for routes whose whole 4xx design is a set of distinguishable codes.
+ *
+ * `openapi-breaking-change` is what caught it, and only on the third DM PR —
+ * adding a 400 to an operation that previously had none replaced
+ * `commonErrorResponses`' envelope with the raw shape, and the gate reported
+ * `"error" no longer accepts object` plus `error.code was removed`. On the two
+ * earlier PRs the override replaced an envelope with an envelope-shaped hole
+ * nothing compared.
+ *
  * Schemas are IMPORTED from `@/lib/schemas` rather than redeclared.
  * `request-body-declared-once` caps hand-written duplicates at zero, and its
  * reason applies: a route and a spec module each declaring their own Zod for
@@ -42,7 +61,7 @@ import {
     MarkConversationReadSchema,
     MessageReactionSchema,
 } from '@/lib/schemas';
-import { op, rawErrorResponses } from './helpers';
+import { op, codedErrorResponses } from './helpers';
 
 const TAGS = ['Direct messages'];
 
@@ -92,10 +111,18 @@ const ConversationSchema = z.object({
     state: z.enum(['REQUEST', 'ACCEPTED', 'DECLINED']),
     initiatedByUserId: z.string(),
     lastMessageAt: z.string().datetime({ offset: true }).nullable(),
+    olderCursor: z.string().nullable().openapi({
+        description: 'Pass back as `before` to fetch the page OLDER than this one, or null at the start of the conversation. There is no "next": a chat opens at the bottom and reads backwards.',
+    }),
+    hasOlder: z.boolean().openapi({
+        description: 'Whether an older page exists. Computed from a `limit + 1` probe row rather than a second COUNT.',
+    }),
     lastReadAt: z.string().datetime({ offset: true }).nullable().openapi({
         description: "The CALLER's own read cursor, never the counterparty's. The participant read policy admits only the caller's own row, so the other person's cursor is not available here — «Видяно» is P8.3's own problem and not solved by this field.",
     }),
-    messages: z.array(MessageSchema),
+    messages: z.array(MessageSchema).openapi({
+        description: 'ONE PAGE, oldest-first within the page even though the page returned first is the NEWEST — a client renders upward from the bottom. Capped at 100 (#2820); the first version of this endpoint returned every message and decrypted every one of them.',
+    }),
 });
 
 const InboxItemSchema = z.object({
@@ -135,7 +162,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
             limit: z.string().optional().openapi({ description: 'Positive integer, clamped to 20.' }),
             cursor: z.string().optional().openapi({ description: 'Opaque. From a previous response\'s nextCursor.' }),
         }),
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             400: 'INVALID_LIMIT (not a positive integer) or INVALID_CURSOR (unreadable). A broken cursor is refused rather than treated as a first page, because silently restarting a scroll looks like duplicated rows.',
         }),
         success: {
@@ -154,7 +181,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
             'Resolves a farm HANDLE to the person who should receive the message — that farm\'s active owner — and returns the conversation, creating it if there is none. Idempotent: pressing it twice returns the same conversation, which is also what makes a REQUEST unrepeatable, since there is no second thread to open. Limited to 5 per hour per caller: the abusable act in a DM system is opening threads with people who never asked, and the default 60/min mutation tier does not bound that.',
         tags: TAGS,
         body: OpenConversationSchema,
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY or DM_SELF — the body was unreadable, the handle was missing, or the handle resolves to the caller.',
             404: 'CONVERSATION_NOT_FOUND. One code for every disclosing cause: no such handle, a farm that has not published, a farm with no active owner, or a block in either direction. Telling them apart would disclose the block.',
         }),
@@ -169,10 +196,17 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         method: 'get',
         path: '/api/social/conversations/{conversationId}',
         operationId: 'readDirectConversation',
-        summary: 'Read a conversation and its messages',
+        summary: 'Read a conversation and one page of its messages',
+        description:
+            'Returns the NEWEST page of messages, oldest-first within the page, and a cursor for the page before it. Paged since #2820 — the first version returned the whole history and decrypted every row in one request.',
         tags: TAGS,
         params: ConversationIdParam,
-        extraResponses: rawErrorResponses({
+        query: z.object({
+            limit: z.string().optional().openapi({ description: 'Positive integer, clamped to 100.' }),
+            before: z.string().optional().openapi({ description: "Opaque. From a previous response's olderCursor." }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_LIMIT (not a positive integer) or INVALID_CURSOR (unreadable `before`). A broken cursor is refused rather than treated as the start of the conversation, because silently restarting a backwards scroll duplicates a page the client already has.',
             404: 'CONVERSATION_NOT_FOUND — no such conversation, the caller is not a participant, or the caller is blocked by one. Identical in every observable, by design.',
         }),
         success: {
@@ -193,7 +227,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         params: ConversationIdParam,
         body: SendDirectMessageSchema,
         extraResponses: {
-            ...rawErrorResponses({
+            ...codedErrorResponses({
                 400: 'INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), or DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation).',
                 404: 'CONVERSATION_NOT_FOUND — no such conversation, not a participant, blocked, or the request was declined.',
             }),
@@ -215,7 +249,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         tags: TAGS,
         params: ConversationIdParam,
         body: RespondToConversationSchema,
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY, or DM_REQUEST_ALREADY_ANSWERED.',
             404: 'CONVERSATION_NOT_FOUND — no such conversation, not a participant, or the caller is the one who opened it.',
         }),
@@ -236,7 +270,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         tags: TAGS,
         params: ConversationIdParam,
         body: MarkConversationReadSchema,
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             400: 'INVALID_JSON or INVALID_BODY — readAt must be an ISO instant with an offset.',
         }),
         success: { status: 204, description: 'The cursor is at or past that instant.' },
@@ -250,7 +284,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         tags: TAGS,
         params: MessageIdParam,
         body: EditDirectMessageSchema,
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED or DM_BODY_TOO_LONG.',
             404: 'MESSAGE_NOT_FOUND — no such message, it was sent by somebody else, or it is deleted. A deleted message is not editable: the row is kept as a record, not as a draft.',
         }),
@@ -266,7 +300,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
             'A SOFT delete: the row keeps its place with a null body so the conversation does not renumber under the other party, and the stored text is overwritten rather than merely hidden.',
         tags: TAGS,
         params: MessageIdParam,
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             404: 'MESSAGE_NOT_FOUND — no such message, it was sent by somebody else, or it is already deleted.',
         }),
         success: { status: 204, description: 'The message was deleted.' },
@@ -282,7 +316,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         tags: TAGS,
         params: MessageIdParam,
         body: MessageReactionSchema,
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY, DM_REACTION_REQUIRED or DM_REACTION_TOO_LONG.',
             404: 'MESSAGE_NOT_FOUND — no such message, or the caller cannot see it.',
         }),
@@ -297,7 +331,7 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         tags: TAGS,
         params: MessageIdParam,
         body: MessageReactionSchema,
-        extraResponses: rawErrorResponses({
+        extraResponses: codedErrorResponses({
             400: 'INVALID_JSON, INVALID_BODY or DM_REACTION_REQUIRED.',
             404: 'MESSAGE_NOT_FOUND — the caller has no such reaction on that message.',
         }),
