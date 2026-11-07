@@ -101,6 +101,27 @@ interface Subscriber {
     send: (event: NotificationEvent) => void;
 }
 
+/** A subscriber with no farm — see {@link subscribeToPersonEvents}. */
+export interface PersonSubscriber {
+    userId: string;
+    send: (event: NotificationEvent) => void;
+}
+
+/**
+ * What goes in a person-scoped frame's `tenantId`.
+ *
+ * The wire contract requires `tenantId` on EVERY kind and not optional,
+ * because a phone belonging to several farms filters on it before refetching
+ * and a field present on one kind and absent on another makes that filter
+ * conditional on the kind. A direct message has no farm, so it carries this —
+ * exactly as a `listing` frame carries its own sentinel.
+ *
+ * NOT a farm, NOT displayable, NOT a filter. It never reaches `channelFor`:
+ * routing is by channel name, and the person channel is built from the user
+ * id alone.
+ */
+export const PERSON_SCOPE_SENTINEL = 'person';
+
 export type NotificationBusMode = 'redis' | 'in-process';
 
 /** Subscribers held by THIS process, keyed by channel. */
@@ -112,6 +133,55 @@ let modeLogged = false;
 function channelFor(tenantId: string, userId: string): string {
     return `notif:${tenantId}:${userId}`;
 }
+
+/**
+ * The PERSON channel — `notif:person:<userId>` (#2809).
+ *
+ * ## Why a second address rather than a nullable tenant
+ *
+ * A direct message has no tenant. P8.1's four DM tables carry none,
+ * deliberately, because two people in a conversation may share no farm — so
+ * `channelFor` has no tenant to be given, and passing a null through it would
+ * produce `notif:null:<userId>`: a real channel name, silently shared by every
+ * tenantless publisher, with nothing in the type saying so.
+ *
+ * Two distinct functions instead, for #1664's reason. `app.user_id` and
+ * `app.actor_user_id` are two session variables that look alike and are keyed
+ * differently, and reading the wrong one cost a silently unenforced block.
+ * Addresses have the same hazard: `subscribeToPersonEvents` and
+ * `subscribeToNotifications` cannot be confused at a call site, where
+ * `subscribe({ tenantId: null, … })` could.
+ *
+ * ## The two namespaces are DISJOINT BY PREFIX, not merely improbable
+ *
+ * A person channel is `person:<userId>` — no `notif:` prefix — so no value of
+ * `tenantId` can produce one. The first draft used `notif:person:<userId>`,
+ * which a tenant whose id was literally `person` would collide with: unlikely,
+ * since tenant ids are cuids, but the test asserting it could only say "zero
+ * or one", which is vacuously true and therefore no test at all.
+ *
+ * Disjoint prefixes turn that into a real assertion — the impostor receives
+ * NOTHING — and cost nothing to arrange.
+ *
+ * The alternatives, both rejected on #2809: publishing to every farm the
+ * person belongs to delivers nothing to a person with no farm and three copies
+ * to a person in three farms; and a sentinel tenant id in the CHANNEL puts a
+ * fake tenant in the one place P8.1 spent a migration comment saying these
+ * rows do not have one. (A sentinel in the FRAME's `tenantId` field is a
+ * different matter — the wire contract requires that field on every kind, and
+ * `listing` already carries one.)
+ */
+function channelForPerson(userId: string): string {
+    return `${PERSON_CHANNEL_PREFIX}${userId}`;
+}
+
+/**
+ * Exported so a test can assert the shape rather than restate it.
+ *
+ * Deliberately NOT prefixed `notif:` — see above. Every tenant channel starts
+ * with that, so sharing the prefix is what made the two namespaces collidable.
+ */
+export const PERSON_CHANNEL_PREFIX = 'person:';
 
 /**
  * Which backing the bus is using right now.
@@ -201,10 +271,32 @@ function ensureSubscriberClient(): Redis | null {
  * 0 subscribers" criterion exists to catch.
  */
 export function subscribeToNotifications(sub: Subscriber): () => void {
+    return subscribeToChannel(channelFor(sub.tenantId, sub.userId), sub);
+}
+
+/**
+ * Register a subscriber for the caller's PERSON channel (#2809).
+ *
+ * The same contract as `subscribeToNotifications` — the returned function MUST
+ * be invoked on disconnect — and the same per-channel bookkeeping, because
+ * both go through `subscribeToChannel`. One implementation, two addresses: a
+ * second copy is how a leak gets fixed on one path and not the other.
+ */
+export function subscribeToPersonEvents(sub: PersonSubscriber): () => void {
+    // `tenantId` is filled with the sentinel the WIRE CONTRACT requires on
+    // every frame. It is not a farm and is never used for routing — the
+    // channel name is what routes — so it cannot reach `channelFor`.
+    return subscribeToChannel(channelForPerson(sub.userId), {
+        tenantId: PERSON_SCOPE_SENTINEL,
+        userId: sub.userId,
+        send: sub.send,
+    });
+}
+
+function subscribeToChannel(channel: string, sub: Subscriber): () => void {
     const mode = getNotificationBusMode();
     logModeOnce(mode);
 
-    const channel = channelFor(sub.tenantId, sub.userId);
     let subs = byChannel.get(channel);
     if (!subs) {
         subs = new Set();
@@ -270,10 +362,29 @@ export function publishNotificationEvent(
     userId: string,
     event: NotificationEvent,
 ): void {
+    publishToChannel(channelFor(tenantId, userId), event);
+}
+
+/**
+ * Publish one event to a PERSON, in this process and every other (#2809).
+ *
+ * `void` for the same reason as its sibling: the row is already committed by
+ * the time this runs, so a caller has nothing useful to do with a failure, and
+ * a lost event degrades to the client's REST refetch.
+ *
+ * **Call it AFTER the write commits.** `sendDirectMessage` uses a bare
+ * `prisma.$transaction`, which opens no `db-context` scope — so `afterCommit`
+ * there fires `void runEffect(...)` un-awaited rather than deferring, which is
+ * #1619 verbatim. A directly-awaited call after the transaction resolves is
+ * what actually orders it.
+ */
+export function publishPersonEvent(userId: string, event: NotificationEvent): void {
+    publishToChannel(channelForPerson(userId), event);
+}
+
+function publishToChannel(channel: string, event: NotificationEvent): void {
     const mode = getNotificationBusMode();
     logModeOnce(mode);
-
-    const channel = channelFor(tenantId, userId);
 
     if (mode === 'in-process') {
         deliverLocally(channel, event);

@@ -57,13 +57,25 @@
 /**
  * What a frame is about.
  *
- * Both kinds are published. `listing` arrived with the coalesced market tick
- * (#2123); the note that once stood here saying it had no publisher yet is
- * gone with it. A consumer should still switch on this rather than assume a
- * closed set — the enum is the contract, and an unknown kind is a frame to
- * ignore, not a parse error.
+ * All three kinds are published. `listing` arrived with the coalesced market
+ * tick (#2123); the note that once stood here saying it had no publisher yet
+ * is gone with it. `dm` arrived with the person-scoped channel (#2809).
+ *
+ * A consumer should still switch on this rather than assume a closed set — the
+ * enum is the contract, and an unknown kind is a frame to ignore, not a parse
+ * error.
+ *
+ * ## Adding `dm` was safe for older clients BY DESIGN, not by luck
+ *
+ * This file's header explains why `kind` is a FIELD and not a named SSE
+ * `event:` line: a named event is silently dropped by a client that registered
+ * no listener, so a third kind would break older clients invisibly. A `kind`
+ * field reaches the single `onmessage` handler, where an unrecognised value is
+ * visibly ignored and loggable — and the iOS client decodes it into an enum
+ * with an `unknown` case. That decision was taken in #2085 for exactly this
+ * moment, and `dm` is the first use of it.
  */
-export type StreamEventKind = 'notification' | 'listing';
+export type StreamEventKind = 'notification' | 'listing' | 'dm';
 
 /** The JSON on one `data:` line. */
 export interface StreamFrame {
@@ -85,6 +97,17 @@ export interface StreamFrame {
      *
      * So a client must not treat this as a listing id on a `listing` frame.
      * Refetching it gets nothing.
+     *
+     * ## For `dm` it IS a handle — the CONVERSATION id
+     *
+     * Not the message id, which would be the obvious choice and the wrong one:
+     * a client receiving a message id still has to know which conversation to
+     * put it in, and `readConversation` is keyed by conversation. So the frame
+     * names the thing the client refetches. It stays a handle and never
+     * content — `DirectMessage.body` is encrypted at rest, and a channel
+     * carrying a farmer's prose would put it through Redis and, via push,
+     * through APNs, which is the exposure
+     * `push-payload-carries-no-free-text` exists to prevent.
      */
     id: string;
     /**
@@ -96,6 +119,12 @@ export interface StreamFrame {
      *     agrent-ios asked for it to be non-optional.
      *   - `listing` — **always the sentinel `'listings'`.** Not a farm, not
      *     displayable, not a filter.
+     *   - `dm` — **always the sentinel `'person'`** (#2809). A direct message
+     *     has no farm: P8.1's four DM tables carry no `tenantId`, because two
+     *     people in a conversation may share no farm. The field is present
+     *     because this contract requires it on every kind, and a client must
+     *     not filter on it — a phone that filtered `dm` frames against its
+     *     memberships would drop every one of them.
      *
      * ## Why `listing` has no farm, when the ruling says it names the seller
      *

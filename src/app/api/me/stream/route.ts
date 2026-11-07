@@ -69,7 +69,11 @@ import { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
 import { getLegacyCtx, getUserCtx } from '@/app-layer/context';
-import { subscribeToNotifications } from '@/lib/notifications/notification-bus';
+import {
+    subscribeToNotifications,
+    subscribeToPersonEvents,
+    PERSON_SCOPE_SENTINEL,
+} from '@/lib/notifications/notification-bus';
 import { replayNotificationIdsAfter } from '@/app-layer/usecases/notification-replay';
 import { createSseResponse } from '@/lib/realtime/sse';
 import { serialiseFrame } from '@/lib/realtime/stream-frame';
@@ -279,9 +283,58 @@ export async function GET(req: NextRequest): Promise<Response> {
                 );
             });
 
+            // ── the PERSON channel, one subscription — #2809 ──
+            //
+            // `notif:person:<userId>`, and it is a THIRD address rather than a
+            // fourth farm: a direct message has no tenant, because P8.1's four
+            // DM tables carry none — two people in a conversation may share no
+            // farm. So there is no (farm, person) pair to subscribe with.
+            //
+            // The two alternatives on #2809 are both wrong here. Publishing to
+            // every farm the person belongs to delivers NOTHING to a person
+            // with no farm and three copies to a person in three, which the
+            // client would then have to de-duplicate. A sentinel tenant in the
+            // CHANNEL puts a fake farm in the one place P8.1 spent a migration
+            // comment saying these rows do not have one.
+            //
+            // The frame carries `PERSON_SCOPE_SENTINEL` in `tenantId` because
+            // this contract requires that field on every kind — `listing` does
+            // the same — and a client must not filter `dm` frames on it.
+            //
+            // `id` is the CONVERSATION id, not the message id: a client
+            // receiving a message id would still have to work out which
+            // conversation to put it in, and `readConversation` is keyed by
+            // conversation. It stays a handle and never content.
+            const unsubscribePerson = subscribeToPersonEvents({
+                userId: ctx.userId!,
+                // `send` directly, NOT through `emit`, and NOT calling
+                // `flush` — the same choice the listing subscriber makes, for
+                // the same reason. The `pending` buffer exists to stop a live
+                // frame preceding a replay and leaving `Last-Event-ID`
+                // pointing BACKWARDS, and only a `notification` frame carries
+                // an `id:` line. `serialiseFrame` omits it for `dm`, so a dm
+                // frame cannot move the cursor and has nothing to order
+                // against.
+                //
+                // The first draft called `flush()` here. That would drain the
+                // replay buffer EARLY — sending replayed notification ids
+                // before the replay had finished — which is the exact
+                // ordering problem the buffer was built to prevent.
+                send: (event) => {
+                    send(
+                        serialiseFrame({
+                            kind: 'dm',
+                            id: event.id,
+                            tenantId: PERSON_SCOPE_SENTINEL,
+                        }),
+                    );
+                },
+            });
+
             const unsubscribe = () => {
                 for (const u of unsubscribes) u();
                 unsubscribeListings();
+                unsubscribePerson();
             };
 
             // Slot refresh rides the same cadence as the heartbeat, one tick

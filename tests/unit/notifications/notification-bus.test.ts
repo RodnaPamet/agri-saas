@@ -11,9 +11,13 @@
 
 import {
     subscribeToNotifications,
+    subscribeToPersonEvents,
     publishNotificationEvent,
+    publishPersonEvent,
     getNotificationSubscriberCount,
     __resetNotificationBusForTests,
+    PERSON_CHANNEL_PREFIX,
+    PERSON_SCOPE_SENTINEL,
     type NotificationEvent,
 } from '@/lib/notifications/notification-bus';
 
@@ -133,5 +137,98 @@ describe('notification bus', () => {
 
         u1();
         u2();
+    });
+});
+
+describe('the PERSON channel — a third address, not a fourth farm (#2809)', () => {
+    /**
+     * A direct message has no tenant: P8.1's four DM tables carry none,
+     * because two people in a conversation may share no farm. So these events
+     * cannot ride `notif:<tenantId>:<userId>` — the two alternatives on #2809
+     * both fail, and the tests below are what hold the chosen one.
+     */
+    it('reaches the addressed person', () => {
+        const got: NotificationEvent[] = [];
+        subscribeToPersonEvents({ userId: 'u-alice', send: (e) => got.push(e) });
+
+        publishPersonEvent('u-alice', { id: 'conv-1' });
+
+        // The positive control every zero below needs: a bus bound to nothing
+        // also delivers nothing.
+        expect(got).toEqual([{ id: 'conv-1' }]);
+    });
+
+    it('does NOT reach a different person', () => {
+        const mine: NotificationEvent[] = [];
+        const theirs: NotificationEvent[] = [];
+        subscribeToPersonEvents({ userId: 'u-alice', send: (e) => mine.push(e) });
+        subscribeToPersonEvents({ userId: 'u-boris', send: (e) => theirs.push(e) });
+
+        publishPersonEvent('u-alice', { id: 'conv-1' });
+
+        expect(mine).toHaveLength(1);
+        expect(theirs).toHaveLength(0);
+    });
+
+    it('is a SEPARATE namespace from the tenant channels, in both directions', () => {
+        const person: NotificationEvent[] = [];
+        const farm: NotificationEvent[] = [];
+        subscribeToPersonEvents({ userId: 'u-alice', send: (e) => person.push(e) });
+        subscribeToNotifications({
+            tenantId: 't-acme',
+            userId: 'u-alice',
+            send: (e) => farm.push(e),
+        });
+
+        publishPersonEvent('u-alice', { id: 'conv-1' });
+        expect(person).toHaveLength(1);
+        // A person event must not spill into a farm channel: a DM is not a
+        // notification row, has nothing to refetch under a tenant, and would
+        // make a client refetch a list that cannot contain it.
+        expect(farm).toHaveLength(0);
+
+        publishNotificationEvent('t-acme', 'u-alice', { id: 'notif-1' });
+        expect(farm).toHaveLength(1);
+        // And the converse, which is the half that would break a bell: a
+        // notification must not arrive as a `dm` frame.
+        expect(person).toHaveLength(1);
+    });
+
+    it('cannot be impersonated by a tenant whose id is the sentinel word', () => {
+        // The two namespaces are disjoint BY PREFIX: a person channel is
+        // `person:<userId>` and every tenant channel starts `notif:`, so no
+        // value of `tenantId` can reach a person's subscribers.
+        //
+        // The first draft shared the prefix (`notif:person:<userId>`), which a
+        // tenant whose id was literally `person` would collide with — and the
+        // only assertion available was "zero or one", which is vacuously true
+        // and therefore no test at all. Making the prefixes disjoint is what
+        // turned this into something that can fail.
+        const person: NotificationEvent[] = [];
+        const impostor: NotificationEvent[] = [];
+        subscribeToPersonEvents({ userId: 'u-alice', send: (e) => person.push(e) });
+        subscribeToNotifications({
+            tenantId: PERSON_SCOPE_SENTINEL,
+            userId: 'u-alice',
+            send: (e) => impostor.push(e),
+        });
+
+        publishPersonEvent('u-alice', { id: 'conv-1' });
+
+        expect(person).toHaveLength(1);
+        expect(impostor).toHaveLength(0);
+        expect(PERSON_CHANNEL_PREFIX).toBe('person:');
+        expect(PERSON_CHANNEL_PREFIX.startsWith('notif:')).toBe(false);
+    });
+
+    it('unsubscribes cleanly, leaving no subscriber behind', () => {
+        const release = subscribeToPersonEvents({ userId: 'u-alice', send: () => {} });
+        expect(getNotificationSubscriberCount()).toBe(1);
+        release();
+        expect(getNotificationSubscriberCount()).toBe(0);
+        // Idempotent, like its sibling: the SSE route can reach cleanup from
+        // both an abort and a stream cancel (#1984).
+        release();
+        expect(getNotificationSubscriberCount()).toBe(0);
     });
 });
