@@ -198,6 +198,123 @@ function bandFn(index: VegetationIndex): (img: EeImage) => EeImage {
 }
 
 /**
+ * The SCL classes this pipeline treats as unusable: 3 cloud shadow, 8 cloud
+ * medium probability, 9 cloud high probability, 10 thin cirrus, 11 snow/ice.
+ *
+ * ONE definition, four call sites. It was four copies of the same chain until
+ * #2837's parcel-level cloud filter needed a FIFTH reader — and a filter that
+ * decides which scenes enter the collection, keyed on a different set of
+ * classes from the mask that then reduces them, would admit a pass as "clear
+ * over the parcel" and reduce it to nothing. The two have to be the same
+ * answer by construction, not by both being correct today.
+ */
+function sclClearMask(img: EeImage): EeImage {
+    const scl = img.select('SCL');
+    return scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
+}
+
+/**
+ * Which SCENE-SELECTION algorithm `adaptiveS2Collection` implements — #2837.
+ *
+ * Bump this whenever a change alters WHICH passes enter the collection: the
+ * tile-level cloud threshold, the masked classes, the window widening, the
+ * collection id. Stored readings record the version that produced them, and
+ * `getParcelRiskHistory` treats a parcel's coverage watermark as ABSENT when
+ * it does not match — so a bump re-searches every parcel automatically.
+ *
+ * That is the point of the constant rather than a migration that nulls the
+ * watermark: a selection change that admits MORE passes leaves every existing
+ * watermark claiming dates were searched when they were searched under rules
+ * that rejected the pass. Nothing would ever go back for them, the chart would
+ * silently keep the old answer, and no test would fail. Remembering to write
+ * the UPDATE is exactly the step that gets forgotten.
+ *
+ * It does NOT cover a change to the INDEX arithmetic (`bandFn`) or the
+ * reducer: those change a stored pass's VALUE, not whether the pass exists,
+ * and the recent-tail refresh plus the upsert handle a value change for the
+ * dates anybody is looking at. A wholesale re-read of history for a changed
+ * band formula is a backfill job, not a watermark reset.
+ *
+ * 1 — the original: `CLOUDY_PIXEL_PERCENTAGE < 60` at tile level, SCL classes
+ *     3/8/9/10/11 masked, scale 20.
+ * 2 — judge cloud over the PARCEL (#2837, owner 2026-11-07): the tile-level
+ *     pre-filter relaxes to `< 90` and a pass is kept only when its
+ *     SCL-clear share over the geometry is at least
+ *     `MIN_PARCEL_CLEAR_SHARE`. Applies to the two polygon readers; the tile
+ *     and bounds paths are unchanged, so this version describes the
+ *     per-parcel collection only.
+ */
+export const SCENE_SELECTION_VERSION = 2;
+
+/**
+ * Tile-level `CLOUDY_PIXEL_PERCENTAGE` ceiling for the PARCEL readers.
+ *
+ * 90 rather than 60, and it is kept rather than dropped. `CLOUDY_PIXEL_PERCENTAGE`
+ * is a figure about a ~100x100 km granule, so at 60 a pass that is clear over
+ * one field and cloudy across the tile never reaches the SCL mask at all —
+ * which is the owner's complaint: parcel 15655-19 read «Заснето на 28
+ * октомври» ten days later because every November pass was filtered out at
+ * tile level.
+ *
+ * It does not go away entirely, because a genuinely overcast granule has no
+ * clear parcel in it and still costs a per-image `reduceRegion` to find that
+ * out. 90 keeps the hopeless cases out of the collection while letting through
+ * everything that could plausibly be clear over one field.
+ */
+const PARCEL_TILE_CLOUD_MAX = 90;
+
+/**
+ * How much of the parcel an SCL-clear pass has to cover to be kept.
+ *
+ * 0.5 (owner's call relayed via `agrent-ios`, confirmed with the peer). At 0.7
+ * a field under the edge of a cloud is discarded while two thirds of it is
+ * perfectly readable; the field mean is already computed over clear pixels
+ * ONLY, so a half-clear pass yields a real answer over a smaller area rather
+ * than a wrong one over the whole.
+ *
+ * Not lower, because the smaller the clear patch the less the mean describes
+ * the FIELD — at 0.1 a reading is one corner standing in for the parcel, and
+ * a trend made of different corners is not a trend.
+ */
+const MIN_PARCEL_CLEAR_SHARE = 0.5;
+
+/**
+ * What fraction of `region` this pass sees without cloud, shadow, cirrus or
+ * snow — an `ee.Number` between 0 and 1.
+ *
+ * `unmask(0)` is the load-bearing call. `SCL` is MASKED outside the granule
+ * footprint, and `reduceRegion`'s mean ignores masked pixels — so a scene
+ * clipping one corner of a parcel would report a clear share of 1.0 for the
+ * sliver it covers and be kept as a full reading of the field. Unmasking to 0
+ * makes "outside this granule" count as not-clear, which is what the share is
+ * supposed to mean.
+ *
+ * Same scale (20) and same SCL classes as the reducer that follows, through
+ * `sclClearMask`, so a pass admitted as clear cannot then reduce to nothing.
+ */
+function parcelClearShare(img: EeImage, region: EeImage): EeImage {
+    const clear = sclClearMask(img).unmask(0).rename('clear');
+    const stats = (
+        clear as unknown as { reduceRegion: (a: Record<string, unknown>) => EeImage }
+    ).reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: region,
+        scale: 20,
+        maxPixels: 1e9,
+        bestEffort: true,
+    });
+    // `get` on an empty reduction yields null, and `ee.Number(null)` fails a
+    // comparison rather than returning false — so the absent case is coerced
+    // to 0, which the filter then rejects.
+    const eeX = ee as unknown as {
+        Number: (v: unknown) => EeImage;
+        Algorithms: { If: (c: unknown, t: unknown, f: unknown) => unknown };
+    };
+    const raw = (stats as unknown as { get: (k: string) => unknown }).get('clear');
+    return eeX.Number(eeX.Algorithms.If(raw, raw, 0));
+}
+
+/**
  * Cloud-filtered S2_SR_HARMONIZED collection for `region`, ADAPTIVE on the
  * date window: prefer the requested `[win.start, win.end)`, but when that
  * window holds NO imagery — the common cause of a blank overlay: the wall
@@ -206,8 +323,34 @@ function bandFn(index: VegetationIndex): (img: EeImage) => EeImage {
  * available acquisition. So the composite is never empty while ANY recent
  * imagery exists, and the date picker still drives the window when data is
  * there. `ee` is untyped; the fluent chain is `EeImage`.
+ *
+ * ## `judgeCloudOverRegion` — opt-in, and why it is not the default
+ *
+ * With it, the tile-level `CLOUDY_PIXEL_PERCENTAGE` ceiling relaxes to
+ * `PARCEL_TILE_CLOUD_MAX` and each pass is kept on its own SCL-clear share
+ * over `region` instead. That is what the owner asked for (2026-11-07), and it
+ * is the right judgement for a PARCEL: a figure about a granule says nothing
+ * about one field.
+ *
+ * It is deliberately NOT on for the tile and bounds readers, whose `region` is
+ * a location BOUNDING BOX rather than a field. Two reasons, and the second
+ * decided it. A clear share over a bbox spanning a whole farm is a different
+ * quantity from a clear share over one field, so 0.5 there would mean
+ * something nobody has chosen. And it costs a `reduceRegion` per image in the
+ * collection, on the path that serves map tiles in bulk — where the current
+ * filter is one property comparison.
+ *
+ * The consequence is that an NDVI overlay and a parcel card can be built from
+ * different sets of scenes, and so can report different acquisition dates.
+ * They already differ in their geometry (bbox versus polygon), so this widens
+ * an existing gap rather than opening one; closing it means deciding what a
+ * clear share over a bbox should mean, which is a separate question.
  */
-function adaptiveS2Collection(region: EeImage, win: NdviWindow): EeImage {
+function adaptiveS2Collection(
+    region: EeImage,
+    win: NdviWindow,
+    opts: { judgeCloudOverRegion?: boolean } = {},
+): EeImage {
     // `ee.Date` / `ee.Algorithms` (and the object-arg ImageCollection ctor) are
     // real EE members missing from the `EarthEngine` type defs — reach them
     // through a narrow typed view rather than `any`.
@@ -216,10 +359,36 @@ function adaptiveS2Collection(region: EeImage, win: NdviWindow): EeImage {
         Algorithms: { If: (cond: unknown, t: unknown, f: unknown) => EeImage };
         ImageCollection: (v: unknown) => EeImage;
     };
-    const base = ee
+    const perRegion = opts.judgeCloudOverRegion === true;
+    let base = ee
         .ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
         .filterBounds(region)
-        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 60));
+        .filter(
+            ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', perRegion ? PARCEL_TILE_CLOUD_MAX : 60),
+        );
+    if (perRegion) {
+        // Per-image, server-side: how much of THIS geometry the pass sees
+        // clear, then keep only the passes that see enough of it. Set as a
+        // property and filtered rather than computed in TypeScript, because
+        // the whole point is that the collection — the adaptive fallback's
+        // `latest` below included — is built from region-clear passes. That
+        // fallback is what makes `acquiredDate` the newest pass actually clear
+        // over the parcel rather than the newest pass in a clear-ish granule.
+        base = base
+            .map((img: EeImage) =>
+                (img as unknown as { set: (k: string, v: unknown) => EeImage }).set(
+                    'regionClearShare',
+                    parcelClearShare(img, region),
+                ),
+            )
+            .filter(
+                (
+                    ee.Filter as unknown as {
+                        gte: (property: string, value: number) => unknown;
+                    }
+                ).gte('regionClearShare', MIN_PARCEL_CLEAR_SHARE),
+            );
+    }
     const windowColl = base.filterDate(win.start, win.end);
     const windowDays = Math.max(1, Math.round((Date.parse(win.end) - Date.parse(win.start)) / 86_400_000));
     const latest = eeX.Date(base.sort('system:time_start', false).first().get('system:time_start'));
@@ -320,9 +489,7 @@ export async function getIndexTileUrl(
     // typed (every method returns another EE object) without leaking
     // `any` — the `@google/earthengine` module itself is untyped.
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const composite: EeImage = masked.map((img: EeImage) => band(img)).median().clip(clipRegion);
@@ -395,9 +562,7 @@ export async function getIndexMeansForBounds(
 
     // Same SCL cloud/shadow/snow mask as the tile pipeline.
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const ndviBand = bandFn('ndvi');
@@ -459,12 +624,13 @@ export async function getIndexMeansForPolygon(
     // `ee.Geometry(geojson)` accepts a GeoJSON geometry object directly.
     const region = new (ee.Geometry as unknown as { new (g: unknown): EeImage })(geometry);
 
-    const collection = adaptiveS2Collection(region, win);
+    // #2837: judge cloud over THIS PARCEL rather than over the ~100x100 km
+    // granule — see `PARCEL_TILE_CLOUD_MAX`. Opt-in, so the tile and bounds
+    // readers keep their cheaper tile-level filter unchanged.
+    const collection = adaptiveS2Collection(region, win, { judgeCloudOverRegion: true });
 
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const ndviBand = bandFn('ndvi');
@@ -505,33 +671,6 @@ export async function getIndexMeansForPolygon(
 
     return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
 }
-
-/**
- * Which SCENE-SELECTION algorithm `adaptiveS2Collection` implements — #2837.
- *
- * Bump this whenever a change alters WHICH passes enter the collection: the
- * tile-level cloud threshold, the masked classes, the window widening, the
- * collection id. Stored readings record the version that produced them, and
- * `getParcelRiskHistory` treats a parcel's coverage watermark as ABSENT when
- * it does not match — so a bump re-searches every parcel automatically.
- *
- * That is the point of the constant rather than a migration that nulls the
- * watermark: a selection change that admits MORE passes leaves every existing
- * watermark claiming dates were searched when they were searched under rules
- * that rejected the pass. Nothing would ever go back for them, the chart would
- * silently keep the old answer, and no test would fail. Remembering to write
- * the UPDATE is exactly the step that gets forgotten.
- *
- * It does NOT cover a change to the INDEX arithmetic (`bandFn`) or the
- * reducer: those change a stored pass's VALUE, not whether the pass exists,
- * and the recent-tail refresh plus the upsert handle a value change for the
- * dates anybody is looking at. A wholesale re-read of history for a changed
- * band formula is a backfill job, not a watermark reset.
- *
- * 1 — the original: `CLOUDY_PIXEL_PERCENTAGE < 60` at tile level, SCL classes
- *     3/8/9/10/11 masked, scale 20.
- */
-export const SCENE_SELECTION_VERSION = 1;
 
 /** One Sentinel-2 pass, reduced over a parcel. */
 export interface IndexPass {
@@ -579,12 +718,13 @@ export async function getIndexMeansPerPass(
     await initEarthEngine();
 
     const region = new (ee.Geometry as unknown as { new (g: unknown): EeImage })(geometry);
-    const collection = adaptiveS2Collection(region, win);
+    // #2837: judge cloud over THIS PARCEL rather than over the ~100x100 km
+    // granule — see `PARCEL_TILE_CLOUD_MAX`. Opt-in, so the tile and bounds
+    // readers keep their cheaper tile-level filter unchanged.
+    const collection = adaptiveS2Collection(region, win, { judgeCloudOverRegion: true });
 
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const ndviBand = bandFn('ndvi');
