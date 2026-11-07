@@ -422,18 +422,42 @@ describe('one round runs its tools in PARALLEL, and folds them in order (#2670)'
 
     it('two tools in one round OVERLAP — the round is not the sum of its tools', async () => {
         /*
-         * The measurement, not a proxy for it. Each tool sleeps 60ms, so a
-         * sequential round takes ≥120ms and a parallel one ≈60ms. The bound
-         * below (100ms) sits between them, which is what makes this fail if
-         * the `Promise.all` is reverted to a `for … await` — and that is the
-         * mutation it was written against.
+         * OVERLAP is measured directly, which is what the test is named for.
+         *
+         * It used to be inferred from TOTAL DURATION: each tool slept 60ms, so
+         * a sequential round took ≥120ms and a parallel one ≈60ms, and the
+         * assertion was `elapsed < 100`. That bound is 40ms of headroom over a
+         * 60ms baseline, measured on a machine doing nothing else — and CI
+         * runs six jest shards with `--coverage` on one runner. It failed on
+         * `Test (shard 5/6)` of run 42417250693 and passed locally in 64ms on
+         * the same commit, which is the signature of a load-correlated bound
+         * rather than a broken property.
+         *
+         * Raising the bound would buy time and keep the defect: an absolute
+         * duration is the wrong instrument, because a loaded runner inflates
+         * the parallel and the sequential world together. What separates them
+         * is whether the SECOND tool starts before the FIRST one finishes —
+         * and load delays both tools equally, so that comparison holds at any
+         * speed. Same mutation it was written against (`for … await` makes the
+         * second start after the first resolves), measured on the event rather
+         * than through a proxy for it.
          *
          * Real timers deliberately: a fake-timer version would assert that
          * `Promise.all` was called, which is the implementation rather than
          * the property.
          */
-        listTasks.mockImplementation(() => after(60, []));
-        analyzeBlockRisk.mockImplementation(() => after(60, { blocks: [] }));
+        const marks: Array<{ tool: string; at: number; done: number }> = [];
+        /** Sleep `ms` of REAL time, recording when this tool ran. */
+        const timed = <T,>(tool: string, ms: number, value: T): Promise<T> => {
+            const mark = { tool, at: Date.now(), done: 0 };
+            marks.push(mark);
+            return after(ms, value).then((v) => {
+                mark.done = Date.now();
+                return v;
+            });
+        };
+        listTasks.mockImplementation(() => timed('list', 60, []));
+        analyzeBlockRisk.mockImplementation(() => timed('risk', 60, { blocks: [] }));
 
         const h = harness();
         const complete = jest
@@ -459,10 +483,28 @@ describe('one round runs its tools in PARALLEL, and folds them in order (#2670)'
          */
         expect(listTasks).toHaveBeenCalledTimes(1);
         expect(analyzeBlockRisk).toHaveBeenCalledTimes(1);
-        expect(elapsed).toBeLessThan(100);
-        // And the loop's own figure agrees with the wall clock, so the
-        // reported `toolPhaseMs` is the slowest tool rather than the sum.
-        expect(out.timing.toolPhaseMs).toBeLessThan(100);
+
+        // Both tools ran, and in the order the model called them — without
+        // this the comparison below could be between one mark and itself.
+        expect(marks.map((m) => m.tool)).toEqual(['list', 'risk']);
+
+        // THE PROPERTY: the second tool started before the first finished.
+        // Scale-free — a loaded runner pushes both `at` and `done` out
+        // together, so the inequality survives any amount of contention,
+        // where an absolute bound does not.
+        expect(marks[1].at).toBeLessThan(marks[0].done);
+
+        // And the loop's own figure agrees: `toolPhaseMs` is the slowest tool
+        // rather than the sum, so it must come in under the two tools' total
+        // measured duration. Compared against what the tools ACTUALLY took on
+        // this run rather than against a constant, for the same reason.
+        const totalToolMs = marks.reduce((sum, m) => sum + (m.done - m.at), 0);
+        expect(out.timing.toolPhaseMs).toBeLessThan(totalToolMs);
+
+        // `elapsed` is read so the variable is not dead, and bounded loosely
+        // rather than tightly: it is a sanity check that the round finished at
+        // all, NOT the parallelism measurement. The two assertions above are.
+        expect(elapsed).toBeLessThan(10_000);
     });
 
     it('the FOLD is in the model’s call order, not completion order', async () => {
