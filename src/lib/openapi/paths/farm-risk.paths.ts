@@ -67,6 +67,17 @@ const ParcelRiskPass = z
         vegetation: RiskLevel,
         moisture: RiskLevel,
         overall: RiskLevel,
+        source: z
+            .enum(['stored', 'earthengine'])
+            .openapi({
+                description:
+                    'Where this pass came from. `stored` is FINAL — computed on an ' +
+                    'earlier request and read back from our own record. `earthengine` ' +
+                    'was computed during THIS request, which is the only case in which ' +
+                    'a slow or failing Earth Engine can shorten the series. So if a ' +
+                    'window returns fewer passes than you expect, this is what tells ' +
+                    'you whether retrying is worth anything.',
+            }),
     })
     .openapi('ParcelRiskPass');
 
@@ -177,7 +188,15 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             'than because the satellite saw nothing. An empty `passes` with ' +
             '`configured: true` is the genuine "no usable pass in this window" case, and ' +
             'the two must not be shown the same way.\n\n' +
-            'Cached per (tenant, parcel, days, day) for 6h and ETagged — send ' +
+            'Readings are STORED, not merely cached: every pass this endpoint computes ' +
+            'is kept per (parcel, acquisition date), so a period question answers from ' +
+            'our own record rather than a live Earth Engine call. That is what makes it ' +
+            'keep working while Earth Engine is slow or down, and what makes a 120-day ' +
+            'question cost the same as a 14-day one. Earth Engine is consulted only for ' +
+            'dates never searched before, plus a short recent tail — Sentinel-2 L2A for ' +
+            'the last few days is still being processed, so a pass can appear after the ' +
+            'fact.\n\n' +
+            'Also cached per (tenant, parcel, days, day) for 6h and ETagged — send ' +
             '`If-None-Match`. A new pass arrives every ~5 days, so a 304 is the normal ' +
             'answer.',
         tags: ['Farm risk'],

@@ -474,6 +474,30 @@ model Parcel {
   /// or that the location has never been imported into, which is the same
   /// thing from a client's point of view: nothing to warn about.
   absentFromImportAt DateTime?
+  /// The window of acquisition dates this parcel's stored satellite readings
+  /// have actually been ASKED about — not the window they have readings FOR.
+  ///
+  /// The distinction is the whole point. A date with no `ParcelIndexReading`
+  /// row means either "no cloud-free pass that day" or "never asked", and
+  /// nothing in the readings table tells those apart. Without a watermark the
+  /// history read would call Earth Engine on every request for the dates it
+  /// has no row for — which is every cloudy day, for ever — and the stored
+  /// readings would save nothing. See `getParcelRiskHistory`.
+  ///
+  /// Both NULL means never asked. Dates, not timestamps: a satellite pass is
+  /// identified by its acquisition DAY throughout this feature.
+  indexReadingsFrom    DateTime?                                  @db.Date
+  indexReadingsThrough DateTime?                                  @db.Date
+  /// Which scene-selection algorithm the window above was searched under —
+  /// `SCENE_SELECTION_VERSION` in `@/lib/agro/earth-engine`.
+  ///
+  /// The watermark is only believable alongside the rules that produced it. A
+  /// change admitting MORE passes (a looser cloud threshold, say) leaves every
+  /// stored watermark claiming dates were searched under rules that REJECTED
+  /// the pass now wanted, and nothing would ever go back for them. Comparing
+  /// this column to the constant makes a mismatched watermark read as absent,
+  /// so a bump re-searches every parcel with no migration step to forget.
+  indexReadingsAlgo    Int?
   /// "Try it with sample data" tag — see Location.isSampleData.
   isSampleData       Boolean                                      @default(false)
   createdAt          DateTime                                     @default(now())
@@ -489,6 +513,7 @@ model Parcel {
   cropPlans            CropPlan[]
   leases               ParcelLease[]
   comments           ParcelComment[]
+  indexReadings      ParcelIndexReading[]
   cropSeasons          ParcelCropSeason[]
   weedObservations     ParcelWeedObservation[]
   costEntryAllocations CostEntryAllocationParcel[]
@@ -672,6 +697,79 @@ model ParcelCropSeason {
 /// The phone queues writes offline and replays them with the outbox item id as
 /// the `Idempotency-Key`. Without the column a lost response followed by a
 /// retry posts the note twice, and nothing would refuse it.
+/// One parcel's Sentinel-2 index means for ONE acquisition date — #2837.
+///
+/// ## Why STORED and not only cached
+///
+/// Owner, relayed 2026-11-07: "can we store past data so the app and the
+/// assistant provide info based on a time period, like the past 14 days". The
+/// 6h Redis entry behind `/analysis` answers the same question twice cheaply
+/// and cannot answer it at all when Earth Engine is slow or down — and it
+/// keeps only TODAY's answer, so every reading older than the current entry
+/// is gone. A period question needs a record, which is this table.
+///
+/// Earth Engine is then consulted only for dates the record has not been
+/// asked about (see `Parcel.indexReadingsFrom` / `indexReadingsThrough`) plus
+/// a short recent tail, because the L2A archive for the last few days is
+/// still filling.
+///
+/// ## Nullable indices are real readings
+///
+/// A row with `ndvi` NULL records that a pass EXISTED and this parcel was
+/// entirely under cloud for it. That is a different fact from no row at all,
+/// and conflating them would make the backfill re-ask Earth Engine about
+/// every cloudy day for ever.
+///
+/// ## `Float`, not `Decimal`
+///
+/// Unlike `areaHa` or a rent amount, these are derived remote-sensing indices
+/// in [-1, 1] rounded to three places — there is no accounting identity to
+/// preserve and no money to lose a cent of. `Decimal` would also come back as
+/// a `Decimal` object that every reader had to convert before serialising,
+/// where the API's contract is a plain JSON number.
+///
+/// NOT in `ENCRYPTED_FIELDS` and must not be: a field mean is derived
+/// agronomic data about the farm's own land, there is nothing personal in it,
+/// and the manifest only handles strings. Tenant-scoped with RLS, like every
+/// other farm record.
+///
+/// Stage 2's within-field statistics (p10/p50/p90, below-threshold share,
+/// weakest zone) belong as COLUMNS on this row rather than a second table, so
+/// one read serves both the latest-reading card and the trend.
+model ParcelIndexReading {
+  id         String   @id @default(cuid())
+  tenantId   String
+  parcelId   String
+  /// The ACQUISITION day, UTC — never the day we computed it. A farmer
+  /// reading a three-week-old pass as today plans against weather that has
+  /// since changed, which is why `/analysis` already surfaces this separately
+  /// from `generatedAt`.
+  acquiredOn DateTime @db.Date
+  /// Field-mean NDVI for this pass. NULL = the pass existed and this parcel
+  /// was fully cloud-masked.
+  ndvi       Float?
+  /// Field-mean NDMI for this pass, same NULL meaning.
+  ndmi       Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parcel Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One row per parcel per acquisition date. This is what makes the write an
+  /// idempotent upsert: re-running an analysis for a day already stored
+  /// replaces that day's numbers instead of appending a second reading the
+  /// chart would draw twice.
+  ///
+  /// Its index is also the ONLY read shape — `WHERE tenantId = ? AND
+  /// parcelId = ? AND acquiredOn >= ? ORDER BY acquiredOn ASC` — equality,
+  /// equality, then the range and the sort key, in query order. A separate
+  /// `@@index` on the same three columns would be the same B-tree twice, so
+  /// this model is triaged in `LIST_MODELS_TENANT_INDEX_SUFFICIENT` rather
+  /// than `LIST_QUERY_INDEXES`, which requires an `@@index` block.
+  @@unique([tenantId, parcelId, acquiredOn])
+}
+
 model ParcelComment {
   id               String   @id @default(cuid())
   tenantId         String
