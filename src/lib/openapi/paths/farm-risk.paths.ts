@@ -53,6 +53,57 @@ const ParcelRisk = z
     .openapi('ParcelRisk');
 
 /**
+ * One satellite pass. Structurally `ParcelRisk` minus the parcel identity, and
+ * that is deliberate — the levels are computed by the SAME functions the card
+ * uses, so a chart point cannot be coloured by a different scale from the
+ * reading above it.
+ */
+const ParcelRiskPass = z
+    .object({
+        /** `YYYY-MM-DD` of the ACQUISITION. */
+        date: z.string(),
+        ndvi: z.number().nullable(),
+        ndmi: z.number().nullable(),
+        vegetation: RiskLevel,
+        moisture: RiskLevel,
+        overall: RiskLevel,
+    })
+    .openapi('ParcelRiskPass');
+
+const ParcelRiskHistory = z
+    .object({
+        parcelId: z.string(),
+        /** The window actually used, after clamping — not necessarily what you sent. */
+        days: z.number().int(),
+        configured: z.boolean(),
+        /** Oldest first. */
+        passes: z.array(ParcelRiskPass),
+        truncated: z.boolean(),
+        generatedAt: z.string().datetime(),
+    })
+    .openapi('ParcelRiskHistory');
+
+/**
+ * `?days=` on the history.
+ *
+ * Declared although it is optional, for `CatalogueQuery`'s reason: a generated
+ * client sends only what the document names.
+ */
+const HistoryQuery = z.object({
+    days: z.coerce
+        .number()
+        .int()
+        .optional()
+        .openapi({
+            description:
+                'Window length in days. CLAMPED to 7-120 rather than refused, and the ' +
+                'response echoes the value actually used — read `days` off the body ' +
+                'rather than assuming you got what you asked for. An unparseable value ' +
+                'is treated as absent (60).',
+        }),
+});
+
+/**
  * `?locale=` on the catalogue.
  *
  * Optional, because the endpoint has a defined fallback — but DECLARED, because
@@ -100,6 +151,43 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
         tags: ['Farm risk'],
         params: ParcelParams,
         success: { status: 200, description: 'Risk readings for the parcel.', schema: ParcelRisk },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/agro/parcels/{parcelId}/analysis/history',
+        operationId: 'getParcelRiskHistory',
+        summary: 'The per-pass NDVI/NDMI series for one parcel',
+        description:
+            'The trend behind the sibling `/analysis` card: one entry per cloud-masked ' +
+            'Sentinel-2 pass in the window, oldest first, each carrying the same ' +
+            '`RiskLevel` vocabulary the card uses.\n\n' +
+            '**`ndvi` and `ndmi` are nullable PER PASS, and a null is a real answer.** A ' +
+            'pass can be in the collection and still be fully cloud-masked over this ' +
+            'parcel — clear over the next field, not over this one. Plot it as a GAP. A ' +
+            'client that renders null as 0 draws a cliff to bare soil that never ' +
+            'happened, which on a crop chart reads as a failed field.\n\n' +
+            'Dates are unique: two orbits can image the same ground on consecutive days, ' +
+            'and the server keeps the first non-null reading per date so a chart has one ' +
+            'point per x.\n\n' +
+            '`truncated: true` means the pass cap was reached and older passes exist ' +
+            'beyond what is returned — ask for a shorter window to see them in full.\n\n' +
+            '`configured: false` is `/analysis`\u2019s meaning verbatim: Earth Engine has no ' +
+            'credentials here, so `passes` is empty because nothing was analysed rather ' +
+            'than because the satellite saw nothing. An empty `passes` with ' +
+            '`configured: true` is the genuine "no usable pass in this window" case, and ' +
+            'the two must not be shown the same way.\n\n' +
+            'Cached per (tenant, parcel, days, day) for 6h and ETagged — send ' +
+            '`If-None-Match`. A new pass arrives every ~5 days, so a 304 is the normal ' +
+            'answer.',
+        tags: ['Farm risk'],
+        params: ParcelParams,
+        query: HistoryQuery,
+        success: {
+            status: 200,
+            description: 'The pass series for the parcel.',
+            schema: ParcelRiskHistory,
+        },
     });
 
     op(registry, {
