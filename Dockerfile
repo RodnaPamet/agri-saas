@@ -245,9 +245,28 @@ COPY --from=builder --chown=nextjs:nodejs /app/src/lib/pdf/fonts ./src/lib/pdf/f
 # already owned by nextjs:nodejs via the per-COPY --chown above, so we
 # only chown the freshly-created upload dir here — NOT a recursive
 # `chown -R /app`, which duplicated the whole tree into its own layer.
+#
+# `/var/log/agrent` is here for the same reason and with a sharper one behind
+# it (#2682). The compose file sets `LOG_FILE_PATH=/var/log/agrent/app.jsonl`
+# and mounts the named volume `applogs` there — and a Docker named volume is
+# created root-owned, then seeds its ownership from the image's directory ONLY
+# if that directory exists at first mount. It did not exist here, so the volume
+# stayed `root:root` 755, the app runs as uid 1001, and every write was EACCES.
+#
+# Measured on the VM: the directory empty after 50 minutes of a healthy app,
+# `app.jsonl` absent, and the logger's own fallback line in `docker logs`:
+#   [logger] LOG_FILE_PATH is set but unusable; continuing on stdout only:
+#   EACCES: permission denied, open '/var/log/agrent/app.jsonl'
+#
+# So the log copy meant to OUTLIVE the container existed nowhere, and the only
+# evidence of that was a line in the very log that gets pruned.
+#
+# `nextjs:nodejs` matches `/data/uploads` above. Note the app's primary group is
+# `nogroup` (adduser --system does not join `nodejs`), so it is the UID that
+# makes this writable, exactly as for uploads.
 RUN chmod +x ./scripts/entrypoint.sh ./scripts/wait-for-migrations.sh && \
-    mkdir -p /data/uploads && \
-    chown nextjs:nodejs /data/uploads
+    mkdir -p /data/uploads /var/log/agrent && \
+    chown nextjs:nodejs /data/uploads /var/log/agrent
 
 # Strip the bundled npm CLI from the RUNTIME image.
 #
