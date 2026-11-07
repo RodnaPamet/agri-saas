@@ -16,6 +16,7 @@ import {
     type RateLimitScope,
 } from '@/lib/security/rate-limit-middleware';
 import type { RateLimitConfig } from '@/lib/security/rate-limit';
+import { reportCiphertextEgress } from '@/lib/security/ciphertext-egress';
 import { resolveRequestUserId, resolveRequestIdentity } from '@/lib/security/rate-limit-identity';
 import { API_VERSION, API_VERSION_HEADER } from '@/lib/api-version';
 
@@ -410,6 +411,27 @@ export function withApiErrorHandling<Context = unknown>(
 
                         // Execute the original handler
                         const response = await handler(req, ctx);
+
+                        /**
+                         * #2723 item 2 — an envelope reaching a response is
+                         * always a defect, whatever went wrong upstream.
+                         *
+                         * Here rather than in `jsonResponse` because this is
+                         * the real choke point: measured 2026-11-07, 416 of
+                         * 439 route files are wrapped in this, against 343
+                         * using `jsonResponse` and 29 using `jsonWithETag`
+                         * (which builds its own `NextResponse` and so is NOT
+                         * covered by the former). `account/export` — the Art
+                         * 15 export #2723 names as the likeliest real case,
+                         * where a person asking what we hold would receive an
+                         * envelope — uses NEITHER helper and IS wrapped here.
+                         *
+                         * Awaited, not fire-and-forget: an un-awaited
+                         * rejection is an unhandled rejection, and this runs
+                         * on every JSON response. It cannot throw and cannot
+                         * consume the body — see `reportCiphertextEgress`.
+                         */
+                        await reportCiphertextEgress(response, route);
 
                         const status = response.status;
                         const durationMs = Math.round(performance.now() - startTime);
