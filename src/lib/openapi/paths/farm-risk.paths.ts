@@ -99,7 +99,7 @@ const HistoryQuery = z.object({
                 'Window length in days. CLAMPED to 7-120 rather than refused, and the ' +
                 'response echoes the value actually used — read `days` off the body ' +
                 'rather than assuming you got what you asked for. An unparseable value ' +
-                'is treated as absent (60).',
+                'is treated as absent (14, matching the phone\u2019s default).',
         }),
 });
 

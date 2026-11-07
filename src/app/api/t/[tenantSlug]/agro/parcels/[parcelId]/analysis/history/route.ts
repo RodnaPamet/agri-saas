@@ -5,7 +5,7 @@ import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonWithETag } from '@/lib/http/etag';
 
 /**
- * GET /api/t/{slug}/agro/parcels/{parcelId}/analysis/history?days=60
+ * GET /api/t/{slug}/agro/parcels/{parcelId}/analysis/history?days=14
  *
  * The per-pass NDVI/NDMI series behind the sibling `/analysis` card — #2837.
  *

@@ -220,8 +220,21 @@ export interface ParcelRiskHistoryResult {
 
 /** Bound on the window a caller may ask for. */
 export const HISTORY_MIN_DAYS = 7;
-/** What a client gets when it names no window. */
-export const HISTORY_DEFAULT_DAYS = 60;
+/**
+ * What a client gets when it names no window.
+ *
+ * 14, matching the phone's own default rather than the widest useful window
+ * (owner, relayed by `agrent-ios` 2026-11-07: "info based on a time period,
+ * like the past 14 days"). The two defaults agreeing is the point — a server
+ * default of 60 and a client default of 14 means the one caller that omits
+ * the parameter gets a different answer from every caller that sends it, and
+ * `days` is in the cache key, so it would also be its own cache entry that
+ * nothing else ever reads.
+ *
+ * Clients should still send `days` explicitly: the phone offers 14 / 30 / 60,
+ * and a default is a fallback, not a contract.
+ */
+export const HISTORY_DEFAULT_DAYS = 14;
 export const HISTORY_MAX_DAYS = 120;
 /**
  * Pass cap. Sentinel-2 revisits every ~5 days and two orbits can both see a
