@@ -126,6 +126,7 @@ model Tenant {
   tasks                    Task[]
   taskComments             TaskComment[]
   parcelComments             ParcelComment[]
+  parcelIndexReadings        ParcelIndexReading[]
   taskLinks                TaskLink[]
   taskWatchers             TaskWatcher[]
   identityProviders        TenantIdentityProvider[]

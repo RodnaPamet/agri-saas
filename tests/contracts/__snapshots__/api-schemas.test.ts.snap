@@ -14431,6 +14431,14 @@ exports[`API contract — per-schema snapshots schema: ParcelRiskPass 1`] = `
     },
     "overall": {
       "$ref": "#/components/schemas/RiskLevel"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "stored",
+        "earthengine"
+      ],
+      "description": "Where this pass came from. \`stored\` is FINAL — computed on an earlier request and read back from our own record. \`earthengine\` was computed during THIS request, which is the only case in which a slow or failing Earth Engine can shorten the series. So if a window returns fewer passes than you expect, this is what tells you whether retrying is worth anything."
     }
   },
   "required": [
@@ -14439,7 +14447,8 @@ exports[`API contract — per-schema snapshots schema: ParcelRiskPass 1`] = `
     "ndmi",
     "vegetation",
     "moisture",
-    "overall"
+    "overall",
+    "source"
   ]
 }"
 `;

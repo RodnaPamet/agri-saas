@@ -1181,6 +1181,144 @@ export class ParcelRepository {
         return raw ? (parseGeometry(raw) as Geometry) : null;
     }
 
+    /**
+     * One parcel's STORED satellite readings from `from` onward, oldest first,
+     * with the coverage watermark that says what has actually been asked about
+     * — #2837.
+     *
+     * The watermark comes back in the SAME call as the readings, because the
+     * two are read together on every history request and the question is one
+     * question: "what do we have, and what have we already looked for". Two
+     * calls would also be two round trips inside the transaction the caller
+     * holds.
+     *
+     * `null` for the parcel means it does not exist for this tenant, which the
+     * caller turns into `PARCEL_NOT_FOUND`. An EXISTING parcel with no
+     * readings comes back as an empty array with both watermark ends null —
+     * distinguishable, and the distinction matters: the second case is a cold
+     * parcel to backfill, the first is a 404.
+     */
+    static async storedIndexReadings(
+        db: PrismaTx,
+        ctx: RequestContext,
+        parcelId: string,
+        from: Date,
+    ): Promise<{
+        coveredFrom: Date | null;
+        coveredThrough: Date | null;
+        /** Which `SCENE_SELECTION_VERSION` searched that window. */
+        coveredAlgo: number | null;
+        readings: Array<{ acquiredOn: Date; ndvi: number | null; ndmi: number | null }>;
+    } | null> {
+        const parcel = await db.parcel.findFirst({
+            where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
+            select: {
+                id: true,
+                indexReadingsFrom: true,
+                indexReadingsThrough: true,
+                indexReadingsAlgo: true,
+            },
+        });
+        if (!parcel) return null;
+
+        const readings = await db.parcelIndexReading.findMany({
+            where: { tenantId: ctx.tenantId, parcelId, acquiredOn: { gte: from } },
+            select: { acquiredOn: true, ndvi: true, ndmi: true },
+            orderBy: { acquiredOn: 'asc' },
+            // Bounded by the caller's window (at most HISTORY_MAX_DAYS days of
+            // ~5-day revisits from two orbits), and `take` keeps a corrupt
+            // watermark from turning into an unbounded read.
+            take: 400,
+        });
+
+        return {
+            coveredFrom: parcel.indexReadingsFrom,
+            coveredThrough: parcel.indexReadingsThrough,
+            coveredAlgo: parcel.indexReadingsAlgo,
+            readings,
+        };
+    }
+
+    /**
+     * Store the readings for a set of acquisition dates and widen the parcel's
+     * coverage watermark — #2837.
+     *
+     * ## Upsert, because a pass can be recomputed
+     *
+     * The unique is `(tenantId, parcelId, acquiredOn)`, so re-running a window
+     * that overlaps stored days REPLACES those days rather than appending a
+     * second reading the chart would draw twice. A fresh computation wins over
+     * a stored one: both come from the same algorithm on the same imagery, so
+     * a disagreement means the archive was reprocessed and the newer answer is
+     * the better one.
+     *
+     * ## The watermark is widened only by what was actually ASKED
+     *
+     * `coveredFrom`/`coveredThrough` are passed in by the caller, which knows
+     * which ranges it put to Earth Engine and whether every one of them
+     * SUCCEEDED. Widening it on a partial failure would record a gap as
+     * searched, and nothing would ever go back for it.
+     *
+     * A write per iteration is deliberate and bounded: at most one row per
+     * acquisition day in the window. Layer D1 flags reads in loops, not
+     * writes, and there is no read here.
+     */
+    static async storeIndexReadings(
+        db: PrismaTx,
+        ctx: RequestContext,
+        parcelId: string,
+        readings: ReadonlyArray<{ acquiredOn: Date; ndvi: number | null; ndmi: number | null }>,
+        coverage: { from: Date; through: Date; algo: number } | null,
+    ): Promise<void> {
+        for (const r of readings) {
+            await db.parcelIndexReading.upsert({
+                where: {
+                    tenantId_parcelId_acquiredOn: {
+                        tenantId: ctx.tenantId,
+                        parcelId,
+                        acquiredOn: r.acquiredOn,
+                    },
+                },
+                create: {
+                    tenantId: ctx.tenantId,
+                    parcelId,
+                    acquiredOn: r.acquiredOn,
+                    ndvi: r.ndvi,
+                    ndmi: r.ndmi,
+                },
+                update: { ndvi: r.ndvi, ndmi: r.ndmi },
+            });
+        }
+
+        if (!coverage) return;
+
+        // `updateMany` with the tenant in the WHERE rather than `update` by id:
+        // the same defence-in-depth every write on this repository uses, and it
+        // keeps a wrong parcelId a no-op instead of a cross-farm write.
+        //
+        // The widening is a MONOTONIC union — `LEAST`/`GREATEST` against what
+        // is already stored — so two concurrent requests for different windows
+        // cannot narrow each other's coverage. Expressed in SQL because Prisma
+        // has no "set to the min of this and the current value".
+        //
+        // The union is only valid WITHIN one scene-selection version, so the
+        // `LEAST`/`GREATEST` apply against the stored window only while the
+        // stored algo matches; on a mismatch the window is REPLACED by what
+        // this call searched. Unioning across versions would produce a window
+        // no single set of rules ever covered — the precise failure the
+        // version exists to prevent.
+        await db.$executeRaw`
+            UPDATE "Parcel"
+               SET "indexReadingsFrom" = CASE WHEN "indexReadingsAlgo" = ${coverage.algo}
+                       THEN LEAST(COALESCE("indexReadingsFrom", ${coverage.from}::date), ${coverage.from}::date)
+                       ELSE ${coverage.from}::date END,
+                   "indexReadingsThrough" = CASE WHEN "indexReadingsAlgo" = ${coverage.algo}
+                       THEN GREATEST(COALESCE("indexReadingsThrough", ${coverage.through}::date), ${coverage.through}::date)
+                       ELSE ${coverage.through}::date END,
+                   "indexReadingsAlgo" = ${coverage.algo}
+             WHERE "id" = ${parcelId} AND "tenantId" = ${ctx.tenantId} AND "deletedAt" IS NULL`;
+    }
+
     /** Read back the denormalized areaHa for a parcel (post-write). */
     private static async areaHaFor(db: PrismaTx, ctx: RequestContext, parcelId: string): Promise<number | null> {
         const rows = await db.parcel.findMany({
