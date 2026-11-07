@@ -3679,6 +3679,55 @@ is unreachable — found by a mutation that changed nothing when forced true. Th
 behaviour is still worth a test, and that test now guards the ORDERING: moving
 the publish above the early return reddens it.
 
+### P8.9 — the block cutoff needs NO new mechanism, and a filter for it would be vacuous
+
+#2801 calls "a block cuts off the blocked person's open stream within 1s" the
+only criterion in P8.9 that is genuinely new mechanism, and asks whether a
+block should PUBLISH a cut event or the stream should POLL a cheap key.
+**Measured: neither.**
+
+`sendDirectMessage` refuses when a block exists in EITHER direction —
+`amIBlockedByAnyOf` for visibility, `personBlockExists` for contact — so after
+a block no message flows in that conversation and the publisher is never
+reached. **The cutoff is 0ms because there is nothing to cut.**
+
+**Do not add a publisher-side block filter.** It could never fire, which is the
+thing P8.1 argues against by name: a vacuously-true clause that reads as a
+control is worse than no clause. It would read as the mechanism enforcing the
+criterion while enforcing nothing.
+
+**That argument depends on a conversation being 1:1, which is pinned.** In a
+three-party conversation C's send would publish to B even though A blocked B,
+and B — who cannot read it — would still learn something happened, which is a
+timing disclosure. Exactly ONE site creates `ConversationParticipant` rows and
+it creates TWO; `p8-9-hardening` asserts that, so group conversations would
+fail it and land on this paragraph, which is where a publisher-side filter
+becomes a control that CAN fire.
+
+**What stops one sender messaging 100 strangers is `DM_OPEN_LIMIT` — 5 per
+hour, caller-keyed — and NOT slow mode.** The route declares an explicit
+`config` with **no `getBucket`**, and both halves matter: a bucket would
+REPLACE the per-caller key to cap a shared resource, which is wrong when the
+harm is spread across 100 unrelated people, and it would also put the route
+outside slow mode's population. Slow mode does not apply either way — it
+narrows the DEFAULT tier only, and a route with an explicit config is excluded
+because every such preset is already tighter. Asserted on the SOURCE, because
+a response cannot show which key bounded it.
+
+**The property test compares SETS, not counts of leaks.** 40 people × 200
+conversations is 8,000 pairs, settled in 40 transactions by comparing each
+reader's visible set with what they should see — because "no row they should
+not see" is satisfied perfectly by a policy that hides everything. Controls: a
+majority of readers must see something, a stranger sees zero, and
+`DirectMessage` is asserted SEPARATELY — a conversation hidden while its
+messages were readable would pass the criterion as written and leak everything
+that matters. Proved against RLS rather than the ORM by dropping
+`conversation_select` on the test base, which fails it.
+
+**"Zero plaintext rows" needs its DENOMINATOR beside it.** Over an empty set
+that count is zero and the criterion passes vacuously, which is why the
+ciphertext check asserts the row count too.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on
