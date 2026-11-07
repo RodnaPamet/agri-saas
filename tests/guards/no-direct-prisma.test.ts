@@ -292,6 +292,22 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // review. `OpenConversationSchema` accepts a HANDLE for exactly that
         // reason.
         'direct-messages.ts',
+        // P8.6 (#2800) — conversation photographs. Privileged for ONE narrow
+        // thing and otherwise user-scoped: the insert needs the `lastMessageAt`
+        // stamp to be atomic with it (the request rule reads that column), and
+        // the participant read that decides who to notify is privileged
+        // because `conversation_participant_select` admits the caller's OWN
+        // row only — forced by P8.1's recursion rule — so a user-context read
+        // returns one row and the counterparty would never be told.
+        //
+        // What is NOT privileged is the part that matters: PARTICIPATION.
+        // `readDirectPhoto` resolves a storage key through
+        // `runInUserContext`, where `direct_message_select` admits a
+        // participant's rows and nobody else's, so the egress refusal is the
+        // database's and there is no second spelling of "may this person see
+        // it" to drift from the first. The privileged participant read returns
+        // IDS ONLY and is bounded.
+        'direct-message-photos.ts',
         // P8.5 (#2799) — the one inbox. Privileged for a reason neither of the
         // two entries above has: it reads ACROSS two scopes that no single
         // context satisfies. The exchange half's RLS keys on

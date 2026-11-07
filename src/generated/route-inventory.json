@@ -611,6 +611,11 @@
       "documented": true
     },
     {
+      "path": "/api/social/conversations/{conversationId}/photos",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/conversations/{conversationId}/read",
       "status": "live",
       "documented": true
@@ -627,6 +632,11 @@
     },
     {
       "path": "/api/social/messages/{messageId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/messages/{messageId}/photo",
       "status": "live",
       "documented": true
     },
