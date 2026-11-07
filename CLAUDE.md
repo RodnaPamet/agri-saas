@@ -3233,6 +3233,51 @@ They work in both session contexts only because `UserBlock` carries an arm for
 each — `user_block_select` and #1664's `user_block_select_actor` — so removing
 the second as "redundant" now breaks TWO features, silently.
 
+### P8.5 — one inbox, and why it is TWO queries where the phase says one
+
+`listInbox` plus `GET /api/social/inbox` (#2799). Two Prisma reads over
+`Conversation` and `ExchangeThread`, merged on one `(lastMessageAt, id)` keyset
+that serves both because both are ordered that way.
+
+**A raw `UNION` cannot decrypt, and that is the deciding fact.** Bodies are
+encrypted and the Prisma client extension is what decrypts them, so a raw read
+returns the envelope — both DM suites assert `$queryRawUnsafe` on
+`DirectMessage.body` matches `/^v[12]:/`. An inbox preview built that way
+renders `v2:…` to the operator and trips #2814's ciphertext-egress detector on
+the way out. A `UNION` would also be a SECOND SPELLING of the exchange block
+filters, which is the #1664 class, and a divergence there is a disclosure
+rather than a wrong sentence.
+
+So the phase's "one query" is honoured where it matters — **no per-farm loop,
+one pagination** — and not literally. Do not "fix" this into one statement
+without re-reading those two paragraphs.
+
+**`...before` beside a sibling `OR` SILENTLY DROPS THE CURSOR.**
+`keysetBefore` returns `{ OR: [...] }`, so a second `OR` key in the same object
+literal replaces it and every page returns page one. `listExchangeThreads`
+carries the note; P8.5 shipped the bug in its first draft and both `where`
+clauses are built on `AND` now. Any keyset query in this repo that also needs
+an `OR` must use `AND: [before, { OR: … }]`.
+
+**`none: { userId: { notIn: blockers } }` empties the whole list.** It excludes
+every conversation having any participant who is not a blocker — which includes
+the caller. The correct form is `{ in: blockers }`. The failure is silent: an
+empty inbox is indistinguishable from having no conversations, which is why the
+blocking test asserts an innocent row is PRESENT in the same breath.
+
+**The inbox is PERSON-scoped, including its exchange half.** A row appears when
+the caller is a PARTY — `inquirerUserId`, the listing's `sellerUserId`, or a
+participant row. It deliberately does NOT reproduce
+`exchange_thread_audience`, which also admits either farm's OWNER/ADMIN, so an
+owner does not see a colleague's exchange thread here. The tenant-scoped
+exchange inbox is untouched and remains the place for that. Starting narrow is
+the reversible direction; widening later is additive.
+
+**`awaitingMyAnswer` is `boolean | null`.** `false` on a request the caller
+opened — waiting for an answer is not owing one — and `null` on an exchange
+row, because the exchange has no request state and `false` there would read as
+"already answered".
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

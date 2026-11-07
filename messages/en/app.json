@@ -6921,6 +6921,7 @@
         "INVALID_FARM_TASK_TYPE": "Unknown farm task type: {type}.",
         "INVALID_FILE": "That file was not found.",
         "INVALID_BODY": "The request is incomplete or malformed.",
+        "INVALID_CURSOR": "That page could not be loaded. Please try again.",
         "INVALID_JSON": "The request could not be read.",
         "INVALID_LIMIT": {
             "empty": "No value for the \"{label}\" parameter. Omit it for the default, or send a positive integer.",
