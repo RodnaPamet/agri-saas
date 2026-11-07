@@ -56,6 +56,14 @@ jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     TaskCommentRepository: {
         listByTask: jest.fn(),
         add: jest.fn(),
+        // #2806. This was ABSENT, and its absence is why the idempotent
+        // replay had no tests rather than merely poor ones: a partial mock
+        // leaves a missing method `undefined`, so any test passing an
+        // `idempotencyKey` died on
+        // `TaskCommentRepository.findByClientMutationId is not a function`
+        // before asserting anything. Untestable reads as untested, and a
+        // reviewer sees no gap.
+        findByClientMutationId: jest.fn(),
     },
     TaskWatcherRepository: {
         listByTask: jest.fn(),
@@ -144,6 +152,9 @@ const mockLinkList = TaskLinkRepository.listByTask as jest.MockedFunction<typeof
 const mockLink = TaskLinkRepository.link as jest.MockedFunction<typeof TaskLinkRepository.link>;
 const mockUnlink = TaskLinkRepository.unlink as jest.MockedFunction<typeof TaskLinkRepository.unlink>;
 const mockCommentAdd = TaskCommentRepository.add as jest.MockedFunction<typeof TaskCommentRepository.add>;
+const mockCommentFindByKey = TaskCommentRepository.findByClientMutationId as jest.MockedFunction<
+    typeof TaskCommentRepository.findByClientMutationId
+>;
 const mockSanitize = sanitizePlainText as jest.MockedFunction<typeof sanitizePlainText>;
 const mockEmitEvent = emitAutomationEvent as jest.MockedFunction<typeof emitAutomationEvent>;
 const mockEnqueueEmail = enqueueEmail as jest.MockedFunction<typeof enqueueEmail>;
@@ -363,6 +374,92 @@ describe('addTaskComment — Epic C.5 sanitisation', () => {
         // (bypassing the persistence boundary) would leave the
         // original HTML in the DB — readable by SDK consumers, PDF
         // generators, audit-pack share links.
+    });
+});
+
+/**
+ * The idempotent replay — #2806.
+ *
+ * `addTaskComment` dedupes a replayed `Idempotency-Key` by pre-reading on
+ * `clientMutationId` and returning the existing row. Nothing tested that it
+ * does: deleting the early return failed zero tests, and neither file
+ * referencing `addTaskComment` mentioned idempotency at all.
+ *
+ * It matters here more than it looks. The offline outbox replays writes under
+ * the same key — that is `outboxHeaders()`'s whole job, and `flushOutbox`'s
+ * retain-and-resend arm makes a replay the EXPECTED case, not the exceptional
+ * one. A broken dedupe shows up as duplicated field notes on a flaky rural
+ * connection, which is the failure the key exists to prevent.
+ *
+ * Found while mutation-proving the parcel comment: a positional `replace`
+ * aimed at that function landed on this one instead — the two carry the
+ * byte-identical `if (existing) return existing;` — and the whole suite
+ * stayed green. The misfire was the finding.
+ */
+describe('addTaskComment — idempotent replay (#2806)', () => {
+    it('returns the ORIGINAL comment and writes nothing on a replay', async () => {
+        mockCommentFindByKey.mockResolvedValueOnce({ id: 'c-original' } as never);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+
+        const res = await addTaskComment(
+            makeRequestContext('EDITOR'), 't1', 'same note again', 'key-1',
+        );
+
+        expect(res).toMatchObject({ id: 'c-original' });
+        // The point of the whole mechanism: no second row.
+        expect(mockCommentAdd).not.toHaveBeenCalled();
+        // And no audit entry claiming a comment was added.
+        expect(mockLog).not.toHaveBeenCalled();
+    });
+
+    it('keys the pre-read on the CALLER\u2019s key, not on any key at all', async () => {
+        // The assertion above is satisfied by a pre-read keyed on a constant,
+        // because a double returns its row whatever it was asked — so the key
+        // has to be read back. This is the half a mocked Prisma hides for free.
+        mockCommentFindByKey.mockResolvedValueOnce({ id: 'c-original' } as never);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+
+        await addTaskComment(makeRequestContext('EDITOR'), 't1', 'again', 'key-7');
+
+        // signature: (db, ctx, taskId, clientMutationId)
+        const call = mockCommentFindByKey.mock.calls[0];
+        expect(call[2]).toBe('t1');
+        expect(call[3]).toBe('key-7');
+    });
+
+    it('does NOT pre-read when the caller sent no key', async () => {
+        // The guard on `idempotencyKey` is its own removable thing: without it
+        // every online comment pays a lookup, and a null key would match the
+        // NULLS-DISTINCT index in a way nobody intended.
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+        mockCommentAdd.mockResolvedValueOnce({ id: 'c-new' } as never);
+
+        await addTaskComment(makeRequestContext('EDITOR'), 't1', 'first time');
+
+        expect(mockCommentFindByKey).not.toHaveBeenCalled();
+        expect(mockCommentAdd).toHaveBeenCalled();
+    });
+
+    it('passes the key THROUGH to the write, so the replay can find it next time', async () => {
+        // Without this the first write stores NULL and every later replay
+        // misses — dedupe that looks wired and never fires.
+        //
+        // TWO implementations, not one: with a key present this usecase opens
+        // `runInTenantContext` TWICE — once for the pre-read, once for the
+        // write. A single `mockImplementationOnce` is consumed by the pre-read
+        // and the write then runs against the default double, which never
+        // invokes the callback, so `add` is never called and the assertion
+        // fails on an undefined call record rather than on the behaviour.
+        mockRunInTx
+            .mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never))
+            .mockImplementationOnce(async (_ctx, fn) => fn({ ...TX } as never));
+        mockCommentFindByKey.mockResolvedValueOnce(null as never);
+        mockCommentAdd.mockResolvedValueOnce({ id: 'c-new' } as never);
+
+        await addTaskComment(makeRequestContext('EDITOR'), 't1', 'first', 'key-9');
+
+        // signature: (db, ctx, taskId, body, clientMutationId)
+        expect(mockCommentAdd.mock.calls[0][4]).toBe('key-9');
     });
 });
 
