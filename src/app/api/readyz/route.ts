@@ -55,6 +55,14 @@
  *                         "missingRows": string[], "referenced": N,
  *                         "orphanRows": N },  // a referenced key with no row is
  *                                             // a surface off for everybody
+ *       "worker":    { "state": "beating" | "stale" | "unknown",
+ *                       "lastBeatAt": ISO|null, "ageSeconds": N|null,
+ *                       "ttlSeconds": N },   // #2825 — `beating` means a job
+ *                                            // was pulled, run and RETURNED,
+ *                                            // not that a process is alive.
+ *                                            // `stale` is the key EXPIRING;
+ *                                            // `unknown` is Redis, not the
+ *                                            // worker.
  *       "mailCanary": { "state": "ok" | "not_sending" | "stale"
  *                                | "never_recorded" | "unknown",
  *                       "outcome": "SENT" | "SKIPPED_NO_RECIPIENT"
@@ -90,6 +98,7 @@ import { basemapBranchStatus } from '@/lib/geo/basemap-bundle-scan';
 import { platformConsoleCapability } from '@/lib/auth/platform-console-capability';
 import { featureFlagsCapability } from '@/lib/feature-flags-capability';
 import { mailCanaryCapability } from '@/lib/email/mail-canary-capability';
+import { workerHeartbeatCapability } from '@/app-layer/jobs/worker-heartbeat-capability';
 import { documentStorageCapability } from '@/lib/documents/storage-capability';
 import { jsonResponse } from '@/lib/api-response';
 import { SERVICE_ID } from '@/lib/service-identity';
@@ -359,6 +368,14 @@ export async function GET() {
     // `checks.redis`; `null` when Redis is unconfigured, which the capability
     // reports as `unknown` rather than inventing a mail problem.
     const mailCanary = await mailCanaryCapability(getRedis ? getRedis() : null);
+    // #2825. WATCHED, never gated: the worker is a separate tier, and a dead
+    // worker does not make the API unready — reads and writes keep working,
+    // which is precisely why the app tier stayed green through a 13-18 hour
+    // worker outage that nothing reported. 503ing the API because background
+    // jobs stopped would turn a degraded deployment into an outage.
+    //
+    // Same client as `mailCanary` above, for the same reason it takes one.
+    const worker = await workerHeartbeatCapability(getRedis ? getRedis() : null);
 
     // #2495 step 3 — WATCHED, not gated, and OUTSIDE `checks`/`failed` like
     // every sibling here. A band rather than the byte total, because this
@@ -404,6 +421,7 @@ export async function GET() {
                 platformConsole,
                 featureFlags,
                 mailCanary,
+                worker,
                 documentStorage,
             },
             latencyMs: Date.now() - start,
