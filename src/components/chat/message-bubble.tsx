@@ -136,9 +136,18 @@ export function MessageBubble({
                 <div
                     {...(canReact ? handlers : {})}
                     className={cn(
-                        // `border-border-default` — a bubble IS a discrete
-                        // surface, which is what that tone is reserved for.
-                        'rounded-lg border border-border-default px-3 py-2 text-sm',
+                        // `border-border-subtle`, which is the DEFAULT tone
+                        // and the three-tone rule's own tie-break ("if you
+                        // have to ask, the answer is subtle"). The first draft
+                        // reached for `border-border-default` arguing a bubble
+                        // is a discrete surface; that tone is reserved for a
+                        // card's or table's OUTER border, a modal/sheet
+                        // boundary and a popover outline, and it carries a
+                        // DOWNWARD budget ratchet — so one more costs an
+                        // argument, and a bubble already has a background
+                        // that separates it. `border-tone-budget` caught it at
+                        // 63 against 62.
+                        'rounded-lg border border-border-subtle px-3 py-2 text-sm',
                         // `bg-bg-muted` for the reader's own messages,
                         // `bg-bg-default` for the other party's. Both are real
                         // tokens, which is worth stating because the first
