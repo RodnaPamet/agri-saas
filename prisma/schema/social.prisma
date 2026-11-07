@@ -630,7 +630,41 @@ model DirectMessage {
   /// `src/lib/security/encrypted-fields.ts` — and note that narrowing stops
   /// DECRYPTION too, so a later change that drops this declaration makes
   /// every stored message unreadable to everyone, with no error and no log.
-  body String
+  ///
+  /// NULLABLE since P8.6 (owner ruling 2026-11-07): a photo alone is a
+  /// complete message. Safe because the encryption middleware skips null on
+  /// the encrypt path and on both decrypt paths, and because
+  /// `DirectMessageView.body` was already `string | null` for a deleted
+  /// message. The CHECK constraint `direct_message_says_something` is what
+  /// stops a row that says nothing at all — see the migration.
+  ///
+  /// `deleteDirectMessage` writes `''` here rather than NULL, destroying the
+  /// plaintext while leaving the row. Two spellings of "no text" therefore
+  /// exist by accident of history: NULL means "a photo-only message" and `''`
+  /// means "retracted". Read `deletedAt`, never the emptiness of this field.
+  body String?
+
+  /// ONE photo per message (owner ruling 2026-11-07) — several photos are
+  /// several messages. Columns rather than a link model because of that, and
+  /// because `LogEntryFile`, the in-repo attachment precedent, hangs off
+  /// `FileRecord`, whose `tenantId` is NOT NULL — and a direct message has no
+  /// tenant. So these bytes are the RECORD-LESS upload class: `scanOrRefuse`
+  /// BEFORE the write, and an egress route that authorises by PARTICIPATION
+  /// rather than a `FileRecord` download gate.
+  ///
+  /// An opaque storage key, deliberately NOT encrypted — it is not content,
+  /// which is the same call `FileRecord.pathKey` makes.
+  attachmentKey    String?
+  attachmentMime   String?
+  attachmentBytes  Int?
+  attachmentSha256 String?
+
+  /// The LINK-CARD columns are deliberately absent until the code stage that
+  /// writes them — `sanitize-rich-text-coverage` is why. Declaring a field
+  /// encrypted (which `linkTitle` / `linkDescription` must be) requires it to
+  /// be sanitised BY NAME at its write path, and a schema-only stage has no
+  /// write path to sanitise in. See the P8.6 migration for the full reasoning
+  /// and #2800 for the obligation list.
 
   createdAt DateTime  @default(now())
   editedAt  DateTime?

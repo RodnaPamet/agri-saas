@@ -94,6 +94,14 @@ const COUNTERPARTY_SAFE: Readonly<Record<string, Readonly<Record<string, string>
             'When the last message landed. Both parties can see the message itself, so its timestamp adds nothing. It ALSO carries a security property — `direct_message_insert` reads it for the one-message request rule — but that is a property of the WRITE path, not a disclosure.',
     },
     DirectMessage: {
+        attachmentKey:
+            'An opaque storage key for the photo this message carries. The counterparty is the person the photo was SENT to — withholding the locator for an image they are meant to look at would be theatre. Possession of it grants nothing on its own: the egress route authorises by participation, so a third party holding the key still gets a not-found.',
+        attachmentMime:
+            'The image type. Needed to render it, and it says nothing the bytes do not.',
+        attachmentBytes:
+            'The size in bytes. The recipient is downloading the file, so they learn it exactly; a progress indicator is the honest use.',
+        attachmentSha256:
+            'The content digest. It lets a client dedupe a re-send and verify what it received. It is a hash OF the photo the counterparty already has, so it discloses nothing further — and it is not a lookup key against anything else, unlike `User.emailHash`.',
         id: 'The row id, for a message the counterparty can read.',
         conversationId: 'The conversation they are in.',
         senderUserId: 'Who wrote it. A message with no attributable sender is not a conversation.',
