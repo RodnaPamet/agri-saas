@@ -117,6 +117,16 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // cached env.ts snapshot would freeze the value at import
             // time and break those flows.
             if (file.endsWith('rate-limit-middleware.ts')) continue;
+            // The same predicate, which now LIVES in `rate-limit-bypass.ts`.
+            // It moved out of the middleware because that module imports
+            // `next/server`, and a four-line env read was dragging Next into
+            // the BullMQ worker's bundle — the worker crash-looped on
+            // ERR_MODULE_NOT_FOUND for ~12-17 hours. The body is unchanged and
+            // the reason for reading `process.env` directly is unchanged: the
+            // env.ts snapshot is captured at first import and cannot express a
+            // per-test flip. The entry above is kept because the middleware
+            // still re-exports it for its ten-plus route importers.
+            if (file.endsWith('rate-limit-bypass.ts')) continue;
             // Outbound-webhook headers read AUDIT_STREAM_LEGACY_HEADERS at
             // call time (same convention as rate-limit-middleware.ts) so an
             // operator can flip the legacy X-Inflect-* dual-emit without a
