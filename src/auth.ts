@@ -828,8 +828,31 @@ export const authOptions: NextAuthOptions = {
                 const activeTenantId = token.tenantId ?? null;
                 if (activeTenantId) {
                     try {
+                        // SELECT is explicit and narrow on purpose (#2723).
+                        //
+                        // `TenantSecuritySettings.auditStreamSecretEncrypted` is
+                        // in `ENCRYPTED_FIELDS` and the model is NOT in
+                        // `GLOBAL_KEK_MODELS`, so it decrypts under the TENANT's
+                        // DEK — which `resolveTenantDekPair` takes from the ALS
+                        // audit context. Nothing in this callback binds one, so
+                        // an unnarrowed read fetched that column as a `v2:`
+                        // envelope with no error and no log.
+                        //
+                        // Not a live defect: only `mfaPolicy` and
+                        // `mfaFailClosed` are read below. It is a worse place
+                        // than most to leave one edit away, though — this is the
+                        // `jwt` callback, where the lines immediately after
+                        // copy fields ONTO the token, so the accident is a
+                        // ciphertext secret in a cookie rather than a garbled
+                        // string on a screen.
+                        //
+                        // Same shape and same fix as `usecases/mfa.ts` and
+                        // `jobs/retention-notifications.ts`, both already
+                        // narrowed. This was the last unmitigated reader in
+                        // #2723's candidate set.
                         const secSettings = await prisma.tenantSecuritySettings.findUnique({
                             where: { tenantId: activeTenantId },
+                            select: { mfaPolicy: true, mfaFailClosed: true },
                         });
                         const policy = secSettings?.mfaPolicy ?? 'DISABLED';
                         const failClosed = secSettings?.mfaFailClosed ?? false;
