@@ -31,7 +31,13 @@ import { codedNotFound } from '@/lib/errors/types';
 import { getRedis } from '@/lib/redis';
 import { LocationRepository } from '../repositories/LocationRepository';
 import { ParcelRepository } from '../repositories/ParcelRepository';
-import { isGeeConfigured, getIndexMeansForPolygon, getIndexMeansPerPass } from '@/lib/agro/earth-engine';
+import {
+    isGeeConfigured,
+    getIndexMeansForPolygon,
+    getIndexMeansPerPass,
+    SCENE_SELECTION_VERSION,
+    type IndexPass,
+} from '@/lib/agro/earth-engine';
 
 export type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown';
 
@@ -206,6 +212,18 @@ export interface ParcelRiskPass {
     vegetation: RiskLevel;
     moisture: RiskLevel;
     overall: RiskLevel;
+    /**
+     * Where this pass came from — #2837 stage 1b.
+     *
+     * `stored` is final: it was computed on an earlier request and read back
+     * from `ParcelIndexReading`. `earthengine` was computed DURING this
+     * request, which is the only case in which a slow or failing Earth Engine
+     * can shorten the series. So this is what tells a client whether a
+     * shorter-than-expected window is worth retrying, which is why it is
+     * exposed rather than kept as an implementation detail (`agrent-ios`
+     * asked for it and decodes it as optional).
+     */
+    source: 'stored' | 'earthengine';
 }
 
 export interface ParcelRiskHistoryResult {
@@ -302,43 +320,107 @@ export async function getParcelRiskHistory(
         }
     }
 
-    const geometry = await runInTenantContext(ctx, async (db) => {
-        const p = await db.parcel.findFirst({
-            where: { id: parcelId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
-        });
-        if (!p) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
-        return ParcelRepository.geometryForParcel(db, ctx, parcelId);
+    const windowStart = ymd(new Date(now.getTime() - requested * DAY_MS));
+
+    // ── Read what we already hold ────────────────────────────────────
+    //
+    // Geometry comes along even when the stored record turns out to be
+    // complete: deciding that needs the watermark, which this same read
+    // returns, and a second tenant transaction to fetch a polygon we may not
+    // need costs a round trip and a pool slot either way.
+    const stored = await runInTenantContext(ctx, async (db) => {
+        const rows = await ParcelRepository.storedIndexReadings(db, ctx, parcelId, parseYmd(windowStart));
+        if (!rows) throw codedNotFound('PARCEL_NOT_FOUND', 'Parcel not found');
+        const geometry = await ParcelRepository.geometryForParcel(db, ctx, parcelId);
+        return { ...rows, geometry };
     });
 
     const configured = isGeeConfigured();
-    let passes: ParcelRiskPass[] = [];
-    let truncated = false;
 
-    if (configured && geometry) {
-        const win = {
-            start: ymd(new Date(now.getTime() - requested * 86_400_000)),
-            end: date,
-        };
+    // ── Decide what, if anything, to ask Earth Engine ────────────────
+    // A watermark written under a DIFFERENT scene-selection algorithm is not
+    // evidence about this one — see `SCENE_SELECTION_VERSION`. Treated as
+    // absent, which re-searches the window under the current rules.
+    const sameAlgo = stored.coveredAlgo === SCENE_SELECTION_VERSION;
+    const ranges =
+        configured && stored.geometry
+            ? uncoveredRanges(
+                  windowStart,
+                  date,
+                  sameAlgo ? stored.coveredFrom : null,
+                  sameAlgo ? stored.coveredThrough : null,
+                  now,
+              )
+            : [];
+
+    const fresh = new Map<string, IndexPass>();
+    let allRangesSucceeded = true;
+    for (const range of ranges) {
         try {
-            const raw = await getIndexMeansPerPass(geometry, win, HISTORY_PASS_CAP);
-            truncated = raw.length >= HISTORY_PASS_CAP;
-            passes = raw.map((pass) => {
-                const vegetation = vegetationLevel(pass.ndvi);
-                const moisture = moistureLevel(pass.ndmi);
-                return {
-                    date: pass.date,
-                    ndvi: pass.ndvi,
-                    ndmi: pass.ndmi,
-                    vegetation,
-                    moisture,
-                    overall: worst(vegetation, moisture),
-                };
-            });
+            const raw = await getIndexMeansPerPass(stored.geometry, range, HISTORY_PASS_CAP);
+            for (const pass of raw) fresh.set(pass.date, pass);
         } catch {
-            /* degrade to an empty series — see the docblock */
+            // Degrade: the stored half of the answer is still worth serving,
+            // and the watermark must NOT advance over a range we failed to
+            // search or nothing will ever come back for it.
+            allRangesSucceeded = false;
         }
     }
+
+    // ── Persist, OUTSIDE the read transaction ────────────────────────
+    //
+    // Deliberately a second tenant context rather than one that spans the
+    // Earth Engine calls. `EE_CALL_TIMEOUT_MS` is 25s and `PG_POOL_MAX` is 12,
+    // so holding a connection across those calls would let twelve concurrent
+    // chart opens exhaust the pool — and a transaction open for 25s is a long
+    // time to hold the per-tenant locks an audited write takes.
+    if (fresh.size > 0) {
+        try {
+            await runInTenantContext(ctx, async (db) => {
+                await ParcelRepository.storeIndexReadings(
+                    db,
+                    ctx,
+                    parcelId,
+                    [...fresh.values()].map((pass) => ({
+                        acquiredOn: parseYmd(pass.date),
+                        ndvi: pass.ndvi,
+                        ndmi: pass.ndmi,
+                    })),
+                    allRangesSucceeded
+                        ? {
+                              from: parseYmd(windowStart),
+                              through: parseYmd(date),
+                              algo: SCENE_SELECTION_VERSION,
+                          }
+                        : null,
+                );
+            });
+        } catch {
+            // The reading is still returned. A failed WRITE must not fail a
+            // READ: the caller asked for a chart, and the only cost of not
+            // storing is that the next request asks Earth Engine again.
+        }
+    }
+
+    // ── Merge ────────────────────────────────────────────────────────
+    //
+    // Fresh wins per date. Both halves come from the same algorithm on the
+    // same imagery, so a disagreement means the archive was reprocessed and
+    // the newer answer is the better one.
+    const byDate = new Map<string, ParcelRiskPass>();
+    for (const row of stored.readings) {
+        const d = ymd(row.acquiredOn);
+        byDate.set(d, toPass(d, row.ndvi, row.ndmi, 'stored'));
+    }
+    for (const pass of fresh.values()) {
+        byDate.set(pass.date, toPass(pass.date, pass.ndvi, pass.ndmi, 'earthengine'));
+    }
+
+    // Oldest first: a trend reads left to right, and the caller should not
+    // have to sort to draw one.
+    const ordered = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+    const truncated = ordered.length > HISTORY_PASS_CAP;
+    const passes = truncated ? ordered.slice(-HISTORY_PASS_CAP) : ordered;
 
     const result: ParcelRiskHistoryResult = {
         parcelId,
@@ -352,7 +434,11 @@ export async function getParcelRiskHistory(
     // Only cache a series that has something in it, for `analyzeParcelRisk`'s
     // reason: caching an Earth Engine failure would hold the empty answer for
     // the full TTL even after EE recovered.
-    if (redis && passes.length > 0) {
+    //
+    // A series assembled while a range FAILED is likewise not cached: it is
+    // short through no fault of the data, and pinning it for 6h would hide
+    // the recovery the next request would otherwise find.
+    if (redis && passes.length > 0 && allRangesSucceeded) {
         try {
             await redis.set(cacheKey, JSON.stringify(result), 'EX', CACHE_TTL_SECONDS);
         } catch {
@@ -362,6 +448,96 @@ export async function getParcelRiskHistory(
 
     return result;
 }
+
+/** One day in ms — named because it appears in three window calculations. */
+const DAY_MS = 86_400_000;
+
+/** `YYYY-MM-DD` → a UTC midnight Date, the shape a `@db.Date` column wants. */
+function parseYmd(d: string): Date {
+    return new Date(`${d}T00:00:00.000Z`);
+}
+
+function shiftYmd(d: string, days: number): string {
+    return ymd(new Date(parseYmd(d).getTime() + days * DAY_MS));
+}
+
+function toPass(
+    date: string,
+    ndvi: number | null,
+    ndmi: number | null,
+    source: 'stored' | 'earthengine',
+): ParcelRiskPass {
+    const vegetation = vegetationLevel(ndvi);
+    const moisture = moistureLevel(ndmi);
+    return { date, ndvi, ndmi, vegetation, moisture, overall: worst(vegetation, moisture), source };
+}
+
+/**
+ * Which date ranges in `[start, end]` still need an Earth Engine call — #2837.
+ *
+ * ## Two reasons a range is needed, and they are not the same reason
+ *
+ * 1. **Never asked.** The coverage watermark is a single interval, so the
+ *    requested window can stick out of it at either end — at most two gaps.
+ * 2. **The recent tail, always.** Sentinel-2 L2A for the last few days is
+ *    still being processed, so a day already inside the watermark can gain a
+ *    pass afterwards. Without this, a chart would freeze at whatever the
+ *    first request happened to see and never show a new pass again.
+ *
+ * `TAIL_REFRESH_DAYS` is 7 — one ~5-day revisit cycle plus processing
+ * latency — so the tail call is small and bounded however long the requested
+ * window is. Combined with the 6h cache that is at most four short calls per
+ * parcel per day, against one call per question before this.
+ *
+ * Returns at most two ranges, merged when they touch, oldest first.
+ */
+export function uncoveredRanges(
+    start: string,
+    end: string,
+    coveredFrom: Date | null,
+    coveredThrough: Date | null,
+    now: Date,
+): Array<{ start: string; end: string }> {
+    // Nothing has ever been asked for this parcel: one call for the lot.
+    if (!coveredFrom || !coveredThrough) return [{ start, end }];
+
+    const from = ymd(coveredFrom);
+    const through = ymd(coveredThrough);
+    const tailStart = ymd(new Date(now.getTime() - TAIL_REFRESH_DAYS * DAY_MS));
+
+    const out: Array<{ start: string; end: string }> = [];
+
+    // (1) the window reaching back before anything we have searched
+    if (start < from) {
+        out.push({ start, end: minYmd(end, shiftYmd(from, -1)) });
+    }
+
+    // (2) everything from the later of (just after the watermark) and (the
+    //     refresh tail) up to today. `minYmd` rather than a choice between
+    //     them: if the watermark ends BEFORE the tail begins there is a real
+    //     gap in the middle, and asking from the earlier of the two covers
+    //     both the gap and the tail in one call.
+    const afterStart = maxYmd(start, minYmd(shiftYmd(through, 1), tailStart));
+    if (afterStart <= end) out.push({ start: afterStart, end });
+
+    // Merge when the two touch, so the common cold-ish case is one call.
+    if (out.length === 2 && shiftYmd(out[0].end, 1) >= out[1].start) {
+        return [{ start: out[0].start, end: out[1].end }];
+    }
+    return out;
+}
+
+const minYmd = (a: string, b: string): string => (a <= b ? a : b);
+const maxYmd = (a: string, b: string): string => (a >= b ? a : b);
+
+/**
+ * How far back to re-ask Earth Engine regardless of the coverage watermark.
+ *
+ * Sentinel-2 revisits in ~5 days and L2A processing lags by hours to a day or
+ * two, so a date already marked as searched can gain a pass afterwards. 7 days
+ * covers a full revisit plus that latency.
+ */
+const TAIL_REFRESH_DAYS = 7;
 
 export interface BlockRiskResult {
     locationId: string;

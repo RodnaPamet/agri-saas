@@ -13659,6 +13659,14 @@
           },
           "overall": {
             "$ref": "#/components/schemas/RiskLevel"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "earthengine"
+            ],
+            "description": "Where this pass came from. `stored` is FINAL — computed on an earlier request and read back from our own record. `earthengine` was computed during THIS request, which is the only case in which a slow or failing Earth Engine can shorten the series. So if a window returns fewer passes than you expect, this is what tells you whether retrying is worth anything."
           }
         },
         "required": [
@@ -13667,7 +13675,8 @@
           "ndmi",
           "vegetation",
           "moisture",
-          "overall"
+          "overall",
+          "source"
         ]
       },
       "ParcelSplitRequest": {
@@ -41024,7 +41033,7 @@
       "get": {
         "operationId": "getParcelRiskHistory",
         "summary": "The per-pass NDVI/NDMI series for one parcel",
-        "description": "The trend behind the sibling `/analysis` card: one entry per cloud-masked Sentinel-2 pass in the window, oldest first, each carrying the same `RiskLevel` vocabulary the card uses.\n\n**`ndvi` and `ndmi` are nullable PER PASS, and a null is a real answer.** A pass can be in the collection and still be fully cloud-masked over this parcel — clear over the next field, not over this one. Plot it as a GAP. A client that renders null as 0 draws a cliff to bare soil that never happened, which on a crop chart reads as a failed field.\n\nDates are unique: two orbits can image the same ground on consecutive days, and the server keeps the first non-null reading per date so a chart has one point per x.\n\n`truncated: true` means the pass cap was reached and older passes exist beyond what is returned — ask for a shorter window to see them in full.\n\n`configured: false` is `/analysis`’s meaning verbatim: Earth Engine has no credentials here, so `passes` is empty because nothing was analysed rather than because the satellite saw nothing. An empty `passes` with `configured: true` is the genuine \"no usable pass in this window\" case, and the two must not be shown the same way.\n\nCached per (tenant, parcel, days, day) for 6h and ETagged — send `If-None-Match`. A new pass arrives every ~5 days, so a 304 is the normal answer.",
+        "description": "The trend behind the sibling `/analysis` card: one entry per cloud-masked Sentinel-2 pass in the window, oldest first, each carrying the same `RiskLevel` vocabulary the card uses.\n\n**`ndvi` and `ndmi` are nullable PER PASS, and a null is a real answer.** A pass can be in the collection and still be fully cloud-masked over this parcel — clear over the next field, not over this one. Plot it as a GAP. A client that renders null as 0 draws a cliff to bare soil that never happened, which on a crop chart reads as a failed field.\n\nDates are unique: two orbits can image the same ground on consecutive days, and the server keeps the first non-null reading per date so a chart has one point per x.\n\n`truncated: true` means the pass cap was reached and older passes exist beyond what is returned — ask for a shorter window to see them in full.\n\n`configured: false` is `/analysis`’s meaning verbatim: Earth Engine has no credentials here, so `passes` is empty because nothing was analysed rather than because the satellite saw nothing. An empty `passes` with `configured: true` is the genuine \"no usable pass in this window\" case, and the two must not be shown the same way.\n\nReadings are STORED, not merely cached: every pass this endpoint computes is kept per (parcel, acquisition date), so a period question answers from our own record rather than a live Earth Engine call. That is what makes it keep working while Earth Engine is slow or down, and what makes a 120-day question cost the same as a 14-day one. Earth Engine is consulted only for dates never searched before, plus a short recent tail — Sentinel-2 L2A for the last few days is still being processed, so a pass can appear after the fact.\n\nAlso cached per (tenant, parcel, days, day) for 6h and ETagged — send `If-None-Match`. A new pass arrives every ~5 days, so a 304 is the normal answer.",
         "tags": [
           "Farm risk"
         ],
