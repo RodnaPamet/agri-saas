@@ -245,6 +245,30 @@ describe('the restore drill targets what exists (#2332)', () => {
         return v as boolean;
     };
 
+    /**
+     * The control for `asState` itself, which `scripts/selector-teeth.mjs`
+     * found dead: gutted to `return []` it stops running the type assertion
+     * and every caller gets a fresh array, so `drilled !== unbacked` compares
+     * two distinct instances, yields `true`, and "in exactly one state" passes
+     * over nonsense. That is the SAME defect this helper was written to kill,
+     * reachable by deleting the helper's body — which is why asserting on its
+     * callers is not enough.
+     *
+     * Added while touching the drill this guard reads (#2661), which pulled the
+     * file into the teeth population. Pre-existing, not introduced here.
+     */
+    it('asState refuses a non-boolean, which is the whole point of it', () => {
+        expect(() => asState([], 'synthetic')).toThrow();
+        expect(() => asState(undefined, 'synthetic')).toThrow();
+        expect(() => asState('true', 'synthetic')).toThrow();
+        expect(() => asState(new Set(), 'synthetic')).toThrow();
+        // And it passes a real boolean through unchanged, both ways — without
+        // this a throw-always helper would satisfy the four above and fail
+        // every assertion below.
+        expect(asState(true, 'synthetic')).toBe(true);
+        expect(asState(false, 'synthetic')).toBe(false);
+    });
+
     it.each(STACKS.map((s) => [s] as const))(
         '%s is either drilled or declared unbacked, never neither',
         (stack) => {
