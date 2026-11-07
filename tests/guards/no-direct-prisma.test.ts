@@ -292,6 +292,24 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // review. `OpenConversationSchema` accepts a HANDLE for exactly that
         // reason.
         'direct-messages.ts',
+        // P8.5 (#2799) — the one inbox. Privileged for a reason neither of the
+        // two entries above has: it reads ACROSS two scopes that no single
+        // context satisfies. The exchange half's RLS keys on
+        // `app.actor_user_id` (a tenant context), the DM half's on
+        // `app.user_id` (a person context), and the list spans every farm the
+        // caller is a party in — so there is no tenant to enter with and no
+        // person context that admits the exchange rows.
+        //
+        // That makes the `where` the control rather than the backstop, which
+        // is P5.6a's posture and carries P5.6a's warning verbatim: here a
+        // dropped clause exports the database. What stands in for scoping is
+        // that every clause is keyed on `ctx.userId` — a participant row, an
+        // `inquirerUserId`, a listing's `sellerUserId` — and never on anything
+        // from a request. `tests/integration/p8-5-one-inbox.test.ts` asserts a
+        // SECOND person's rows are ABSENT on every read for that reason; a
+        // presence-only suite would pass while this function leaked
+        // everything.
+        'inbox.ts',
         // P5.4a (#1595) — the moderation console. Every table it touches
         // denies `app_user` for every command (`ModerationAction`,
         // `StatementOfReasons`) or admits only a reporter reading their own

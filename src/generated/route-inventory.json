@@ -621,6 +621,11 @@
       "documented": true
     },
     {
+      "path": "/api/social/inbox",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/messages/{messageId}",
       "status": "live",
       "documented": true
