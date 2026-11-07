@@ -93,13 +93,39 @@ describe('nav registries point at routes that exist', () => {
 
     describe('page-segregation.ts', () => {
         const src = readFileSync(join(ROOT, 'src/lib/nav/page-segregation.ts'), 'utf8');
-        it.each(['MAIN_PAGES', 'SUBPAGES', 'BACK_AFFORDANCE_EXEMPT_SUBPAGES'])(
-            '%s has no entry for a deleted route',
-            (name) => {
-                const dead = findDeadRoutes(literalsIn(src, name), real);
-                expect({ list: name, dead }).toEqual({ list: name, dead: [] });
-            },
-        );
+        /**
+         * Per-list floors, measured 2026-11-07: MAIN_PAGES 20, SUBPAGES 32,
+         * BACK_AFFORDANCE_EXEMPT_SUBPAGES 7. Set a little under each so an
+         * ordinary deletion does not fail the guard while a broken extraction
+         * does.
+         */
+        const FLOORS: Readonly<Record<string, number>> = {
+            MAIN_PAGES: 15,
+            SUBPAGES: 25,
+            BACK_AFFORDANCE_EXEMPT_SUBPAGES: 5,
+        };
+        it.each(Object.keys(FLOORS))('%s has no entry for a deleted route', (name) => {
+            const declared = literalsIn(src, name);
+
+            // THE FLOOR, and it is what this assertion was missing.
+            // `findDeadRoutes([], real)` returns `[]`, so an extraction that
+            // produced NOTHING satisfied "no dead routes" perfectly —
+            // `Selector teeth` reported `literalsIn` as SURVIVED when a PR
+            // touching `src/lib/nav/` pulled this guard into the audit
+            // population (#2844). An empty window passes a negated assertion,
+            // which is why every extraction in this repo owes a denominator.
+            //
+            // The sibling `canonical-parents.ts` case below already had one
+            // (`keys.length > 10`); this path simply never got it.
+            expect(declared.length).toBeGreaterThanOrEqual(FLOORS[name]);
+            // And every entry must LOOK like a route, so a regex that starts
+            // matching the wrong thing fails too rather than returning a
+            // plausible count of nonsense.
+            for (const route of declared) expect(route.startsWith('/')).toBe(true);
+
+            const dead = findDeadRoutes(declared, real);
+            expect({ list: name, dead }).toEqual({ list: name, dead: [] });
+        });
     });
 
     it('canonical-parents.ts has no entry for a deleted route', () => {
