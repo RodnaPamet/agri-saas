@@ -16,6 +16,17 @@
  * duplicated rows, which reads as a render bug and sends somebody to the wrong
  * layer.
  *
+ * ## `?source=dm` narrows the halves, and it is a DISCLOSURE lever
+ *
+ * `listInbox` is person-scoped: its exchange half admits the caller only as
+ * the inquirer or the listing's seller, deliberately not reproducing
+ * `exchange_thread_audience`, which also admits either farm's OWNER/ADMIN. The
+ * tenant-scoped exchange messaging screen has always shown an owner their
+ * colleagues' threads, so backing that screen with this half would REMOVE rows
+ * it shows today. P8.4 therefore asks for `?source=dm` and keeps the screen's
+ * own tenant-scoped query for the other half. An absent param still returns
+ * both, so P8.5's shape is unchanged.
+ *
  * ## `no-store`
  *
  * The same rule as the DM routes: `PERSISTABLE_PATHS` is an allowlist, and an
@@ -30,7 +41,32 @@ import { listInbox, INBOX_PAGE_SIZE } from '@/app-layer/usecases/inbox';
 import { jsonResponse } from '@/lib/api-response';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
+import { codedBadRequest } from '@/lib/errors/types';
+import type { InboxSource } from '@/app-layer/usecases/inbox';
 import { parseLimitParam } from '@/lib/validation/query-params';
+
+const SOURCES = ['dm', 'exchange'] as const;
+
+/**
+ * An UNRECOGNISED `?source` is a 400, never "both". Falling back to both would
+ * answer a question the caller did not ask and, on a screen that asked for the
+ * DM half only, would quietly add person-scoped exchange rows beside the
+ * tenant-scoped ones the screen already fetched — the same row twice, from two
+ * different audiences.
+ */
+function parseSources(raw: string | null): readonly InboxSource[] | undefined {
+    if (raw === null) return undefined;
+    const wanted = raw.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
+    if (wanted.length === 0) {
+        throw codedBadRequest('INVALID_SOURCE', 'Name at least one source.');
+    }
+    for (const w of wanted) {
+        if (!(SOURCES as readonly string[]).includes(w)) {
+            throw codedBadRequest('INVALID_SOURCE', 'That source is not one this inbox has.');
+        }
+    }
+    return wanted as readonly InboxSource[];
+}
 
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     const ctx = await getUserCtx(req, { surface: 'social' });
@@ -52,8 +88,11 @@ export const GET = withApiErrorHandling(async (req: NextRequest) => {
         max: INBOX_PAGE_SIZE,
     });
 
+    const sources = parseSources(req.nextUrl.searchParams.get('source'));
+
     const page = await listInbox(ctx, {
         ...(parsed === undefined ? {} : { limit: parsed }),
+        ...(sources === undefined ? {} : { sources }),
         cursor: req.nextUrl.searchParams.get('cursor'),
     });
     return jsonResponse(page, { headers: { 'Cache-Control': 'no-store' } });

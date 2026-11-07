@@ -108,7 +108,26 @@ export interface InboxPage {
 
 export async function listInbox(
     ctx: UserContext,
-    options: { limit?: number; cursor?: string | null } = {},
+    options: {
+        limit?: number;
+        cursor?: string | null;
+        /**
+         * Which halves to read. Omitted ⇒ both — P8.5's original behaviour,
+         * unchanged for every existing caller.
+         *
+         * P8.4 needs `['dm']` and the reason is a disclosure boundary, not
+         * efficiency. This function is PERSON-scoped: its exchange half admits
+         * the caller only as `inquirerUserId` or the listing's
+         * `sellerUserId`, deliberately NOT reproducing
+         * `exchange_thread_audience`, which also admits either farm's
+         * OWNER/ADMIN. The exchange messaging screen is tenant-scoped and has
+         * always shown an owner their colleagues' threads. Backing that screen
+         * with this half would therefore REMOVE rows an owner can see today —
+         * a regression dressed as a merge. So the screen keeps its own
+         * tenant-scoped query and takes only the DM half from here.
+         */
+        sources?: readonly InboxSource[];
+    } = {},
 ): Promise<InboxPage> {
     // `Number.isFinite`, not `??`: NaN is neither null nor undefined, so `??`
     // passes it through and `take: NaN` is a Prisma 500. The same choke point
@@ -134,8 +153,15 @@ export async function listInbox(
     const blockers = await whoHasBlockedMe(prisma as never, ctx.userId);
     const notBlocked = blockers.length > 0 ? { notIn: blockers } : undefined;
 
+    // An excluded half is NOT read at all. `Promise.all` accepts a plain
+    // value, so the skipped side is an empty array rather than a query with a
+    // `take: 0` or a never-matching `where` — both of which still cost a round
+    // trip and would make the skip invisible in a query log.
+    const wantDm = !options.sources || options.sources.includes('dm');
+    const wantExchange = !options.sources || options.sources.includes('exchange');
+
     const [dmRows, exRows] = await Promise.all([
-        prisma.conversation.findMany({
+        !wantDm ? [] : prisma.conversation.findMany({
             where: {
                 // `AND`, not two spreads into one object. `keysetBefore`
                 // returns `{ OR: [...] }`, and a sibling `OR` key in the same
@@ -197,7 +223,7 @@ export async function listInbox(
                 },
             },
         }),
-        prisma.exchangeThread.findMany({
+        !wantExchange ? [] : prisma.exchangeThread.findMany({
             where: {
                 // `AND` for the same reason as above, and here the collision
                 // was REAL rather than hypothetical: `...before` sets `OR`,
