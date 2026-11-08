@@ -4,9 +4,10 @@
  * Two profiles to verify:
  *   - sanitizeRichTextHtml — keeps a small set of formatting tags +
  *     safe links; strips scripts, event handlers, javascript: URIs.
- *   - sanitizePlainText — strips ALL tags AND decodes entities so a
- *     stored `&lt;script&gt;` cannot roundtrip back into a `<script>`
- *     downstream.
+ *   - sanitizePlainText — resolves entities to a FIXED POINT then strips
+ *     ALL tags, so a stored `&lt;script&gt;` cannot roundtrip back into a
+ *     `<script>` downstream, and is IDEMPOTENT. Until #2854 both halves of
+ *     that sentence were false and a test below pinned the round-trip.
  *
  * Plus the convenience policy-content selector.
  *
@@ -189,13 +190,97 @@ describe('sanitizePlainText — strips everything', () => {
         expect(out).toContain('tail');
     });
 
-    it('decodes encoded angle brackets so a future renderer cannot re-emit `<script>`', () => {
-        const out = sanitizePlainText('&lt;script&gt;alert(1)&lt;/script&gt;');
-        // The literal string the user would see when they read the
-        // field verbatim. Whether it then reaches a markdown renderer
-        // or PDF generator, no `<script>` element ever materialises
-        // because there's no script tag in the source HTML.
-        expect(out).toBe('<script>alert(1)</script>');
+    it('an ENCODED script tag is stripped, not decoded into a literal one (#2854)', () => {
+        /*
+         * This assertion used to read `toBe('<script>alert(1)</script>')`,
+         * under a name claiming "a future renderer cannot re-emit `<script>`"
+         * and a comment arguing "no `<script>` element ever materialises
+         * because there's no script tag in the source HTML".
+         *
+         * The comment's premise was true and its conclusion did not follow.
+         * There was no script tag in the INPUT; there was one in the OUTPUT,
+         * in text form. Whether it materialises depends entirely on every
+         * downstream renderer escaping — and not depending on that is the
+         * whole reason to store sanitised text rather than raw.
+         *
+         * So the test documented, defended and pinned the vulnerability while
+         * its name asserted the opposite. Left in place it would have failed
+         * the fix.
+         */
+        expect(sanitizePlainText('&lt;script&gt;alert(1)&lt;/script&gt;')).toBe('');
+        // The tag form has always been stripped; the encoded form now agrees.
+        expect(sanitizePlainText('<script>alert(1)</script>')).toBe('');
+        // Doubly-encoded resolves too — the fixed point is what makes the
+        // output independent of how many times the payload was escaped.
+        expect(sanitizePlainText('&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;')).toBe('');
+    });
+
+    it('ordinary text keeping literal <, > and & is NOT regressed', () => {
+        /*
+         * The reason the decode was last, and the reason the obvious fix
+         * (decode before strip) is wrong: `sanitize-html` re-encodes, so in
+         * that order nothing undoes it and every one of these gains entities.
+         * A farmer types «цена < 100 лв/дка» into a listing description.
+         */
+        expect(sanitizePlainText('цена < 100 лв/дка')).toBe('цена < 100 лв/дка');
+        expect(sanitizePlainText('Нива 5 > Нива 3')).toBe('Нива 5 > Нива 3');
+        expect(sanitizePlainText('Иван & Петър ООД')).toBe('Иван & Петър ООД');
+        expect(sanitizePlainText("O'Brien & Sons")).toBe("O'Brien & Sons");
+    });
+
+    it('is IDEMPOTENT — f(f(x)) === f(x)', () => {
+        /*
+         * The property a live caller already assumed. `backend-2`'s DM link
+         * card sanitised the same value twice and defended it as idempotent,
+         * which was false: measured, the old function CONVERGED to stripping
+         * over repeated passes but pass TWO is where it was at its worst, so a
+         * two-pass caller sat exactly on the bad step.
+         *
+         * A table of examples would not establish this; the point is that it
+         * holds for every shape, so the assertion ranges over the corpus.
+         */
+        const CORPUS = [
+            '<b>X</b>',
+            '&lt;b&gt;X&lt;/b&gt;',
+            '&lt;script&gt;a&lt;/script&gt;',
+            '&amp;lt;script&amp;gt;',
+            '&amp;amp;lt;script&amp;amp;gt;',
+            '<img src=x onerror=alert(1)>Y',
+            'Пръскане с Каптан &amp; Манкоцеб',
+            'цена < 100 лв/дка',
+            'Иван & Петър ООД',
+            '  Блок 12  ',
+            '   ',
+            '&#x20;&#x20;ляво',
+            '5 &amp;lt; 10',
+            '',
+        ];
+        for (const input of CORPUS) {
+            const once = sanitizePlainText(input);
+            expect(sanitizePlainText(once)).toBe(once);
+        }
+        // A control: the corpus must contain something the function actually
+        // CHANGES, or idempotence is being asserted over fixed points only.
+        expect(CORPUS.some((i) => sanitizePlainText(i) !== i)).toBe(true);
+    });
+
+    it('the #1825 contract survives: trim last, whitespace-only stays falsy', () => {
+        // 28 blank-check call sites do `if (!name) throw …_REQUIRED`.
+        expect(sanitizePlainText('  Блок 12  ')).toBe('Блок 12');
+        expect(sanitizePlainText('   ')).toBe('');
+        expect(sanitizePlainText('&#x20;&#x20;ляво')).toBe('ляво');
+        expect(sanitizePlainText('<b>   </b>')).toBe('');
+    });
+
+    it('a deliberately double-escaped ampersand COLLAPSES — the accepted change', () => {
+        /*
+         * Documented rather than special-cased. No field in this product
+         * round-trips escaped markup on purpose, and a special case would
+         * reintroduce the whose-entity-is-this ambiguity the fixed point
+         * exists to remove. Confirmed with `backend-2` for the social fields.
+         */
+        expect(sanitizePlainText('a &amp;amp; b')).toBe('a & b');
+        expect(sanitizePlainText('5 &amp;lt; 10')).toBe('5 < 10');
     });
 
     it('decodes &amp; and &quot; and &#39;', () => {
