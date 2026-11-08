@@ -87,6 +87,9 @@ export const POST = withApiErrorHandling(
                 ? { idempotencyKey: parsed.data.idempotencyKey }
                 : {}),
             ...(parsed.data.linkUrl ? { linkUrl: parsed.data.linkUrl } : {}),
+            ...(parsed.data.replyToMessageId
+                ? { replyToMessageId: parsed.data.replyToMessageId }
+                : {}),
         });
         return jsonResponse(sent, {
             status: sent.deduplicated ? 200 : 201,

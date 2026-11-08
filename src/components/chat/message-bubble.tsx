@@ -43,11 +43,18 @@
  * Nothing here calls `preventDefault()`. #449 put it on a tooltip trigger's
  * `onPointerDown` and made every wrapped link inert on touch.
  *
- * **Swipe-to-reply is NOT here, and cannot be yet** (#2829): `DirectMessage`
- * carries no `replyToMessageId`, so there is nothing for a reply to point at —
- * the quoted message would live in the composer's local state and vanish on
- * send. P8's rule ships schema a release ahead of the code that writes it, so
- * that column is a later phase, not a thing to work around in a component.
+ * **Swipe-to-reply is still NOT here, and the reason has changed** (#2829).
+ * It used to be that `DirectMessage` carried no `replyToMessageId`, so a reply
+ * had nothing to point at; #2880 added the column, its FK and the
+ * same-conversation trigger, and the API half now accepts
+ * `replyToMessageId` on send and returns a `replyTo` preview on read.
+ *
+ * What remains is this component's own: the gesture, the FOCUSABLE reply
+ * control beside it (the `<IconAction>` rule above — a gesture is invisible to
+ * a keyboard and a screen reader), the quoted preview inside the bubble, and a
+ * rendered test under a coarse `matchMedia`, since the branch is dead under
+ * jsdom's always-false stub. Do not read the API half landing as the gesture
+ * being available.
  */
 import { useTranslations } from 'next-intl';
 import * as React from 'react';
