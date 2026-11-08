@@ -35,7 +35,6 @@ import {
     getCostRollupByField,
 } from '@/app-layer/usecases/cost-rollup';
 import { makeRequestContext } from '../helpers/make-context';
-import { bgnToEur } from '@/lib/exchange/currency';
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -276,29 +275,35 @@ describe('cost rollup — a partial total says so', () => {
     });
 });
 
-describe('cost rollup — lev blends at the peg, foreign currency never blends', () => {
-    // Owner ruling 2026-10-26: the app is EUR-only. Lev converts at the
-    // legally fixed 1.95583 — arithmetic, not FX — while a genuinely foreign
-    // currency still refuses, because that WOULD need a market quote this
-    // product has none of. These tests used to assert that BGN + EUR was
-    // unblendable; that was right when no conversion existed anywhere.
-    it('blends lev into euro at the fixed peg rather than refusing', async () => {
+describe('cost rollup — euro spellings blend, no currency converts', () => {
+    // Owner ruling 2026-10-26: the app is EUR-only. These expectations have
+    // moved twice. They first asserted BGN + EUR was unblendable; #2546 made
+    // lev convert at the legally fixed 1.95583 (arithmetic, not FX) and blend;
+    // #2793 removed the peg once the one production lev row was deleted, so
+    // lev is back to refusing — now for the same reason USD always has.
+    //
+    // What never moved is the EURO-SPELLING half, which is what the rollup
+    // exists to fold, and the `STILL refuses` / `collapses three spellings`
+    // cases below are the pair that keeps those two questions apart.
+    it('withholds a lev amount rather than converting it, and says the row is mixed', async () => {
         mockDb.logEntry.findMany.mockResolvedValueOnce([
             { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
         ]);
-        // Currency now rides on the groupBy key, so the separate distinct
-        // read this used to mock no longer exists.
+        // Currency rides on the groupBy key, so the separate distinct read
+        // this used to mock no longer exists.
         mockDb.stockTransaction.groupBy.mockResolvedValueOnce([
             { logEntryId: 'le-1', costCurrency: 'EUR', _sum: { costAmount: 50 } },
         ]);
 
         const { rows } = await getCostRollupByPlanting(adminCtx);
         const p1 = rows.find((r) => r.plantingId === 'p-1')!;
-        // One currency after normalisation, so no refusal.
-        expect(p1.currencies).toEqual(['EUR']);
-        expect(p1.currencyMixed).toBe(false);
-        // 100 BGN -> 51.13 EUR at the peg, plus 50 EUR of stock.
-        expect(p1.totalCost).toBeCloseTo(bgnToEur(100) + 50, 2);
+        expect(p1.currencies.sort()).toEqual(['BGN', 'EUR']);
+        expect(p1.currencyMixed).toBe(true);
+        // ONLY the 50 EUR of stock. The 100 лв contributes nothing — not its
+        // former 51.13, and not its raw 100 either, which is the half that
+        // matters: a withheld amount counted at face value would overstate
+        // this row by roughly double the lev figure.
+        expect(p1.totalCost).toBeCloseTo(50, 2);
     });
 
     it('STILL refuses when a genuinely foreign currency is present', async () => {
@@ -335,7 +340,6 @@ describe('cost rollup — lev blends at the peg, foreign currency never blends',
     });
 
     it('propagates a FOREIGN mix up to the season aggregate', async () => {
-        // Still propagates — only the lev case stopped being a mix.
         mockDb.logEntry.findMany.mockResolvedValueOnce([
             { id: 'le-1', costAmount: 100, costCurrency: 'USD' },
             { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
@@ -345,14 +349,17 @@ describe('cost rollup — lev blends at the peg, foreign currency never blends',
         expect(rows[0].currencies.sort()).toEqual(['EUR', 'USD']);
     });
 
-    it('does NOT propagate a lev-and-euro mix, because it is no longer one', async () => {
+    it('propagates a lev-and-euro mix too, now that lev does not convert', async () => {
+        // This asserted the OPPOSITE between #2546 and #2793 — `currencyMixed:
+        // false`, `['EUR']` — and the flip is the whole behaviour change, so it
+        // is the case to read if a future reader wonders whether the peg went.
         mockDb.logEntry.findMany.mockResolvedValueOnce([
             { id: 'le-1', costAmount: 100, costCurrency: 'BGN' },
             { id: 'le-2', costAmount: 50, costCurrency: 'EUR' },
         ]);
         const { rows } = await getCostRollupBySeason(adminCtx);
-        expect(rows[0].currencyMixed).toBe(false);
-        expect(rows[0].currencies).toEqual(['EUR']);
+        expect(rows[0].currencyMixed).toBe(true);
+        expect(rows[0].currencies.sort()).toEqual(['BGN', 'EUR']);
     });
 });
 
