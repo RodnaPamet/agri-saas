@@ -35,15 +35,25 @@
  * path once a decision is final, so the screen shows the same not-found a
  * missing conversation gets.
  *
- * ## No "load older" yet, and that is measured rather than forgotten
+ * ## Paging up, and the anchoring it needs (#2826)
  *
- * `readConversation` returns `olderCursor` and `hasOlder` and pages backwards
- * on a `(createdAt, id)` keyset, so the data side is ready. The CONTROL is
- * absent because paging up without scroll anchoring puts the reader somewhere
- * they did not ask to be, and anchoring is a change to the timeline's scroll
- * ownership — #2826 owns both together. Measured 2026-11-07: production has 0
- * conversations and 0 direct messages, and the page size is 100, so nobody can
- * reach a second page today.
+ * `readConversation` pages BACKWARD on a `(createdAt, id)` keyset and returns
+ * `olderCursor` + `hasOlder`. The newest page comes from SWR and is polled;
+ * older pages accumulate HERE, prepended, because a poll must refresh the
+ * newest page without discarding what the reader has already pulled in.
+ *
+ * A prepend cannot be restored by scroll OFFSET. react-window v2 keys its
+ * measurement cache by INDEX and v2 removed `itemKey`, so inserting rows above
+ * the viewport re-points every cached height at a different message and the
+ * estimated extent above the reader is wrong until it has been scrolled
+ * through. So the timeline exposes `anchor()` / `restore()` and this page
+ * decides WHEN: capture before the fetch, restore after the commit that adds
+ * the rows.
+ *
+ * The policy stays here rather than in the primitive because only the page
+ * knows a prepend is happening — a timeline that anchored on every render
+ * would impose one policy on every future consumer, which is the argument
+ * `<SwipeRow>` makes for committing nothing.
  *
  * ## The counterparty is the sender of a message that is not mine
  *
@@ -64,7 +74,12 @@ import * as React from 'react';
 import useSWR from 'swr';
 
 import { MessageComposer } from '@/components/chat/message-composer';
-import { MessageTimeline, type TimelineMessage } from '@/components/chat/message-timeline';
+import {
+    MessageTimeline,
+    type MessageTimelineHandle,
+    type TimelineAnchor,
+    type TimelineMessage,
+} from '@/components/chat/message-timeline';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BlockPersonButton } from '@/components/trust-safety/BlockPersonButton';
 import { Button } from '@/components/ui/button';
@@ -161,9 +176,89 @@ export function DmConversationClient({
         setFrozenUnread({ for: data.id, id: firstUnseen?.id ?? null });
     }
 
+    /**
+     * Older pages, oldest-first, ahead of SWR's newest page.
+     *
+     * Page state rather than SWR cache mutation: the 30-second poll replaces
+     * the newest page wholesale, and folding older pages into that cache would
+     * make every poll either discard them or merge them, which is a
+     * reconciliation this screen does not need. Keyed by conversation so
+     * navigating away and back does not resurrect somebody else's history.
+     */
+    const [older, setOlder] = React.useState<{
+        for: string;
+        rows: ConversationWire['messages'];
+        cursor: string | null;
+        hasOlder: boolean;
+    } | null>(null);
+    const [loadingOlder, setLoadingOlder] = React.useState(false);
+
+    if (data && older && older.for !== data.id) setOlder(null);
+
+    const sameConversation = Boolean(data && older && older.for === data.id);
+    const cursor = sameConversation ? older!.cursor : (data?.olderCursor ?? null);
+    const hasOlder = sameConversation ? older!.hasOlder : (data?.hasOlder ?? false);
+
+    const timeline = React.useRef<MessageTimelineHandle | null>(null);
+    /** Set by the loader, consumed by the layout effect after the commit. */
+    const pendingAnchor = React.useRef<TimelineAnchor | null>(null);
+
+    const loadOlder = React.useCallback(async () => {
+        if (!data || !cursor || loadingOlder) return;
+        // CAPTURED BEFORE THE FETCH, not after: between the two the reader may
+        // scroll, and an anchor read after the await would record where they
+        // ended up rather than where the prepend has to put them back.
+        pendingAnchor.current = timeline.current?.anchor() ?? null;
+        setLoadingOlder(true);
+        try {
+            const page = await apiGet<ConversationWire>(
+                `${path}?before=${encodeURIComponent(cursor)}`,
+            );
+            setOlder((prev) => {
+                const kept = prev && prev.for === data.id ? prev.rows : [];
+                // DEDUPED BY ID. The newest page is a moving window — new
+                // messages shift it — so a page boundary can overlap, and a
+                // duplicate row would get a duplicate React key and an anchor
+                // that matches two elements.
+                const seen = new Set(kept.map((m) => m.id));
+                const fresh = page.messages.filter((m) => !seen.has(m.id));
+                return {
+                    for: data.id,
+                    rows: [...fresh, ...kept],
+                    cursor: page.olderCursor,
+                    hasOlder: page.hasOlder,
+                };
+            });
+        } catch {
+            // A failed page must not clear the anchor on the floor: leaving it
+            // set would restore on some LATER commit, moving the reader for no
+            // reason they can see.
+            pendingAnchor.current = null;
+        } finally {
+            setLoadingOlder(false);
+        }
+    }, [data, cursor, loadingOlder, path]);
+
+    /**
+     * Restore AFTER the commit that added the rows, before the browser paints.
+     *
+     * `useLayoutEffect`, not `useEffect`: an effect runs after paint, so the
+     * reader would see one frame at the wrong position — which is the jump
+     * this whole phase is about.
+     */
+    React.useLayoutEffect(() => {
+        if (!pendingAnchor.current) return;
+        timeline.current?.restore(pendingAnchor.current);
+        pendingAnchor.current = null;
+    }, [older]);
+
     const messages: TimelineMessage[] = React.useMemo(
         () =>
-            (data?.messages ?? []).map((m) => ({
+            [
+                // Older pages first — the timeline takes oldest-first.
+                ...(sameConversation ? older!.rows : []),
+                ...(data?.messages ?? []),
+            ].map((m) => ({
                 id: m.id,
                 senderUserId: m.senderUserId,
                 body: m.body ?? '',
@@ -172,8 +267,9 @@ export function DmConversationClient({
                 deletedAt: m.deletedAt,
                 reactions: m.reactions,
             })),
-        [data?.messages],
+        [data?.messages, data?.id, older],
     );
+
 
     // The newest message from the other party names them. Searched from the
     // END so a long history does not make this depend on who spoke first.
@@ -274,19 +370,29 @@ export function DmConversationClient({
             </div>
 
             {/*
-              * The scroll container is HERE, not inside the timeline. That is
-              * the seam #2826 has to move: the windowed branch scrolls itself,
-              * so anchoring a prepend across both branches means the timeline
-              * owning this element. Nothing pages up yet, so the two do not
-              * disagree today.
+              * THE TIMELINE OWNS ITS SCROLLER, in both branches — #2826. This
+              * used to be a `div.overflow-y-auto` here, which worked only
+              * because nothing paged up: the windowed branch scrolls itself,
+              * so with both live there were two scrollers and a prepend had to
+              * be anchored in whichever one happened to be real.
               */}
-            <div className="min-h-0 flex-1 overflow-y-auto">
-                <MessageTimeline
-                    messages={messages}
-                    myUserId={myUserId}
-                    firstUnreadId={frozenUnread?.id ?? null}
-                />
-            </div>
+            {hasOlder ? (
+                <div className="flex justify-center border-b border-border-subtle p-tight">
+                    <Button
+                        size="sm"
+                        disabled={loadingOlder}
+                        onClick={() => void loadOlder()}
+                    >
+                        {loadingOlder ? t('loadingOlder') : t('loadOlder')}
+                    </Button>
+                </div>
+            ) : null}
+            <MessageTimeline
+                ref={timeline}
+                messages={messages}
+                myUserId={myUserId}
+                firstUnreadId={frozenUnread?.id ?? null}
+            />
 
             {theirRequest ? (
                 <div className="space-y-default border-t border-border-subtle p-default">

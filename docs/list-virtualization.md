@@ -101,8 +101,38 @@ PREPENDING older pages").
 
 **What it does mean for a caller:** a surface that prepends owes its own
 scroll anchoring — hold the previously-top row and restore to it after the
-rerender, rather than trusting the scroll offset. That is the page's job,
-not the primitive's, and it is tracked separately.
+rerender, rather than trusting the scroll offset.
+
+**Built for the chat timeline in #2826**, and the split is worth copying:
+
+- `MessageTimeline` owns its SCROLL ELEMENT in both branches, and exposes
+  `anchor()` / `restore()` on a ref. It had to: the windowed branch scrolls
+  itself while the plain branch was scrolled by the page, so with both live
+  there were two scrollers and a prepend had to be anchored in whichever one
+  happened to be real.
+- The PAGE decides WHEN — capture before the fetch, restore in a
+  `useLayoutEffect` after the commit that adds the rows. Only the page knows a
+  prepend is happening, and a timeline that anchored on every render would
+  impose one policy on every future consumer.
+- The anchor is `{ key, offsetInViewport }` — a row IDENTITY plus how far below
+  the viewport's top edge it was sitting. Never an offset: inserting rows above
+  the viewport moves every row down by a distance nobody knows until they are
+  measured, which is this whole section.
+- `<VirtualizedList>` gained `data-virtualized-viewport` so a consumer can
+  reach react-window's scroll element. An ATTRIBUTE rather than a third verb on
+  `VirtualizedListHandle`, because `scrollToItem` / `scrollTo` address rows by
+  INDEX and an index is exactly what a prepend invalidates.
+- `restore()` is a NO-OP when the anchor row is no longer rendered. Guessing a
+  position for a row that was deleted between the two calls is worse than
+  leaving the reader put.
+- `useLayoutEffect`, not `useEffect`: an effect runs after paint, so the reader
+  would see one frame at the wrong position — which IS the jump.
+
+jsdom has no layout engine, so the arithmetic (`anchoredScrollTop`) and the
+position reader (`rowTopOf`) are exported and tested as pure functions, and the
+DOM half runs with `offsetTop` / `offsetHeight` DEFINED on the row elements.
+That is not a simulation of layout: it supplies the one input the algorithm
+reads, so the real `anchor()` / `restore()` run against real elements.
 
 ## Rolled-out surfaces
 
