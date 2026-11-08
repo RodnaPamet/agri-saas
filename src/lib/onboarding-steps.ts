@@ -276,30 +276,47 @@ export type FirstRunSignal = 'first-field-mapped' | 'first-job-logged';
 export interface FirstRunStep {
     /** Stable id — doubles as the completion-signal key. */
     id: FirstRunSignal;
-    /** Imperative step label ("Map your first field"). */
-    label: string;
-    /** One-line reason it matters. */
-    hint: string;
+    /**
+     * i18n KEY for the imperative step label, under `dashboard.firstRun`.
+     *
+     * A key and not prose. These six strings were hard-coded ENGLISH and
+     * `FirstRunCard` rendered them raw, on the first screen a new farm sees,
+     * in a product where about four in five users are on Bulgarian (#2858).
+     * `OnboardingWizard` next door already does it this way — `labelKey` plus
+     * `t(step.labelKey)` — so this is the house shape rather than a new one.
+     */
+    labelKey: string;
+    /** i18n key for the one-line reason it matters. */
+    hintKey: string;
     /** Tenant-relative path the CTA opens (joined with the tenant base). */
     href: string;
-    /** CTA button label. */
-    cta: string;
+    /** i18n key for the CTA button label. */
+    ctaKey: string;
 }
 
 export const FIRST_RUN_STEPS: ReadonlyArray<FirstRunStep> = [
     {
         id: 'first-field-mapped',
-        label: 'Map your first field',
-        hint: 'Draw or import a parcel — every journal entry, job, and claim hangs off a location.',
+        // The nouns moved with the strings. This step maps a LOCATION — a
+        // «Блок» in `docs/nav-vocabulary.md` — and the old copy called it a
+        // "field" in the label, a "parcel" in the hint and a "location" in the
+        // same sentence: three nouns for a two-concept flow. The hint still
+        // names the parcel, because a parcel is literally what the operator
+        // draws inside the block.
+        labelKey: 'stepMapBlockLabel',
+        hintKey: 'stepMapBlockHint',
         href: '/locations',
-        cta: 'Map a field',
+        ctaKey: 'stepMapBlockCta',
     },
     {
         id: 'first-job-logged',
-        label: 'Log your first job',
-        hint: 'Plan a field operation or log an activity — the field record behind every claim.',
+        labelKey: 'stepLogJobLabel',
+        // "the FIELD record" was ambiguous in English and untranslatable as
+        // written — it meant the farm diary, not a field. The Bulgarian says
+        // «записът в дневника» and the English now says "diary record".
+        hintKey: 'stepLogJobHint',
         href: '/farm-tasks',
-        cta: 'Plan a job',
+        ctaKey: 'stepLogJobCta',
     },
 ];
 

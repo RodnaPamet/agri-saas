@@ -173,6 +173,28 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             suspendedAt: true,
             createdAt: true,
             updatedAt: true,
+            // #2863, owner ruling 2026-11-08: the person's OWN data, not ids.
+            //
+            // `image` is their avatar. `acceptedTermsVersion`, `bottomTabOrder`
+            // and `newsTagPreferences` are preferences they set. The three
+            // erasure stamps are the state of their own request — and
+            // `/api/auth/me` already hands `deletion` to the native recovery
+            // screen, so withholding them from the export while the API
+            // surfaces them would be the inconsistent half.
+            //
+            // `deletionRequestedBy` is an actor CLASS (`SELF` / `MODERATION`),
+            // never a person, and whether they or a moderator started the
+            // erasure is exactly what the Art 17 statement tells them for a
+            // termination. `isPrivateRelay` is a fact about their own sign-in.
+            image: true,
+            acceptedTermsVersion: true,
+            bottomTabOrder: true,
+            newsTagPreferences: true,
+            isPrivateRelay: true,
+            deletionRequestedAt: true,
+            deletionRequestedBy: true,
+            terminatedAt: true,
+            pseudonymisedAt: true,
         },
     });
 
@@ -211,6 +233,13 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             select: {
                 id: true, subjectKind: true, subjectId: true, reasonCode: true,
                 status: true, detail: true, createdAt: true,
+                // #2863. Reporter-visible through RLS already — the arm is
+                // ROW-level, so every column of their own row is theirs to
+                // read — so withholding it from the export while the policy
+                // admits it was the inconsistent half. It says a human was
+                // told, which Art 16 entitles a notifier to know, and it is
+                // explicitly NOT the triage clock (P5.8).
+                alertedAt: true,
             },
             orderBy: { createdAt: 'desc' },
             take,
@@ -249,6 +278,17 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             select: {
                 id: true, sellerTenantId: true, commodity: true, side: true,
                 kind: true, description: true, status: true,
+                // #2863. A seller's own listing exported with its commodity
+                // and description and NO price, quantity or region is not the
+                // listing — it was the starkest gap the derived guard found.
+                // `sellerContact` and `sellerDisplayName` are what they chose
+                // to publish about themselves; `publishAsFarm` is that choice.
+                // `suppressedForDeletionAt` and `expiresAt` are why a listing
+                // of theirs is not visible.
+                quantityTonnes: true, pricePerTonne: true, priceCurrency: true,
+                regionCode: true, regionName: true, lat: true, lon: true,
+                sellerDisplayName: true, publishAsFarm: true, sellerContact: true,
+                suppressedForDeletionAt: true, expiresAt: true,
                 // #2865 — we removed this on a notice. Art 15 is a right to
                 // know what is held, and the Art 17 statement of reasons
                 // already told them; withholding it from the export would
@@ -260,7 +300,15 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         }),
         prisma.exchangeThread.findMany({
             where: { inquirerUserId: userId },
-            select: { id: true, listingId: true, closedAt: true, createdAt: true },
+            select: {
+                id: true, listingId: true, closedAt: true, createdAt: true,
+                // #2863. `inquirerLastReadAt` is THEIRS — these rows are
+                // `where: { inquirerUserId: userId }`. `sellerLastReadAt` is
+                // the COUNTERPARTY's and stays out: P8.5 draws that line for
+                // the same column family ("the CALLER's own read cursor, never
+                // the counterparty's").
+                lastMessageAt: true, inquirerLastReadAt: true,
+            },
             orderBy: { createdAt: 'desc' },
             take,
         }),
@@ -270,6 +318,8 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             select: {
                 id: true, listingId: true, message: true, quantityTonnes: true,
                 status: true, createdAt: true,
+                // #2863 — the contact details they chose to share, and when.
+                inquirerContact: true, contactSharedAt: true,
             },
             orderBy: { createdAt: 'desc' },
             take,
@@ -284,6 +334,9 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
                 // #2865, for the listing's reason one query up: we removed it,
                 // and Art 15 is a right to know what is held.
                 removedByModerationAt: true,
+                // #2863 — whether they withdrew it themselves, which is a
+                // different fact from our having removed it.
+                deletedAt: true,
             },
             orderBy: { createdAt: 'desc' },
             take,
@@ -320,6 +373,8 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             select: {
                 id: true, promotionId: true, inquirerTenantId: true,
                 consentedAt: true, status: true, createdAt: true,
+                // #2863 — whether their own lead was withdrawn.
+                deletedAt: true,
             },
             orderBy: { createdAt: 'desc' },
             take,
@@ -334,6 +389,10 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             select: {
                 id: true, text: true, sourceQuote: true, sourceAt: true,
                 editedByPerson: true, deletedAt: true, createdAt: true,
+                // #2863 — a point superseded by a later one is still a point
+                // we held about them, and when it stopped applying is part of
+                // the answer.
+                supersededAt: true,
             },
             orderBy: { sourceAt: 'desc' },
             take,

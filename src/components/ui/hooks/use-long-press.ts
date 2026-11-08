@@ -40,9 +40,11 @@
  * cancel — four exits, matching the four dismissal paths `tooltip.tsx` is
  * required to keep.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { PointerEvent as ReactPointerEvent } from 'react';
+
+import { useCoarsePointer } from './use-coarse-pointer';
 
 /**
  * 500ms. Long enough that a tap cannot reach it (a deliberate tap is ~100ms)
@@ -53,44 +55,6 @@ export const LONG_PRESS_MS = 500;
 
 /** Past this much drift the hold is a scroll, not a press. */
 const DEFAULT_MOVE_TOLERANCE_PX = 10;
-
-/**
- * Subscribed, not read once: a tablet with a detachable keyboard or a paired
- * mouse flips this at RUNTIME, and a stale value would leave the user on the
- * wrong gesture until remount. `useSyncExternalStore` also answers during
- * render rather than after an effect, so there is no first-frame flash — and
- * it is what keeps this hook off `react-hooks/set-state-in-effect`, which the
- * `useState` + `useEffect` first draft tripped (the lint gate is a CEILING, so
- * a new warning is a real cost).
- *
- * This is the SECOND copy of this detector in the repo — `tooltip.tsx` has a
- * module-private `useCoarsePointer` using the identical query string. Two
- * spellings of one policy is how two answers diverge, so extracting it is
- * tracked on #2828 rather than left unsaid; it is not done HERE because
- * editing `tooltip.tsx` pulls two shape guards into a P8.3 diff.
- */
-function useCoarsePointer(): boolean {
-    const subscribe = useCallback((onChange: () => void) => {
-        if (typeof window === 'undefined' || !window.matchMedia) return () => {};
-        const mq = window.matchMedia('(hover: none), (pointer: coarse)');
-        // Safari < 14 only has the deprecated listener API.
-        if (mq.addEventListener) {
-            mq.addEventListener('change', onChange);
-            return () => mq.removeEventListener('change', onChange);
-        }
-        mq.addListener(onChange);
-        return () => mq.removeListener(onChange);
-    }, []);
-
-    return useSyncExternalStore(
-        subscribe,
-        () =>
-            typeof window !== 'undefined' &&
-            typeof window.matchMedia === 'function' &&
-            window.matchMedia('(hover: none), (pointer: coarse)').matches,
-        () => false,
-    );
-}
 
 export interface UseLongPressOptions {
     onLongPress: () => void;
