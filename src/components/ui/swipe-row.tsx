@@ -45,7 +45,7 @@ import {
 } from 'react';
 import { cn } from '@/lib/cn';
 import { haptic } from '@/lib/haptics';
-import { useMediaQuery } from './hooks/use-media-query';
+import { useCoarsePointer } from './hooks/use-coarse-pointer';
 import { useReducedMotion } from './hooks/use-reduced-motion';
 
 /**
@@ -93,7 +93,7 @@ export function SwipeRow({
     disabled = false,
     className,
 }: SwipeRowProps) {
-    const { isMobile } = useMediaQuery();
+    const coarsePointer = useCoarsePointer();
     const reducedMotion = useReducedMotion();
     const [offset, setOffset] = useState(0);
     const [dragging, setDragging] = useState(false);
@@ -158,7 +158,16 @@ export function SwipeRow({
     }, [offset, onAction, reset]);
 
     // Desktop keeps its table actions; nothing here applies.
-    if (!isMobile || disabled) {
+    //
+    // `useCoarsePointer`, not `useMediaQuery().isMobile` — #2828. This asked a
+    // VIEWPORT question while the docblock above argued for a pointer one, and
+    // the two disagree in both directions: a desktop window narrowed to phone
+    // width rendered this wrapper (inert, because `onPointerDown` already
+    // refuses `pointerType === 'mouse'`), and a LARGE TABLET got no wrapper at
+    // all, so a finger had no swipe on the one device class most likely to
+    // want it. Strictly better in both: less dead DOM on the first, a working
+    // gesture on the second.
+    if (!coarsePointer || disabled) {
         return <div className={className}>{children}</div>;
     }
 

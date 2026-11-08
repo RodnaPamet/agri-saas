@@ -648,10 +648,27 @@ describe('tooltip touch path — derived, never supplied', () => {
         expect(DERIVED_POINTER_RE.test(src)).toBe(true);
     });
 
-    it('keeps useCoarsePointer internal to the primitive', () => {
-        expect(src).toMatch(/^function useCoarsePointer\(/m);
+    it('DERIVES the pointer class from the shared hook, and supplies it nowhere', () => {
+        // The property is "never SUPPLIED", not "defined in this file". It
+        // used to assert `^function useCoarsePointer(` here, which was the
+        // same property while the detector was module-private — #2828 moved
+        // it to `hooks/use-coarse-pointer.ts`, because there were THREE copies
+        // of one policy and the risk was never the query string drifting: it
+        // is the next consumer importing whichever copy it finds and a later
+        // fix landing on only one.
+        //
+        // So: imported from the one module, and still not re-exported from
+        // here, which would make a second import path for a policy that is
+        // supposed to have one.
+        expect(src).toMatch(
+            /import\s*\{[^}]*\buseCoarsePointer\b[^}]*\}\s*from\s*["']\.\/hooks\/use-coarse-pointer["']/,
+        );
         expect(src).not.toMatch(/export\s+(?:function|const)\s+useCoarsePointer\b/);
         expect(src).not.toMatch(/export\s*\{[^}]*\buseCoarsePointer\b[^}]*\}/);
+        // And the file defines no local copy, which is what the extraction
+        // was for — a shadowing `function useCoarsePointer` here would make
+        // the import above dead while every other assertion still passed.
+        expect(src).not.toMatch(/^(?:function|const)\s+useCoarsePointer\b/m);
     });
 
     it('exposes no prop that could fork or disable the touch path', () => {

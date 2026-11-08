@@ -29,6 +29,10 @@ export { useInViewport } from "./use-in-viewport";
 export { useIntersectionObserver } from "./use-intersection-observer";
 export { useKeyboardInset, type KeyboardInset } from "./use-keyboard-inset";
 export { useMediaQuery } from "./use-media-query";
+// ONE coarse-pointer answer for every touch affordance (#2828). The two
+// one-shot `(pointer: coarse)` checks are a NARROWER query and stay their
+// own — see the hook's docblock.
+export { useCoarsePointer, COARSE_POINTER_QUERY } from "./use-coarse-pointer";
 export { useResizeObserver } from "./use-resize-observer";
 export {
     useResponsivePresentation,
