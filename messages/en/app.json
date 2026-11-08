@@ -7096,6 +7096,8 @@
         "awaitingAcceptance": "Waiting for a reply. You can write again once they accept.",
         "composerPlaceholder": "Write a message…",
         "loadError": "We could not load this conversation. Try again.",
+        "loadOlder": "Older messages",
+        "loadingOlder": "Loading…",
         "requestAccept": "Accept",
         "requestDecline": "Decline",
         "requestExplainer": "This person is writing to you for the first time. Accept to exchange messages.",
