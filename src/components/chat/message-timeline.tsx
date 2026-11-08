@@ -33,7 +33,10 @@
  */
 import * as React from 'react';
 
-import { VirtualizedList } from '@/components/ui/virtualized-list';
+import {
+    VirtualizedList,
+    type VirtualizedListHandle,
+} from '@/components/ui/virtualized-list';
 import { cn } from '@/lib/cn';
 
 import { chatDayKey, DayPill } from './day-pill';
@@ -70,6 +73,64 @@ type Row =
           mine: boolean;
           grouped: boolean;
       };
+
+/**
+ * Where the reader was, named by ROW rather than by pixel offset (#2826).
+ *
+ * A scroll offset is meaningless across a prepend: inserting a page of older
+ * messages above the viewport moves every row down by a distance nobody knows
+ * until the rows are measured. The row IDENTITY survives, so that is what is
+ * recorded, plus how far below the top of the viewport it was sitting.
+ */
+export interface TimelineAnchor {
+    /** The `Row.key` that was topmost in the viewport. */
+    readonly key: string;
+    /** Its distance below the top of the viewport, in pixels. */
+    readonly offsetInViewport: number;
+}
+
+export interface MessageTimelineHandle {
+    /**
+     * Record the topmost visible row. Null when there is nothing to anchor to
+     * — an empty timeline, or a scroll element that has not mounted.
+     */
+    anchor(): TimelineAnchor | null;
+    /** Put that row back where it was. A no-op if it is no longer rendered. */
+    restore(anchor: TimelineAnchor | null): void;
+}
+
+/**
+ * The arithmetic, as a pure function, because the DOM half cannot be tested
+ * where there is no layout engine.
+ *
+ * `rowTop` is the row's top in the SCROLL CONTENT's coordinates — which is
+ * what changes across a prepend — and the result is the `scrollTop` that puts
+ * it back at `offsetInViewport` below the viewport's top edge. Clamped at 0:
+ * a prepend can leave the anchor nearer the top than it was (the reader was
+ * already at the very top and asked for more), and a negative `scrollTop` is
+ * silently coerced by the browser, which would make a wrong answer look right.
+ */
+export function anchoredScrollTop(rowTop: number, offsetInViewport: number): number {
+    return Math.max(0, rowTop - offsetInViewport);
+}
+
+/**
+ * A row's top in scroll-content coordinates.
+ *
+ * `offsetTop` in the PLAIN branch, where rows are laid out by flow. The
+ * windowed branch absolute-positions rows from an inline `style.top`, and
+ * reads that in preference — not as a jsdom accommodation but because it is
+ * the authority there: react-window writes the position it decided, while
+ * `offsetTop` is the browser's reading of it and is 0 before layout.
+ */
+export function rowTopOf(el: HTMLElement): number {
+    const inline = el.style.top;
+    if (inline && inline.endsWith('px')) {
+        const parsed = Number.parseFloat(inline);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return el.offsetTop;
+}
 
 export interface MessageTimelineProps {
     /** Oldest-first. */
@@ -149,7 +210,10 @@ export function buildTimelineRows(
     return rows;
 }
 
-export function MessageTimeline({
+export const MessageTimeline = React.forwardRef<
+    MessageTimelineHandle,
+    MessageTimelineProps
+>(function MessageTimeline({
     messages,
     myUserId,
     firstUnreadId = null,
@@ -159,7 +223,7 @@ export function MessageTimeline({
     virtualize,
     height,
     className,
-}: MessageTimelineProps) {
+}: MessageTimelineProps, ref) {
     const rows = React.useMemo(
         () => buildTimelineRows(messages, myUserId, firstUnreadId),
         [messages, myUserId, firstUnreadId],
@@ -168,6 +232,73 @@ export function MessageTimeline({
     const threshold =
         typeof virtualize === 'object' ? virtualize.threshold : TIMELINE_VIRTUALIZE_THRESHOLD;
     const windowed = virtualize === false ? false : rows.length > threshold;
+
+    /**
+     * THE SCROLL ELEMENT, owned here in BOTH branches — which is the seam
+     * #2826 had to move.
+     *
+     * The page used to wrap this component in its own `overflow-y-auto`, which
+     * worked only because nothing paged up: the windowed branch scrolls
+     * ITSELF, so with both branches live there were two scrollers and a
+     * prepend had to be anchored in whichever one happened to be real. One
+     * element, one answer.
+     *
+     * In the plain branch this div IS the scroller. In the windowed branch it
+     * is a static wrapper and `scrollerRef` is pointed at react-window's own
+     * element instead, through the imperative handle below.
+     */
+    const plainScroller = React.useRef<HTMLDivElement | null>(null);
+    const listRef = React.useRef<VirtualizedListHandle | null>(null);
+    const windowedWrapper = React.useRef<HTMLDivElement | null>(null);
+
+    /** Whichever element actually scrolls, for the branch that is rendered. */
+    const scrollElement = React.useCallback((): HTMLElement | null => {
+        if (!windowed) return plainScroller.current;
+        // react-window's list element is the scroller in this branch. It is
+        // reached through the DOM rather than a second imperative hop, because
+        // `VirtualizedListHandle` deliberately exposes only `scrollToItem` /
+        // `scrollTo` and widening it would make a windowing-engine swap a
+        // bigger change (Epic 68's two-seam rule).
+        const wrapper = windowedWrapper.current;
+        if (!wrapper) return null;
+        return wrapper.querySelector<HTMLElement>('[data-virtualized-viewport]')
+            ?? (wrapper.firstElementChild as HTMLElement | null);
+    }, [windowed]);
+
+    React.useImperativeHandle(ref, () => ({
+        anchor(): TimelineAnchor | null {
+            const scroller = scrollElement();
+            if (!scroller) return null;
+            const top = scroller.scrollTop;
+            // The TOPMOST row whose bottom is still below the viewport's top
+            // edge — the one the reader is looking at. A row scrolled just
+            // past is the wrong anchor: restoring to it would scroll the
+            // reader backwards by its height.
+            const candidates = scroller.querySelectorAll<HTMLElement>('[data-row-key]');
+            for (const el of candidates) {
+                const rowTop = rowTopOf(el);
+                if (rowTop + el.offsetHeight > top) {
+                    return { key: el.dataset.rowKey!, offsetInViewport: rowTop - top };
+                }
+            }
+            return null;
+        },
+        restore(anchor: TimelineAnchor | null): void {
+            if (!anchor) return;
+            const scroller = scrollElement();
+            if (!scroller) return;
+            const el = scroller.querySelector<HTMLElement>(
+                `[data-row-key="${CSS.escape(anchor.key)}"]`,
+            );
+            // No-op when the anchor row is no longer rendered. In the windowed
+            // branch a prepend keeps it rendered — it was visible — and in the
+            // plain branch every row is in the DOM. A missing element means
+            // the row was deleted between the two calls, and guessing a
+            // position for it would be worse than leaving the reader put.
+            if (!el) return;
+            scroller.scrollTop = anchoredScrollTop(rowTopOf(el), anchor.offsetInViewport);
+        },
+    }), [scrollElement]);
 
     const renderRow = React.useCallback(
         (row: Row) => {
@@ -198,14 +329,23 @@ export function MessageTimeline({
 
     if (windowed) {
         return (
-            <div className={cn('flex-1', className)} data-timeline-mode="virtualized">
+            <div
+                ref={windowedWrapper}
+                className={cn('min-h-0 flex-1', className)}
+                data-timeline-mode="virtualized"
+            >
                 <VirtualizedList
+                    ref={listRef}
                     itemCount={rows.length}
                     dynamicRowHeight={{ defaultRowHeight: ESTIMATED_ROW_PX }}
                     height={height}
                     width="100%"
                     renderItem={({ index, style }) => (
-                        <div style={style} key={rows[index].key}>
+                        // `data-row-key` is what `anchor()` / `restore()` look
+                        // rows up by. It is the row's own key rather than an
+                        // index because an index is exactly what a prepend
+                        // invalidates — which is the whole defect.
+                        <div style={style} key={rows[index].key} data-row-key={rows[index].key}>
                             {renderRow(rows[index])}
                         </div>
                     )}
@@ -216,12 +356,19 @@ export function MessageTimeline({
 
     return (
         <div
-            className={cn('flex flex-col px-default py-default', className)}
+            ref={plainScroller}
+            className={cn(
+                'min-h-0 flex-1 overflow-y-auto px-default py-default',
+                'flex flex-col',
+                className,
+            )}
             data-timeline-mode="plain"
         >
             {rows.map((row) => (
-                <React.Fragment key={row.key}>{renderRow(row)}</React.Fragment>
+                <div key={row.key} data-row-key={row.key}>
+                    {renderRow(row)}
+                </div>
             ))}
         </div>
     );
-}
+});

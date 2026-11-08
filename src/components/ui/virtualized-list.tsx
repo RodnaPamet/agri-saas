@@ -295,6 +295,19 @@ export const VirtualizedList = React.forwardRef<
                 className={innerClassName}
                 defaultHeight={hasExplicitHeight ? height : undefined}
                 style={{ height: "100%" }}
+                // NAMES THE SCROLLER, for a consumer that has to anchor a
+                // prepend (#2826). This element is react-window's own
+                // scroll container in the windowed branch, and a consumer
+                // reaching it through `firstElementChild` would break the
+                // moment this file wrapped it in anything.
+                //
+                // An ATTRIBUTE rather than a widened imperative handle:
+                // `scrollToItem` / `scrollTo` address rows by INDEX, which is
+                // exactly what a prepend invalidates, so the anchoring
+                // consumer needs the element and not another verb. Epic 68's
+                // two-seam rule is also why — a third verb on this handle is
+                // a bigger thing to reimplement when the engine is swapped.
+                data-virtualized-viewport=""
             />
         </div>
     );
