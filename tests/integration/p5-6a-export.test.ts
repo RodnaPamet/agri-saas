@@ -241,7 +241,14 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
             AssistantMemoryFact: out.assistantMemory,
             OrgMembership: out.organisationMemberships,
             FeatureFlagCohortMember: out.featureCohorts,
-            // P8.1 (#2795) — four more, empty until P8.2 ships a writer.
+            // P8.1 (#2795) — four more. EMPTY IN THIS SUITE, which seeds no
+            // conversation: this test grades whether every exported model has
+            // a collection in the envelope, not whether any row reaches it.
+            // The rows and their COLUMNS are graded in
+            // `p8-6-dm-link-cards` (runtime) and
+            // `export-select-covers-every-column` (every model, #2840).
+            // The comment here said 'empty until P8.2 ships a writer' after
+            // P8.2 had shipped one.
             Conversation: out.conversationsIOpened,
             ConversationParticipant: out.conversationMemberships,
             DirectMessage: out.directMessages,

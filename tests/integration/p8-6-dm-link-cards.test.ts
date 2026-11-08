@@ -33,6 +33,7 @@ jest.mock('@/app-layer/usecases/direct-message-link-cards', () => ({
 
 import { prisma } from '@/lib/prisma';
 import { runInUserContext } from '@/lib/db-context';
+import { exportPersonalData } from '@/app-layer/usecases/personal-data-export';
 import {
     sendDirectMessage,
     readConversation,
@@ -282,6 +283,42 @@ describeFn('P8.6 — link cards, the code stage (#2800)', () => {
             description: null,
             fetchedAt: null,
         });
+    }, 60_000);
+
+    it('the Art 15 EXPORT carries the card metadata, and not the storage key', async () => {
+        mockedFetch.mockResolvedValue({
+            url: 'https://agri.example.test/exported',
+            title: 'За износ',
+            description: 'Описание за износ',
+            fetchedAt: FETCHED_AT,
+        });
+        const sent = await sendDirectMessage(ctxFor(ALICE), {
+            conversationId: CONV,
+            body: 'в експорта',
+            linkUrl: 'https://agri.example.test/exported',
+        });
+
+        // THE RUNTIME HALF of #2840. `export-select-covers-every-column` is a
+        // SOURCE guard — it proves a column reaches a `select`, not that it
+        // reaches the person, and a column selected and then dropped before the
+        // envelope would pass there. This reads what the person receives.
+        const out = await exportPersonalData(ALICE);
+        const row = out.directMessages.rows.find((r) => r.id === sent.messageId);
+        expect(row).toBeDefined();
+        expect(row!.linkUrl).toBe('https://agri.example.test/exported');
+        expect(row!.linkTitle).toBe('За износ');
+        expect(row!.linkDescription).toBe('Описание за износ');
+        expect(row!.linkFetchedAt).toEqual(FETCHED_AT);
+        // Decrypted, not an envelope — the export runs privileged and
+        // `DirectMessage` is in GLOBAL_KEK_MODELS, so this is the assertion
+        // that would catch it losing that.
+        expect(String(row!.linkTitle)).not.toMatch(/^v[12]:/);
+        // And the key is NOT in the file: it authorises nothing (the egress
+        // route gates on participation), so exporting it would only widen
+        // where a locator travels.
+        expect(row).not.toHaveProperty('attachmentKey');
+        // The omission is NAMED rather than silent, which is what Art 15 asks.
+        expect(out.notIncluded.join(' ')).toMatch(/image files attached to your messages/i);
     }, 60_000);
 
     it('the counterparty reads the card through RLS, not through a privileged client', async () => {
