@@ -102,9 +102,25 @@ function stepsOf(source: string): Step[] {
 
 const label = (s: Step): string => s.name ?? s.uses ?? '(unnamed)';
 
-/** Index of the SBOM-generating step, or -1. Keyed on the ACTION, not the name. */
-const sbomIndex = (steps: Step[]): number =>
-    steps.findIndex((s) => (s.uses ?? '').startsWith('anchore/sbom-action'));
+/**
+ * EVERY SBOM-generating step's index. Keyed on the ACTION, not the name.
+ *
+ * Plural since #2884, which added two retry attempts because the install has
+ * no retry of its own and lost four releases' SBOMs in one day. A
+ * `findIndex` here graded only the FIRST attempt — so moving all three back
+ * after semantic-release, or dropping `continue-on-error` from the two
+ * retries, would both have been invisible to this guard while it stayed
+ * green. A singular selector went blind the moment the population became
+ * plural, which is why it is derived rather than counted.
+ */
+const sbomIndices = (steps: Step[]): number[] =>
+    steps.reduce<number[]>(
+        (acc, s, i) => ((s.uses ?? '').startsWith('anchore/sbom-action') ? [...acc, i] : acc),
+        [],
+    );
+
+/** The FIRST SBOM step, for the callers that genuinely mean "where does it start". */
+const sbomIndex = (steps: Step[]): number => sbomIndices(steps)[0] ?? -1;
 
 /** Index of the step that runs semantic-release, or -1. Keyed on the COMMAND. */
 const releaseIndex = (steps: Step[]): number =>
@@ -124,7 +140,8 @@ function violations(source: string): string[] {
     const steps = stepsOf(source);
     const out: string[] = [];
 
-    const iSbom = sbomIndex(steps);
+    const iSboms = sbomIndices(steps);
+    const iSbom = iSboms[0] ?? -1;
     const iRel = releaseIndex(steps);
     const iDetect = detectIndex(steps);
     const iAttach = attachIndex(steps);
@@ -134,23 +151,30 @@ function violations(source: string): string[] {
     if (iAttach === -1) return ['no `gh release upload` step at all'];
     if (iDetect === -1) return ['no step detecting whether a release published'];
 
-    const sbom = steps[iSbom];
     const attach = steps[iAttach];
     const detect = steps[iDetect];
 
-    // 1 — ordering.
-    if (iSbom > iRel) {
-        out.push(`SBOM generation (step ${iSbom + 1}) runs AFTER semantic-release (step ${iRel + 1})`);
-    }
+    // Rules 1-3 range over EVERY generation attempt (#2884). Each attempt can
+    // independently be moved, re-gated or made blocking, and a retry that
+    // blocks the release is the same defect as a first attempt that does.
+    for (const i of iSboms) {
+        const sbom = steps[i];
+        const which = `SBOM generation (step ${i + 1}, ${label(sbom)})`;
 
-    // 2 — generation must not be gated on the release having happened.
-    if (/released/.test(sbom.if ?? '')) {
-        out.push(`SBOM generation is gated on the release outcome: if: ${sbom.if}`);
-    }
+        // 1 — ordering.
+        if (i > iRel) {
+            out.push(`${which} runs AFTER semantic-release (step ${iRel + 1})`);
+        }
 
-    // 3 — generation must not be able to block the release.
-    if (sbom['continue-on-error'] !== true) {
-        out.push('SBOM generation lacks `continue-on-error: true`, so a syft outage blocks the release');
+        // 2 — generation must not be gated on the release having happened.
+        if (/released/.test(sbom.if ?? '')) {
+            out.push(`${which} is gated on the release outcome: if: ${sbom.if}`);
+        }
+
+        // 3 — generation must not be able to block the release.
+        if (sbom['continue-on-error'] !== true) {
+            out.push(`${which} lacks \`continue-on-error: true\`, so a syft outage blocks the release`);
+        }
     }
 
     // 4 — detect + attach must not be gated on success().
@@ -185,14 +209,19 @@ describe('release.yml generates its SBOM before the release (#2458)', () => {
         // and CI shards the whole tree with no --verbose.
         console.log(
             `[release-sbom-ordering] graded ${steps.length} steps in .github/workflows/release.yml; ` +
-                `sbom=#${sbomIndex(steps) + 1} semantic-release=#${releaseIndex(steps) + 1} ` +
+                `sbom_attempts=${sbomIndices(steps).length} at #${sbomIndices(steps).map((i) => i + 1).join(',#')} ` +
+                `semantic-release=#${releaseIndex(steps) + 1} ` +
                 `detect=#${detectIndex(steps) + 1} attach=#${attachIndex(steps) + 1}`,
         );
         console.log(
             `[release-sbom-ordering] step names: ${steps.map((s, i) => `${i + 1}.${label(s)}`).join(' | ')}`,
         );
         // A detector that located none of the four would pass every
-        // assertion below over nothing.
+        // assertion below over nothing. The attempt COUNT is printed and
+        // floored rather than pinned: #2884 took it from 1 to 3, and a
+        // selector that silently found one of three is the failure this
+        // reading exists to make visible.
+        expect(sbomIndices(steps).length).toBeGreaterThanOrEqual(1);
         expect(sbomIndex(steps)).toBeGreaterThanOrEqual(0);
         expect(releaseIndex(steps)).toBeGreaterThanOrEqual(0);
         expect(detectIndex(steps)).toBeGreaterThanOrEqual(0);
@@ -250,13 +279,41 @@ describe('the detector can express each failure', () => {
     });
 
     it('catches generation moved back after semantic-release', () => {
-        const steps = stepsOf(source);
+        // EVERY attempt moves. Moving only the first leaves a retry before
+        // semantic-release, and a `findIndex`-based rule would then find THAT
+        // one and report nothing — which is exactly how this guard went blind
+        // when #2884 made the population plural.
         const doc = yaml.load(source) as { jobs: Record<string, { steps: Step[] }> };
         const job = Object.values(doc.jobs)[0];
-        const [sbom] = job.steps.splice(sbomIndex(steps), 1);
-        job.steps.push(sbom);
+        const moved: Step[] = [];
+        for (const i of sbomIndices(job.steps).reverse()) {
+            moved.unshift(...job.steps.splice(i, 1));
+        }
+        job.steps.push(...moved);
         const found = violations(yaml.dump(doc));
         expect(found.join('\n')).toMatch(/runs AFTER semantic-release/);
+    });
+
+    it('catches ONE retry attempt being moved back, not just the whole set', () => {
+        // The case the old singular selector could not express, and the reason
+        // the rules iterate: a release whose first attempt succeeds looks fine,
+        // so a misplaced retry survives review and surfaces only on the day the
+        // first attempt fails — which is 4 runs in 10, measured.
+        const doc = yaml.load(source) as { jobs: Record<string, { steps: Step[] }> };
+        const job = Object.values(doc.jobs)[0];
+        const all = sbomIndices(job.steps);
+        expect(all.length).toBeGreaterThan(1);
+        const [last] = job.steps.splice(all[all.length - 1], 1);
+        job.steps.push(last);
+        expect(violations(yaml.dump(doc)).join('\n')).toMatch(/runs AFTER semantic-release/);
+    });
+
+    it('catches continue-on-error being removed from a RETRY attempt alone', () => {
+        const doc = yaml.load(source) as { jobs: Record<string, { steps: Step[] }> };
+        const job = Object.values(doc.jobs)[0];
+        const all = sbomIndices(job.steps);
+        delete job.steps[all[all.length - 1]]['continue-on-error'];
+        expect(violations(yaml.dump(doc)).join('\n')).toMatch(/lacks `continue-on-error/);
     });
 
     it('catches generation re-gated on the release outcome', () => {
