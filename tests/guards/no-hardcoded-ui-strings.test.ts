@@ -95,9 +95,11 @@ const FILE_ALLOWLIST: { pattern: RegExp; reason: string }[] = [
             + 'matches the label and therefore no longer identifies what the '
             + 'operator is about to spray. That is a different kind of '
             + 'exclusion from the three above: those are copy we keep in '
-            + 'English for a developer audience, this is a string that is not '
-            + 'copy. The COMMON names shown beside them ARE copy and are not '
-            + 'in this file.',
+            + 'English for a developer audience. THE STRING IS NOT COPY. Which '
+            + 'is the sentence to read before adding a Bulgarian value here — '
+            + 'doing so would make things worse rather than better, in one of '
+            + 'the two ways above. The COMMON names shown beside them ARE copy '
+            + 'and are not in this file.',
     },
     { pattern: /(^|\/)error\.tsx$/, reason: 'React error boundary — renders below the intl provider; must not depend on it' },
     { pattern: /(^|\/)global-error\.tsx$/, reason: 'Root error boundary — replaces the whole tree incl. the intl provider' },
