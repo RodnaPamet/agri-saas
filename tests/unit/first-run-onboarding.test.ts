@@ -5,10 +5,7 @@
  * (it can only show "done" when the underlying signal is true) and the
  * dedupe key stable (it rides in localStorage).
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-
-import { REPO_ROOT } from '../helpers/collect-files';
+import { readCatalogue } from '../helpers/catalogue';
 
 import {
     FIRST_RUN_STEPS,
@@ -43,13 +40,20 @@ describe('FIRST_RUN_STEPS', () => {
          *
          * Read off the catalogues rather than mocked, because the failure this
          * guards is a MISSING ENTRY and a mock cannot be missing one.
+         *
+         * Through `readCatalogue` and not `readFileSync`: #1813 moved the
+         * catalogue's path behind one function so `messages/` can be split
+         * into bundles without touching any caller, and
+         * `one-catalogue-reader` holds the direct-reader count at zero. My
+         * first version read the files directly and that guard caught it in
+         * CI — correctly, and it is why the path appears nowhere here.
          */
-        const en = JSON.parse(
-            fs.readFileSync(path.join(REPO_ROOT, 'messages/en/app.json'), 'utf8'),
-        ) as { dashboard: { firstRun: Record<string, string> } };
-        const bg = JSON.parse(
-            fs.readFileSync(path.join(REPO_ROOT, 'messages/bg/app.json'), 'utf8'),
-        ) as { dashboard: { firstRun: Record<string, string> } };
+        const en = readCatalogue('en') as unknown as {
+            dashboard: { firstRun: Record<string, string> };
+        };
+        const bg = readCatalogue('bg') as unknown as {
+            dashboard: { firstRun: Record<string, string> };
+        };
 
         const keys = FIRST_RUN_STEPS.flatMap((s) => [s.labelKey, s.hintKey, s.ctaKey]);
         // The denominator, so a registry that lost its steps cannot pass here
