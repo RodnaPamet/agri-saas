@@ -22,6 +22,7 @@ import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
 import { restoreViewport, setViewport } from './viewport';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 jest.mock('next-intl', () => ({
     useTranslations: () => {
@@ -276,10 +277,35 @@ function mountConversation(over: Record<string, unknown> = {}) {
         isLoading: false,
         mutate,
     });
-    const view = render(
-        <DmConversationClient conversationId="c1" myUserId={ME} personBlocksEnabled />,
+    // `TooltipProvider` is part of this screen's REAL environment, not
+    // scaffolding: `src/app/providers.tsx` mounts one around the whole app, and
+    // since #2833 every bubble from the other party carries an `<IconAction>`
+    // for «Сигнализирай» — which is a Radix Tooltip trigger. Without a provider
+    // the render throws «`Tooltip` must be used within `TooltipProvider`» and
+    // all twelve cases here fail at the mount.
+    //
+    // This file passed before only because `DmConversationClient` passed the
+    // timeline no per-message callback, so the bubble rendered no interactive
+    // affordance at all. `chat-primitives.test.tsx` already carries the same
+    // provider for the same reason.
+    // A FUNCTION, not a constant. Passing `rerender` the SAME element object
+    // lets React bail out of the subtree entirely — measured: with a shared
+    // `const tree`, removing the once-per-conversation guard in
+    // `DmConversationClient` left all 22 cases green, because the effect never
+    // re-ran. A fresh element every call is what makes the rerender real.
+    const tree = () => (
+        <TooltipProvider delayDuration={0}>
+            <DmConversationClient conversationId="c1" myUserId={ME} personBlocksEnabled />
+        </TooltipProvider>
     );
-    return { mutate, view };
+    const view = render(tree());
+    // `rerender` REPLACES the whole tree, so a bare
+    // `view.rerender(<DmConversationClient … />)` drops the provider and throws
+    // at the Tooltip — which is how two cases here failed after #2833 even with
+    // the provider added at mount. Handing back a wrapped rerender means a
+    // caller cannot forget it, rather than each call site remembering.
+    const rerender = () => view.rerender(tree());
+    return { mutate, view, rerender };
 }
 
 describe('DmConversationClient', () => {
@@ -324,7 +350,7 @@ describe('DmConversationClient', () => {
     });
 
     it('moves the read cursor ONCE per conversation, not once per poll', async () => {
-        const { view } = mountConversation();
+        const { view, rerender } = mountConversation();
         await waitFor(() =>
             expect(apiPost).toHaveBeenCalledWith(
                 '/api/social/conversations/c1/read',
@@ -354,9 +380,7 @@ describe('DmConversationClient', () => {
             isLoading: false,
             mutate: jest.fn(),
         });
-        view.rerender(
-            <DmConversationClient conversationId="c1" myUserId={ME} personBlocksEnabled />,
-        );
+        rerender();
         await waitFor(() => expect(readCalls()).toBe(1));
     });
 
@@ -367,7 +391,7 @@ describe('DmConversationClient', () => {
         // nothing asserted it until this case: with `lastReadAt` never moving
         // in the fixture, recomputing gave the same answer and unfreezing the
         // cursor left every other test green.
-        const { view } = mountConversation({ lastReadAt: null });
+        const { view, rerender } = mountConversation({ lastReadAt: null });
         expect(screen.getByText('newMessages')).toBeInTheDocument();
 
         // The poll that follows the mark-read: same messages, cursor now PAST
@@ -378,9 +402,7 @@ describe('DmConversationClient', () => {
             isLoading: false,
             mutate: jest.fn(),
         });
-        view.rerender(
-            <DmConversationClient conversationId="c1" myUserId={ME} personBlocksEnabled />,
-        );
+        rerender();
 
         expect(screen.getByText('newMessages')).toBeInTheDocument();
     });

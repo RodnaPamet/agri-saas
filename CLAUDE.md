@@ -3501,12 +3501,49 @@ its docblock argues hardest for, and the shapes recur:
   a caught-up reader gets NO divider — otherwise "always on" satisfies the
   freeze.
 
-**Reporting a DM is NOT offered (#2833).** `captureSnapshot` resolves
-`MESSAGE` against `prisma.exchangeMessage`, so a notice about a direct message
-files with `SUBJECT_NOT_FOUND` evidence — and the response discloses nothing
-about the subject by design, so the reporter cannot tell that from success.
-`BlockPersonButton` ships; `ReportButton` waits for a resolver that can see
-`DirectMessage`.
+**Reporting a DM IS offered, per message, and it is the one subject kind that
+checks WHO IS ASKING (#2833).** It was not until 2026-11-08: `captureSnapshot`
+resolved `MESSAGE` against `prisma.exchangeMessage`, so a notice about a direct
+message filed with `SUBJECT_NOT_FOUND` evidence — and the response discloses
+nothing about the subject by design, so the reporter could not tell that from
+success.
+
+`DIRECT_MESSAGE` is a SEPARATE kind from `MESSAGE`, not a widening of it: the
+two live in different tables under different policies (`ExchangeMessage.body`
+is per-tenant DEK, `DirectMessage.body` is under the GLOBAL KEK), and a
+resolver trying both would be guessing which table an id belongs to. Same
+reasoning as `ACCOUNT`.
+
+**The capture asserts the reporter is a PARTICIPANT, which no other kind has
+had to do.** Every other subject is something the reporter could see anyway — a
+listing is public, an exchange message is in a thread they are party to. A DM
+is not, and `captureSnapshot` runs PRIVILEGED, so without that check a crafted
+id pulls two strangers' private conversation into the moderation queue and the
+reporter gets the same `{ id, RECEIVED }` either way: the notice form becomes a
+read oracle whose answer is delivered to a moderator. The metadata is read
+WITHOUT the body first, so a non-participant never causes the plaintext to
+exist rather than having it decrypted and discarded.
+
+**The anonymous Art 16 route refuses this kind outright**, in its own uniform
+`invalid_request` shape rather than a code of its own — a distinct code would
+confirm that the kind exists and is merely not accepted there. It has no
+principal to check participation against, and a private message is not
+publicly accessible content, so the Art 16 duty does not reach it.
+
+**A moderator cannot REMOVE a direct message** (owner ruling 2026-11-08):
+suspension is the remedy. `DirectMessage` carries no `removedByModerationAt`,
+and `DIRECT_MESSAGE` is deliberately absent from `REMOVABLE_SUBJECT_KINDS` —
+which `assertPerformable` enforces. That absence is held by
+`tests/guards/dm-is-reportable-not-removable.test.ts` and NOT by the
+behavioural suite, measured: adding the kind to that list leaves all nine cases
+of `moderation-content-removal` green, because `removeSubjectOnTx`'s `default:`
+arm throws the identical code. Two deliberate layers, one observable — so the
+outcome and the ruling need separate probes.
+
+The control is PER MESSAGE (a notice names one message) and the gating lives in
+`MessageBubble`: never on your own message — `remove` is the control for
+that — and never on a deleted one. A caller passes the callback
+unconditionally.
 
 **«Заявки» is spoken for.** Owner kept `exchange.nav.myInterests` as «Моите
 заявки», so a DM request bucket cannot take that noun. The row carries a

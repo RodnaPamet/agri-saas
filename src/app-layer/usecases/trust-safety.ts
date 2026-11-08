@@ -73,14 +73,22 @@ export interface OwnReport {
  * Returns nothing: the row is the output, and a failure is written to
  * `captureError` rather than raised. A thrown error here would lose the notice.
  *
- * The four subject kinds have unrelated shapes and only two exist today, which
- * is why this resolves by `switch` rather than through a registry: a registry
- * with two entries and two holes reads as complete.
+ * The five subject kinds have unrelated shapes and three exist today, which is
+ * why this resolves by `switch` rather than through a registry: a registry with
+ * three entries and two holes reads as complete. (Four and two until #2833 —
+ * the counts are in the prose because a registry's completeness is exactly what
+ * they argue about, so they have to move when a kind does.)
+ *
+ * `reporterUserId` is a parameter because ONE kind needs it: `DIRECT_MESSAGE`
+ * must assert the reporter is a participant. It is threaded rather than read
+ * from a context because this function runs after the notice is durable, on
+ * the privileged client, where there is no request context to consult.
  */
 async function captureSnapshot(
     reportId: string,
     subjectKind: FileReportInput['subjectKind'],
     subjectId: string,
+    reporterUserId: string | null,
 ): Promise<void> {
     let body: string | null = null;
     let captureError: string | null = null;
@@ -121,6 +129,104 @@ async function captureSnapshot(
                     ].join('\n')
                     : null;
                 if (!row) captureError = 'SUBJECT_NOT_FOUND';
+                break;
+            }
+            case 'DIRECT_MESSAGE': {
+                // THE ONLY KIND THAT CHECKS WHO IS ASKING (#2833).
+                //
+                // Every other kind here is something the reporter could see
+                // anyway — a listing is public, an exchange message is in a
+                // thread they are party to. A direct message is not: this
+                // function runs on the PRIVILEGED client, so a crafted id
+                // would capture two strangers' private conversation into the
+                // moderation queue, and the reporter would get the same
+                // `{ id, RECEIVED }` either way. The notice form would be a
+                // read oracle with the answer delivered to a moderator.
+                if (!reporterUserId) {
+                    // Defence in depth: `POST /api/public/notices` refuses
+                    // this kind outright, because there is no principal to
+                    // check against. If that refusal is ever removed, this
+                    // records a miss rather than capturing the message.
+                    captureError = 'SUBJECT_REQUIRES_A_REPORTER';
+                    break;
+                }
+
+                // READ THE METADATA WITHOUT THE BODY FIRST. Selecting `body`
+                // here would decrypt a stranger's message and then discard it
+                // — the right outcome reached by the wrong route, and one
+                // `select` edit away from storing it. A non-participant must
+                // never cause the plaintext to exist.
+                const meta = await prisma.directMessage.findUnique({
+                    where: { id: subjectId },
+                    select: {
+                        conversationId: true,
+                        senderUserId: true,
+                        createdAt: true,
+                        deletedAt: true,
+                        attachmentMime: true,
+                        attachmentBytes: true,
+                    },
+                });
+                if (!meta) {
+                    captureError = 'SUBJECT_NOT_FOUND';
+                    break;
+                }
+
+                // `findFirst` on both columns rather than the compound unique:
+                // the generated key name is a Prisma artefact, and a rename
+                // there would be a silent miss here.
+                //
+                // `leftAt` is deliberately NOT filtered. Somebody who has left
+                // the conversation still SAW the message, and their row is kept
+                // precisely so their history resolves — refusing them would
+                // mean leaving a conversation destroys your ability to report
+                // what was said in it.
+                const participant = await prisma.conversationParticipant.findFirst({
+                    where: { conversationId: meta.conversationId, userId: reporterUserId },
+                    select: { id: true },
+                });
+                if (!participant) {
+                    captureError = 'SUBJECT_NOT_VISIBLE_TO_REPORTER';
+                    break;
+                }
+
+                if (meta.deletedAt) {
+                    // P5.3's rule: a deleted message has nothing to capture,
+                    // and its snapshot would be an empty body indistinguishable
+                    // from a capture failure. The row still HOLDS the plaintext
+                    // until a retraction overwrites it, so this is a refusal to
+                    // look rather than an absence of anything to see.
+                    captureError = 'SUBJECT_DELETED';
+                    break;
+                }
+
+                const row = await prisma.directMessage.findUnique({
+                    where: { id: subjectId },
+                    select: { body: true },
+                });
+                if (!row) {
+                    // Deleted between the two reads. Not impossible, and the
+                    // honest answer is the same as never having found it.
+                    captureError = 'SUBJECT_NOT_FOUND';
+                    break;
+                }
+
+                // The attachment is NAMED but its key is not recorded. A
+                // photo-only message has a null body, and without this line a
+                // moderator cannot tell that from a failed capture — but the
+                // storage key would be a second copy of a locator they can
+                // already reach through `subjectId` and the participation-gated
+                // egress route.
+                const photo = meta.attachmentMime
+                    ? `photo: ${meta.attachmentMime}, ${meta.attachmentBytes ?? 0} bytes`
+                    : 'photo: none';
+                body = [
+                    `sender: ${meta.senderUserId}`,
+                    `sent: ${meta.createdAt.toISOString()}`,
+                    photo,
+                    '',
+                    row.body ?? '',
+                ].join('\n');
                 break;
             }
             case 'PROFILE':
@@ -203,7 +309,7 @@ export async function fileNotice(
     });
 
     // After the notice is durable, so a capture failure cannot lose it.
-    await captureSnapshot(id, input.subjectKind, input.subjectId);
+    await captureSnapshot(id, input.subjectKind, input.subjectId, reporterUserId);
 
     logger.info('trust-safety.notice_filed', {
         component: 'trust-safety',

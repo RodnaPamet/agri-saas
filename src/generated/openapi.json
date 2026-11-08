@@ -8714,7 +8714,8 @@
               "LISTING",
               "MESSAGE",
               "PROFILE",
-              "THREAD"
+              "THREAD",
+              "DIRECT_MESSAGE"
             ]
           },
           "subjectId": {

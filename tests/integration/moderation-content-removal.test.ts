@@ -238,6 +238,28 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
             expect(await noticeStatus(reportId)).toBe('RECEIVED');
         }, 60_000);
 
+        it('refuses CONTENT_REMOVED on a DIRECT_MESSAGE — owner ruling 2026-11-08', async () => {
+            // #2833 made a direct message REPORTABLE and deliberately not
+            // REMOVABLE. Owner ruling: suspension is the remedy this release.
+            //
+            // The enforcement is an ABSENCE — `DIRECT_MESSAGE` is simply not in
+            // `REMOVABLE_SUBJECT_KINDS` — which is why this test exists. An
+            // absence has no code to read, so nothing else in the repo states
+            // that the ruling is in force, and adding the kind to that list
+            // would silently make removal available with no arm to perform it.
+            // `DirectMessage` has no `removedByModerationAt` column, so there
+            // is nothing a removal could even write.
+            const reportId = await fileNotice('DIRECT_MESSAGE', `dm-ruled-${randomUUID()}`);
+
+            await expect(actOnNotice({
+                reportId, actionKind: 'CONTENT_REMOVED',
+                rationale: 'r', generation: 'current',
+            })).rejects.toMatchObject({ code: 'MODERATION_ACTION_NOT_PERFORMABLE' });
+
+            expect(await actionCount(reportId)).toBe(0);
+            expect(await noticeStatus(reportId)).toBe('RECEIVED');
+        }, 60_000);
+
         it('refuses a subject that is NOT THERE — a statement about content we never had', async () => {
             const reportId = await fileNotice('LISTING', `el-gone-${randomUUID()}`);
 
