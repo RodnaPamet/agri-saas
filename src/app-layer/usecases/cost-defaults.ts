@@ -164,9 +164,11 @@ export interface CropCostDefaults {
  * ## The currency can differ from the form's
  *
  * A stored line carries the currency it was entered in. Bulgaria moved to EUR
- * in 2026 and older rows are in BGN, so a client prefilling the NUMBER without
- * reading the currency shows a 24 000 лв salary as €24 000 — wrong by the
- * fixed 1.95583, and plausible. The currency travels per line for that reason.
+ * in 2026 and a row recorded before that may be in BGN, so a client prefilling
+ * the NUMBER without reading the currency shows a 24 000 лв salary as €24 000 —
+ * plausible on screen, and wrong by roughly double. The currency travels per
+ * line for that reason, and since #2793 nothing anywhere converts it: such a
+ * line is refused on save and withheld from every total.
  */
 export async function getCropCostDefaults(
     ctx: RequestContext,

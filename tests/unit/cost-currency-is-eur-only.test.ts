@@ -1,13 +1,23 @@
 /**
- * The calculator is EUR-only — owner ruling 2026-10-26.
+ * The calculator is EUR-only — owner ruling 2026-10-26, and since #2793 that
+ * is true of the SOURCE as well as of the data.
  *
  * `Калкулатор` refused with `COST_CURRENCY_MIXED` on the owner's own farm. The
  * live rows were 10 × 'EUR', 3 × 'EURO' and 1 × 'BGN' — three spellings of two
  * currencies, one pegged to the other. These assert the normalisation that
- * resolves that, including the exact production shape.
+ * resolves that, including that exact shape.
+ *
+ * TWO things changed on 2026-11-08 and they pull in opposite directions, so
+ * read both before editing a case here. The EURO-folding half is UNTOUCHED —
+ * it is what stopped the calculator calling one farm's costs mixed. The LEV
+ * half is gone: `normaliseCostToEur` used to convert a BGN amount at the fixed
+ * 1.95583 peg and now refuses it `FOREIGN`, because the one production lev row
+ * was deleted (measured 2026-11-06) and `COST_ENTRY_CURRENCY_NOT_EUR` has
+ * refused a non-euro cost on write since #2398. The 2026-10-26 mix is
+ * therefore kept as a HISTORICAL shape — production is 13 rows, all EUR — and
+ * its lev row now asserts the refusal rather than the conversion.
  */
 import { normaliseCostToEur, allResolveToEur, isStoredAsEuro } from '@/lib/grain/currencies';
-import { BGN_PER_EUR, bgnToEur } from '@/lib/exchange/currency';
 
 describe('normaliseCostToEur', () => {
     it('passes euro through in every spelling the free-text field produced', () => {
@@ -26,25 +36,28 @@ describe('normaliseCostToEur', () => {
         }
     });
 
-    it('converts lev at the legally fixed peg, reusing the exchange helper', () => {
-        // Reused rather than reimplemented so the calculator and the grain
-        // exchange cannot drift to two different pegs. The exchange already
-        // converted its stored BGN listings at this rate in a SQL migration.
-        expect(normaliseCostToEur(1.0, 'BGN')).toEqual({ eur: bgnToEur(1.0), refusal: null });
-        expect(normaliseCostToEur(1.95583, 'BGN').eur).toBe(1);
-        // Rounded to the Decimal(12,2) precision both sides store.
-        expect(normaliseCostToEur(100, 'BGN').eur).toBe(Math.round((100 / BGN_PER_EUR) * 100) / 100);
-        // The lev's own free-text spellings, which the same field produced.
-        for (const code of ['bgn', 'лв', 'ЛВ.', 'BGL']) {
-            expect({ code, refusal: normaliseCostToEur(10, code).refusal })
-                .toEqual({ code, refusal: null });
+    it('REFUSES lev in every spelling, and withholds the amount with it (#2793)', () => {
+        // It used to CONVERT these, at the legally fixed 1.95583 peg, and
+        // return `refusal: null` — reusing the exchange module's helper so the
+        // calculator and the marketplace could not drift to two pegs. Both the
+        // helper and the peg constant are gone.
+        //
+        // `eur: null` is asserted alongside the refusal because that is the
+        // half that protects the money: a refusal carrying the raw lev figure
+        // would let a caller that only reads `.eur` add 500 лв to a euro total
+        // as 500 €, which is the 96% overstatement the removal must not cause.
+        for (const code of ['BGN', 'bgn', ' bgn ', 'лв', 'ЛВ.', 'BGL']) {
+            expect({ code, ...normaliseCostToEur(500, code) })
+                .toEqual({ code, eur: null, refusal: 'FOREIGN' });
         }
     });
 
     it('REFUSES a genuinely foreign currency rather than relabelling it', () => {
-        // The asymmetry is the point. A peg is arithmetic; a dollar rate is a
-        // market quote this product does not have. Folding USD into euro would
-        // misstate money by whatever the rate happens to be that day.
+        // Relabelling any of these as euro would misstate money by whatever
+        // the rate happens to be that day. There used to be an asymmetry here
+        // — a peg is arithmetic, a dollar rate is a market quote this product
+        // does not have — and lev has joined this list rather than keeping its
+        // own arm, so there is now one rule: not euro, not totalled.
         for (const code of ['USD', 'GBP', 'RON', 'PLN', 'CHF']) {
             expect({ code, ...normaliseCostToEur(500, code) })
                 .toEqual({ code, eur: null, refusal: 'FOREIGN' });
@@ -56,26 +69,38 @@ describe('normaliseCostToEur', () => {
         expect(normaliseCostToEur(Number.NaN, 'EUR')).toEqual({ eur: null, refusal: null });
     });
 
-    it('resolves the owner farm\'s EXACT production mix to one currency', () => {
+    it('resolves the owner farm\'s 2026-10-26 mix, lev now excepted', () => {
         // Measured read-only on production 2026-10-26 by the agrent-ios
         // session: PAYROLL 1200 EURO, RENT 40 EURO, FERTILIZER 10 EURO,
         // OTHER 1.00 BGN, plus 10 rows already 'EUR'. This is the farm whose
-        // calculator was refusing.
+        // calculator was refusing. The BGN row was deleted on 2026-11-06, so
+        // the shape is historical — kept because it is the only place the
+        // EURO-folding half is pinned against a real farm.
         const rows: Array<[number, string | null]> = [
             [1200, 'EURO'], [40, 'EURO'], [10, 'EURO'], [1.0, 'BGN'],
             ...Array.from({ length: 10 }, () => [100, 'EUR'] as [number, string]),
         ];
-        expect(allResolveToEur(rows.map(([, c]) => c))).toBe(true);
+        // The lev row is what breaks this now, and nothing else does — printed
+        // as a pair so a future failure says WHICH half moved.
+        expect({
+            withLev: allResolveToEur(rows.map(([, c]) => c)),
+            asProductionStandsToday: allResolveToEur(
+                rows.filter(([, c]) => c !== 'BGN').map(([, c]) => c),
+            ),
+        }).toEqual({ withLev: false, asProductionStandsToday: true });
         const total = rows.reduce((sum, [a, c]) => sum + (normaliseCostToEur(a, c).eur ?? 0), 0);
-        // 1200 + 40 + 10 + (1 / 1.95583 -> 0.51) + 10 x 100
-        expect(total).toBeCloseTo(1250 + bgnToEur(1.0) + 1000, 2);
+        // 1200 + 40 + 10 + 10 x 100. The lev row contributes NOTHING — not its
+        // converted 0.51, and not its raw 1.00 either.
+        expect(total).toBeCloseTo(1250 + 1000, 2);
     });
 
-    it('allResolveToEur is false as soon as one row is foreign', () => {
+    it('allResolveToEur is false as soon as one row is non-euro', () => {
         // The control in the other direction: a predicate that returned true
         // unconditionally would let a dollar row into a euro total.
-        expect(allResolveToEur(['EUR', 'EURO', null, 'BGN'])).toBe(true);
+        expect(allResolveToEur(['EUR', 'EURO', null, '€'])).toBe(true);
         expect(allResolveToEur(['EUR', 'USD'])).toBe(false);
+        // Lev was the one code that passed this and failed `isStoredAsEuro`.
+        expect(allResolveToEur(['EUR', 'EURO', null, 'BGN'])).toBe(false);
     });
 });
 
@@ -86,34 +111,41 @@ describe('isStoredAsEuro — the WRITE-path question, which is not the read one'
         }
     });
 
-    it('says NO to lev — and this is where it DIVERGES from allResolveToEur', () => {
-        // The whole reason this function exists. `allResolveToEur(['BGN'])` is
-        // TRUE, because normaliseCostToEur converts lev at the fixed peg and
-        // returns no refusal — it answers "can the rollup total this row".
+    it('says NO to lev — where it USED to diverge from allResolveToEur', () => {
+        // The reason this function exists, kept because it is why the save
+        // path does not call the rollup's predicate. `allResolveToEur(['BGN'])`
+        // was TRUE while `normaliseCostToEur` converted lev at the fixed peg —
+        // it answers "can the rollup total this row", a different question
+        // from "is this row already euro" — and using the rollup's answer on
+        // the save path was a real mistake caught before it shipped (#2398):
+        // it would have left the one production BGN row editable, let the form
+        // pin it to EUR, and relabelled 1.00 BGN as 1.00 EUR, overstating a
+        // farmer's cost by 1.95583x.
         //
-        // That is a different question from "is this row already euro", and
-        // using the rollup's answer on the save path was a real mistake caught
-        // before it shipped (#2398): it would have left the one production BGN
-        // row editable, let the form pin it to EUR, and relabelled 1.00 BGN as
-        // 1.00 EUR — overstating a farmer's cost by 1.95583x.
+        // #2793 made both answer `false`, so the two no longer diverge on any
+        // code at all. The pair is still PRINTED rather than collapsed to one
+        // assertion: a future money unit that converts again would reopen the
+        // gap here, which is the signal worth keeping.
         for (const code of ['BGN', 'bgn', 'лв', 'ЛВ.', 'BGL']) {
             expect({ code, storedAsEuro: isStoredAsEuro(code), rollupCanTotal: allResolveToEur([code]) })
-                .toEqual({ code, storedAsEuro: false, rollupCanTotal: true });
+                .toEqual({ code, storedAsEuro: false, rollupCanTotal: false });
         }
     });
 
-    it('says no to a foreign currency, where the two predicates AGREE', () => {
-        // Printed beside the divergence above so the contrast is visible: both
-        // say no here, and only lev splits them.
+    it('says no to a foreign currency, where the two predicates also AGREE', () => {
+        // Printed beside the case above so the contrast is visible — and as of
+        // #2793 there is no contrast left to see. No code splits them.
         for (const code of ['USD', 'GBP', 'RON', 'PLN']) {
             expect({ code, storedAsEuro: isStoredAsEuro(code), rollupCanTotal: allResolveToEur([code]) })
                 .toEqual({ code, storedAsEuro: false, rollupCanTotal: false });
         }
     });
 
-    it('classifies the owner farm\'s EXACT production mix into editable and locked', () => {
+    it('classifies the owner farm\'s 2026-10-27 mix into editable and locked', () => {
         // 14 rows, measured read-only on production 2026-10-27: 10 'EUR',
-        // 3 'EURO', 1 'BGN'. Exactly ONE row locks.
+        // 3 'EURO', 1 'BGN'. Exactly ONE row locks. Historical since the lev
+        // row was deleted on 2026-11-06 — this function's answers did not
+        // change in #2793, only its sibling's did.
         const production = [...Array(10).fill('EUR'), ...Array(3).fill('EURO'), 'BGN'];
         const locked = production.filter((c) => !isStoredAsEuro(c));
         expect({ rows: production.length, locked }).toEqual({ rows: 14, locked: ['BGN'] });

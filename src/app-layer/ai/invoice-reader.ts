@@ -67,8 +67,12 @@ function toImageMedia(mimeType: string): SupportedImageMedia {
  * Two deliberate differences from `CreateCostEntrySchema`:
  *
  * - `currency` is what is PRINTED on the invoice, so a lev invoice comes back
- *   `BGN` and the usecase converts at the fixed peg. Asking the model to
- *   convert would put arithmetic in the one place we cannot check it.
+ *   `BGN` and the USECASE decides what to do with it — today it refuses the
+ *   line (`INVOICE_LINE_FOREIGN_CURRENCY`); until #2539 it converted at the
+ *   fixed peg, which #2793 then removed. Either way the model reports and
+ *   never converts: asking it to convert would put arithmetic in the one place
+ *   we cannot check it, and the right answer has already changed twice without
+ *   this schema moving.
  * - every attribution field is absent. The model cannot know which planting a
  *   drum of diesel belongs to, and a guess would put a wrong attribution into
  *   the Калкулатор — the one number the owner checks.

@@ -14,10 +14,12 @@
  *
  * ─── Money and produce are NOT the same dimension ───────────────────
  *
- * `@/lib/agro/rent-units` canonicalises free-text rent units to exactly two
- * forms, and BOTH are per-decare rates:
+ * `@/lib/agro/rent-units` canonicalises free-text rent units to three forms,
+ * and ALL of them are per-decare rates:
  *
- *   RENT_UNIT_LEVA = 'лв/дка'   — MONEY per decare
+ *   RENT_UNIT_EUR  = '€/дка'    — MONEY per decare, the only money unit this
+ *                                 module resolves
+ *   RENT_UNIT_LEVA = 'лв/дка'   — MONEY per decare, REFUSED since #2793
  *   RENT_UNIT_KG   = 'кг/дка'   — a MASS (grain) per decare
  *
  * Bulgarian farm rent is commonly paid in produce, not cash. A result shape
@@ -63,15 +65,20 @@
  *
  * ─── Currency ────────────────────────────────────────────────────────
  *
- * `ParcelLease` carries NO currency column, and this module does not
- * invent one or perform FX conversion. Every `money` result is implicitly
- * denominated in whatever single currency the tenant operates rent in
- * (BGN in practice — Bulgarian rent is quoted in „лв"). A caller comparing
- * `perHa` figures across tenants/currencies is responsible for grouping by
- * currency itself. `@/lib/grain/currencies.ts` was checked and does not
- * apply here: it is `Contract.priceCurrency`'s picker for grain SALE
- * contracts, a different model with an actual currency column — lease rent
- * has no such column to pick from.
+ * `ParcelLease` carries NO currency column — the UNIT is where the currency
+ * is recorded, via `MONEY_RENT_UNIT_CURRENCY`. This module does not perform
+ * FX conversion, and since #2793 it does not convert at a peg either: every
+ * `money` result is EURO because `€/дка` is the only money unit it resolves,
+ * and a `лв/дка` lease comes back `resolved: false`.
+ *
+ * It USED to divide a lev rate by the fixed 1.95583 peg and report the result
+ * as euro. That was exact arithmetic while it stood, and it is gone with the
+ * rest of the lev machinery — so the refusal is not a gap this module should
+ * grow a parser for. Removing the division WITHOUT the refusal is the one
+ * change to avoid: it would report 500 лв/ha as 500 €/ha, a silent 96%
+ * overstatement, where a refusal costs the caller a named exclusion. The
+ * write path refuses the unit too (`parcel-lease.ts`), so a new lev lease
+ * cannot be recorded; the refusal here is for a row written before that.
  *
  * Pure, synchronous, no Prisma/I-O/React — safe to unit test directly and
  * to call from a usecase, a report, or a future UI comparison view alike.
@@ -81,11 +88,11 @@ import {
     canonicalRentUnit,
     isMoneyRentUnit,
     MONEY_RENT_UNIT_CURRENCY,
+    RENT_MONEY_CURRENCY,
     RENT_UNIT_EUR,
     RENT_UNIT_KG,
     RENT_UNIT_LEVA,
 } from '@/lib/agro/rent-units';
-import { BGN_PER_EUR } from '@/lib/exchange/currency';
 import { DCA_PER_HA } from '@/lib/agro/rate-calc';
 
 /** The `ParcelLease` fields this module needs — a subset, not the full row. */
@@ -110,12 +117,15 @@ export interface RentBasisLease {
  */
 export type RentBasisResult =
     /**
-     * `perHa` is ALWAYS EURO, whatever unit the lease is quoted in, and
-     * `currency` says so rather than leaving the caller to assume it. Before
-     * #2397's follow-up this arm carried an unlabelled figure that happened to
-     * be leva, and the caller tagged every money rent with a sentinel meaning
-     * "currency unknown" — which made every farm with cash rent unable to
-     * total its costs.
+     * `perHa` is ALWAYS EURO, and `currency` says so rather than leaving the
+     * caller to assume it. Before #2397's follow-up this arm carried an
+     * unlabelled figure that happened to be leva, and the caller tagged every
+     * money rent with a sentinel meaning "currency unknown" — which made every
+     * farm with cash rent unable to total its costs.
+     *
+     * The literal type is what keeps that true now that nothing converts: a
+     * money unit quoted in anything but `RENT_MONEY_CURRENCY` cannot reach this
+     * arm, because there is no arm for it to reach.
      */
     | { resolved: true; kind: 'money'; perHa: number; currency: 'EUR' }
     | { resolved: true; kind: 'produce'; kgPerHa: number }
@@ -190,21 +200,35 @@ export function resolveRentBasis(lease: RentBasisLease, areaHa: number | null | 
 
     if (isMoneyRentUnit(canonical)) {
         // Owner ruling 2026-10-31: money rent is reported in EURO. A `€/дка`
-        // lease passes through; a `лв/дка` lease — every lease recorded before
-        // that date — converts at the legally fixed peg.
+        // lease passes through unchanged — a per-decare euro rate × DCA_PER_HA
+        // is a per-hectare euro rate, and no conversion is involved.
         //
-        // The DIVISION is done here rather than through `normaliseCostToEur`,
-        // and the reason is that this is a RATE and not an amount. That helper
-        // rounds to 2 dp because it mirrors a `Decimal(12,2)` column, which is
-        // right for money and wrong for a per-hectare rate that is then
-        // MULTIPLIED by an area: rounding 500 лв/ha to 255.65 €/ha instead of
-        // 255.6465… overstates a 100 ha holding by 35 cents, and the error
-        // grows with the farm. Rounding happens downstream, on the money, where
-        // `allocateByWeights` is already cent-exact. Same peg constant either
-        // way, so there is still one source for the rate.
+        // Anything else is REFUSED rather than relabelled (#2793). A `лв/дка`
+        // lease used to divide by the fixed 1.95583 peg here; with the peg
+        // removed, passing the figure through would report 500 лв/ha as
+        // 500 €/ha — a 96% overstatement that no caller could detect, because
+        // the `currency: 'EUR'` label would assert it was already euro. An
+        // exclusion with a reason is the honest answer, and it is where
+        // `grain-net-worth`'s `leasesUnresolvedRent` already puts a lease it
+        // cannot price.
+        //
+        // The check is on the CURRENCY and not on `canonical === RENT_UNIT_LEVA`
+        // so that a money unit added to `MONEY_RENT_UNIT_CURRENCY` later is
+        // refused by default rather than silently reported as euro — the
+        // direction `grain-net-worth`'s own note names as the one that would
+        // revive its `RENT_CURRENCY_UNRECORDED` branch.
         const currency = MONEY_RENT_UNIT_CURRENCY[canonical];
-        const perHaEur = currency === 'BGN' ? perHectare / BGN_PER_EUR : perHectare;
-        return { resolved: true, kind: 'money', perHa: perHaEur, currency: 'EUR' };
+        if (currency !== RENT_MONEY_CURRENCY) {
+            return {
+                resolved: false,
+                raw: rawUnit,
+                reason:
+                    `Rent unit "${rawUnit}" is quoted in ${currency}, and this product no ` +
+                    `longer converts to ${RENT_MONEY_CURRENCY}. Re-enter the rent as ` +
+                    `${RENT_UNIT_EUR} to include this lease in per-hectare figures.`,
+            };
+        }
+        return { resolved: true, kind: 'money', perHa: perHectare, currency: RENT_MONEY_CURRENCY };
     }
     return { resolved: true, kind: 'produce', kgPerHa: perHectare };
 }

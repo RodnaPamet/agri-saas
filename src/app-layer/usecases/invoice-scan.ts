@@ -138,9 +138,9 @@ function toProposedLine(
     /**
      * The SAVE path's predicate, not the rollup's (#2539).
      *
-     * This used to call `normaliseCostToEur`, which CONVERTS lev at the fixed
-     * peg and refuses only genuinely foreign currencies. That is the right
-     * predicate for a rollup — a lev row is addable to a euro total — and the
+     * This used to call `normaliseCostToEur`, which CONVERTED lev at the fixed
+     * peg and refused only genuinely foreign currencies. That was the right
+     * predicate for a rollup — a lev row was addable to a euro total — and the
      * wrong one here, for a reason that outlives the EUR-only ruling: a scan
      * produces lines to be SAVED, and the save path refuses anything that is
      * not already euro (`COST_ENTRY_CURRENCY_NOT_EUR`). Converting here
@@ -150,6 +150,11 @@ function toProposedLine(
      * `isStoredAsEuro` is the save path's own question — "is this ALREADY
      * euro, as opposed to merely convertible" — and it says NO to lev. Its
      * docblock already drew that distinction; nothing was using it here.
+     *
+     * #2793 then removed the peg, so the two predicates now agree and this
+     * line would behave the same either way. Keep `isStoredAsEuro`: it is
+     * still the question this site is asking, and the reasoning above is why
+     * the fix did not have to wait for the peg to go.
      *
      * So a lev line is now REFUSED rather than converted. Combined with
      * dropping the `12.34 лв. · ` description prefix below, that is the whole
