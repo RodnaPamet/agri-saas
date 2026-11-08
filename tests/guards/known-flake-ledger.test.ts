@@ -121,6 +121,58 @@ function isLedgeredByJq(line: string, ledgerJson: string): boolean {
  * the latter appears in prose explaining a removal, and a guard that fired on
  * its own fix's comment would be answered by deleting the comment.
  */
+/**
+ * The body of ONE `test('<title>', …)` in a spec, comments blanked, by brace
+ * matching from the `test(` call. Module-level so `selector-teeth` can audit
+ * it, and it carries its own control below — an extraction that silently
+ * returned `''` would satisfy every "must contain" assertion by emptiness.
+ */
+function ledgeredTestBody(specSource: string, title: string): string {
+    const code = blankNonCode(specSource);
+    const at = code.indexOf(title);
+    if (at < 0) return '';
+    /*
+     * The body brace is the one after the ARROW, not the first `{` after
+     * `async`. These specs are written
+     *
+     *     test('title', async ({
+     *         page,
+     *     }) => {
+     *
+     * so the first `{` past `async` is the DESTRUCTURING parameter, and brace
+     * matching from there returns `{ page, }` — a non-empty slice that
+     * contains none of the helpers. The population printed `0 of 4` and the
+     * floor caught it; without that floor this whole section would have
+     * passed over nothing.
+     */
+    const arrow = code.indexOf('=>', at);
+    if (arrow < 0) return '';
+    const open = code.indexOf('{', arrow);
+    if (open < 0) return '';
+    let depth = 0;
+    for (let i = open; i < code.length; i += 1) {
+        if (code[i] === '{') depth += 1;
+        else if (code[i] === '}') {
+            depth -= 1;
+            if (depth === 0) return code.slice(open, i + 1);
+        }
+    }
+    return '';
+}
+
+/**
+ * The two diagnostics that make a navigation flake's capture DECISIVE rather
+ * than ambiguous, and the helper that awaits the transition.
+ *
+ * `instrumentRowGestures` records the gesture and the element it landed on;
+ * `instrumentUrlChanges` records the call that changed the URL. Between them
+ * they separate the three states these entries have actually been seen in:
+ * the gesture never dispatched, it dispatched and nothing navigated, and it
+ * navigated and something navigated back.
+ */
+const TRANSITION_HELPER = 'expectRouteTransition';
+const REQUIRED_INSTRUMENTS = ['instrumentRowGestures', 'instrumentUrlChanges'] as const;
+
 const NO_RETRY = /describe\s*\.\s*configure\s*\(\s*\{[^}]*retries\s*:\s*0/;
 
 const E2E_SPECS = collectSourceFiles({
@@ -352,6 +404,83 @@ describe('the known-flake ledger', () => {
     });
 
     // ── The workflow uses this rule ───────────────────────────────────
+
+    it('control: the body extractor returns a real body, not an empty slice', () => {
+        /*
+         * `ledgeredTestBody` is this section's selector. An extraction that
+         * returned `''` would make every `toContain` below vacuous, and the
+         * assertions would pass whatever the specs do — the failure mode that
+         * `selector-teeth` exists to catch and that an `it()`-inline selector
+         * hides. Proved on a real entry plus a deliberate miss.
+         */
+        const f = ledger.flakes[0] as Flake;
+        const file = E2E_SPECS.find((p) => path.basename(p) === f.spec);
+        expect(file).toBeDefined();
+        const body = ledgeredTestBody(fs.readFileSync(file as string, 'utf8'), f.title);
+        expect(body.length).toBeGreaterThan(200);
+        expect(body.startsWith('{')).toBe(true);
+        expect(body.endsWith('}')).toBe(true);
+        // …and a title that is not there yields nothing rather than a
+        // plausible-looking slice of the wrong test.
+        expect(ledgeredTestBody(fs.readFileSync(file as string, 'utf8'), 'no such title here')).toBe('');
+    });
+
+    it('every ledgered NAVIGATION flake carries both diagnostics', () => {
+        /*
+         * #1862. `tooltip-and-copy.spec.ts` was ledgered on 2026-10-06 and its
+         * captures stayed ambiguous for a month, because it lacked the two
+         * instruments its two siblings already had — its own failure output
+         * said `url changes: NOT INSTRUMENTED` and `row gestures: (not
+         * instrumented)`. A flake that recurs about once in thirteen runs
+         * cannot afford to waste a capture.
+         *
+         * The population is DERIVED, not listed: a ledgered test counts as a
+         * navigation flake when it awaits a route transition. That keeps the
+         * rule off entries it cannot apply to — `ciso-portfolio`'s read-only
+         * AUDITOR invariant performs no navigation, and its own ledger entry
+         * records that it CANNOT exhibit this shape — without an exemption
+         * list anyone has to remember to prune.
+         */
+        const population: string[] = [];
+        const missing: string[] = [];
+        for (const f of ledger.flakes) {
+            const file = E2E_SPECS.find((p) => path.basename(p) === f.spec);
+            if (!file) continue; // a missing spec file is a different test's job
+            const body = ledgeredTestBody(fs.readFileSync(file, 'utf8'), f.title);
+            if (!body.includes(`${TRANSITION_HELPER}(`)) continue;
+            population.push(`${f.spec} :: ${f.title}`);
+            const absent = REQUIRED_INSTRUMENTS.filter((h) => !body.includes(`${h}(`));
+            if (absent.length > 0) {
+                missing.push(`${f.spec} :: "${f.title}" lacks ${absent.join(' + ')}`);
+            }
+        }
+
+        console.log(
+            `[flake-instruments] ${population.length} of ${ledger.flakes.length} ledgered ` +
+                `entr(y/ies) await a route transition and must carry both diagnostics`,
+        );
+
+        // A floor, because an extraction that stopped matching would empty the
+        // population and pass over nothing.
+        expect(population.length).toBeGreaterThan(0);
+
+        if (missing.length > 0) {
+            throw new Error(
+                `A ledgered navigation flake is missing its diagnostics:\n\n` +
+                    missing.map((m) => `  ${m}`).join('\n') +
+                    `\n\nCall them before the gesture:\n` +
+                    `  await instrumentRowGestures(page);\n` +
+                    `  await instrumentUrlChanges(page);\n\n` +
+                    `Without them a capture cannot tell "the gesture never dispatched" ` +
+                    `from "it dispatched and nothing navigated" from "it navigated and ` +
+                    `something navigated back" — and these entries have been seen in ` +
+                    `all three states, in the SAME run, giving opposite answers. ` +
+                    `A flake recurring about once in thirteen runs cannot afford an ` +
+                    `ambiguous capture.`,
+            );
+        }
+        expect(missing).toEqual([]);
+    });
 
     it('ci.yml reads the ledger and splits notice from warning', () => {
         expect(workflow).toContain(LEDGER_REL);

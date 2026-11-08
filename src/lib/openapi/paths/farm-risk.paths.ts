@@ -35,6 +35,107 @@ const RiskLevel = z.enum(['good', 'watch', 'stress', 'unknown']).openapi('RiskLe
         'not a failure — render it as absence, never as a fourth severity.',
 });
 
+/**
+ * How NDVI is DISTRIBUTED across the parcel — #2837 stage 2.
+ *
+ * The phone shows this for the LATEST reading only (`agrent-ios`, 2026-11-07):
+ * the full p10/p50/p90 on the parcel card, and at most `belowThresholdShare`
+ * charted over time from the history endpoint.
+ */
+const WithinField = z
+    .object({
+        ndviP10: z.number().nullable(),
+        ndviP50: z.number().nullable(),
+        ndviP90: z.number().nullable(),
+        belowThresholdShare: z.number().nullable(),
+        threshold: z.number(),
+        coverage: z.number().nullable(),
+    })
+    .openapi('ParcelWithinField', {
+        description:
+            'NDVI distribution across the parcel. **Every figure is over the CLEAR ' +
+            'area, not the whole field** — cloud, shadow, cirrus and snow are masked ' +
+            'out and masked pixels are not counted, so `belowThresholdShare: 0.3` ' +
+            'means "30% of what the satellite could see is in stress", NOT "30% of ' +
+            'the field". Nothing can be said about ground under cloud, and the ' +
+            'alternatives both invent a reading: counting cloud as healthy makes a ' +
+            'mostly-clouded parcel look fine, counting it as stressed cries wolf.\n\n' +
+            '`threshold` is echoed rather than assumed — it is the same NDVI value ' +
+            'the `vegetation` level uses for its `stress` boundary, so the share and ' +
+            'the level on the same screen cannot disagree.\n\n' +
+            'Read `ndviP50` against `ndvi` (the mean): a mean well below the median ' +
+            'means a minority of very poor pixels is dragging it down, which is a ' +
+            'different problem from a uniformly mediocre crop and wants a different ' +
+            'action.\n\n' +
+            '`coverage` is the DENOMINATOR made explicit: what share of the parcel the ' +
+            'composite could see at all, 0..1. It is the share of parcel pixels with ' +
+            'at least one clear observation across the whole window — NOT one pass\u2019s ' +
+            'clear share, which would describe a different picture from these numbers, ' +
+            'since they are a 30-day median over many passes. Near 1 is the normal ' +
+            'case and is not worth telling anyone; well below 1 is when saying how ' +
+            'much of the field was visible stops the other figures from being read as ' +
+            'statements about the whole parcel.\n\n' +
+            '**`coverage < 1` has THREE causes and only two of them are weather**, which ' +
+            'matters for the sentence a client shows. (1) Cloud, cloud shadow or thin ' +
+            'cirrus — SCL 3, 8, 9, 10. (2) **Snow or ice** — SCL 11, masked exactly like ' +
+            'cloud, and on arable land in a Bulgarian winter this is the common case, not ' +
+            'an edge one. (3) No qualifying scene covered that part of the parcel at all: ' +
+            'a pass is kept on its own clear share over the geometry, so a granule ' +
+            'clipping one end of a field can contribute while the other end gets zero ' +
+            'observations — nothing to do with the sky.\n\n' +
+            'So do NOT render the uncovered remainder as "under cloud". A farmer looking ' +
+            'at a field they know is under SNOW, told it was under cloud, has been given ' +
+            'a reason to distrust the number the sentence is attached to. Say the ' +
+            'satellite had no clear view of the rest, and leave the cause out.',
+    });
+
+/**
+ * The nine compass cells of a 3x3 grid over a parcel's bounding box.
+ *
+ * Declared as an ENUM so a client's switch can be exhaustive — `agrent-ios`
+ * asked for exactly that, 2026-11-08.
+ */
+const ZoneCode = z
+    .enum(['NW', 'N', 'NE', 'W', 'C', 'E', 'SW', 'S', 'SE'])
+    .openapi('ParcelZoneCode', {
+        description:
+            'Which ninth of the parcel, on a 3x3 grid. `C` is the centre. The compass is ' +
+            'GEOGRAPHIC: the grid is cut from the parcel\u2019s WGS84 lat/lon bounding box, so ' +
+            '`SE` means the south-east of the FIELD and does not depend on how any map is ' +
+            'rotated or oriented.',
+    });
+
+const Weakest = z
+    .object({
+        zone: ZoneCode,
+        ndvi: z.number(),
+        delta: z.number(),
+        bounds: z.array(z.number()).length(4),
+    })
+    .openapi('ParcelWeakestZone', {
+        description:
+            'The weakest ninth of the parcel. `delta` is the zone\u2019s mean NDVI minus the ' +
+            'field median, so it is always NEGATIVE — a zone is only reported when it is ' +
+            'materially below.\n\n' +
+            '**`null` means "cannot localise", NOT "the field is even."** Three different ' +
+            'situations all return null and are not distinguishable from the outside: a ' +
+            'parcel too small to subdivide usefully (a cell needs ~1 ha of clear pixels, so ' +
+            'the floor is roughly 9 ha of bounding box, more for an irregular shape), a pass ' +
+            'too cloudy for any cell to qualify, and a genuinely uniform field. So say ' +
+            'nothing on null \u2014 a sentence like "no weak area" asserts the third when it ' +
+            'could be any of them.\n\n' +
+            'The floors are deliberate and both agronomic: a cell must hold at least 25 ' +
+            'clear 20 m pixels, or the weakest cell is whichever corner the cloud left ' +
+            'smallest; and it must sit at least 0.10 NDVI below the median, which is about a ' +
+            'third of the width of the `watch` band, so a uniformly mediocre field nominates ' +
+            'no arbitrary corner.\n\n' +
+            '`bounds` is `[west, south, east, north]` in WGS84 \u2014 the GRID CELL\u2019s box, one ' +
+            'ninth of the parcel\u2019s bounding box. It is **not** the parcel\u2019s shape inside ' +
+            'that cell: a rectangle drawn from it will extend past an irregular outline. ' +
+            'Clip it against the parcel before drawing, or use it as a marker rather than a ' +
+            'region.',
+    });
+
 const ParcelRisk = z
     .object({
         parcelId: z.string(),
@@ -48,6 +149,8 @@ const ParcelRisk = z
         moisture: RiskLevel,
         overall: RiskLevel,
         acquiredDate: z.string().nullable(),
+        withinField: WithinField.nullable(),
+        weakest: Weakest.nullable(),
         generatedAt: z.string().datetime(),
     })
     .openapi('ParcelRisk');
@@ -156,6 +259,16 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             'composite falls back to the latest usable window, so it can be weeks old ' +
             'while `generatedAt` is now. Show the acquisition date; a farmer reading a ' +
             'three-week-old reading as today plans against weather that has since changed.\n\n' +
+            '`withinField` is the NDVI DISTRIBUTION across the parcel, and it is the ' +
+            'reason a single mean is not enough: 0.5 can be a uniformly mediocre crop ' +
+            'or an excellent one with a failing corner. `null` when there was no ' +
+            'usable imagery. Its figures are over the CLEAR area rather than the whole ' +
+            'field — see the schema.\n\n' +
+            '`weakest` names the weakest ninth of the parcel, and costs a SECOND Earth ' +
+            'Engine call \u2014 per-cell means need a nine-geometry reduction that cannot ride ' +
+            'the whole-parcel one. That is why it is here and not on every pass of the ' +
+            'history endpoint. It is `null` far more often than not, and `null` means ' +
+            '\u201ccannot localise\u201d rather than \u201ceven\u201d \u2014 see the schema.\n\n' +
             'The parcel id is a PATH segment, deliberately. iOS writes the full request ' +
             'URL — query included — to the unified log from its own networking layer, ' +
             'below anything an app can suppress.',

@@ -198,6 +198,123 @@ function bandFn(index: VegetationIndex): (img: EeImage) => EeImage {
 }
 
 /**
+ * The SCL classes this pipeline treats as unusable: 3 cloud shadow, 8 cloud
+ * medium probability, 9 cloud high probability, 10 thin cirrus, 11 snow/ice.
+ *
+ * ONE definition, four call sites. It was four copies of the same chain until
+ * #2837's parcel-level cloud filter needed a FIFTH reader — and a filter that
+ * decides which scenes enter the collection, keyed on a different set of
+ * classes from the mask that then reduces them, would admit a pass as "clear
+ * over the parcel" and reduce it to nothing. The two have to be the same
+ * answer by construction, not by both being correct today.
+ */
+function sclClearMask(img: EeImage): EeImage {
+    const scl = img.select('SCL');
+    return scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
+}
+
+/**
+ * Which SCENE-SELECTION algorithm `adaptiveS2Collection` implements — #2837.
+ *
+ * Bump this whenever a change alters WHICH passes enter the collection: the
+ * tile-level cloud threshold, the masked classes, the window widening, the
+ * collection id. Stored readings record the version that produced them, and
+ * `getParcelRiskHistory` treats a parcel's coverage watermark as ABSENT when
+ * it does not match — so a bump re-searches every parcel automatically.
+ *
+ * That is the point of the constant rather than a migration that nulls the
+ * watermark: a selection change that admits MORE passes leaves every existing
+ * watermark claiming dates were searched when they were searched under rules
+ * that rejected the pass. Nothing would ever go back for them, the chart would
+ * silently keep the old answer, and no test would fail. Remembering to write
+ * the UPDATE is exactly the step that gets forgotten.
+ *
+ * It does NOT cover a change to the INDEX arithmetic (`bandFn`) or the
+ * reducer: those change a stored pass's VALUE, not whether the pass exists,
+ * and the recent-tail refresh plus the upsert handle a value change for the
+ * dates anybody is looking at. A wholesale re-read of history for a changed
+ * band formula is a backfill job, not a watermark reset.
+ *
+ * 1 — the original: `CLOUDY_PIXEL_PERCENTAGE < 60` at tile level, SCL classes
+ *     3/8/9/10/11 masked, scale 20.
+ * 2 — judge cloud over the PARCEL (#2837, owner 2026-11-07): the tile-level
+ *     pre-filter relaxes to `< 90` and a pass is kept only when its
+ *     SCL-clear share over the geometry is at least
+ *     `MIN_PARCEL_CLEAR_SHARE`. Applies to the two polygon readers; the tile
+ *     and bounds paths are unchanged, so this version describes the
+ *     per-parcel collection only.
+ */
+export const SCENE_SELECTION_VERSION = 2;
+
+/**
+ * Tile-level `CLOUDY_PIXEL_PERCENTAGE` ceiling for the PARCEL readers.
+ *
+ * 90 rather than 60, and it is kept rather than dropped. `CLOUDY_PIXEL_PERCENTAGE`
+ * is a figure about a ~100x100 km granule, so at 60 a pass that is clear over
+ * one field and cloudy across the tile never reaches the SCL mask at all —
+ * which is the owner's complaint: parcel 15655-19 read «Заснето на 28
+ * октомври» ten days later because every November pass was filtered out at
+ * tile level.
+ *
+ * It does not go away entirely, because a genuinely overcast granule has no
+ * clear parcel in it and still costs a per-image `reduceRegion` to find that
+ * out. 90 keeps the hopeless cases out of the collection while letting through
+ * everything that could plausibly be clear over one field.
+ */
+const PARCEL_TILE_CLOUD_MAX = 90;
+
+/**
+ * How much of the parcel an SCL-clear pass has to cover to be kept.
+ *
+ * 0.5 (owner's call relayed via `agrent-ios`, confirmed with the peer). At 0.7
+ * a field under the edge of a cloud is discarded while two thirds of it is
+ * perfectly readable; the field mean is already computed over clear pixels
+ * ONLY, so a half-clear pass yields a real answer over a smaller area rather
+ * than a wrong one over the whole.
+ *
+ * Not lower, because the smaller the clear patch the less the mean describes
+ * the FIELD — at 0.1 a reading is one corner standing in for the parcel, and
+ * a trend made of different corners is not a trend.
+ */
+const MIN_PARCEL_CLEAR_SHARE = 0.5;
+
+/**
+ * What fraction of `region` this pass sees without cloud, shadow, cirrus or
+ * snow — an `ee.Number` between 0 and 1.
+ *
+ * `unmask(0)` is the load-bearing call. `SCL` is MASKED outside the granule
+ * footprint, and `reduceRegion`'s mean ignores masked pixels — so a scene
+ * clipping one corner of a parcel would report a clear share of 1.0 for the
+ * sliver it covers and be kept as a full reading of the field. Unmasking to 0
+ * makes "outside this granule" count as not-clear, which is what the share is
+ * supposed to mean.
+ *
+ * Same scale (20) and same SCL classes as the reducer that follows, through
+ * `sclClearMask`, so a pass admitted as clear cannot then reduce to nothing.
+ */
+function parcelClearShare(img: EeImage, region: EeImage): EeImage {
+    const clear = sclClearMask(img).unmask(0).rename('clear');
+    const stats = (
+        clear as unknown as { reduceRegion: (a: Record<string, unknown>) => EeImage }
+    ).reduceRegion({
+        reducer: ee.Reducer.mean(),
+        geometry: region,
+        scale: 20,
+        maxPixels: 1e9,
+        bestEffort: true,
+    });
+    // `get` on an empty reduction yields null, and `ee.Number(null)` fails a
+    // comparison rather than returning false — so the absent case is coerced
+    // to 0, which the filter then rejects.
+    const eeX = ee as unknown as {
+        Number: (v: unknown) => EeImage;
+        Algorithms: { If: (c: unknown, t: unknown, f: unknown) => unknown };
+    };
+    const raw = (stats as unknown as { get: (k: string) => unknown }).get('clear');
+    return eeX.Number(eeX.Algorithms.If(raw, raw, 0));
+}
+
+/**
  * Cloud-filtered S2_SR_HARMONIZED collection for `region`, ADAPTIVE on the
  * date window: prefer the requested `[win.start, win.end)`, but when that
  * window holds NO imagery — the common cause of a blank overlay: the wall
@@ -206,8 +323,34 @@ function bandFn(index: VegetationIndex): (img: EeImage) => EeImage {
  * available acquisition. So the composite is never empty while ANY recent
  * imagery exists, and the date picker still drives the window when data is
  * there. `ee` is untyped; the fluent chain is `EeImage`.
+ *
+ * ## `judgeCloudOverRegion` — opt-in, and why it is not the default
+ *
+ * With it, the tile-level `CLOUDY_PIXEL_PERCENTAGE` ceiling relaxes to
+ * `PARCEL_TILE_CLOUD_MAX` and each pass is kept on its own SCL-clear share
+ * over `region` instead. That is what the owner asked for (2026-11-07), and it
+ * is the right judgement for a PARCEL: a figure about a granule says nothing
+ * about one field.
+ *
+ * It is deliberately NOT on for the tile and bounds readers, whose `region` is
+ * a location BOUNDING BOX rather than a field. Two reasons, and the second
+ * decided it. A clear share over a bbox spanning a whole farm is a different
+ * quantity from a clear share over one field, so 0.5 there would mean
+ * something nobody has chosen. And it costs a `reduceRegion` per image in the
+ * collection, on the path that serves map tiles in bulk — where the current
+ * filter is one property comparison.
+ *
+ * The consequence is that an NDVI overlay and a parcel card can be built from
+ * different sets of scenes, and so can report different acquisition dates.
+ * They already differ in their geometry (bbox versus polygon), so this widens
+ * an existing gap rather than opening one; closing it means deciding what a
+ * clear share over a bbox should mean, which is a separate question.
  */
-function adaptiveS2Collection(region: EeImage, win: NdviWindow): EeImage {
+function adaptiveS2Collection(
+    region: EeImage,
+    win: NdviWindow,
+    opts: { judgeCloudOverRegion?: boolean } = {},
+): EeImage {
     // `ee.Date` / `ee.Algorithms` (and the object-arg ImageCollection ctor) are
     // real EE members missing from the `EarthEngine` type defs — reach them
     // through a narrow typed view rather than `any`.
@@ -216,10 +359,36 @@ function adaptiveS2Collection(region: EeImage, win: NdviWindow): EeImage {
         Algorithms: { If: (cond: unknown, t: unknown, f: unknown) => EeImage };
         ImageCollection: (v: unknown) => EeImage;
     };
-    const base = ee
+    const perRegion = opts.judgeCloudOverRegion === true;
+    let base = ee
         .ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
         .filterBounds(region)
-        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 60));
+        .filter(
+            ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', perRegion ? PARCEL_TILE_CLOUD_MAX : 60),
+        );
+    if (perRegion) {
+        // Per-image, server-side: how much of THIS geometry the pass sees
+        // clear, then keep only the passes that see enough of it. Set as a
+        // property and filtered rather than computed in TypeScript, because
+        // the whole point is that the collection — the adaptive fallback's
+        // `latest` below included — is built from region-clear passes. That
+        // fallback is what makes `acquiredDate` the newest pass actually clear
+        // over the parcel rather than the newest pass in a clear-ish granule.
+        base = base
+            .map((img: EeImage) =>
+                (img as unknown as { set: (k: string, v: unknown) => EeImage }).set(
+                    'regionClearShare',
+                    parcelClearShare(img, region),
+                ),
+            )
+            .filter(
+                (
+                    ee.Filter as unknown as {
+                        gte: (property: string, value: number) => unknown;
+                    }
+                ).gte('regionClearShare', MIN_PARCEL_CLEAR_SHARE),
+            );
+    }
     const windowColl = base.filterDate(win.start, win.end);
     const windowDays = Math.max(1, Math.round((Date.parse(win.end) - Date.parse(win.start)) / 86_400_000));
     const latest = eeX.Date(base.sort('system:time_start', false).first().get('system:time_start'));
@@ -320,9 +489,7 @@ export async function getIndexTileUrl(
     // typed (every method returns another EE object) without leaking
     // `any` — the `@google/earthengine` module itself is untyped.
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const composite: EeImage = masked.map((img: EeImage) => band(img)).median().clip(clipRegion);
@@ -350,6 +517,71 @@ export async function getIndexTileUrl(
     return { tileUrl: urlFormat, acquiredDate };
 }
 
+/**
+ * How NDVI is DISTRIBUTED across the parcel, not just its average — #2837
+ * stage 2.
+ *
+ * A field mean of 0.5 can be a uniformly mediocre crop or an excellent one
+ * with a failing corner, and those call for different actions. The
+ * percentiles say which.
+ *
+ * ## The denominator is the CLEAR area, not the parcel
+ *
+ * Every figure here is computed over the pixels this composite could actually
+ * see: `reduceRegion` ignores masked pixels, and the SCL mask removes cloud,
+ * shadow, cirrus and snow. So `belowThresholdShare: 0.3` means "30% of what
+ * we can see is in stress", NOT "30% of the field". That is the honest
+ * reading — nothing can be said about ground under cloud — and it is stated
+ * here because a client would otherwise reasonably assume the field.
+ *
+ * Deliberately NOT unmasked to zero: counting cloud as not-in-stress would
+ * make a mostly-clouded parcel look healthy, which is the dangerous
+ * direction. Counting it as in-stress would cry wolf. Reporting the share of
+ * what was visible is the only one of the three that does not invent a
+ * reading.
+ */
+export interface WithinFieldStats {
+    /** NDVI 10th percentile over the clear area — the weakest tenth. */
+    ndviP10: number | null;
+    /** Median NDVI. Compare with `ndvi` (the mean): a mean well below the
+     *  median means a minority of very poor pixels is dragging it down. */
+    ndviP50: number | null;
+    ndviP90: number | null;
+    /**
+     * Share of the CLEAR area whose NDVI is below `threshold`, 0..1.
+     * `null` when the composite saw nothing.
+     */
+    belowThresholdShare: number | null;
+    /**
+     * The NDVI value `belowThresholdShare` was computed against, echoed so a
+     * client never has to assume it. Supplied by the caller, which holds the
+     * same constant the risk levels use — see `NDVI_STRESS_THRESHOLD`.
+     */
+    threshold: number;
+    /**
+     * What share of the PARCEL the composite could see at all, 0..1 — the
+     * denominator every other figure here is relative to.
+     *
+     * `agrent-ios` asked for this and corrected the shape I offered, which is
+     * worth recording because the correction is the whole point. I proposed
+     * surfacing a single PASS's clear share — the number `adaptiveS2Collection`
+     * already computes to decide whether to keep a scene. That describes a
+     * different picture from the numbers beside it: `/analysis` is a 30-day
+     * MEDIAN over many passes, so the right denominator is the share of parcel
+     * pixels with at least ONE clear observation in the window, not the share
+     * one scene happened to see.
+     *
+     * So it is the COMPOSITE's mask: `ndvi.mask()` is 1 where some pass
+     * contributed and 0 where none did, unmasked so the mean's denominator is
+     * every parcel pixel rather than only the observed ones. One more band on
+     * the same `reduceRegion`.
+     *
+     * Near 1 is the normal case and the phone stays quiet about it; well below
+     * 1 is when «видими 60 % от парцела» is worth saying.
+     */
+    coverage: number | null;
+}
+
 /** Field-area mean vegetation-index readings (the AI-briefing input). */
 export interface FieldIndexMeans {
     /**
@@ -370,6 +602,12 @@ export interface FieldIndexMeans {
      * date they asked for.
      */
     acquiredDate: string | null;
+    /**
+     * The NDVI distribution across the parcel — #2837 stage 2. `null` when
+     * the caller did not ask for it (no `stressThreshold`), which is every
+     * caller that only needs the means.
+     */
+    withinField: WithinFieldStats | null;
 }
 
 /**
@@ -395,9 +633,7 @@ export async function getIndexMeansForBounds(
 
     // Same SCL cloud/shadow/snow mask as the tile pipeline.
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const ndviBand = bandFn('ndvi');
@@ -440,7 +676,17 @@ export async function getIndexMeansForBounds(
         typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
 
     // Band names are the uppercased index names from `bandFn`'s `.rename(...)`.
-    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
+    return {
+        ndvi: round3(info.NDVI),
+        ndmi: round3(info.NDMI),
+        acquiredDate,
+        // No distribution for a BOUNDING BOX. Percentiles over a rectangle
+        // spanning a whole farm describe the farm's variation between fields,
+        // not variation within one — and this reader's callers want the
+        // briefing's two numbers. Explicit `null` rather than an optional
+        // field so a future reader has to decide rather than inherit.
+        withinField: null,
+    };
 }
 
 /**
@@ -453,25 +699,72 @@ export async function getIndexMeansForBounds(
 export async function getIndexMeansForPolygon(
     geometry: unknown,
     win: NdviWindow,
+    opts: { stressThreshold?: number } = {},
 ): Promise<FieldIndexMeans> {
     await initEarthEngine();
 
     // `ee.Geometry(geojson)` accepts a GeoJSON geometry object directly.
     const region = new (ee.Geometry as unknown as { new (g: unknown): EeImage })(geometry);
 
-    const collection = adaptiveS2Collection(region, win);
+    // #2837: judge cloud over THIS PARCEL rather than over the ~100x100 km
+    // granule — see `PARCEL_TILE_CLOUD_MAX`. Opt-in, so the tile and bounds
+    // readers keep their cheaper tile-level filter unchanged.
+    const collection = adaptiveS2Collection(region, win, { judgeCloudOverRegion: true });
 
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const ndviBand = bandFn('ndvi');
     const ndmiBand = bandFn('ndmi');
     const ndvi = masked.map((img: EeImage) => ndviBand(img)).median();
     const ndmi = masked.map((img: EeImage) => ndmiBand(img)).median();
-    const combined = (ndvi as EeImage).addBands(ndmi).clip(region);
+
+    const threshold = opts.stressThreshold;
+    // #2837 stage 2: the distribution rides the SAME `reduceRegion` as the
+    // means. A separate call for the percentiles would be a second metered
+    // Earth Engine round trip over pixels this one is already scanning.
+    //
+    // The below-threshold band is `ndvi.lt(threshold)` — 0/1 — whose MEAN is
+    // the share. It inherits the SCL mask, so the share is of the CLEAR area;
+    // `WithinFieldStats` records why that is the right denominator and why it
+    // is deliberately not unmasked.
+    const bands =
+        threshold === undefined
+            ? (ndvi as EeImage).addBands(ndmi)
+            : (ndvi as EeImage)
+                  .addBands(ndmi)
+                  .addBands(
+                      (ndvi as unknown as { lt: (v: number) => EeImage })
+                          .lt(threshold)
+                          .rename('NDVIBELOW'),
+                  )
+                  // The COMPOSITE's coverage: 1 where at least one pass
+                  // contributed a clear pixel, 0 where none did. `unmask(0)`
+                  // is what makes the mean's denominator every parcel pixel
+                  // rather than only the observed ones — without it this band
+                  // would read 1.0 everywhere it is defined and say nothing.
+                  .addBands(
+                      (ndvi as unknown as { mask: () => EeImage })
+                          .mask()
+                          .unmask(0)
+                          .rename('COVERAGE'),
+                  );
+    const combined = bands.clip(region);
+
+    const eeR = ee.Reducer as unknown as {
+        mean: () => { combine: (a: Record<string, unknown>) => unknown };
+        percentile: (ps: number[]) => unknown;
+    };
+    // `.combine` SUFFIXES every output — `NDVI_mean`, `NDVI_p10`, … — so the
+    // keys read back below are NOT the bare band names they were before this
+    // change. Combined unconditionally rather than behind the `threshold`
+    // branch: one output shape is easier to read back correctly than two, and
+    // percentiles over pixels already being scanned cost nothing.
+    const reducer = eeR.mean().combine({
+        reducer2: eeR.percentile([10, 50, 90]),
+        sharedInputs: true,
+    });
 
     const reduced = (
         combined as unknown as {
@@ -480,7 +773,7 @@ export async function getIndexMeansForPolygon(
             };
         }
     ).reduceRegion({
-        reducer: ee.Reducer.mean(),
+        reducer,
         geometry: region,
         scale: 20,
         maxPixels: 1e9,
@@ -503,35 +796,218 @@ export async function getIndexMeansForPolygon(
     const round3 = (v: unknown): number | null =>
         typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
 
-    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
+    return {
+        // `_mean`, not `NDVI`: the reducer is combined — see the note above it.
+        ndvi: round3(info.NDVI_mean),
+        ndmi: round3(info.NDMI_mean),
+        acquiredDate,
+        withinField:
+            threshold === undefined
+                ? null
+                : {
+                      ndviP10: round3(info.NDVI_p10),
+                      ndviP50: round3(info.NDVI_p50),
+                      ndviP90: round3(info.NDVI_p90),
+                      belowThresholdShare: round3(info.NDVIBELOW_mean),
+                      threshold,
+                      coverage: round3(info.COVERAGE_mean),
+                  },
+    };
 }
 
 /**
- * Which SCENE-SELECTION algorithm `adaptiveS2Collection` implements — #2837.
- *
- * Bump this whenever a change alters WHICH passes enter the collection: the
- * tile-level cloud threshold, the masked classes, the window widening, the
- * collection id. Stored readings record the version that produced them, and
- * `getParcelRiskHistory` treats a parcel's coverage watermark as ABSENT when
- * it does not match — so a bump re-searches every parcel automatically.
- *
- * That is the point of the constant rather than a migration that nulls the
- * watermark: a selection change that admits MORE passes leaves every existing
- * watermark claiming dates were searched when they were searched under rules
- * that rejected the pass. Nothing would ever go back for them, the chart would
- * silently keep the old answer, and no test would fail. Remembering to write
- * the UPDATE is exactly the step that gets forgotten.
- *
- * It does NOT cover a change to the INDEX arithmetic (`bandFn`) or the
- * reducer: those change a stored pass's VALUE, not whether the pass exists,
- * and the recent-tail refresh plus the upsert handle a value change for the
- * dates anybody is looking at. A wholesale re-read of history for a changed
- * band formula is a backfill job, not a watermark reset.
- *
- * 1 — the original: `CLOUDY_PIXEL_PERCENTAGE < 60` at tile level, SCL classes
- *     3/8/9/10/11 masked, scale 20.
+ * The nine compass cells of a 3x3 grid over a parcel's bounding box, north
+ * first. A CODE, not prose: the client localises it.
  */
-export const SCENE_SELECTION_VERSION = 1;
+export const ZONE_CODES = [
+    'NW', 'N', 'NE',
+    'W', 'C', 'E',
+    'SW', 'S', 'SE',
+] as const;
+export type ZoneCode = (typeof ZONE_CODES)[number];
+
+/** One grid cell's reading. */
+export interface ZoneMean {
+    zone: ZoneCode;
+    /** Mean NDVI over the part of this cell inside the parcel, or null. */
+    ndvi: number | null;
+    /**
+     * How many clear 20 m pixels the mean is computed from. The CALLER uses
+     * this as a materiality floor — a three-pixel corner must not be
+     * nominated as a field's weak zone.
+     */
+    clearPixels: number;
+    /**
+     * The CELL's own box, `[west, south, east, north]` in WGS84 — one ninth
+     * of the parcel's bounding box.
+     *
+     * Free: the rectangle is computed in TypeScript to build the request, so
+     * returning it costs no Earth Engine work. `agrent-ios` asked for it to
+     * mark the zone on an outline map later (#567's successor), and the owner
+     * chose words before a drawing, so nothing renders it yet.
+     *
+     * **It is the GRID CELL, not the parcel's shape inside that cell.** A
+     * rectangle drawn from this will extend past an irregular parcel's
+     * outline. Clip it against the parcel before drawing, or draw it as a
+     * marker rather than a region.
+     */
+    bounds: [number, number, number, number];
+}
+
+/**
+ * The bounding box of a GeoJSON Polygon or MultiPolygon as
+ * `[west, south, east, north]`.
+ *
+ * Computed HERE rather than from `region.bounds()` because the geometry is
+ * already in hand: asking Earth Engine for a box it was just given would be
+ * a metered round trip to learn something this process can compute exactly.
+ */
+function geoJsonBbox(geometry: unknown): [number, number, number, number] | null {
+    let w = Infinity;
+    let s = Infinity;
+    let e = -Infinity;
+    let n = -Infinity;
+    const visit = (node: unknown): void => {
+        if (!Array.isArray(node)) return;
+        // A coordinate PAIR is two finite numbers; anything else is a nest.
+        if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+            const [lon, lat] = node as [number, number];
+            if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+            if (lon < w) w = lon;
+            if (lon > e) e = lon;
+            if (lat < s) s = lat;
+            if (lat > n) n = lat;
+            return;
+        }
+        for (const child of node) visit(child);
+    };
+    const coords = (geometry as { coordinates?: unknown })?.coordinates;
+    visit(coords);
+    if (!Number.isFinite(w) || !Number.isFinite(s) || !Number.isFinite(e) || !Number.isFinite(n)) {
+        return null;
+    }
+    // A degenerate box cannot be subdivided — a point or a line parcel is
+    // bad data, and nine cells of zero width would each reduce to nothing.
+    if (e <= w || n <= s) return null;
+    return [w, s, e, n];
+}
+
+/**
+ * Mean NDVI per 3x3 grid cell over a parcel — #2837 stage 2b.
+ *
+ * ## One extra round trip, and why it cannot ride the other one
+ *
+ * The whole-parcel figures (`getIndexMeansForPolygon`) come from a
+ * `reduceRegion` over ONE geometry. Per-cell means need `reduceRegions` over
+ * NINE, which is a different call returning a FeatureCollection. There is no
+ * combined reducer that produces both, so this is the second metered call
+ * stage 2b costs — stated rather than buried, because it is the reason
+ * `weakest` is on `/analysis` only and not on every pass of the history.
+ *
+ * ## The cells are rectangles, not intersections
+ *
+ * The composite is already `.clip(region)`, so pixels outside the parcel are
+ * masked and `reduceRegions` ignores them. Intersecting each rectangle with
+ * the parcel geometry server-side would produce the same numbers for nine
+ * more geometry operations.
+ *
+ * ## It measures; it does not judge
+ *
+ * Nine means and nine pixel counts come back, and the CALLER decides whether
+ * any of them is a real weak zone. That split is deliberate: the materiality
+ * floors are agronomic thresholds, they belong beside the other agronomic
+ * thresholds in the usecase, and keeping them out of here makes them testable
+ * without an Earth Engine graph — which nothing in this repo can evaluate.
+ */
+export async function getZoneMeans(geometry: unknown, win: NdviWindow): Promise<ZoneMean[]> {
+    const bbox = geoJsonBbox(geometry);
+    if (!bbox) return [];
+
+    await initEarthEngine();
+
+    const region = new (ee.Geometry as unknown as { new (g: unknown): EeImage })(geometry);
+    const collection = adaptiveS2Collection(region, win, { judgeCloudOverRegion: true });
+    const masked = collection.map((img: EeImage) => img.updateMask(sclClearMask(img)));
+    const ndvi = masked.map((img: EeImage) => bandFn('ndvi')(img)).median().clip(region);
+
+    const [w, s, e, n] = bbox;
+    const dx = (e - w) / 3;
+    const dy = (n - s) / 3;
+    const eeX = ee as unknown as {
+        Feature: (g: unknown, p: Record<string, unknown>) => unknown;
+        FeatureCollection: (fs: unknown[]) => unknown;
+    };
+    // The box per zone, kept so the result can carry it without a second
+    // derivation — two places computing the same nine rectangles is two
+    // places to get the row order wrong.
+    const boxes = new Map<string, [number, number, number, number]>();
+    const cells = ZONE_CODES.map((zone, i) => {
+        const col = i % 3;
+        // Row 0 is the NORTH row, so y runs from the top down. North here is
+        // GEOGRAPHIC north — the grid is cut from the WGS84 lat/lon bounding
+        // box, so the labels do not depend on how any map is rotated.
+        const row = Math.floor(i / 3);
+        const cellW = w + col * dx;
+        const cellE = cellW + dx;
+        const cellN = n - row * dy;
+        const cellS = cellN - dy;
+        boxes.set(zone, [cellW, cellS, cellE, cellN]);
+        return eeX.Feature(ee.Geometry.Rectangle([cellW, cellS, cellE, cellN]), { zone });
+    });
+
+    const eeR = ee.Reducer as unknown as {
+        mean: () => { combine: (a: Record<string, unknown>) => unknown };
+        count: () => unknown;
+    };
+    const reduced = (
+        ndvi as unknown as {
+            reduceRegions: (a: Record<string, unknown>) => {
+                evaluate: (cb: (v: unknown, err?: unknown) => void) => void;
+            };
+        }
+    ).reduceRegions({
+        collection: eeX.FeatureCollection(cells),
+        // `count` alongside `mean` so the caller can refuse a cell whose mean
+        // rests on a handful of pixels. Without it the weakest cell is
+        // whichever corner the cloud left smallest.
+        reducer: eeR.mean().combine({ reducer2: eeR.count(), sharedInputs: true }),
+        scale: 20,
+    });
+
+    const raw = await withEeDeadline<{ features?: unknown[] }>(
+        'EE reduceRegions (zones)',
+        EE_CALL_TIMEOUT_MS,
+        (resolve, reject) => {
+            reduced.evaluate((value: unknown, err?: unknown) => {
+                if (err) {
+                    reject(new Error(`EE reduceRegions failed: ${String(err)}`));
+                    return;
+                }
+                resolve((value ?? {}) as { features?: unknown[] });
+            });
+        },
+    );
+
+    const round3 = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
+
+    const out: ZoneMean[] = [];
+    for (const f of raw.features ?? []) {
+        const props = (f as { properties?: Record<string, unknown> })?.properties ?? {};
+        const zone = props.zone;
+        if (typeof zone !== 'string' || !(ZONE_CODES as readonly string[]).includes(zone)) continue;
+        const count = props.NDVI_count;
+        const box = boxes.get(zone);
+        if (!box) continue;
+        out.push({
+            zone: zone as ZoneCode,
+            ndvi: round3(props.NDVI_mean),
+            clearPixels: typeof count === 'number' && Number.isFinite(count) ? Math.round(count) : 0,
+            bounds: box,
+        });
+    }
+    return out;
+}
 
 /** One Sentinel-2 pass, reduced over a parcel. */
 export interface IndexPass {
@@ -579,12 +1055,13 @@ export async function getIndexMeansPerPass(
     await initEarthEngine();
 
     const region = new (ee.Geometry as unknown as { new (g: unknown): EeImage })(geometry);
-    const collection = adaptiveS2Collection(region, win);
+    // #2837: judge cloud over THIS PARCEL rather than over the ~100x100 km
+    // granule — see `PARCEL_TILE_CLOUD_MAX`. Opt-in, so the tile and bounds
+    // readers keep their cheaper tile-level filter unchanged.
+    const collection = adaptiveS2Collection(region, win, { judgeCloudOverRegion: true });
 
     const masked = collection.map((img: EeImage) => {
-        const scl = img.select('SCL');
-        const keep = scl.neq(3).and(scl.neq(8)).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11));
-        return img.updateMask(keep);
+        return img.updateMask(sclClearMask(img));
     });
 
     const ndviBand = bandFn('ndvi');

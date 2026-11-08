@@ -37,9 +37,86 @@ import {
     getIndexMeansPerPass,
     SCENE_SELECTION_VERSION,
     type IndexPass,
+    type WithinFieldStats,
+    getZoneMeans,
+    type ZoneCode,
+    type ZoneMean,
 } from '@/lib/agro/earth-engine';
 
 export type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown';
+
+/**
+ * The weakest part of a parcel — #2837 stage 2b.
+ *
+ * `zone` is a CODE for the client to localise, and the compass is GEOGRAPHIC:
+ * the grid is cut from the parcel's WGS84 bounding box, so «югоизточната
+ * част» means the same thing however a map happens to be rotated.
+ */
+export interface WeakestZone {
+    zone: ZoneCode;
+    ndvi: number;
+    /**
+     * `zone`'s mean minus the field median, so always NEGATIVE here — the
+     * zone is only reported when it is materially BELOW the median.
+     */
+    delta: number;
+    /** The grid cell's box, `[w, s, e, n]`. See `ZoneMean.bounds`. */
+    bounds: [number, number, number, number];
+}
+
+/**
+ * Clear 20 m pixels a cell needs before it may be called a field's weak zone.
+ *
+ * 25 pixels is one hectare. Below that the mean is noise and the "weakest"
+ * cell is whichever corner the cloud left smallest — the app would point a
+ * farmer at three pixels. Nine such cells make the floor roughly 9 ha of
+ * BOUNDING BOX, and more for an irregular parcel, so small fields report
+ * nothing. That is the honest answer: you cannot localise inside a field the
+ * satellite sees as a handful of pixels.
+ */
+const MIN_ZONE_CLEAR_PIXELS = 25;
+
+/**
+ * How far below the field median a cell must sit to be worth naming, in NDVI.
+ *
+ * 0.10 is about a third of the width of the `watch` band (0.35 to 0.6), so it
+ * is a difference an agronomist would act on rather than sampling noise. A
+ * uniformly mediocre field therefore reports NOTHING rather than nominating
+ * an arbitrary corner — which is the whole point of having a floor.
+ */
+const MIN_ZONE_DELTA = 0.1;
+
+/**
+ * The weakest cell worth naming, or null — the judgement half of stage 2b.
+ *
+ * Separated from `getZoneMeans` (which only measures) so these two agronomic
+ * floors sit beside the other agronomic thresholds, and so they can be tested
+ * without an Earth Engine graph, which nothing in this repo can evaluate.
+ *
+ * `null` means **"cannot localise"**, NOT "the field is even". The client must
+ * say nothing rather than «no weak part» — `agrent-ios` confirmed that
+ * reading 2026-11-08, and it is the one the floors actually support: a parcel
+ * under ~9 ha, a cloudy pass, and a genuinely uniform field all return null
+ * and are not distinguishable here.
+ */
+export function pickWeakestZone(zones: ZoneMean[], median: number | null): WeakestZone | null {
+    if (median === null) return null;
+
+    let worst: WeakestZone | null = null;
+    for (const z of zones) {
+        if (z.ndvi === null) continue;
+        if (z.clearPixels < MIN_ZONE_CLEAR_PIXELS) continue;
+        const delta = Math.round((z.ndvi - median) * 1000) / 1000;
+        if (delta > -MIN_ZONE_DELTA) continue;
+        // Strict `<` would never replace on a tie, so a tie keeps the FIRST
+        // in `ZONE_CODES` order — north-west first — rather than depending on
+        // whatever order Earth Engine returned the features in.
+        if (worst === null || delta < worst.delta) {
+            worst = { zone: z.zone, ndvi: z.ndvi, delta, bounds: z.bounds };
+        }
+    }
+    return worst;
+}
 
 export interface ParcelRiskResult {
     parcelId: string;
@@ -64,6 +141,24 @@ export interface ParcelRiskResult {
     acquiredDate: string | null;
     /** ISO timestamp the analysis was produced. */
     generatedAt: string;
+    /**
+     * How NDVI is DISTRIBUTED across the parcel — #2837 stage 2.
+     *
+     * `null` when there was no usable imagery. A field mean of 0.5 can be a
+     * uniformly mediocre crop or an excellent one with a failing corner, and
+     * those call for different actions; the percentiles say which.
+     *
+     * The phone shows this for the LATEST reading only (`agrent-ios`, asked
+     * 2026-11-07) — the full p10/p50/p90 on the parcel card, and at most
+     * `belowThresholdShare` charted over time.
+     */
+    withinField: WithinFieldStats | null;
+    /**
+     * The weakest part of the parcel, or `null` when it cannot be localised —
+     * #2837 stage 2b. `null` is the normal answer for a small or cloudy
+     * parcel and does NOT mean the field is even.
+     */
+    weakest: WeakestZone | null;
 }
 
 const WINDOW_DAYS = 30;
@@ -74,10 +169,29 @@ function ymd(d: Date): string {
 }
 
 /** NDVI → vegetation risk. Higher canopy vigour is better. */
+/**
+ * NDVI at or below which a pixel is in STRESS — the `watch` floor, named.
+ *
+ * Exported because stage 2's `belowThresholdShare` is "what share of the
+ * parcel is in stress", and a second spelling of 0.35 would be the mistake
+ * stage 1 already paid for once: `agrent-ios` caught that draft inventing a
+ * parallel level vocabulary, and the fix was the SHARED function rather than
+ * the right constant. A share computed against its own copy of the number
+ * would disagree with the card's own level the first time somebody retunes
+ * it, and the two would be read side by side on the same screen.
+ *
+ * It is the `watch` boundary rather than the `good` one deliberately: the
+ * actionable question for an operator is how much of the field is in trouble,
+ * not how much is short of excellent.
+ */
+export const NDVI_STRESS_THRESHOLD = 0.35;
+/** NDVI at or above which vegetation is healthy. */
+export const NDVI_GOOD_THRESHOLD = 0.6;
+
 function vegetationLevel(ndvi: number | null): RiskLevel {
     if (ndvi == null) return 'unknown';
-    if (ndvi >= 0.6) return 'good';
-    if (ndvi >= 0.35) return 'watch';
+    if (ndvi >= NDVI_GOOD_THRESHOLD) return 'good';
+    if (ndvi >= NDVI_STRESS_THRESHOLD) return 'watch';
     return 'stress';
 }
 
@@ -106,7 +220,17 @@ export async function analyzeParcelRisk(
     assertCanRead(ctx);
     const now = opts.now ?? new Date();
     const date = ymd(now);
-    const cacheKey = `parcel-risk:v1:${ctx.tenantId}:${parcelId}:${date}`;
+    // `v3` since stage 2b added `weakest`; `v2` was stage 2a's `withinField`.
+    // The rule this encodes is worth more than either bump: a field added to
+    // this payload needs the version moved, or a `v`-1 entry written before
+    // the deploy returns the key ABSENT where the contract says
+    // `X | null` — on a response the spec declares as always present. A `v2`
+    // entry written before
+    // this deploy has `withinField` but no `weakest`. Bumping is easier to
+    // reason about than normalising on read, and the cost is bounded: one
+    // Earth Engine call per parcel on its first read after deploy, which the
+    // day turning would have cost anyway.
+    const cacheKey = `parcel-risk:v3:${ctx.tenantId}:${parcelId}:${date}`;
 
     const redis = getRedis();
     if (redis) {
@@ -133,18 +257,45 @@ export async function analyzeParcelRisk(
     let ndvi: number | null = null;
     let ndmi: number | null = null;
     let acquiredDate: string | null = null;
+    let withinField: WithinFieldStats | null = null;
+    let weakest: WeakestZone | null = null;
     if (configured && geometry) {
         const win = {
             start: ymd(new Date(now.getTime() - WINDOW_DAYS * 86_400_000)),
             end: date,
         };
         try {
-            const means = await getIndexMeansForPolygon(geometry, win);
+            const means = await getIndexMeansForPolygon(geometry, win, {
+                // The SAME constant the levels use. A second spelling of 0.35
+                // would make the share disagree with the card's own level the
+                // first time somebody retunes it, and the two are read side by
+                // side on one screen.
+                stressThreshold: NDVI_STRESS_THRESHOLD,
+            });
             ndvi = means.ndvi;
             ndmi = means.ndmi;
+            withinField = means.withinField;
             acquiredDate = means.acquiredDate;
         } catch {
             /* no clear pixels / EE error — leave null, degrade to "unknown" */
+        }
+
+        // Stage 2b's SECOND Earth Engine call, and it is deliberately its own
+        // try/catch after the first. Per-cell means need `reduceRegions` over
+        // nine geometries, which cannot ride the whole-parcel `reduceRegion`
+        // — so a failure here must not cost the card its ndvi, ndmi and
+        // distribution, which have already landed.
+        //
+        // Skipped entirely when there is no median to compare against: with
+        // nothing to be below, every floor is unevaluable and the answer is
+        // `null` either way, so the call would be metered work for a known
+        // result.
+        if (withinField?.ndviP50 != null) {
+            try {
+                weakest = pickWeakestZone(await getZoneMeans(geometry, win), withinField.ndviP50);
+            } catch {
+                /* the zone grid is additive — the reading stands without it */
+            }
         }
     }
 
@@ -165,6 +316,8 @@ export async function analyzeParcelRisk(
         moisture,
         overall,
         acquiredDate,
+        withinField,
+        weakest,
         generatedAt: now.toISOString(),
     };
 

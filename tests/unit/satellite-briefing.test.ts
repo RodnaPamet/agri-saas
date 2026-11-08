@@ -91,7 +91,7 @@ beforeEach(() => {
     mocks.getSeasonRecap.mockResolvedValue(null as never);
     // `FieldIndexMeans` carries the imagery's real acquisition date alongside
     // the means; "no clear pixels" means all three are absent.
-    mocks.getIndexMeansForBounds.mockResolvedValue({ ndvi: null, ndmi: null, acquiredDate: null });
+    mocks.getIndexMeansForBounds.mockResolvedValue({ ndvi: null, ndmi: null, acquiredDate: null, withinField: null });
     mocks.generateFieldBriefing.mockResolvedValue({ headline: 'H', summary: 'S', actions: [] });
     mocks.retrieve.mockResolvedValue([]);
 });
@@ -124,6 +124,10 @@ describe('getFieldBriefing', () => {
             ndvi: 0.74,
             ndmi: 0.31,
             acquiredDate: '2026-06-12',
+            // The BOUNDS reader never computes a distribution — percentiles
+            // over a rectangle spanning a whole farm describe variation
+            // BETWEEN fields, not within one (#2837 stage 2).
+            withinField: null,
         });
         mocks.getSeasonRecap.mockResolvedValue({
             seasonName: 'Summer', year: 2026, totalAreaHa: 40, totalYieldTonnes: 0,
