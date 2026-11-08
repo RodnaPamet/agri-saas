@@ -132,6 +132,50 @@ describeFn('exchange conversations are private to people (#1298)', () => {
         expect(seen.messages[0].fromMyFarm).toBe(false);
     }, 60_000);
 
+    it('a MODERATION-REMOVED message serves no body, exactly like a deleted one (#2865)', async () => {
+        // MUTATION-PROVED INTO EXISTENCE. `getExchangeThread`'s mapping blanks
+        // a removed body, and dropping `|| m.removedByModerationAt` from it
+        // reddened NOTHING — the guard only checks the column is named in the
+        // file, and no test read a removed message back.
+        const opener = ctxFor(U_OPENER, BUYER_T, 'EDITOR');
+        const { id: threadId } = await openExchangeThread(opener, listingId);
+        await sendExchangeMessage(opener, threadId, 'first, and it stays');
+        await sendExchangeMessage(opener, threadId, 'second, and it goes');
+
+        const before = await getExchangeThread(opener, threadId, {});
+        // Found BY BODY, not by position. `openExchangeThread` is idempotent,
+        // so this is the same thread the control test above already sent into
+        // — `messages.at(-1)` picked up that message and the assertion failed
+        // on a message this test never wrote.
+        const target = before.messages.find((m) => m.body === 'second, and it goes')!;
+        // CONTROL: the body is there to lose, and the other message is the
+        // control for the one that is removed — "no body" is satisfied by a
+        // read that returns nothing for anybody.
+        expect(target.body).toBe('second, and it goes');
+        expect(target.deleted).toBe(false);
+
+        // Stamped directly rather than through `actOnNotice`: the subject here
+        // is the READ, and a notice plus a decision would put two mechanisms
+        // in one assertion. `moderation-content-removal` covers the write.
+        await globalPrisma.$executeRawUnsafe(
+            `UPDATE "ExchangeMessage" SET "removedByModerationAt" = NOW() WHERE "id" = $1`,
+            target.id,
+        );
+
+        const after = await getExchangeThread(opener, threadId, {});
+        const removed = after.messages.find((m) => m.id === target.id)!;
+        // Identical to a deleted message, deliberately: telling the
+        // counterparty WHICH it was would disclose a moderation action to a
+        // third party that nothing requires it to know.
+        expect(removed.body).toBeNull();
+        expect(removed.deleted).toBe(true);
+        // And the untouched message is untouched, so this is a per-row
+        // decision rather than the thread going dark.
+        const kept = after.messages.find((m) => m.body === 'first, and it stays')!;
+        expect(kept).toBeDefined();
+        expect(kept.deleted).toBe(false);
+    }, 60_000);
+
     it('THE REGRESSION: a colleague at the buyer farm cannot see the thread at all', async () => {
         // The two-phone finding, as an assertion. `U_BUYER_COLLEAGUE` has an
         // ACTIVE membership at the same farm as the opener and is neither the

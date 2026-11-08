@@ -6814,6 +6814,8 @@
         "CROP_SEASON_NOT_FOUND": "That crop season was not found.",
         "CROP_SEASON_YEAR_INVALID": "That harvest year is out of range — it must be between {min} and {max}.",
         "CROP_TYPE_INVALID": "A crop is required.",
+        "MODERATION_ACTION_NOT_PERFORMABLE": "This platform cannot carry out that outcome, so it was not recorded.",
+        "MODERATION_SUBJECT_GONE": "That content is no longer there to remove.",
         "PARCEL_COMMENT_EMPTY": "A note cannot be empty.",
         "PARCEL_COMMENT_NOT_FOUND": "Note not found.",
         "PARCEL_COMMENT_TOO_LONG": "That note is too long.",
