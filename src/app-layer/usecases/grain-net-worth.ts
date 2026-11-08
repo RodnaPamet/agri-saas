@@ -182,18 +182,26 @@ const KG_PER_TONNE = 1000;
 // a distinction worth stating where the old comment stood.
 //
 // `ParcelLease` still has no currency column — that part has not changed. What
-// changed is that the UNIT now answers the question: `MONEY_RENT_UNIT_CURRENCY`
-// maps `€/дка` to EUR and `лв/дка` to BGN, and `resolveRentBasis` converts the
-// second at the fixed peg before returning. So a money rent arrives here
-// already labelled, and the sentinel has no producer on this path.
+// changed is that the UNIT answers the question: `MONEY_RENT_UNIT_CURRENCY`
+// maps `€/дка` to EUR and `лв/дка` to BGN, and `resolveRentBasis` returns only
+// the first as money. So a money rent arrives here already labelled, and the
+// sentinel has no producer on this path.
+//
+// #2793 closed the one change that would have given it one. That change was
+// named here in advance — "adding a foreign money unit to
+// `MONEY_RENT_UNIT_CURRENCY` with no conversion for it" — and it is exactly
+// what removing the fixed peg did to `лв/дка`, which had been converted at
+// 1.95583 until then. `resolveRentBasis` refuses such a unit rather than
+// returning it unlabelled, so a lev lease arrives at `computeRent` as
+// `resolved: false` and lands in `leasesUnresolvedRent` with a reason, which
+// is a NAMED exclusion rather than an unlabelled figure.
 //
 // The CONSUMER remains and is deliberately untouched: the
 // `RENT_CURRENCY_UNRECORDED` branch below still withholds net worth if a
-// money rent ever arrives unlabelled. So this is a guard with no current
-// producer rather than dead code, and one change would give it one again —
-// adding a foreign money unit to `MONEY_RENT_UNIT_CURRENCY` with no
-// conversion for it, which is exactly what `normaliseCostToEur` refuses with
-// `FOREIGN` on the cost side.
+// money rent ever arrives unlabelled. It is a guard with no producer and no
+// longer with an obvious way to acquire one — the refusal is upstream of it
+// now — so treat it as defence in depth rather than as a branch waiting for
+// a case.
 //
 // The DTO's `rentCurrencyUnknown` is therefore always false today. Confirmed
 // with the iOS session before changing it: the phone reads that flag per crop
@@ -372,8 +380,10 @@ export interface CommodityNetWorthRow {
     typedCropCost: number;
     typedCropCostCurrencies: string[];
 
-    /** Money-denominated (лв/дка) rent attributed to this commodity's
-     *  plantings. EURO — converted at the peg when the lease is in лв/дка. */
+    /** Money-denominated (€/дка) rent attributed to this commodity's
+     *  plantings, in EURO. `€/дка` is the only money unit that reaches here:
+     *  a `лв/дка` lease is refused by `resolveRentBasis` since #2793 and lands
+     *  in `leasesUnresolvedRent` instead of being converted at the peg. */
     rentCostMoneyAmount: number;
     /** Produce-denominated (кг/дка) rent attributed to this commodity's
      *  plantings, in kilograms — a MASS, never added to money directly. */
@@ -712,8 +722,11 @@ interface CommodityAcc {
     attributedCropCostCurrencyMixed: boolean;
     rentCostMoneyAmount: number;
     /**
-     * The currencies the money rent arrived in — EUR for every recognised
-     * money unit since the peg conversion landed in `resolveRentBasis`.
+     * The currencies the money rent arrived in — always EUR, because `€/дка`
+     * is the only money unit `resolveRentBasis` resolves. It used to be EUR
+     * for every recognised money unit, `лв/дка` included, via the peg
+     * conversion that #2793 removed; the SET is the same, by refusal now
+     * rather than by conversion.
      *
      * Carried rather than assumed. This used to be the sentinel
      * `UNKNOWN_RENT_CURRENCY`, applied to any non-zero money rent regardless
@@ -1513,13 +1526,19 @@ function computeCashOut(rows: readonly CostEntryRow[]): GrainCashOutLine[] {
          * one currency, which is the farm-visible half: the owner's own farm
          * records all three.
          *
-         * #2547 deliberately did NOT do this, and its reasoning is worth
-         * keeping rather than deleting with the line: collapsing `'BGN'` here
-         * would relabel a lev amount as euro without dividing it by the peg,
-         * overstating it by 1.95583x. That was exactly right while the amounts
-         * were raw. It is safe now only because this change converts them at
-         * the read site in the same commit — the label and the amount move
+         * #2547 deliberately did NOT do this, and its reasoning is the rule
+         * that has since governed three changes: collapsing `'BGN'` here would
+         * relabel a lev amount as euro without dividing it by the peg,
+         * overstating it by 1.95583x — so the LABEL and the AMOUNT move
          * together or neither moves.
+         *
+         * #2546 moved both (fold BGN here, convert at the read site, one
+         * commit). #2793 moved both BACK: `canonicalCostCurrency` no longer
+         * folds BGN and `normaliseCostToEur` no longer converts it, so a lev
+         * row keeps its code and its figure and is withheld from the euro
+         * total. The rule held through the removal exactly as it held through
+         * the addition, which is the point of stating it as an invariant
+         * rather than as a note about one direction.
          *
          * A genuinely foreign code is still left as stored and still gets its
          * own bucket, unconverted, because there is no rate to use.
@@ -1637,8 +1656,11 @@ function finalizeRow(
      * overstating the crop side by the 1.95583 peg. The comparison had been
      * the only thing preventing that blend, and relabelling removed it.
      *
-     * So the AMOUNT moves with the label, which is the rule `isStoredAsEuro`
-     * states: relabelling without dividing by the peg overstates.
+     * So the AMOUNT moves with the label — the invariant stated at the cost
+     * read site above. #2793 removed the lev half of BOTH: nothing folds a
+     * `BGN` label here and nothing converts a `BGN` amount, so an all-lev farm
+     * is coherent in lev again, exactly as it was before #2546. Normalising
+     * the euro SPELLINGS is untouched and is what this block is now for.
      *
      * A genuinely FOREIGN price keeps its RAW amount and its own code,
      * deliberately. There is no FX table in this product, so a dollar price
@@ -1778,12 +1800,19 @@ function finalizeRow(
         } else if (onlyCurrency !== canonicalCostCurrency(priceCurrency)) {
             // BOTH sides canonicalised, or this check breaks the farms it is
             // meant to serve. The question it asks is "are these two figures
-            // ADDABLE", and the fixed peg makes lev and euro addable — so a
-            // BGN price against BGN costs must still compute, even though the
-            // costs now arrive canonicalised to EUR. Comparing a canonical
-            // cost currency against a RAW price currency would refuse exactly
-            // that farm, turning one refusal (mixed) into another (mismatch)
-            // and looking like the fix had done nothing.
+            // ADDABLE", and `'EUR'` vs `'EURO'` is a spelling rather than a
+            // currency — so a farm whose costs read `'EURO'` and whose price
+            // reads `'EUR'` must still compute. Comparing a canonical cost
+            // currency against a RAW price currency would refuse exactly that
+            // farm, turning one refusal (mixed) into another (mismatch) and
+            // looking like the fix had done nothing.
+            //
+            // This used to be argued from the PEG — lev and euro were addable,
+            // so a BGN price against BGN costs had to compute. #2793 removed
+            // the peg, and the two sides moved together: neither the label nor
+            // the amount is folded now, so an all-BGN farm matches ITSELF here
+            // and is coherent in lev rather than addable to euro. The
+            // canonicalise-both rule survives on the spellings alone.
             netWorthUnavailableCode = 'COST_PRICE_CURRENCY_MISMATCH';
             netWorthUnavailableParams = {
                 costCurrency: onlyCurrency,
@@ -2051,6 +2080,14 @@ async function loadTenantRows(db: PrismaTx, ctx: RequestContext, seasonId: strin
      * safe. Relabelling a lev row EUR without dividing by the peg overstates
      * it by 1.95583x — exactly what `isStoredAsEuro`'s docblock warns about —
      * so the two must happen together or neither.
+     *
+     * #2793 took the lev half out of BOTH, which is the only way to remove a
+     * peg without breaking that rule: `normaliseCostToEur` now refuses `BGN`
+     * `FOREIGN` and `canonicalCostCurrency` leaves the label alone, so such a
+     * row falls through the branch below with its own code and its own figure.
+     * The euro SPELLINGS still fold and still convert, which is the behaviour
+     * #2546 was built for and which no production row has needed since the
+     * one lev cost entry was deleted on 2026-11-06.
      *
      * A FOREIGN row keeps its raw code AND its raw amount, deliberately. It
      * then trips `cashCostCurrencyMixed` and the figure is withheld, which is

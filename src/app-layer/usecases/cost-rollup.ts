@@ -393,10 +393,15 @@ async function computePlantingCostRows(
     // 2026-10-26, the calculator is EUR-only.
     //
     // A `_sum` over mixed currencies is a blend performed in SQL, before any
-    // code can see the parts, so a lev amount could not be converted at the
-    // peg afterwards: 1 BGN had already been added as 1 unit. Putting the
+    // code can see the parts, so a non-euro amount could not be withheld
+    // afterwards: 1 BGN would already have been added as 1 unit. Putting the
     // currency in `by` keeps each currency's subtotal separable, which is what
     // `normaliseCostToEur` needs.
+    //
+    // That argument got STRONGER in #2793, not weaker. Lev used to be
+    // convertible at the fixed peg, so an unsplit sum was recoverable in
+    // principle; now it is refused, so an unsplit sum silently counts it at
+    // face value and nothing downstream can tell.
     //
     // It also removes a query. The separate `distinct` read that used to
     // follow existed only because "currency cannot ride on a _sum" — with the
@@ -526,9 +531,9 @@ async function computePlantingCostRows(
     for (const entry of logEntries) {
         const targets = plantingsByEntry.get(entry.id);
         if (!targets?.size) continue;
-        // EUR-only: lev converts at the fixed peg, euro in any spelling and an
-        // unrecorded currency pass through, a genuinely foreign currency is
-        // withheld and recorded so the caller still refuses to blend it.
+        // EUR-only: euro in any spelling and an unrecorded currency pass
+        // through; anything else — lev included since #2793 — is withheld and
+        // recorded, so the caller still refuses to blend it.
         const n = normaliseCostToEur(dec(entry.costAmount), entry.costCurrency);
         const share = (n.eur ?? 0) / targets.size;
         for (const pid of targets) {

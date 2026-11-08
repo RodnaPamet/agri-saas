@@ -61,7 +61,7 @@ describeFn('parcel lease register (RLS)', () => {
             lessorEik: '203045511',
             kind: 'ARENDA',
             rentAmount: 60,
-            rentUnit: 'лв/дка',
+            rentUnit: '€/дка',
             startDate: '2026-01-01',
             endDate: '2031-01-01',
         });
@@ -80,7 +80,7 @@ describeFn('parcel lease register (RLS)', () => {
             lessorName: 'Агро ЕООД',
             kind: 'NAEM',
             rentAmount: 75,
-            rentUnit: 'лв/дка',
+            rentUnit: '€/дка',
         });
         expect(updated.kind).toBe('NAEM');
         expect(String(updated.rentAmount)).toBe('75');
@@ -95,5 +95,126 @@ describeFn('parcel lease register (RLS)', () => {
         await expect(
             createParcelLease(ctx(), parcelId, { lessorName: '   ', kind: 'ARENDA' }),
         ).rejects.toThrow(/lessor/i);
+    });
+});
+
+/*
+ * The #2793 rent-unit refusal.
+ *
+ * The lev peg is gone, so a `лв/дка` lease has no honest per-hectare figure
+ * anywhere in the product (`resolveRentBasis` reports it unresolved). Refusing
+ * it at the WRITE is what stops a lease saving, listing, and then being
+ * excluded from every cost figure with nobody told why.
+ *
+ * Three properties, and the second and third are what keep the refusal from
+ * being a trap rather than a rule.
+ */
+describeFn('parcel lease — a lev rent unit is refused on write (#2793)', () => {
+    const levInput = {
+        lessorName: 'Лев ЕООД',
+        kind: 'ARENDA' as const,
+        rentAmount: 60,
+        rentUnit: 'лв/дка',
+    };
+
+    test('refuses a лв/дка rent on CREATE, with the coded refusal and its params', async () => {
+        const err = await createParcelLease(ctx(), parcelId, levInput).then(
+            () => null,
+            (e: unknown) => e as { code?: string; params?: Record<string, unknown>; status?: number },
+        );
+        // Asserted as a captured error rather than `rejects.toThrow(/…/)`: the
+        // MESSAGE is server prose the client replaces with its own copy, so
+        // the code and the params are the contract. `expected` is what the
+        // form needs to offer, and a refusal naming no alternative leaves the
+        // operator guessing.
+        expect(err).not.toBeNull();
+        expect(err?.code).toBe('LEASE_RENT_UNIT_NOT_EUR');
+        expect(err?.params).toMatchObject({ unit: 'лв/дка', currency: 'BGN', expected: '€/дка' });
+    });
+
+    test('refuses a lev ALIAS too, not only the canonical spelling', async () => {
+        // The refusal is keyed on the CANONICAL unit, so every alias
+        // `canonicalRentUnit` folds onto `лв/дка` is covered by construction —
+        // which is the reason it is not a string comparison on the raw text.
+        // `rentUnitRaw` preserves what was typed, so `params.unit` reports it.
+        for (const typed of ['lv/dka', 'ЛВ / ДКА', 'лв./дка']) {
+            const err = await createParcelLease(ctx(), parcelId, { ...levInput, rentUnit: typed }).then(
+                () => null,
+                (e: unknown) => e as { code?: string; params?: Record<string, unknown> },
+            );
+            expect({ typed, code: err?.code, unit: err?.params?.unit })
+                .toEqual({ typed, code: 'LEASE_RENT_UNIT_NOT_EUR', unit: typed });
+        }
+    });
+
+    test('ACCEPTS €/дка and кг/дка — the refusal is not a ban on the field', async () => {
+        // The positive control, and it is doing real work: a refusal that
+        // fired on every unit would pass both cases above while making the
+        // lease register unusable. `кг/дка` is here because produce rent has
+        // no currency at all and must never be judged by a currency rule.
+        for (const unit of ['€/дка', 'кг/дка', 'eur/dka', 'кг./дка']) {
+            const lease = await createParcelLease(ctx(), parcelId, { ...levInput, rentUnit: unit });
+            expect({ unit, saved: lease.rentUnitRaw }).toEqual({ unit, saved: unit });
+            await deleteParcelLease(ctx(), lease.id);
+        }
+    });
+
+    test('a LEGACY lev lease still edits, as long as its unit is not changed', async () => {
+        // The half that makes this safe to ship, and it mirrors
+        // `COST_ENTRY_LEGACY_CURRENCY_LOCKED` exactly: restating a row's own
+        // value verbatim is not a change. The form posts every field, so an
+        // operator correcting the LESSOR'S NAME resubmits the stored `лв/дка`
+        // — and a flat check would refuse that edit, leaving a legacy lease
+        // permanently uncorrectable.
+        //
+        // Written DIRECTLY through Prisma because the usecase now refuses this
+        // shape: there is no way to create the row the test needs through the
+        // API, which is the point. Production has 0 leases (measured
+        // 2026-11-06), so this row exists nowhere but here.
+        const legacy = await prisma.parcelLease.create({
+            data: {
+                tenantId: TENANT_ID,
+                parcelId,
+                lessorName: 'Стар Лев ЕООД',
+                kind: 'ARENDA',
+                rentAmount: 60,
+                rentUnit: 'лв/дка',
+                rentUnitRaw: 'лв/дка',
+            },
+            select: { id: true },
+        });
+
+        const updated = await updateParcelLease(ctx(), legacy.id, {
+            lessorName: 'Нов Лев ЕООД',
+            kind: 'ARENDA',
+            rentAmount: 60,
+            rentUnit: 'лв/дка',
+        });
+        expect(updated.lessorName).toBe('Нов Лев ЕООД');
+        expect(updated.rentUnit).toBe('лв/дка');
+
+        // The way OUT is `€/дка`, and it is accepted — so the exemption is a
+        // grandfather clause rather than a dead end.
+        const toEuro = await updateParcelLease(ctx(), legacy.id, {
+            lessorName: 'Нов Лев ЕООД',
+            kind: 'ARENDA',
+            rentAmount: 30,
+            rentUnit: '€/дка',
+        });
+        expect(toEuro.rentUnit).toBe('€/дка');
+
+        // And the door shuts behind it: the exemption is keyed on the row's
+        // OWN stored unit, so the same lease can no longer be moved BACK to
+        // lev. This is what stops "legacy" being a hole — without it, any
+        // lease could reach `лв/дка` in two edits.
+        const err = await updateParcelLease(ctx(), legacy.id, {
+            lessorName: 'Нов Лев ЕООД',
+            kind: 'ARENDA',
+            rentAmount: 30,
+            rentUnit: 'лв/дка',
+        }).then(() => null, (e: unknown) => e as { code?: string });
+        expect(err?.code).toBe('LEASE_RENT_UNIT_NOT_EUR');
+
+        await deleteParcelLease(ctx(), legacy.id);
     });
 });
