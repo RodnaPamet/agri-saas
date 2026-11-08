@@ -109,6 +109,12 @@ export function assertRecordableRentUnit(
     raw: string | null,
     stored?: string | null,
 ): void {
+    // The null check is SEPARATE from `isMoneyRentUnit`, which answers false
+    // for null and would make it redundant at runtime. It is here so the
+    // narrowing reaches `params` below: `unit` and `currency` are
+    // `string | number`, and the alternative is a cast, which would erase the
+    // target a later mistake has to fail against.
+    if (canonical == null) return;
     if (!isMoneyRentUnit(canonical) || isRecordedMoneyRentUnit(canonical)) return;
     if (stored != null && canonical === stored) return;
     throw codedBadRequest(
@@ -116,7 +122,7 @@ export function assertRecordableRentUnit(
         `Money rent is recorded in ${RENT_MONEY_CURRENCY}. Enter the rent as ${RENT_UNIT_EUR}.`,
         {
             unit: raw ?? canonical,
-            currency: MONEY_RENT_UNIT_CURRENCY[canonical as string],
+            currency: MONEY_RENT_UNIT_CURRENCY[canonical],
             expected: RENT_UNIT_EUR,
         },
     );
