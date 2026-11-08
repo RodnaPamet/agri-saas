@@ -149,6 +149,7 @@ describe('analyzeParcelRisk — the within-field distribution (#2837 stage 2)', 
             ndviP90: 0.88,
             belowThresholdShare: 0.07,
             threshold: NDVI_STRESS_THRESHOLD,
+            coverage: 0.98,
         };
         mockGetIndexMeansForPolygon.mockResolvedValue({
             ndvi: 0.72,
@@ -191,6 +192,7 @@ describe('analyzeParcelRisk — cache condition (degraded readings must not stic
                 ndviP90: 0.88,
                 belowThresholdShare: 0.07,
                 threshold: 0.35,
+                coverage: 0.98,
             },
         });
 

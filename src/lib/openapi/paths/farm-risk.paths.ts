@@ -49,6 +49,7 @@ const WithinField = z
         ndviP90: z.number().nullable(),
         belowThresholdShare: z.number().nullable(),
         threshold: z.number(),
+        coverage: z.number().nullable(),
     })
     .openapi('ParcelWithinField', {
         description:
@@ -65,7 +66,15 @@ const WithinField = z
             'Read `ndviP50` against `ndvi` (the mean): a mean well below the median ' +
             'means a minority of very poor pixels is dragging it down, which is a ' +
             'different problem from a uniformly mediocre crop and wants a different ' +
-            'action.',
+            'action.\n\n' +
+            '`coverage` is the DENOMINATOR made explicit: what share of the parcel the ' +
+            'composite could see at all, 0..1. It is the share of parcel pixels with ' +
+            'at least one clear observation across the whole window — NOT one pass\u2019s ' +
+            'clear share, which would describe a different picture from these numbers, ' +
+            'since they are a 30-day median over many passes. Near 1 is the normal ' +
+            'case and is not worth telling anyone; well below 1 is when saying how ' +
+            'much of the field was visible stops the other figures from being read as ' +
+            'statements about the whole parcel.',
     });
 
 const ParcelRisk = z

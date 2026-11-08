@@ -558,6 +558,28 @@ export interface WithinFieldStats {
      * same constant the risk levels use — see `NDVI_STRESS_THRESHOLD`.
      */
     threshold: number;
+    /**
+     * What share of the PARCEL the composite could see at all, 0..1 — the
+     * denominator every other figure here is relative to.
+     *
+     * `agrent-ios` asked for this and corrected the shape I offered, which is
+     * worth recording because the correction is the whole point. I proposed
+     * surfacing a single PASS's clear share — the number `adaptiveS2Collection`
+     * already computes to decide whether to keep a scene. That describes a
+     * different picture from the numbers beside it: `/analysis` is a 30-day
+     * MEDIAN over many passes, so the right denominator is the share of parcel
+     * pixels with at least ONE clear observation in the window, not the share
+     * one scene happened to see.
+     *
+     * So it is the COMPOSITE's mask: `ndvi.mask()` is 1 where some pass
+     * contributed and 0 where none did, unmasked so the mean's denominator is
+     * every parcel pixel rather than only the observed ones. One more band on
+     * the same `reduceRegion`.
+     *
+     * Near 1 is the normal case and the phone stays quiet about it; well below
+     * 1 is when «видими 60 % от парцела» is worth saying.
+     */
+    coverage: number | null;
 }
 
 /** Field-area mean vegetation-index readings (the AI-briefing input). */
@@ -716,6 +738,17 @@ export async function getIndexMeansForPolygon(
                       (ndvi as unknown as { lt: (v: number) => EeImage })
                           .lt(threshold)
                           .rename('NDVIBELOW'),
+                  )
+                  // The COMPOSITE's coverage: 1 where at least one pass
+                  // contributed a clear pixel, 0 where none did. `unmask(0)`
+                  // is what makes the mean's denominator every parcel pixel
+                  // rather than only the observed ones — without it this band
+                  // would read 1.0 everywhere it is defined and say nothing.
+                  .addBands(
+                      (ndvi as unknown as { mask: () => EeImage })
+                          .mask()
+                          .unmask(0)
+                          .rename('COVERAGE'),
                   );
     const combined = bands.clip(region);
 
@@ -777,6 +810,7 @@ export async function getIndexMeansForPolygon(
                       ndviP90: round3(info.NDVI_p90),
                       belowThresholdShare: round3(info.NDVIBELOW_mean),
                       threshold,
+                      coverage: round3(info.COVERAGE_mean),
                   },
     };
 }

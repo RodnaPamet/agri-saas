@@ -182,6 +182,37 @@ describe('the clear share counts outside-the-footprint as NOT clear', () => {
         expect(body).toMatch(/\.unmask\(0\)/);
     });
 
+    it('the COMPOSITE coverage band is unmasked too, and read back', () => {
+        /*
+         * #2837 stage 2a. `withinField.coverage` answers "what share of the
+         * parcel could the composite see at all", and it is the denominator
+         * every other figure in that object is relative to.
+         *
+         * `ndvi.mask()` is 1 where some pass contributed and 0 where none did
+         * — but only where the mask image itself is defined. Without
+         * `.unmask(0)` the mean's denominator is the OBSERVED pixels rather
+         * than every parcel pixel, so coverage reads ~1.0 whatever the cloud
+         * did: "we saw everything", the reassuring direction, on a parcel that
+         * was half hidden. Then `belowThresholdShare` gets read as a statement
+         * about the field, which is the error `coverage` exists to prevent.
+         *
+         * Pinned on the SOURCE because the unit suite mocks
+         * `getIndexMeansForPolygon` wholesale, so nothing there executes the
+         * band construction — measured: removing the `unmask(0)` and even
+         * hardwiring `coverage: null` left all 36 unit tests green. A mutation
+         * surviving says where the assertion has to live, not that the code is
+         * fine.
+         */
+        const body = bodyOf('getIndexMeansForPolygon');
+        const coverage = body.slice(body.indexOf("rename('COVERAGE')") - 220, body.indexOf("rename('COVERAGE')"));
+        expect(body).toContain("rename('COVERAGE')");
+        expect(coverage).toContain('.mask()');
+        expect(coverage).toContain('.unmask(0)');
+        // …and the value actually reaches the DTO. A band computed and never
+        // read is the same as no band.
+        expect(body).toContain('COVERAGE_mean');
+    });
+
     it('…and reduces at the same scale as the reading it gates', () => {
         // A clear share measured at 100 m over a mask applied at 20 m would
         // admit passes whose clear pixels do not survive the reduction.

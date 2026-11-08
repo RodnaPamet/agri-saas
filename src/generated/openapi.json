@@ -13989,6 +13989,12 @@
           },
           "threshold": {
             "type": "number"
+          },
+          "coverage": {
+            "type": [
+              "number",
+              "null"
+            ]
           }
         },
         "required": [
@@ -13996,9 +14002,10 @@
           "ndviP50",
           "ndviP90",
           "belowThresholdShare",
-          "threshold"
+          "threshold",
+          "coverage"
         ],
-        "description": "NDVI distribution across the parcel. **Every figure is over the CLEAR area, not the whole field** — cloud, shadow, cirrus and snow are masked out and masked pixels are not counted, so `belowThresholdShare: 0.3` means \"30% of what the satellite could see is in stress\", NOT \"30% of the field\". Nothing can be said about ground under cloud, and the alternatives both invent a reading: counting cloud as healthy makes a mostly-clouded parcel look fine, counting it as stressed cries wolf.\n\n`threshold` is echoed rather than assumed — it is the same NDVI value the `vegetation` level uses for its `stress` boundary, so the share and the level on the same screen cannot disagree.\n\nRead `ndviP50` against `ndvi` (the mean): a mean well below the median means a minority of very poor pixels is dragging it down, which is a different problem from a uniformly mediocre crop and wants a different action."
+        "description": "NDVI distribution across the parcel. **Every figure is over the CLEAR area, not the whole field** — cloud, shadow, cirrus and snow are masked out and masked pixels are not counted, so `belowThresholdShare: 0.3` means \"30% of what the satellite could see is in stress\", NOT \"30% of the field\". Nothing can be said about ground under cloud, and the alternatives both invent a reading: counting cloud as healthy makes a mostly-clouded parcel look fine, counting it as stressed cries wolf.\n\n`threshold` is echoed rather than assumed — it is the same NDVI value the `vegetation` level uses for its `stress` boundary, so the share and the level on the same screen cannot disagree.\n\nRead `ndviP50` against `ndvi` (the mean): a mean well below the median means a minority of very poor pixels is dragging it down, which is a different problem from a uniformly mediocre crop and wants a different action.\n\n`coverage` is the DENOMINATOR made explicit: what share of the parcel the composite could see at all, 0..1. It is the share of parcel pixels with at least one clear observation across the whole window — NOT one pass’s clear share, which would describe a different picture from these numbers, since they are a 30-day median over many passes. Near 1 is the normal case and is not worth telling anyone; well below 1 is when saying how much of the field was visible stops the other figures from being read as statements about the whole parcel."
       },
       "ParcelsByCrop": {
         "type": "object",
