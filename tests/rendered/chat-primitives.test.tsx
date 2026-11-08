@@ -822,8 +822,320 @@ describe('MessageBubble — the report control (#2833)', () => {
         const btn = screen.getByRole('button', { name: LABEL });
         // `opacity-0`, NOT `hidden` — hidden is not tabbable, which is the
         // whole reason the reaction control uses opacity too.
-        expect(btn.className).toContain('opacity-0');
+        //
+        // `classList` since #2829, and the change is not cosmetic: measured by
+        // mutation, `className.toContain('opacity-0')` is satisfied by
+        // `IconAction`'s own `before:opacity-0` / `disabled:opacity-0` base
+        // classes, so this assertion passed with `className="hidden"` passed
+        // in. It graded nothing. Whole-token comparison plus the explicit
+        // absence of `hidden` is what makes it fail.
+        expect(btn.classList.contains('opacity-0')).toBe(true);
+        expect(btn.classList.contains('hidden')).toBe(false);
         btn.focus();
         expect(btn).toHaveFocus();
+    });
+});
+
+// ────── §13 the reply half — the quote, the control, and the swipe ──────
+
+/**
+ * #2829's component stage. Three things landed together and the grouping is
+ * the point rather than convenience:
+ *
+ *   · the QUOTE, because a reply with no visible context is a message only
+ *     the sender can read;
+ *   · the CONTROL, because a swipe is invisible to a keyboard and to a screen
+ *     reader — `<SwipeRow>`'s rule, which every gesture in this product
+ *     inherits;
+ *   · the SWIPE, which is the part jsdom hides: `tests/rendered/setup.ts`
+ *     answers `matches: false` to every query, so the coarse branch is dead
+ *     code unless a test installs its own `matchMedia`. That is the gap the
+ *     #449 tooltip regression shipped through.
+ *
+ * The case that is easiest to get wrong is the last one in this block: both
+ * gestures live on the SAME element, and `{...a} {...b}` keeps only the second
+ * set — silently, with no warning and no type error.
+ */
+describe('MessageBubble reply — quote, control and gesture', () => {
+    const AT = new Date('2026-11-07T09:00:00Z');
+    const REPLY_LABEL = 'Отговори';
+    let originalMatchMedia: typeof window.matchMedia;
+
+    beforeEach(() => {
+        originalMatchMedia = window.matchMedia;
+        setViewport('mobile');
+    });
+
+    afterEach(() => {
+        window.matchMedia = originalMatchMedia;
+        restoreViewport();
+    });
+
+    /** Same shape as §11's: a stub that answers only the coarse features. */
+    function installPointerClass(coarse: boolean) {
+        window.matchMedia = ((query: string) =>
+            ({
+                matches: coarse && COARSE_FEATURE_RE.test(query),
+                media: query,
+                onchange: null,
+                addListener: () => {},
+                removeListener: () => {},
+                addEventListener: () => {},
+                removeEventListener: () => {},
+                dispatchEvent: () => false,
+            }) as unknown as MediaQueryList) as typeof window.matchMedia;
+    }
+
+    function mountBubble(coarse: boolean, over: Record<string, unknown> = {}) {
+        installPointerClass(coarse);
+        const onRequestReply = jest.fn();
+        const onRequestReactions = jest.fn();
+        mount(
+            <MessageBubble
+                body="hello"
+                createdAt={AT}
+                mine={false}
+                onRequestReply={onRequestReply}
+                replyLabel={REPLY_LABEL}
+                onRequestReactions={onRequestReactions}
+                reactionsLabel="React"
+                {...over}
+            />,
+        );
+        return { onRequestReply, onRequestReactions };
+    }
+
+    /** Drag from (x0,y0) by (dx,dy) and release. */
+    function swipe(el: HTMLElement, dx: number, dy = 0) {
+        fireEvent.pointerDown(el, { clientX: 100, clientY: 100 });
+        fireEvent.pointerMove(el, { clientX: 100 + dx, clientY: 100 + dy });
+        fireEvent.pointerUp(el);
+    }
+
+    describe('the quoted preview', () => {
+        it('renders the quoted body above the message', () => {
+            mount(
+                <MessageBubble
+                    body="480 €/t"
+                    createdAt={AT}
+                    mine={false}
+                    replyTo={{ senderLabel: 'Иван', body: 'Колко искате?', deleted: false }}
+                />,
+            );
+            expect(screen.getByText(/Колко искате\?/)).toBeInTheDocument();
+            expect(screen.getByText('Иван:')).toBeInTheDocument();
+            expect(screen.getByText('480 €/t')).toBeInTheDocument();
+        });
+
+        it('renders the DELETED copy for a retracted target, not its old body', () => {
+            // `deleted` is read rather than `!body`, and this is the case that
+            // separates them: the API withholds the body AND sets the flag, so
+            // a component reading only the body cannot tell this from a
+            // photo-only message.
+            mount(
+                <MessageBubble
+                    body="отговор"
+                    createdAt={AT}
+                    mine={false}
+                    replyTo={{ senderLabel: 'Иван', body: null, deleted: true }}
+                />,
+            );
+            expect(screen.getByText(COPY.messageDeleted)).toBeInTheDocument();
+        });
+
+        it('does NOT render the deleted copy for a photo-only target', () => {
+            // The control for the case above. A photo-only message has a null
+            // body too (P8.6 made the column nullable), so a component that
+            // inferred "deleted" from the body would call a photograph a
+            // retraction — and the assertion above would pass either way.
+            mount(
+                <MessageBubble
+                    body="хубава снимка"
+                    createdAt={AT}
+                    mine={false}
+                    replyTo={{ senderLabel: 'Иван', body: null, deleted: false }}
+                />,
+            );
+            expect(screen.queryByText(COPY.messageDeleted)).not.toBeInTheDocument();
+            expect(screen.getByText('хубава снимка')).toBeInTheDocument();
+        });
+
+        it('renders no quote at all when the message is not a reply', () => {
+            // Without this the three above are satisfied by a component that
+            // always renders a quote block, empty or not.
+            mount(<MessageBubble body="hello" createdAt={AT} mine={false} />);
+            expect(screen.getByText('hello')).toBeInTheDocument();
+            expect(screen.queryByText('Иван:')).not.toBeInTheDocument();
+        });
+    });
+
+    describe('the focusable control — the keyboard path', () => {
+        it('is a real button, reachable by Tab, on a FINE pointer where no gesture exists', () => {
+            // The whole reason the control exists. On a desktop the swipe is
+            // not attached at all, so this button is the only way to reply.
+            const { onRequestReply } = mountBubble(false);
+            const btn = screen.getByRole('button', { name: REPLY_LABEL });
+            // `classList`, NOT `className.toContain`. MEASURED: `IconAction`'s
+            // own base classes include `before:opacity-0` and
+            // `disabled:opacity-0`, so a SUBSTRING match is satisfied whatever
+            // this call site passes — swapping the prop for `hidden` left the
+            // assertion green. `classList` compares whole tokens, so
+            // `before:opacity-0` is a different class and cannot stand in.
+            //
+            // The ABSENCE of `hidden` is the half that carries the property:
+            // jsdom applies no CSS, so `hidden` here would still be focusable
+            // in the test and not in a browser — the className is the only
+            // observable, and it has to be read exactly.
+            expect(btn.classList.contains('opacity-0')).toBe(true);
+            expect(btn.classList.contains('hidden')).toBe(false);
+            btn.focus();
+            expect(btn).toHaveFocus();
+            fireEvent.click(btn);
+            expect(onRequestReply).toHaveBeenCalledTimes(1);
+        });
+
+        it('is ALSO in the DOM on a coarse pointer, beside the gesture', () => {
+            // A gesture is an enhancement over a control, never a replacement:
+            // a screen-reader user on a phone has the gesture and cannot use
+            // it, so removing the button on touch would be the defect.
+            mountBubble(true);
+            expect(screen.getByRole('button', { name: REPLY_LABEL })).toBeInTheDocument();
+        });
+
+        it('is offered on your OWN message, unlike «Сигнализирай»', () => {
+            // The deliberate asymmetry with the report control. Replying to
+            // something you said is ordinary, and there is no competing
+            // control to confuse it with.
+            mountBubble(false, { mine: true });
+            expect(screen.getByRole('button', { name: REPLY_LABEL })).toBeInTheDocument();
+        });
+
+        it('is NOT offered on a DELETED message', () => {
+            // The API accepts a deleted TARGET so a reply survives a
+            // retraction — not so one can be started against a message with
+            // nothing left in it, which would quote «изтрито» before anybody
+            // read what was being answered.
+            mountBubble(false, { body: '', deletedAt: AT });
+            expect(screen.queryByRole('button', { name: REPLY_LABEL })).not.toBeInTheDocument();
+        });
+
+        it('renders nothing when no callback is supplied — the control', () => {
+            mount(<MessageBubble body="hello" createdAt={AT} mine={false} />);
+            expect(screen.queryByRole('button', { name: REPLY_LABEL })).not.toBeInTheDocument();
+        });
+    });
+
+    describe('the swipe gesture', () => {
+        it('fires on release past the threshold, on a coarse pointer', () => {
+            const { onRequestReply } = mountBubble(true);
+            swipe(screen.getByText('hello'), -70);
+            expect(onRequestReply).toHaveBeenCalledTimes(1);
+        });
+
+        it('works in EITHER direction', () => {
+            // Direction-agnostic by design: a right-to-left swipe is the
+            // convention on one platform and the opposite on another, and the
+            // action is the same either way.
+            const { onRequestReply } = mountBubble(true);
+            swipe(screen.getByText('hello'), 70);
+            expect(onRequestReply).toHaveBeenCalledTimes(1);
+        });
+
+        it('does NOT fire below the threshold — the gesture is abortable', () => {
+            // It fires on RELEASE rather than at the threshold, so a thumb
+            // that crosses a line it cannot see and comes back has not acted.
+            const { onRequestReply } = mountBubble(true);
+            swipe(screen.getByText('hello'), -20);
+            expect(onRequestReply).not.toHaveBeenCalled();
+        });
+
+        it('does NOT fire when the drag is dragged BACK under the threshold', () => {
+            // Past the threshold and back again. `completed` has to be
+            // recomputed on every move, not latched on first crossing.
+            const { onRequestReply } = mountBubble(true);
+            const el = screen.getByText('hello');
+            fireEvent.pointerDown(el, { clientX: 100, clientY: 100 });
+            fireEvent.pointerMove(el, { clientX: 20, clientY: 100 });
+            fireEvent.pointerMove(el, { clientX: 95, clientY: 100 });
+            fireEvent.pointerUp(el);
+            expect(onRequestReply).not.toHaveBeenCalled();
+        });
+
+        it('does NOT fire on a VERTICAL drag, because that is a scroll', () => {
+            // The false-alarm direction, and the one a user cannot undo
+            // without noticing: flicking a timeline to scroll must never file
+            // a reply. The horizontal travel here is past the threshold, so a
+            // threshold-only rule would fire.
+            const { onRequestReply } = mountBubble(true);
+            swipe(screen.getByText('hello'), -70, -200);
+            expect(onRequestReply).not.toHaveBeenCalled();
+        });
+
+        it('does NOT fire on a FINE pointer, however far the drag goes', () => {
+            // The branch jsdom hides by default. Asserted against the coarse
+            // case above rather than assumed — a mouse user has never expected
+            // to drag a message sideways, and they have the button.
+            const { onRequestReply } = mountBubble(false);
+            swipe(screen.getByText('hello'), -200);
+            expect(onRequestReply).not.toHaveBeenCalled();
+        });
+
+        it('does NOT fire on a deleted message even on a coarse pointer', () => {
+            const { onRequestReply } = mountBubble(true, { body: '', deletedAt: AT });
+            swipe(screen.getByText(COPY.messageDeleted), -70);
+            expect(onRequestReply).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('TWO gestures on ONE element', () => {
+        it('a swipe fires the reply and a hold fires the reactions, from the same node', () => {
+            // THE CASE THIS BLOCK EXISTS FOR. Both hooks return the same four
+            // pointer handlers, and `{...press} {...swipe}` keeps only the
+            // second set — a plain object spread, no composition, no warning,
+            // no type error. One gesture then stops working and the only
+            // symptom is a feature that silently does nothing on a phone.
+            //
+            // Asserted as a PAIR in one test rather than two, because each
+            // alone passes under the broken spread: whichever set survived is
+            // the one that works.
+            jest.useFakeTimers();
+            try {
+                const { onRequestReply, onRequestReactions } = mountBubble(true);
+                const el = screen.getByText('hello');
+
+                swipe(el, -70);
+                expect(onRequestReply).toHaveBeenCalledTimes(1);
+
+                fireEvent.pointerDown(el, { clientX: 100, clientY: 100 });
+                act(() => {
+                    jest.advanceTimersByTime(600);
+                });
+                expect(onRequestReactions).toHaveBeenCalledTimes(1);
+            } finally {
+                jest.useRealTimers();
+            }
+        });
+
+        it('a horizontal drag CANCELS the hold, so one gesture cannot fire both', () => {
+            // They do not need to know about each other: a drag passes
+            // `useLongPress`'s 10px move tolerance and cancels it. Without
+            // this, a slow swipe would file a reply AND open the reaction
+            // picker, and the operator chose one.
+            jest.useFakeTimers();
+            try {
+                const { onRequestReply, onRequestReactions } = mountBubble(true);
+                const el = screen.getByText('hello');
+                fireEvent.pointerDown(el, { clientX: 100, clientY: 100 });
+                fireEvent.pointerMove(el, { clientX: 30, clientY: 100 });
+                act(() => {
+                    jest.advanceTimersByTime(600);
+                });
+                fireEvent.pointerUp(el);
+                expect(onRequestReply).toHaveBeenCalledTimes(1);
+                expect(onRequestReactions).not.toHaveBeenCalled();
+            } finally {
+                jest.useRealTimers();
+            }
+        });
     });
 });
