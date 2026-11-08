@@ -48,7 +48,13 @@ import { listCostEntries } from '@/app-layer/usecases/cost-entry';
 import { listActiveListings } from '@/app-layer/usecases/exchange';
 import { listLocationsPaginated } from '@/app-layer/usecases/location';
 import { assertModuleEnabled } from '@/app-layer/usecases/modules';
-import { analyzeBlockRisk } from '@/app-layer/usecases/parcel-risk';
+import {
+    analyzeBlockRisk,
+    getParcelRiskHistory,
+    HISTORY_DEFAULT_DAYS,
+    HISTORY_MAX_DAYS,
+    HISTORY_MIN_DAYS,
+} from '@/app-layer/usecases/parcel-risk';
 import { getPriceTrends } from '@/app-layer/usecases/trends';
 import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
 import { assertCanRead } from '@/app-layer/policies/common';
@@ -463,6 +469,24 @@ const ListBlocksArgs = z.object({
  */
 const AnalyzeBlockRiskArgs = z.object({
     locationId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+}).strict();
+
+/**
+ * Trend args (#2837 stage 3).
+ *
+ * `days` is OPTIONAL and the bounds come from the usecase's own constants
+ * rather than being restated — `HISTORY_MIN_DAYS` / `HISTORY_MAX_DAYS` are
+ * what `getParcelRiskHistory` clamps to, and a second copy here would be a
+ * contract the model is told and the server does not keep.
+ *
+ * Absent means 14, which is the SAME default the route and the phone use. The
+ * usecase's own docblock says why that agreement matters: `days` is in the
+ * cache key, so a server default of 60 against a client default of 14 would
+ * make the one caller that omits it the only reader of its own cache entry.
+ */
+const ParcelRiskTrendArgs = z.object({
+    parcelId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    days: z.number().int().min(HISTORY_MIN_DAYS).max(HISTORY_MAX_DAYS).optional(),
 }).strict();
 
 /**
@@ -1098,12 +1122,89 @@ export const ASSISTANT_TOOLS: Readonly<Record<string, AssistantTool>> = {
                     .filter((p) => p.overall === 'stress' || p.overall === 'watch')
                     .slice(0, 12)
                     .map((p) => ({
+                        // The id, so the model can follow up with
+                        // `parcel_risk_trend` — the same disclosure
+                        // `list_blocks` already makes for `analyze_block_risk`
+                        // (its description says so in terms). Without it the
+                        // trend tool has a required argument nobody can
+                        // obtain, which is a tool that can never fire.
+                        //
+                        // Only the parcels named here carry one, so a trend
+                        // can be asked for a parcel that needed attention and
+                        // not for one that was fine. That is a real limit and
+                        // the trend tool's description states it, rather than
+                        // leaving the model to discover it by failing.
+                        parcelId: p.parcelId,
                         parcel: p.name,
                         level: p.overall,
                         vegetation: p.vegetation,
                         moisture: p.moisture,
                         acquiredDate: p.acquiredDate,
                     })),
+            };
+        },
+    },
+    parcel_risk_trend: {
+        def: {
+            name: 'parcel_risk_trend',
+            description:
+                'How ONE parcel\'s satellite reading has moved over time — a pass per clear '
+                + 'satellite visit, newest last. Get the parcel id from analyze_block_risk, '
+                + 'which returns one for each parcel it names. Pass `days` (7-120) when the '
+                + 'person names a period; otherwise 14. State the window the answer covers — '
+                + 'it is echoed as `days`. When `complete` is false there is more history '
+                + 'than this and the earliest passes are missing, so do not describe the '
+                + 'oldest reading as a starting point.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    parcelId: {
+                        type: 'string',
+                        description:
+                            'A parcel id from analyze_block_risk. Never invent one. Only '
+                            + 'parcels that tool NAMED carry an id — it lists the ones needing '
+                            + 'attention, so a parcel that was fine cannot be asked about.',
+                    },
+                    days: {
+                        type: 'integer',
+                        minimum: HISTORY_MIN_DAYS,
+                        maximum: HISTORY_MAX_DAYS,
+                        description:
+                            'The window, in days. Omit for 14. Out-of-range values are '
+                            + 'clamped by the server, not refused.',
+                    },
+                },
+                required: ['parcelId'],
+                additionalProperties: false,
+            },
+        },
+        args: ParcelRiskTrendArgs,
+        // `truncated` means the pass cap was hit, so the EARLIEST passes are
+        // the ones missing — which is exactly the end a trend answer reasons
+        // from. Reported as a halt rather than trusted to the description, for
+        // the reason `analyze_block_risk` gives: a description is a request
+        // and the prose is the model's.
+        isPartial: (r) => (r as { complete?: boolean }).complete === false,
+        run: async (ctx, args) => {
+            const a = ParcelRiskTrendArgs.parse(args);
+            const r = await getParcelRiskHistory(
+                ctx,
+                a.parcelId,
+                a.days ?? HISTORY_DEFAULT_DAYS,
+            );
+            return {
+                // Echoed from the RESULT, not from `a.days` — the usecase
+                // clamps, so the window the answer covers is not always the
+                // one that was asked for, and the sentence must state what was
+                // actually read.
+                days: r.days,
+                // `configured: false` is Earth Engine not set up — there is
+                // nothing to wait for, which is a different answer from a
+                // parcel the satellite has not seen yet. Both produce an empty
+                // `passes`, so the flag is the only thing that tells them apart.
+                satelliteConfigured: r.configured,
+                complete: !r.truncated,
+                passes: r.passes,
             };
         },
     },

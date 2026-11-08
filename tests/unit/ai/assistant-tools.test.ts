@@ -85,8 +85,25 @@ jest.mock('@/app-layer/usecases/location', () => ({
     listLocationsPaginated: (...a: unknown[]) => listLocationsPaginated(...a),
 }));
 const analyzeBlockRisk = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+const getParcelRiskHistory = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
+/**
+ * The CONSTANTS are kept real and only the functions are doubled (#2837).
+ *
+ * `parcel_risk_trend`'s args schema is built at module load from
+ * `HISTORY_MIN_DAYS` / `HISTORY_MAX_DAYS`. Under a partial barrel mock those
+ * resolve to `undefined`, and measured: `z.number().int().min(undefined)`
+ * builds SILENTLY and then rejects EVERY value — 1 and 9999 alike. So a
+ * `days` case would fail for a reason that has nothing to do with the tool,
+ * and a case that omitted `days` would pass while testing nothing, which is
+ * the shape that makes untestable indistinguishable from untested.
+ *
+ * `requireActual` rather than retyping 7/14/120 here: a second copy of a
+ * bound is a contract the test asserts and the server does not keep.
+ */
 jest.mock('@/app-layer/usecases/parcel-risk', () => ({
+    ...jest.requireActual('@/app-layer/usecases/parcel-risk'),
     analyzeBlockRisk: (...a: unknown[]) => analyzeBlockRisk(...a),
+    getParcelRiskHistory: (...a: unknown[]) => getParcelRiskHistory(...a),
 }));
 const getPriceTrends = jest.fn<Promise<Record<string, unknown>>, unknown[]>();
 jest.mock('@/app-layer/usecases/trends', () => ({
@@ -607,6 +624,106 @@ describe('assistant tools (#2578)', () => {
         expect(res.content).toContain('П-1');
         expect(res.content).toContain('П-2');
         expect(res.content).not.toContain('П-3');
+    });
+
+    it('analyze_block_risk returns a parcelId, so a trend can be asked for', async () => {
+        // Without this `parcel_risk_trend` has a required argument nobody can
+        // obtain — a tool that can never fire. The same disclosure
+        // `list_blocks` already makes for `analyze_block_risk`.
+        analyzeBlockRisk.mockResolvedValue({
+            locationName: 'Голямо поле',
+            analysed: 2, total: 2, worst: 'stress',
+            counts: { unknown: 0, good: 1, watch: 0, stress: 1 },
+            configured: true,
+            parcels: [
+                { parcelId: 'par-7', name: 'П-1', overall: 'stress', vegetation: 'stress', moisture: 'good', acquiredDate: '2026-10-28' },
+                { parcelId: 'par-8', name: 'П-9', overall: 'good', vegetation: 'good', moisture: 'good', acquiredDate: '2026-10-28' },
+            ],
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const res = await runTool(ctx, 'analyze_block_risk', '{"locationId":"loc-1"}');
+        expect(res.content).toContain('par-7');
+        // And only for the parcel it NAMED — the fine one is absent, id and all.
+        expect(res.content).not.toContain('par-8');
+    });
+
+    it('parcel_risk_trend defaults to 14 days when none is named', async () => {
+        // The default must match the route's and the phone's. `days` is in the
+        // cache key, so a tool defaulting to 60 would be the only reader of its
+        // own cache entry.
+        getParcelRiskHistory.mockResolvedValue({
+            parcelId: 'par-7', days: 14, configured: true, truncated: false,
+            passes: [{ date: '2026-10-28', ndvi: 0.62 }],
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const res = await runTool(ctx, 'parcel_risk_trend', '{"parcelId":"par-7"}');
+        expect(res.ok).toBe(true);
+        expect(getParcelRiskHistory).toHaveBeenCalledWith(ctx, 'par-7', 14);
+    });
+
+    it('parcel_risk_trend passes a named window through', async () => {
+        getParcelRiskHistory.mockResolvedValue({
+            parcelId: 'par-7', days: 30, configured: true, truncated: false,
+            passes: [], generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        await runTool(ctx, 'parcel_risk_trend', '{"parcelId":"par-7","days":30}');
+        expect(getParcelRiskHistory).toHaveBeenCalledWith(ctx, 'par-7', 30);
+    });
+
+    it('parcel_risk_trend echoes the window the USECASE used, not the one asked for', async () => {
+        // The usecase CLAMPS, so the two can differ, and the answer has to
+        // state what was actually read. Echoing the argument would make the
+        // sentence describe a window nobody looked at.
+        // The two values must DIFFER or the assertion cannot tell them apart —
+        // measured: with the fixture and the argument both at 120, swapping
+        // `r.days` for `a.days` left all 53 cases green. Asked 120, answered
+        // 60, so only the result's own figure can produce this.
+        getParcelRiskHistory.mockResolvedValue({
+            parcelId: 'par-7', days: 60, configured: true, truncated: false,
+            passes: [], generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const res = await runTool(ctx, 'parcel_risk_trend', '{"parcelId":"par-7","days":120}');
+        expect(res.content).toContain('"days":60');
+        expect(res.content).not.toContain('"days":120');
+    });
+
+    it('parcel_risk_trend reports a truncated history as INCOMPLETE', async () => {
+        // `truncated` means the pass cap was hit, so the EARLIEST passes are
+        // missing — the end a trend answer reasons from. A halt rather than a
+        // description the model may or may not honour.
+        getParcelRiskHistory.mockResolvedValue({
+            parcelId: 'par-7', days: 120, configured: true, truncated: true,
+            passes: [{ date: '2026-10-28', ndvi: 0.62 }],
+            generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const res = await runTool(ctx, 'parcel_risk_trend', '{"parcelId":"par-7"}');
+        expect(res.content).toContain('"complete":false');
+        expect(res.partial).toBe(true);
+    });
+
+    it('parcel_risk_trend keeps `configured` distinguishable from "not seen yet"', async () => {
+        // Both give an empty `passes`, and only the flag tells them apart: one
+        // is "nothing to wait for", the other is "no clear pass yet".
+        getParcelRiskHistory.mockResolvedValue({
+            parcelId: 'par-7', days: 14, configured: false, truncated: false,
+            passes: [], generatedAt: '2026-11-01T00:00:00.000Z',
+        });
+        const res = await runTool(ctx, 'parcel_risk_trend', '{"parcelId":"par-7"}');
+        expect(res.content).toContain('"satelliteConfigured":false');
+    });
+
+    it('parcel_risk_trend REFUSES a malformed id and an out-of-range window', async () => {
+        // Provenance, as for `analyze_block_risk`: an id the model READ rather
+        // than composed. And the bounds are the usecase's own constants — this
+        // asserts they are live, which a partial barrel mock would silently
+        // defeat by making them `undefined`.
+        await expect(runTool(ctx, 'parcel_risk_trend', '{"parcelId":"../etc"}'))
+            .resolves.toMatchObject({ ok: false });
+        await expect(runTool(ctx, 'parcel_risk_trend', '{"parcelId":"par-7","days":3}'))
+            .resolves.toMatchObject({ ok: false });
+        await expect(runTool(ctx, 'parcel_risk_trend', '{"parcelId":"par-7","days":999}'))
+            .resolves.toMatchObject({ ok: false });
+        expect(getParcelRiskHistory).not.toHaveBeenCalled();
     });
 
     it('analyze_block_risk takes a DERIVED id but refuses a malformed one', async () => {
