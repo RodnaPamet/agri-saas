@@ -6973,6 +6973,7 @@
         "LEAFLET_SCAN_INPUT_MISSING": "Send the leaflet file in the `file` field.",
         "LEASE_NOT_FOUND": "That lease was not found.",
         "LEASE_PAYMENT_NOT_FOUND": "Payment not found.",
+        "LEASE_RENT_UNIT_NOT_EUR": "Money rent is recorded in euro. Enter the rent as {expected} instead of {unit}.",
         "LISTING_EXPIRED": "This listing has expired.",
         "LISTING_EXPIRES_AT_IN_PAST": "Choose an expiry date in the future, or remove it.",
         "LISTING_FULFIL_REQUIRES_ACTIVE": "This listing has expired — withdraw it instead of marking it fulfilled.",

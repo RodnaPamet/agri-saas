@@ -6973,6 +6973,7 @@
         "LEAFLET_SCAN_INPUT_MISSING": "Изпратете файла на брошурата в полето „file“.",
         "LEASE_NOT_FOUND": "Договорът за наем не беше намерен.",
         "LEASE_PAYMENT_NOT_FOUND": "Плащането не беше намерено.",
+        "LEASE_RENT_UNIT_NOT_EUR": "Паричната рента се вписва в евро. Въведете рентата като {expected} вместо {unit}.",
         "LISTING_EXPIRED": "Обявата е изтекла.",
         "LISTING_EXPIRES_AT_IN_PAST": "Изберете дата на изтичане в бъдещето или я премахнете.",
         "LISTING_FULFIL_REQUIRES_ACTIVE": "Обявата е изтекла — оттеглете я, вместо да я отбелязвате като изпълнена.",

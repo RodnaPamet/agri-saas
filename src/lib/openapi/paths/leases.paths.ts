@@ -14,6 +14,16 @@
  * obligation — the two are not convertible and summing them produces a number
  * that means nothing.
  *
+ * MONEY RENT IS EURO-ONLY, and it is enforced rather than defaulted (#2793).
+ * `€/дка` is the only money unit a lease may be written in; `лв/дка` is
+ * recognised, refused on write with `LEASE_RENT_UNIT_NOT_EUR`, and reported as
+ * UNRESOLVED by every per-hectare figure. It used to convert at the legally
+ * fixed 1.95583 peg, which was removed once no stored row needed it. A lease
+ * recorded before that keeps editing with its own unit restated — the refusal
+ * is on a CHANGE, not on the stored value — and a payment against such a lease
+ * still books in `лв/дка`, because the obligation is owed whatever this
+ * product can report.
+ *
  * `rentUnit` is the CANONICAL form and `rentUnitRaw` is what was actually typed
  * or imported. Both travel: the canonical one is what arithmetic may use, the
  * raw one is what a person recognises and what an audit trail needs.
@@ -122,7 +132,9 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         operationId: 'createTenantLease',
         summary: 'Register a lease',
         description:
-            'The tenant-wide entry point: `parcelId` travels in the BODY here, because the Rent page picks the parcel in a combobox. The parcel-scoped route takes it as a path parameter instead.',
+            'The tenant-wide entry point: `parcelId` travels in the BODY here, because the Rent page picks the parcel in a combobox. The parcel-scoped route takes it as a path parameter instead.'
+            + '\n\n**Refusal code.** `LEASE_RENT_UNIT_NOT_EUR` (400) — a money `rentUnit` in a currency this product does not record, which today means лв/дка in any spelling the canonicaliser folds (`lv/dka`, `ЛВ / ДКА`, `лв./дка`). `params` carries `unit` (what was sent, verbatim), `currency` (`BGN`) and `expected` (`€/дка`), so a form can offer the fix rather than only report the refusal. `кг/дка` is NOT judged by this rule: produce rent is a mass and has no currency.'
+            + '\n\nIt is refused at the WRITE deliberately. Accepting it would save a lease that lists correctly and is then silently absent from every per-hectare and cost figure, because `resolveRentBasis` reports it unresolved — a lease that looks recorded and counts for nothing.',
         tags: ['Leases'],
         params: TenantParams,
         body: TenantLeaseCreateSchema,
@@ -158,7 +170,8 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         summary: 'Update a lease',
         description:
             'The body is the same shape as a create MINUS the parcel: a lease cannot be moved to another parcel by editing it.' +
-            '\n\nRefusal code: `LEASE_NOT_FOUND` (404).',
+            '\n\n**Refusal codes.** `LEASE_NOT_FOUND` (404). And `LEASE_RENT_UNIT_NOT_EUR` (400) — see the create operation for the code and its `params`.' +
+            '\n\nThe rent-unit refusal is on a CHANGE, not on the stored value: a lease already recorded in `лв/дка` may be updated with that unit RESTATED, so correcting the lessor’s name on a legacy lease works even though no new lease may be written in lev. The form posts every field, and refusing an unchanged value would make such a lease permanently uncorrectable. Moving it to `€/дка` is accepted and is the way out; moving it BACK is refused, because the exemption is keyed on the row’s own stored unit rather than on the unit being lev.',
         tags: ['Leases'],
         params: LeaseParams,
         body: ParcelLeaseSchema,
@@ -209,7 +222,8 @@ export function registerLeasePaths(registry: OpenAPIRegistry): void {
         summary: 'Record a rent payment',
         description:
             'OMIT `unit` to book against the lease’s own canonical rent unit, which is the safe default: rent settled in grain must never be recorded against a money obligation, and the two cannot be summed.\n\n'
-            + '**Refusal code.** `LEASE_NOT_FOUND` — no such lease in this farm, or one not visible to it. Coded in #1712: it carried an English sentence and no code, and the iOS client resolves display from `error.message` with no `NOT_FOUND` entry, so a Bulgarian farmer read "Lease not found" in English. It is reachable from THIS operation and not from the `GET` above, which answers an unknown lease with an empty list.',
+            + '**Refusal codes.** `LEASE_NOT_FOUND` — no such lease in this farm, or one not visible to it. Coded in #1712: it carried an English sentence and no code, and the iOS client resolves display from `error.message` with no `NOT_FOUND` entry, so a Bulgarian farmer read "Lease not found" in English. It is reachable from THIS operation and not from the `GET` above, which answers an unknown lease with an empty list.\n\n'
+            + '`LEASE_RENT_UNIT_NOT_EUR` (400) — a SUPPLIED `unit` in a currency this product does not record (#2793), the same rule and the same code as the lease write path. The lease’s OWN unit is exempt, including when restated explicitly: a lease recorded in `лв/дка` before the peg was removed still owes rent, and refusing to record what was paid against it would lose a real settlement and report the lessor unpaid for ever. So omitting `unit` always works, which is the documented default anyway.',
         tags: ['Leases'],
         params: LeaseParams,
         body: LeasePaymentSchema,

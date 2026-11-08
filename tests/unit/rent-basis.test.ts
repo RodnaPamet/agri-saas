@@ -2,26 +2,36 @@
  * Unit tests for `src/lib/grain/rent-basis.ts` — resolving `ParcelLease`
  * rent to a comparable annual per-hectare figure.
  *
- * Money (лв/дка) and produce (кг/дка) are different DIMENSIONS — a
+ * Money (€/дка) and produce (кг/дка) are different DIMENSIONS — a
  * currency and a mass — so every branch below is checked for both the
  * resolved shape (`kind` + the matching field) AND the honest refusal
  * shape (`resolved: false` + a reason naming the raw unit text).
+ *
+ * `лв/дка` is a THIRD outcome since #2793 and has its own block at the
+ * bottom: recognised, money, and refused. Every case that is about something
+ * else — area independence, the `kind` narrowing, a genuine zero, `rentUnit`
+ * precedence — was moved onto `€/дка` in that change, and NOT because lev
+ * looked untidy there. Two of them would have gone vacuous on it: comparing
+ * two lev results for area independence compares two identical refusals, and
+ * a zero-rent case asserting `resolved: false` would have stopped saying
+ * anything about zero at all.
  */
 import { resolveRentBasis, type RentBasisResult } from '@/lib/grain/rent-basis';
-import { BGN_PER_EUR } from '@/lib/exchange/currency';
-import { RENT_UNIT_KG, RENT_UNIT_LEVA } from '@/lib/agro/rent-units';
+import { RENT_UNIT_EUR, RENT_UNIT_KG, RENT_UNIT_LEVA } from '@/lib/agro/rent-units';
 import { DCA_PER_HA } from '@/lib/agro/rate-calc';
 
 describe('resolveRentBasis — money per decare, reported in EURO', () => {
     /*
-     * Owner ruling 2026-10-31: money rent is reported in euro whatever unit
-     * the lease is quoted in. `€/дка` passes through; `лв/дка` — every lease
-     * recorded before that date — converts at the legally fixed peg.
+     * Owner ruling 2026-10-31: money rent is reported in euro. `€/дка` passes
+     * through, and it is now the ONLY money unit that resolves — #2793 removed
+     * the fixed peg that converted `лв/дка` (owner ruling 2026-11-08, with 0
+     * leases in production), so a lev lease is refused instead.
      *
-     * These expectations CHANGED with that ruling, and deliberately: they
-     * asserted the un-converted lev figure before. The division is written out
-     * rather than pre-computed so the intent survives a reader who does not
-     * know the rate by sight.
+     * These expectations have changed TWICE and in opposite directions: they
+     * asserted an un-converted lev figure, then a peg division, and now a
+     * per-decare euro rate that needs no rate at all. The arithmetic here is
+     * `× DCA_PER_HA` and nothing else — if a future reader finds a division in
+     * this block, something has reintroduced a conversion.
      */
     it('a €/дка lease passes through unconverted', () => {
         const result = resolveRentBasis({ rentAmount: 40, rentUnit: '€/дка' }, 3);
@@ -34,30 +44,96 @@ describe('resolveRentBasis — money per decare, reported in EURO', () => {
     });
 
     it('resolves a canonical rentUnit to a money per-hectare figure', () => {
-        const result = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_LEVA }, 5);
-        // 80 лв/дка = 800 лв/ha, converted at the peg.
+        const result = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_EUR }, 5);
+        // 80 €/дка = 800 €/ha. A pure unit conversion, no rate involved.
         expect(result).toEqual({
             resolved: true,
             kind: 'money',
-            perHa: (80 * DCA_PER_HA) / BGN_PER_EUR,
+            perHa: 80 * DCA_PER_HA,
             currency: 'EUR',
         });
     });
 
-    it('resolves a raw alias (lv/dka) via rentUnitRaw when rentUnit is absent', () => {
-        const result = resolveRentBasis({ rentAmount: 50, rentUnitRaw: 'lv/dka' }, 3.2);
+    it('resolves a raw alias (eur/dka) via rentUnitRaw when rentUnit is absent', () => {
+        const result = resolveRentBasis({ rentAmount: 50, rentUnitRaw: 'eur / dka' }, 3.2);
         expect(result).toEqual({
             resolved: true,
             kind: 'money',
-            perHa: 500 / BGN_PER_EUR,
+            perHa: 500,
             currency: 'EUR',
         });
     });
 
     it('is area-INDEPENDENT once resolved — a per-decare rate scales, it does not accumulate', () => {
-        const small = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_LEVA }, 1);
-        const large = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_LEVA }, 500);
+        const small = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_EUR }, 1);
+        const large = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_EUR }, 500);
         expect(small).toEqual(large);
+        // The control the comparison needs: two RESULTS, not two refusals.
+        // `toEqual` is satisfied by any two identical values, and on `лв/дка`
+        // both sides are now the same `resolved: false` object — which would
+        // pass while proving nothing about scaling.
+        expect(small.resolved).toBe(true);
+    });
+});
+
+describe('resolveRentBasis — лв/дка is money, and is REFUSED (#2793)', () => {
+    /*
+     * The behaviour this phase added. It is a refusal and not a conversion
+     * because the fixed 1.95583 peg was removed: passing a lev rate through
+     * the money arm would report 500 лв/ha as 500 €/ha, and the arm's own
+     * `currency: 'EUR'` label would assert that was already euro. A caller
+     * cannot detect that; it can detect `resolved: false`.
+     */
+    it('refuses the canonical лв/дка rather than converting or relabelling it', () => {
+        const result = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_LEVA }, 5);
+        expect(result.resolved).toBe(false);
+        if (result.resolved) throw new Error('expected unresolved');
+        expect(result.raw).toBe(RENT_UNIT_LEVA);
+        // The reason has to name BGN and point at the unit to use. A reason
+        // that only said "unresolved" would leave the operator with a lease
+        // silently absent from every cost figure and nothing to act on.
+        expect(result.reason).toMatch(/BGN/);
+        expect(result.reason).toContain(RENT_UNIT_EUR);
+    });
+
+    it('refuses a raw lev alias (lv/dka) the same way, naming what was typed', () => {
+        const result = resolveRentBasis({ rentAmount: 50, rentUnitRaw: 'lv/dka' }, 3.2);
+        expect(result.resolved).toBe(false);
+        if (result.resolved) throw new Error('expected unresolved');
+        // `raw` is the operator's own text, not the canonical form — the same
+        // contract every other refusal in this module honours.
+        expect(result.raw).toBe('lv/dka');
+        expect(result.reason).toMatch(/BGN/);
+    });
+
+    it('refuses it as a MONEY unit, not as an unrecognised one', () => {
+        // The distinction that makes this worth a block of its own, and the
+        // control on the whole change. лв/дка is still in the canonical set
+        // (see `rent-units.ts`), so it must NOT fall into the arm for a unit
+        // nothing recognises — whose reason says the figure "may be a
+        // per-hectare or absolute-per-parcel figure", which is false of a
+        // per-decare lev rate and would send a reader to parse the text.
+        const lev = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_LEVA }, 5);
+        const nonsense = resolveRentBasis({ rentAmount: 80, rentUnitRaw: 'за целия имот' }, 5);
+        if (lev.resolved || nonsense.resolved) throw new Error('expected both unresolved');
+        expect(nonsense.reason).toMatch(/per-hectare or absolute-per-parcel/);
+        expect(lev.reason).not.toMatch(/per-hectare or absolute-per-parcel/);
+        // Both refuse, and they refuse for DIFFERENT stated reasons. Asserting
+        // only `resolved: false` on each would pass with the two collapsed.
+        expect(lev.reason).not.toBe(nonsense.reason);
+    });
+
+    it('answers the amount and area questions FIRST, so the lev reason is not misreported', () => {
+        // Order matters for the message, not for the verdict. A lev lease with
+        // no amount recorded is unpriced before it is un-convertible, and
+        // telling the operator to re-enter it in euro would be advice they
+        // cannot act on until they enter a figure at all.
+        const noAmount = resolveRentBasis({ rentAmount: null, rentUnit: RENT_UNIT_LEVA }, 5);
+        const noArea = resolveRentBasis({ rentAmount: 80, rentUnit: RENT_UNIT_LEVA }, null);
+        if (noAmount.resolved || noArea.resolved) throw new Error('expected both unresolved');
+        expect(noAmount.reason).toMatch(/amount/i);
+        expect(noArea.reason).toMatch(/area/i);
+        for (const r of [noAmount, noArea]) expect(r.reason).not.toMatch(/BGN/);
     });
 });
 
@@ -75,7 +151,7 @@ describe('resolveRentBasis — produce per decare (кг/дка)', () => {
 
 describe('resolveRentBasis — money and produce are NOT interchangeable', () => {
     it('carries the dimension in the field name, not just the number', () => {
-        const money = resolveRentBasis({ rentAmount: 10, rentUnit: RENT_UNIT_LEVA }, 1);
+        const money = resolveRentBasis({ rentAmount: 10, rentUnit: RENT_UNIT_EUR }, 1);
         const produce = resolveRentBasis({ rentAmount: 10, rentUnit: RENT_UNIT_KG }, 1);
 
         if (!money.resolved || !produce.resolved) throw new Error('expected both to resolve');
@@ -113,16 +189,17 @@ describe('resolveRentBasis — money and produce are NOT interchangeable', () =>
             throw new Error('cannot combine money and produce — different dimensions');
         }
 
-        const money = resolveRentBasis({ rentAmount: 10, rentUnit: RENT_UNIT_LEVA }, 1);
+        const money = resolveRentBasis({ rentAmount: 10, rentUnit: RENT_UNIT_EUR }, 1);
         const produce = resolveRentBasis({ rentAmount: 10, rentUnit: RENT_UNIT_KG }, 1);
         expect(() => combineSameKind(money, produce)).toThrow(/cannot combine/);
 
-        const moneyToo = resolveRentBasis({ rentAmount: 20, rentUnit: RENT_UNIT_LEVA }, 1);
-        // Both sides are now EURO, so the sum is of converted figures. The
-        // point of the test is the TYPE narrowing, not the rate — but the
-        // numbers have to be right or it would pass for the wrong reason.
+        const moneyToo = resolveRentBasis({ rentAmount: 20, rentUnit: RENT_UNIT_EUR }, 1);
+        // The point of the test is the TYPE narrowing, not the arithmetic —
+        // but the numbers have to be right or it would pass for the wrong
+        // reason, and `combineSameKind` throwing on two refusals would read
+        // as the money/produce guard firing.
         expect(combineSameKind(money, moneyToo)).toBeCloseTo(
-            (10 * DCA_PER_HA) / BGN_PER_EUR + (20 * DCA_PER_HA) / BGN_PER_EUR,
+            10 * DCA_PER_HA + 20 * DCA_PER_HA,
             10,
         );
     });
@@ -130,13 +207,13 @@ describe('resolveRentBasis — money and produce are NOT interchangeable', () =>
 
 describe('resolveRentBasis — zero rent is a real value, not an unresolved unit', () => {
     it('resolves a genuine zero rentAmount to perHa: 0, distinct from resolved: false', () => {
-        const result = resolveRentBasis({ rentAmount: 0, rentUnit: RENT_UNIT_LEVA }, 2);
+        const result = resolveRentBasis({ rentAmount: 0, rentUnit: RENT_UNIT_EUR }, 2);
         expect(result).toEqual({ resolved: true, kind: 'money', perHa: 0, currency: 'EUR' });
         expect(result.resolved).toBe(true);
     });
 
     it('a null rentAmount is unresolved, not zero', () => {
-        const result = resolveRentBasis({ rentAmount: null, rentUnit: RENT_UNIT_LEVA }, 2);
+        const result = resolveRentBasis({ rentAmount: null, rentUnit: RENT_UNIT_EUR }, 2);
         expect(result.resolved).toBe(false);
         if (result.resolved) throw new Error('expected unresolved');
         expect(result.reason).toMatch(/amount/i);
@@ -232,11 +309,19 @@ describe('resolveRentBasis — rentUnit takes precedence over rentUnitRaw', () =
         // rentUnit is set by the write path via canonicalRentUnit(rentUnitRaw)
         // (see src/app-layer/usecases/parcel-lease.ts) so in real data they
         // never disagree on DIMENSION — but rentUnit is authoritative.
-        const result = resolveRentBasis({ rentAmount: 40, rentUnit: RENT_UNIT_LEVA, rentUnitRaw: 'лв./дка' }, 2);
+        //
+        // The two values are deliberately on OPPOSITE sides of #2793's refusal
+        // now, which makes this a stronger test than the pair it replaced: if
+        // precedence inverted, the result would be a REFUSAL rather than a
+        // number that is merely off by the old peg.
+        const result = resolveRentBasis(
+            { rentAmount: 40, rentUnit: RENT_UNIT_EUR, rentUnitRaw: 'лв./дка' },
+            2,
+        );
         expect(result).toEqual({
             resolved: true,
             kind: 'money',
-            perHa: 400 / BGN_PER_EUR,
+            perHa: 400,
             currency: 'EUR',
         });
     });

@@ -463,11 +463,13 @@ export function CostEntryFormModal({
      * one question: does this row already hold euro, or is it a legacy row
      * whose currency must not be touched?
      *
-     * `isStoredAsEuro` and NOT `allResolveToEur`: the latter answers `true` for
-     * BGN, because the rollup converts lev at the fixed peg. Using it here
-     * would make the one production BGN row editable, pin its field to EUR, and
-     * relabel 1.00 BGN as 1.00 EUR on the next save — a 1.95583x overstatement,
-     * which is the exact trap #2398 exists to close.
+     * `isStoredAsEuro` and NOT `allResolveToEur`. The two now agree — #2793
+     * removed the peg, so the rollup refuses a BGN row rather than converting
+     * it — and the reason is kept because it is why this line reads the way it
+     * does: while the peg existed the latter answered `true` for BGN, so using
+     * it here would have made the one production BGN row editable, pinned its
+     * field to EUR, and relabelled 1.00 BGN as 1.00 EUR on the next save — a
+     * 1.95583x overstatement, which is the exact trap #2398 exists to close.
      */
     const isLegacyCurrency = record != null && !isStoredAsEuro(record.currency);
     const shownCurrency = isLegacyCurrency ? (record?.currency ?? '') : 'EUR';

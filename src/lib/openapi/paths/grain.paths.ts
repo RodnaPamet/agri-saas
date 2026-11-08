@@ -221,8 +221,10 @@ const CropCostDefaults = z
                 currency: z.string().openapi({
                     description:
                         'READ THIS; do not assume the form\u2019s. Bulgaria moved to EUR in 2026 and ' +
-                        'older rows are BGN, so prefilling the number alone shows a 24 000 \u043b\u0432 figure ' +
-                        'as \u20ac24 000 \u2014 wrong by the fixed 1.95583 and entirely plausible on screen.',
+                        'a row recorded before that may be BGN, so prefilling the number alone shows ' +
+                        'a 24 000 \u043b\u0432 figure as \u20ac24 000 \u2014 entirely plausible on screen, and ' +
+                        'wrong by roughly double. Nothing converts it for you: the server refuses a ' +
+                        'non-euro cost on write and no longer converts one on read either.',
                 }),
                 incurredOn: z.string().datetime().openapi({
                     description:
@@ -295,7 +297,7 @@ const COST_WRITE_REFUSALS =
     '\n\n**The invoice** — `COST_ENTRY_INVOICE_FILE_NOT_FOUND`, `COST_ENTRY_INVOICE_UPLOAD_INCOMPLETE` (the upload never finished) and `COST_ENTRY_INVOICE_FILE_DELETED`.' +
     '\n\n**The date** — `COST_ENTRY_INVALID_DATE`, with the field named in `params.field`.' +
     '\n\n**The currency** — `COST_ENTRY_CURRENCY_NOT_EUR`, with the submitted code in `params.currency`. Costs are recorded in euro: every euro spelling the old free-text field produced is accepted (`EUR`, `EURO`, `EUROS`, `\u20ac`, `E`), and anything else is refused. ' +
-    'Lev is refused too, which is the non-obvious part \u2014 the cost calculator CONVERTS lev at the fixed 1.95583 peg when totalling, so a lev row reads correctly on the calculator while being unsavable here. Those are deliberately different questions: \u201ccan this be totalled in euro\u201d and \u201cmay this be stored\u201d.';
+    'Lev is refused like any other non-euro code. It used to be the non-obvious case \u2014 the calculator CONVERTED lev at the fixed 1.95583 peg when totalling, so a lev row read correctly there while being unsavable here \u2014 and that peg was removed once no stored row needed it. A lev row is now withheld from a total rather than converted into one, so the two questions (\u201ccan this be totalled in euro\u201d and \u201cmay this be stored\u201d) finally have the same answer.';
 
 /**
  * The validation refusals both contract WRITES answer (#1712 batch 7).
@@ -321,7 +323,7 @@ const COST_WRITE_REFUSALS =
  */
 const COST_PATCH_ONLY_REFUSALS =
     '\n\n**Changing a legacy row\u2019s currency is refused** \u2014 `COST_ENTRY_LEGACY_CURRENCY_LOCKED`, with the stored code in `params.stored`. ' +
-    'A row recorded before costs became euro-only keeps its own currency: it is neither converted nor relabelled. Refusing a change TO euro is the point rather than an oversight \u2014 rewriting `BGN` to `EUR` without touching `amount` would overstate the cost by the 1.95583 peg, silently. Delete and re-enter the row in euro instead. ' +
+    'A row recorded before costs became euro-only keeps its own currency: it is neither converted nor relabelled. Refusing a change TO euro is the point rather than an oversight \u2014 rewriting `BGN` to `EUR` without touching `amount` would overstate the cost by roughly double, silently. Delete and re-enter the row in euro instead; such a row is also withheld from every euro total, so it is not quietly counted at face value in the meantime. ' +
     'Omitting `currency` is the no-op, and is what the form does, so editing such a row\u2019s description or supplier needs no special handling. Restating the row\u2019s OWN code verbatim is also accepted, because an unchanged value is not a change.';
 
 const CONTRACT_WRITE_REFUSALS =
@@ -960,10 +962,12 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             '(a «Документи» row — the server resolves it to that document\'s FileRecord, because `fileRecordId` is ' +
             'not on the document DTO). More than one, or none, is `INVOICE_SCAN_INPUT_AMBIGUOUS`. A `documentId` ' +
             'naming a purged tombstone answers `DOCUMENT_PURGED`, and an unknown one `DOCUMENT_NOT_FOUND`.' +
-            '\n\nAmounts come back in **EUR** whatever the invoice says: лев is converted at the fixed peg ' +
-            '(1 EUR = 1.95583 BGN) and the original figure is prefixed to `description`, because the cost schema has ' +
-            'no column for an original amount and the save path refuses a non-EUR currency. A genuinely foreign ' +
-            'currency is refused per line rather than relabelled.' +
+            '\n\nAmounts come back in **EUR**, and a line in any other currency is REFUSED per line rather ' +
+            'than relabelled \u2014 лев included, with `INVOICE_LINE_FOREIGN_CURRENCY`. An earlier version of this ' +
+            'endpoint converted лев at the fixed peg and prefixed the original figure to `description`; both are ' +
+            'gone, because a scan proposes lines to be SAVED and the save path refuses anything that is not ' +
+            'already euro, so converting here offered the farmer a line the server would then refuse \u2014 or ' +
+            'accept at a silently different figure.' +
             '\n\nEvery attribution field (`plantingId`, `seasonId`, `locationId`, `parcelId`, `leaseId`, `itemId`) and ' +
             '`commodityCanonical` come back NULL by design — the model cannot know which planting a drum of diesel ' +
             'belongs to, and a guess would put a wrong attribution into the calculator.' +
@@ -1098,7 +1102,7 @@ export function registerGrainPaths(registry: OpenAPIRegistry): void {
             '\n\n**`?commodity=<any spelling>` returns the per-CROP sheet instead** — the farm\'s last «Култура» lines for that crop, as `{ commodity, lines: [{ category, amountPerDca, currency, incurredOn, description }] }`. Send no `commodity` and you get the overhead payload above, unchanged. The spelling is normalised, so `Canola` resolves to `rapeseed`, and the canonical value is echoed back so you know what was looked up. A commodity the vocabulary does not cover is a **400** carrying `code: \"UNKNOWN_COMMODITY\"` and the value you sent in `params.commodity`, not an empty sheet: an empty answer is indistinguishable from "this crop has no history", so a typo would read as a fact about the farm.' +
             '\n\n**It returns the latest SET, not the latest line.** A sheet is several lines entered together — ПРЗ, торове, seed — so every row sharing the most recent `incurredOn` for that crop comes back, each with its own `description` as the row\'s name. Prefilling only the newest line would collapse a sheet into one and the farmer would retype the rest without noticing.' +
             '\n\n**`amountPerDca: null` means the farmer entered a TOTAL, not that the line is empty.** The line is returned rather than dropped, so a client can show the row unfilled instead of implying the farm never recorded that cost.' +
-            '\n\n**Read each line\'s `currency`; do not assume the form\'s.** Bulgaria moved to EUR in 2026 and older rows are stored in BGN, so prefilling the NUMBER alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583, and entirely plausible on screen. Convert, or leave a foreign-currency line out and say so.' +
+            '\n\n**Read each line\'s `currency`; do not assume the form\'s.** Bulgaria moved to EUR in 2026 and a row recorded before that may be stored in BGN, so prefilling the NUMBER alone shows a 24 000 лв figure as €24 000 — entirely plausible on screen, and wrong by roughly double. Leave a non-euro line out and say so; this API converts nothing, and a figure you convert yourself is one the server cannot check.' +
             '\n\nCarries a weak ETag; send `If-None-Match` and handle **304**.',
         tags: ['Grain'],
         params: TenantParams,

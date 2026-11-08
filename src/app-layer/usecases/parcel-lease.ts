@@ -11,8 +11,15 @@ import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { badRequest, codedNotFound } from '@/lib/errors/types';
-import { canonicalRentUnit } from '@/lib/agro/rent-units';
+import { badRequest, codedBadRequest, codedNotFound } from '@/lib/errors/types';
+import {
+    canonicalRentUnit,
+    isMoneyRentUnit,
+    isRecordedMoneyRentUnit,
+    MONEY_RENT_UNIT_CURRENCY,
+    RENT_MONEY_CURRENCY,
+    RENT_UNIT_EUR,
+} from '@/lib/agro/rent-units';
 
 export type LeaseKindInput = 'ARENDA' | 'NAEM';
 
@@ -63,11 +70,76 @@ function toDate(v?: string | null): Date | null {
     return v ? new Date(v) : null;
 }
 
-/** Build the persist payload from validated input — sanitises every free text. */
-function mapLeaseData(input: ParcelLeaseInput) {
+/**
+ * Refuse a money rent unit this product cannot report (#2793).
+ *
+ * The payload's `rentUnit` is `z.string().max(20)` free text, so nothing in
+ * the schema can carry this rule — and until #2793 nothing needed to: a
+ * `лв/дка` lease was accepted and `resolveRentBasis` converted it at the
+ * legally fixed 1.95583 peg. The peg is gone (owner ruling 2026-11-08), so a
+ * lev-priced lease now has no honest per-hectare figure anywhere in the
+ * product. Refusing it at the WRITE is what keeps that from being a surprise
+ * later: the alternative is a lease that saves, lists, and is then excluded
+ * from every cost figure with the operator never told why.
+ *
+ * The ORDER matters and is the reason this landed before the peg came out.
+ * Removing the division without this refusal would report 500 лв/ha as
+ * 500 €/ha — a silent 96% overstatement — which is strictly worse than either
+ * converting or refusing.
+ *
+ * Only MONEY units are judged. `кг/дка` is a mass with no currency, and an
+ * unrecognised unit is already preserved verbatim in `rentUnitRaw` and
+ * reported `resolved: false` by `rent-basis.ts`; refusing either here would
+ * narrow the field far beyond the currency question.
+ *
+ * Exported for `lease-payment.ts`, which applies the same rule to a SUPPLIED
+ * payment unit. One function rather than two spellings — a payment accepted in
+ * a unit the lease could not have been written in is the drift to avoid.
+ *
+ * `stored` is the lease's OWN unit on an update, and passing it is what keeps
+ * a legacy row EDITABLE. This mirrors `COST_ENTRY_LEGACY_CURRENCY_LOCKED`
+ * exactly, including the part that is easy to leave out: restating a row's own
+ * value verbatim is not a change, and refusing it would block an operator
+ * correcting the LESSOR'S NAME on a lease recorded before the peg came out.
+ * The form posts every field, so an unrelated edit resubmits the stored unit —
+ * which is why this has to be a comparison and not a flat check.
+ */
+export function assertRecordableRentUnit(
+    canonical: string | null,
+    raw: string | null,
+    stored?: string | null,
+): void {
+    // The null check is SEPARATE from `isMoneyRentUnit`, which answers false
+    // for null and would make it redundant at runtime. It is here so the
+    // narrowing reaches `params` below: `unit` and `currency` are
+    // `string | number`, and the alternative is a cast, which would erase the
+    // target a later mistake has to fail against.
+    if (canonical == null) return;
+    if (!isMoneyRentUnit(canonical) || isRecordedMoneyRentUnit(canonical)) return;
+    if (stored != null && canonical === stored) return;
+    throw codedBadRequest(
+        'LEASE_RENT_UNIT_NOT_EUR',
+        `Money rent is recorded in ${RENT_MONEY_CURRENCY}. Enter the rent as ${RENT_UNIT_EUR}.`,
+        {
+            unit: raw ?? canonical,
+            currency: MONEY_RENT_UNIT_CURRENCY[canonical],
+            expected: RENT_UNIT_EUR,
+        },
+    );
+}
+
+/**
+ * Build the persist payload from validated input — sanitises every free text.
+ *
+ * `storedRentUnit` is the row's current unit on an UPDATE and absent on a
+ * CREATE; see `assertRecordableRentUnit` for why that distinction exists.
+ */
+function mapLeaseData(input: ParcelLeaseInput, storedRentUnit?: string | null) {
     const lessorName = sanitizePlainText((input.lessorName ?? '').trim());
     if (!lessorName) throw badRequest('Lessor name is required.');
     const rawRentUnit = input.rentUnit ? sanitizePlainText(input.rentUnit.trim()) : null;
+    const canonicalRent = canonicalRentUnit(rawRentUnit);
+    assertRecordableRentUnit(canonicalRent, rawRentUnit, storedRentUnit);
     return {
         lessorName,
         lessorEik: input.lessorEik ? sanitizePlainText(input.lessorEik.trim()) : null,
@@ -75,7 +147,7 @@ function mapLeaseData(input: ParcelLeaseInput) {
         rentAmount: input.rentAmount != null ? new Prisma.Decimal(input.rentAmount) : null,
         // The roll GROUPs BY rentUnit, so it stores the CANONICAL form; the
         // operator's original text is preserved verbatim alongside it.
-        rentUnit: canonicalRentUnit(rawRentUnit),
+        rentUnit: canonicalRent,
         rentUnitRaw: rawRentUnit,
         startDate: toDate(input.startDate),
         endDate: toDate(input.endDate),
@@ -201,12 +273,16 @@ export async function updateParcelLease(ctx: RequestContext, leaseId: string, in
     return runInTenantContext(ctx, async (db) => {
         const existing = await db.parcelLease.findFirst({
             where: { id: leaseId, tenantId: ctx.tenantId, deletedAt: null },
-            select: { id: true },
+            // `rentUnit` is read for the #2793 refusal, not for the update
+            // itself: a row already quoted in `лв/дка` keeps editing with its
+            // own unit restated, and only a CHANGE to an unrecordable unit is
+            // refused.
+            select: { id: true, rentUnit: true },
         });
         if (!existing) throw codedNotFound('LEASE_NOT_FOUND', 'That lease was not found.');
         const lease = await db.parcelLease.update({
             where: { id: leaseId },
-            data: mapLeaseData(input),
+            data: mapLeaseData(input, existing.rentUnit),
             select: LEASE_SELECT,
         });
         await logEvent(db, ctx, {

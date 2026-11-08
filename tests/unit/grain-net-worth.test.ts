@@ -40,7 +40,6 @@ jest.mock('@/app-layer/usecases/trends', () => ({
 }));
 
 import { getGrainNetWorth } from '@/app-layer/usecases/grain-net-worth';
-import { BGN_PER_EUR } from '@/lib/exchange/currency';
 import { toCalculatorRow } from '@/lib/grain/calculator-payload';
 import { makeRequestContext } from '../helpers/make-context';
 import { assertNetWorthInvariants } from '../helpers/grain-net-worth-invariants';
@@ -98,14 +97,23 @@ beforeEach(resetMocks);
 /**
  * A lev figure as the euro the rent now resolves to.
  *
- * Owner ruling 2026-10-31: money rent is reported in EURO, and a `лв/дка`
- * lease — which is every lease recorded before that date, and every fixture
- * in this file — converts at the legally fixed peg. These expectations CHANGED
- * with that ruling, and are written as a conversion rather than as the
- * resulting constant so a reader can see which figure is the fixture's and
- * which is the rate's.
+ * Owner ruling 2026-10-31: money rent is reported in EURO. These expectations
+ * have moved TWICE and the second move deleted a helper, so a reader comparing
+ * against git history should know which era they are in.
+ *
+ * Era 1 — a `лв/дка` lease (every lease recorded before that ruling) was
+ * reported in lev, unlabelled. Era 2 — it CONVERTED at the legally fixed peg,
+ * and the expectations here were written as `eur(1500)` rather than as the
+ * resulting constant so the rate was visible. Era 3, #2793 — the peg is gone,
+ * `€/дка` is the only money unit `resolveRentBasis` resolves, and a lev lease
+ * is refused into `leasesUnresolvedRent`.
+ *
+ * So every lease fixture in this file is `€/дка` now, and the `eur()` helper
+ * that divided by 1.95583 is deleted rather than redefined: a helper named
+ * `eur` returning its own argument reads as a conversion that is still
+ * happening. The one place lev still appears is the block that asserts it is
+ * REFUSED.
  */
-const eur = (lev: number): number => Math.round((lev / BGN_PER_EUR) * 100) / 100;
 
 describe('getGrainNetWorth — standing crop', () => {
     it('computes expected kg end to end from plannedYieldKgPerHa × area, and excludes a planting with no estimate', async () => {
@@ -318,9 +326,9 @@ describe('getGrainNetWorth — rent attribution', () => {
             {
                 id: 'lease-1',
                 parcelId: 'parcel-1',
-                rentAmount: 50, // лв/дка
-                rentUnit: 'лв/дка',
-                rentUnitRaw: 'лв/дка',
+                rentAmount: 50, // €/дка
+                rentUnit: '€/дка',
+                rentUnitRaw: '€/дка',
                 parcel: { areaHa: 3 },
             },
         ]);
@@ -331,7 +339,7 @@ describe('getGrainNetWorth — rent attribution', () => {
         // perHa = 50 × 10 = 500 leva/ha; total for the 3 ha parcel = 1500;
         // split 1 ha / 2 ha ⇒ entirely attributed to the SAME commodity
         // here, so the row total is the full 1500.
-        expect(wheat.rentCostMoneyAmount).toBe(eur(1500));
+        expect(wheat.rentCostMoneyAmount).toBe(1500);
     });
 
     it('values produce rent (кг/дка) via the commodity price rather than adding kg to money', async () => {
@@ -408,8 +416,8 @@ describe('getGrainNetWorth — rent attribution', () => {
                 id: 'lease-4',
                 parcelId: 'parcel-empty',
                 rentAmount: 20,
-                rentUnit: 'лв/дка',
-                rentUnitRaw: 'лв/дка',
+                rentUnit: '€/дка',
+                rentUnitRaw: '€/дка',
                 parcel: { areaHa: 1 },
             },
         ]);
@@ -441,7 +449,13 @@ describe('getGrainNetWorth — payroll allocation', () => {
             planting({ id: 'p-3', areaM2: 5_000, cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'maize' } } }), // 0.5 ha
         ]);
         mockDb.costEntry.findMany.mockResolvedValue([
-            { id: 'pay-2', category: 'PAYROLL', amount: 300, currency: 'BGN', plantingId: null, seasonId: 's-1' },
+            // `'EURO'` rather than `'BGN'` since #2793. This case is about a
+            // SPELLING difference not reading as two currencies, which is the
+            // half of #2546 that survived the peg's removal — and `'EURO'` is
+            // the spelling the owner's own farm actually stored. A lev row here
+            // would now be a real mix and the allocation assertions below would
+            // be grading the refusal instead of the pro-rata split.
+            { id: 'pay-2', category: 'PAYROLL', amount: 300, currency: 'EURO', plantingId: null, seasonId: 's-1' },
             { id: 'pay-3', category: 'PAYROLL', amount: 60, currency: 'EUR', plantingId: null, seasonId: 's-1' },
         ]);
 
@@ -450,28 +464,34 @@ describe('getGrainNetWorth — payroll allocation', () => {
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         const maize = result.rows.find((r) => r.commodity === 'maize')!;
         // Weight: wheat 1/1.5 = 2/3, maize 0.5/1.5 = 1/3.
-        // The pool is eur(300) + 60, not 300 + 60: the lev row converts before
-        // anything is allocated, so the SHARES are euro shares of a euro pool.
-        const pool = eur(300) + 60;
+        // The pool is 360: both rows are euro under different spellings, so
+        // they fold into one pool before anything is allocated and the SHARES
+        // are euro shares of a euro pool.
+        const pool = 300 + 60;
         expect(wheat.payrollCost).toBeCloseTo((2 / 3) * pool, 2);
         expect(maize.payrollCost).toBeCloseTo((1 / 3) * pool, 2);
         expect(wheat.payrollAllocated).toBe(true);
         expect(maize.payrollAllocated).toBe(true);
         // ONE currency, and NOT mixed — this assertion is the inverse of what
-        // it used to be, and the reversal is the whole point of #2546. A farm
-        // recording lev and euro was reading as two currencies, so `Калкулатор`
-        // refused it a cost figure. Lev and euro are addable because the peg is
-        // fixed; what is not addable is a genuinely foreign currency, and the
-        // test below holds that line.
+        // it was before #2546, and the reversal is that change's whole point.
+        // A farm recording euro under two spellings was reading as two
+        // currencies, so `Калкулатор` refused it a cost figure.
+        //
+        // #2546 also made LEV addable, at the fixed peg, and #2793 took that
+        // back once no production row needed it — so the live claim is
+        // narrower than it was: euro SPELLINGS fold, and nothing converts. A
+        // genuinely foreign currency was never addable, and the test below
+        // holds that line.
         expect(wheat.payrollCostCurrencies).toEqual(['EUR']);
         expect(wheat.payrollCostCurrencyMixed).toBe(false);
     });
 
     it('STILL refuses a genuinely foreign payroll currency — the mix that is real', async () => {
-        // The counterpart to the test above. Collapsing lev into euro must not
-        // collapse everything: there is no FX table in this product, so a
+        // The counterpart to the test above. Folding the euro spellings must
+        // not fold everything: there is no FX table in this product, so a
         // dollar row and a euro row cannot be added, and the refusal has to
         // survive the fix that stopped it firing on a spelling difference.
+        // Since #2793 a lev row is on THIS side of the line, not that one.
         mockDb.planting.findMany.mockResolvedValue([
             planting({ id: 'p-1', areaM2: 10_000, cropPlan: { seasonId: 's-1', cropType: { commodityCanonical: 'wheat' } } }),
         ]);
@@ -591,23 +611,27 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         ]);
     });
 
-    it('DOES fold BGN into EUR now, because the amount converts in the same change', async () => {
+    it('does NOT fold BGN into EUR, and keeps the lev amount under its own code', async () => {
         /*
-         * THIS TEST IS THE INVERSE OF THE ONE IT REPLACES, and the reversal is
-         * the whole content of #2546.
+         * THIS ASSERTION HAS NOW FLIPPED TWICE IN PLACE, which is why it is
+         * kept here rather than rewritten: the history is the only thing that
+         * says whether folding is safe, and the answer has depended on
+         * something outside this file each time.
          *
          * #2547 shipped `does NOT fold BGN into EUR — that needs the amounts
-         * converted (#2546)`, as the deliberate boundary of a crash fix: at
-         * that point collapsing `'BGN'` here would have relabelled a lev
-         * amount as euro without dividing by the peg, overstating it by
-         * 1.95583x. That reasoning was exactly right and is why the control
-         * existed.
+         * converted (#2546)`, as the deliberate boundary of a crash fix:
+         * collapsing `'BGN'` here would have relabelled a lev amount as euro
+         * without dividing by the peg, overstating it by 1.95583x.
          *
-         * #2546 converts the amounts at the read site, so the condition the
-         * control was waiting for is met and the assertion flips rather than
-         * being deleted. Keeping its position and its history is the point: a
-         * reader who finds only the new assertion cannot tell whether folding
-         * was always safe, and it was not.
+         * #2546 converted the amounts at the read site, so the condition the
+         * control was waiting for was met and this flipped to `DOES fold`.
+         *
+         * #2793 removed the peg — the production lev cost row was deleted and
+         * the save path had refused one since #2398 — so the amount stopped
+         * converting and the label stopped folding, TOGETHER. That is the
+         * invariant both earlier states were instances of: the LABEL and the
+         * AMOUNT move together or neither moves. A reader who finds only one
+         * of these three states cannot tell a safe fold from an unsafe one.
          */
         mockDb.planting.findMany.mockResolvedValue([
             planting({ id: 'p-1', areaM2: 10_000, parcelId: 'parcel-1', plannedYieldKgPerHa: 3000 }),
@@ -621,9 +645,24 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
 
         const result = await netWorthResult(ctx);
 
-        // ONE line, and the lev amount divided by the peg — not 140.
-        expect(result.cashOut.map((l) => l.currency)).toEqual(['EUR']);
-        expect(result.cashOut[0].amount).toBeCloseTo(40 + eur(100), 2);
+        // TWO lines, and the euro one carries 40 — not 140, and not the 51.13
+        // the peg used to produce. The lev row keeps its RAW amount under its
+        // OWN code, exactly as a FOREIGN row always has: `cashOut` is a series
+        // grouped BY currency, so what stops a blend is the separate line, not
+        // a withheld figure. Dropping the row instead would take real money
+        // out of a total nobody was told was incomplete.
+        expect(result.cashOut.map((l) => l.currency).sort()).toEqual(['BGN', 'EUR']);
+        const eurLine = result.cashOut.find((l) => l.currency === 'EUR')!;
+        expect(eurLine.amount).toBeCloseTo(40, 2);
+        expect(eurLine.categories).toEqual(['OTHER']);
+        // The lev row is NAMED rather than dropped: a farm that has such a row
+        // must be able to see it exists, which is the same reason a FOREIGN
+        // row keeps its code in the case below.
+        const bgnLine = result.cashOut.find((l) => l.currency === 'BGN')!;
+        expect({ categories: bgnLine.categories, amount: bgnLine.amount }).toEqual({
+            categories: ['FUEL'],
+            amount: 100,
+        });
     });
 
     it('a genuinely FOREIGN currency is still mixed, and keeps its own code', async () => {
@@ -691,8 +730,8 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
                 id: 'lease-1',
                 parcelId: 'parcel-1',
                 rentAmount: 50,
-                rentUnit: 'лв/дка',
-                rentUnitRaw: 'лв/дка',
+                rentUnit: '€/дка',
+                rentUnitRaw: '€/дка',
                 parcel: { areaHa: 1 },
             },
         ]);
@@ -700,7 +739,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         const result = await netWorthResult(ctx);
         const wheat = result.rows[0];
 
-        expect(wheat.rentCostMoneyAmount).toBe(eur(500));
+        expect(wheat.rentCostMoneyAmount).toBe(500);
         expect(wheat.cashCostCurrencies).toEqual(['EUR']);
         expect(wheat.cashCostCurrencies).not.toContain('UNKNOWN');
         // And the consequence the owner sees: nothing is mixed, so no refusal.
@@ -773,17 +812,20 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
-        // standing crop = 3 t × 250 = 750; cash cost = 100 (BGN, matches price currency).
-        // 3 t of wheat at a LEV price, converted — so the asset side is euro
-        // now, and so is the cost side. Written as the composition rather than
-        // as 383.46 so the derivation is on the page, and so this stays right
-        // if the peg ever changes (for a currency board that means "if the peg
-        // is abandoned", not "if the market moves").
-        expect(wheat.netAssetPosition).toBeCloseTo(3 * eur(250), 2);
-        // The lev cost collapses into the euro set. This is the owner's farm's
-        // defect in miniature: one currency, recorded two ways.
-        expect(wheat.cashCostCurrencies).toEqual(['EUR']);
-        expect(wheat.netWorth).toBeCloseTo(3 * eur(250) - eur(100), 2);
+        // An ALL-LEV farm, which is the case this title names and the clearest
+        // thing #2793 restored. Both sides stay in lev — nothing is converted
+        // and nothing is relabelled — so the figure is coherent in the farm's
+        // own currency: standing crop 3 t × 250 = 750, cash cost 100, net 650.
+        //
+        // Between #2546 and #2793 both sides converted at the peg and this
+        // asserted `3 * eur(250) - eur(100)` with `cashCostCurrencies: ['EUR']`.
+        // Both eras satisfy the title; what matters is that the two sides moved
+        // TOGETHER, because a converted asset side against a raw cost side is
+        // the 1.95583x overstatement every docblock in this area warns about.
+        expect(wheat.netAssetPosition).toBeCloseTo(750, 2);
+        expect(wheat.cashCostCurrencies).toEqual(['BGN']);
+        expect(wheat.priceCurrency).toBe('BGN');
+        expect(wheat.netWorth).toBeCloseTo(650, 2);
         expect(wheat.netWorthUnavailableReason).toBeNull();
     });
 
@@ -831,22 +873,28 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
             truncated: false,
             unvalued: { noUnitCost: 0, unitMismatch: 0 },
         });
+        // A EURO price since #2793, and the change is not cosmetic. An
+        // unrecorded cost currency counts as EURO by the owner's ruling, so a
+        // LEV price would now put the two sides in different currencies and
+        // the comparison would refuse with `COST_PRICE_CURRENCY_MISMATCH` —
+        // the right answer to a question this case is not asking. It worked
+        // with a lev price only while the peg converted the asset side onto
+        // the cost side's currency.
         mockGetMarketReferences.mockResolvedValue(
-            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'EUR', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
         const result = await netWorthResult(ctx);
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.cashCostCurrencies).toEqual([]);
-        // UNCONVERTED, deliberately: an unrecorded currency counts as euro by
-        // the owner's ruling, so there is nothing to divide. The asset side
-        // DOES convert, because the price is in lev — the two sides move for
-        // different reasons, and only one of them moves here.
+        // UNCONVERTED on both sides: nothing in this product converts a
+        // currency any more, and an unrecorded one is a missing LABEL rather
+        // than an unknown unit.
         expect(wheat.cashCostTotal).toBe(100);
-        expect(wheat.netAssetPosition).toBeCloseTo(3 * eur(250), 2);
+        expect(wheat.netAssetPosition).toBeCloseTo(750, 2);
         // 750 − 100. The bug returned 750 here.
-        expect(wheat.netWorth).toBeCloseTo(3 * eur(250) - 100, 2);
+        expect(wheat.netWorth).toBeCloseTo(750 - 100, 2);
         expect(wheat.netWorthUnavailableReason).toBeNull();
     });
 
@@ -866,28 +914,38 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
 
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
         expect(wheat.cashCostTotal).toBe(0);
-        expect(wheat.netWorth).toBeCloseTo(3 * eur(250), 2);
+        expect(wheat.netWorth).toBeCloseTo(750, 2);
         expect(wheat.netWorthUnavailableReason).toBeNull();
     });
 
-    it('reports the CANONICAL price currency, because the figures beside it are euro', async () => {
+    it('reports the CANONICAL price currency, folding a euro SPELLING', async () => {
         // The gap a mutation found: nothing asserted `priceCurrency`, so
-        // reporting the RAW code passed every other test in this file. That
-        // would ship euro figures under a lev label — `standingCropValue`,
-        // `grainOnHandValue`, `netAssetPosition` and `netWorth` are all euro
-        // once the price converts, and a client rendering «лв» against them
-        // would be wrong by the peg in the reader's head rather than in the
-        // arithmetic. Same defect as relabelling an amount, one field along.
+        // reporting the RAW code passed every other test in this file. The
+        // label and the figures beside it have to agree —
+        // `standingCropValue`, `grainOnHandValue`, `netAssetPosition` and
+        // `netWorth` are all in the price's currency, and a client rendering
+        // the wrong symbol against them is wrong in the reader's head rather
+        // than in the arithmetic. Same defect as relabelling an amount, one
+        // field along.
+        //
+        // The fixture is `'EURO'` rather than `'BGN'` since #2793. A lev price
+        // is no longer folded OR converted, so it now behaves exactly like the
+        // USD case below and would have made this a duplicate of it; the euro
+        // spellings are what `canonicalCostCurrency` still folds, and a
+        // price stored `'EURO'` against costs stored `'EUR'` is the farm shape
+        // that made the comparison refuse in the first place.
         mockDb.planting.findMany.mockResolvedValue([planting({ id: 'p-1', plannedYieldKgPerHa: 3000 })]);
         mockGetMarketReferences.mockResolvedValue(
-            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'BGN', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
+            new Map([['wheat', { commodity: 'wheat', pricePerTonne: 250, currency: 'EURO', observedAt: '2026-01-01', source: 'ec-agrifood' }]]),
         );
 
         const result = await netWorthResult(ctx);
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
 
         expect(wheat.priceCurrency).toBe('EUR');
-        expect(wheat.standingCropValue).toBeCloseTo(3 * eur(250), 2);
+        // 3 t × 250, unconverted — folding a SPELLING changes no figure, which
+        // is the difference between this and the peg conversion it replaced.
+        expect(wheat.standingCropValue).toBeCloseTo(750, 2);
     });
 
     it('keeps a FOREIGN price currency as its own code, and does NOT convert the amount', async () => {
@@ -904,7 +962,7 @@ describe('getGrainNetWorth — currency handling and net worth', () => {
         const wheat = result.rows.find((r) => r.commodity === 'wheat')!;
 
         expect(wheat.priceCurrency).toBe('USD');
-        // RAW: 3 t x 250, not 3 x eur(250).
+        // RAW: 3 t x 250, and no code anywhere may turn it into euro.
         expect(wheat.standingCropValue).toBe(750);
     });
 
@@ -932,13 +990,17 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
                 id: 'lease-1',
                 parcelId: 'parcel-1',
                 rentAmount: 50,
-                rentUnit: 'лв/дка',
-                rentUnitRaw: 'лв/дка',
+                rentUnit: '€/дка',
+                rentUnitRaw: '€/дка',
                 parcel: { areaHa: 1 },
             },
         ]);
         mockDb.costEntry.findMany.mockResolvedValue([
-            { id: 'pay-1', category: 'PAYROLL', amount: 40, currency: 'BGN', plantingId: 'p-1', seasonId: null },
+            // `'EURO'`, not `'BGN'`: this case is about WHICH TERMS of the
+            // composite move, and since #2793 a lev payroll row would be
+            // withheld from `cashCostTotal` entirely rather than converted,
+            // which tests the refusal instead of the composition.
+            { id: 'pay-1', category: 'PAYROLL', amount: 40, currency: 'EURO', plantingId: 'p-1', seasonId: null },
         ]);
         const rollupRows = [{ plantingId: 'p-1', totalCost: 100, currencies: ['EUR'], currencyMixed: false, unvaluedNoUnitCost: 0, unvaluedUnitMismatch: 0 }];
         mockGetCostRollupByPlanting.mockResolvedValue({ rows: rollupRows, truncated: false });
@@ -950,14 +1012,17 @@ describe('getGrainNetWorth — divergence from ATTRIBUTED_CROP_COST (the fourth-
 
         expect(rollupTotal).toBe(100);
         // A COMPOSITE, and which terms move is the whole content of this
-        // assertion. The rent converts (лв/дка) and the payroll converts too,
-        // now that cost amounts are normalised at the read site — but the
-        // reused attributed cost does NOT, because it arrives from cost-rollup
-        // already in euro. A blanket conversion of 640 would be wrong, and so
-        // would leaving the payroll raw: the comment here used to say "only the
-        // RENT converts", which was true until #2546 and is the exact shape of
-        // staleness that makes a wrong total look right.
-        expect(netWorthTotal).toBeCloseTo(100 + eur(40) + eur(500), 10);
+        // assertion. NOTHING converts now: the rent is `€/дка`, the payroll is
+        // euro under another spelling, and the reused attributed cost arrives
+        // from cost-rollup already in euro — so the total is a plain sum of
+        // three euro figures.
+        //
+        // This comment has been wrong twice in the other direction, which is
+        // why the terms are written out rather than collapsed to 640. It said
+        // "only the RENT converts" (true until #2546), then "the rent converts
+        // and the payroll converts too" (true until #2793). A sum that is
+        // right for the wrong reasons looks identical to one that is right.
+        expect(netWorthTotal).toBeCloseTo(100 + 40 + 500, 10);
         expect(netWorthTotal).not.toBe(rollupTotal);
         expect(mockGetCostRollupByPlanting).toHaveBeenCalledWith(ctx, { seasonId: 's-1', take: 2000 });
     });
@@ -1367,24 +1432,32 @@ describe('getGrainNetWorth — cash-out never blends currencies', () => {
         ]);
         mockDb.costEntry.findMany.mockResolvedValue([
             costEntry({ id: 'a', category: 'FUEL', amount: 100, currency: 'EUR' }),
-            costEntry({ id: 'b', category: 'SEED', amount: 200, currency: 'BGN' }),
-            costEntry({ id: 'c', category: 'FUEL', amount: 50, currency: 'BGN' }),
-            // The one that keeps the title of this describe true. Without a
-            // foreign row there is nothing left to group: lev and euro are one
-            // currency now, so a BGN+EUR fixture tests the COLLAPSE and not the
-            // grouping, and "never blends currencies" would be asserted by a
-            // test that could no longer observe a blend.
+            // `'EURO'` / blank, the spellings that still FOLD, so the first
+            // bucket below is a real collapse rather than three codes that
+            // never needed collapsing.
+            costEntry({ id: 'b', category: 'SEED', amount: 200, currency: 'EURO' }),
+            costEntry({ id: 'c', category: 'FUEL', amount: 50, currency: null }),
+            // Two rows that must NOT fold, for the same reason and in two
+            // currencies — since #2793 lev is on this side of the line, which
+            // is what keeps the title of this describe observable. Before it,
+            // a BGN+EUR fixture tested the COLLAPSE and only the USD row could
+            // show a blend being avoided.
             costEntry({ id: 'd', category: 'SERVICE', amount: 90, currency: 'USD' }),
+            costEntry({ id: 'e', category: 'OTHER', amount: 70, currency: 'BGN' }),
         ]);
 
         const result = await netWorthResult(ctx);
 
         expect(result.cashOut).toEqual([
-            // Euro and lev in ONE bucket, the lev amounts converted:
-            // 100 + eur(200) + eur(50).
-            { currency: 'EUR', amount: 100 + eur(200) + eur(50), categories: ['FUEL', 'SEED'] },
-            // The dollar row keeps its own bucket AND its raw amount. There is
-            // no rate to convert it with, so converting would invent one.
+            // The lev row keeps its own bucket AND its raw amount, exactly
+            // like the dollar one. Sorted first because the buckets are
+            // ordered by code.
+            { currency: 'BGN', amount: 70, categories: ['OTHER'] },
+            // Three euro SPELLINGS in ONE bucket, amounts unchanged:
+            // 100 + 200 + 50.
+            { currency: 'EUR', amount: 350, categories: ['FUEL', 'SEED'] },
+            // There is no rate to convert a dollar with, so converting would
+            // invent one.
             { currency: 'USD', amount: 90, categories: ['SERVICE'] },
         ]);
     });
@@ -1662,7 +1735,7 @@ describe('allocation basis — land with no crop', () => {
                 id: 'lease-1',
                 parcelId: 'parcel-idle',
                 rentAmount: 5,
-                rentUnit: 'лв/дка',
+                rentUnit: '€/дка',
                 rentUnitRaw: null,
                 parcel: { areaHa: 10 },
             },
@@ -1670,8 +1743,8 @@ describe('allocation basis — land with no crop', () => {
 
         const result = await netWorthResult(ctx);
 
-        // 5 лв/дка × 10 дка/ха × 10 ха = 500.
-        expect(result.unallocatedToCrop.amount).toBe(eur(500));
+        // 5 €/дка × 10 дка/ха × 10 ха = 500.
+        expect(result.unallocatedToCrop.amount).toBe(500);
         // THE FIX (#2397 follow-up). This asserted `['UNKNOWN']` — the
         // sentinel was applied to any money rent regardless of unit, which is
         // what made every farm with cash rent read as mixed-currency and had
@@ -1833,8 +1906,8 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
             {
                 id: 'lease-1',
                 parcelId: 'parcel-leased',
-                rentAmount: 5, // 5 лв/дка ⇒ 50 лв/ха
-                rentUnit: 'лв/дка',
+                rentAmount: 5, // 5 €/дка ⇒ 50 €/ха
+                rentUnit: '€/дка',
                 rentUnitRaw: null,
                 parcel: { areaHa: 10 },
             },
@@ -1863,13 +1936,13 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
         ]);
         expect(result.imputedLandCharge).toMatchObject({
             areaHa: 10,
-            totalAmount: eur(500),
+            totalAmount: 500,
             refusalCode: null,
         });
-        expect(result.imputedLandCharge?.perHa).toBeCloseTo(500 / BGN_PER_EUR / 10, 9);
-        expect(wheat.imputedLandCharge).toBe(eur(500));
+        expect(result.imputedLandCharge?.perHa).toBeCloseTo(500 / 10, 9);
+        expect(wheat.imputedLandCharge).toBe(500);
         expect(wheat.imputedLandChargeAreaHa).toBe(10);
-        expect(wheat.imputedLandChargePerHa).toBeCloseTo(500 / BGN_PER_EUR / 10, 10);
+        expect(wheat.imputedLandChargePerHa).toBeCloseTo(500 / 10, 10);
     });
 
     it('does NOT enter cashCostTotal, and does not move net worth', async () => {
@@ -1885,9 +1958,9 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
         // Only the real lease is cash: 50 лв/ха × 10 ха = 500. The farm
         // also owns 10 ha worth another 500 in opportunity cost, and the
         // total stays 500 — not 1000.
-        expect(wheat.rentCostMoneyAmount).toBe(eur(500));
-        expect(wheat.cashCostTotal).toBe(eur(500));
-        expect(wheat.imputedLandCharge).toBe(eur(500));
+        expect(wheat.rentCostMoneyAmount).toBe(500);
+        expect(wheat.cashCostTotal).toBe(500);
+        expect(wheat.imputedLandCharge).toBe(500);
         expect(wheat.cashCostTotal).toBe(
             Math.round((wheat.attributedCropCost + wheat.rentCostMoneyAmount + wheat.payrollCost) * 100) / 100,
         );
@@ -1904,7 +1977,7 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
                 id: 'lease-1',
                 parcelId: 'parcel-idle',
                 rentAmount: 5,
-                rentUnit: 'лв/дка',
+                rentUnit: '€/дка',
                 rentUnitRaw: null,
                 parcel: { areaHa: 10 },
             },
@@ -1917,7 +1990,7 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
         const result = await netWorthResult(ctx);
         const wheat = result.rows[0];
 
-        expect(wheat.imputedLandCharge).toBe(eur(500));
+        expect(wheat.imputedLandCharge).toBe(500);
         expect(wheat.cashCostTotal).toBe(0);
         expect(wheat.netWorth).toBe(wheat.netAssetPosition);
     });
@@ -1972,7 +2045,7 @@ describe('imputed land charge — beside the cash cost, never inside it', () => 
                 id: 'lease-1',
                 parcelId: 'parcel-leased',
                 rentAmount: 5,
-                rentUnit: 'лв/дка',
+                rentUnit: '€/дка',
                 rentUnitRaw: null,
                 parcel: { areaHa: 10 },
             },

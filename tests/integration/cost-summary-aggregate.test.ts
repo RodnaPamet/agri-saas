@@ -212,10 +212,16 @@ describeFn('cost summary aggregate', () => {
         it('keeps BGN SEPARATE — the control that makes the fold meaningful', async () => {
             // Without this, a fold that swallowed lev into EUR would satisfy
             // the assertion above perfectly, and the total would be wrong
-            // rather than merely split. `canonicalCostCurrency` DOES fold BGN,
-            // correctly, because it is used beside `normaliseCostToEur`; this
-            // aggregate converts nothing, so folding lev here would add two
-            // different units together.
+            // rather than merely split.
+            //
+            // `canonicalCostCurrency` USED to fold BGN, correctly, because it
+            // sat beside `normaliseCostToEur` and that converted the amount at
+            // the fixed peg — so this control existed to say that THIS
+            // aggregate, which converts nothing, must not copy it. #2793
+            // removed both halves and the two now agree, which makes the
+            // control redundant on that axis and no less load-bearing: this
+            // SQL would still add two different units together if it folded
+            // the label, whatever its TypeScript neighbour decides.
             const s = await getCostSummary(spellingCtx());
             const fert = s.byType.filter((r) => r.category === 'FERTILIZER');
 

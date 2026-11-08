@@ -34,12 +34,17 @@ export interface LeaseFormState {
 /**
  * Shared defaults — rent is quoted per decare in EURO.
  *
- * Owner ruling 2026-10-31: new leases are entered in `€/дка` only. The field
- * stays free text, so a lease already recorded in `лв/дка` still edits and
- * saves as it was typed, and `canonicalRentUnit` recognises both — what
- * changes is which one a NEW lease starts in. Existing lev leases are read as
- * euro at the fixed peg by `resolveRentBasis`, so nothing has to be migrated
- * for the figures to add up.
+ * Owner ruling 2026-10-31: new leases are entered in `€/дка` only, and since
+ * #2793 that is ENFORCED rather than merely defaulted — a `лв/дка` rent is
+ * refused on save with `LEASE_RENT_UNIT_NOT_EUR`.
+ *
+ * The field stays free text, and `canonicalRentUnit` still recognises both, so
+ * a lease already recorded in `лв/дка` keeps editing: the server refuses a
+ * CHANGE to an unrecordable unit, not the row's own unit restated, which is
+ * what lets an operator fix the lessor's name on a legacy lease. Changing such
+ * a lease's rent means re-entering it in `€/дка` — the figures do not add up
+ * otherwise, because `resolveRentBasis` no longer converts at the fixed peg
+ * and reports a lev lease as unresolved instead.
  */
 export const EMPTY_LEASE_FORM: LeaseFormState = {
     lessorName: '',

@@ -5501,7 +5501,7 @@ exports[`API contract — per-schema snapshots schema: CropCostDefaults 1`] = `
           },
           "currency": {
             "type": "string",
-            "description": "READ THIS; do not assume the form’s. Bulgaria moved to EUR in 2026 and older rows are BGN, so prefilling the number alone shows a 24 000 лв figure as €24 000 — wrong by the fixed 1.95583 and entirely plausible on screen."
+            "description": "READ THIS; do not assume the form’s. Bulgaria moved to EUR in 2026 and a row recorded before that may be BGN, so prefilling the number alone shows a 24 000 лв figure as €24 000 — entirely plausible on screen, and wrong by roughly double. Nothing converts it for you: the server refuses a non-euro cost on write and no longer converts one on read either."
           },
           "incurredOn": {
             "type": "string",
