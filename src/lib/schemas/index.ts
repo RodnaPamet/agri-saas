@@ -1675,11 +1675,27 @@ export const SendDirectMessageSchema = z.object({
     // message — `outboxHeaders()` is the producer. Absent is allowed because
     // a web composer that is online has nothing to replay.
     idempotencyKey: z.string().min(1).max(200).optional(),
+    // `httpsUrl()`, never a bare `z.string().url()`: under the installed zod
+    // the loose form accepts `http://`, `ftp://`, `file://`, `data:` and
+    // `javascript:`, all measured. `payload-url-scheme` scans this directory
+    // from the filesystem, so a bare one here would be caught — but the reason
+    // to use it is that the field's contract should be as narrow as its
+    // purpose.
+    //
+    // It is a CONTRACT NARROWING and not an SSRF guard:
+    // `https://169.254.169.254/` passes it. What stops that is
+    // `fetchPublicUrl`, which re-runs the host policy at every redirect hop.
+    linkUrl: httpsUrl().optional(),
 }).strip().openapi('SendDirectMessage', {
     description:
         'A message to send. The sender is the authenticated caller. Repeating '
         + 'a request with the same idempotencyKey returns the message the '
-        + 'first attempt created rather than sending a second.',
+        + 'first attempt created rather than sending a second. An optional '
+        + '`linkUrl` attaches a link card: the server fetches the page through '
+        + 'the per-hop host policy, sanitises whatever metadata comes back, and '
+        + 'stores a snapshot. The fetch is BEST-EFFORT — a refused host, a '
+        + 'timeout or a page with no metadata sends the message with the URL '
+        + 'and no preview rather than refusing it.',
 });
 
 export const RespondToConversationSchema = z.object({

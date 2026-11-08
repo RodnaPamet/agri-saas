@@ -659,12 +659,37 @@ model DirectMessage {
   attachmentBytes  Int?
   attachmentSha256 String?
 
-  /// The LINK-CARD columns are deliberately absent until the code stage that
-  /// writes them — `sanitize-rich-text-coverage` is why. Declaring a field
-  /// encrypted (which `linkTitle` / `linkDescription` must be) requires it to
-  /// be sanitised BY NAME at its write path, and a schema-only stage has no
-  /// write path to sanitise in. See the P8.6 migration for the full reasoning
-  /// and #2800 for the obligation list.
+  /// The link card — a SNAPSHOT of a third-party page at a moment.
+  ///
+  /// These arrived WITH their writer rather than a release ahead, which the
+  /// photo columns above did not, and `sanitize-rich-text-coverage` is why:
+  /// `linkTitle` / `linkDescription` must be declared in `ENCRYPTED_FIELDS`,
+  /// and declaring a field there requires it to be sanitised BY NAME at its
+  /// write path — which a schema-only stage has none of. Shipping the columns
+  /// unencrypted "for now" would let third-party text reach a column nothing
+  /// had decided to protect, so the columns, the manifest entry and the
+  /// `sanitizePlainText` call are one diff.
+  ///
+  /// `linkUrl` is fetched through `fetchPublicUrl`, which re-runs the host
+  /// policy at EVERY REDIRECT HOP: a check before the call validates the URL
+  /// the CALLER chose, while the RESPONDER chooses where the request lands.
+  ///
+  /// `linkTitle` and `linkDescription` are ENCRYPTED and UNTRUSTED. Both at
+  /// once — encryption is not sanitisation (D.2), and a field being ciphertext
+  /// at rest says nothing about the renderer that decrypts it.
+  linkUrl         String?
+  linkTitle       String?
+  linkDescription String?
+
+  /// No `linkImageKey`: the card is text only. Storing a preview image means
+  /// DECODING bytes a hostile server chose, which is the record-less upload
+  /// shape (scan before strip, a key, an egress route gated by
+  /// participation) rather than a column — #2855.
+
+  /// When the fetch happened. Without it a reader cannot tell a fresh card
+  /// from a stale one, and re-fetching later would silently rewrite what two
+  /// people discussed.
+  linkFetchedAt DateTime?
 
   createdAt DateTime  @default(now())
   editedAt  DateTime?

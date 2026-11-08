@@ -78,9 +78,15 @@ export interface PersonalDataExport {
      * What this export does NOT contain, in the response itself.
      *
      * Art 15 is a right to know what is held, so an export that silently
-     * omitted categories would be a worse answer than one that names them. The
-     * strings are resolved from the registry so they cannot drift from what the
-     * code does.
+     * omitted categories would be a worse answer than one that names them.
+     *
+     * The MODELS are resolved from the registry (`EXPORTED_MODELS`), so which
+     * collections appear cannot drift from what the erasure touches. These
+     * STRINGS are not — they are hand-written prose, and this docblock claimed
+     * otherwise until #2840. What holds them is
+     * `privacy-notice-matches-erasure` on one axis and the integration test's
+     * substring assertions on the other; neither derives the sentences, so a
+     * category that stops being omitted leaves its line behind.
      */
     readonly notIncluded: readonly string[];
     readonly account: Record<string, unknown>;
@@ -137,6 +143,15 @@ const NOT_INCLUDED: readonly string[] = [
     + 'design, in both directions.',
     'Platform and organisation audit trails. These record actions by and about '
     + 'several people, so a copy would disclose other people\'s activity.',
+    // #2840, owner ruling 2026-11-08: metadata plus this line, rather than the
+    // bytes or a signed URL per attachment. The response is ONE JSON document
+    // and `PER_COLLECTION_LIMIT` bounds rows rather than megabytes, so bytes
+    // would make the export a different artefact. Naming the omission is what
+    // Art 15 requires; a silent one would be the worse answer.
+    'The image files attached to your messages. Each message below lists its '
+    + 'photograph\'s type, size and digest, and the photographs themselves stay '
+    + 'in the conversation they were sent to rather than being copied into this '
+    + 'file. Open the conversation to save one.',
 ];
 
 export async function exportPersonalData(userId: string): Promise<PersonalDataExport> {
@@ -233,7 +248,12 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             where: { sellerUserId: userId },
             select: {
                 id: true, sellerTenantId: true, commodity: true, side: true,
-                kind: true, description: true, status: true, createdAt: true,
+                kind: true, description: true, status: true,
+                // #2865 — we removed this on a notice. Art 15 is a right to
+                // know what is held, and the Art 17 statement of reasons
+                // already told them; withholding it from the export would
+                // be quieter about our own action than about theirs.
+                removedByModerationAt: true, createdAt: true,
             },
             orderBy: { createdAt: 'desc' },
             take,
@@ -259,7 +279,12 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             // The body is theirs — they wrote it. The counterparty's replies
             // are NOT here: `senderUserId` scopes this to what they sent, and
             // the other side of a conversation is somebody else's words.
-            select: { id: true, threadId: true, body: true, createdAt: true },
+            select: {
+                id: true, threadId: true, body: true, createdAt: true,
+                // #2865, for the listing's reason one query up: we removed it,
+                // and Art 15 is a right to know what is held.
+                removedByModerationAt: true,
+            },
             orderBy: { createdAt: 'desc' },
             take,
         }),
@@ -362,9 +387,32 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             // The body is theirs — they wrote it. The counterparty's replies
             // are NOT here, the `ExchangeMessage` rule above verbatim: the
             // other side of a conversation is somebody else's words.
+            //
+            // THE ATTACHMENT AND LINK COLUMNS ARE HERE BECAUSE AN EXPLICIT
+            // `select` IS A LIST THAT GOES STALE (#2840). P8.6 added eight
+            // columns and this list omitted all of them, so a photo-only
+            // message exported as a row with a null body and nothing else —
+            // which reads as an empty message rather than as a photograph.
+            // `export-select-covers-every-column` is what now fails when a
+            // ninth arrives.
+            //
+            // The METADATA, not the bytes (owner ruling 2026-11-08). The
+            // response is one JSON document and `PER_COLLECTION_LIMIT` bounds
+            // ROWS rather than megabytes, so the bytes are named in
+            // `notIncluded` instead of silently absent — Art 15 is a right to
+            // know what is held.
+            //
+            // `attachmentKey` is deliberately NOT exported. It is honest and
+            // useless: the egress route authorises by participation, so a bare
+            // key in a downloadable file resolves to nothing for the person
+            // holding it, and exporting a locator that grants no access only
+            // widens where it travels.
             select: {
                 id: true, conversationId: true, body: true,
                 createdAt: true, editedAt: true, deletedAt: true,
+                attachmentMime: true, attachmentBytes: true, attachmentSha256: true,
+                linkUrl: true, linkTitle: true, linkDescription: true,
+                linkFetchedAt: true,
             },
             orderBy: { createdAt: 'desc' },
             take,

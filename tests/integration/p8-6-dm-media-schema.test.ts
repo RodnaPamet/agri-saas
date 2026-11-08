@@ -125,6 +125,25 @@ describeFn('P8.6 schema — photos and link cards (#2800)', () => {
             expect(await rawColumn(id, 'body')).toBeNull();
         });
 
+        it('accepts a LINK-ONLY message — the CHECK gained its linkUrl arm', async () => {
+            // #2800's migration drops and recreates
+            // `direct_message_says_something` to add `OR "linkUrl" IS NOT
+            // NULL`. Without that arm a message carrying only a shared link is
+            // refused by the database, which is the one thing a link card is
+            // for. The control is 'REFUSES a message that says nothing at all'
+            // below: widening a CHECK is how a CHECK stops checking, and this
+            // assertion alone is satisfied by a constraint that accepts
+            // everything.
+            const state = await insertState({
+                id: `dm-linkonly-${randomUUID()}`,
+                conversationId: CONV,
+                senderUserId: BORIS,
+                body: null,
+                linkUrl: 'https://agri.example.test/only',
+            });
+            expect(state).toBeNull();
+        });
+
         it('still accepts a TEXT-ONLY message — the regression control', async () => {
             const id = `dm-text-${randomUUID()}`;
             const state = await insertState({
@@ -182,7 +201,17 @@ describeFn('P8.6 schema — photos and link cards (#2800)', () => {
             // way — ciphertext in the column and a correct decrypt are
             // indistinguishable from the ORM, which is the whole reason the
             // at-rest reads below exist.
-            expect(ENCRYPTED_FIELDS.DirectMessage).toEqual(['body']);
+            // `linkTitle` / `linkDescription` joined the manifest WITH their
+            // writer (#2800) — the whole reason the link-card columns did not
+            // ship in this stage. `attachmentKey` and `linkUrl` are the two
+            // this assertion is actually guarding: a storage key is not
+            // content, and `linkUrl` is plaintext by a recorded judgement
+            // rather than by omission (see `ENCRYPTED_FIELDS`).
+            expect(ENCRYPTED_FIELDS.DirectMessage).toEqual([
+                'body',
+                'linkTitle',
+                'linkDescription',
+            ]);
         });
 
         it('stores the key at rest exactly as written', async () => {
@@ -202,19 +231,59 @@ describeFn('P8.6 schema — photos and link cards (#2800)', () => {
             expect(await rawColumn(id, 'attachmentKey')).toBe(key);
         });
 
-        it('has NO link-card columns yet — they land with their writer', async () => {
-            // `sanitize-rich-text-coverage` is why: declaring `linkTitle` /
-            // `linkDescription` encrypted requires sanitising them BY NAME at
-            // a write path, and a schema-only stage has none. Asserted so that
-            // adding the columns without the manifest entry and the sanitiser
-            // fails here rather than shipping third-party text into a column
-            // nothing decided to protect.
+        it('has exactly the FOUR link-card columns, and no linkImageKey', async () => {
+            // This test asserted `[]` through the schema stage, with the
+            // reason that declaring `linkTitle` / `linkDescription` encrypted
+            // requires sanitising them BY NAME at a write path and a
+            // schema-only stage has none. #2800 is that write path, so the
+            // assertion inverts rather than being deleted — which is what it
+            // was for: it forced the columns, the manifest entry and the
+            // sanitiser into one diff.
+            //
+            // FOUR, not five. A `linkImageKey` was in both earlier drafts with
+            // nothing that writes it; storing a preview image is a DECODE of
+            // bytes a hostile server chose, so it is the record-less upload
+            // shape rather than a column — #2855. Named here so adding the
+            // column back without its writer fails in the same place.
             const cols = await rawPrisma.$queryRawUnsafe<Array<{ column_name: string }>>(
                 `SELECT column_name FROM information_schema.columns
-                  WHERE table_name = 'DirectMessage' AND column_name LIKE 'link%'`,
+                  WHERE table_name = 'DirectMessage' AND column_name LIKE 'link%'
+                  ORDER BY column_name`,
             );
-            expect(cols.map((c) => c.column_name)).toEqual([]);
+            expect(cols.map((c) => c.column_name)).toEqual([
+                'linkDescription',
+                'linkFetchedAt',
+                'linkTitle',
+                'linkUrl',
+            ]);
         });
+
+        it('encrypts the card TEXT at rest and leaves the URL verbatim', async () => {
+            const id = `dm-card-${randomUUID()}`;
+            const url = 'https://agri.example.test/at-rest';
+            const state = await insertState({
+                id,
+                conversationId: CONV,
+                senderUserId: BORIS,
+                body: null,
+                linkUrl: url,
+                linkTitle: 'Заглавие при покой',
+                linkDescription: 'Описание при покой',
+                linkFetchedAt: new Date(),
+            });
+            expect(state).toBeNull();
+
+            // The manifest decision, read where the manifest acts. A round
+            // trip through the extension returns the plaintext either way, so
+            // only the raw column tells a correct decrypt from no encryption
+            // at all.
+            expect(await rawColumn(id, 'linkTitle')).toMatch(/^v[12]:/);
+            expect(await rawColumn(id, 'linkDescription')).toMatch(/^v[12]:/);
+            // And the URL is NOT encrypted — the inbox preview and any future
+            // unfurl cache read it with no tenant in scope.
+            expect(await rawColumn(id, 'linkUrl')).toBe(url);
+        });
+
     });
 
     describe('the new columns inherit the EXISTING row policies', () => {

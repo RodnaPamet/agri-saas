@@ -207,7 +207,7 @@ export async function getListing(ctx: RequestContext, id: string) {
         // holds English prose in thrown errors on a downward ratchet — a second
         // `codedNotFound('LISTING_NOT_FOUND', 'Listing not found')` raises the count for a sentence that
         // already exists one line below.
-        const hidden = listing.suppressedForDeletionAt
+        const hidden = listing.suppressedForDeletionAt || listing.removedByModerationAt
             ? true
             : (await sellerTenantsWithExchangeOff()).includes(listing.sellerTenantId);
         if (hidden) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
@@ -692,7 +692,11 @@ export async function createInquiry(ctx: RequestContext, input: CreateInquiryInp
         // `listing_not_active` below — honest, because the seller withdrew it —
         // whereas naming the suppressed state would disclose that its seller
         // asked to delete their account.
-        if (!listing || listing.suppressedForDeletionAt) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
+        // #2865 rides the same throw as #1655, and for the same two reasons:
+        // the silence is wanted — naming the state would disclose a moderation
+        // decision to anybody who can type an id — and it is one fewer
+        // server-authored sentence.
+        if (!listing || listing.suppressedForDeletionAt || listing.removedByModerationAt) throw codedNotFound('LISTING_NOT_FOUND', 'Listing not found');
         if (listing.status !== ExchangeListingStatus.ACTIVE) {
             // KEEPS `LISTING_NOT_ACTIVE` (#2564), rather than minting a third
             // new code: this is the reader with NOTHING to do about it, so the
