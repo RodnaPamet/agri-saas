@@ -28,13 +28,58 @@ import * as fs from 'fs';
 import * as path from 'path';
 import ts from 'typescript';
 
-const ROOTS = ['src/app', 'src/components'].map((d) => path.resolve(__dirname, '../../', d));
+// `src/lib` joined the roots in #2858. The gap it closes is recorded in this
+// file's own docblock and had been open long enough to collect an occupant:
+// the dashboard's first-run card rendered six hardcoded ENGLISH strings
+// straight out of `src/lib/onboarding-steps.ts` — the first thing a new farm
+// sees, in a product where four in five users carry `uiLanguage: 'bg'`. The
+// docblock named the precedent (`src/lib/celebrations.ts`), that one instance
+// was cleaned up, and the GAP was left open, so a documented escape hatch with
+// its only known occupant removed read as closed.
+const ROOTS = ['src/app', 'src/components', 'src/lib'].map((d) => path.resolve(__dirname, '../../', d));
 
 /**
  * Files that legitimately hard-code copy because next-intl is unavailable
  * or inappropriate there. Each entry carries a reason; a new entry needs one.
  */
 const FILE_ALLOWLIST: { pattern: RegExp; reason: string }[] = [
+    {
+        pattern: /^src\/lib\/openapi\//,
+        reason:
+            'The OpenAPI document. Its `description:` fields are API '
+            + 'DOCUMENTATION read by SDK authors and by the contract tests, not '
+            + 'UI copy — the spec is English by convention and translating it '
+            + 'would make `openapi-breaking-change` compare two languages. '
+            + 'Measured when `src/lib` joined the roots (#2858): 1,086 '
+            + 'config-property hits in `src/lib`, of which this subtree is the '
+            + 'overwhelming majority.',
+    },
+    {
+        pattern: /^src\/lib\/dto\//,
+        reason:
+            'DTO schema metadata — `description:` on a zod/openapi field, which '
+            + 'describes a WIRE FORMAT to a developer. Same axis as the spec '
+            + 'above: a translated schema description would be wrong, not '
+            + 'localised.',
+    },
+    {
+        pattern: /^src\/lib\/scim\//,
+        reason:
+            'SCIM type definitions. The protocol fixes these names and an IdP '
+            + 'reads them; they are not shown to a farmer at all.',
+    },
+    {
+        pattern: /^src\/lib\/agriculture\/weed-options\.ts$/,
+        reason:
+            'LATIN BINOMIALS — `Sorghum halepense`, `Echinochloa crus-galli`. '
+            + 'They are identical in every language by international botanical '
+            + 'convention, which is the whole point of a binomial, and a '
+            + 'Bulgarian "translation" would either be the same string (which '
+            + '`i18n-completeness`\'s untranslated check then flags) or a '
+            + 'colloquial name that no longer identifies the species on a PPP '
+            + 'label. The COMMON names shown beside them are a separate '
+            + 'question and are not in this file.',
+    },
     { pattern: /(^|\/)error\.tsx$/, reason: 'React error boundary — renders below the intl provider; must not depend on it' },
     { pattern: /(^|\/)global-error\.tsx$/, reason: 'Root error boundary — replaces the whole tree incl. the intl provider' },
     { pattern: /(^|\/)not-found\.tsx$/, reason: 'Next not-found boundary — may render outside the locale segment' },
@@ -104,7 +149,18 @@ const CURRENT_BASELINE = 13;
 // 'Frameworks', 'Audits') with them. MEASURED from the drift sentinel's
 // own arithmetic — it asserts BASELINE <= count + 15 and reported 233 as
 // the ceiling, so the live count is 218 — not estimated.
-const CONFIG_PROP_BASELINE = 201;
+// 201 → 407 when `src/lib` joined ROOTS (#2858). This is a POPULATION
+// change, not slack: the scan now reads 54 more files, and 206 of the hits it
+// counts were always there and always invisible. The number is taken from the
+// FAILURE MESSAGE with the floor forced to 0, which is what this file's
+// docblock demands and what a prior re-floor here got wrong — it projected a
+// figure that carried four slack and passed against a live 13.
+//
+// Raising this line is otherwise forbidden, and the distinction is the one the
+// coverage gate draws when `bullmq-real-api` entered its denominator: a
+// re-floor after the POPULATION moved is a different act from a re-floor that
+// admits new debt. Nothing in `src/app` or `src/components` changed here.
+const CONFIG_PROP_BASELINE = 407;
 
 /**
  * A string counts as user-facing copy if — after stripping HTML entities — it
