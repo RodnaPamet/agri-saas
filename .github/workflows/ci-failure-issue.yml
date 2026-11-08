@@ -124,6 +124,19 @@ on:
       # It exists because `Dependabot Updates` itself CANNOT be watched here;
       # see the removal note below.
       - "Dependabot updater health"
+      # Daily cron plus a `workflow_run` on Release (#2884). The SECOND state
+      # question in this list, and the reason it belongs here rather than
+      # needing an exemption: a release that published with no SBOM already
+      # reddened `Release` and already produced an issue — and all four such
+      # issues on 2026-11-08 SELF-CLOSED, because the next Release succeeding
+      # closes them while saying nothing about the previous release's asset.
+      #
+      # This probe asks whether any release LACKS one, so its green answer IS
+      # a true statement about the durable artefact, and closing on it means
+      # exactly what it says. The self-closing rule is correct for a state
+      # question and wrong for a run outcome; that is the distinction, not an
+      # argument for a carve-out.
+      - "SBOM presence audit"
       # `Dependabot Updates` was listed here and has been REMOVED: the
       # notifier cannot watch it, for a reason no amount of permissions can
       # fix. A `workflow_run` triggered by a run whose actor is
