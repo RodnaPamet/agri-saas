@@ -85,10 +85,26 @@ function verdict(state, detail) {
  * as a replay and revokes the session. That is correct behaviour for a stolen
  * token and useless for an hourly probe.
  *
- * Static credentials and the cookie flow have neither problem. The probe
- * account needs no write permission; it needs to be in the cohort the
- * `notifications.sse` flag is narrowed to, or the stream will correctly
- * answer 204 and the probe will report OFF for ever.
+ * Static credentials and the cookie flow have neither problem.
+ *
+ * The probe account needs **a password** — `signIn` below posts to
+ * `/api/auth/callback/credentials`, so a Google-only account has nothing to
+ * present and cannot be used. It needs no write permission: `/api/me/stream`
+ * and `/api/me/probe-event` both resolve a PERSON through `getUserCtx`, not a
+ * tenant role.
+ *
+ * It does NOT need to be in a cohort, and this paragraph said it did until
+ * 2026-11-09. `notifications.sse` was cohort-narrowed when that was written;
+ * the cohort was dropped on 2026-10-25 per the owner's #2137 ruling — because
+ * membership was per-user with no enrolment hook, so 4 of 8 active users
+ * silently never got realtime — and `enabled` alone decides now. Verified
+ * against the live flag: `enabled: true`, `cohorts: []`, `forcedOff: false`.
+ *
+ * Kept as a correction rather than deleted, because the failure it warned
+ * about is real and would recur the moment anyone re-narrows the flag: a
+ * non-member gets a 204, which is indistinguishable from the channel being
+ * deliberately off, so the probe reports OFF for ever and the monitor is green
+ * while watching nothing.
  */
 async function signIn() {
     if (!EMAIL || !PASSWORD) {
