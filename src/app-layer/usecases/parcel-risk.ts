@@ -37,6 +37,7 @@ import {
     getIndexMeansPerPass,
     SCENE_SELECTION_VERSION,
     type IndexPass,
+    type WithinFieldStats,
 } from '@/lib/agro/earth-engine';
 
 export type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown';
@@ -64,6 +65,18 @@ export interface ParcelRiskResult {
     acquiredDate: string | null;
     /** ISO timestamp the analysis was produced. */
     generatedAt: string;
+    /**
+     * How NDVI is DISTRIBUTED across the parcel — #2837 stage 2.
+     *
+     * `null` when there was no usable imagery. A field mean of 0.5 can be a
+     * uniformly mediocre crop or an excellent one with a failing corner, and
+     * those call for different actions; the percentiles say which.
+     *
+     * The phone shows this for the LATEST reading only (`agrent-ios`, asked
+     * 2026-11-07) — the full p10/p50/p90 on the parcel card, and at most
+     * `belowThresholdShare` charted over time.
+     */
+    withinField: WithinFieldStats | null;
 }
 
 const WINDOW_DAYS = 30;
@@ -74,10 +87,29 @@ function ymd(d: Date): string {
 }
 
 /** NDVI → vegetation risk. Higher canopy vigour is better. */
+/**
+ * NDVI at or below which a pixel is in STRESS — the `watch` floor, named.
+ *
+ * Exported because stage 2's `belowThresholdShare` is "what share of the
+ * parcel is in stress", and a second spelling of 0.35 would be the mistake
+ * stage 1 already paid for once: `agrent-ios` caught that draft inventing a
+ * parallel level vocabulary, and the fix was the SHARED function rather than
+ * the right constant. A share computed against its own copy of the number
+ * would disagree with the card's own level the first time somebody retunes
+ * it, and the two would be read side by side on the same screen.
+ *
+ * It is the `watch` boundary rather than the `good` one deliberately: the
+ * actionable question for an operator is how much of the field is in trouble,
+ * not how much is short of excellent.
+ */
+export const NDVI_STRESS_THRESHOLD = 0.35;
+/** NDVI at or above which vegetation is healthy. */
+export const NDVI_GOOD_THRESHOLD = 0.6;
+
 function vegetationLevel(ndvi: number | null): RiskLevel {
     if (ndvi == null) return 'unknown';
-    if (ndvi >= 0.6) return 'good';
-    if (ndvi >= 0.35) return 'watch';
+    if (ndvi >= NDVI_GOOD_THRESHOLD) return 'good';
+    if (ndvi >= NDVI_STRESS_THRESHOLD) return 'watch';
     return 'stress';
 }
 
@@ -106,7 +138,15 @@ export async function analyzeParcelRisk(
     assertCanRead(ctx);
     const now = opts.now ?? new Date();
     const date = ymd(now);
-    const cacheKey = `parcel-risk:v1:${ctx.tenantId}:${parcelId}:${date}`;
+    // `v2` since #2837 stage 2 added `withinField`. A `v1` entry written
+    // before the deploy carries no such key, so `JSON.parse` yields
+    // `undefined` where the contract says `WithinFieldStats | null` — the
+    // field ABSENT rather than null, for up to the 6h TTL, on a response the
+    // spec declares as always present. Bumping the version is easier to
+    // reason about than normalising on read, and the cost is bounded: one
+    // Earth Engine call per parcel on its first read after deploy, which the
+    // day turning would have cost anyway.
+    const cacheKey = `parcel-risk:v2:${ctx.tenantId}:${parcelId}:${date}`;
 
     const redis = getRedis();
     if (redis) {
@@ -133,15 +173,23 @@ export async function analyzeParcelRisk(
     let ndvi: number | null = null;
     let ndmi: number | null = null;
     let acquiredDate: string | null = null;
+    let withinField: WithinFieldStats | null = null;
     if (configured && geometry) {
         const win = {
             start: ymd(new Date(now.getTime() - WINDOW_DAYS * 86_400_000)),
             end: date,
         };
         try {
-            const means = await getIndexMeansForPolygon(geometry, win);
+            const means = await getIndexMeansForPolygon(geometry, win, {
+                // The SAME constant the levels use. A second spelling of 0.35
+                // would make the share disagree with the card's own level the
+                // first time somebody retunes it, and the two are read side by
+                // side on one screen.
+                stressThreshold: NDVI_STRESS_THRESHOLD,
+            });
             ndvi = means.ndvi;
             ndmi = means.ndmi;
+            withinField = means.withinField;
             acquiredDate = means.acquiredDate;
         } catch {
             /* no clear pixels / EE error — leave null, degrade to "unknown" */
@@ -165,6 +213,7 @@ export async function analyzeParcelRisk(
         moisture,
         overall,
         acquiredDate,
+        withinField,
         generatedAt: now.toISOString(),
     };
 

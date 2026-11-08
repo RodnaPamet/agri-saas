@@ -35,6 +35,60 @@ const RiskLevel = z.enum(['good', 'watch', 'stress', 'unknown']).openapi('RiskLe
         'not a failure — render it as absence, never as a fourth severity.',
 });
 
+/**
+ * How NDVI is DISTRIBUTED across the parcel — #2837 stage 2.
+ *
+ * The phone shows this for the LATEST reading only (`agrent-ios`, 2026-11-07):
+ * the full p10/p50/p90 on the parcel card, and at most `belowThresholdShare`
+ * charted over time from the history endpoint.
+ */
+const WithinField = z
+    .object({
+        ndviP10: z.number().nullable(),
+        ndviP50: z.number().nullable(),
+        ndviP90: z.number().nullable(),
+        belowThresholdShare: z.number().nullable(),
+        threshold: z.number(),
+        coverage: z.number().nullable(),
+    })
+    .openapi('ParcelWithinField', {
+        description:
+            'NDVI distribution across the parcel. **Every figure is over the CLEAR ' +
+            'area, not the whole field** — cloud, shadow, cirrus and snow are masked ' +
+            'out and masked pixels are not counted, so `belowThresholdShare: 0.3` ' +
+            'means "30% of what the satellite could see is in stress", NOT "30% of ' +
+            'the field". Nothing can be said about ground under cloud, and the ' +
+            'alternatives both invent a reading: counting cloud as healthy makes a ' +
+            'mostly-clouded parcel look fine, counting it as stressed cries wolf.\n\n' +
+            '`threshold` is echoed rather than assumed — it is the same NDVI value ' +
+            'the `vegetation` level uses for its `stress` boundary, so the share and ' +
+            'the level on the same screen cannot disagree.\n\n' +
+            'Read `ndviP50` against `ndvi` (the mean): a mean well below the median ' +
+            'means a minority of very poor pixels is dragging it down, which is a ' +
+            'different problem from a uniformly mediocre crop and wants a different ' +
+            'action.\n\n' +
+            '`coverage` is the DENOMINATOR made explicit: what share of the parcel the ' +
+            'composite could see at all, 0..1. It is the share of parcel pixels with ' +
+            'at least one clear observation across the whole window — NOT one pass\u2019s ' +
+            'clear share, which would describe a different picture from these numbers, ' +
+            'since they are a 30-day median over many passes. Near 1 is the normal ' +
+            'case and is not worth telling anyone; well below 1 is when saying how ' +
+            'much of the field was visible stops the other figures from being read as ' +
+            'statements about the whole parcel.\n\n' +
+            '**`coverage < 1` has THREE causes and only two of them are weather**, which ' +
+            'matters for the sentence a client shows. (1) Cloud, cloud shadow or thin ' +
+            'cirrus — SCL 3, 8, 9, 10. (2) **Snow or ice** — SCL 11, masked exactly like ' +
+            'cloud, and on arable land in a Bulgarian winter this is the common case, not ' +
+            'an edge one. (3) No qualifying scene covered that part of the parcel at all: ' +
+            'a pass is kept on its own clear share over the geometry, so a granule ' +
+            'clipping one end of a field can contribute while the other end gets zero ' +
+            'observations — nothing to do with the sky.\n\n' +
+            'So do NOT render the uncovered remainder as "under cloud". A farmer looking ' +
+            'at a field they know is under SNOW, told it was under cloud, has been given ' +
+            'a reason to distrust the number the sentence is attached to. Say the ' +
+            'satellite had no clear view of the rest, and leave the cause out.',
+    });
+
 const ParcelRisk = z
     .object({
         parcelId: z.string(),
@@ -48,6 +102,7 @@ const ParcelRisk = z
         moisture: RiskLevel,
         overall: RiskLevel,
         acquiredDate: z.string().nullable(),
+        withinField: WithinField.nullable(),
         generatedAt: z.string().datetime(),
     })
     .openapi('ParcelRisk');
@@ -156,6 +211,11 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             'composite falls back to the latest usable window, so it can be weeks old ' +
             'while `generatedAt` is now. Show the acquisition date; a farmer reading a ' +
             'three-week-old reading as today plans against weather that has since changed.\n\n' +
+            '`withinField` is the NDVI DISTRIBUTION across the parcel, and it is the ' +
+            'reason a single mean is not enough: 0.5 can be a uniformly mediocre crop ' +
+            'or an excellent one with a failing corner. `null` when there was no ' +
+            'usable imagery. Its figures are over the CLEAR area rather than the whole ' +
+            'field — see the schema.\n\n' +
             'The parcel id is a PATH segment, deliberately. iOS writes the full request ' +
             'URL — query included — to the unified log from its own networking layer, ' +
             'below anything an app can suppress.',

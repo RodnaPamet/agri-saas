@@ -68,6 +68,7 @@ import {
     analyzeBlockRisk,
     analyzeParcelRisk,
     MAX_BATCH_PARCELS,
+    NDVI_STRESS_THRESHOLD,
 } from '@/app-layer/usecases/parcel-risk';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -75,6 +76,18 @@ const ctx = makeRequestContext('READER', { userId: 'u-1', tenantId: 't-1', tenan
 const NOW = new Date('2026-07-20T09:00:00.000Z');
 const PARCEL = { id: 'p-1', name: 'North field', areaHa: 12.5, cropType: 'WHEAT' };
 const GEOMETRY = { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] };
+
+/** One parcel reading at a given NDVI, fresh cache, for threshold probes. */
+async function riskAt(ndvi: number) {
+    redisGet.mockResolvedValue(null);
+    mockGetIndexMeansForPolygon.mockResolvedValue({
+        ndvi,
+        ndmi: 0.2,
+        acquiredDate: '2026-07-18',
+        withinField: null,
+    });
+    return analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+}
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -86,12 +99,101 @@ beforeEach(() => {
     mockIsGeeConfigured.mockReturnValue(true);
 });
 
+describe('analyzeParcelRisk — the within-field distribution (#2837 stage 2)', () => {
+    it('asks Earth Engine for the share against the SAME threshold the levels use', async () => {
+        /*
+         * The property stage 1 already paid to learn: `agrent-ios` caught that
+         * draft inventing a parallel level vocabulary, and the fix was the
+         * SHARED function rather than the right constant.
+         *
+         * `belowThresholdShare` is "what share of the parcel is in stress", so
+         * the number it compares against must be the one `vegetationLevel`
+         * uses for the `stress` boundary. A copy would disagree with the
+         * card's own level the first time somebody retunes it — and the share
+         * and the level are read side by side on one screen.
+         *
+         * Asserted as EQUALITY WITH THE LEVEL FUNCTION'S OWN BOUNDARY rather
+         * than against the literal 0.35: a hand-written 0.35 here would pass
+         * whether or not the constant is shared, which is the whole failure
+         * being guarded.
+         */
+        mockGetIndexMeansForPolygon.mockResolvedValue({
+            ndvi: 0.72,
+            ndmi: 0.18,
+            acquiredDate: '2026-07-18',
+            withinField: null,
+        });
+
+        await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+
+        const [, , opts] = mockGetIndexMeansForPolygon.mock.calls[0] as [
+            unknown,
+            unknown,
+            { stressThreshold?: number } | undefined,
+        ];
+        expect(opts?.stressThreshold).toBe(NDVI_STRESS_THRESHOLD);
+
+        // …and the constant really is the level boundary: at it, `watch`; a
+        // hair below, `stress`. Without this the assertion above is satisfied
+        // by any exported number.
+        const atThreshold = await riskAt(NDVI_STRESS_THRESHOLD);
+        const justBelow = await riskAt(NDVI_STRESS_THRESHOLD - 0.001);
+        expect(atThreshold.vegetation).toBe('watch');
+        expect(justBelow.vegetation).toBe('stress');
+    });
+
+    it('surfaces the distribution unchanged, and null when there was none', async () => {
+        const stats = {
+            ndviP10: 0.41,
+            ndviP50: 0.74,
+            ndviP90: 0.88,
+            belowThresholdShare: 0.07,
+            threshold: NDVI_STRESS_THRESHOLD,
+            coverage: 0.98,
+        };
+        mockGetIndexMeansForPolygon.mockResolvedValue({
+            ndvi: 0.72,
+            ndmi: 0.18,
+            acquiredDate: '2026-07-18',
+            withinField: stats,
+        });
+        const withStats = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+        expect(withStats.withinField).toEqual(stats);
+
+        // A reading with no imagery carries no distribution — and `null`
+        // rather than an absent key, because the spec declares the field
+        // always present.
+        redisGet.mockResolvedValue(null);
+        mockGetIndexMeansForPolygon.mockRejectedValue(new Error('EE down'));
+        const degraded = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+        expect(degraded.withinField).toBeNull();
+        expect('withinField' in degraded).toBe(true);
+    });
+
+    it('does not ask for a distribution when Earth Engine is unconfigured', async () => {
+        mockIsGeeConfigured.mockReturnValue(false);
+
+        const result = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+
+        expect(mockGetIndexMeansForPolygon).not.toHaveBeenCalled();
+        expect(result.withinField).toBeNull();
+    });
+});
+
 describe('analyzeParcelRisk — cache condition (degraded readings must not stick)', () => {
     it('caches a reading that had imagery', async () => {
         mockGetIndexMeansForPolygon.mockResolvedValue({
             ndvi: 0.72,
             ndmi: 0.18,
             acquiredDate: '2026-07-18',
+            withinField: {
+                ndviP10: 0.41,
+                ndviP50: 0.74,
+                ndviP90: 0.88,
+                belowThresholdShare: 0.07,
+                threshold: 0.35,
+                coverage: 0.98,
+            },
         });
 
         const result = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
@@ -99,7 +201,16 @@ describe('analyzeParcelRisk — cache condition (degraded readings must not stic
         expect(result.overall).toBe('good');
         expect(redisSet).toHaveBeenCalledTimes(1);
         const [key, value, ex, ttl] = redisSet.mock.calls[0];
-        expect(key).toBe('parcel-risk:v1:t-1:p-1:2026-07-20');
+        /*
+         * `v2` since #2837 stage 2 added `withinField`. The bump is the point
+         * rather than an incidental: a `v1` entry written before that deploy
+         * has no such key, so a read inside the 6h TTL would return the field
+         * ABSENT where the contract says `WithinFieldStats | null` — and the
+         * spec declares it always present. Pinned here so a future change
+         * that adds a field to this payload without bumping the version fails
+         * rather than shipping an under-specified response for six hours.
+         */
+        expect(key).toBe('parcel-risk:v2:t-1:p-1:2026-07-20');
         expect(JSON.parse(value as string)).toMatchObject({ ndvi: 0.72, ndmi: 0.18 });
         expect(ex).toBe('EX');
         expect(ttl).toBe(21_600);
