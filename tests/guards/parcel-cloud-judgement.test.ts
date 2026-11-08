@@ -46,11 +46,41 @@ const SRC = fs.readFileSync(path.resolve(__dirname, '../..', REL), 'utf8');
  */
 const CODE = blankNonCode(SRC);
 
-/** The body of a named function in `CODE`, by brace matching from its `{`. */
+/**
+ * The body of a named function in `CODE`, by brace matching.
+ *
+ * The opening brace is found by PAREN-MATCHING the parameter list first, not
+ * by taking the first `{` after the name. #2837 stage 2 gave
+ * `getIndexMeansForPolygon` an `opts: { stressThreshold?: number } = {}`
+ * parameter, and the naive version then extracted
+ * `"{ stressThreshold?: number }"` as the whole function body.
+ *
+ * It failed loudly here because the assertions are `toMatch`, and an inline
+ * type literal does not contain `scale: 20`. A guard written with
+ * `not.toContain` would have passed on that slice — which is the shape to
+ * watch for: an extractor that returns the WRONG non-empty thing is invisible
+ * to a negated assertion.
+ */
 function bodyOf(name: string): string {
     const at = CODE.indexOf(`function ${name}(`);
     if (at < 0) throw new Error(`No \`function ${name}(\` in ${REL}`);
-    const open = CODE.indexOf('{', at);
+    // Walk the parameter list to its closing paren, so a brace inside a
+    // parameter's type cannot be mistaken for the body.
+    const paramsOpen = CODE.indexOf('(', at);
+    let parens = 0;
+    let paramsEnd = -1;
+    for (let i = paramsOpen; i < CODE.length; i += 1) {
+        if (CODE[i] === '(') parens += 1;
+        else if (CODE[i] === ')') {
+            parens -= 1;
+            if (parens === 0) {
+                paramsEnd = i;
+                break;
+            }
+        }
+    }
+    if (paramsEnd < 0) throw new Error(`Unbalanced parens in \`${name}\`'s signature`);
+    const open = CODE.indexOf('{', paramsEnd);
     let depth = 0;
     for (let i = open; i < CODE.length; i += 1) {
         if (CODE[i] === '{') depth += 1;
@@ -81,6 +111,18 @@ describe('parcel-level cloud judgement — controls', () => {
         const body = bodyOf('sclClearMask');
         expect(body.length).toBeGreaterThan(40);
         expect(body).toContain('SCL');
+
+        /*
+         * And specifically the function with an inline TYPE LITERAL in its
+         * parameter list, because that is what broke the first version:
+         * `opts: { stressThreshold?: number } = {}` made the naive extractor
+         * return the type literal as the body. A body is recognisable by
+         * holding the reducer this guard is about.
+         */
+        const polygon = bodyOf('getIndexMeansForPolygon');
+        expect(polygon.length).toBeGreaterThan(500);
+        expect(polygon).toContain('reduceRegion');
+        expect(polygon).not.toContain('stressThreshold?: number');
     });
 });
 
@@ -138,6 +180,37 @@ describe('the clear share counts outside-the-footprint as NOT clear', () => {
             );
         }
         expect(body).toMatch(/\.unmask\(0\)/);
+    });
+
+    it('the COMPOSITE coverage band is unmasked too, and read back', () => {
+        /*
+         * #2837 stage 2a. `withinField.coverage` answers "what share of the
+         * parcel could the composite see at all", and it is the denominator
+         * every other figure in that object is relative to.
+         *
+         * `ndvi.mask()` is 1 where some pass contributed and 0 where none did
+         * — but only where the mask image itself is defined. Without
+         * `.unmask(0)` the mean's denominator is the OBSERVED pixels rather
+         * than every parcel pixel, so coverage reads ~1.0 whatever the cloud
+         * did: "we saw everything", the reassuring direction, on a parcel that
+         * was half hidden. Then `belowThresholdShare` gets read as a statement
+         * about the field, which is the error `coverage` exists to prevent.
+         *
+         * Pinned on the SOURCE because the unit suite mocks
+         * `getIndexMeansForPolygon` wholesale, so nothing there executes the
+         * band construction — measured: removing the `unmask(0)` and even
+         * hardwiring `coverage: null` left all 36 unit tests green. A mutation
+         * surviving says where the assertion has to live, not that the code is
+         * fine.
+         */
+        const body = bodyOf('getIndexMeansForPolygon');
+        const coverage = body.slice(body.indexOf("rename('COVERAGE')") - 220, body.indexOf("rename('COVERAGE')"));
+        expect(body).toContain("rename('COVERAGE')");
+        expect(coverage).toContain('.mask()');
+        expect(coverage).toContain('.unmask(0)');
+        // …and the value actually reaches the DTO. A band computed and never
+        // read is the same as no band.
+        expect(body).toContain('COVERAGE_mean');
     });
 
     it('…and reduces at the same scale as the reading it gates', () => {
