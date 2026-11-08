@@ -1,0 +1,85 @@
+#
+# Re-dispatch a FAILED image publish, once (#2582).
+#
+# ── Why recovery and not better detection ──
+#
+# Detection already exists and works. On 2026-10-31 `image-tip-check.yml`
+# reported main's tip as unpublished within a minute of the failed publish,
+# named the expected tag, and distinguished the stale `:latest` from the
+# missing one. What had no mechanism was RECOVERY: a human read the issue and
+# clicked re-run. Owner decision 2026-11-08 — automate that click.
+#
+# ── Why this is its own workflow ──
+#
+# It must observe the publish's conclusion, which means `workflow_run`, and a
+# workflow cannot trigger on its own completion. Putting the retry inside
+# `ghcr-publish.yml` would also mean the step that re-dispatches runs in the
+# job that just failed, which is the least reliable place to put a remedy.
+#
+# ── The decision logic is NOT in this YAML ──
+#
+# It lives in `.github/scripts/publish-retry.sh` and is executed by
+# `tests/unit/publish-retry.test.ts`. That split is #676's lesson: the first
+# CI-failure notifier put its decision logic inline here, where nothing could
+# run it, and shipped two defects that both fired within two minutes of
+# merging. A mechanism that re-dispatches a production publish deserves at
+# least as much.
+#
+# A red run here becomes an issue through `ci-failure-issue.yml`, which watches
+# every workflow but itself.
+#
+name: Publish retry
+
+on:
+    workflow_run:
+        workflows: ["Publish image to GHCR"]
+        types: [completed]
+
+permissions:
+    contents: read
+    # Needed to re-dispatch the failed run. This is the only workflow in the
+    # repo that writes to `actions`, and it is why the guards in the script are
+    # worth reading before changing it.
+    actions: write
+
+concurrency:
+    # Per failed run, so two publishes failing in a burst are considered
+    # independently. Never cancel: a cancelled recovery is no recovery, which
+    # is the shape this whole file exists to remove.
+    group: publish-retry-${{ github.event.workflow_run.id }}
+    cancel-in-progress: false
+
+jobs:
+    retry:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+
+        steps:
+            - name: Check out main at full depth
+              uses: actions/checkout@v5
+              with:
+                  # `fetch-depth: 0` because the publishable tip has to be
+                  # found with `--invert-grep`, which walks BACK past
+                  # `chore(release): … [skip ci]` commits. A shallow clone can
+                  # contain nothing but skip-ci commits, and the script's own
+                  # guard would then compare against the wrong sha.
+                  fetch-depth: 0
+                  ref: main
+
+            - name: Retry the publish if it failed on the current tip
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  REPO: ${{ github.repository }}
+                  CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+                  RUN_ID: ${{ github.event.workflow_run.id }}
+                  RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+                  HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+              run: |
+                  set -euo pipefail
+                  TIP_SHA="$(git log -1 --format=%H --invert-grep --grep='\[skip ci\]')"
+                  if [ -z "$TIP_SHA" ]; then
+                      echo "::error::No publishable commit found in the clone. Every commit reachable here carries the CI-skip marker, which means the checkout is too shallow (needs fetch-depth: 0)."
+                      exit 1
+                  fi
+                  echo "publishable tip: $TIP_SHA"
+                  TIP_SHA="$TIP_SHA" bash .github/scripts/publish-retry.sh
