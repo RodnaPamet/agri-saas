@@ -67,6 +67,45 @@ SUPERSEDED_ONLY="${SUPERSEDED_ONLY:-Publish image to GHCR}"
 # would quietly switch it on. `${VAR-default}` honours an explicit empty.
 FLAKY_JOBS="${FLAKY_JOBS-E2E}"
 
+# ── a green run cannot close an issue about a FIXED subject (#2884) ──
+#
+# The close path asks "is this workflow green now". For most watched workflows
+# that re-establishes the assertion the failure broke, because the SUBJECT
+# moves: `Image tip check` asks about main's tip, `Restore Test` about whether
+# a restore works today, `Basemap Provenance` about the deployed build. A later
+# green genuinely answers the same question again. #2580 and #2641 both went
+# away on the next green run and both were RIGHT to.
+#
+# `Release` is not like that. Its artefacts are keyed to a TAG, which never
+# moves. On 2026-11-08 four Release runs published tags with no SBOM — the
+# Syft checksum download failed to connect, `status=000`, with no retry — and
+# the notifier filed #2871, #2872, #2877 and #2882. Every one went away on the
+# next green Release, which produced a DIFFERENT tag's SBOM and repaired
+# nothing. #2882 existed for 27 minutes and was the only record that
+# `v12.152.0` had none. Backfilling it was manual, had been done by hand twice
+# before, and the pattern was invisible both times because each look started
+# from scratch.
+#
+# So: for these workflows a green run COMMENTS and leaves the issue open. The
+# reader has to confirm the earlier subject was repaired, because nothing else
+# can.
+#
+# `${VAR-default}` and not `${VAR:-default}`, for the reason FLAKY_JOBS gives
+# below: the latter makes an explicit empty value mean "use the default", so
+# the one setting a reviewer would reach for to switch this off would quietly
+# switch it on.
+FIXED_SUBJECT_WORKFLOWS="${FIXED_SUBJECT_WORKFLOWS-Release}"
+
+is_fixed_subject() {
+    local name="$1" entry
+    local IFS='|'
+    for entry in $FIXED_SUBJECT_WORKFLOWS; do
+        [ -n "$entry" ] || continue
+        [ "$name" = "$entry" ] && return 0
+    done
+    return 1
+}
+
 is_flaky_job() {
     local name="$1" entry
     local IFS='|'
@@ -167,6 +206,17 @@ case "$CONCLUSION" in
         # reliable ordering even when runs finish out of order.
         if [ -n "$RECORDED" ] && [ "$RUN_ID" -lt "$RECORDED" ]; then
             echo "stale success: run ${RUN_ID} predates recorded failure ${RECORDED} — leaving #${EXISTING} open"
+            exit 0
+        fi
+        if is_fixed_subject "$WF"; then
+            # Green again, and that says nothing about the subject the earlier
+            # failure broke — see FIXED_SUBJECT_WORKFLOWS. Comment and LEAVE
+            # OPEN.
+            "$GH" issue comment "$EXISTING" --repo "$REPO" --body \
+                "✅ **${WF}** is green again — [run ${RUN_ID}](${RUN_URL}) on \`${BRANCH}\` (${SHA}).
+
+**Left open deliberately.** This workflow's artefacts are keyed to a tag, which does not move, so a later green run produces a DIFFERENT tag's artefact and repairs nothing for the one that failed. Confirm the failed run's own tag carries what it should — \`gh release view <tag> --json assets\` — and close this by hand once it does. See #2884."
+            echo "left #${EXISTING} open: ${WF} is green but its subject is FIXED (#2884)"
             exit 0
         fi
         "$GH" issue comment "$EXISTING" --repo "$REPO" --body \
