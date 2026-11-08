@@ -71,6 +71,55 @@ import { env } from '@/env';
  * that is photographed. The layers exist back to 2020.
  */
 export const ORTHO_YEARS = [2025, 2024, 2023, 2022, 2021, 2020] as const;
+
+/**
+ * The earliest year that could carry a physical-block layer. The
+ * `Agricultural_Land_YYYY` layers exist back to 2020.
+ */
+export const ORTHO_BLOCKS_EARLIEST_YEAR = 2020;
+
+/**
+ * Candidate years for the PHYSICAL BLOCK layer, NEWEST FIRST — a SECOND year
+ * list, deliberately.
+ *
+ * `ORTHO_YEARS` above answers "which years have a PHOTO over this area".
+ * This answers "which years could carry physical blocks we can label", and
+ * `agrent-ios` measured on the public WFS (2026-11-08, bbox
+ * 43.405,24.575,43.415,24.590) that the two differ:
+ *
+ *   2026  no `Agricultural_Land` layer at all (ExceptionReport)
+ *   2025  PHBIDENT features — 56722-1346, 1555, 1608, 1925, 1928, 499, 500, 503
+ *   2023  PHBIDENT features — a DIFFERENT numbering: 1346, 1608, 1921, 1922, 1925, 1928
+ *   2022  features carry ELGIDENT («56722-1343-10»), eligible-area elements,
+ *   2021  with NO PHBIDENT — so every one is dropped and the area shows NO blocks
+ *   2020  no layer
+ *
+ * So two lists is not duplication. One is about imagery, the other about a
+ * cadastral product that is published on its own schedule and renumbered
+ * between years. Collapsing them would have to pick one question to answer
+ * wrongly.
+ *
+ * DERIVED from the clock rather than hardcoded, so the newest layer is picked
+ * up when the Ministry publishes it with no code change — the owner's ask
+ * (2026-11-08, relayed). The cost of a year that does not exist yet is one
+ * ExceptionReport on a cold lookup, cached like any other answer.
+ */
+export function orthoBlockYearCandidates(now: Date): number[] {
+    const latest = now.getUTCFullYear();
+    const out: number[] = [];
+    for (let y = latest; y >= ORTHO_BLOCKS_EARLIEST_YEAR; y -= 1) out.push(y);
+    return out;
+}
+
+/**
+ * Which ФБ year was resolved for an AREA. Separate from
+ * `orthoCoverageCacheKey` because it answers a different question about the
+ * same bbox, and a shared key would make one overwrite the other.
+ */
+export function orthoBlocksYearCacheKey(bbox: LonLatBbox): string {
+    const r = (n: number): string => n.toFixed(3);
+    return `ortho:fbyear:v1:${r(bbox.west)}:${r(bbox.south)}:${r(bbox.east)}:${r(bbox.north)}`;
+}
 export type OrthoYear = (typeof ORTHO_YEARS)[number];
 
 /** Below this, a national overview fans across the whole country. */
