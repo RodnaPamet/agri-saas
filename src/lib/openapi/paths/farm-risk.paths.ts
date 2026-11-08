@@ -74,7 +74,19 @@ const WithinField = z
             'since they are a 30-day median over many passes. Near 1 is the normal ' +
             'case and is not worth telling anyone; well below 1 is when saying how ' +
             'much of the field was visible stops the other figures from being read as ' +
-            'statements about the whole parcel.',
+            'statements about the whole parcel.\n\n' +
+            '**`coverage < 1` has THREE causes and only two of them are weather**, which ' +
+            'matters for the sentence a client shows. (1) Cloud, cloud shadow or thin ' +
+            'cirrus — SCL 3, 8, 9, 10. (2) **Snow or ice** — SCL 11, masked exactly like ' +
+            'cloud, and on arable land in a Bulgarian winter this is the common case, not ' +
+            'an edge one. (3) No qualifying scene covered that part of the parcel at all: ' +
+            'a pass is kept on its own clear share over the geometry, so a granule ' +
+            'clipping one end of a field can contribute while the other end gets zero ' +
+            'observations — nothing to do with the sky.\n\n' +
+            'So do NOT render the uncovered remainder as "under cloud". A farmer looking ' +
+            'at a field they know is under SNOW, told it was under cloud, has been given ' +
+            'a reason to distrust the number the sentence is attached to. Say the ' +
+            'satellite had no clear view of the rest, and leave the cause out.',
     });
 
 const ParcelRisk = z
