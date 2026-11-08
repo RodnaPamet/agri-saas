@@ -214,6 +214,114 @@ export async function listNotices(opts: {
 }
 
 /**
+ * Which subject kinds a removal can actually be carried out on.
+ *
+ * Derived from what the code below does, and NOT a second list of the enum:
+ * `removeSubjectOnTx` has an arm per entry here and `default`s to a refusal, so
+ * the two cannot disagree about a kind. `PROFILE` and `THREAD` are absent for
+ * the same reason `captureSnapshot` records them `SUBJECT_KIND_NOT_CAPTURABLE`
+ * — a profile's removable surface is P6's `FarmBrand` and a thread is a
+ * collection whose removal shape nobody has decided.
+ */
+const REMOVABLE_SUBJECT_KINDS = ['LISTING', 'MESSAGE'] as const;
+
+/**
+ * Refuse an outcome this platform cannot carry out, before anything is written.
+ *
+ * `MODERATION_ACTION_KINDS` is deliberately NOT narrowed to match. It is a
+ * PUBLISHED enum — the API contract and the iOS client mirror it — so dropping
+ * `CONTENT_DEMOTED` is a breaking change for a value no caller can usefully
+ * send, and the honest fix is to delete it once somebody confirms nothing
+ * depends on it (#2868). Until then the value parses and the usecase refuses
+ * it, which is one refusal rather than a contract break.
+ */
+function assertPerformable(
+    actionKind: ModerationActionKind,
+    subjectKind: string,
+): void {
+    if (actionKind === 'CONTENT_DEMOTED') {
+        // There is no ranking in this product. The exchange feed orders by
+        // recency and the trends surface is computed, so there is nothing a
+        // demotion could change — which is why this is a refusal and not a
+        // no-op: a recorded `CONTENT_DEMOTED` would announce a sanction that
+        // does not exist.
+        throw codedBadRequest(
+            'MODERATION_ACTION_NOT_PERFORMABLE',
+            'This platform cannot carry out that outcome.',
+        );
+    }
+    if (
+        actionKind === 'CONTENT_REMOVED'
+        && !(REMOVABLE_SUBJECT_KINDS as readonly string[]).includes(subjectKind)
+    ) {
+        throw codedBadRequest(
+            'MODERATION_ACTION_NOT_PERFORMABLE',
+            'This platform cannot carry out that outcome.',
+        );
+    }
+}
+
+/**
+ * Hide the content a notice names, on the caller's transaction.
+ *
+ * STAMPS A COLUMN rather than deleting a row, because an Art 17 statement
+ * carries redress and a decision somebody may appeal must be reversible. The
+ * column is `removedByModerationAt` on both tables — never `status =
+ * WITHDRAWN` and never `suppressedForDeletionAt`, both of which belong to
+ * somebody else's decision (see the schema notes, and #1655).
+ *
+ * A removal that changes NOTHING refuses. `updateMany` reports its count, and
+ * zero means the subject is not there — a notice can name an id that never
+ * existed, and `captureSnapshot` already records that as `SUBJECT_NOT_FOUND`
+ * while the reporter learns nothing, by design. Recording `CONTENT_REMOVED`
+ * against it would deliver a statement about content we never had.
+ *
+ * It is NOT refused when the row is already removed: asking twice is
+ * idempotent, because two notices about one listing are the ordinary case and
+ * the second moderator must be able to close theirs.
+ */
+async function removeSubjectOnTx(
+    tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+    subjectKind: string,
+    subjectId: string,
+): Promise<void> {
+    const now = new Date();
+    let touched = 0;
+    switch (subjectKind) {
+        case 'LISTING': {
+            const { count } = await tx.exchangeListing.updateMany({
+                where: { id: subjectId },
+                data: { removedByModerationAt: now },
+            });
+            touched = count;
+            break;
+        }
+        case 'MESSAGE': {
+            const { count } = await tx.exchangeMessage.updateMany({
+                where: { id: subjectId },
+                data: { removedByModerationAt: now },
+            });
+            touched = count;
+            break;
+        }
+        default:
+            // Unreachable — `assertPerformable` ran first. Kept so adding a
+            // kind to `REMOVABLE_SUBJECT_KINDS` without an arm here fails
+            // loudly rather than recording an unperformed removal.
+            throw codedBadRequest(
+                'MODERATION_ACTION_NOT_PERFORMABLE',
+                'This platform cannot carry out that outcome.',
+            );
+    }
+    if (touched === 0) {
+        throw codedBadRequest(
+            'MODERATION_SUBJECT_GONE',
+            'That content is no longer there to remove.',
+        );
+    }
+}
+
+/**
  * Record a decision on a notice.
  *
  * `NONE` is a real outcome and the reason `actionKind` is not nullable:
@@ -238,6 +346,12 @@ export async function actOnNotice(input: {
         select: { id: true, subjectKind: true, subjectId: true, status: true },
     });
     if (!report) return { actionId: '', status: 'RECEIVED' };
+
+    // REFUSED BEFORE ANYTHING IS WRITTEN (#2865). A moderator picking an
+    // outcome this platform cannot carry out is the defect; a 400 is worse to
+    // use and a far better legal position than a delivered statement of
+    // reasons asserting something untrue.
+    assertPerformable(input.actionKind, report.subjectKind);
 
     const actionId = `ma-${randomUUID()}`;
     const status: ReportStatus = input.actionKind === 'NONE' ? 'REJECTED' : 'ACTIONED';
@@ -272,6 +386,28 @@ export async function actOnNotice(input: {
             where: { id: report.id },
             data: { status },
         });
+
+        // CONTENT_REMOVED REMOVES SOMETHING, which it did not until #2865.
+        //
+        // In the SAME transaction as the decision that records it, for #1635's
+        // reason: a `CONTENT_REMOVED` row with the content still live is an
+        // Art 17 statement — «Премахнахме съдържанието.», composed from this
+        // very row by `statement-dispatch` — asserting a fact that is false.
+        // The rule P5.9 set for the account kinds applies here verbatim: the
+        // outcome cannot be recorded without being performed.
+        //
+        // So a subject this cannot act on REFUSES, rolling the transaction
+        // back, rather than recording a decision nothing carries out. That is
+        // the opposite of the usual best-effort posture in this module, and
+        // deliberately: a moderation decision that is merely logged is a
+        // compliance artefact about an event that did not happen.
+        if (input.actionKind === 'CONTENT_REMOVED') {
+            await removeSubjectOnTx(tx, report.subjectKind, report.subjectId);
+        }
+
+        // CONTENT_DEMOTED is refused BEFORE the transaction opens — see
+        // `assertPerformable`. There is no ranking in this product to demote
+        // within, so no row here could be honest.
 
         // ACCOUNT_TERMINATED withholds access too, so it suspends here as
         // well. The ERASURE half is P5.6 (#1597, now settled on the Art

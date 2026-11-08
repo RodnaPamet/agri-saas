@@ -121,6 +121,23 @@ model ExchangeListing {
   /// decision, and overwriting it would destroy the information the restore
   /// needs and conflate a platform action with a human one.
   suppressedForDeletionAt DateTime?
+  /// Hidden from other farms because a MODERATOR removed it (#2865).
+  ///
+  /// A second column rather than a second use of `suppressedForDeletionAt` —
+  /// read that field's note directly above, which refuses this use in advance:
+  /// the deletion restore clears exactly the rows IT marks, so sharing the
+  /// column would let a seller cancelling their account deletion un-hide a
+  /// listing a moderator removed.
+  ///
+  /// NULLABLE because an Art 17 statement carries redress, so a wrongly
+  /// removed listing has to be able to come back. The restore ROUTE is #2867;
+  /// the nullable timestamp is what keeps that a route to write rather than
+  /// data to recover.
+  ///
+  /// The SELLER's own management view is deliberately NOT filtered on it, the
+  /// same asymmetry #1655 settled: hiding it from them would read as "already
+  /// gone" at the moment they are deciding whether to appeal.
+  removedByModerationAt   DateTime?
   expiresAt               DateTime?
   createdAt               DateTime              @default(now())
   updatedAt               DateTime              @updatedAt
@@ -290,16 +307,29 @@ model ExchangeThreadRead {
 /// the other party's scrollback — they remember reading something that is now
 /// absent, which reads as data loss rather than as a retraction.
 model ExchangeMessage {
-  id               String    @id @default(cuid())
-  threadId         String
+  id                    String    @id @default(cuid())
+  threadId              String
   /// Which side sent it. Stored rather than derived so a message stays
   /// attributable after a listing is edited or a thread is closed.
-  senderTenantId   String
-  senderUserId     String
+  senderTenantId        String
+  senderUserId          String
   /// Plain text, sanitised on write. Chat is the highest-risk surface in any
   /// product: text one tenant writes and another tenant's browser renders.
-  body             String
-  deletedAt        DateTime?
+  body                  String
+  deletedAt             DateTime?
+  /// Removed by a MODERATOR (#2865), not by its sender.
+  ///
+  /// Separate from `deletedAt` on purpose: that is the sender retracting their
+  /// own words, this is ours, and the Art 17 statement is about ours. Keeping
+  /// them apart is also what makes a platform removal survive a later
+  /// self-delete, and what lets a moderation audit answer "did we act" without
+  /// reading it off a column anybody can write.
+  ///
+  /// The READ renders a removed message exactly like a deleted one — null body,
+  /// `deleted: true`. Telling the counterparty WHICH it was would disclose a
+  /// moderation action to a third party that nothing requires it to know, and
+  /// the notifier is already answered by their own report status.
+  removedByModerationAt DateTime?
   /// Client-supplied `Idempotency-Key`, scoped to the SENDER.
   ///
   /// A farmer on a bad link taps send twice and the phone retries; without
@@ -311,8 +341,8 @@ model ExchangeMessage {
   /// Nullable and unconstrained when null: every NULL is distinct in
   /// Postgres, so callers that send no key are unaffected. Mirrors
   /// `LogEntry.clientMutationId` and `Task.clientMutationId`.
-  clientMutationId String?
-  createdAt        DateTime  @default(now())
+  clientMutationId      String?
+  createdAt             DateTime  @default(now())
 
   thread ExchangeThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 

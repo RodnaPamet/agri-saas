@@ -132,8 +132,17 @@ describe('ExchangeRepository.listActiveListings', () => {
         // `suppressedForDeletionAt` joined the base set in #1655: a seller who
         // asked to delete their account is withheld from other farms for the
         // 30-day grace period, which is what the privacy notice promises.
+        // `removedByModerationAt` joined it in #2865 — a moderator removed the
+        // listing on a notice, and the Art 17 statement says so.
+        //
+        // TWO columns and not one, deliberately. Each restore clears only the
+        // rows IT marked, so sharing a column would let a cancelled account
+        // deletion un-hide a listing a moderator removed. There is a guard
+        // deriving this now: `listing-hiding-columns-are-filtered` requires
+        // every hiding column at every read that serves a listing, so a third
+        // cause is not a third manual sweep.
         expect(Object.keys(whereOf(db.exchangeListing.findMany)).sort()).toEqual([
-            'AND', 'status', 'suppressedForDeletionAt',
+            'AND', 'removedByModerationAt', 'status', 'suppressedForDeletionAt',
         ]);
     });
 
