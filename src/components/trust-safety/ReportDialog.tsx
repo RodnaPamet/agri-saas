@@ -45,9 +45,24 @@ import { Combobox } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
 import { apiPost } from '@/lib/api-client';
-import { REPORT_DETAIL_MAX, REPORT_REASON_CODES } from '@/lib/schemas';
+import { REPORT_DETAIL_MAX, REPORT_REASON_CODES, REPORT_SUBJECT_KINDS } from '@/lib/schemas';
 
-export type ReportSubjectKind = 'LISTING' | 'MESSAGE' | 'PROFILE' | 'THREAD';
+/**
+ * DERIVED from the request contract, not restated (#2833).
+ *
+ * This was a hand-written union — a THIRD copy of the kinds beside
+ * `REPORT_SUBJECT_KINDS` and the Prisma enum — and it went stale the moment
+ * `DIRECT_MESSAGE` was added. `report-subject-kinds-mirror` did not catch it
+ * because that guard compares the zod list to the PRISMA enum; nothing
+ * compared either to this.
+ *
+ * Deriving is safe HERE and would not be everywhere: the bundle argument that
+ * makes `FarmRiskClient` keep its own `type RiskLevel` copy — importing the
+ * server's would pull Prisma into a `'use client'` bundle — does not apply,
+ * because this module already imports two values from `@/lib/schemas` on the
+ * line above. So the copy bought nothing and cost a silent mirror.
+ */
+export type ReportSubjectKind = (typeof REPORT_SUBJECT_KINDS)[number];
 
 export interface ReportDialogProps {
     open: boolean;

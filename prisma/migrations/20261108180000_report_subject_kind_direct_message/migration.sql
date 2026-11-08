@@ -1,0 +1,31 @@
+-- #2833 — DIRECT_MESSAGE as the subject of a NOTICE.
+--
+-- Additive: a new enum VALUE. No rollback inverse is required per
+-- deploy/rollback/README.md — nothing is renamed, dropped or rewritten.
+--
+-- BUT NOT FOR THE REASON THE `ACCOUNT` MIGRATION GIVES, and copying that
+-- sentence here would have been wrong. #1667 says "the previous image keeps
+-- working because it never writes the value" — true of ACCOUNT, which was
+-- added for a moderation ACTION the code did not yet take. This value IS
+-- written, by `fileNotice`, from the release that adds it.
+--
+-- So what a rollback actually leaves is `ContentReport` rows carrying a
+-- `subjectKind` the previous image does not know. Measured consequence: Prisma
+-- does not validate an enum on READ, so the value flows through
+-- `listOwnReports` and the moderation queue as a string; the old
+-- `captureSnapshot` switch has no arm for it, but that code runs only at write
+-- time. The previous image therefore DEGRADES — it can display such a notice
+-- and cannot act on it — rather than failing. That is acceptable and it is not
+-- "keeps working", which is why it is written down instead of inherited.
+--
+-- `REPORT_SUBJECT_KINDS` (the zod list `FileReportSchema` validates against)
+-- gains this value too, unlike ACCOUNT — a DM is reportable. The strict-subset
+-- relationship is held by tests/guards/report-subject-kinds-mirror.test.ts,
+-- and ACCOUNT remains the recorded exclusion.
+--
+-- NOT added to `REMOVABLE_SUBJECT_KINDS` (owner ruling 2026-11-08): a
+-- moderator cannot remove a direct message this release, and suspension is the
+-- remedy. `DirectMessage` has no `removedByModerationAt` column, so there is
+-- nothing to write; `assertPerformable` refuses `CONTENT_REMOVED` for any kind
+-- outside that list, which is the enforcement.
+ALTER TYPE "ReportSubjectKind" ADD VALUE 'DIRECT_MESSAGE';
