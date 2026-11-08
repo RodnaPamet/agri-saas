@@ -16744,12 +16744,17 @@
             "type": "string",
             "maxLength": 2000,
             "format": "uri"
+          },
+          "replyToMessageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
           }
         },
         "required": [
           "body"
         ],
-        "description": "A message to send. The sender is the authenticated caller. Repeating a request with the same idempotencyKey returns the message the first attempt created rather than sending a second. An optional `linkUrl` attaches a link card: the server fetches the page through the per-hop host policy, sanitises whatever metadata comes back, and stores a snapshot. The fetch is BEST-EFFORT — a refused host, a timeout or a page with no metadata sends the message with the URL and no preview rather than refusing it."
+        "description": "A message to send. The sender is the authenticated caller. Repeating a request with the same idempotencyKey returns the message the first attempt created rather than sending a second. An optional `linkUrl` attaches a link card: the server fetches the page through the per-hop host policy, sanitises whatever metadata comes back, and stores a snapshot. The fetch is BEST-EFFORT — a refused host, a timeout or a page with no metadata sends the message with the URL and no preview rather than refusing it.\n\n`replyToMessageId` quotes an earlier message. It must be a message in THIS conversation; anything else — another conversation, or no such message — is `DM_REPLY_TARGET_NOT_FOUND`, deliberately one answer rather than two, so the field cannot tell a real message id from a guessed one. A DELETED message IS a valid target: the row survives a retraction, and the quote renders as deleted rather than refusing the reply because the other party retracted something a moment earlier."
       },
       "SendExchangeMessage": {
         "type": "object",
@@ -61921,6 +61926,36 @@
                               "fetchedAt"
                             ],
                             "description": "The link card, or null. A SNAPSHOT taken when the message was sent and never refreshed — re-fetching later would silently rewrite what two people discussed. `fetchedAt` null means the fetch was REFUSED (a host that resolves privately at any redirect hop, a timeout, a non-2xx), which is how a client tells that apart from a page that simply carried no metadata and therefore stamped a time. `title` and `description` are the third-party page's own text, sanitised at the usecase."
+                          },
+                          "replyTo": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "senderUserId": {
+                                "type": "string"
+                              },
+                              "body": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "deleted": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "senderUserId",
+                              "body",
+                              "deleted"
+                            ],
+                            "description": "The message this one quotes, or null. A sub-object rather than a bare id, and that is the point of the field: the target may sit OUTSIDE the page you are holding — a reply to something from last week arrives on a page whose oldest row is from today — so an id alone would cost one extra request per reply.\n\n`deleted` is what tells a RETRACTED target from a PHOTO-ONLY one, both of which have a null `body` (the body column is nullable since P8.6). Render «Съобщението е изтрито» for the first and a photo affordance for the second; a client reading only `body` would show the wrong copy for one of them.\n\nThe body is the target's full text, not a truncation: clamping a quote to one line is a display decision, and it discloses nothing new, because the target is always in the SAME conversation. `attachment` and `linkCard` are deliberately absent — a quote is a line of text, and re-serving a photograph's metadata once per reply to it would put the same bytes in the payload repeatedly."
                           }
                         },
                         "required": [
@@ -61932,7 +61967,8 @@
                           "deletedAt",
                           "reactions",
                           "attachment",
-                          "linkCard"
+                          "linkCard",
+                          "replyTo"
                         ]
                       },
                       "description": "ONE PAGE, oldest-first within the page even though the page returned first is the NEWEST — a client renders upward from the bottom. Capped at 100 (#2820); the first version of this endpoint returned every message and decrypted every one of them."
@@ -62056,7 +62092,7 @@
       "post": {
         "operationId": "sendDirectMessage",
         "summary": "Send a message",
-        "description": "Sends into a conversation the caller participates in. While the conversation is a REQUEST, exactly ONE message is allowed until the other person accepts — so a second send answers 400 DM_REQUEST_AWAITING_REPLY rather than queueing. Repeating a request with the same idempotencyKey returns the first attempt's message with `deduplicated: true` and status 200.\n\nAn optional `linkUrl` attaches a LINK CARD. The server fetches that page BEFORE opening the transaction — an external fetch inside one holds a pool connection, and `PG_POOL_MAX` is 12 — through `fetchPublicUrl`, which re-runs the host policy at every redirect hop. Whatever metadata comes back is sanitised at the usecase and stored as a SNAPSHOT that is never refreshed.",
+        "description": "Sends into a conversation the caller participates in. While the conversation is a REQUEST, exactly ONE message is allowed until the other person accepts — so a second send answers 400 DM_REQUEST_AWAITING_REPLY rather than queueing. Repeating a request with the same idempotencyKey returns the first attempt's message with `deduplicated: true` and status 200.\n\nAn optional `linkUrl` attaches a LINK CARD. The server fetches that page BEFORE opening the transaction — an external fetch inside one holds a pool connection, and `PG_POOL_MAX` is 12 — through `fetchPublicUrl`, which re-runs the host policy at every redirect hop. Whatever metadata comes back is sanitised at the usecase and stored as a SNAPSHOT that is never refreshed.\n\nAn optional `replyToMessageId` QUOTES an earlier message, and it must be one in THIS conversation. A target in another conversation and a target that does not exist get the SAME refusal, deliberately — two answers would let a sender probe for real message ids. A DELETED message is a valid target: the row survives a retraction, so the reply lands and the quote renders as deleted, rather than the composer failing because the other party retracted something a moment earlier.\n\nThe database holds the same rule independently (`direct_message_reply_same_conversation`, a trigger, because Postgres forbids a subquery in a CHECK and the comparison is between two rows). The usecase check is what produces a usable refusal: measured without it, the trigger's SQLSTATE 23514 reaches the client as Prisma's `P2039` — an unrecognised error with no coded mapping, so a 500 carrying nothing a client can show anybody.",
         "tags": [
           "Direct messages"
         ],
@@ -62148,7 +62184,7 @@
             }
           },
           "400": {
-            "description": "INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation), or DM_LINK_URL_INVALID.\n\n`DM_LINK_URL_INVALID` is not reachable through this route: `linkUrl` is declared `httpsUrl()`, so a non-https value is already INVALID_BODY at the boundary. It is documented because the usecase raises it for a second caller arriving without the schema, and a code with no entry in the catalogues is a refusal a client cannot show anybody.\n\nA link whose page cannot be fetched is NOT a refusal. The fetch is best-effort: a host that resolves privately at any redirect hop, a timeout, a non-2xx or a page with no metadata all send the message with the URL stored and `linkCard.fetchedAt` null.",
+            "description": "INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation), DM_REPLY_TARGET_NOT_FOUND (the quoted message is not in this conversation, or does not exist — one code for both), or DM_LINK_URL_INVALID.\n\n`DM_LINK_URL_INVALID` is not reachable through this route: `linkUrl` is declared `httpsUrl()`, so a non-https value is already INVALID_BODY at the boundary. It is documented because the usecase raises it for a second caller arriving without the schema, and a code with no entry in the catalogues is a refusal a client cannot show anybody.\n\nA link whose page cannot be fetched is NOT a refusal. The fetch is best-effort: a host that resolves privately at any redirect hop, a timeout, a non-2xx or a page with no metadata all send the message with the URL stored and `linkCard.fetchedAt` null.",
             "content": {
               "application/json": {
                 "schema": {

@@ -1703,6 +1703,11 @@ export const SendDirectMessageSchema = z.object({
     // `https://169.254.169.254/` passes it. What stops that is
     // `fetchPublicUrl`, which re-runs the host policy at every redirect hop.
     linkUrl: httpsUrl().optional(),
+    // The message being replied to (#2829). An ID the caller already holds
+    // from the timeline, and the server verifies it is in THIS conversation —
+    // a cross-conversation target is refused with the same answer a nonexistent
+    // one gets, so the field cannot be used to probe for message ids.
+    replyToMessageId: z.string().min(1).max(200).optional(),
 }).strip().openapi('SendDirectMessage', {
     description:
         'A message to send. The sender is the authenticated caller. Repeating '
@@ -1712,7 +1717,15 @@ export const SendDirectMessageSchema = z.object({
         + 'the per-hop host policy, sanitises whatever metadata comes back, and '
         + 'stores a snapshot. The fetch is BEST-EFFORT — a refused host, a '
         + 'timeout or a page with no metadata sends the message with the URL '
-        + 'and no preview rather than refusing it.',
+        + 'and no preview rather than refusing it.'
+        + '\n\n`replyToMessageId` quotes an earlier message. It must be a '
+        + 'message in THIS conversation; anything else — another conversation, '
+        + 'or no such message — is `DM_REPLY_TARGET_NOT_FOUND`, deliberately '
+        + 'one answer rather than two, so the field cannot tell a real message '
+        + 'id from a guessed one. A DELETED message IS a valid target: the row '
+        + 'survives a retraction, and the quote renders as deleted rather than '
+        + 'refusing the reply because the other party retracted something a '
+        + 'moment earlier.',
 });
 
 export const RespondToConversationSchema = z.object({

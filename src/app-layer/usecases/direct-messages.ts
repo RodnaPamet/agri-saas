@@ -139,6 +139,41 @@ export interface MessageLinkCardView {
     readonly fetchedAt: Date | null;
 }
 
+/**
+ * The message this one replies to, for the quoted preview — #2829.
+ *
+ * A SEPARATE object rather than a bare `replyToMessageId`, and that is the
+ * whole reason the field exists. The target may sit OUTSIDE the page the
+ * client is holding: a reply to something from last week arrives on a page
+ * whose oldest row is from today, so a client given only an id cannot resolve
+ * it without a second request per reply — which is the N+1 shape D1 forbids,
+ * moved to the network.
+ *
+ * `body` is null when the target was DELETED, and `deleted` says which of the
+ * two reasons it is null. A photo-only message has a null `body` too (P8.6
+ * made the column nullable), so without the flag a client cannot tell «this
+ * was retracted» from «this was a photograph» and would render the wrong copy
+ * for one of them.
+ *
+ * The body is returned IN FULL rather than truncated. A quote is displayed as
+ * one clamped line, and clamping is a display decision the client already
+ * makes in CSS; baking a server-side cap in would mean picking a width here.
+ * It discloses nothing new either — the target is in the SAME conversation
+ * (the `direct_message_reply_same_conversation` trigger guarantees it), so a
+ * reader who can see this message can already page back to that one.
+ *
+ * `attachment` and `linkCard` are deliberately ABSENT. A quote is a line of
+ * text; re-serving a photograph's metadata inside every reply to it would put
+ * the same bytes in the payload once per reply, and the client has the
+ * message id if it wants the real thing.
+ */
+export interface MessageReplyView {
+    readonly id: string;
+    readonly senderUserId: string;
+    readonly body: string | null;
+    readonly deleted: boolean;
+}
+
 export interface DirectMessageView {
     readonly id: string;
     readonly senderUserId: string;
@@ -161,6 +196,8 @@ export interface DirectMessageView {
      */
     readonly attachment: MessageAttachmentView | null;
     readonly linkCard: MessageLinkCardView | null;
+    /** What this message replies to, or null — see `MessageReplyView`. */
+    readonly replyTo: MessageReplyView | null;
 }
 
 export interface ConversationView {
@@ -356,6 +393,12 @@ export async function sendDirectMessage(
          * stored as a SNAPSHOT — see `direct-message-link-cards.ts`.
          */
         linkUrl?: string;
+        /**
+         * Optional reply target — #2829. Must be a message in the SAME
+         * conversation; see the check inside the transaction for why that is
+         * verified here as well as by the trigger.
+         */
+        replyToMessageId?: string;
     },
 ): Promise<{ messageId: string; createdAt: Date; deduplicated: boolean }> {
     const body = cleanBody(input.body);
@@ -445,12 +488,55 @@ export async function sendDirectMessage(
             );
         }
 
+        // THE REPLY TARGET, checked here as well as by the trigger (#2829).
+        //
+        // `direct_message_reply_same_conversation` is the GUARANTEE and it
+        // stays: it refuses a cross-conversation target with SQLSTATE 23514
+        // whatever writes the row, including a future second writer and a
+        // hand-run SQL statement. What it cannot do is produce a usable
+        // refusal. MEASURED by deleting this block and running the suite: the
+        // client receives Prisma's **`P2039`** — an unrecognised error with no
+        // mapping in `@/lib/errors`, so a 500 with nothing a client can show
+        // anybody, for a request that is simply wrong.
+        //
+        // Note which code that is, because the repo's recorded instance of
+        // this class is a different one: a trigger refusing a DELETE surfaces
+        // as `Foreign key constraint violated on the (not available)`, naming
+        // an FK that does not exist. Same lesson in both — a trigger's refusal
+        // arrives as something that names no constraint — and the actual code
+        // depends on the statement, so measure rather than assume which.
+        //
+        // So this is the MESSAGE and the trigger is the CONTROL. The check is
+        // scoped to the conversation rather than asking whether the target
+        // exists, because "a message in another conversation" and "no such
+        // message" must be the same answer: anything else is an oracle telling
+        // a sender that a message id they guessed is real.
+        //
+        // A DELETED target is ACCEPTED on purpose. The row survives a soft
+        // delete, so the FK and the trigger both hold, and the quoted preview
+        // renders «изтрито» from `MessageReplyView.deleted` — refusing instead
+        // would make a reply fail because the other party retracted something
+        // moments earlier, which reads as a broken composer.
+        if (input.replyToMessageId !== undefined) {
+            const target = await tx.directMessage.findFirst({
+                where: { id: input.replyToMessageId, conversationId: conversation.id },
+                select: { id: true },
+            });
+            if (!target) {
+                throw codedBadRequest(
+                    'DM_REPLY_TARGET_NOT_FOUND',
+                    'That message is not in this conversation.',
+                );
+            }
+        }
+
         const message = await tx.directMessage.create({
             data: {
                 conversationId: conversation.id,
                 senderUserId: ctx.userId,
                 body,
                 ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+                ...(input.replyToMessageId ? { replyToMessageId: input.replyToMessageId } : {}),
                 // The card's text is ALREADY sanitised — `fetchLinkCard` does
                 // it, at the usecase layer, because the row is read by the
                 // Art 15 export and by SDK consumers and not only by a
@@ -707,6 +793,20 @@ export async function readConversation(
                 linkTitle: true,
                 linkDescription: true,
                 linkFetchedAt: true,
+                // ONE nested relation read for the whole page, not one per
+                // row: Prisma resolves `replyTo` with a single extra query
+                // keyed on the collected ids, so this is the `findMany({ id:
+                // { in: [...] } })` shape D1 prescribes rather than the N+1 it
+                // forbids. `body` is selected and then WITHHELD when the
+                // target is deleted — see the mapping below.
+                replyTo: {
+                    select: {
+                        id: true,
+                        senderUserId: true,
+                        body: true,
+                        deletedAt: true,
+                    },
+                },
             },
         });
 
@@ -756,6 +856,25 @@ export async function readConversation(
                             description: m.linkDescription,
                             fetchedAt: m.linkFetchedAt,
                         },
+                // The TARGET's own `deletedAt` governs the quote, not this
+                // message's. A reply survives the retraction of what it quotes
+                // — that is the common case, and the whole reason `deleted` is
+                // a field rather than inferred from a null body, which a
+                // photo-only message also has.
+                //
+                // `|| null` on the body for the reason the link card's title
+                // carries it: `deleteDirectMessage` writes `''` to destroy the
+                // plaintext while keeping the row, so a retracted target's
+                // column holds an empty string, and an empty quote is a third
+                // state nobody wants to render.
+                replyTo: m.replyTo
+                    ? {
+                        id: m.replyTo.id,
+                        senderUserId: m.replyTo.senderUserId,
+                        body: m.replyTo.deletedAt ? null : (m.replyTo.body || null),
+                        deleted: m.replyTo.deletedAt !== null,
+                    }
+                    : null,
             })),
         };
     });
