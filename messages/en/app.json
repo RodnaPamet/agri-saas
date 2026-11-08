@@ -6824,6 +6824,7 @@
         "DM_BODY_REQUIRED": "A message cannot be empty.",
         "DM_BODY_TOO_LONG": "That message is too long.",
         "DM_IDEMPOTENCY_KEY_REUSED": "That key has already been used for a different conversation.",
+        "DM_LINK_URL_INVALID": "That link cannot be read. A link must start with https://.",
         "DM_REACTION_REQUIRED": "Choose a reaction.",
         "DM_REACTION_TOO_LONG": "That is not a reaction.",
         "DM_REQUEST_ALREADY_ANSWERED": "This request has already been answered.",
