@@ -25,11 +25,26 @@
  * pinning here is that the usecase does not trust what the fetcher hands it.
  */
 import { randomUUID } from 'crypto';
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 jest.mock('@/app-layer/usecases/direct-message-link-cards', () => ({
     ...jest.requireActual('@/app-layer/usecases/direct-message-link-cards'),
     fetchLinkCard: jest.fn(),
 }));
+
+jest.mock('@/app-layer/automation/webhook-safety', () => {
+    const actual = jest.requireActual('@/app-layer/automation/webhook-safety');
+    return {
+        ...actual,
+        // A pass-through, so the ONE case below can drive a real loopback
+        // server. The host rules are exercised for real in
+        // `webhook-safety.test.ts` (36 cases) and the per-hop refusal in
+        // `tests/unit/social/dm-link-cards.test.ts`.
+        checkWebhookUrl: (url: string) => ({ ok: true, host: new URL(url).hostname }),
+        assertPublicAddress: (host: string) => Promise.resolve({ ok: true, host }),
+    };
+});
 
 import { prisma } from '@/lib/prisma';
 import { runInUserContext } from '@/lib/db-context';
@@ -39,7 +54,10 @@ import {
     readConversation,
     deleteDirectMessage,
 } from '@/app-layer/usecases/direct-messages';
-import { fetchLinkCard } from '@/app-layer/usecases/direct-message-link-cards';
+import {
+    fetchLinkCard,
+    _fetchCardAt,
+} from '@/app-layer/usecases/direct-message-link-cards';
 import type { UserContext } from '@/app-layer/types';
 
 import { DB_AVAILABLE } from './db-helper';
@@ -127,11 +145,14 @@ describeFn('P8.6 — link cards, the code stage (#2800)', () => {
         expect(seen.messages.find((m) => m.id === sent.messageId)!.linkCard).toBeNull();
     }, 60_000);
 
-    it('SANITISES the card text, asserted on the STORED row', async () => {
-        // A fetcher handing back markup is the case that matters: the usecase
-        // must not trust its own boundary. `sanitizePlainText` is idempotent,
-        // so sanitising in both places costs nothing and this assertion holds
-        // whichever one is doing the work — remove BOTH and it fails.
+    it('SANITISES the card text ONCE, asserted on the STORED row', async () => {
+        // A fetcher handing back markup is the case that matters, and this is
+        // now the ONLY sanitising site (#2874). The comment here used to say
+        // `sanitizePlainText` is idempotent so two passes cost nothing —
+        // measured, it is not: each pass strips tags and then decodes one
+        // entity level, so a doubly-encoded payload reaches literal
+        // `<script>` on the second pass. The fetcher trims and caps; this
+        // write sanitises.
         mockedFetch.mockResolvedValue({
             url: 'https://agri.example.test/hostile',
             title: '<img src=x onerror=alert(1)>Заглавие',
@@ -151,6 +172,75 @@ describeFn('P8.6 — link cards, the code stage (#2800)', () => {
         });
         expect(stored.linkTitle).toBe('Заглавие');
         expect(stored.linkDescription).toBe('Описание');
+    }, 60_000);
+
+    it('sanitises EXACTLY ONCE across the real fetcher — the composition, unmocked', async () => {
+        // THE GAP THE OTHER CASES LEAVE. Every test here mocks
+        // `fetchLinkCard`, so none of them can see a second sanitising pass
+        // being added back INSIDE it — measured: restoring that call left this
+        // suite 92/92 green, and only the unit suite went red. "A mocked
+        // dependency cannot report that the dependency changed."
+        //
+        // So this one mocks only the SCHEME CHECK, by delegating to
+        // `_fetchCardAt` — the real extraction, the real `clean`, a real
+        // server — and asserts the STORED row. Two passes anywhere in that
+        // chain fail it.
+        const srv = http.createServer((_req, res) => {
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+            res.end(
+                '<html><head><meta property="og:title" '
+                + 'content="&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;"></head></html>',
+            );
+        });
+        await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+        const { port } = srv.address() as AddressInfo;
+        mockedFetch.mockImplementation((url: string) => _fetchCardAt(url));
+
+        try {
+            const sent = await sendDirectMessage(ctxFor(ALICE), {
+                conversationId: CONV,
+                body: 'истинският път',
+                linkUrl: `http://127.0.0.1:${port}/double`,
+            });
+            const stored = await prisma.directMessage.findUniqueOrThrow({
+                where: { id: sent.messageId },
+                select: { linkTitle: true },
+            });
+            // ONE pass: the entities survive as entities, which every consumer
+            // renders as text. TWO passes would store `<script>a</script>`.
+            expect(stored.linkTitle).toBe('&lt;script&gt;a&lt;/script&gt;');
+            expect(stored.linkTitle).not.toContain('<script');
+        } finally {
+            await new Promise<void>((resolve) => srv.close(() => resolve()));
+        }
+    }, 60_000);
+
+    it('stores a DOUBLY-ENCODED payload as TEXT, not as markup — the #2874 case', async () => {
+        // THE REGRESSION THIS PHASE EXISTS FOR. With two passes the stored
+        // value was `<script>a</script>` — literal markup in the row — because
+        // each pass decodes one entity level after stripping. With one it stays
+        // entity-encoded, which every consumer renders as text.
+        //
+        // Asserted on the ROW rather than on the fetcher, because the row is
+        // what the counterparty, the report snapshot and the Art 15 export all
+        // read. Restoring the second `sanitizePlainText` call fails this.
+        mockedFetch.mockResolvedValue({
+            url: 'https://agri.example.test/double',
+            title: '&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;',
+            description: null,
+            fetchedAt: FETCHED_AT,
+        });
+        const sent = await sendDirectMessage(ctxFor(ALICE), {
+            conversationId: CONV,
+            body: 'двойно кодирано',
+            linkUrl: 'https://agri.example.test/double',
+        });
+        const stored = await prisma.directMessage.findUniqueOrThrow({
+            where: { id: sent.messageId },
+            select: { linkTitle: true },
+        });
+        expect(stored.linkTitle).toBe('&lt;script&gt;a&lt;/script&gt;');
+        expect(stored.linkTitle).not.toContain('<script');
     }, 60_000);
 
     it('keeps linkTitle and linkDescription as CIPHERTEXT at rest', async () => {
