@@ -148,6 +148,35 @@ jobs:
       # repair path, and it argues for exactly this placement of the
       # signal.
       #
+      # ── IT IS RETRIED, because the install has no retry of its own (#2884) ──
+      #
+      # MEASURED 2026-11-08: FOUR of ten Release runs lost their SBOM, each
+      # after the release had already published, and every one failed the same
+      # way:
+      #
+      #   [error] received HTTP status=000 for url='…/syft_…_checksums.txt'
+      #   [error] unable to download checksums file
+      #   [error] failed to install syft
+      #
+      # `status=000` is curl failing to CONNECT — not the 404 you would guess
+      # and not the 504 the note above anticipated from #685. The API call
+      # that resolved the tag succeeded; only the asset download failed.
+      # `anchore/sbom-action` installs syft with no retry, so one connection
+      # reset costs a supply-chain artefact. 4 of 10 is not a blip, and the
+      # single event #685 recorded was two and a half months earlier.
+      #
+      # The attempts are gated on `hashFiles`, i.e. on whether the FILE exists,
+      # not on the previous step's outcome. That is the state question rather
+      # than the run question — the same reason `sbom-presence-audit.yml`
+      # exists — and it has a practical consequence too: at most one attempt
+      # ever runs to completion, so the three steps cannot collide on the
+      # artifact name (actions/upload-artifact v4 errors on a duplicate).
+      #
+      # Three attempts, not two: at the observed 40% per-attempt failure rate
+      # that is ~6% rather than ~16%. The retry does NOT replace the loud
+      # signal — `Attach SBOM` below still fails when a release published with
+      # no file, and the presence audit still asks the question daily.
+      #
       # Named off the commit, not the tag: no tag exists yet at this
       # point, by construction.
       - name: Generate SBOM (SPDX-JSON)
@@ -160,6 +189,28 @@ jobs:
           artifact-name: "sbom-${{ github.sha }}.spdx.json"
           # Bounded because this now runs on EVERY main push rather than
           # only on publishing ones: ~2.5 MB a time, ~25 pushes a day.
+          upload-artifact-retention: 14
+
+      - name: Generate SBOM (SPDX-JSON) — attempt 2
+        if: hashFiles('sbom.spdx.json') == ''
+        continue-on-error: true
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: "sbom.spdx.json"
+          artifact-name: "sbom-${{ github.sha }}.spdx.json"
+          upload-artifact-retention: 14
+
+      - name: Generate SBOM (SPDX-JSON) — attempt 3
+        if: hashFiles('sbom.spdx.json') == ''
+        continue-on-error: true
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: "sbom.spdx.json"
+          artifact-name: "sbom-${{ github.sha }}.spdx.json"
           upload-artifact-retention: 14
 
       # semantic-release reads release.config.js and does everything:

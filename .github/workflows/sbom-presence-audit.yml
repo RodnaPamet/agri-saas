@@ -1,0 +1,95 @@
+#
+# Does every published release carry its SBOM? — #2884
+#
+# ── The gap this closes ──
+#
+# `release.yml`'s `Attach SBOM` step already fails LOUD when a release
+# published with no SBOM, and `ci-failure-issue.yml` already turns that red
+# run into an issue. Both worked, four times on 2026-11-08 (`v12.151.2`,
+# `v12.151.3`, `v12.151.5`, `v12.152.0`).
+#
+# What failed is that the signal did not survive its own success. The notifier
+# closes its issue on the next green run of the same workflow — correct for a
+# flaky check, wrong here, because the next Release succeeding says nothing
+# whatever about the PREVIOUS release's SBOM. All four issues self-closed, and
+# afterwards the repository said nothing: no open issue, no list of affected
+# tags, and the repair command surviving only inside a closed issue's log.
+# `sbom-backfill.yml` had been run by hand twice before that, so the pattern
+# had already been invisible twice.
+#
+# ── Why this one is self-closing-SAFE, and needs no exemption ──
+#
+# #2884 offered two options: take the SBOM failure out of the self-closing
+# family, or write a state-based audit. They are not alternatives — a state
+# audit makes the family rule CORRECT here rather than needing a carve-out.
+#
+# "Did the last run succeed" and "does any release lack an SBOM" are different
+# questions, and only the second one's GREEN answer is a true statement about
+# the durable artefact. So this workflow is in `ci-failure-issue.yml`'s
+# watchlist like every other probe, and its issue closing on the next green
+# run means exactly what it says.
+#
+# Same shape as `Image tip check` and `Basemap Provenance`: assert the state of
+# the world, not the outcome of a run.
+#
+# ── Why the schedule AND the workflow_run trigger ──
+#
+# The `workflow_run` leg narrows the blind window to minutes rather than up to
+# a day. The schedule is the backstop for everything that leg cannot see: a
+# cancelled Release, an asset deleted out of band, and the case that made this
+# necessary — a run that failed and whose issue has since been closed by a
+# later success.
+#
+# Both legs need the grace window the checker implements: MEASURED on
+# `v12.157.0`, a release reads back with an EMPTY asset list for about a
+# minute after publication, because semantic-release creates the row and a
+# later step uploads the file. Without it this workflow would file an issue
+# about nearly every release, and a probe that cries wolf is one people learn
+# to ignore — the same ending as the silence it was written to fix.
+#
+name: SBOM presence audit
+
+on:
+    workflow_run:
+        workflows: ["Release"]
+        types: [completed]
+    schedule:
+        # Daily, offset from `Image tip check`'s 08:00 so two probes do not
+        # contend for the same runner minute.
+        - cron: "25 8 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: sbom-presence-audit
+    # Never cancel. A cancelled state check is a state check that did not run,
+    # which is the failure mode this file exists to avoid — `Image tip check`
+    # carries the same note for the same reason.
+    cancel-in-progress: false
+
+jobs:
+    audit:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+              with:
+                  # Always ask the question against main's own checker, never
+                  # against whatever ref triggered the run.
+                  ref: main
+
+            - name: Audit release SBOMs
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GITHUB_REPOSITORY: ${{ github.repository }}
+              # Exits non-zero on `missing` AND on `unaudited`. The second is
+              # deliberate: an empty listing produces zero missing releases,
+              # which is byte-identical to a clean audit, so treating it as a
+              # pass is how a broken token reads as a green supply chain.
+              # `tests/unit/ci/release-sbom-audit.test.ts` executes the checker
+              # and asserts both exit codes.
+              run: node scripts/ci/check-release-sboms.mjs
