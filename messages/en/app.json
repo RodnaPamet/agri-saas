@@ -2527,7 +2527,8 @@
                 "good": "Healthy",
                 "watch": "Watch",
                 "stress": "Stress",
-                "unknown": "No data"
+                "unknown": "No data",
+                    "notAssessed": "No crop to assess"
             },
             "ask": {
                 "alreadySent": "You have already asked about this parcel. You can send another request, for example with a different area or cover.",

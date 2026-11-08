@@ -43,7 +43,31 @@ import {
     type ZoneMean,
 } from '@/lib/agro/earth-engine';
 
-export type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown';
+/**
+ * The grading vocabulary, shared by `vegetation`, `moisture` and `overall`.
+ *
+ * ## `notAssessed` is NOT `unknown`, and the distinction is the point
+ *
+ * `unknown` means **no usable satellite reading** — no cloud-free pass, or
+ * Earth Engine unconfigured. Something may fix it: the next pass, or
+ * credentials.
+ *
+ * `notAssessed` means **the imagery is fine and there is nothing to measure**.
+ * Only `moisture` ever takes it, and only on bare or sparse ground: NDMI is
+ * leaf water, so with no canopy there are no leaves to hold any. Nothing will
+ * fix it until the crop emerges, so a client that retries or waits is wasting
+ * its time, and one that renders it as a severity is reporting a reading
+ * nobody took.
+ *
+ * Collapsing the two would make those indistinguishable — the
+ * uniform-failure-shape problem, and `agrent-ios` asked for a distinct value
+ * for exactly this reason (2026-11-08).
+ *
+ * `vegetation` never takes `notAssessed`: vegetation IS the thing measured.
+ * `overall` never takes it either, because `worst` scores it zero — see
+ * `SEVERITY`.
+ */
+export type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown' | 'notAssessed';
 
 /**
  * The weakest part of a parcel — #2837 stage 2b.
@@ -187,6 +211,25 @@ function ymd(d: Date): string {
 export const NDVI_STRESS_THRESHOLD = 0.35;
 /** NDVI at or above which vegetation is healthy. */
 export const NDVI_GOOD_THRESHOLD = 0.6;
+/**
+ * NDVI below which there is too little canopy to grade MOISTURE at all.
+ *
+ * Owner decision 2026-11-08, relayed by `agrent-ios`. A farmer's parcel read
+ * «Влага: Стрес» after a week of non-stop rain — NDVI 0.16, NDMI -0.1. Both
+ * numbers were correct and the conclusion was nonsense: NDMI measures LEAF
+ * water, and with no canopy there are no leaves, so NDMI is low over soaked
+ * bare soil exactly as it is over dry. Calling that moisture stress on a
+ * flooded field discredits the whole card.
+ *
+ * 0.2 is the conventional bare-or-sparse boundary, and deliberately BELOW the
+ * 0.35 stress line so a genuinely stressed crop at 0.3 still gets its
+ * moisture graded. Raising it to 0.35 would silence moisture for the fields
+ * that most need it.
+ *
+ * Exported for the same reason as `NDVI_STRESS_THRESHOLD`: one number, so a
+ * retune cannot move the grading in one place and not another.
+ */
+export const NDVI_CANOPY_FLOOR = 0.2;
 
 function vegetationLevel(ndvi: number | null): RiskLevel {
     if (ndvi == null) return 'unknown';
@@ -196,14 +239,57 @@ function vegetationLevel(ndvi: number | null): RiskLevel {
 }
 
 /** NDMI → moisture risk. Lower canopy moisture indicates drought stress. */
-function moistureLevel(ndmi: number | null): RiskLevel {
+/**
+ * Moisture, which needs the VEGETATION reading to know whether grading it
+ * means anything — see `NDVI_CANOPY_FLOOR`.
+ *
+ * `ndvi` is a parameter rather than the gate living at the call sites, so the
+ * rule holds for the parcel card AND for every pass of the history by
+ * construction. Two call sites applying it separately is how one of them
+ * stops.
+ *
+ * Precedence matters. An absent NDMI is `unknown` first — nothing was
+ * measured, so there is no grading to suppress. An absent NDVI is `unknown`
+ * too: without it we cannot tell whether grading is meaningful, and guessing
+ * that there IS a canopy is the direction that produces the wrong answer the
+ * floor exists to prevent.
+ */
+function moistureLevel(ndmi: number | null, ndvi: number | null): RiskLevel {
     if (ndmi == null) return 'unknown';
+    if (ndvi == null) return 'unknown';
+    if (ndvi < NDVI_CANOPY_FLOOR) return 'notAssessed';
     if (ndmi >= 0.1) return 'good';
     if (ndmi >= -0.1) return 'watch';
     return 'stress';
 }
 
-const SEVERITY: Record<RiskLevel, number> = { unknown: 0, good: 1, watch: 2, stress: 3 };
+/**
+ * `worst`'s ordering. `notAssessed` scores ZERO so that
+ * `overall = worst(vegetation, moisture)` ignores an ungraded moisture —
+ * the owner's requirement (2026-11-08), expressed in the comparison rather
+ * than as a special case at the call site.
+ *
+ * **Its VALUE is currently unobservable, and the honest reason is not the
+ * zero.** `notAssessed` is produced only when `ndvi < NDVI_CANOPY_FLOOR`
+ * (0.2), which is also below `NDVI_STRESS_THRESHOLD` (0.35) — so a parcel
+ * whose moisture is ungraded ALWAYS has `vegetation: 'stress'`, severity 3.
+ * `worst` returns its first argument on a tie and every caller passes
+ * vegetation first, so `overall` is `'stress'` whether this entry is 0 or 3.
+ * Measured: setting it to 3 passes all 46 tests.
+ *
+ * The zero stays because it is what keeps this correct if that coupling ever
+ * breaks — a floor raised above the stress line, or a `vegetation` that
+ * learns its own ungraded state. Written down because an argument resting on
+ * a coupling, dressed as an argument about this number, is how the next
+ * reader gets it wrong.
+ */
+const SEVERITY: Record<RiskLevel, number> = {
+    unknown: 0,
+    notAssessed: 0,
+    good: 1,
+    watch: 2,
+    stress: 3,
+};
 function worst(a: RiskLevel, b: RiskLevel): RiskLevel {
     return SEVERITY[a] >= SEVERITY[b] ? a : b;
 }
@@ -220,7 +306,12 @@ export async function analyzeParcelRisk(
     assertCanRead(ctx);
     const now = opts.now ?? new Date();
     const date = ymd(now);
-    // `v3` since stage 2b added `weakest`; `v2` was stage 2a's `withinField`.
+    // `v4` since moisture is no longer graded on bare land — and this bump is
+    // for changed VALUES, not a new field, which is the first time that
+    // applies here. A `v3` entry still says «Влага: Стрес» on the flooded bare
+    // parcel the owner complained about, for up to the 6h TTL after the fix
+    // deploys. `v3` was stage 2b's `weakest`; `v2` was stage 2a's
+    // `withinField`.
     // The rule this encodes is worth more than either bump: a field added to
     // this payload needs the version moved, or a `v`-1 entry written before
     // the deploy returns the key ABSENT where the contract says
@@ -230,7 +321,7 @@ export async function analyzeParcelRisk(
     // reason about than normalising on read, and the cost is bounded: one
     // Earth Engine call per parcel on its first read after deploy, which the
     // day turning would have cost anyway.
-    const cacheKey = `parcel-risk:v3:${ctx.tenantId}:${parcelId}:${date}`;
+    const cacheKey = `parcel-risk:v4:${ctx.tenantId}:${parcelId}:${date}`;
 
     const redis = getRedis();
     if (redis) {
@@ -300,7 +391,7 @@ export async function analyzeParcelRisk(
     }
 
     const vegetation = vegetationLevel(ndvi);
-    const moisture = moistureLevel(ndmi);
+    const moisture = moistureLevel(ndmi, ndvi);
     const overall = worst(vegetation, moisture);
     const areaHa = parcel.areaHa != null ? Number(parcel.areaHa) : null;
 
@@ -621,7 +712,7 @@ function toPass(
     source: 'stored' | 'earthengine',
 ): ParcelRiskPass {
     const vegetation = vegetationLevel(ndvi);
-    const moisture = moistureLevel(ndmi);
+    const moisture = moistureLevel(ndmi, ndvi);
     return { date, ndvi, ndmi, vegetation, moisture, overall: worst(vegetation, moisture), source };
 }
 
@@ -784,7 +875,19 @@ export async function analyzeBlockRisk(
         }
     }
 
-    const counts: Record<RiskLevel, number> = { unknown: 0, good: 0, watch: 0, stress: 0 };
+    // `notAssessed` is structurally present and always ZERO: it is produced
+    // only for `moisture`, and this counts parcels by `overall`, which `worst`
+    // can never return as `notAssessed`. Listed because the Record is
+    // exhaustive over the union, so tsc requires it — and leaving it out by
+    // widening the type would be the silent-default mistake the Role switch
+    // rule exists for.
+    const counts: Record<RiskLevel, number> = {
+        unknown: 0,
+        notAssessed: 0,
+        good: 0,
+        watch: 0,
+        stress: 0,
+    };
     let worstLevel: RiskLevel = 'unknown';
     for (const p of parcels) {
         counts[p.overall] += 1;

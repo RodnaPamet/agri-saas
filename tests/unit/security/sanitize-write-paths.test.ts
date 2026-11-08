@@ -123,13 +123,29 @@ describe('addTaskComment sanitises the body before persisting', () => {
         expect(body).toContain('tail');
     });
 
-    it('decodes HTML entities so a stored `&lt;script&gt;` cannot roundtrip', async () => {
+    it('an encoded script tag never reaches the row (#2854)', async () => {
+        /*
+         * This pinned `toBe('<script>x</script>')` — the value actually
+         * PERSISTED — under a name saying it "cannot roundtrip", with a
+         * comment arguing a markdown engine that decodes entities could not
+         * re-emit a script tag. True of a renderer that decodes; irrelevant
+         * to one that interpolates. The stored row held a literal script tag
+         * and the safety rested on every downstream consumer escaping it.
+         *
+         * This is the write-path half: the fix is in `sanitizePlainText`, and
+         * what matters here is that the row is clean, because the row is what
+         * outlives the request and is read by the PDF export, share links and
+         * SDK consumers that Epic C.5 names.
+         */
         await addTaskComment(ctx, 'task-1', '&lt;script&gt;x&lt;/script&gt;');
-        const body = mockTaskCommentAdd.mock.calls[0][3];
-        expect(body).toBe('<script>x</script>');
-        // The literal text the user typed; whatever renderer reads it
-        // sees real angle brackets, not entities — so even a markdown
-        // engine that decodes entities cannot re-emit a script tag.
+        expect(mockTaskCommentAdd.mock.calls[0][3]).toBe('');
+    });
+
+    it('a comment keeping literal angle brackets still persists them', async () => {
+        // The other direction, so the assertion above is not satisfied by a
+        // write path that simply drops everything.
+        await addTaskComment(ctx, 'task-1', 'цена < 100 лв/дка');
+        expect(mockTaskCommentAdd.mock.calls[0][3]).toBe('цена < 100 лв/дка');
     });
 });
 

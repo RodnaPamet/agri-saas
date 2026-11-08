@@ -246,6 +246,13 @@
                 "tests/guards"
             ],
             "why": "Was declared test-free under `No guard reads them` and is READ: b8-landing-no-passwords-grc does `const README = read('README.md')` and asserts the landing copy carries no credentials. So editing it derived NOTHING and read as a pass — the failure #2018 exists to prevent, occurring inside these rules. #2566."
+        },
+        {
+            "when": "^src\\/lib\\/security\\/sanitize\\.ts$",
+            "run": [
+                "tests/integration"
+            ],
+            "why": "This module decides what 139 call sites STORE, and the suites asserting on a stored sanitised value are integration suites. Measured on #2854: the derived population was contracts + guardrails + guards + unit — 1913 suites green — while p8-6-dm-link-cards held two assertions encoding the OLD decode order and would have gone red in CI's `test` job. A peer reproduced it before the merge; nothing in the derivation would have. The whole root rather than that one file, because naming it is a guess about which suite asserts on stored text next, and `tests/integration` is already the answer five other rules give for a change to what gets written."
         }
     ],
     "contentRules": [
