@@ -49,12 +49,22 @@ where four in five users carry `uiLanguage: 'bg'`. Those six were fixed by
   are the same axis one layer down: a translated wire-format description would
   be wrong rather than localised.
 
-- **Latin binomials get their own entry.** `weed-options.ts` holds
-  `Sorghum halepense`, `Echinochloa crus-galli`. They are identical in every
-  language by international botanical convention — that is what a binomial is
-  for — and a Bulgarian "translation" would either be the same string, which
-  `i18n-completeness`'s untranslated check then flags, or a colloquial name
-  that no longer identifies the species on a PPP label.
+- **The exclusions are TWO KINDS, and the file now says which is which.** A
+  reader working out why the baseline is 407 needs to tell them apart:
+  `openapi` / `dto` / `scim` are **English by convention** — the strings ARE
+  copy, read by a developer rather than a farmer, so a translation would be
+  wrong for its audience rather than absent. `weed-options.ts` is **not
+  language at all**.
+
+- **Latin binomials are IDENTIFIERS.** `Sorghum halepense`,
+  `Echinochloa crus-galli` — the binomial is the REGULATED identifier for a
+  species and it is what is printed on a PPP label, which is the document an
+  operator is holding while reading this list. So both available
+  "translations" are wrong in different ways: the identical string, which
+  `i18n-completeness`'s untranslated check then flags as untranslated copy, or
+  a colloquial Bulgarian name that no longer matches the label and therefore no
+  longer identifies what the operator is about to spray. The COMMON names
+  shown beside them ARE copy, and are not in this file.
 
 - **407 is a POPULATION change, not slack**, and the distinction matters
   because raising this line is otherwise forbidden. The scan now reads 54 more

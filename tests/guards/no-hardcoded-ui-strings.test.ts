@@ -42,6 +42,19 @@ const ROOTS = ['src/app', 'src/components', 'src/lib'].map((d) => path.resolve(_
  * Files that legitimately hard-code copy because next-intl is unavailable
  * or inappropriate there. Each entry carries a reason; a new entry needs one.
  */
+// THE EXCLUSIONS BELOW ARE TWO DIFFERENT KINDS, and a reader working out why
+// the baseline is 407 will want to know which is which:
+//
+//   ENGLISH BY CONVENTION — `openapi`, `dto`, `scim`. These strings ARE copy,
+//   read by a developer rather than a farmer, and a translation would be
+//   wrong for its audience rather than absent.
+//
+//   NOT LANGUAGE AT ALL — `weed-options.ts`. A Latin binomial is an
+//   IDENTIFIER that happens to be spelled in letters. It has no translation
+//   in the way a sentence does, which is a different claim from "we have
+//   chosen not to translate it".
+//
+// Anything added here should say which kind it is.
 const FILE_ALLOWLIST: { pattern: RegExp; reason: string }[] = [
     {
         pattern: /^src\/lib\/openapi\//,
@@ -71,14 +84,20 @@ const FILE_ALLOWLIST: { pattern: RegExp; reason: string }[] = [
     {
         pattern: /^src\/lib\/agriculture\/weed-options\.ts$/,
         reason:
-            'LATIN BINOMIALS — `Sorghum halepense`, `Echinochloa crus-galli`. '
-            + 'They are identical in every language by international botanical '
-            + 'convention, which is the whole point of a binomial, and a '
-            + 'Bulgarian "translation" would either be the same string (which '
-            + '`i18n-completeness`\'s untranslated check then flags) or a '
-            + 'colloquial name that no longer identifies the species on a PPP '
-            + 'label. The COMMON names shown beside them are a separate '
-            + 'question and are not in this file.',
+            'NOT LANGUAGE — these are IDENTIFIERS. `Sorghum halepense`, '
+            + '`Echinochloa crus-galli`: a Latin binomial is the REGULATED '
+            + 'identifier for a species, and it is the identifier printed on a '
+            + 'PPP label, which is the document an operator holds while reading '
+            + 'this list. So the two available "translations" are both wrong in '
+            + 'different ways — the identical string, which '
+            + '`i18n-completeness`\'s untranslated check then flags as '
+            + 'untranslated copy, or a colloquial Bulgarian name that no longer '
+            + 'matches the label and therefore no longer identifies what the '
+            + 'operator is about to spray. That is a different kind of '
+            + 'exclusion from the three above: those are copy we keep in '
+            + 'English for a developer audience, this is a string that is not '
+            + 'copy. The COMMON names shown beside them ARE copy and are not '
+            + 'in this file.',
     },
     { pattern: /(^|\/)error\.tsx$/, reason: 'React error boundary — renders below the intl provider; must not depend on it' },
     { pattern: /(^|\/)global-error\.tsx$/, reason: 'Root error boundary — replaces the whole tree incl. the intl provider' },
