@@ -382,13 +382,16 @@ export async function openExchangeThread(ctx: RequestContext, listingId: string)
             select: {
                 id: true, sellerTenantId: true, sellerUserId: true,
                 suppressedForDeletionAt: true,
+                // #2865 — a listing a moderator removed cannot start a NEW
+                // conversation either.
+                removedByModerationAt: true,
             },
         });
         // #1655 rides the existing throw, which is both the silence wanted and
         // one fewer server-authored sentence. This path filtered on `id` alone,
         // so a saved link could open a thread against a listing the feed had
         // already stopped showing.
-        if (!listing || listing.suppressedForDeletionAt) {
+        if (!listing || listing.suppressedForDeletionAt || listing.removedByModerationAt) {
             throw codedNotFound('LISTING_NOT_FOUND', 'That listing was not found.');
         }
 
@@ -548,6 +551,8 @@ export async function getExchangeThread(
             select: {
                 id: true, senderTenantId: true, senderUserId: true, body: true,
                 deletedAt: true, createdAt: true,
+                // #2865 — a message a moderator removed serves no body either.
+                removedByModerationAt: true,
             },
         });
 
@@ -629,8 +634,13 @@ export async function getExchangeThread(
                 // client does not reimplement the same two-id comparison.
                 fromMyFarm:
                     m.senderTenantId === ctx.tenantId && m.senderUserId !== ctx.userId,
-                body: m.deletedAt ? null : m.body,
-                deleted: m.deletedAt !== null,
+                // A removed message renders EXACTLY like a deleted one.
+                // Telling the counterparty which it was would disclose a
+                // moderation action to a third party that nothing requires it
+                // to know, and the notifier is already answered by their own
+                // report status. The author is told by the Art 17 statement.
+                body: m.deletedAt || m.removedByModerationAt ? null : m.body,
+                deleted: m.deletedAt !== null || m.removedByModerationAt !== null,
                 createdAt: m.createdAt,
             })),
         };

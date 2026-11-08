@@ -1,0 +1,56 @@
+-- CONTENT_REMOVED has to REMOVE something (#2865).
+--
+-- ============================================================================
+-- WHAT WAS WRONG
+-- ============================================================================
+--
+-- `ModerationActionKind` has five values and only the two account ones did
+-- anything. `actOnNotice` branched on `actionKind` exactly once — to suspend —
+-- so `CONTENT_REMOVED` wrote a `ModerationAction` row, set the notice to
+-- ACTIONED, and performed nothing. `statement-dispatch` then composed an Art 17
+-- statement of reasons from that row and delivered «Премахнахме съдържанието.»
+-- to the reported person, while the content stayed live and visible to
+-- everybody.
+--
+-- That is #1635's shape one sibling along: a recordable, announced outcome with
+-- no enforcement. P5.9 closed it for the account kinds; the content kinds were
+-- left behind, and unlike #1635 this one affects the exchange, which is the
+-- surface actually reachable in production.
+--
+-- ============================================================================
+-- WHY A NEW COLUMN RATHER THAN `status = WITHDRAWN` OR THE EXISTING ONE
+-- ============================================================================
+--
+-- `ExchangeListing.suppressedForDeletionAt` already hides a listing, and its
+-- own docblock refuses this use in advance:
+--
+--   > Named for its one cause on purpose. The restore clears exactly the rows
+--   > this column marks, so a second, unrelated reason to hide a listing must
+--   > NOT share it — restoring would then un-hide something it never hid.
+--
+-- A seller cancelling an account deletion would otherwise un-hide a listing a
+-- moderator removed. And `status = WITHDRAWN` is the SELLER's own decision:
+-- overwriting it destroys the information a restore needs and conflates a
+-- platform action with a human one (#1655 argues both at length).
+--
+-- NULLABLE, so a removal is REVERSIBLE. An Art 17 statement carries redress,
+-- so a wrongly removed listing has to be able to come back; a hard delete is
+-- the wrong primitive for a decision somebody may appeal. There is no restore
+-- ROUTE yet — #2867 — and a nullable timestamp is what keeps that a route to
+-- write rather than data to recover.
+ALTER TABLE "ExchangeListing" ADD COLUMN "removedByModerationAt" TIMESTAMP(3);
+
+-- The same column on a message, for the same reasons. Separate from
+-- `deletedAt`, which is the SENDER retracting their own words: a platform
+-- removal must survive the sender's delete and be distinguishable from it in
+-- the row, because the Art 17 statement is about ours and not about theirs.
+ALTER TABLE "ExchangeMessage" ADD COLUMN "removedByModerationAt" TIMESTAMP(3);
+
+-- No index, mirroring `suppressedForDeletionAt`, which has none either. Every
+-- read filters this column ALONGSIDE an already-indexed predicate (`side,
+-- status` for the feed, the primary key for a detail read), so a partial index
+-- would serve only the admin question "what have we removed", which is not a
+-- hot path.
+--
+-- No RLS change: both tables already carry their policy sets, and Postgres RLS
+-- is ROW-level, so a new column is governed by the arms already there.

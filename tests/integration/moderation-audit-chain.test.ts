@@ -60,6 +60,7 @@ const users: string[] = [];
 const reports: string[] = [];
 const actions: string[] = [];
 const statements: string[] = [];
+const listings: string[] = [];
 
 async function makeUser(): Promise<string> {
     const id = `u-1619-${randomUUID()}`;
@@ -73,13 +74,41 @@ async function makeUser(): Promise<string> {
     return id;
 }
 
+/**
+ * A REAL listing for the notice to name.
+ *
+ * It used to be `listing-${randomUUID()}` — an id nothing had — and every test
+ * here passed, because nothing looked. #2865 made `CONTENT_REMOVED` actually
+ * remove the content, and a removal that changes no rows now refuses
+ * (`MODERATION_SUBJECT_GONE`): recording that outcome against content we never
+ * had would deliver an Art 17 statement saying we removed something that did
+ * not exist. So the fixture's premise has to be true, which it was not.
+ *
+ * Raw SQL to match the rest of this suite. No tenant or user row is needed —
+ * `sellerTenantId` / `sellerUserId` are plain columns with no FK on this
+ * table (the schema says so explicitly of the first).
+ */
+async function makeListing(): Promise<string> {
+    const id = `el-1619-${randomUUID()}`;
+    await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "ExchangeListing"
+           ("id","sellerTenantId","sellerUserId","side","kind","commodity",
+            "quantityTonnes","regionCode","regionName","lat","lon","updatedAt")
+         VALUES ($1,$2,$3,'SELL'::"ExchangeSide",'CULTURE'::"ExchangeKind",
+                 'wheat',10,'BG-16','Пловдив',42.1,24.7,NOW())`,
+        id, `t-1619-${randomUUID()}`, `u-1619-${randomUUID()}`,
+    );
+    listings.push(id);
+    return id;
+}
+
 async function fileNotice(): Promise<string> {
     const id = `cr-1619-${randomUUID()}`;
     await globalPrisma.$executeRawUnsafe(
         `INSERT INTO "ContentReport"
            ("id","subjectKind","subjectId","reasonCode","status","detail","reporterUserId")
          VALUES ($1,'LISTING',$2,'ILLEGAL_CONTENT'::"ReportReasonCode",'RECEIVED',$3,NULL)`,
-        id, `listing-${randomUUID()}`, encryptField('a complaint'),
+        id, await makeListing(), encryptField('a complaint'),
     );
     reports.push(id);
     return id;
@@ -107,6 +136,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
         await del('StatementOfReasons', 'id', statements);
         await del('ModerationAction', 'id', actions);
         await del('ContentReport', 'id', reports);
+        await del('ExchangeListing', 'id', listings);
         await del('UserSession', 'userId', users);
         await del('User', 'id', users);
         await globalPrisma.$disconnect();
@@ -139,7 +169,12 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
         const secret = `moderator-words-${randomUUID()}`;
 
         const { actionId } = await actOnNotice({
-            reportId, actionKind: 'CONTENT_DEMOTED',
+            // CONTENT_REMOVED, not CONTENT_DEMOTED: #2865 refuses the latter
+            // outright, because there is no ranking in this product to demote
+            // within and a recorded demotion would announce a sanction that
+            // does not exist. This test's subject is the RATIONALE, not the
+            // kind.
+            reportId, actionKind: 'CONTENT_REMOVED',
             rationale: secret, generation: 'current',
         });
         actions.push(actionId);

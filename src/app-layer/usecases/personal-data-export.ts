@@ -248,7 +248,12 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             where: { sellerUserId: userId },
             select: {
                 id: true, sellerTenantId: true, commodity: true, side: true,
-                kind: true, description: true, status: true, createdAt: true,
+                kind: true, description: true, status: true,
+                // #2865 — we removed this on a notice. Art 15 is a right to
+                // know what is held, and the Art 17 statement of reasons
+                // already told them; withholding it from the export would
+                // be quieter about our own action than about theirs.
+                removedByModerationAt: true, createdAt: true,
             },
             orderBy: { createdAt: 'desc' },
             take,
@@ -274,7 +279,12 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             // The body is theirs — they wrote it. The counterparty's replies
             // are NOT here: `senderUserId` scopes this to what they sent, and
             // the other side of a conversation is somebody else's words.
-            select: { id: true, threadId: true, body: true, createdAt: true },
+            select: {
+                id: true, threadId: true, body: true, createdAt: true,
+                // #2865, for the listing's reason one query up: we removed it,
+                // and Art 15 is a right to know what is held.
+                removedByModerationAt: true,
+            },
             orderBy: { createdAt: 'desc' },
             take,
         }),
