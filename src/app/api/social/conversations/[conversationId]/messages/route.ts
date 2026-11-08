@@ -30,6 +30,22 @@
  * ITEM survives into the replay where a header assembled by a closure does
  * not. The body is the item.
  *
+ * ## Every OPTIONAL field the schema parses has to be FORWARDED
+ *
+ * `linkUrl` was parsed here and dropped, so P8.6's link cards (#2800) were
+ * unreachable over HTTP from the day they shipped: the usecase accepted the
+ * field, this schema documented it, the OpenAPI spec described the fetch and
+ * its best-effort behaviour, and no client could trigger any of it. Nothing
+ * was red. The link-card suite drives `sendDirectMessage` DIRECTLY — the right
+ * split for what it tests — so the only thing that could have caught it is a
+ * test at THIS seam, which is why one exists now
+ * (`tests/unit/social/dm-send-forwards-optional-fields.test.ts`).
+ *
+ * The spread form is the shape to keep. `...(x ? { x } : {})` per field means
+ * a new optional field is one line here and `exactOptionalPropertyTypes` stays
+ * satisfied; passing `parsed.data` wholesale would forward unknown keys into a
+ * usecase argument, and `.strip()` makes that silent rather than loud.
+ *
  * ## The default mutation tier, unlike the open route
  *
  * Opening a conversation is bounded by `DM_OPEN_LIMIT` (5/hour) because
@@ -70,6 +86,7 @@ export const POST = withApiErrorHandling(
             ...(parsed.data.idempotencyKey
                 ? { idempotencyKey: parsed.data.idempotencyKey }
                 : {}),
+            ...(parsed.data.linkUrl ? { linkUrl: parsed.data.linkUrl } : {}),
         });
         return jsonResponse(sent, {
             status: sent.deduplicated ? 200 : 201,
