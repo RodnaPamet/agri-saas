@@ -1,0 +1,63 @@
+-- A removal can be REVERSED, and the reversal is its own action — #2867.
+--
+-- ============================================================================
+-- WHY A NEW ENUM VALUE AND NOT A FLAG ON THE ORIGINAL ROW
+-- ============================================================================
+--
+-- #2865 made `CONTENT_REMOVED` stamp `removedByModerationAt`, nullable
+-- precisely so an upheld appeal can clear it. Nothing could clear it: the only
+-- route was a DBA running an UPDATE, which is the same gap `liftSuspension`
+-- closed for the account kinds (#1676) — reversible in the data long before it
+-- was reversible through an interface.
+--
+-- The reversal is recorded as a SECOND `ModerationAction` rather than by
+-- mutating or deleting the first. Three reasons, in order of how badly each
+-- would bite:
+--
+--   1. `platform_audit_log_immutable` and the hash chain. #1619 appends a
+--      `MODERATION_ACTION_RECORDED` entry per action, so rewriting the first
+--      action's kind would leave the chain asserting a decision that no longer
+--      exists in the table it describes.
+--   2. Art 17 owes the person a statement for each decision. "We removed your
+--      listing" and "we have restored it" are two communications, and a
+--      regulator asking what we did and when needs both rows.
+--   3. An appeal history is the thing an appeal process is FOR. A flag says
+--      the current state; two rows say what happened.
+--
+-- ADDITIVE, so no `.down.sql`: `destructive-migration-has-inverse` derives its
+-- population from `DROP`/`RENAME`, and this is an `ADD VALUE`.
+ALTER TYPE "ModerationActionKind" ADD VALUE IF NOT EXISTS 'CONTENT_RESTORED';
+
+-- ============================================================================
+-- IT IS NOT ACCEPTABLE ON A NOTICE, AND THAT ASYMMETRY IS DELIBERATE
+-- ============================================================================
+--
+-- `MODERATION_ACTION_KINDS` in `src/lib/schemas/index.ts` is what
+-- `ActOnNoticeSchema` validates against, and `CONTENT_RESTORED` is NOT in it.
+-- A restore is not a decision ON a notice — it is the reversal of one — so
+-- `POST /api/admin/moderation/notices` must refuse it rather than record a
+-- restore against a notice that asked for a removal.
+--
+-- That is exactly the shape `ReportSubjectKind.ACCOUNT` already has: present
+-- in the Prisma enum, absent from the list the public schema validates, with
+-- the difference named and held by `report-subject-kinds-mirror`. The same
+-- treatment for this value lives in
+-- `tests/guards/moderation-action-kinds-mirror.test.ts`.
+
+-- ============================================================================
+-- THE CHAIN NEEDS ITS OWN VERB TOO, by #1619's own pairing argument
+-- ============================================================================
+--
+-- `PlatformAuditAction` already pairs `ACCOUNT_SUSPENDED` with
+-- `ACCOUNT_SUSPENSION_LIFTED`, and its comment says why: "Paired on purpose: a
+-- suspension history that recorded only the suspensions would show every
+-- account as still suspended."
+--
+-- That argument transfers exactly. A moderation history that recorded only
+-- removals would show every removed listing as still removed, and the reversal
+-- would be visible only by parsing `detailsJson` — which is not an encrypted
+-- column and is deliberately thin.
+--
+-- So the restore gets its own value rather than riding
+-- `MODERATION_ACTION_RECORDED` with a kind in the details.
+ALTER TYPE "PlatformAuditAction" ADD VALUE IF NOT EXISTS 'MODERATION_CONTENT_RESTORED';

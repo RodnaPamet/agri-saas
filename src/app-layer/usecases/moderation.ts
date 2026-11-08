@@ -864,3 +864,225 @@ export async function moderationHandlingStats(
         },
     };
 }
+
+/**
+ * Reverse a `CONTENT_REMOVED` — #2867.
+ *
+ * ## Keyed on the ACTION, not on the subject
+ *
+ * The caller names the removal's `actionId` and nothing else. The subject is
+ * read off that row, which is the same refusal P5.4a already makes for
+ * `actOnNotice`: *"a caller-supplied subject would let an action be recorded
+ * against content it was not about"*. Here it would be worse — a restore
+ * addressed by subject could un-hide a listing no appeal ever concerned,
+ * because `removedByModerationAt` carries no record of WHICH decision set it.
+ *
+ * ## A SECOND action row, never a mutation of the first
+ *
+ * #1619 appends a chain entry per action, so rewriting the original's kind
+ * would leave `PlatformAuditLog` asserting a decision the table no longer
+ * holds — and `platform_audit_log_immutable` would refuse the correction.
+ * Art 17 also owes a statement per decision: "we removed your listing" and
+ * "we have restored it" are two communications, and the second is the one an
+ * appeal produces.
+ *
+ * ## Three outcomes, and only one of them writes
+ *
+ *   the subject is GONE          refuse — `MODERATION_SUBJECT_GONE`
+ *   it is already visible        return `restored: false`, write NOTHING
+ *   it was hidden                clear the column, write the action, queue
+ *                                the statement
+ *
+ * The middle one is the idempotence, and it deliberately does not write a
+ * second `CONTENT_RESTORED`. A removal keyed on an action is ONE appeal; two
+ * restores of it are the same appeal twice, unlike two notices about one
+ * listing, which are two genuine decisions and both get their row (#2865).
+ * Writing a row per call would put an unbounded number of identical "we have
+ * restored it" statements in front of one person.
+ *
+ * ## What it does NOT touch
+ *
+ * `ContentReport.status` stays ACTIONED. The notice WAS acted on, and the
+ * action was later reversed — which is what the second row records. Moving it
+ * back to RECEIVED would put a decided notice into the triage queue and ask a
+ * moderator to decide it again.
+ */
+export async function restoreRemovedContent(input: {
+    actionId: string;
+    rationale: string;
+    generation: PlatformKeyGeneration;
+}): Promise<{ restoreActionId: string | null; restored: boolean }> {
+    const action = await prisma.moderationAction.findUnique({
+        where: { id: input.actionId },
+        select: {
+            id: true,
+            actionKind: true,
+            subjectKind: true,
+            subjectId: true,
+            reportId: true,
+        },
+    });
+    // Absent reads as absent, like `actOnNotice`'s missing notice: a platform
+    // admin is entitled to that difference, where a public route would be an
+    // enumeration oracle.
+    if (!action) {
+        throw codedBadRequest(
+            'MODERATION_ACTION_NOT_FOUND',
+            'That moderation action was not found.',
+        );
+    }
+    // ONLY a removal is reversible by this verb. A suspension is lifted by
+    // `liftSuspension` (#1676), `NONE` removed nothing, and `CONTENT_DEMOTED`
+    // was never performed at all (#2868) — so each of those would be a restore
+    // with nothing to restore, announced to somebody by an Art 17 statement.
+    if (action.actionKind !== 'CONTENT_REMOVED') {
+        throw codedBadRequest(
+            'MODERATION_ACTION_NOT_REVERSIBLE',
+            'Only a content removal can be restored.',
+        );
+    }
+
+    const restoreActionId = `ma-${randomUUID()}`;
+    let restored = false;
+
+    // RESOLVED BEFORE THE TRANSACTION. `resolveContentRecipient` reads through
+    // the GLOBAL client, so calling it inside an open transaction would want a
+    // SECOND pool connection while the first is held — #1191's P0.8 deadlock
+    // at `PG_POOL_MAX` 12. It needs only the subject, which the action row
+    // above already gave us.
+    const recipientUserId = await resolveContentRecipient(
+        action.subjectKind,
+        action.subjectId,
+    );
+
+    await prisma.$transaction(async (tx) => {
+        const state = await readRemovalState(tx, action.subjectKind, action.subjectId);
+        if (state === 'gone') {
+            throw codedBadRequest(
+                'MODERATION_SUBJECT_GONE',
+                'That content is no longer there to restore.',
+            );
+        }
+        if (state === 'visible') return;
+
+        await clearRemovalOnTx(tx, action.subjectKind, action.subjectId);
+        await tx.moderationAction.create({
+            data: {
+                id: restoreActionId,
+                // The SAME notice. A reversal belongs to the case it reverses,
+                // so "what happened to this notice" is one query rather than a
+                // join nobody will think to write.
+                reportId: action.reportId,
+                moderatorRef: moderatorRefFor(input.generation),
+                actionKind: 'CONTENT_RESTORED',
+                subjectKind: action.subjectKind,
+                subjectId: action.subjectId,
+                rationale: sanitizePlainText(input.rationale),
+            },
+        });
+        restored = true;
+    });
+
+    if (!restored) return { restoreActionId: null, restored: false };
+
+    // AFTER the commit, and best-effort, for #1619's reasons verbatim: this is
+    // a bare `prisma.$transaction`, which opens no `db-context` scope, so
+    // `afterCommit` would fire un-awaited. And a chain-writer failure must not
+    // undo a restore — an appeal upheld and then rolled back because an audit
+    // subsystem was sick is its own compliance failure.
+    try {
+        await appendPlatformAuditEntry({
+            scope: 'moderation',
+            action: 'MODERATION_CONTENT_RESTORED',
+            actorUserId: null,
+            detailsJson: {
+                restoreActionId,
+                reversedActionId: action.id,
+                subjectKind: action.subjectKind,
+                moderatorRef: moderatorRefFor(input.generation),
+                // Never the rationale: `detailsJson` is not an encrypted
+                // column, and the reason lives on `ModerationAction.rationale`,
+                // which is. #1619 draws this line.
+                hasRationale: input.rationale.trim().length > 0,
+            },
+        });
+    } catch (err) {
+        logger.error('moderation.restore_chain_append_failed', {
+            component: 'moderation',
+            restoreActionId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+
+    // The Art 17 FOLLOW-UP. The person was told their content was removed, so
+    // they are owed the correction — and it goes to the same recipient the
+    // removal's statement went to, resolved the same way rather than
+    // remembered from the first row.
+    if (recipientUserId) {
+        await queueStatementForAction({
+            actionId: restoreActionId,
+            recipientUserId,
+            actionKind: 'CONTENT_RESTORED',
+            rationale: input.rationale,
+        });
+    }
+
+    return { restoreActionId, restored: true };
+}
+
+/** Is the subject hidden, visible, or not there at all? */
+async function readRemovalState(
+    tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+    subjectKind: string,
+    subjectId: string,
+): Promise<'hidden' | 'visible' | 'gone'> {
+    const row =
+        subjectKind === 'LISTING'
+            ? await tx.exchangeListing.findUnique({
+                where: { id: subjectId },
+                select: { removedByModerationAt: true },
+            })
+            : subjectKind === 'MESSAGE'
+                ? await tx.exchangeMessage.findUnique({
+                    where: { id: subjectId },
+                    select: { removedByModerationAt: true },
+                })
+                : null;
+    // A kind with no arm reads as GONE rather than throwing, and that is the
+    // honest answer: `REMOVABLE_SUBJECT_KINDS` is what decides which kinds can
+    // be removed at all, so a removal of some other kind cannot exist for this
+    // verb to reverse.
+    if (!row) return 'gone';
+    return row.removedByModerationAt === null ? 'visible' : 'hidden';
+}
+
+/** Clear the hiding column. The mirror of `removeSubjectOnTx`. */
+async function clearRemovalOnTx(
+    tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+    subjectKind: string,
+    subjectId: string,
+): Promise<void> {
+    // `removedByModerationAt: { not: null }` in the WHERE, so a concurrent
+    // restore cannot double-clear — and the state read above already decided
+    // this row was hidden, which makes the two together a compare-and-set
+    // rather than a blind write.
+    if (subjectKind === 'LISTING') {
+        await tx.exchangeListing.updateMany({
+            where: { id: subjectId, removedByModerationAt: { not: null } },
+            data: { removedByModerationAt: null },
+        });
+        return;
+    }
+    if (subjectKind === 'MESSAGE') {
+        await tx.exchangeMessage.updateMany({
+            where: { id: subjectId, removedByModerationAt: { not: null } },
+            data: { removedByModerationAt: null },
+        });
+        return;
+    }
+    // Unreachable — `readRemovalState` answered `gone` for anything else.
+    throw codedBadRequest(
+        'MODERATION_ACTION_NOT_PERFORMABLE',
+        'This platform cannot carry out that outcome.',
+    );
+}

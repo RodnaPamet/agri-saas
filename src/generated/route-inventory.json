@@ -150,6 +150,11 @@
       "documented": true
     },
     {
+      "path": "/api/admin/moderation/restore",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/admin/moderation/statements",
       "status": "live",
       "documented": true

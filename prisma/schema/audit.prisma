@@ -105,6 +105,11 @@ enum PlatformAuditAction {
   // decision and its consequence in one chain rather than two halves.
   MODERATION_ACTION_RECORDED
   MODERATION_STATEMENT_QUEUED
+  // #2867 — a removal REVERSED. Its own value rather than riding
+  // `MODERATION_ACTION_RECORDED` with a kind in `detailsJson`, by the pairing
+  // argument four lines up: a moderation history that recorded only removals
+  // would show every removed listing as still removed.
+  MODERATION_CONTENT_RESTORED
   // #1656 — a suspended account's attempt to act was REFUSED. In the same
   // `moderation` scope: a platform admin reading "what has this suspension
   // done" needs the consequences next to the decision, and an attempt to join
