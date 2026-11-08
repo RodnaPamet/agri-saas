@@ -260,12 +260,26 @@ export function sanitizeUntrusted(text: string): string {
  *
  * ## Why not strip inside `sanitizeUntrusted` itself
  *
- * It would fix every caller at once, and it is the wrong shape here for a
- * specific reason: `sanitizePlainText` is NOT idempotent. It decodes entities
- * LAST, so `&amp;lt;` becomes `&lt;` on one pass and `<` on two. A caller that
- * already strips — and #2694 adds one — would then corrupt any text containing
- * an escaped entity. One application per value, at the point the value enters
- * the prompt.
+ * It would fix every caller at once. The reason recorded here was that
+ * `sanitizePlainText` is NOT idempotent — it decoded entities LAST, so
+ * `&amp;lt;` became `&lt;` on one pass and `<` on two, and a caller that
+ * already strips (#2694 adds one) would corrupt text carrying an escaped
+ * entity.
+ *
+ * **That reason expired with #2854.** The function resolves entities to a
+ * fixed point before stripping and is now idempotent, so double application
+ * no longer corrupts anything.
+ *
+ * The structure is unchanged anyway, and the remaining argument is the one
+ * that was doing the real work: stripping inside `sanitizeUntrusted` reaches
+ * EVERY caller of that helper, including the ones whose input is not markup
+ * and whose prompts would then be silently rewritten. Idempotence does not
+ * make that safe — it only removes the corruption objection. Moving it is a
+ * change with its own blast radius and wants its own review.
+ *
+ * Kept rather than deleted because the expired half is why the shape is what
+ * it is, and a reader who finds only the surviving half will not know the
+ * decision was once made on different grounds.
  */
 export function sanitizeUntrustedMarkup(text: string): string {
     // STRIP FIRST. See the note above: the other order defangs nothing and

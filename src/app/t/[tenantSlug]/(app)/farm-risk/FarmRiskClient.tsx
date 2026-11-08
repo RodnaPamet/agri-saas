@@ -19,7 +19,17 @@ interface LocationOption {
 interface ParcelsResp {
     parcels: Array<{ id: string; name: string; areaHa?: number | null; cropType?: string | null }>;
 }
-type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown';
+/**
+ * A LOCAL copy of the server's `RiskLevel`, and it has to be one: importing
+ * from `@/app-layer/usecases/parcel-risk` would pull the usecase — and
+ * Prisma — into a `'use client'` bundle.
+ *
+ * So the duplication is deliberate and the drift is the hazard. `tsc` cannot
+ * see it: widening the server's union does not touch this file, and the first
+ * symptom is a chip with no label on screen. `tests/guards/risk-level-client-
+ * mirror.test.ts` compares the two unions for that reason.
+ */
+type RiskLevel = 'good' | 'watch' | 'stress' | 'unknown' | 'notAssessed';
 interface ParcelRisk {
     parcelId: string;
     name: string;
@@ -40,6 +50,11 @@ const LEVEL_VARIANT: Record<RiskLevel, 'success' | 'warning' | 'error' | 'neutra
     watch: 'warning',
     stress: 'error',
     unknown: 'neutral',
+    // NEUTRAL, not a severity. `notAssessed` means there was nothing to
+    // measure — bare or sparse ground, where NDMI has no leaves to read — so
+    // colouring it would report a reading nobody took. Same visual weight as
+    // `unknown`, different words: see `ag.risk.level.notAssessed`.
+    notAssessed: 'neutral',
 };
 
 export function FarmRiskClient({
