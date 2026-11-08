@@ -434,11 +434,22 @@ describe('DmConversationClient', () => {
         expect(screen.queryByRole('button', { name: 'trigger' })).not.toBeInTheDocument();
     });
 
-    it('renders no "load older" control, because nothing anchors a prepend yet', () => {
+    it('renders the "load older" control once there IS an older page', () => {
+        // THE INVERSION THIS TEST EXISTED FOR. It asserted the ABSENCE of this
+        // control through P8.4, because #2826 owned paging and its anchoring
+        // together — anchoring with no paging is untestable, paging with no
+        // anchoring is a visible jump. #2826 shipped both, so the absence is
+        // no longer the property; the control is.
         mountConversation({ hasOlder: true, olderCursor: 'cursor-abc' });
-        // #2826 owns paging AND its anchoring together: anchoring with no
-        // paging is untestable, paging with no anchoring is a visible jump.
-        // `hasOlder: true` must therefore still render no control.
+        expect(screen.getByRole('button', { name: /older/i })).toBeInTheDocument();
+    });
+
+    it('renders NO "load older" control when there is no older page', () => {
+        // The control for the inversion above. Without it, "the button is
+        // there" is satisfied by a button rendered unconditionally — which
+        // would offer a page that does not exist and answer a click with
+        // nothing.
+        mountConversation({ hasOlder: false, olderCursor: null });
         expect(screen.queryByRole('button', { name: /older/i })).not.toBeInTheDocument();
     });
 });
