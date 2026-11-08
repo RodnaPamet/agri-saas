@@ -36,8 +36,10 @@
  *
  * ## Whatever comes back is UNTRUSTED TEXT
  *
- * Sanitised HERE, at the usecase, not at render time: the row is also read by
- * the Art 15 export and by SDK consumers (C.5). `sanitizePlainText` TRIMS
+ * Sanitised ONCE, by the CALLER at the write — not here (#2874). Two passes
+ * over one value walk an entity-encoded payload closer to markup rather than
+ * further from it, because each pass strips tags and then decodes one entity
+ * level. `clean` below carries the measurement. `sanitizePlainText` TRIMS
  * since #1825, and a zero-width space survives it and is still truthy — so a
  * title of nothing but U+200B is possible and renders as an empty card rather
  * than as absent. Accepted rather than fixed, because widening past
@@ -68,6 +70,11 @@ export const LINK_DESCRIPTION_MAX = 500;
 
 export interface LinkCard {
     readonly url: string;
+    /**
+     * UNSANITISED third-party text, trimmed and capped. The caller sanitises
+     * at the write — see `clean` below and #2874. Never render one of these
+     * without `sanitizePlainText`.
+     */
     readonly title: string | null;
     readonly description: string | null;
     readonly fetchedAt: Date | null;
@@ -142,11 +149,35 @@ function extractMeta(html: string, names: readonly string[]): string | null {
     return null;
 }
 
+/**
+ * TRIM AND CAP ONLY. The sanitising happens ONCE, at the write (#2874).
+ *
+ * This used to call `sanitizePlainText` here as well, and `sendDirectMessage`
+ * called it again by name at the write — two passes over one value, defended
+ * as free because the function is "idempotent". It is not: each pass strips
+ * tags and THEN decodes one level of HTML entities, so a second pass walks an
+ * encoded payload one step closer to markup. Measured:
+ *
+ *     `&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;`
+ *        pass 1 → `&lt;script&gt;a&lt;/script&gt;`   (inert text)
+ *        pass 2 → `<script>a</script>`               (STORED markup)
+ *
+ * One pass it is, and it lives at the WRITE rather than here: C.5 puts
+ * sanitising at the usecase, and `sanitize-rich-text-coverage` verifies the
+ * field BY NAME there — which is a check that the boundary form cannot get
+ * (it would need a `SEAM_COVERED` entry, and an exemption describing a seam
+ * can outlive the seam).
+ *
+ * So a `LinkCard` carries UNSANITISED text, and its one consumer writes it
+ * through `sanitizePlainText`. The type says so; any second consumer owes the
+ * same call.
+ *
+ * Capping BEFORE sanitising is safe in the one direction that matters:
+ * sanitising only ever shortens, so the stored value is still within `max`.
+ */
 function clean(raw: string | null, max: number): string | null {
     if (raw === null) return null;
-    // SANITISED at the usecase, because the row is read by the export and by
-    // SDK consumers too — not only by a renderer (C.5).
-    const text = sanitizePlainText(raw);
+    const text = raw.trim();
     if (!text) return null;
     return text.length > max ? text.slice(0, max) : text;
 }
