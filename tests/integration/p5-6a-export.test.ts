@@ -37,6 +37,7 @@ const reports: string[] = [];
 const blocks: string[] = [];
 const actions: string[] = [];
 const statements: string[] = [];
+const listings: string[] = [];
 
 async function makeUser(label: string): Promise<string> {
     const id = `u-p56-${label}-${randomUUID()}`;
@@ -47,6 +48,31 @@ async function makeUser(label: string): Promise<string> {
         id, encryptField(email), hashForLookup(email),
     );
     users.push(id);
+    return id;
+}
+
+/**
+ * A listing of theirs, so the export has one to be short of (#2863).
+ *
+ * The derived guard proves a column reaches a `select`; only running the
+ * function proves it reaches the PERSON. This is the model where the gap was
+ * starkest — a seller's own listing exported with its commodity and
+ * description and no price, quantity or region.
+ */
+async function makeListing(sellerUserId: string): Promise<string> {
+    const id = `el-p56-${randomUUID()}`;
+    await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "ExchangeListing"
+           ("id","sellerTenantId","sellerUserId","side","kind","commodity",
+            "quantityTonnes","pricePerTonne","priceCurrency","regionCode",
+            "regionName","lat","lon","sellerDisplayName","sellerContact",
+            "publishAsFarm","updatedAt")
+         VALUES ($1,$2,$3,'SELL'::"ExchangeSide",'CULTURE'::"ExchangeKind",
+                 'wheat',42.5,210.75,'EUR','BG-16','Пловдив',42.1,24.7,
+                 'Иванов ЕООД','+359 888 123 456',true,NOW())`,
+        id, `t-p56-${randomUUID()}`, sellerUserId,
+    );
+    listings.push(id);
     return id;
 }
 
@@ -109,6 +135,7 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
         await del('ModerationAction', 'id', actions);
         await del('UserBlock', 'id', blocks);
         await del('ContentReport', 'id', reports);
+        await del('ExchangeListing', 'id', listings);
         await del('User', 'id', users);
         await globalPrisma.$disconnect();
     });
@@ -257,6 +284,66 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
 
         const unrepresented = EXPORTED_MODELS.filter((m) => !(m in collections));
         expect(unrepresented).toEqual([]);
+    });
+
+    it('hands the person their OWN listing in FULL — #2863', async () => {
+        const me = await makeUser('listingowner');
+        const listingId = await makeListing(me);
+
+        const out = await exportPersonalData(me);
+        const row = out.exchangeListings.rows.find((r) => r.id === listingId);
+        expect(row).toBeDefined();
+
+        // THE GAP, as a runtime assertion. These eleven columns were all
+        // absent before the ruling of 2026-11-08, so a seller's own listing
+        // exported with its commodity and description and nothing a person
+        // would recognise as the offer they made.
+        expect(row).toMatchObject({
+            commodity: 'wheat',
+            quantityTonnes: expect.anything(),
+            pricePerTonne: expect.anything(),
+            priceCurrency: 'EUR',
+            regionCode: 'BG-16',
+            regionName: 'Пловдив',
+            lat: 42.1,
+            lon: 24.7,
+            sellerDisplayName: 'Иванов ЕООД',
+            sellerContact: '+359 888 123 456',
+            publishAsFarm: true,
+        });
+        // And the line the ruling drew in the other direction: `sellerUserId`
+        // is themselves and adds nothing, so it stays out by RULE rather than
+        // by decision.
+        expect(row).not.toHaveProperty('sellerUserId');
+    });
+
+    it('hands the person their own ACCOUNT facts and preferences — #2863', async () => {
+        const me = await makeUser('accountfacts');
+        // `bottomTabOrder` is a JSON column, not a string — raw SQL needs the
+        // cast, and without it Postgres answers 22P02 rather than coercing.
+        await globalPrisma.$executeRawUnsafe(
+            `UPDATE "User" SET "image" = $2, "bottomTabOrder" = $3::jsonb,
+                 "acceptedTermsVersion" = $4 WHERE "id" = $1`,
+            me, 'avatars/example.webp', '["journal","tasks","exchange"]', 'v3',
+        );
+
+        const out = await exportPersonalData(me);
+        // Their avatar and the preferences they set. Absent before the ruling.
+        expect(out.account).toMatchObject({
+            image: 'avatars/example.webp',
+            bottomTabOrder: ['journal', 'tasks', 'exchange'],
+            acceptedTermsVersion: 'v3',
+        });
+        // The erasure state is theirs too — `/api/auth/me` already hands
+        // `deletion` to the native recovery screen, so withholding it here was
+        // the inconsistent half. NULL for a person who never asked, which is
+        // the value this assertion wants: the KEY has to be present.
+        expect(out.account).toHaveProperty('deletionRequestedAt', null);
+        expect(out.account).toHaveProperty('terminatedAt', null);
+        // And no credential, ever. The rule that keeps `passwordHash` and
+        // `emailHash` out is older than this change and must survive it.
+        expect(out.account).not.toHaveProperty('passwordHash');
+        expect(out.account).not.toHaveProperty('emailHash');
     });
 
     it('marks a collection truncated rather than silently returning a prefix', async () => {

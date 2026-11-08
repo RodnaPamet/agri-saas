@@ -105,66 +105,48 @@ const EXEMPT_BY_RULE: readonly { readonly test: RegExp; readonly why: string }[]
 ];
 
 /**
- * Columns NOT YET REVIEWED against Art 15 — #2863.
+ * Columns DELIBERATELY NOT exported, each with the reason.
  *
- * SHRINK-ONLY. Measured 2026-11-08 by running this guard's own extraction: 176
- * columns across 19 exported models, 107 reaching a select, 24 exempt by the
- * rules above, and these left over. They are NOT a decision that they may be
- * withheld — they are the ones nobody has decided about, which is a different
- * thing, and the reason this list is named for an open issue rather than given
- * a reason each.
+ * This was `UNREVIEWED_BASELINE` and held 39 entries whose honest reason was
+ * "nobody has decided". #2863 is that decision (owner ruling 2026-11-08: the
+ * person's OWN data, not ids), so 29 of them are now selected and these ten
+ * are refusals rather than gaps.
  *
- * Some are plainly the person's own (`ExchangeListing.pricePerTonne`, so a
- * seller's listing exports without its price; `User.image`;
- * `ExchangeInquiry.inquirerContact`). Some are farm or internal ids where the
- * answer is arguable. All of them need the same review, and adding ~38 columns
- * to a legal export is not a change to make silently on the way past.
+ * The line it draws: a column is exported when it is a fact about the person
+ * or about something they made, and withheld when it is an IDENTIFIER for an
+ * entity other people belong to, or another party's data. That is the same
+ * boundary P5.6a drew for farm records — "a farmer's own compliance diary is
+ * not theirs to take away from the farm" — applied to the ids that point into
+ * that scope.
  *
- * **An entry here is cover, so it expires:** §3 fails when a baseline entry
- * names a column that no longer exists or has since been selected, so the cover
- * is removed in the same diff as the fix.
+ * SHRINK-ONLY is no longer the right shape for this list: an entry here is a
+ * decision, so it may be revisited, but §3 still refuses one that names a
+ * column which no longer exists or has since been selected — cover that
+ * outlives its subject stays alive for whatever is written at the same name
+ * next (#1285).
  */
-const UNREVIEWED_BASELINE: readonly string[] = [
-    'AssistantMemoryFact.supersededAt',
-    'ContentReport.alertedAt',
-    'DirectMessage.attachmentKey',
-    'ExchangeInquiry.inquirerTenantId',
-    'ExchangeInquiry.inquirerContact',
-    'ExchangeInquiry.contactSharedAt',
-    'ExchangeListing.quantityTonnes',
-    'ExchangeListing.pricePerTonne',
-    'ExchangeListing.priceCurrency',
-    'ExchangeListing.regionCode',
-    'ExchangeListing.regionName',
-    'ExchangeListing.lat',
-    'ExchangeListing.lon',
-    'ExchangeListing.sellerDisplayName',
-    'ExchangeListing.publishAsFarm',
-    'ExchangeListing.sellerContact',
-    'ExchangeListing.suppressedForDeletionAt',
-    'ExchangeListing.expiresAt',
-    'ExchangeMessage.senderTenantId',
-    'ExchangeMessage.deletedAt',
-    'ExchangeThread.inquirerTenantId',
-    'ExchangeThread.lastMessageAt',
-    'ExchangeThread.sellerLastReadAt',
-    'ExchangeThread.inquirerLastReadAt',
-    'InsuranceLead.inquirerTenantId',
-    'InsuranceLead.parcelId',
-    'InsuranceLead.locationId',
-    'PersonProfile.id',
-    'PromotionLead.contextParcelId',
-    'PromotionLead.deletedAt',
-    'User.isPrivateRelay',
-    'User.image',
-    'User.deletionRequestedAt',
-    'User.deletionRequestedBy',
-    'User.terminatedAt',
-    'User.pseudonymisedAt',
-    'User.acceptedTermsVersion',
-    'User.bottomTabOrder',
-    'User.newsTagPreferences',
-];
+const OMITTED_BY_DECISION: Record<string, string> = {
+    'DirectMessage.attachmentKey':
+        'A storage locator that authorises nothing: the egress route gates on RLS participation, so a bare key in a downloadable file resolves to nothing for the person holding it. Exporting it would only widen where a locator travels. The photograph\'s type, size and digest ARE exported, and `notIncluded` says the bytes are not in the file.',
+    'ExchangeInquiry.inquirerTenantId':
+        'The FARM the inquiry was sent from — an entity with other members, not a fact about this person. They see the inquiry, its message, its quantity and their own contact details; which of their farms it went out under is that farm\'s identifier.',
+    'ExchangeMessage.senderTenantId':
+        'The FARM the message was sent from, the same reason as `ExchangeInquiry.inquirerTenantId` above. The body is theirs and is exported, along with when they wrote it and whether either of us removed it; the tenant id names an organisation several people belong to.',
+    'ExchangeThread.inquirerTenantId':
+        'The FARM the thread was opened from, the same reason as the two exchange siblings above. The thread itself, its listing, its timestamps and their OWN read cursor are all exported; the tenant id names an organisation several people belong to.',
+    'ExchangeThread.sellerLastReadAt':
+        'The COUNTERPARTY\'s read cursor. These rows are selected `where: { inquirerUserId: userId }`, so this column is the other party\'s — P8.5 draws exactly this line for the same column family ("the CALLER\'s own read cursor, never the counterparty\'s"), and when somebody else read your message is their information rather than yours.',
+    'InsuranceLead.inquirerTenantId':
+        'The FARM the lead was raised for — an entity with other members, the same reason as its three exchange siblings above. The lead\'s own message, risk and quote are exported; which of their farms it was raised under is that farm\'s identifier rather than a fact about them.',
+    'InsuranceLead.parcelId':
+        'A FARM RECORD id. P5.6a puts farm records out of scope deliberately — the record belongs to a farm with its own retention duty (БАБХ ДНЕВНИК) — and an id pointing INTO that scope belongs on the same side of the line. The lead\'s own message, risk and quote are exported.',
+    'InsuranceLead.locationId':
+        'A FARM RECORD id, for the block the parcel sits in — the same reason as `parcelId` directly above. P5.6a puts farm records out of scope because the record belongs to a farm with its own retention duty, and an id pointing into that scope belongs on the same side of the line.',
+    'PromotionLead.contextParcelId':
+        'A FARM RECORD id, for the parcel the promotion was shown against — the same reason as the two `InsuranceLead` ids above. The lead itself, its promotion, its consent timestamp and its status are all exported; the parcel it was shown against is a farm record.',
+    'PersonProfile.id':
+        'A surrogate key with no meaning outside the database. Their profile\'s CONTENT — display name, about, published state, timestamps — is exported; the row\'s own primary key tells them nothing and `userId` is themselves.',
+};
 
 /** `promotionLead` → `PromotionLead`, the delegate spelling Prisma generates. */
 function delegateName(model: string): string {
@@ -253,6 +235,8 @@ describe('the Art 15 export covers every column of an exported model (#2840)', (
         }
     }
 
+    const omitted = (qualified: string): boolean => qualified in OMITTED_BY_DECISION;
+
     const isSelected = (qualified: string): boolean => {
         const [model, column] = qualified.split('.');
         return selected.get(delegateName(model))?.has(column) ?? false;
@@ -303,21 +287,25 @@ describe('the Art 15 export covers every column of an exported model (#2840)', (
         console.log(
             `[art15-export-columns] ${everyColumn.length} column(s) across `
             + `${POPULATION.length} exported model(s): ${sel} selected, `
-            + `${ruled} exempt by rule, ${left} unreviewed `
-            + `(baseline holds ${UNREVIEWED_BASELINE.length})`,
+            + `${ruled} exempt by rule, ${left} omitted by decision `
+            + `(the map holds ${Object.keys(OMITTED_BY_DECISION).length})`,
         );
-        expect(left).toBeLessThanOrEqual(UNREVIEWED_BASELINE.length);
+        // EQUAL, not `<=`. The unreviewed bucket is gone (#2863), so every
+        // column is now accounted for by a selection, a rule or a written
+        // refusal — and slack here would let the next unreviewed column hide
+        // under a decision somebody else made.
+        expect(left).toBe(Object.keys(OMITTED_BY_DECISION).length);
     });
 
     it('§2 every column is selected, exempt by rule, or on the baseline', () => {
         const unaccounted = everyColumn.filter(
-            (c) => !isSelected(c) && !exemptRule(c) && !UNREVIEWED_BASELINE.includes(c),
+            (c) => !isSelected(c) && !exemptRule(c) && !omitted(c),
         );
         expect(unaccounted).toEqual([]);
     });
 
-    it('§3 the baseline has no stale entries — cover expires with the fix', () => {
-        const gone = UNREVIEWED_BASELINE.filter((c) => {
+    it('§3 no refusal is stale — cover expires with the fix', () => {
+        const gone = Object.keys(OMITTED_BY_DECISION).filter((c) => {
             const [model, column] = c.split('.');
             const m = byName.get(model);
             // Outside the POPULATION counts as gone, not as covered. An entry
@@ -328,12 +316,36 @@ describe('the Art 15 export covers every column of an exported model (#2840)', (
             if (!POPULATION.includes(model)) return true;
             return !m || !m.fields.some((f) => f.name === column);
         });
-        const nowSelected = UNREVIEWED_BASELINE.filter(isSelected);
-        const ruled = UNREVIEWED_BASELINE.filter((c) => exemptRule(c));
-        // A baseline entry is COVER. An entry for a column that was since
-        // exported, or that a rule now exempts, keeps that cover alive for
-        // whatever is created at the same name next — the #1285 failure.
+        const nowSelected = Object.keys(OMITTED_BY_DECISION).filter(isSelected);
+        const ruled = Object.keys(OMITTED_BY_DECISION).filter((c) => exemptRule(c));
+        // A refusal is COVER. One for a column that was since exported, or
+        // that a rule now exempts, keeps that cover alive for whatever is
+        // created at the same name next — the #1285 failure.
         expect({ gone, nowSelected, ruled }).toEqual({ gone: [], nowSelected: [], ruled: [] });
+        // And every refusal states a REASON, long enough to be one.
+        for (const why of Object.values(OMITTED_BY_DECISION)) {
+            expect(why.length).toBeGreaterThan(100);
+        }
+    });
+
+    it('§4b the person\'s OWN data reaches the export — #2863\'s ruling', () => {
+        // NAMED, not derived: these are the columns the ruling turned from
+        // "unreviewed" into "exported", and the starkest of them is the reason
+        // the issue existed — a seller's own listing exported with its
+        // commodity and description and NO price, quantity or region.
+        for (const column of [
+            'ExchangeListing.quantityTonnes', 'ExchangeListing.pricePerTonne',
+            'ExchangeListing.regionName', 'ExchangeListing.sellerContact',
+            'ExchangeInquiry.inquirerContact', 'ExchangeThread.inquirerLastReadAt',
+            'User.image', 'User.newsTagPreferences', 'User.deletionRequestedAt',
+            'AssistantMemoryFact.supersededAt', 'ContentReport.alertedAt',
+        ]) {
+            expect(isSelected(column)).toBe(true);
+        }
+        // And the line the ruling drew holds in the other direction: the
+        // counterparty's read cursor is NOT exported, though its sibling is.
+        expect(isSelected('ExchangeThread.sellerLastReadAt')).toBe(false);
+        expect(omitted('ExchangeThread.sellerLastReadAt')).toBe(true);
     });
 
     it('§4 the DM attachment and link columns reach the export — #2840 itself', () => {
