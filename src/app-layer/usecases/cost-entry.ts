@@ -144,11 +144,15 @@ function assertPayrollBreakdown(input: {
  *
  * ## The predicate is `isStoredAsEuro`, NOT `allResolveToEur`
  *
- * `allResolveToEur(['BGN'])` is `true` — `normaliseCostToEur` converts lev at
- * the fixed peg. It answers "can the rollup total this row", which is a
- * different question from "is this row already euro". Using it here would let
- * the one production BGN row through, the form would pin it to EUR, and the
- * next save would relabel 1.00 BGN as 1.00 EUR: a 1.95583× overstatement.
+ * The two predicates give the SAME answer since #2793 removed the peg, so the
+ * distinction no longer bites — and it is recorded rather than deleted,
+ * because it is why this line is not `allResolveToEur`. While the peg existed
+ * `allResolveToEur(['BGN'])` was `true` (`normaliseCostToEur` converted lev),
+ * so using it here would have let the one production BGN row through, the form
+ * would have pinned it to EUR, and the next save would have relabelled 1.00
+ * BGN as 1.00 EUR: a 1.95583× overstatement. The questions are still
+ * different — "can the rollup total this row" versus "is this row already
+ * euro" — and this is the second one.
  */
 function assertEuroOnlyCurrency(submitted: string): void {
     if (isStoredAsEuro(submitted)) return;
@@ -166,8 +170,10 @@ function assertEuroOnlyCurrency(submitted: string): void {
  * Refusing a change TO euro is the point, not an oversight: rewriting `BGN` to
  * `EUR` without touching the amount is exactly the silent 1.95583×
  * overstatement the ruling declined. The row keeps its own currency until
- * somebody deletes and re-enters it, and the rollup already converts it
- * correctly in the meantime.
+ * somebody deletes and re-enters it. Since #2793 the rollup no longer converts
+ * it in the meantime either — it REFUSES it, like any other foreign
+ * currency — which makes the lock the only thing standing between a legacy row
+ * and a relabelling, rather than a belt beside the rollup's braces.
  *
  * The form renders this field read-only for such a row, so a well-behaved
  * client never reaches here. That is why it is still checked: the read-only

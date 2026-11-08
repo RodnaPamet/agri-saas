@@ -10,12 +10,20 @@
  * The fix is denomination, not labelling:
  *
  *   • **Legacy BGN rows were CONVERTED**, once, in
- *     `prisma/migrations/…_exchange_euro_denomination`, at
- *     {@link BGN_PER_EUR}. That figure is not a market quote — the lev has
- *     been pegged at exactly 1.95583/€ since 1999 and euro adoption uses it
- *     as the irrevocable conversion rate. Converting at a *fixed* rate is
- *     exact arithmetic, which is the only reason a data migration is a safe
- *     answer here at all.
+ *     `prisma/migrations/20260729120000_exchange_euro_denomination`. That
+ *     migration carries its own rate as a SQL literal (1.95583 — the lev's
+ *     peg since 1999, and the irrevocable euro-adoption rate), which is why
+ *     this module no longer exports it: the conversion was a one-off on data
+ *     that is already converted, and a migration is immutable, so the
+ *     authority for what was applied is the migration itself.
+ *
+ *     A `BGN_PER_EUR` constant and a `bgnToEur` helper lived here until
+ *     #2793 and are GONE. They had drifted into a live converter — the cost
+ *     calculator and `rent-basis.ts` both divided by the peg at READ time —
+ *     and converting a stored figure on every read is a different act from
+ *     converting a column once. A lev amount is now REFUSED wherever one can
+ *     still arrive, so do not re-add either: a peg constant with no consumer
+ *     is the next relabelling waiting for a caller.
  *
  *   • **New listings are EUR-only** ({@link EXCHANGE_CURRENCY}) — enforced by
  *     the create schema, so the write path cannot reintroduce a second
@@ -35,19 +43,6 @@
 /** The currency every NEW listing is denominated in. */
 export const EXCHANGE_CURRENCY = 'EUR' as const;
 export type ExchangeCurrency = typeof EXCHANGE_CURRENCY;
-
-/**
- * The legally fixed BGN↔EUR rate (1 EUR = 1.95583 BGN), pegged since 1999 and
- * the irrevocable conversion rate for euro adoption. Exported so the migration
- * note, the tests and any future backfill all read the same constant.
- */
-export const BGN_PER_EUR = 1.95583;
-
-/** Convert a lev amount to euro at the fixed rate, rounded to 2 dp (the
- *  `Decimal(12,2)` column's precision). Mirrors the SQL migration exactly. */
-export function bgnToEur(amountBgn: number): number {
-    return Math.round((amountBgn / BGN_PER_EUR) * 100) / 100;
-}
 
 /** Currency symbols for the price surfaces. Unknown codes render verbatim. */
 const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {

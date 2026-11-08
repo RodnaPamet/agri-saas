@@ -120,14 +120,18 @@ const TOTAL_MINOR = Prisma.sql`(SUM("amount") * 100)::bigint AS "totalMinor"`;
  * — two copies is how the TS and the SQL drift, and that module's docblock
  * already argues against private copies.
  *
- * It is NOT `canonicalCostCurrency`, which folds BGN into EUR too. That
- * function is correct where it is used, beside `normaliseCostToEur`, which
- * converts lev at the fixed peg — fold the label, convert the amount. This
- * aggregate converts nothing, by its own contract three paragraphs up:
- * *"Never blended — there is no FX table in this repo, so consumers group BY
- * currency or refuse."* Folding BGN here without converting would add lev to
- * euros as the same unit, which is a wrong TOTAL rather than a split series.
- * So lev keeps its own row.
+ * It is NOT `canonicalCostCurrency` — and the reason is now historical on one
+ * axis and live on the other. That function used to fold BGN into EUR too,
+ * correctly, because it sat beside `normaliseCostToEur`, which converted lev
+ * at the fixed peg: fold the label, convert the amount. #2793 removed both
+ * halves, so the two agree today.
+ *
+ * The rule here is unchanged regardless, by this aggregate's own contract
+ * three paragraphs up: *"Never blended — there is no FX table in this repo, so
+ * consumers group BY currency or refuse."* Folding any non-euro code here
+ * without converting would add it to euros as the same unit, which is a wrong
+ * TOTAL rather than a split series. So lev keeps its own row — and would even
+ * if `canonicalCostCurrency` started folding it again.
  *
  * `btrim` and `upper` before comparing, because the stored values are what
  * somebody typed: « eur », «Euro» and «EUR» are all one currency.

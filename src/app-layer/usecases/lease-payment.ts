@@ -18,6 +18,7 @@ import { logEvent } from '../events/audit';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { codedNotFound } from '@/lib/errors/types';
 import { canonicalRentUnit } from '@/lib/agro/rent-units';
+import { assertRecordableRentUnit } from './parcel-lease';
 
 export interface LeasePaymentInput {
     seasonYear: number;
@@ -82,9 +83,23 @@ export async function recordLeasePayment(
         if (!lease) throw codedNotFound('LEASE_NOT_FOUND', 'Lease not found');
 
         // Default to the lease's own unit so a payment can't drift dimensionally.
-        const unit = input.unit
-            ? canonicalRentUnit(sanitizePlainText(input.unit.trim()))
-            : lease.rentUnit;
+        const supplied = input.unit ? canonicalRentUnit(sanitizePlainText(input.unit.trim())) : null;
+        // A SUPPLIED money unit has to be one this product records (#2793) —
+        // the same rule the lease write path applies, same function, so a
+        // payment cannot be booked in a unit no lease could be written in.
+        //
+        // The lease's OWN unit is exempt, and that is the whole reason this is
+        // a comparison rather than a flat check. A lease written before the
+        // peg came out may be quoted in `лв/дка`, and that obligation is still
+        // owed: refusing to record what was actually paid against it would
+        // lose a settlement to protect a currency rule, and the roll would
+        // then report the lessor as unpaid for ever. Passing the value through
+        // as a DEFAULT while refusing the identical value when TYPED would be
+        // the arbitrary version of the same rule.
+        if (supplied != null && supplied !== lease.rentUnit) {
+            assertRecordableRentUnit(supplied, input.unit ?? null);
+        }
+        const unit = supplied ?? lease.rentUnit;
 
         const payment = await db.leasePayment.create({
             data: {

@@ -49,8 +49,8 @@ beforeAll(async () => {
     const pA = await createParcel(ctx(), locAId, { name: 'TL-A1', geometry: square(0.01) });
     const pB = await createParcel(ctx(), locBId, { name: 'TL-B1', geometry: square(0.01) });
     parcelAId = pA.id;
-    await createParcelLease(ctx(), pA.id, { lessorName: 'Ivan Petrov', kind: 'ARENDA', rentAmount: 55, rentUnit: 'лв/дка' });
-    await createParcelLease(ctx(), pB.id, { lessorName: 'Maria Georgieva', kind: 'NAEM', rentAmount: 40, rentUnit: 'лв/дка' });
+    await createParcelLease(ctx(), pA.id, { lessorName: 'Ivan Petrov', kind: 'ARENDA', rentAmount: 55, rentUnit: '€/дка' });
+    await createParcelLease(ctx(), pB.id, { lessorName: 'Maria Georgieva', kind: 'NAEM', rentAmount: 40, rentUnit: '€/дка' });
 });
 
 afterAll(async () => {

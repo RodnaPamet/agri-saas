@@ -15,7 +15,6 @@
  * never invalidates existing rows.
  */
 
-import { bgnToEur } from '@/lib/exchange/currency';
 
 /** Code + the symbol/name shown beside it in the picker. */
 export const CONTRACT_CURRENCIES: ReadonlyArray<{ code: string; symbol: string }> = [
@@ -61,17 +60,15 @@ export function currencyOptions(
  * phone's old free-text «Валута» field), 1 × `'BGN'`. Three spellings of two
  * currencies, one of which is pegged to the other.
  *
- * `cost-rollup` states — correctly, when it was written — that "there is no FX
- * table anywhere in this product … so amounts in different currencies CANNOT
- * be converted". That argument has since expired on one axis:
- * `src/lib/exchange/currency.ts` exists, the lev has been pegged at exactly
- * 1.95583/€ since 1999, and the grain exchange already converted its stored
- * BGN listings at that rate in a SQL migration. `bgnToEur` is reused here so
- * the calculator and the exchange cannot drift to two different pegs, and so
- * the rounding matches the `Decimal(12,2)` column both sides store.
- *
- * Converting at a legally fixed peg is arithmetic. Converting USD is a market
- * quote this product still does not have — hence the asymmetry below.
+ * `cost-rollup` states that "there is no FX table anywhere in this product …
+ * so amounts in different currencies CANNOT be converted", and that is the
+ * posture again. It was briefly not: a `bgnToEur` helper converted at the
+ * legally fixed 1.95583 peg, because one production `CostEntry` carried
+ * `'BGN'` and the calculator called that farm's costs "mixed". That row is
+ * gone (deleted 2026-11-06), `COST_ENTRY_CURRENCY_NOT_EUR` refuses a non-euro
+ * cost on write, `CONTRACT_CURRENCIES` is EUR-only, and #2793 removed the
+ * peg — so every spelling below is a spelling of EURO, and a lev code is as
+ * foreign as a dollar one.
  *
  * ## What is deliberately NOT done
  *
@@ -99,11 +96,10 @@ export function currencyOptions(
  * argument this module's own docblock already makes against private copies.
  * One list, two readers.
  *
- * Note what this set does NOT contain: lev. `canonicalCostCurrency` folds BGN
- * into EUR as well, but only because it is used beside `normaliseCostToEur`,
- * which converts at the fixed peg. A consumer that folds the LABEL without
- * converting the AMOUNT would add lev to euros as the same unit, so a caller
- * that cannot convert wants these spellings and not that function.
+ * Note what this set does NOT contain: lev. Nothing in this module folds it
+ * any more (#2793) — a BGN label is foreign, and a consumer that folded the
+ * LABEL without converting the AMOUNT would add lev to euros as the same
+ * unit. That is now the same answer every function here gives.
  */
 export const EURO_SPELLINGS_LIST = ['EUR', 'EURO', 'EUROS', '€', 'E'] as const;
 
@@ -129,8 +125,14 @@ export interface NormalisedCost {
  * One cost row's contribution to a euro total.
  *
  * - euro in any spelling, or unrecorded  → the amount unchanged
- * - lev                                  → converted at the fixed peg
  * - anything else                        → refused, amount withheld
+ *
+ * THE LEV ARM IS GONE (#2793). It converted at the fixed peg, and it is dead:
+ * measured on production 2026-11-06, the one `BGN` cost row (1.00) was deleted
+ * and the three `EURO` rows relabelled, so every `CostEntry` is euro;
+ * `COST_ENTRY_CURRENCY_NOT_EUR` refuses a non-euro cost on write; and
+ * `CONTRACT_CURRENCIES` is EUR-only. A lev code now refuses like any other
+ * foreign currency, which is the same answer a USD row has always had.
  *
  * Unrecorded counts as euro because the app is EUR-only: a blank currency on a
  * farm that can only record euro is a missing label, not an unknown unit.
@@ -142,9 +144,7 @@ export function normaliseCostToEur(
     if (amount == null || !Number.isFinite(amount)) return { eur: null, refusal: null };
     const code = currency?.trim().toUpperCase() ?? '';
     if (code === '' || EURO_SPELLINGS.has(code)) return { eur: amount, refusal: null };
-    if (code === 'BGN' || code === 'ЛВ' || code === 'ЛВ.' || code === 'BGL') {
-        return { eur: bgnToEur(amount), refusal: null };
-    }
+
     return { eur: null, refusal: 'FOREIGN' };
 }
 
@@ -169,38 +169,35 @@ export function normaliseCostToEur(
  * that missing counterpart, exported so there is one rule rather than a second
  * private copy.
  *
- * Deliberately NOT `isStoredAsEuro`. That function answers a different and
- * narrower question — "is this ALREADY euro, as opposed to merely convertible"
- * — and says NO to lev, because the EUR-only save path must lock a BGN row
- * rather than relabel it. For a rollup, lev is addable: `normaliseCostToEur`
- * converts it at the fixed peg and refuses nothing. Using the save path's
- * predicate here would keep BGN in the set and keep refusing the farm.
+ * Since #2793 this is the same predicate as `isStoredAsEuro` — the lev arm is
+ * gone from both, so "resolves to euro" and "is already euro" now name one
+ * set. The two functions are kept apart because they answer different
+ * QUESTIONS and one of them has a caller that must keep refusing: this one
+ * builds a SET for a rollup, `isStoredAsEuro` gates the EUR-only save path.
+ * They were deliberately different while the peg existed (lev was addable for
+ * a rollup and lockable for the save path), and collapsing them to one export
+ * would make a future divergence a rewrite rather than an edit.
  */
 export function canonicalCostCurrency(currency: string | null | undefined): string {
     const code = currency?.trim().toUpperCase() ?? '';
     if (code === '' || EURO_SPELLINGS.has(code)) return 'EUR';
-    if (code === 'BGN' || code === 'ЛВ' || code === 'ЛВ.' || code === 'BGL') return 'EUR';
     return code;
 }
 
 /**
  * Is this currency ALREADY euro — as opposed to merely convertible to it?
  *
- * Distinct from `allResolveToEur`, and the distinction is load-bearing. That
- * function answers "can the rollup total this row", and it says **yes** to lev:
- * `normaliseCostToEur` converts BGN at the fixed peg and returns
- * `refusal: null`. So `allResolveToEur(['BGN'])` is `true`.
+ * Distinct from `allResolveToEur` in QUESTION, and since #2793 identical in
+ * ANSWER. That function asks "can the rollup total this row"; this one asks
+ * "may the save path edit it". The peg is what made them disagree — lev was
+ * convertible (so `allResolveToEur(['BGN'])` was `true`) and NOT already euro
+ * (so a lock predicate built on the first would have relabelled 1.00 BGN as
+ * 1.00 EUR, overstating it by 1.95583×, which is #2398). With the peg gone
+ * there are two states, not three:
  *
- * Which makes it the wrong question for the EUR-only save path (#2398). A lock
- * predicate built on it would treat the one production BGN row as euro, pin its
- * field to EUR, and relabel 1.00 BGN as 1.00 EUR on the next save — overstating
- * it by 1.95583×. Three states, not two:
- *
- *   - stored as euro      EUR / EURO / EUROS / € / E / blank   editable
- *   - convertible at peg  BGN / ЛВ / ЛВ. / BGL                 locked
- *   - foreign             USD / GBP …                          locked, and
- *                                                              refused by the
- *                                                              rollup
+ *   - stored as euro  EUR / EURO / EUROS / € / E / blank   editable
+ *   - foreign         BGN / ЛВ / ЛВ. / BGL / USD / GBP …   locked, and refused
+ *                                                          by the rollup
  *
  * Blank counts as euro for the same reason `normaliseCostToEur` does: on a farm
  * that can only record euro, a missing label is a missing label, not an unknown
