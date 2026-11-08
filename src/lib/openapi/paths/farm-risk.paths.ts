@@ -29,11 +29,28 @@ const ParcelParams = TenantParams.extend({
  * request succeeded and there is nothing to report. A client that maps it to
  * a colour alongside the other three is asserting a reading it does not have.
  */
-const RiskLevel = z.enum(['good', 'watch', 'stress', 'unknown']).openapi('RiskLevel', {
-    description:
-        'good | watch | stress | unknown. `unknown` means no usable satellite reading, ' +
-        'not a failure — render it as absence, never as a fourth severity.',
-});
+const RiskLevel = z
+    .enum(['good', 'watch', 'stress', 'unknown', 'notAssessed'])
+    .openapi('RiskLevel', {
+        description:
+            'good | watch | stress | unknown | notAssessed. The last two are both ' +
+            'ABSENCES and they are NOT interchangeable \u2014 render neither as a ' +
+            'severity.\n\n' +
+            '`unknown` \u2014 **no usable satellite reading.** No cloud-free pass in the ' +
+            'window, or Earth Engine unconfigured. Something may fix it: the next pass, ' +
+            'or credentials. Waiting is reasonable.\n\n' +
+            '`notAssessed` \u2014 **the imagery is fine and there was nothing to measure.** ' +
+            'Only `moisture` ever takes it, and only on bare or sparse ground (NDVI below ' +
+            '0.2). NDMI measures LEAF water, so with no canopy there are no leaves to ' +
+            'hold any, and NDMI sits low over soaked bare soil exactly as over dry \u2014 ' +
+            'which is how a flooded field used to read «Влага: Стрес». Nothing will fix ' +
+            'it until the crop emerges, so a client that retries or waits is wasting its ' +
+            'time, and one that shows a severity is reporting a reading nobody took.\n\n' +
+            '`vegetation` never takes `notAssessed`: vegetation IS the thing measured, ' +
+            'and low greenness on an empty field is a true statement. `overall` never ' +
+            'takes it either \u2014 it is `worst(vegetation, moisture)` and an ungraded ' +
+            'moisture is ignored.',
+    });
 
 /**
  * How NDVI is DISTRIBUTED across the parcel — #2837 stage 2.
