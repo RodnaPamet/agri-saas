@@ -46,11 +46,41 @@ const SRC = fs.readFileSync(path.resolve(__dirname, '../..', REL), 'utf8');
  */
 const CODE = blankNonCode(SRC);
 
-/** The body of a named function in `CODE`, by brace matching from its `{`. */
+/**
+ * The body of a named function in `CODE`, by brace matching.
+ *
+ * The opening brace is found by PAREN-MATCHING the parameter list first, not
+ * by taking the first `{` after the name. #2837 stage 2 gave
+ * `getIndexMeansForPolygon` an `opts: { stressThreshold?: number } = {}`
+ * parameter, and the naive version then extracted
+ * `"{ stressThreshold?: number }"` as the whole function body.
+ *
+ * It failed loudly here because the assertions are `toMatch`, and an inline
+ * type literal does not contain `scale: 20`. A guard written with
+ * `not.toContain` would have passed on that slice — which is the shape to
+ * watch for: an extractor that returns the WRONG non-empty thing is invisible
+ * to a negated assertion.
+ */
 function bodyOf(name: string): string {
     const at = CODE.indexOf(`function ${name}(`);
     if (at < 0) throw new Error(`No \`function ${name}(\` in ${REL}`);
-    const open = CODE.indexOf('{', at);
+    // Walk the parameter list to its closing paren, so a brace inside a
+    // parameter's type cannot be mistaken for the body.
+    const paramsOpen = CODE.indexOf('(', at);
+    let parens = 0;
+    let paramsEnd = -1;
+    for (let i = paramsOpen; i < CODE.length; i += 1) {
+        if (CODE[i] === '(') parens += 1;
+        else if (CODE[i] === ')') {
+            parens -= 1;
+            if (parens === 0) {
+                paramsEnd = i;
+                break;
+            }
+        }
+    }
+    if (paramsEnd < 0) throw new Error(`Unbalanced parens in \`${name}\`'s signature`);
+    const open = CODE.indexOf('{', paramsEnd);
     let depth = 0;
     for (let i = open; i < CODE.length; i += 1) {
         if (CODE[i] === '{') depth += 1;
@@ -81,6 +111,18 @@ describe('parcel-level cloud judgement — controls', () => {
         const body = bodyOf('sclClearMask');
         expect(body.length).toBeGreaterThan(40);
         expect(body).toContain('SCL');
+
+        /*
+         * And specifically the function with an inline TYPE LITERAL in its
+         * parameter list, because that is what broke the first version:
+         * `opts: { stressThreshold?: number } = {}` made the naive extractor
+         * return the type literal as the body. A body is recognisable by
+         * holding the reducer this guard is about.
+         */
+        const polygon = bodyOf('getIndexMeansForPolygon');
+        expect(polygon.length).toBeGreaterThan(500);
+        expect(polygon).toContain('reduceRegion');
+        expect(polygon).not.toContain('stressThreshold?: number');
     });
 });
 

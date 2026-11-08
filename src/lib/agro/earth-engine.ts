@@ -517,6 +517,49 @@ export async function getIndexTileUrl(
     return { tileUrl: urlFormat, acquiredDate };
 }
 
+/**
+ * How NDVI is DISTRIBUTED across the parcel, not just its average — #2837
+ * stage 2.
+ *
+ * A field mean of 0.5 can be a uniformly mediocre crop or an excellent one
+ * with a failing corner, and those call for different actions. The
+ * percentiles say which.
+ *
+ * ## The denominator is the CLEAR area, not the parcel
+ *
+ * Every figure here is computed over the pixels this composite could actually
+ * see: `reduceRegion` ignores masked pixels, and the SCL mask removes cloud,
+ * shadow, cirrus and snow. So `belowThresholdShare: 0.3` means "30% of what
+ * we can see is in stress", NOT "30% of the field". That is the honest
+ * reading — nothing can be said about ground under cloud — and it is stated
+ * here because a client would otherwise reasonably assume the field.
+ *
+ * Deliberately NOT unmasked to zero: counting cloud as not-in-stress would
+ * make a mostly-clouded parcel look healthy, which is the dangerous
+ * direction. Counting it as in-stress would cry wolf. Reporting the share of
+ * what was visible is the only one of the three that does not invent a
+ * reading.
+ */
+export interface WithinFieldStats {
+    /** NDVI 10th percentile over the clear area — the weakest tenth. */
+    ndviP10: number | null;
+    /** Median NDVI. Compare with `ndvi` (the mean): a mean well below the
+     *  median means a minority of very poor pixels is dragging it down. */
+    ndviP50: number | null;
+    ndviP90: number | null;
+    /**
+     * Share of the CLEAR area whose NDVI is below `threshold`, 0..1.
+     * `null` when the composite saw nothing.
+     */
+    belowThresholdShare: number | null;
+    /**
+     * The NDVI value `belowThresholdShare` was computed against, echoed so a
+     * client never has to assume it. Supplied by the caller, which holds the
+     * same constant the risk levels use — see `NDVI_STRESS_THRESHOLD`.
+     */
+    threshold: number;
+}
+
 /** Field-area mean vegetation-index readings (the AI-briefing input). */
 export interface FieldIndexMeans {
     /**
@@ -537,6 +580,12 @@ export interface FieldIndexMeans {
      * date they asked for.
      */
     acquiredDate: string | null;
+    /**
+     * The NDVI distribution across the parcel — #2837 stage 2. `null` when
+     * the caller did not ask for it (no `stressThreshold`), which is every
+     * caller that only needs the means.
+     */
+    withinField: WithinFieldStats | null;
 }
 
 /**
@@ -605,7 +654,17 @@ export async function getIndexMeansForBounds(
         typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
 
     // Band names are the uppercased index names from `bandFn`'s `.rename(...)`.
-    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
+    return {
+        ndvi: round3(info.NDVI),
+        ndmi: round3(info.NDMI),
+        acquiredDate,
+        // No distribution for a BOUNDING BOX. Percentiles over a rectangle
+        // spanning a whole farm describe the farm's variation between fields,
+        // not variation within one — and this reader's callers want the
+        // briefing's two numbers. Explicit `null` rather than an optional
+        // field so a future reader has to decide rather than inherit.
+        withinField: null,
+    };
 }
 
 /**
@@ -618,6 +677,7 @@ export async function getIndexMeansForBounds(
 export async function getIndexMeansForPolygon(
     geometry: unknown,
     win: NdviWindow,
+    opts: { stressThreshold?: number } = {},
 ): Promise<FieldIndexMeans> {
     await initEarthEngine();
 
@@ -637,7 +697,41 @@ export async function getIndexMeansForPolygon(
     const ndmiBand = bandFn('ndmi');
     const ndvi = masked.map((img: EeImage) => ndviBand(img)).median();
     const ndmi = masked.map((img: EeImage) => ndmiBand(img)).median();
-    const combined = (ndvi as EeImage).addBands(ndmi).clip(region);
+
+    const threshold = opts.stressThreshold;
+    // #2837 stage 2: the distribution rides the SAME `reduceRegion` as the
+    // means. A separate call for the percentiles would be a second metered
+    // Earth Engine round trip over pixels this one is already scanning.
+    //
+    // The below-threshold band is `ndvi.lt(threshold)` — 0/1 — whose MEAN is
+    // the share. It inherits the SCL mask, so the share is of the CLEAR area;
+    // `WithinFieldStats` records why that is the right denominator and why it
+    // is deliberately not unmasked.
+    const bands =
+        threshold === undefined
+            ? (ndvi as EeImage).addBands(ndmi)
+            : (ndvi as EeImage)
+                  .addBands(ndmi)
+                  .addBands(
+                      (ndvi as unknown as { lt: (v: number) => EeImage })
+                          .lt(threshold)
+                          .rename('NDVIBELOW'),
+                  );
+    const combined = bands.clip(region);
+
+    const eeR = ee.Reducer as unknown as {
+        mean: () => { combine: (a: Record<string, unknown>) => unknown };
+        percentile: (ps: number[]) => unknown;
+    };
+    // `.combine` SUFFIXES every output — `NDVI_mean`, `NDVI_p10`, … — so the
+    // keys read back below are NOT the bare band names they were before this
+    // change. Combined unconditionally rather than behind the `threshold`
+    // branch: one output shape is easier to read back correctly than two, and
+    // percentiles over pixels already being scanned cost nothing.
+    const reducer = eeR.mean().combine({
+        reducer2: eeR.percentile([10, 50, 90]),
+        sharedInputs: true,
+    });
 
     const reduced = (
         combined as unknown as {
@@ -646,7 +740,7 @@ export async function getIndexMeansForPolygon(
             };
         }
     ).reduceRegion({
-        reducer: ee.Reducer.mean(),
+        reducer,
         geometry: region,
         scale: 20,
         maxPixels: 1e9,
@@ -669,7 +763,22 @@ export async function getIndexMeansForPolygon(
     const round3 = (v: unknown): number | null =>
         typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
 
-    return { ndvi: round3(info.NDVI), ndmi: round3(info.NDMI), acquiredDate };
+    return {
+        // `_mean`, not `NDVI`: the reducer is combined — see the note above it.
+        ndvi: round3(info.NDVI_mean),
+        ndmi: round3(info.NDMI_mean),
+        acquiredDate,
+        withinField:
+            threshold === undefined
+                ? null
+                : {
+                      ndviP10: round3(info.NDVI_p10),
+                      ndviP50: round3(info.NDVI_p50),
+                      ndviP90: round3(info.NDVI_p90),
+                      belowThresholdShare: round3(info.NDVIBELOW_mean),
+                      threshold,
+                  },
+    };
 }
 
 /** One Sentinel-2 pass, reduced over a parcel. */
