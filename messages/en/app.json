@@ -5230,7 +5230,7 @@
             "loadingImagery": "Loading {index} imagery…",
             "imageryNotConfigured": "{index} imagery isn’t configured for this deployment.",
             "imageryLoadError": "Couldn’t load {index} imagery for this date — try another.",
-            "imageryNone": "No cloud-free {index} imagery for this field around that date.",
+            "imageryNone": "No usable {index} imagery for this field around that date \u2014 cloud, snow, or no satellite pass.",
             "merge": "Merge",
             "cadastreToggle": "Cadastral map",
             "cadastreBoundariesToggle": "Cadastral boundaries",
