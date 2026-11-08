@@ -98,6 +98,10 @@ on:
       - "Publish image to GHCR"
       # ...and the STATE question its cancellations cannot answer (#826).
       - "Image tip check"
+      # ...and the RECOVERY the state question does not perform (#2582). This
+      # one holds `actions: write` and re-dispatches a production publish, so
+      # its own failure is the kind that must not be quiet.
+      - "Publish retry"
       # push-to-main runs only; the job-level `if:` already drops PR runs.
       - "Lighthouse"
       # Dispatch-only, but "a human dispatched it" is not "a human is
