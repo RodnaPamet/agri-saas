@@ -174,29 +174,62 @@ describeFn('P8.6 — link cards, the code stage (#2800)', () => {
         expect(stored.linkDescription).toBe('Описание');
     }, 60_000);
 
-    it('sanitises EXACTLY ONCE across the real fetcher — the composition, unmocked', async () => {
-        // THE GAP THE OTHER CASES LEAVE. Every test here mocks
-        // `fetchLinkCard`, so none of them can see a second sanitising pass
-        // being added back INSIDE it — measured: restoring that call left this
-        // suite 92/92 green, and only the unit suite went red. "A mocked
-        // dependency cannot report that the dependency changed."
+    it('an encoded-markup title reaches the column as NOTHING, through the real fetcher', async () => {
+        // THE GAP THE OTHER CASES LEAVE. Every other test here mocks
+        // `fetchLinkCard`, so none of them exercises the real extraction or the
+        // real `clean`. This one mocks only the SCHEME CHECK, by delegating to
+        // `_fetchCardAt` — real server, real `extractMeta`, real `clean` — and
+        // asserts the STORED row.
         //
-        // So this one mocks only the SCHEME CHECK, by delegating to
-        // `_fetchCardAt` — the real extraction, the real `clean`, a real
-        // server — and asserts the STORED row. Two passes anywhere in that
-        // chain fail it.
-        const srv = http.createServer((_req, res) => {
+        // IT NO LONGER DETECTS A SECOND SANITISING PASS, and that is worth
+        // stating rather than leaving as a silently weaker test. It used to:
+        // `sanitizePlainText` decoded one entity level AFTER stripping, so a
+        // second pass walked `&amp;lt;script&amp;gt;` one step closer to markup
+        // and this assertion caught it (#2874). #2854 made the function
+        // idempotent — it decodes to a FIXED POINT before stripping — so one
+        // pass and two now produce identical bytes and NO assertion on the
+        // output can tell them apart. What protects "exactly once" instead is
+        // `sanitize-rich-text-coverage`, which requires the field to be
+        // sanitised BY NAME at the write, plus the idempotence property test in
+        // `tests/unit/security/sanitize.test.ts`.
+        //
+        // What it still covers is the composition: a title that is entirely
+        // encoded markup is stripped to `''`, and the write is
+        // `sanitizePlainText(card.title) || null`, so the column lands NULL —
+        // "they sent only markup" and "there was no title" are the same fact to
+        // every reader, which is a better outcome than the entity-encoded text
+        // this test used to assert.
+        //
+        // THE CONTROL IS LOAD-BEARING. `toBeNull()` is satisfied by a fetcher
+        // that broke entirely — a 500, a moved `og:title`, an `extractMeta`
+        // regex that stopped matching — and every one of those fails toward
+        // green. So the same server, the same delegation and the same write
+        // must carry an ordinary title through intact.
+        const srv = http.createServer((req, res) => {
+            const title = req.url?.includes('/plain')
+                ? 'Нива до Садово'
+                : '&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;';
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-            res.end(
-                '<html><head><meta property="og:title" '
-                + 'content="&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;"></head></html>',
-            );
+            res.end(`<html><head><meta property="og:title" content="${title}"></head></html>`);
         });
         await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
         const { port } = srv.address() as AddressInfo;
         mockedFetch.mockImplementation((url: string) => _fetchCardAt(url));
 
         try {
+            const control = await sendDirectMessage(ctxFor(ALICE), {
+                conversationId: CONV,
+                body: 'контрола',
+                linkUrl: `http://127.0.0.1:${port}/plain`,
+            });
+            const controlRow = await prisma.directMessage.findUniqueOrThrow({
+                where: { id: control.messageId },
+                select: { linkTitle: true },
+            });
+            // The control: this chain CAN deliver a title. Without it the
+            // assertion below passes over a fetcher that returned nothing.
+            expect(controlRow.linkTitle).toBe('Нива до Садово');
+
             const sent = await sendDirectMessage(ctxFor(ALICE), {
                 conversationId: CONV,
                 body: 'истинският път',
@@ -206,24 +239,32 @@ describeFn('P8.6 — link cards, the code stage (#2800)', () => {
                 where: { id: sent.messageId },
                 select: { linkTitle: true },
             });
-            // ONE pass: the entities survive as entities, which every consumer
-            // renders as text. TWO passes would store `<script>a</script>`.
-            expect(stored.linkTitle).toBe('&lt;script&gt;a&lt;/script&gt;');
-            expect(stored.linkTitle).not.toContain('<script');
+            expect(stored.linkTitle).toBeNull();
         } finally {
             await new Promise<void>((resolve) => srv.close(() => resolve()));
         }
     }, 60_000);
 
-    it('stores a DOUBLY-ENCODED payload as TEXT, not as markup — the #2874 case', async () => {
-        // THE REGRESSION THIS PHASE EXISTS FOR. With two passes the stored
-        // value was `<script>a</script>` — literal markup in the row — because
-        // each pass decodes one entity level after stripping. With one it stays
-        // entity-encoded, which every consumer renders as text.
+    it('a DOUBLY-ENCODED payload reaches the column as NOTHING — the #2874 case', async () => {
+        // THE REGRESSION THIS PHASE EXISTS FOR, and its expected value moved
+        // with #2854. With two passes of the OLD function the row held
+        // `<script>a</script>` — literal markup — because each pass decoded one
+        // entity level after stripping. This test then asserted the one-pass
+        // result, `&lt;script&gt;a&lt;/script&gt;`: entity-encoded text, which
+        // every consumer renders inert.
+        //
+        // #2854 decodes to a FIXED POINT before stripping, so a payload that is
+        // entirely encoded markup now strips to `''`, and the write is
+        // `sanitizePlainText(card.title) || null`. The column lands NULL, which
+        // is strictly better than the inert text: the payload does not survive
+        // in any form, and "they sent only markup" is indistinguishable from
+        // "there was no title" — which is what every reader should see.
         //
         // Asserted on the ROW rather than on the fetcher, because the row is
         // what the counterparty, the report snapshot and the Art 15 export all
-        // read. Restoring the second `sanitizePlainText` call fails this.
+        // read. The sibling case above runs the same property through the REAL
+        // fetcher and carries the positive control; this one pins the WRITE
+        // with the extraction mocked out.
         mockedFetch.mockResolvedValue({
             url: 'https://agri.example.test/double',
             title: '&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;',
@@ -239,8 +280,7 @@ describeFn('P8.6 — link cards, the code stage (#2800)', () => {
             where: { id: sent.messageId },
             select: { linkTitle: true },
         });
-        expect(stored.linkTitle).toBe('&lt;script&gt;a&lt;/script&gt;');
-        expect(stored.linkTitle).not.toContain('<script');
+        expect(stored.linkTitle).toBeNull();
     }, 60_000);
 
     it('keeps linkTitle and linkDescription as CIPHERTEXT at rest', async () => {

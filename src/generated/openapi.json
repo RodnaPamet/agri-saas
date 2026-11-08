@@ -12322,7 +12322,9 @@
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "description": "The **physical-block (ФБ) year** — the `Agricultural_Land_YYYY` layer these outlines came from. **Not the photo’s year**, which is `/ortho/coverage`’s `year` and can differ.\n\nThe Ministry renumbers ФБ between years, so this is the number to show beside the outlines: the same area returns `56722-1921/1922` from the 2023 layer and `56722-499/500/503` from 2025. A farmer comparing their own parcels against a neighbour’s otherwise sees two numbering schemes on one screen and cannot tell which matches their documents.\n\nBlocks come from the NEWEST layer that answers with labelled features over the bbox, searched newest first. Two consequences worth knowing. An outline may not match an older photo where a block was redrawn — accepted deliberately, because a current, consistent numbering beats an outline that matches the pixels and no document. And some years carry a DIFFERENT product: 2021 and 2022 answer with `ELGIDENT` eligible-area elements and no `PHBIDENT`, so they are skipped rather than drawn.\n\n`null` means no layer could be established for the area — every candidate year failed or returned nothing usable. It is not cached, so a later request will try again.",
+            "example": 2025
           },
           "truncated": {
             "type": "boolean",
@@ -16486,9 +16488,10 @@
           "good",
           "watch",
           "stress",
-          "unknown"
+          "unknown",
+          "notAssessed"
         ],
-        "description": "good | watch | stress | unknown. `unknown` means no usable satellite reading, not a failure — render it as absence, never as a fourth severity."
+        "description": "good | watch | stress | unknown | notAssessed. The last two are both ABSENCES and they are NOT interchangeable — render neither as a severity.\n\n`unknown` — **no usable satellite reading.** No cloud-free pass in the window, or Earth Engine unconfigured. Something may fix it: the next pass, or credentials. Waiting is reasonable.\n\n`notAssessed` — **the imagery is fine and there was nothing to measure.** Only `moisture` ever takes it, and only on bare or sparse ground (NDVI below 0.2). NDMI measures LEAF water, so with no canopy there are no leaves to hold any, and NDMI sits low over soaked bare soil exactly as over dry — which is how a flooded field used to read «Влага: Стрес». Nothing will fix it until the crop emerges, so a client that retries or waits is wasting its time, and one that shows a severity is reporting a reading nobody took.\n\n`vegetation` never takes `notAssessed`: vegetation IS the thing measured, and low greenness on an empty field is a true statement. `overall` never takes it either — it is `worst(vegetation, moisture)` and an ungraded moisture is ignored."
       },
       "Season": {
         "type": "object",

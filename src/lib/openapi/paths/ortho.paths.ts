@@ -48,7 +48,28 @@ const Coverage = z
 const Blocks = z
     .object({
         type: z.literal('FeatureCollection'),
-        year: z.number().int().nullable(),
+        year: z.number().int().nullable().openapi({
+            description:
+                'The **physical-block (ФБ) year** — the `Agricultural_Land_YYYY` layer these '
+                + 'outlines came from. **Not the photo\u2019s year**, which is '
+                + '`/ortho/coverage`\u2019s `year` and can differ.\n\n'
+                + 'The Ministry renumbers ФБ between years, so this is the number to show '
+                + 'beside the outlines: the same area returns `56722-1921/1922` from the 2023 '
+                + 'layer and `56722-499/500/503` from 2025. A farmer comparing their own '
+                + 'parcels against a neighbour\u2019s otherwise sees two numbering schemes on one '
+                + 'screen and cannot tell which matches their documents.\n\n'
+                + 'Blocks come from the NEWEST layer that answers with labelled features over '
+                + 'the bbox, searched newest first. Two consequences worth knowing. An outline '
+                + 'may not match an older photo where a block was redrawn \u2014 accepted '
+                + 'deliberately, because a current, consistent numbering beats an outline that '
+                + 'matches the pixels and no document. And some years carry a DIFFERENT '
+                + 'product: 2021 and 2022 answer with `ELGIDENT` eligible-area elements and no '
+                + '`PHBIDENT`, so they are skipped rather than drawn.\n\n'
+                + '`null` means no layer could be established for the area \u2014 every candidate '
+                + 'year failed or returned nothing usable. It is not cached, so a later '
+                + 'request will try again.',
+            example: 2025,
+        }),
         truncated: z.boolean().openapi({
             description:
                 'True when the server’s cap cut the list. **Read it** — a cut list that does '
