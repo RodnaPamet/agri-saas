@@ -165,11 +165,14 @@ export const POST = withApiErrorHandling(
         // already passed. The second order fails silently in the direction of
         // the model obeying.
         //
-        // Applied exactly ONCE. `sanitizePlainText` is NOT idempotent — it
-        // decodes `&amp;` last, deliberately, so `&amp;lt;` becomes the
-        // literal `&lt;` on one pass and `<` on two. A defensive second call
-        // inside `recordTurn` would corrupt any question containing an escaped
-        // entity.
+        // Applied exactly ONCE — and since #2854 that is for the byte-identity
+        // reason below, not for the one written here before. This used to say
+        // `sanitizePlainText` is NOT idempotent, so a defensive second call
+        // inside `recordTurn` would corrupt a question containing an escaped
+        // entity (`&amp;lt;` → `&lt;` on one pass, `<` on two). It decodes to a
+        // FIXED POINT before stripping now, so a second call changes nothing
+        // and that corruption cannot happen. Keep it at one anyway: a second
+        // call on a DIFFERENT value is what would break byte-identity.
         //
         // And this single value is what BOTH the model and the stored turn
         // receive, below. That is what keeps them byte-identical, so a later

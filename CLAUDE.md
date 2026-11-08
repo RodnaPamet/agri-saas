@@ -922,6 +922,19 @@ others as backstops.
   `sanitizeRichTextHtml` / `sanitizePlainText` from `@/lib/security/sanitize` —
   never at render time only, because the row is also read by PDF export, share
   links and SDK consumers. Do not widen the allowlist without a security review.
+  **`sanitizePlainText` is IDEMPOTENT, since #2854** — it decodes entities to a
+  FIXED POINT, then strips, then decodes once. It did not until 2026-11-08: it
+  stripped first and decoded afterwards, so an encoded `&lt;script&gt;` passed
+  the stripper as inert text and the trailing decode turned it into literal
+  markup in the stored row, and a SECOND call walked a doubly-encoded payload
+  one step closer to markup rather than further from it. Two call sites had
+  reasoned carefully about that non-idempotence — the assistant stream route and
+  the DM link card (#2874) — so both carry corrected history rather than a
+  deleted claim. Decode-then-strip is NOT the fix and was measured: sanitize-html
+  re-encodes `<`/`>`/`&` after stripping, so it turns `цена < 100 лв/дка` into
+  `цена &lt; 100 лв/дка`. A second call is now redundant, never harmful; prefer
+  one, at the usecase, because that is where `sanitize-rich-text-coverage`
+  verifies the field by name.
   **`sanitizePlainText` TRIMS, since #1825**, so the repo's standard blank
   check — `const name = sanitizePlainText(x); if (!name) throw …_REQUIRED` —
   now refuses a whitespace-only value, and no stored plain-text field keeps

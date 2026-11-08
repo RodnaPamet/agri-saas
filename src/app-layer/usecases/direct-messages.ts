@@ -456,28 +456,34 @@ export async function sendDirectMessage(
                 // Art 15 export and by SDK consumers and not only by a
                 // renderer (C.5). Encryption happens on the way to the column
                 // and is a different problem (D.2).
-                // SANITISED EXACTLY ONCE, at the boundary in `fetchLinkCard`,
-                // and deliberately NOT again here (#2874).
+                // SANITISED EXACTLY ONCE, and HERE is that once — `linkTitle`
+                // and `linkDescription` above. `fetchLinkCard` trims and caps
+                // and does not sanitise (#2874). This comment said "at the
+                // boundary in `fetchLinkCard`" until #2854, which is the
+                // opposite of what that PR did and of what the code does.
                 //
-                // This used to sanitise a second time, under a comment saying
-                // it cost nothing because `sanitizePlainText` is idempotent.
-                // It is NOT. Each pass decodes one level of HTML entities
-                // AFTER stripping tags, so a second pass walks an encoded
-                // payload one step closer to markup — measured:
+                // It used to sanitise in BOTH places, under a comment saying
+                // the second call cost nothing because `sanitizePlainText` is
+                // idempotent. That was false when #2874 measured it — each
+                // pass decoded one entity level AFTER stripping tags, so a
+                // second pass walked an encoded payload one step CLOSER to
+                // markup, and on this caller, whose input is chosen by a
+                // hostile third party rather than typed by the operator:
                 //
                 //   `&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;`
                 //      pass 1 → `&lt;script&gt;a&lt;/script&gt;`   (inert text)
                 //      pass 2 → `<script>a</script>`               (STORED markup)
                 //
-                // One pass leaves the entity-encoded form, which every
-                // consumer renders as text. Two passes store literal markup.
-                // So the extra call did not add a protection, it removed one —
-                // and this is the one caller whose input is chosen by a
-                // hostile third party rather than typed by the operator.
+                // So the extra call did not add a protection, it removed one.
                 //
-                // The underlying ordering defect is #2854. This change does
-                // not depend on how that is resolved: a single pass is correct
-                // either way.
+                // #2854 fixed the ordering, and the function is idempotent
+                // now — it decodes to a FIXED POINT before stripping — so that
+                // measurement no longer reproduces and a second call would be
+                // merely redundant. One pass is correct either way, which is
+                // what #2874 relied on; what changed is the reason. It stays
+                // at the WRITE because C.5 puts sanitising at the usecase and
+                // `sanitize-rich-text-coverage` verifies the field BY NAME
+                // here, which the boundary form cannot get.
                 ...(card
                     ? {
                           linkUrl: card.url,

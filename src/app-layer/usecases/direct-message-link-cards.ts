@@ -36,10 +36,9 @@
  *
  * ## Whatever comes back is UNTRUSTED TEXT
  *
- * Sanitised ONCE, by the CALLER at the write — not here (#2874). Two passes
- * over one value walk an entity-encoded payload closer to markup rather than
- * further from it, because each pass strips tags and then decodes one entity
- * level. `clean` below carries the measurement. `sanitizePlainText` TRIMS
+ * Sanitised ONCE, by the CALLER at the write — not here (#2874). The reason
+ * is now C.5 placement alone; the *harm* that motivated it is gone, and
+ * `clean` below records what changed. `sanitizePlainText` TRIMS
  * since #1825, and a zero-width space survives it and is still truthy — so a
  * title of nothing but U+200B is possible and renders as an empty card rather
  * than as absent. Accepted rather than fixed, because widening past
@@ -154,13 +153,20 @@ function extractMeta(html: string, names: readonly string[]): string | null {
  *
  * This used to call `sanitizePlainText` here as well, and `sendDirectMessage`
  * called it again by name at the write — two passes over one value, defended
- * as free because the function is "idempotent". It is not: each pass strips
- * tags and THEN decodes one level of HTML entities, so a second pass walks an
- * encoded payload one step closer to markup. Measured:
+ * as free because the function is "idempotent". It was not, and #2874 measured
+ * the harm: each pass stripped tags and THEN decoded one level of HTML
+ * entities, so a second pass walked an encoded payload one step CLOSER to
+ * markup.
  *
  *     `&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;`
  *        pass 1 → `&lt;script&gt;a&lt;/script&gt;`   (inert text)
  *        pass 2 → `<script>a</script>`               (STORED markup)
+ *
+ * **#2854 made the function idempotent** — it decodes to a FIXED POINT before
+ * stripping — so a second pass is now harmless and that measurement no longer
+ * reproduces. The conclusion is unchanged and the reason is narrower: one pass,
+ * because a second buys nothing, not because it corrupts. The history stays
+ * because it is why the call sits where it does.
  *
  * One pass it is, and it lives at the WRITE rather than here: C.5 puts
  * sanitising at the usecase, and `sanitize-rich-text-coverage` verifies the
