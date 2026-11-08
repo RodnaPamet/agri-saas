@@ -194,7 +194,7 @@ describe('fetchLinkCard — the per-hop refusal is INHERITED', () => {
 });
 
 describe('whatever comes back is UNTRUSTED TEXT', () => {
-    it('strips a RAW tag from a title rather than storing it', async () => {
+    it('does NOT sanitise — the caller does, exactly once (#2874)', async () => {
         const srv = await start((_req, res) =>
             html(
                 res,
@@ -203,16 +203,22 @@ describe('whatever comes back is UNTRUSTED TEXT', () => {
             ),
         );
         const card = await _fetchCardAt(`${srv.url}/x`);
-        // Sanitised at the USECASE, because the row is read by the Art 15
-        // export and by SDK consumers too — not only by a renderer (C.5).
-        // A raw tag is what a hostile page actually serves, and what the
-        // attribute regex captures: `content="…"` ends at the next quote, and
-        // `onerror=alert(1)` carries none.
-        expect(card.title).not.toContain('<img');
-        expect(card.title).toBe('Пшеница');
+        // THE FETCHER HANDS BACK WHAT THE PAGE SERVED, trimmed and capped.
+        //
+        // It used to sanitise here AND the write sanitised again by name — two
+        // passes over one value, defended as free because the function is
+        // "idempotent". Measured, it is not: each pass strips tags and then
+        // decodes one entity level, so a doubly-encoded payload reaches
+        // literal `<script>` on the second pass. One pass, at the write, where
+        // `sanitize-rich-text-coverage` verifies the field by name.
+        //
+        // So the raw tag is still here. The assertion that it does not reach
+        // the ROW is `p8-6-dm-link-cards` → "SANITISES the card text, asserted
+        // on the STORED row", which is the one that matters.
+        expect(card.title).toBe('<img src=x onerror=alert(1)>Пшеница');
     });
 
-    it('an ENTITY-ENCODED tag round-trips into literal markup — measured, #2854', async () => {
+    it('passes an ENTITY-ENCODED tag through untouched — #2854 owns the decode', async () => {
         const srv = await start((_req, res) =>
             html(
                 res,
@@ -221,21 +227,16 @@ describe('whatever comes back is UNTRUSTED TEXT', () => {
             ),
         );
         const card = await _fetchCardAt(`${srv.url}/entity`);
-        // NOT the behaviour `sanitize.ts`'s own docblock claims ("so a stored
-        // `&lt;script&gt;` can't roundtrip back into a `<script>`"): it strips
-        // tags FIRST and decodes entities AFTER, so the decoded result is
-        // literal `<script>` TEXT. Measured across five inputs, not inferred.
+        // The fetcher is a transport: it extracts, trims and caps. What the
+        // ENCODED form becomes is the sanitiser's business, and the sanitiser
+        // runs once at the write.
         //
-        // Pinned rather than fixed, because the function has 139 call sites
-        // and the fix is a product decision on #2854. It is not an injection
-        // today — React escapes it and `script-src` carries no
-        // `unsafe-inline` — and it matters MORE here than at the other 138
-        // sites, because every one of those sanitises text a signed-in
-        // operator typed while this one sanitises bytes a hostile server
-        // chose. A test asserting `not.toContain('<script')` would be the
-        // wrong kind of green: it would fail, and the honest reading is that
-        // the repo's plain-text sanitiser does this everywhere.
-        expect(card.title).toBe('<script>a</script>');
+        // The regex captures the attribute's bytes as served, so the entities
+        // are still entities here. #2854 is the ordering defect in
+        // `sanitizePlainText` itself — it strips tags and THEN decodes one
+        // entity level, which is why running it twice was worse than running
+        // it once (#2874) and why a doubly-encoded payload is its hard case.
+        expect(card.title).toBe('&lt;script&gt;a&lt;/script&gt;');
     });
 
     it('caps a hostile title and description', async () => {
