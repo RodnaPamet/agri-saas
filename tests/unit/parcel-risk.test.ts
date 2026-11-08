@@ -76,6 +76,7 @@ import {
     analyzeParcelRisk,
     MAX_BATCH_PARCELS,
     NDVI_STRESS_THRESHOLD,
+    NDVI_CANOPY_FLOOR,
     pickWeakestZone,
 } from '@/app-layer/usecases/parcel-risk';
 import { makeRequestContext } from '../helpers/make-context';
@@ -106,6 +107,97 @@ beforeEach(() => {
     mockGeometryForParcel.mockResolvedValue(GEOMETRY);
     mockIsGeeConfigured.mockReturnValue(true);
     mockGetZoneMeans.mockResolvedValue([]);
+});
+
+describe('moisture is NOT graded on bare land (owner, 2026-11-08)', () => {
+    const at = async (ndvi: number | null, ndmi: number | null) => {
+        redisGet.mockResolvedValue(null);
+        mockGetIndexMeansForPolygon.mockResolvedValue({
+            ndvi,
+            ndmi,
+            acquiredDate: '2026-11-01',
+            withinField: null,
+        });
+        return analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+    };
+
+    it('the owner\u2019s parcel: NDVI 0.16, NDMI -0.1 after a week of rain', async () => {
+        /*
+         * 15655-19, the reading that opened this. Both numbers are CORRECT and
+         * the old conclusion was nonsense: NDMI is LEAF water, and with no
+         * canopy there are no leaves, so NDMI sits low over soaked bare soil
+         * exactly as over dry. «Влага: Стрес» on a flooded field.
+         */
+        const r = await at(0.16, -0.1);
+        expect(r.moisture).toBe('notAssessed');
+        // Vegetation is still graded — 0.16 IS low greenness, which is true
+        // and is the thing the satellite can actually see.
+        expect(r.vegetation).toBe('stress');
+        // And `overall` ignores the ungraded moisture rather than averaging
+        // it in: it is vegetation's verdict.
+        expect(r.overall).toBe('stress');
+    });
+
+    it('a stressed CROP at 0.3 still gets its moisture graded', async () => {
+        /*
+         * The floor is 0.2 and not 0.35 precisely so this parcel keeps its
+         * moisture reading. Putting the floor at the stress line would
+         * silence moisture for the fields that most need it.
+         */
+        const r = await at(0.3, -0.5);
+        expect(r.moisture).toBe('stress');
+        expect(r.vegetation).toBe('stress');
+    });
+
+    it('the floor is AT 0.2, not near it', async () => {
+        expect((await at(NDVI_CANOPY_FLOOR, 0.5)).moisture).toBe('good');
+        expect((await at(NDVI_CANOPY_FLOOR - 0.001, 0.5)).moisture).toBe('notAssessed');
+    });
+
+    it('a healthy canopy is unaffected', async () => {
+        const r = await at(0.72, 0.18);
+        expect(r.moisture).toBe('good');
+        expect(r.vegetation).toBe('good');
+        expect(r.overall).toBe('good');
+    });
+
+    it('distinguishes notAssessed from unknown, which is the whole reason for a new value', async () => {
+        // No imagery at all: nothing measured, and a later pass may fix it.
+        const noImagery = await at(null, null);
+        expect(noImagery.moisture).toBe('unknown');
+        expect(noImagery.vegetation).toBe('unknown');
+
+        // Imagery fine, nothing to measure. Nothing will fix it until the
+        // crop emerges, so a client must not treat these the same.
+        const bare = await at(0.1, 0.4);
+        expect(bare.moisture).toBe('notAssessed');
+        expect(bare.moisture).not.toBe(noImagery.moisture);
+    });
+
+    it('an NDMI with no NDVI is unknown, not notAssessed', async () => {
+        /*
+         * Without NDVI we cannot tell whether grading means anything, and
+         * assuming there IS a canopy is the direction that produces the wrong
+         * answer the floor exists to prevent. `unknown` is the honest answer.
+         */
+        const r = await at(null, -0.4);
+        expect(r.moisture).toBe('unknown');
+    });
+
+    it('overall never comes back notAssessed', async () => {
+        /*
+         * `worst` scores it zero and returns its FIRST argument on a tie, and
+         * every caller passes `vegetation` first — which is never
+         * `notAssessed`. Asserted across the whole grid rather than argued,
+         * because a reordered call site would break it silently.
+         */
+        for (const ndvi of [null, 0.05, 0.16, 0.2, 0.4, 0.72]) {
+            for (const ndmi of [null, -0.5, -0.05, 0.4]) {
+                const r = await at(ndvi, ndmi);
+                expect(r.overall).not.toBe('notAssessed');
+            }
+        }
+    });
 });
 
 describe('pickWeakestZone — the two materiality floors (#2837 stage 2b)', () => {
@@ -362,8 +454,11 @@ describe('analyzeParcelRisk — cache condition (degraded readings must not stic
         expect(redisSet).toHaveBeenCalledTimes(1);
         const [key, value, ex, ttl] = redisSet.mock.calls[0];
         /*
-         * `v3` since stage 2b added `weakest` (`v2` was `withinField`). The
-         * bump is the point
+         * `v4` since moisture stopped being graded on bare land — the first
+         * bump here for changed VALUES rather than a new field, and the one
+         * that matters most: a `v3` entry still says «Влага: Стрес» on the
+         * flooded bare parcel for up to 6h after the fix deploys. The bump is
+         * the point
          * rather than an incidental: a `v1` entry written before that deploy
          * has no such key, so a read inside the 6h TTL would return the field
          * ABSENT where the contract says `WithinFieldStats | null` — and the
@@ -371,7 +466,7 @@ describe('analyzeParcelRisk — cache condition (degraded readings must not stic
          * that adds a field to this payload without bumping the version fails
          * rather than shipping an under-specified response for six hours.
          */
-        expect(key).toBe('parcel-risk:v3:t-1:p-1:2026-07-20');
+        expect(key).toBe('parcel-risk:v4:t-1:p-1:2026-07-20');
         expect(JSON.parse(value as string)).toMatchObject({ ndvi: 0.72, ndmi: 0.18 });
         expect(ex).toBe('EX');
         expect(ttl).toBe(21_600);
@@ -619,7 +714,20 @@ describe('analyzeBlockRisk — a partial answer must say so (#2631)', () => {
 
         const res = await analyzeBlockRisk(ctx, 'loc-1', { now: NOW });
         expect(res.worst).toBe('stress');
-        expect(res.counts).toEqual({ unknown: 0, good: 2, watch: 0, stress: 1 });
+        /*
+         * `notAssessed` is present and ZERO, and this exact-object assertion
+         * is what proves it. It is produced only for `moisture`, while these
+         * counts are by `overall`, which `worst` can never return as
+         * `notAssessed` — so a non-zero here would mean that invariant had
+         * broken.
+         */
+        expect(res.counts).toEqual({
+            unknown: 0,
+            notAssessed: 0,
+            good: 2,
+            watch: 0,
+            stress: 1,
+        });
         // And a caller can NAME the stressed parcel rather than report a count.
         expect(res.parcels.filter((p) => p.overall === 'stress').map((p) => p.parcelId)).toEqual([
             'p-2',
