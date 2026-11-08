@@ -348,6 +348,14 @@ describe('serving and caching a tile (#2421)', () => {
     });
 });
 
+/**
+ * A fixed clock, because the ФБ candidate list is DERIVED from it (#569) so
+ * the newest layer is picked up with no code change. Without pinning it these
+ * tests would search from whatever year the machine thinks it is, and would
+ * start failing on 1 January.
+ */
+const NOW = new Date('2026-11-08T00:00:00.000Z');
+
 describe('the physical blocks (#2421)', () => {
     function blocksBody(n: number, withId = true) {
         return {
@@ -367,8 +375,10 @@ describe('the physical blocks (#2421)', () => {
             dates: (y) => jsonRes(coverageBody(y === 2023 ? 1 : 0)),
             blocks: () => jsonRes(blocksBody(2)),
         });
-        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl });
-        expect(r.year).toBe(2023);
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
+        // The ФБ year, NOT the photo's 2023 — #569. Here every year answers
+        // with blocks, so the newest candidate wins.
+        expect(r.year).toBe(NOW.getUTCFullYear());
         expect(r.truncated).toBe(false);
         expect(r.features[0]).toEqual({
             id: '56722-0',
@@ -385,7 +395,7 @@ describe('the physical blocks (#2421)', () => {
             dates: (y) => jsonRes(coverageBody(y === 2023 ? 1 : 0)),
             blocks: () => jsonRes(blocksBody(601)),
         });
-        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl });
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
         expect(r.features).toHaveLength(600);
         expect(r.truncated).toBe(true);
     });
@@ -397,7 +407,7 @@ describe('the physical blocks (#2421)', () => {
             dates: (y) => jsonRes(coverageBody(y === 2023 ? 1 : 0)),
             blocks: () => jsonRes(blocksBody(600)),
         });
-        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl });
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
         expect(r.features).toHaveLength(600);
         expect(r.truncated).toBe(false);
     });
@@ -407,16 +417,97 @@ describe('the physical blocks (#2421)', () => {
             dates: (y) => jsonRes(coverageBody(y === 2023 ? 1 : 0)),
             blocks: () => jsonRes(blocksBody(3, false)),
         });
-        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl });
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
         expect(r.features).toEqual([]);
         // Not truncated — nothing was cut, the features were unusable.
         expect(r.truncated).toBe(false);
     });
 
-    it('returns nothing when no year covers the area, without asking for blocks', async () => {
-        const { impl, seen } = router({ dates: () => jsonRes(coverageBody(0)) });
-        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl });
+    it('asks for blocks even where no photo covers the area — #569', async () => {
+        /*
+         * This test's NAME used to assert the opposite — "without asking for
+         * blocks" — and that was the defect, not an optimisation. Blocks are
+         * decoupled from photo coverage now (owner, 2026-11-08): the ФБ layer
+         * is a cadastral product on its own schedule, and an area with no
+         * recent photo still has physical blocks a farmer needs to see.
+         *
+         * Renamed rather than re-asserted, because a name that states a cause
+         * outlives the body and the next reader believes it.
+         */
+        const { impl, seen } = router({
+            dates: () => jsonRes(coverageBody(0)),
+            blocks: (y) => jsonRes(y === 2025 ? blocksBody(1) : { features: [] }),
+        });
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
+        expect(seen.some((u) => u.includes('Agricultural_Land'))).toBe(true);
+        // 2026 answers with an EMPTY feature array, which means "the layer
+        // covers this and there is nothing here" — so the search stops there
+        // rather than falling back to 2025's blocks.
+        expect(r.year).toBe(2026);
+        expect(r.features).toEqual([]);
+    });
+
+    it('skips a year whose features carry the WRONG numbering — the 2021/22 case', async () => {
+        /*
+         * `agrent-ios` measured this on the public WFS: 2021 and 2022 answer
+         * with `ELGIDENT` eligible-area elements and NO `PHBIDENT`. The old
+         * code asked for the photo's year, got those, dropped every one on the
+         * id check, and showed the farmer no blocks at all.
+         *
+         * Features present but none labelled means "wrong product, try an
+         * older year" — which is a different outcome from an empty array, and
+         * conflating the two is what this distinction exists to prevent.
+         */
+        const { impl } = router({
+            dates: () => jsonRes(coverageBody(0)),
+            blocks: (y) =>
+                jsonRes(y >= 2022 ? blocksBody(3, false) : blocksBody(2)),
+        });
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
+        expect(r.year).toBe(2021);
+        expect(r.features).toHaveLength(2);
+    });
+
+    it('an ExceptionReport year is skipped, not treated as empty', async () => {
+        // 2026 has no `Agricultural_Land` layer today — measured. A non-OK
+        // response must fall through to an older year; treating it as "nothing
+        // here" would show no blocks for the whole country until the Ministry
+        // publishes.
+        const { impl } = router({
+            dates: () => jsonRes(coverageBody(0)),
+            blocks: (y) =>
+                y === 2026 ? new Response('ExceptionReport', { status: 400 }) : jsonRes(blocksBody(2)),
+        });
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
+        expect(r.year).toBe(2025);
+        expect(r.features).toHaveLength(2);
+    });
+
+    it('reports no year when NOTHING answers, and does not cache that', async () => {
+        /*
+         * An upstream outage must not be remembered as a fact about the area.
+         * `year: null` is the honest "we could not establish a block year",
+         * and the absence of a cache write is what lets the next request try
+         * again.
+         */
+        const { impl } = router({
+            dates: () => jsonRes(coverageBody(0)),
+            blocks: () => new Response('nope', { status: 503 }),
+        });
+        const r = await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
         expect(r).toEqual({ year: null, features: [], truncated: false });
-        expect(seen.some((u) => u.includes('Agricultural_Land'))).toBe(false);
+    });
+
+    it('probes newest-first and stops — it does not sweep every year', async () => {
+        const { impl, seen } = router({
+            dates: () => jsonRes(coverageBody(0)),
+            blocks: (y) => jsonRes(y === 2026 ? blocksBody(1) : blocksBody(9)),
+        });
+        await fetchOrthoBlocks(ctx, BBOX, { fetchImpl: impl, now: NOW });
+        const years = seen
+            .filter((u) => u.includes('Agricultural_Land'))
+            .map((u) => Number(/Agricultural_Land_(\d{4})/.exec(u)?.[1]));
+        // Exactly one probe: the newest candidate answered.
+        expect(years).toEqual([2026]);
     });
 });
