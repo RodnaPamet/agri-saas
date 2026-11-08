@@ -704,6 +704,28 @@ model DirectMessage {
   /// same scoping `ExchangeMessage` uses, for the same reason.
   idempotencyKey String?
 
+  /// What this message is a reply to, or NULL — #2829.
+  ///
+  /// SELF-REFERENTIAL, `ON DELETE SET NULL`. A deleted message keeps its row
+  /// (`deletedAt` is a soft delete), so this FK is barely exercised; what it
+  /// decides is the case where a target row really does go, and CASCADE there
+  /// would take the REPLY with it — somebody else's message deleted because
+  /// the thing it quoted was.
+  ///
+  /// A CROSS-CONVERSATION target is refused by a TRIGGER, not a CHECK:
+  /// Postgres forbids a subquery in a CHECK and the comparison is between two
+  /// rows. Without it a crafted request quotes a message from a conversation
+  /// the sender is not in, and the reply preview decrypts it for somebody with
+  /// no right to it. The trigger is deliberately NOT `SECURITY DEFINER` — see
+  /// the migration, and P8.2 for why one would be a trap.
+  ///
+  /// NOTE for the code stage: a reply to a DELETED message must render the
+  /// «Съобщението е изтрито» copy rather than the original body, which the
+  /// soft-deleted row still contains until a retraction overwrites it.
+  replyToMessageId String?
+  replyTo          DirectMessage?    @relation("DirectMessageReply", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies          DirectMessage[]   @relation("DirectMessageReply")
+
   conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   reactions    MessageReaction[]
 
@@ -712,6 +734,9 @@ model DirectMessage {
   @@unique([senderUserId, idempotencyKey])
   /// The timeline read: one conversation, in order.
   @@index([conversationId, createdAt])
+  /// "What replied to this", and the FK's own integrity checks. The migration
+  /// makes it PARTIAL — almost no message is a reply.
+  @@index([replyToMessageId])
 }
 
 /// A reaction on a direct message. P8.1 (#2795).

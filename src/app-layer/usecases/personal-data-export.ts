@@ -472,6 +472,15 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
                 attachmentMime: true, attachmentBytes: true, attachmentSha256: true,
                 linkUrl: true, linkTitle: true, linkDescription: true,
                 linkFetchedAt: true,
+                // #2829. An ID, but not the kind #2863's ruling excludes: that
+                // line is about an identifier for an entity OTHER PEOPLE
+                // belong to (a farm) or for a farm record. This names another
+                // message in the SAME conversation — one a trigger guarantees
+                // is in it, and one they could already read — and `id` plus
+                // `conversationId` are exported for these rows anyway. Without
+                // it an exported reply is a bare sentence with nothing to
+                // answer.
+                replyToMessageId: true,
             },
             orderBy: { createdAt: 'desc' },
             take,

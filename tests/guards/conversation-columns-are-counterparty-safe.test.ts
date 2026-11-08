@@ -120,6 +120,8 @@ const COUNTERPARTY_SAFE: Readonly<Record<string, Readonly<Record<string, string>
             'The shared page\'s own title, as that page served it. Not the sender\'s words: it discloses nothing about them that the URL beside it does not already hand over. Encrypted at rest under the GLOBAL KEK so BOTH parties can read it, and sanitised at the usecase because a third-party server chose the bytes.',
         linkDescription:
             'The shared page\'s own summary, on the same footing as its title. Capped at LINK_DESCRIPTION_MAX so a hostile page cannot write a novel into the conversation.',
+        replyToMessageId:
+            'Which message this one replies to — #2829. It names a message in the SAME conversation, which a trigger enforces at the database rather than a CHECK (Postgres forbids a subquery in one, and the comparison is between two rows), so the only id it can hold is one the counterparty can already read. Withholding it would make a quoted reply unreadable to the person it was addressed to, which is the opposite of the point.',
         linkFetchedAt:
             'When the card was taken. A card is a SNAPSHOT and is never refreshed, so this is what separates a fresh preview from a stale one — withholding it would leave the reader unable to tell. It also distinguishes a REFUSED fetch (null) from a page that simply had no metadata (stamped), and both of those are facts about the link the counterparty can see.',
     },
