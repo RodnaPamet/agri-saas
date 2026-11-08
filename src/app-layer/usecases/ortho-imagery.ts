@@ -17,6 +17,8 @@ import { bboxTouchesBulgaria } from '@/lib/geo/ortho-bbox';
 import {
     ORTHO_ATTRIBUTION,
     ORTHO_YEARS,
+    orthoBlockYearCandidates,
+    orthoBlocksYearCacheKey,
     buildOrthoBlocksUrl,
     buildOrthoCoverageUrl,
     buildOrthoTileUrl,
@@ -174,6 +176,8 @@ export interface OrthoCoverage {
 
 interface Deps {
     fetchImpl?: typeof fetch;
+    /** Injectable clock — the block-year candidates are derived from it. */
+    now?: Date;
 }
 
 /** One upstream GET, inside the concurrency bound. Null means unavailable. */
@@ -438,31 +442,157 @@ const BLOCKS_MAX_FEATURES = 600;
  * keeps a request bounded — but a cap that lives only in the client is not a
  * cap, and `truncated` is what stops a cut list reading as a complete one.
  */
+/** At most this many upstream probes while searching for the ФБ year. */
+const BLOCKS_YEAR_MAX_PROBES = 8;
+
+/** What one candidate year's layer said about this bbox. */
+type YearProbe =
+    /** The layer answered with labelled blocks. */
+    | { kind: 'blocks'; year: number; raw: RawFeature[] }
+    /** The layer exists and there is genuinely nothing here. */
+    | { kind: 'empty'; year: number }
+    /** Try an older year: no layer, a failure, or the wrong numbering. */
+    | { kind: 'next' };
+
+interface RawFeature {
+    properties?: Record<string, unknown>;
+    geometry?: unknown;
+}
+
+const hasBlockId = (f: RawFeature): boolean =>
+    typeof f.properties?.PHBIDENT === 'string' && (f.properties.PHBIDENT as string).length > 0;
+
+/**
+ * Ask ONE year's `Agricultural_Land` layer about this bbox.
+ *
+ * The three outcomes are the whole design, and the middle one is why this is
+ * not a simple "first year that returns features" loop:
+ *
+ * - **blocks** — at least one feature carries `PHBIDENT`. Answer with this
+ *   year.
+ * - **empty** — the layer answered with NO features. The layer covers the
+ *   area and there is nothing there, so STOP: falling through to an older
+ *   year would draw last year's outlines over ground that has none, which is
+ *   worse than drawing nothing.
+ * - **next** — no layer (ExceptionReport), a failed request, or features that
+ *   all carry `ELGIDENT` instead. `agrent-ios` measured the last case on 2021
+ *   and 2022, where every feature is an eligible-area element in a different
+ *   numbering: the old code asked for the photo's year, got those, dropped
+ *   every one on the `PHBIDENT` check, and showed the farmer NO blocks.
+ */
+async function probeBlockYear(
+    baseUrl: string,
+    year: number,
+    bbox: LonLatBbox,
+    deps: Deps,
+): Promise<YearProbe> {
+    // One over the cap, so a full page is distinguishable from an exact fit.
+    const res = await upstream(
+        buildOrthoBlocksUrl(baseUrl, year, bbox, BLOCKS_MAX_FEATURES + 1),
+        deps,
+        'application/json',
+    );
+    if (!res || !res.ok) return { kind: 'next' };
+    const json = (await res.json().catch(() => null)) as { features?: RawFeature[] } | null;
+    const raw = json?.features;
+    // A missing `features` key is a malformed or Exception body, NOT an empty
+    // area — only an explicit empty array means "nothing here".
+    if (!Array.isArray(raw)) return { kind: 'next' };
+    if (raw.length === 0) return { kind: 'empty', year };
+    if (!raw.some(hasBlockId)) return { kind: 'next' };
+    return { kind: 'blocks', year, raw };
+}
+
+/**
+ * The physical blocks over an area — #569.
+ *
+ * ## The block year is NOT the photo year
+ *
+ * It used to be: `fetchOrthoBlocks` passed `coverage.year` to
+ * `buildOrthoBlocksUrl`. The Ministry renumbers ФБ between years, so a farmer
+ * comparing their own parcels against a neighbour's saw two numbering schemes
+ * on one screen — measured by `agrent-ios` on the public WFS, where the same
+ * bbox returns `56722-1921/1922` in 2023 and `56722-499/500/503` in 2025.
+ *
+ * Worse, two photo years return no usable blocks at all: 2021 and 2022 carry
+ * `ELGIDENT` eligible-area elements with no `PHBIDENT`, so every feature was
+ * dropped and an area whose newest photo is 2021 showed NOTHING.
+ *
+ * So blocks now come from the newest layer that actually answers with
+ * labelled blocks, searched newest first and decoupled from
+ * `resolveOrthoCoverage`. The owner accepted the trade-off (2026-11-08,
+ * relayed): a 2025 outline may not match an older photo where a block was
+ * redrawn. A consistent, current numbering beats an outline that matches the
+ * pixels and no document.
+ *
+ * ## One upstream request in the steady state
+ *
+ * The resolved year is cached per area, so a warm lookup probes exactly the
+ * year it already knows — the same single request the old code made. A cold
+ * lookup costs one probe per candidate until a layer answers, which is two
+ * today (2026 has no layer, 2025 does), bounded by
+ * `BLOCKS_YEAR_MAX_PROBES` rather than by the length of a list.
+ *
+ * ## Capped, and `truncated` is load-bearing
+ *
+ * Capped here rather than trusting the client's bbox discipline. The phone
+ * asks for blocks only below 0.12° (or 0.3° for the farm's own bounds), which
+ * keeps a request bounded — but a cap that lives only in the client is not a
+ * cap, and `truncated` is what stops a cut list reading as a complete one.
+ */
 export async function fetchOrthoBlocks(
     ctx: RequestContext,
     bbox: LonLatBbox,
     deps: Deps = {},
 ): Promise<OrthoBlocks> {
     const src = await assertOrthoAvailable(ctx);
-    const coverage = await resolveOrthoCoverage(ctx, bbox, deps);
-    if (coverage.year === null) return { year: null, features: [], truncated: false };
 
-    // One over the cap, so a full page is distinguishable from an exact fit.
-    const res = await upstream(
-        buildOrthoBlocksUrl(src.url, coverage.year, bbox, BLOCKS_MAX_FEATURES + 1),
-        deps,
-        'application/json',
-    );
-    if (!res || !res.ok) return { year: coverage.year, features: [], truncated: false };
+    const redis = getRedis();
+    const yearKey = orthoBlocksYearCacheKey(bbox);
+    let cachedYear: number | null = null;
+    if (redis) {
+        try {
+            const hit = await redis.get(yearKey);
+            if (hit) {
+                const n = Number(hit);
+                if (Number.isInteger(n)) cachedYear = n;
+            }
+        } catch {
+            /* a Redis hiccup must not cost the answer */
+        }
+    }
 
-    const json = (await res.json().catch(() => null)) as
-        | { features?: Array<{ properties?: Record<string, unknown>; geometry?: unknown }> }
-        | null;
-    const raw = json?.features ?? [];
-    const truncated = raw.length > BLOCKS_MAX_FEATURES;
+    const candidates = cachedYear !== null
+        ? [cachedYear]
+        : orthoBlockYearCandidates(deps.now ?? new Date()).slice(0, BLOCKS_YEAR_MAX_PROBES);
 
+    let resolved: YearProbe = { kind: 'next' };
+    for (const year of candidates) {
+        resolved = await probeBlockYear(src.url, year, bbox, deps);
+        if (resolved.kind !== 'next') break;
+    }
+
+    // Nothing answered. `year: null` says "we could not establish a block
+    // year", which is the same shape the old code returned for no coverage —
+    // and is NOT cached, because an upstream outage must not be remembered as
+    // a fact about the area.
+    if (resolved.kind === 'next') return { year: null, features: [], truncated: false };
+
+    if (redis && cachedYear === null) {
+        try {
+            await redis.set(yearKey, String(resolved.year), 'EX', COVERAGE_TTL_SECONDS);
+        } catch {
+            /* still answered, just uncached */
+        }
+    }
+
+    if (resolved.kind === 'empty') {
+        return { year: resolved.year, features: [], truncated: false };
+    }
+
+    const truncated = resolved.raw.length > BLOCKS_MAX_FEATURES;
     const features: OrthoBlock[] = [];
-    for (const f of raw.slice(0, BLOCKS_MAX_FEATURES)) {
+    for (const f of resolved.raw.slice(0, BLOCKS_MAX_FEATURES)) {
         const id = f.properties?.PHBIDENT;
         // Read leniently: a feature without the Ministry's own identifier is
         // not something we can label, and dropping it beats drawing an
@@ -476,5 +606,5 @@ export async function fetchOrthoBlocks(
         });
     }
 
-    return { year: coverage.year, features, truncated };
+    return { year: resolved.year, features, truncated };
 }
