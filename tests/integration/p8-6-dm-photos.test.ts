@@ -27,7 +27,7 @@ import {
     readDirectPhoto,
     DM_PHOTO_MAX_BYTES,
 } from '@/app-layer/usecases/direct-message-photos';
-import { deleteDirectMessage } from '@/app-layer/usecases/direct-messages';
+import { deleteDirectMessage, readConversation } from '@/app-layer/usecases/direct-messages';
 import type { UserContext } from '@/app-layer/types';
 
 import { DB_AVAILABLE } from './db-helper';
@@ -116,7 +116,7 @@ describeFn('P8.6 — conversation photographs (#2800)', () => {
     }, 60_000);
 
     describe('sending', () => {
-        it('stores a re-encoded WebP with NO metadata, and records its digest', async () => {
+        it('stores a re-encoded JPEG — the FORMAT IS PRESERVED — with NO metadata, and records its digest', async () => {
             const original = await jpegWithExif();
             // The control for the stripping assertion: the INPUT must actually
             // carry metadata, or "no metadata afterwards" is true of a fixture
@@ -284,6 +284,68 @@ describeFn('P8.6 — conversation photographs (#2800)', () => {
 
             // And the object itself is gone.
             await expect(getStorageProvider().head(key)).rejects.toBeDefined();
+        }, 60_000);
+    });
+
+    describe('the TIMELINE says a photograph is there', () => {
+        it('readConversation returns the attachment, and null once retracted', async () => {
+            const sent = await sendDirectPhoto(ctxFor(ALICE), {
+                conversationId: CONV,
+                bytes: await jpegWithExif(),
+            });
+
+            // This is the half #2852 shipped without: `sendDirectPhoto` and
+            // `readDirectPhoto` both worked, and `readConversation`'s select
+            // carried none of the attachment columns — so a client reading the
+            // timeline saw `body: null` and nothing saying a photograph
+            // existed. Fetchable by a client that already knew, invisible to
+            // one that did not. Fixed with #2800's link-card read, because the
+            // two are one omission.
+            const seen = await readConversation(ctxFor(BORIS), CONV, {});
+            const row = seen.messages.find((m) => m.id === sent.messageId);
+            expect(row?.attachment).not.toBeNull();
+            expect(row!.attachment!.mime).toBe('image/jpeg');
+            expect(row!.attachment!.bytes).toBeGreaterThan(0);
+            expect(row!.attachment!.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+            await deleteDirectMessage(ctxFor(ALICE), sent.messageId);
+
+            const after = await readConversation(ctxFor(BORIS), CONV, {});
+            expect(
+                after.messages.find((m) => m.id === sent.messageId)!.attachment,
+            ).toBeNull();
+        }, 60_000);
+
+        it('serves NO attachment for a deleted row that still carries a key', async () => {
+            // MUTATION-PROVED INTO EXISTENCE: removing `m.deletedAt ||` from
+            // the mapping reddened nothing, because the delete clears the key
+            // and `!m.attachmentKey` answers first. The arm exists for the
+            // state the delete is supposed to prevent, and the CHECK permits
+            // that row — `deletedAt IS NOT NULL` is its first arm — so this
+            // produces it directly rather than trusting the writer the arm is
+            // a backstop for.
+            const stale = await prisma.directMessage.create({
+                data: {
+                    conversationId: CONV,
+                    senderUserId: ALICE,
+                    body: '',
+                    deletedAt: new Date(),
+                    attachmentKey: `dm/${CONV}/stale.jpg`,
+                    attachmentMime: 'image/jpeg',
+                    attachmentBytes: 1234,
+                },
+                select: { id: true },
+            });
+            // Control: the key is really there, so a null payload is a
+            // decision and not an empty row.
+            const stored = await prisma.directMessage.findUniqueOrThrow({
+                where: { id: stale.id },
+                select: { attachmentKey: true },
+            });
+            expect(stored.attachmentKey).toBe(`dm/${CONV}/stale.jpg`);
+
+            const seen = await readConversation(ctxFor(BORIS), CONV, {});
+            expect(seen.messages.find((m) => m.id === stale.id)!.attachment).toBeNull();
         }, 60_000);
     });
 

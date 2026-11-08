@@ -6824,6 +6824,7 @@
         "DM_BODY_REQUIRED": "Съобщението не може да бъде празно.",
         "DM_BODY_TOO_LONG": "Съобщението е твърде дълго.",
         "DM_IDEMPOTENCY_KEY_REUSED": "Този ключ вече е използван за друг разговор.",
+        "DM_LINK_URL_INVALID": "Тази връзка не може да бъде прочетена. Връзката трябва да започва с https://.",
         "DM_REACTION_REQUIRED": "Изберете реакция.",
         "DM_REACTION_TOO_LONG": "Това не е реакция.",
         "DM_REQUEST_ALREADY_ANSWERED": "На тази заявка вече е отговорено.",
