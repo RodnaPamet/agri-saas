@@ -61,6 +61,14 @@ jest.mock('@/lib/agro/earth-engine', () => ({
     // `undefined === undefined` — always true, the mismatch branch never
     // executes, and the fixtures below mean nothing. A partial barrel mock
     // makes untestable indistinguishable from untested.
+    //
+    // The literal need NOT track the real constant (which is 2 since the
+    // parcel-level cloud judgement): every assertion here derives both sides
+    // of the comparison from this imported value, so the suite tests the
+    // same-versus-different BRANCH rather than a particular number. What the
+    // real constant must be is pinned by
+    // `tests/guards/parcel-cloud-judgement.test.ts`, which also pins that
+    // `parcel-risk.ts` actually compares against it.
     SCENE_SELECTION_VERSION: 1,
 }));
 
