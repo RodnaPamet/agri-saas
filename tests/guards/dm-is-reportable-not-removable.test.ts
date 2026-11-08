@@ -104,8 +104,9 @@ describe('a direct message is reportable and not removable (#2833)', () => {
         // copy does not apply to a plain string array.
         const files = collectSourceFiles({
             roots: ['src'],
+            // A floor near reality, not 1: this sweep asserts an ABSENCE, so an
+            // exclude predicate that ate the population would pass for free.
             floor: 2000,
-            what: 'dm-is-reportable-not-removable source sweep',
         });
         const offenders: string[] = [];
         for (const f of files) {
