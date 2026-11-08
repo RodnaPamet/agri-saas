@@ -39,6 +39,9 @@
  * how a value ends up unsendable for the wrong reason. This guard is about the
  * first two only.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 import { ModerationActionKind } from '@prisma/client';
 
 import { MODERATION_ACTION_KINDS } from '@/lib/schemas';
@@ -169,9 +172,18 @@ describe('MODERATION_ACTION_KINDS mirrors the enum, minus a named difference', (
         // the two CATALOGUES to each other: a key missing from both is
         // perfectly balanced.
         for (const locale of ['en', 'bg'] as const) {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
-            const messages = require(`../../messages/${locale}/app.json`);
-            const line = messages?.statementOfReasons?.action?.CONTENT_RESTORED;
+            // `readFileSync` + `JSON.parse`, not `require`: a `require` of a
+            // JSON module needed an `eslint-disable` for two rules that are
+            // not enabled on test files, and `lint-ceiling` counts an INERT
+            // directive — ceiling 0 — so the suppression itself failed CI.
+            const raw = readFileSync(
+                join(process.cwd(), `messages/${locale}/app.json`),
+                'utf8',
+            );
+            const messages = JSON.parse(raw) as {
+                statementOfReasons?: { action?: Record<string, string> };
+            };
+            const line = messages.statementOfReasons?.action?.CONTENT_RESTORED;
             expect(typeof line).toBe('string');
             expect((line as string).length).toBeGreaterThan(10);
         }
