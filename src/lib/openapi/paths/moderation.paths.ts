@@ -9,8 +9,8 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
-import { ActOnNoticeSchema, QueueStatementSchema } from '@/lib/schemas';
-import { op } from './helpers';
+import { ActOnNoticeSchema, RestoreContentSchema, QueueStatementSchema } from '@/lib/schemas';
+import { op, codedErrorResponses } from './helpers';
 
 const KEY_GATE =
     '\n\n**Platform-admin key**, not a tenant permission. Every role in the enum is '
@@ -89,6 +89,37 @@ export function registerModerationPaths(registry: OpenAPIRegistry): void {
             schema: z.object({
                 actionId: z.string(),
                 status: z.enum(['RECEIVED', 'TRIAGED', 'ACTIONED', 'REJECTED']),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/admin/moderation/restore',
+        operationId: 'restoreRemovedContent',
+        summary: 'Moderation — reverse a content removal',
+        description:
+            'Clears `removedByModerationAt` on the subject of a `CONTENT_REMOVED`, records a SECOND `ModerationAction` (`CONTENT_RESTORED`) and queues the Art 17 follow-up statement — all in one transaction (#2867).'
+            + '\n\n**Addressed by the ACTION id of the removal, not by its subject.** `removedByModerationAt` carries no record of WHICH decision set it, so a restore addressed by subject could un-hide a listing no appeal ever concerned. The subject is read off the action row, which is the same refusal the notices route makes by denormalising it from the notice rather than accepting it from the body.'
+            + '\n\nA SECOND row rather than a mutation of the first: #1619 appends a chain entry per action, so rewriting the original\'s kind would leave `PlatformAuditLog` asserting a decision the table no longer holds — and `platform_audit_log_immutable` would refuse the correction. Art 17 also owes a statement per decision, and an appeal history is what an appeal process is for.'
+            + '\n\n`restored: false` with a null `restoreActionId` means the content was ALREADY visible — an appeal upheld twice. The call succeeds and writes nothing: one removal keyed on one action is one appeal, unlike two notices about one listing, which are two decisions and both get their row.'
+            + '\n\nThe notice itself stays **ACTIONED**. It WAS acted on and the action was later reversed, which the second row records; moving it back to RECEIVED would put a decided notice into the triage queue.'
+            + '\n\nRefusals, and each writes nothing at all:'
+            + '\n- `MODERATION_ACTION_NOT_FOUND` — no such action.'
+            + '\n- `MODERATION_ACTION_NOT_REVERSIBLE` — the action is not a `CONTENT_REMOVED`. A suspension is lifted by its own verb (#1676), `NONE` removed nothing, and `CONTENT_DEMOTED` was never performed (#2868) — each would be a reversal of nothing, announced to somebody by a statement of reasons.'
+            + '\n- `MODERATION_SUBJECT_GONE` — the content no longer exists, so "we have restored it" would be about a listing nobody can see.'
+            + KEY_GATE,
+        tags: ['Moderation'],
+        body: RestoreContentSchema,
+        extraResponses: codedErrorResponses({
+            400: 'MODERATION_ACTION_NOT_FOUND, MODERATION_ACTION_NOT_REVERSIBLE or MODERATION_SUBJECT_GONE.',
+        }),
+        success: {
+            status: 200,
+            description: 'The restore was applied, or the content was already visible.',
+            schema: z.object({
+                restoreActionId: z.string().nullable(),
+                restored: z.boolean(),
             }),
         },
     });

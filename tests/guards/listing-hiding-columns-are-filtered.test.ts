@@ -70,6 +70,8 @@ const MAY_SEE_HIDDEN: Record<string, string> = {
         'Reads one row with NO `select`, so it returns every column including both hiding ones, and its callers decide. `getListing` in the usecase is where the filtering happens, and it is in the population below.',
     'app-layer/repositories/exchange.ts::listListingsBySeller':
         'The seller\'s OWN management view. #1655 settled this deliberately: hiding their listings from themselves would read as "already deleted" at the exact moment they are deciding whether to cancel — and for #2865 they additionally need to see what was removed in order to appeal it.',
+    'app-layer/usecases/moderation.ts::readRemovalState':
+        'Reads `removedByModerationAt` IN ORDER TO CLEAR IT — the restore verb (#2867). It is the one read in the repo whose whole purpose is a hidden listing: a reverse-the-removal path that could not see a removed row could never reverse one. It deliberately does NOT consult `suppressedForDeletionAt` either, and that is the sharper half of the reason — a seller mid-account-deletion has a listing hidden for a cause this verb has no business touching, so a restore must clear its own column and leave that one alone.',
     'app-layer/usecases/trust-safety.ts::captureSnapshot':
         'Captures the EVIDENCE for a notice. It must read a listing a moderator has already removed, or acting on a second notice about the same listing would find nothing to capture.',
     'app-layer/usecases/statement-queue.ts::resolveContentRecipient':

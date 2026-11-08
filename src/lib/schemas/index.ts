@@ -1781,6 +1781,36 @@ export const MODERATION_ACTION_KINDS = [
 /** Rationale ceiling. Generous for a decision, bounded so one is not a payload. */
 export const MODERATION_RATIONALE_MAX = 8000;
 
+/**
+ * Reversing a content removal — #2867.
+ *
+ * Addressed by the `actionId` of the REMOVAL, not by the subject:
+ * `removedByModerationAt` carries no record of which decision set it, so a
+ * restore addressed by subject could un-hide a listing no appeal concerned.
+ *
+ * `CONTENT_RESTORED` is deliberately absent from `MODERATION_ACTION_KINDS`
+ * above — a restore reverses a decision rather than being one, so the notices
+ * route must refuse it. `tests/guards/moderation-action-kinds-mirror.test.ts`
+ * holds that list as a strict SUBSET of the Prisma enum with the difference
+ * named, the same treatment `ReportSubjectKind.ACCOUNT` has.
+ */
+export const RestoreContentSchema = z.object({
+    actionId: z.string().min(1).max(200),
+    /**
+     * REQUIRED, like a decision's. An appeal upheld without a reason is the
+     * thing Art 17 exists to prevent, and this text is what the follow-up
+     * statement is built from.
+     */
+    rationale: z.string().min(1).max(MODERATION_RATIONALE_MAX),
+}).strip().openapi('RestoreContent', {
+    description:
+        'Reverses a CONTENT_REMOVED, addressed by the action id of the removal '
+        + 'rather than by its subject. Records a second ModerationAction '
+        + '(CONTENT_RESTORED) and queues the Art 17 follow-up statement; the '
+        + 'notice itself stays ACTIONED, because it WAS acted on and the '
+        + 'action was later reversed.',
+});
+
 export const ActOnNoticeSchema = z.object({
     reportId: z.string().min(1).max(200),
     actionKind: z.enum(MODERATION_ACTION_KINDS),
