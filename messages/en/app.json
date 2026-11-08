@@ -102,6 +102,12 @@
         },
         "firstRun": {
             "sampleTitle": "You’re exploring with sample data",
+            "stepMapBlockLabel": "Map your first block",
+            "stepMapBlockHint": "Draw or import a parcel — every journal entry, job, and claim hangs off a block.",
+            "stepMapBlockCta": "Map a block",
+            "stepLogJobLabel": "Log your first job",
+            "stepLogJobHint": "Plan a field operation or log an activity — the diary record behind every claim.",
+            "stepLogJobCta": "Plan a job",
             "sampleDesc": "These demo fields, jobs, and stock let you try the app risk-free. Clear them whenever you’re ready to track your real operation.",
             "clearSample": "Clear sample data",
             "sampleAdded": "Sample data added",

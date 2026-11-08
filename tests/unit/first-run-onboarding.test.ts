@@ -5,6 +5,11 @@
  * (it can only show "done" when the underlying signal is true) and the
  * dedupe key stable (it rides in localStorage).
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import { REPO_ROOT } from '../helpers/collect-files';
+
 import {
     FIRST_RUN_STEPS,
     firstRunProgress,
@@ -21,10 +26,45 @@ describe('FIRST_RUN_STEPS', () => {
         // Every step carries a CTA, a destination, and a reason — the card
         // renders all three, so none may be empty.
         for (const step of FIRST_RUN_STEPS) {
-            expect(step.label.length).toBeGreaterThan(0);
-            expect(step.hint.length).toBeGreaterThan(0);
-            expect(step.cta.length).toBeGreaterThan(0);
+            expect(step.labelKey.length).toBeGreaterThan(0);
+            expect(step.hintKey.length).toBeGreaterThan(0);
+            expect(step.ctaKey.length).toBeGreaterThan(0);
             expect(step.href.startsWith('/')).toBe(true);
+        }
+    });
+
+    it('every key RESOLVES in both catalogues — #2858', () => {
+        /*
+         * The assertion above only says the keys are non-empty, and that was
+         * true of the hard-coded ENGLISH prose it replaced. What makes the
+         * change an improvement is that each key reaches a real value in BOTH
+         * locales: a key with no entry renders as the key itself, which is
+         * worse on screen than the English was.
+         *
+         * Read off the catalogues rather than mocked, because the failure this
+         * guards is a MISSING ENTRY and a mock cannot be missing one.
+         */
+        const en = JSON.parse(
+            fs.readFileSync(path.join(REPO_ROOT, 'messages/en/app.json'), 'utf8'),
+        ) as { dashboard: { firstRun: Record<string, string> } };
+        const bg = JSON.parse(
+            fs.readFileSync(path.join(REPO_ROOT, 'messages/bg/app.json'), 'utf8'),
+        ) as { dashboard: { firstRun: Record<string, string> } };
+
+        const keys = FIRST_RUN_STEPS.flatMap((s) => [s.labelKey, s.hintKey, s.ctaKey]);
+        // The denominator, so a registry that lost its steps cannot pass here
+        // by having nothing to check.
+        expect(keys).toHaveLength(6);
+
+        for (const k of keys) {
+            expect(typeof en.dashboard.firstRun[k]).toBe('string');
+            expect(typeof bg.dashboard.firstRun[k]).toBe('string');
+            expect((en.dashboard.firstRun[k] ?? '').length).toBeGreaterThan(0);
+            expect((bg.dashboard.firstRun[k] ?? '').length).toBeGreaterThan(0);
+            // And the Bulgarian is a TRANSLATION, not the English pasted in —
+            // the thing `i18n-diff`'s untranslated axis exists for, asserted
+            // here too so these six cannot regress to a copy-paste.
+            expect(bg.dashboard.firstRun[k]).not.toBe(en.dashboard.firstRun[k]);
         }
     });
 });
