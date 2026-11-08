@@ -47,6 +47,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import {
+    branchFormatOf,
+    describeMissingFormats,
+    type Found,
+} from '../helpers/timestamp-format-advice';
+
 const SPEC = join(process.cwd(), 'src/generated/openapi.json');
 
 /**
@@ -85,12 +91,6 @@ function requestSchemas(spec: Spec): Set<string> {
     return found;
 }
 
-interface Found {
-    /** `Schema.path/to/prop` — the dotted path a reader can grep for. */
-    where: string;
-    root: string;
-    format: string | null;
-}
 
 /** Every property whose name ends in `At`, at any depth, with its format. */
 function timestampProps(spec: Spec): Found[] {
@@ -112,6 +112,7 @@ function timestampProps(spec: Spec): Found[] {
                     where: [...trail, name].join('/'),
                     root,
                     format: typeof f === 'string' ? f : null,
+                    branchFormat: branchFormatOf(value),
                 });
             }
         }
@@ -144,20 +145,7 @@ describe('a timestamp a client reads declares its format (#1391)', () => {
             .filter((p) => !DOCUMENTED_IN_ERROR.has(`${p.root}.${p.where}`));
 
         if (missing.length) {
-            throw new Error(
-                `${missing.length} of ${responseSide.length} response-side timestamps are ` +
-                    `typed without a \`format\`:\n\n` +
-                    missing.map((p) => `    ${p.root}.${p.where}`).join('\n') +
-                    `\n\nA client decoding one has to guess the encoding, and a generated ` +
-                    `client gets a bare \`string\` where it could have had a date (#1391).\n\n` +
-                    `Add \`.datetime()\` to the Zod declaration and run ` +
-                    `\`npm run openapi:generate\`. It is free: \`format\` is none of the six ` +
-                    `classes scripts/openapi-breaking.ts scores, and these schemas are ` +
-                    `registration-only — they are never \`.parse()\`d, so nothing starts ` +
-                    `validating.\n\n` +
-                    `If the field is genuinely day-resolution, \`format: date\` satisfies this ` +
-                    `rule — what a client cannot work with is the absence.`,
-            );
+            throw new Error(describeMissingFormats(missing, responseSide.length));
         }
     });
 
