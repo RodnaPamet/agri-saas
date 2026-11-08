@@ -23,7 +23,22 @@
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
 /** Models with a deliberate self-referencing FK. Each needs a reason. */
-const EXEMPT_SELF_REF = new Map<string, string>([]);
+const EXEMPT_SELF_REF = new Map<string, string>([
+    [
+        'DirectMessage',
+        'A reply points at the message it answers — #2829. The guard\'s concern '
+        + 'is a bulk writer having to topologically sort its own rows, and this '
+        + 'edge cannot produce that: a reply is written one message at a time by '
+        + '`sendDirectMessage`, whose target already exists because a person read '
+        + 'it in order to reply to it. There is no importer for this table and no '
+        + 'seed writes one. The edge is also NOT a hierarchy — it is one hop with '
+        + 'no transitive walk anywhere in the code, so there is no depth to '
+        + 'recurse and no cycle to detect: a message cannot reply to itself '
+        + '(nothing can name an id that does not exist yet) and a chain is read '
+        + 'one level deep for the quoted preview. `ON DELETE SET NULL` is what '
+        + 'keeps a lost target from taking the reply with it.',
+    ],
+]);
 
 describe('Prisma schema — no unregistered self-referencing models', () => {
     test('no model has a foreign key pointing to itself', () => {
