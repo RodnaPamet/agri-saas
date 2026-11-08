@@ -107,7 +107,7 @@ const COLLECTOR_SCAN_DIRS = [...GUARD_DIRS, 'tests/unit'];
  * length — see the ratchet test for why slack is the thing being refused.
  * Lower it in the same PR that migrates a file.
  */
-const REGISTER_CEILING = 213;
+const REGISTER_CEILING = 212;
 
 /** Hand-rolled collection: a filesystem walk, a git index read, or a glob. */
 const COLLECTS = /readdirSync|ls-files|glob\(/;
@@ -264,7 +264,6 @@ const HAND_ROLLED_COLLECTORS: readonly string[] = [
     'tests/guards/motion-language.test.ts',
     'tests/guards/multi-select-facet-route-parity.test.ts',
     'tests/guards/nav-routes-exist.test.ts',
-    'tests/guards/no-ad-hoc-tooltip-title.test.ts',
     'tests/guards/no-hand-rolled-menus.test.ts',
     'tests/guards/no-hardcoded-ui-strings.test.ts',
     'tests/guards/no-horizontal-drift-patterns.test.ts',

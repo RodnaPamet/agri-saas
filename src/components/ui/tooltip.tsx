@@ -36,10 +36,11 @@ import {
     useEffect,
     useRef,
     useState,
-    useSyncExternalStore,
     type ReactNode,
 } from "react";
 import { cn } from "@/lib/cn";
+
+import { useCoarsePointer } from "./hooks/use-coarse-pointer";
 
 export type TooltipSide = "top" | "right" | "bottom" | "left";
 export type TooltipAlign = "start" | "center" | "end";
@@ -65,37 +66,12 @@ export const TOOLTIPS_ENABLED = true;
 const TOUCH_AUTO_DISMISS_MS = 6000;
 
 /**
- * True on devices whose primary pointer cannot hover — phones, tablets.
- *
- * Subscribed rather than read once: tablets with a detachable keyboard or
- * a paired mouse flip this at runtime, and a stale value would leave the
- * user with the wrong open gesture until remount.
- *
- * `useSyncExternalStore` gives an SSR-safe answer (false on the server, so
- * markup matches the desktop-first render) with no effect-driven flash.
+ * `useCoarsePointer` was a module-private copy here until #2828 — see
+ * `hooks/use-coarse-pointer.ts`, which carries the reasoning this comment
+ * used to: subscribed rather than read once, because a tablet with a
+ * detachable keyboard flips the answer at runtime and a stale value leaves
+ * the user with the wrong open gesture until remount.
  */
-function useCoarsePointer(): boolean {
-    const subscribe = useCallback((onChange: () => void) => {
-        if (typeof window === "undefined" || !window.matchMedia) return () => {};
-        const mq = window.matchMedia("(hover: none), (pointer: coarse)");
-        // Safari < 14 only has the deprecated listener API.
-        if (mq.addEventListener) {
-            mq.addEventListener("change", onChange);
-            return () => mq.removeEventListener("change", onChange);
-        }
-        mq.addListener(onChange);
-        return () => mq.removeListener(onChange);
-    }, []);
-
-    return useSyncExternalStore(
-        subscribe,
-        () =>
-            typeof window !== "undefined" &&
-            typeof window.matchMedia === "function" &&
-            window.matchMedia("(hover: none), (pointer: coarse)").matches,
-        () => false,
-    );
-}
 
 /**
  * Global provider. Mount once at the app root so Radix can share the

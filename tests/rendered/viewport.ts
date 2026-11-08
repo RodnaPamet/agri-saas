@@ -54,6 +54,30 @@ const SETUP_MATCH_MEDIA = typeof window !== 'undefined' ? window.matchMedia : un
 /** The `min-width` breakpoints `useMediaQuery` probes, widest first. */
 const MIN_WIDTH_PROBE = /min-width:\s*(\d+)px/;
 
+/**
+ * The POINTER queries, which are a different question from the viewport.
+ *
+ * `useCoarsePointer` asks `(hover: none), (pointer: coarse)` and
+ * `usePullToRefresh` asks `(pointer: coarse)` alone. Both were answered
+ * `false` by this helper, so `setViewport('mobile')` produced a phone-WIDTH
+ * window with a MOUSE — a device that does not exist, and the reason two
+ * `<SwipeRow>` tests broke the moment that component started asking the
+ * pointer question instead of the width one (#2828).
+ *
+ * A phone and a tablet are coarse; a desktop is not. The `coarsePointer`
+ * override exists for the two real devices this coupling gets wrong — a touch
+ * laptop (wide AND coarse) and a desktop-width window on a mouse-driven
+ * tablet — so a test meaning one of those can say so rather than inheriting
+ * the common case.
+ */
+const POINTER_PROBE = /pointer:\s*coarse|hover:\s*none/;
+
+const VIEWPORT_IS_COARSE: Record<Viewport, boolean> = {
+    mobile: true,
+    tablet: true,
+    desktop: false,
+};
+
 const VIEWPORT_WIDTH: Record<Viewport, number> = {
     // Widths chosen to sit just inside each band: a phone below the
     // 640px `sm` breakpoint, a tablet between `sm` and `lg`, a desktop
@@ -80,14 +104,24 @@ function mediaQueryList(query: string, matches: boolean): MediaQueryList {
  * Answer `min-width` media queries for `kind`, so `useMediaQuery`
  * resolves to that device.
  *
- * Only `min-width` is interpreted — every other query (a
- * `prefers-reduced-motion` probe, a `print` probe) keeps the
- * setup-file default of `false`, so this helper changes the device and
- * nothing else.
+ * `min-width` AND the pointer queries are interpreted — a phone-width
+ * window with a mouse is not a device, and answering `false` to
+ * `(pointer: coarse)` under `setViewport('mobile')` is what that used
+ * to be. Every OTHER query (a `prefers-reduced-motion` probe, a `print`
+ * probe) keeps the setup-file default of `false`, so this helper
+ * changes the device and nothing else.
+ *
+ * Pass `{ coarsePointer }` to decouple the two deliberately — a touch
+ * laptop is wide and coarse, a mouse-driven tablet is neither.
  */
-export function setViewport(kind: Viewport): void {
+export function setViewport(
+    kind: Viewport,
+    opts: { coarsePointer?: boolean } = {},
+): void {
     const width = VIEWPORT_WIDTH[kind];
+    const coarse = opts.coarsePointer ?? VIEWPORT_IS_COARSE[kind];
     window.matchMedia = ((query: string) => {
+        if (POINTER_PROBE.test(query)) return mediaQueryList(query, coarse);
         const probe = MIN_WIDTH_PROBE.exec(query);
         const matches = probe ? width >= Number(probe[1]) : false;
         return mediaQueryList(query, matches);

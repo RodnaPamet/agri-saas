@@ -37,6 +37,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
+
 const APP_ROOT = path.resolve(__dirname, '../../src/app');
 
 // Recorded at Epic 56 close-out. Lower this when you migrate a
@@ -53,19 +56,6 @@ const APP_ROOT = path.resolve(__dirname, '../../src/app');
 //       `title=` is the right tradeoff at this scale.
 const BASELINE_HTML_TITLE_ATTRS = 4;
 
-function walk(dir: string, out: string[]): string[] {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            if (entry.name === 'node_modules' || entry.name === '.next') continue;
-            walk(full, out);
-        } else if (entry.isFile() && entry.name.endsWith('.tsx')) {
-            out.push(full);
-        }
-    }
-    return out;
-}
-
 /**
  * Scan a file for `title=` that sits inside a lower-case HTML element
  * (`span`, `div`, `button`, `a`, `p`, `input`, `code`, `label`, `li`,
@@ -76,7 +66,24 @@ function walk(dir: string, out: string[]): string[] {
  * nearest `<Name` opening. If `Name` starts lowercase and contains no
  * dot, count it.
  */
-function countHtmlTitleAttrs(src: string, file: string): Array<{ line: number; tag: string }> {
+function countHtmlTitleAttrs(raw: string, file: string): Array<{ line: number; tag: string }> {
+    // COMMENTS BLANKED by the shared stripper, which replaced two hand-rolled
+    // prefix rules: "the line's trimmed prefix starts with `*`" and "… with
+    // `//`". Those were careful — an earlier `.includes('//')` version skipped
+    // `<a href="https://example.com" title="External">` because the URL's
+    // slashes sat in the prefix — and they still could not see a block comment
+    // whose `/*` opened on an earlier line with no leading `*` continuation.
+    //
+    // `strings: false` on purpose: the subject is the ATTRIBUTE NAME and its
+    // opening quote, so string CONTENTS are irrelevant, and blanking them
+    // would erase the `href` value this function must not be confused by.
+    //
+    // Migrating the file collection to `collectSourceFiles` is what put this
+    // guard in `guards-blank-comments-before-matching`'s population at all —
+    // `readsSource` keys on a quoted `src/` path, and the old
+    // `path.resolve(__dirname, '../../src/app')` did not match. The detection
+    // is correct: it always read `src/`.
+    const src = blankNonCode(raw);
     const findings: Array<{ line: number; tag: string }> = [];
     const re = /\btitle\s*=\s*(["'{])/g;
     let match: RegExpExecArray | null;
@@ -84,19 +91,6 @@ function countHtmlTitleAttrs(src: string, file: string): Array<{ line: number; t
     while ((match = re.exec(src)) !== null) {
         const pos = match.index;
 
-        // Skip matches inside a comment line. Two cases:
-        //   (1) JSDoc / block comment continuation: leading `*` after trim
-        //   (2) Line comment starting the row: leading `//` after trim
-        // NOTE: we only skip when the comment marker STARTS the line's
-        // prefix — not when it appears anywhere. An earlier version used
-        // `.includes('//')` and caused a latent false-negative: a line
-        // like `<a href="https://example.com" title="External">` would
-        // be skipped because the URL's `//` sat in the prefix. The
-        // tighter check catches real comments without leaking on URLs.
-        const lineStart = src.lastIndexOf('\n', pos) + 1;
-        const trimmedPrefix = src.slice(lineStart, pos).trimStart();
-        if (trimmedPrefix.startsWith('*')) continue;
-        if (trimmedPrefix.startsWith('//')) continue;
 
         // Walk back to find the opening `<Name` for this attribute's tag.
         // Stop on the first unmatched `<` before the position.
@@ -133,7 +127,15 @@ function countHtmlTitleAttrs(src: string, file: string): Array<{ line: number; t
 }
 
 describe('Epic 56 — ad-hoc `title=` ratchet', () => {
-    const files = walk(APP_ROOT, []);
+    // THE SHARED COLLECTOR, which refuses an empty result.
+    //
+    // `walk()` was hand-rolled here and `Selector teeth` reported it dead:
+    // every assertion below is `total <= BASELINE`, which `total === 0`
+    // satisfies — so a walk returning nothing read as "no ad-hoc titles" and
+    // the guard could not tell that from "I scanned nothing". That is the
+    // `an-empty-window-passes-a-negated-assertion` shape, and it is why a
+    // RATCHET on a count needs its population floored rather than trusted.
+    const files = collectSourceFiles({ roots: ['src/app'], extensions: ['.tsx'] });
 
     it(`count of HTML \`title=\` attributes in src/app/ is ≤ ${BASELINE_HTML_TITLE_ATTRS}`, () => {
         const perFile: Record<string, Array<{ line: number; tag: string }>> = {};
@@ -159,6 +161,49 @@ describe('Epic 56 — ad-hoc `title=` ratchet', () => {
         }
 
         expect(total).toBeLessThanOrEqual(BASELINE_HTML_TITLE_ATTRS);
+    });
+
+    it('CONTROL — the detector finds an HTML `title=`, and ignores a component one', () => {
+        // The other half of what `Selector teeth` asked for.
+        // `countHtmlTitleAttrs()` returning `[]` also satisfied every
+        // assertion above, so the detector's ability to detect was never
+        // asserted. Synthetic sources, because the live population is a
+        // RATCHET whose whole purpose is to reach zero — a control that
+        // depended on the four allowlisted sites still existing would fail
+        // the moment somebody did the migration this guard exists to drive.
+        const html = countHtmlTitleAttrs('<span title="hover me">x</span>', 'synthetic.tsx');
+        expect(html).toHaveLength(1);
+        expect(html[0].tag).toBe('span');
+
+        // A React prop on a component is not the subject: `<Modal title=…>`
+        // and `<Sheet.Header title=…>` are legitimate.
+        expect(countHtmlTitleAttrs('<Modal title="ok" />', 'synthetic.tsx')).toEqual([]);
+        expect(countHtmlTitleAttrs('<Sheet.Header title="ok" />', 'synthetic.tsx')).toEqual([]);
+
+        // And a commented-out one is not a finding. REAL comment syntax, both
+        // forms — measured, because the first draft of this control used a
+        // bare ` * <span title="x">` line and `blankNonCode` correctly left it
+        // alone: a continuation line with no `/*` above it is not a comment,
+        // it is code that happens to start with an asterisk. The hand-rolled
+        // prefix rule this replaced DID skip it, which is the false negative
+        // the migration removes.
+        expect(countHtmlTitleAttrs('// <span title="x">', 'synthetic.tsx')).toEqual([]);
+        expect(
+            countHtmlTitleAttrs('/**\n * <span title="x">\n */', 'synthetic.tsx'),
+        ).toEqual([]);
+        expect(countHtmlTitleAttrs('/* <span title="x"> */', 'synthetic.tsx')).toEqual([]);
+        // A URL's `//` in the prefix must NOT skip the line. That false
+        // negative was fixed once already (see the docblock) and nothing
+        // asserted it.
+        expect(
+            countHtmlTitleAttrs('<a href="https://example.com" title="External">x</a>', 'synthetic.tsx'),
+        ).toHaveLength(1);
+    });
+
+    it('the population is NON-EMPTY, which is what makes the ratchet mean anything', () => {
+        // A floor, not an exact count: `src/app` holds hundreds of `.tsx`
+        // files and the number moves with every page added.
+        expect(files.length).toBeGreaterThan(200);
     });
 
     it('baseline is plausible (positive integer, matches recorded state)', () => {
