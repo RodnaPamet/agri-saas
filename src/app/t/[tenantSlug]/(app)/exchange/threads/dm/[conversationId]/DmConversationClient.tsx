@@ -63,10 +63,21 @@
  * the standing rule that you can block somebody who has already written to
  * you, rather than being a limitation to work around.
  *
- * `ReportButton` is deliberately NOT here — #2833. `captureSnapshot` resolves
- * `MESSAGE` against `prisma.exchangeMessage`, so a notice about a direct
- * message would be filed with `SUBJECT_NOT_FOUND` as its evidence, and the
- * reporter could not tell that from a successful report.
+ * «Сигнализирай» IS here now, PER MESSAGE — #2833 closed the gap it was
+ * waiting on. `captureSnapshot` has a `DIRECT_MESSAGE` arm that reads through
+ * the Prisma client (so the body decrypts rather than snapshotting `v2:…`) and
+ * asserts the reporter is a PARTICIPANT, which no other subject kind has had
+ * to do: that capture runs privileged, so without it a crafted id would pull
+ * two strangers' private conversation into the moderation queue.
+ *
+ * It is per-message rather than a header control because a notice names ONE
+ * message. The bubble decides whether to offer it — never on your own, never on
+ * a deleted one (P5.3) — so this passes the callback unconditionally and does
+ * not re-implement that rule.
+ *
+ * **A moderator cannot REMOVE a direct message** (owner ruling 2026-11-08):
+ * suspension is the remedy. So nothing here may promise a takedown; the
+ * dialog's existing copy says the notice will be reviewed, which stays true.
  */
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -82,6 +93,7 @@ import {
 } from '@/components/chat/message-timeline';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BlockPersonButton } from '@/components/trust-safety/BlockPersonButton';
+import { ReportDialog } from '@/components/trust-safety/ReportDialog';
 import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -130,6 +142,10 @@ export function DmConversationClient({
     // is how a surface ends up with two names, which is the defect
     // `docs/nav-vocabulary.md` exists to prevent.
     const tExchange = useTranslations('exchange.messaging');
+    // The report control's accessible name comes from the trust-safety
+    // namespace rather than `chat`, so one string serves every surface that
+    // offers «Сигнализирай».
+    const tReport = useTranslations('trustSafety.report');
     const tenantHref = useTenantHref();
     const router = useRouter();
 
@@ -200,6 +216,11 @@ export function DmConversationClient({
     const hasOlder = sameConversation ? older!.hasOlder : (data?.hasOlder ?? false);
 
     const timeline = React.useRef<MessageTimelineHandle | null>(null);
+
+    // Which message «Сигнализирай» was pressed on, or null. One piece of state
+    // rather than a dialog per bubble: the dialog is a modal, so only one can
+    // be open, and mounting 200 of them is the windowing problem again.
+    const [reportingMessageId, setReportingMessageId] = React.useState<string | null>(null);
     /** Set by the loader, consumed by the layout effect after the commit. */
     const pendingAnchor = React.useRef<TimelineAnchor | null>(null);
 
@@ -387,11 +408,28 @@ export function DmConversationClient({
                     </Button>
                 </div>
             ) : null}
+            {reportingMessageId ? (
+                <ReportDialog
+                    open
+                    setOpen={(next) => {
+                        // `Dispatch<SetStateAction<boolean>>` — the Modal
+                        // primitive passes an updater through, so resolve it
+                        // before deciding, rather than assuming a boolean.
+                        const open = typeof next === 'function' ? next(true) : next;
+                        if (!open) setReportingMessageId(null);
+                    }}
+                    subjectKind="DIRECT_MESSAGE"
+                    subjectId={reportingMessageId}
+                />
+            ) : null}
+
             <MessageTimeline
                 ref={timeline}
                 messages={messages}
                 myUserId={myUserId}
                 firstUnreadId={frozenUnread?.id ?? null}
+                onRequestReport={setReportingMessageId}
+                reportLabel={tReport('triggerAria')}
             />
 
             {theirRequest ? (

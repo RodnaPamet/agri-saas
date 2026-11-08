@@ -64,7 +64,7 @@ import { IconAction } from '@/components/ui/icon-action';
 // nucleo, not the legacy icon package — see the note in
 // `message-composer.tsx`. `MessageSmile` rather than `FaceSmile`: the
 // control reacts to THIS message.
-import { MessageSmile } from '@/components/ui/icons/nucleo';
+import { Flag, MessageSmile } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 
@@ -88,6 +88,21 @@ export interface MessageBubbleProps {
     readonly onRequestReactions?: () => void;
     /** Accessible name for the reaction control. Required when it renders. */
     readonly reactionsLabel?: string;
+    /**
+     * «Сигнализирай» for THIS message (#2833). The dialog belongs to the page,
+     * as the reaction picker does. Omitted ⇒ no control.
+     *
+     * Gated HERE rather than by the caller, because P5.3's rule is about the
+     * control and not about one surface: it is never offered on your OWN
+     * message — `remove` is the control for that, and offering both reads as a
+     * choice between them — nor on a DELETED one, which has nothing to capture
+     * and whose snapshot would be an empty body indistinguishable from a
+     * capture failure. A caller that passes the callback unconditionally still
+     * gets the rule.
+     */
+    readonly onRequestReport?: () => void;
+    /** Accessible name for the report control. Required when it renders. */
+    readonly reportLabel?: string;
 }
 
 export function MessageBubble({
@@ -101,6 +116,8 @@ export function MessageBubble({
     reactions,
     onRequestReactions,
     reactionsLabel,
+    onRequestReport,
+    reportLabel,
 }: MessageBubbleProps) {
     const t = useTranslations('chat');
     const { formatDateTime } = useDateFormat();
@@ -109,6 +126,9 @@ export function MessageBubble({
     // A deleted message has nothing to react to, which is the same reason P5.3
     // does not offer «Сигнализирай» on one.
     const canReact = Boolean(onRequestReactions) && !isDeleted;
+    // NOT on your own message and NOT on a deleted one — see the prop's
+    // docblock. `mine` is the half a caller would forget.
+    const canReport = Boolean(onRequestReport) && !isDeleted && !mine;
     const { handlers, pressing } = useLongPress({
         onLongPress: () => onRequestReactions?.(),
         enabled: canReact,
@@ -206,6 +226,21 @@ export function MessageBubble({
                             label={reactionsLabel ?? t('addReaction')}
                             variant="ghost"
                             onClick={onRequestReactions}
+                            className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                        />
+                    ) : null}
+                    {canReport ? (
+                        // Same treatment as the reaction control: in the DOM
+                        // always so Tab reaches it, revealed on hover or focus,
+                        // `opacity-0` rather than `hidden` because hidden is
+                        // not focusable. No gesture for this one — a long press
+                        // already means reactions, and two gestures on one
+                        // bubble is a guess about which the operator made.
+                        <IconAction
+                            icon={<Flag />}
+                            label={reportLabel ?? t('reportMessage')}
+                            variant="ghost"
+                            onClick={onRequestReport}
                             className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                         />
                     ) : null}

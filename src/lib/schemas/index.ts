@@ -1583,7 +1583,24 @@ export const AttachLogEntryFileSchema = z.object({
 // whether the field exists. Same for `status` — the pipeline sets that.
 
 /** The surfaces a notice can name. Mirrors the `ReportSubjectKind` enum. */
-export const REPORT_SUBJECT_KINDS = ['LISTING', 'MESSAGE', 'PROFILE', 'THREAD'] as const;
+export const REPORT_SUBJECT_KINDS = [
+    'LISTING',
+    'MESSAGE',
+    'PROFILE',
+    'THREAD',
+    /**
+     * A DIRECT message (#2833). Reportable, unlike `ACCOUNT` — which is a
+     * moderation ACTION subject and is the recorded exclusion that keeps this
+     * list a strict SUBSET of the Prisma enum.
+     *
+     * Reportable only by a PARTICIPANT, and the anonymous Art 16 route refuses
+     * it: that route has no principal to check participation against, and
+     * `captureSnapshot` runs privileged, so a crafted id would otherwise
+     * capture a stranger's private message. Enforced at the route, because the
+     * schema cannot see which route parsed it.
+     */
+    'DIRECT_MESSAGE',
+] as const;
 
 /**
  * The reason categories. Mirrors `ReportReasonCode`, owner-confirmed

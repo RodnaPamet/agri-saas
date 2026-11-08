@@ -83,7 +83,18 @@ interface Scenario {
     existingBody?: string;
     conclusion: string;
     runId: string;
-    /** The watched workflow's name. Defaults to a workflow with no exception. */
+    /**
+     * The watched workflow's name. Defaults to a workflow with NO exception on
+     * either axis — not in `SUPERSEDED_ONLY` (`Publish image to GHCR`) and not
+     * in `FIXED_SUBJECT_WORKFLOWS` (`Release`).
+     *
+     * It defaulted to `Release` until #2884, when `Release` became the one
+     * workflow a green run may not close. Two close tests taking the default
+     * silently started asserting the new branch instead of the ordinary one —
+     * so the default moved to `CI` rather than those tests being adjusted,
+     * because "defaults to a workflow with no exception" is the property every
+     * other case in this file leans on.
+     */
     wf?: string;
     /**
      * The names of the run's FAILED jobs, as the failed-job probe reports them.
@@ -102,6 +113,13 @@ interface Scenario {
      * case exercises the value production actually runs with.
      */
     flakyJobs?: string;
+    /**
+     * Overrides `FIXED_SUBJECT_WORKFLOWS` (#2884). Left unset by default, so
+     * every other case runs against the production list — which is what makes
+     * "an ordinary workflow still closes" a real assertion rather than one
+     * arranged by the harness.
+     */
+    fixedSubjectWorkflows?: string;
 }
 
 /**
@@ -161,7 +179,7 @@ exit 0
             env: {
                 ...process.env,
                 GH: bin,
-                WF: s.wf ?? 'Release',
+                WF: s.wf ?? 'CI',
                 CONCLUSION: s.conclusion,
                 RUN_URL: `https://example.invalid/${s.runId}`,
                 RUN_ID: s.runId,
@@ -176,6 +194,9 @@ exit 0
                 // Only set when the scenario asks, so every other case runs
                 // against the shipped default.
                 ...(s.flakyJobs === undefined ? {} : { FLAKY_JOBS: s.flakyJobs }),
+                ...(s.fixedSubjectWorkflows === undefined
+                    ? {}
+                    : { FIXED_SUBJECT_WORKFLOWS: s.fixedSubjectWorkflows }),
             },
         });
 
@@ -492,6 +513,88 @@ describe('CI-failure notifier — files for real failures, and only those', () =
         expect(closed(calls)).toBe(false);
         expect(commented(calls)).toBe(false);
         expect(out).toContain('stale success');
+    });
+
+    it('a FIXED-SUBJECT workflow is NOT closed by a later green run — #2884', () => {
+        // `Release` keys its artefacts to a TAG, which never moves, so a green
+        // run produces a different tag's SBOM and repairs nothing for the one
+        // that failed. On 2026-11-08 four Release runs shipped tags with no
+        // SBOM and all four issues went away on the next green — #2882 lasted
+        // 27 minutes and was the only record that v12.152.0 had none.
+        const { out, calls } = run({
+            wf: 'Release',
+            conclusion: 'success',
+            runId: '300',
+            openIssue: '42',
+            existingBody: '<!-- ci-failure-run: 200 -->',
+        });
+
+        // It still COMMENTS: silence would read as the notifier having missed
+        // the recovery, and the reader needs to know the workflow itself is fine.
+        expect(commented(calls)).toBe(true);
+        expect(closed(calls)).toBe(false);
+        expect(out).toContain('subject is FIXED');
+    });
+
+    it('and the comment says WHAT to check, not just that it is open', () => {
+        // An issue left open with no instruction is the state #2884 describes
+        // from the other side: the repair step surviving only in somebody's
+        // memory of an incident.
+        const { calls } = run({
+            wf: 'Release',
+            conclusion: 'success',
+            runId: '300',
+            openIssue: '42',
+            existingBody: '<!-- ci-failure-run: 200 -->',
+        });
+        const comment = calls.find((c) => c.includes('issue comment')) ?? '';
+        expect(comment).toContain('gh release view');
+        expect(comment).toContain('does not move');
+    });
+
+    it('an ORDINARY workflow still closes — the control', () => {
+        // Run against the PRODUCTION list, not a harness override, so this
+        // asserts the rule is narrow rather than that the stub was set up
+        // narrowly. Without it, a list that accidentally matched everything
+        // would leave every ci-failure issue open for ever.
+        const { calls } = run({
+            wf: 'Image tip check',
+            conclusion: 'success',
+            runId: '300',
+            openIssue: '42',
+            existingBody: '<!-- ci-failure-run: 200 -->',
+        });
+        expect(closed(calls)).toBe(true);
+    });
+
+    it('a STALE success on a fixed-subject workflow is still stale', () => {
+        // Ordering comes FIRST. Otherwise the new branch would comment "green
+        // again" on an issue about a newer failure, which is defect 2 wearing
+        // a different hat.
+        const { out, calls } = run({
+            wf: 'Release',
+            conclusion: 'success',
+            runId: '100',
+            openIssue: '42',
+            existingBody: '<!-- ci-failure-run: 200 -->',
+        });
+        expect(commented(calls)).toBe(false);
+        expect(closed(calls)).toBe(false);
+        expect(out).toContain('stale success');
+    });
+
+    it('FIXED_SUBJECT_WORKFLOWS is configurable, and empty means close everything', () => {
+        // The same `${VAR-default}` contract FLAKY_JOBS has: an explicit empty
+        // must mean "no workflow is fixed-subject", not "use the default".
+        const { calls } = run({
+            wf: 'Release',
+            conclusion: 'success',
+            runId: '300',
+            openIssue: '42',
+            existingBody: '<!-- ci-failure-run: 200 -->',
+            fixedSubjectWorkflows: '',
+        });
+        expect(closed(calls)).toBe(true);
     });
 
     it('a success with nothing open does nothing at all', () => {
