@@ -133,6 +133,11 @@ neither can a reader six months later looking at a stored row.
   `unsafe-inline` — and it matters more here than at the other 138 sites,
   because this is the first caller whose input is adversarial by default.
 
+  *(Superseded 2026-11-08 by #2854: `sanitizePlainText` decodes to a FIXED
+  POINT before stripping and is idempotent. The single pass this note argues
+  for is unchanged and still correct; its reason is now C.5 placement rather
+  than the harm measured above.)*
+
 - **The PHOTOGRAPH was missing from the timeline too, and that is fixed in
   this diff.** P8.6's photo half (#2852) shipped `sendDirectPhoto` and
   `readDirectPhoto` and never added the attachment columns to
