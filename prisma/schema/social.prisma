@@ -181,6 +181,25 @@ enum ModerationActionKind {
   CONTENT_DEMOTED
   ACCOUNT_SUSPENDED
   ACCOUNT_TERMINATED
+
+  /// The reversal of a `CONTENT_REMOVED`, as the subject of a moderation
+  /// ACTION — never of a notice (#2867).
+  ///
+  /// A SECOND row rather than a flag on the first, or a delete of it: #1619
+  /// appends a chain entry per action, so rewriting the original's kind would
+  /// leave the chain asserting a decision the table no longer holds; Art 17
+  /// owes a statement per decision, and "we removed it" and "we restored it"
+  /// are two communications; and an appeal history is what an appeal process
+  /// is for.
+  ///
+  /// **It is deliberately NOT acceptable on a notice.**
+  /// `MODERATION_ACTION_KINDS` in `src/lib/schemas/index.ts` is what
+  /// `ActOnNoticeSchema` validates against and this value stays out of it — a
+  /// restore reverses a decision rather than being one, so the notices route
+  /// must refuse it. Same shape as `ReportSubjectKind.ACCOUNT`, and
+  /// `tests/guards/moderation-action-kinds-mirror.test.ts` holds the list as a
+  /// strict SUBSET with the difference named.
+  CONTENT_RESTORED
 }
 
 /// A DSA Art 16 notice. Holds BOTH a signed-in user's report and an anonymous

@@ -17410,6 +17410,29 @@ exports[`API contract — per-schema snapshots schema: RespondToConversation 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: RestoreContent 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "actionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    }
+  },
+  "required": [
+    "actionId",
+    "rationale"
+  ],
+  "description": "Reverses a CONTENT_REMOVED, addressed by the action id of the removal rather than by its subject. Records a second ModerationAction (CONTENT_RESTORED) and queues the Art 17 follow-up statement; the notice itself stays ACTIONED, because it WAS acted on and the action was later reversed."
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: RiskLevel 1`] = `
 "{
   "type": "string",

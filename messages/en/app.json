@@ -6707,6 +6707,7 @@
         "action": {
             "NONE": "We looked at a report about your content and decided to take no action. Your content stays as it is.",
             "CONTENT_REMOVED": "We removed the content.",
+            "CONTENT_RESTORED": "We have restored the content. The decision to remove it has been reversed.",
             "CONTENT_DEMOTED": "We left the content in place but reduced how widely it is shown.",
             "ACCOUNT_SUSPENDED": "We suspended your account. You cannot open your farm while the suspension is in force. Everything already recorded is kept.",
             "ACCOUNT_TERMINATED": "We closed your account."
@@ -6821,6 +6822,8 @@
         "CROP_SEASON_NOT_FOUND": "That crop season was not found.",
         "CROP_SEASON_YEAR_INVALID": "That harvest year is out of range — it must be between {min} and {max}.",
         "CROP_TYPE_INVALID": "A crop is required.",
+        "MODERATION_ACTION_NOT_FOUND": "That moderation action was not found.",
+        "MODERATION_ACTION_NOT_REVERSIBLE": "Only a content removal can be restored.",
         "MODERATION_ACTION_NOT_PERFORMABLE": "This platform cannot carry out that outcome, so it was not recorded.",
         "MODERATION_SUBJECT_GONE": "That content is no longer there to remove.",
         "PARCEL_COMMENT_EMPTY": "A note cannot be empty.",
