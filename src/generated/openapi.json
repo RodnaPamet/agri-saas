@@ -16716,12 +16716,17 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200
+          },
+          "linkUrl": {
+            "type": "string",
+            "maxLength": 2000,
+            "format": "uri"
           }
         },
         "required": [
           "body"
         ],
-        "description": "A message to send. The sender is the authenticated caller. Repeating a request with the same idempotencyKey returns the message the first attempt created rather than sending a second."
+        "description": "A message to send. The sender is the authenticated caller. Repeating a request with the same idempotencyKey returns the message the first attempt created rather than sending a second. An optional `linkUrl` attaches a link card: the server fetches the page through the per-hop host policy, sanitises whatever metadata comes back, and stores a snapshot. The fetch is BEST-EFFORT — a refused host, a timeout or a page with no metadata sends the message with the URL and no preview rather than refusing it."
       },
       "SendExchangeMessage": {
         "type": "object",
@@ -61824,6 +61829,75 @@
                                 "emoji"
                               ]
                             }
+                          },
+                          "attachment": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "mime": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "bytes": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
+                              },
+                              "sha256": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "mime",
+                              "bytes",
+                              "sha256"
+                            ],
+                            "description": "The photograph this message carries, or null. A sub-object so \"is there a photo\" is one null check rather than three fields that can disagree. The BYTES are fetched from `/api/social/messages/{messageId}/photo`, which a client derives from the message id — the storage key is deliberately not in this payload, because that route authorises by RLS participation and not by possession of a key. Null for a retracted message: deleting clears the columns AND the payload re-checks `deletedAt`."
+                          },
+                          "linkCard": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "description": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "fetchedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "url",
+                              "title",
+                              "description",
+                              "fetchedAt"
+                            ],
+                            "description": "The link card, or null. A SNAPSHOT taken when the message was sent and never refreshed — re-fetching later would silently rewrite what two people discussed. `fetchedAt` null means the fetch was REFUSED (a host that resolves privately at any redirect hop, a timeout, a non-2xx), which is how a client tells that apart from a page that simply carried no metadata and therefore stamped a time. `title` and `description` are the third-party page's own text, sanitised at the usecase."
                           }
                         },
                         "required": [
@@ -61833,7 +61907,9 @@
                           "createdAt",
                           "editedAt",
                           "deletedAt",
-                          "reactions"
+                          "reactions",
+                          "attachment",
+                          "linkCard"
                         ]
                       },
                       "description": "ONE PAGE, oldest-first within the page even though the page returned first is the NEWEST — a client renders upward from the bottom. Capped at 100 (#2820); the first version of this endpoint returned every message and decrypted every one of them."
@@ -61957,7 +62033,7 @@
       "post": {
         "operationId": "sendDirectMessage",
         "summary": "Send a message",
-        "description": "Sends into a conversation the caller participates in. While the conversation is a REQUEST, exactly ONE message is allowed until the other person accepts — so a second send answers 400 DM_REQUEST_AWAITING_REPLY rather than queueing. Repeating a request with the same idempotencyKey returns the first attempt's message with `deduplicated: true` and status 200.",
+        "description": "Sends into a conversation the caller participates in. While the conversation is a REQUEST, exactly ONE message is allowed until the other person accepts — so a second send answers 400 DM_REQUEST_AWAITING_REPLY rather than queueing. Repeating a request with the same idempotencyKey returns the first attempt's message with `deduplicated: true` and status 200.\n\nAn optional `linkUrl` attaches a LINK CARD. The server fetches that page BEFORE opening the transaction — an external fetch inside one holds a pool connection, and `PG_POOL_MAX` is 12 — through `fetchPublicUrl`, which re-runs the host policy at every redirect hop. Whatever metadata comes back is sanitised at the usecase and stored as a SNAPSHOT that is never refreshed.",
         "tags": [
           "Direct messages"
         ],
@@ -62049,7 +62125,7 @@
             }
           },
           "400": {
-            "description": "INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), or DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation).",
+            "description": "INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation), or DM_LINK_URL_INVALID.\n\n`DM_LINK_URL_INVALID` is not reachable through this route: `linkUrl` is declared `httpsUrl()`, so a non-https value is already INVALID_BODY at the boundary. It is documented because the usecase raises it for a second caller arriving without the schema, and a code with no entry in the catalogues is a refusal a client cannot show anybody.\n\nA link whose page cannot be fetched is NOT a refusal. The fetch is best-effort: a host that resolves privately at any redirect hop, a timeout, a non-2xx or a page with no metadata all send the message with the URL stored and `linkCard.fetchedAt` null.",
             "content": {
               "application/json": {
                 "schema": {
@@ -64425,7 +64501,7 @@
       "post": {
         "operationId": "actOnModerationNotice",
         "summary": "Moderation — record a decision on a notice",
-        "description": "Writes a `ModerationAction` and moves the notice’s status, in ONE transaction. A notice marked ACTIONED with no action row, or an action whose notice still reads RECEIVED, are both states a queue cannot tell from a crash — so neither is reachable.\n\n`actionKind: \"NONE\"` is a real outcome, not a no-op: \"looked and did nothing\" must be distinguishable from \"never looked\", and it moves the notice to REJECTED — the judgement.\n\n**The moderator is taken from the verified key and is never read from the body.** It records which key GENERATION authorised the action (current or previous), which narrows a compromise window to one side of a rotation. It is deliberately **not a person**: there is one platform key for every operator, so a regulator asking \"who decided this\" gets \"somebody holding the key\". Per-moderator attribution needs per-moderator credentials — tracked in #2735. (P5.8 was expected to own this and closed without it: `verifyPlatformApiKey` still returns a key generation and no person.)\n\nThe subject is denormalised from the notice, so an action cannot be recorded against content it was not about. `rationale` is REQUIRED — unlike a notice’s `detail`, because a decision without a reason is what Art 17 exists to prevent, and it is the text the statement is built from.\n\n404 when the notice does not exist. Unlike the public notice route, a platform admin is entitled to that difference — there it would be an enumeration oracle.\n\n**Platform-admin key**, not a tenant permission. Every role in the enum is tenant-scoped, so `admin.manage` would let an ADMIN of any one farm read every other farm’s notices — which is also why the underlying tables deny `app_user` outright rather than relying on this route to filter.",
+        "description": "Writes a `ModerationAction` and moves the notice’s status, in ONE transaction. A notice marked ACTIONED with no action row, or an action whose notice still reads RECEIVED, are both states a queue cannot tell from a crash — so neither is reachable.\n\n`actionKind: \"NONE\"` is a real outcome, not a no-op: \"looked and did nothing\" must be distinguishable from \"never looked\", and it moves the notice to REJECTED — the judgement.\n\n**The moderator is taken from the verified key and is never read from the body.** It records which key GENERATION authorised the action (current or previous), which narrows a compromise window to one side of a rotation. It is deliberately **not a person**: there is one platform key for every operator, so a regulator asking \"who decided this\" gets \"somebody holding the key\". Per-moderator attribution needs per-moderator credentials — tracked in #2735. (P5.8 was expected to own this and closed without it: `verifyPlatformApiKey` still returns a key generation and no person.)\n\nThe subject is denormalised from the notice, so an action cannot be recorded against content it was not about. `rationale` is REQUIRED — unlike a notice’s `detail`, because a decision without a reason is what Art 17 exists to prevent, and it is the text the statement is built from.\n\n**`CONTENT_REMOVED` REMOVES THE CONTENT**, in the same transaction as the decision (#2865). It did not until then: the action row was written, the notice read ACTIONED, and `statement-dispatch` delivered an Art 17 statement saying «Премахнахме съдържанието.» while the listing or message stayed live and visible. The rule P5.9 set for the account kinds applies here verbatim — the outcome cannot be recorded without being performed.\n\nSo two outcomes can be REFUSED, and a refusal writes nothing at all:\n- `MODERATION_ACTION_NOT_PERFORMABLE` — `CONTENT_DEMOTED` (there is no ranking in this product to demote within, so a recorded demotion would announce a sanction that does not exist — #2868), or `CONTENT_REMOVED` on a `PROFILE` or `THREAD`, whose removable surface nobody has decided. `NONE` is always available and is what \"looked and could do nothing\" means.\n- `MODERATION_SUBJECT_GONE` — the notice names content that is not there. A notice may name an id nothing has (`captureSnapshot` records `SUBJECT_NOT_FOUND` for exactly that, and the reporter cannot tell it from success), and recording a removal against it would deliver a statement about content we never had.\n\nRemoving twice is IDEMPOTENT: two notices about one listing is the ordinary case and the second moderator must be able to close theirs. A removal is a nullable timestamp rather than a delete, because an Art 17 statement carries redress — the restore ROUTE is #2867.\n\n404 when the notice does not exist. Unlike the public notice route, a platform admin is entitled to that difference — there it would be an enumeration oracle.\n\n**Platform-admin key**, not a tenant permission. Every role in the enum is tenant-scoped, so `admin.manage` would let an ADMIN of any one farm read every other farm’s notices — which is also why the underlying tables deny `app_user` outright rather than relying on this route to filter.",
         "tags": [
           "Moderation"
         ],

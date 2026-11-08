@@ -91,6 +91,7 @@ import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 import { personBlockExists, amIBlockedByAnyOf } from './person-blocks';
+import { fetchLinkCard } from './direct-message-link-cards';
 
 /**
  * The same bound `ExchangeMessage` uses. Not a new number: a farmer writing to
@@ -111,6 +112,33 @@ export const DM_MAX_EMOJI_LENGTH = 16;
  */
 export const DM_MESSAGE_PAGE_SIZE = 100;
 
+/**
+ * What a message CARRIES, beside its text.
+ *
+ * Sub-objects rather than loose columns, so "is there a photo" is ONE null
+ * check instead of four fields that can disagree — a row with a mime and no
+ * key is not a state any client should have to reason about.
+ *
+ * `attachmentKey` is deliberately NOT in the payload. The egress route is
+ * `/api/social/messages/{messageId}/photo`, which a client derives from the
+ * message id it already has, so the locator buys nobody anything — and the
+ * route authorises by RLS participation rather than by possession of the key,
+ * which is exactly why it does not need to travel.
+ */
+export interface MessageAttachmentView {
+    readonly mime: string | null;
+    readonly bytes: number | null;
+    readonly sha256: string | null;
+}
+
+/** The stored card. A SNAPSHOT: `fetchedAt` null means the fetch was refused. */
+export interface MessageLinkCardView {
+    readonly url: string;
+    readonly title: string | null;
+    readonly description: string | null;
+    readonly fetchedAt: Date | null;
+}
+
 export interface DirectMessageView {
     readonly id: string;
     readonly senderUserId: string;
@@ -119,6 +147,20 @@ export interface DirectMessageView {
     readonly editedAt: Date | null;
     readonly deletedAt: Date | null;
     readonly reactions: readonly { readonly userId: string; readonly emoji: string }[];
+    /**
+     * The photograph, or null.
+     *
+     * ADDED HERE ALONGSIDE `linkCard` because the two are the same omission.
+     * P8.6's photo half (#2852) shipped `sendDirectPhoto` and
+     * `readDirectPhoto` and never put the attachment columns in THIS select,
+     * so a client fetching a conversation saw a photo message as `body: null`
+     * with nothing saying a photograph existed — sendable, fetchable by a
+     * client that already knew, and invisible to one reading the timeline.
+     * Adding `linkCard` without it would have shipped a payload that describes
+     * link cards and not photographs, which reads as a decision.
+     */
+    readonly attachment: MessageAttachmentView | null;
+    readonly linkCard: MessageLinkCardView | null;
 }
 
 export interface ConversationView {
@@ -305,7 +347,16 @@ export async function openConversationFromHandle(
  */
 export async function sendDirectMessage(
     ctx: UserContext,
-    input: { conversationId: string; body: string; idempotencyKey?: string },
+    input: {
+        conversationId: string;
+        body: string;
+        idempotencyKey?: string;
+        /**
+         * Optional link card. Fetched through the per-hop host policy and
+         * stored as a SNAPSHOT — see `direct-message-link-cards.ts`.
+         */
+        linkUrl?: string;
+    },
 ): Promise<{ messageId: string; createdAt: Date; deduplicated: boolean }> {
     const body = cleanBody(input.body);
 
@@ -332,6 +383,18 @@ export async function sendDirectMessage(
             return { messageId: replay.id, createdAt: replay.createdAt, deduplicated: true };
         }
     }
+
+    // Fetched BEFORE the transaction, and that is not a style choice. An
+    // external fetch inside an open transaction holds a pool connection for
+    // the duration of a third party's response time — #1191's P0.8 deadlock
+    // is what happens when a transaction wants a resource it cannot get, and
+    // `PG_POOL_MAX` is 12. A 3-second third-party timeout × 12 concurrent
+    // sends would wedge the pool.
+    //
+    // Best-effort by construction: `fetchLinkCard` returns a card with nothing
+    // in it rather than throwing, for every failure except a URL that is not
+    // `https:` — which is a bad request and should be one.
+    const card = input.linkUrl ? await fetchLinkCard(input.linkUrl) : null;
 
     const sent = await prisma.$transaction(async (tx) => {
         const conversation = await tx.conversation.findUnique({
@@ -373,6 +436,33 @@ export async function sendDirectMessage(
                 senderUserId: ctx.userId,
                 body,
                 ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+                // The card's text is ALREADY sanitised — `fetchLinkCard` does
+                // it, at the usecase layer, because the row is read by the
+                // Art 15 export and by SDK consumers and not only by a
+                // renderer (C.5). Encryption happens on the way to the column
+                // and is a different problem (D.2).
+                // Sanitised BY NAME here, and also at the boundary in
+                // `fetchLinkCard`. Twice on purpose, and it costs nothing —
+                // `sanitizePlainText` strips tags and trims, so it is
+                // idempotent:
+                //
+                //   * the FETCHER sanitises because that is where untrusted
+                //     remote text enters the process;
+                //   * the WRITE names the field because
+                //     `sanitize-rich-text-coverage`'s field-level detector
+                //     then covers it directly, which that guard says is
+                //     "stronger than per-field, not weaker" — the alternative
+                //     was a `SEAM_COVERED` exemption, and an exemption that
+                //     describes a seam can outlive the seam (its own
+                //     `FarmProfile.eik` entry did exactly that).
+                ...(card
+                    ? {
+                          linkUrl: card.url,
+                          linkTitle: card.title === null ? null : sanitizePlainText(card.title),
+                          linkDescription: card.description === null ? null : sanitizePlainText(card.description),
+                          linkFetchedAt: card.fetchedAt,
+                      }
+                    : {}),
             },
             select: { id: true, createdAt: true },
         });
@@ -578,6 +668,16 @@ export async function readConversation(
                 editedAt: true,
                 deletedAt: true,
                 reactions: { select: { userId: true, emoji: true } },
+                // `attachmentKey` is read only to decide PRESENCE; it is not
+                // returned. See `MessageAttachmentView`.
+                attachmentKey: true,
+                attachmentMime: true,
+                attachmentBytes: true,
+                attachmentSha256: true,
+                linkUrl: true,
+                linkTitle: true,
+                linkDescription: true,
+                linkFetchedAt: true,
             },
         });
 
@@ -605,6 +705,28 @@ export async function readConversation(
                 editedAt: m.editedAt,
                 deletedAt: m.deletedAt,
                 reactions: m.reactions,
+                // `deletedAt` is checked here as well as in the delete, which
+                // clears both sets of columns. Belt and braces in the cheap
+                // direction: a row that somehow kept its card must not serve
+                // it back, and the test for a retraction asserts the PAYLOAD
+                // rather than the columns for that reason.
+                attachment:
+                    m.deletedAt || !m.attachmentKey
+                        ? null
+                        : {
+                            mime: m.attachmentMime,
+                            bytes: m.attachmentBytes,
+                            sha256: m.attachmentSha256,
+                        },
+                linkCard:
+                    m.deletedAt || !m.linkUrl
+                        ? null
+                        : {
+                            url: m.linkUrl,
+                            title: m.linkTitle,
+                            description: m.linkDescription,
+                            fetchedAt: m.linkFetchedAt,
+                        },
             })),
         };
     });
@@ -672,6 +794,14 @@ export async function deleteDirectMessage(ctx: UserContext, messageId: string): 
                 attachmentMime: null,
                 attachmentBytes: null,
                 attachmentSha256: null,
+                // The link card goes with it. A retracted message keeping its
+                // card would still show what was shared, which is the
+                // disclosure the retraction is for — and the CHECK's
+                // `deletedAt` arm is what permits a row with nothing left.
+                linkUrl: null,
+                linkTitle: null,
+                linkDescription: null,
+                linkFetchedAt: null,
             },
         });
         return n;

@@ -177,17 +177,28 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     //  Narrowing stops DECRYPTION too: dropping this declaration later
     //  makes every stored message unreadable to everyone, with no error and
     //  no log. Measure with `npm run preflight:fanout` before any change.
-    // `body` only. `linkTitle` / `linkDescription` will join it in the code
-    // stage that writes them and NOT before: declaring a field here creates a
-    // `sanitize-rich-text-coverage` obligation to sanitise it by name at its
-    // write path, and P8.6's schema stage has no write path to satisfy that in
-    // (`SEAM_COVERED` verifies a seam that exists; it does not promise one).
+    // `linkTitle` / `linkDescription` join `body` here in the SAME diff as
+    // their columns and their sanitiser, which is what
+    // `sanitize-rich-text-coverage` requires: declaring a field encrypted
+    // creates an obligation to sanitise it BY NAME at its write path, and a
+    // schema-only stage has no write path to satisfy that in.
     //
-    // `attachmentKey` is absent on its own merits and stays absent: an opaque
-    // storage key is not content, which is the call `FileRecord.pathKey`
-    // already makes, and encrypting it would make the egress route decrypt on
-    // every byte served.
-    DirectMessage: ['body'],
+    // They are encrypted for `body`'s reason — what somebody chose to SHARE in
+    // a private conversation is as revealing as what they typed about it — and
+    // they are additionally UNTRUSTED REMOTE TEXT, which is a separate problem
+    // the usecase solves: encryption is not sanitisation (D.2).
+    //
+    // `attachmentKey` stays ABSENT on its own merits: an opaque storage key is
+    // not content, which is the call `FileRecord.pathKey` already makes, and
+    // encrypting one would make the egress route decrypt on every byte served.
+    //
+    // `linkUrl` stays absent too, and that one is a JUDGEMENT rather than a
+    // category: it is third-party-chosen, it is what the two text columns are
+    // ABOUT, and it is as revealing as they are. It is plaintext because the
+    // inbox preview and any future unfurl cache read it without a tenant in
+    // scope, and because a URL is the one part of a card the recipient was
+    // always going to see in full. Revisit it with the preview image (#2855).
+    DirectMessage: ['body', 'linkTitle', 'linkDescription'],
 
     PromotionLead: ['requestMessage'],
 

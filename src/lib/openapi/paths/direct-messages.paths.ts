@@ -104,6 +104,21 @@ const MessageSchema = z.object({
     editedAt: z.string().datetime({ offset: true }).nullable(),
     deletedAt: z.string().datetime({ offset: true }).nullable(),
     reactions: z.array(z.object({ userId: z.string(), emoji: z.string() })),
+    attachment: z.object({
+        mime: z.string().nullable(),
+        bytes: z.number().int().nullable(),
+        sha256: z.string().nullable(),
+    }).nullable().openapi({
+        description: 'The photograph this message carries, or null. A sub-object so "is there a photo" is one null check rather than three fields that can disagree. The BYTES are fetched from `/api/social/messages/{messageId}/photo`, which a client derives from the message id — the storage key is deliberately not in this payload, because that route authorises by RLS participation and not by possession of a key. Null for a retracted message: deleting clears the columns AND the payload re-checks `deletedAt`.',
+    }),
+    linkCard: z.object({
+        url: z.string(),
+        title: z.string().nullable(),
+        description: z.string().nullable(),
+        fetchedAt: z.string().datetime({ offset: true }).nullable(),
+    }).nullable().openapi({
+        description: 'The link card, or null. A SNAPSHOT taken when the message was sent and never refreshed — re-fetching later would silently rewrite what two people discussed. `fetchedAt` null means the fetch was REFUSED (a host that resolves privately at any redirect hop, a timeout, a non-2xx), which is how a client tells that apart from a page that simply carried no metadata and therefore stamped a time. `title` and `description` are the third-party page\'s own text, sanitised at the usecase.',
+    }),
 });
 
 const ConversationSchema = z.object({
@@ -229,13 +244,13 @@ export function registerDirectMessagePaths(registry: OpenAPIRegistry): void {
         operationId: 'sendDirectMessage',
         summary: 'Send a message',
         description:
-            'Sends into a conversation the caller participates in. While the conversation is a REQUEST, exactly ONE message is allowed until the other person accepts — so a second send answers 400 DM_REQUEST_AWAITING_REPLY rather than queueing. Repeating a request with the same idempotencyKey returns the first attempt\'s message with `deduplicated: true` and status 200.',
+            'Sends into a conversation the caller participates in. While the conversation is a REQUEST, exactly ONE message is allowed until the other person accepts — so a second send answers 400 DM_REQUEST_AWAITING_REPLY rather than queueing. Repeating a request with the same idempotencyKey returns the first attempt\'s message with `deduplicated: true` and status 200.\n\nAn optional `linkUrl` attaches a LINK CARD. The server fetches that page BEFORE opening the transaction — an external fetch inside one holds a pool connection, and `PG_POOL_MAX` is 12 — through `fetchPublicUrl`, which re-runs the host policy at every redirect hop. Whatever metadata comes back is sanitised at the usecase and stored as a SNAPSHOT that is never refreshed.',
         tags: TAGS,
         params: ConversationIdParam,
         body: SendDirectMessageSchema,
         extraResponses: {
             ...codedErrorResponses({
-                400: 'INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), or DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation).',
+                400: 'INVALID_JSON, INVALID_BODY, DM_BODY_REQUIRED (empty after trimming), DM_BODY_TOO_LONG, DM_REQUEST_AWAITING_REPLY (a request already holds its one message), DM_IDEMPOTENCY_KEY_REUSED (that key belongs to a different conversation), or DM_LINK_URL_INVALID.\n\n`DM_LINK_URL_INVALID` is not reachable through this route: `linkUrl` is declared `httpsUrl()`, so a non-https value is already INVALID_BODY at the boundary. It is documented because the usecase raises it for a second caller arriving without the schema, and a code with no entry in the catalogues is a refusal a client cannot show anybody.\n\nA link whose page cannot be fetched is NOT a refusal. The fetch is best-effort: a host that resolves privately at any redirect hop, a timeout, a non-2xx or a page with no metadata all send the message with the URL stored and `linkCard.fetchedAt` null.',
                 404: 'CONVERSATION_NOT_FOUND — no such conversation, not a participant, blocked, or the request was declined.',
             }),
             200: {

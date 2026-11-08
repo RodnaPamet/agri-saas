@@ -211,6 +211,16 @@ export class ExchangeRepository {
             // themselves would read as "already deleted" at the exact moment
             // they are deciding whether to recover.
             suppressedForDeletionAt: null,
+            // #2865 — and NOT folded into the column above. Two causes, two
+            // columns, two filters: the deletion restore clears only the rows
+            // IT marked, so sharing one column would let a cancelled account
+            // deletion un-hide a listing a moderator removed.
+            //
+            // IN THE `where`, never a post-filter: this query takes `limit + 1`
+            // as its `hasMore` probe, so dropping rows afterwards turns a
+            // moderation control into a pagination bug (#1655 carries the same
+            // note one line up).
+            removedByModerationAt: null,
             AND: and,
         };
         if (filters.sides?.length) where.side = { in: filters.sides };

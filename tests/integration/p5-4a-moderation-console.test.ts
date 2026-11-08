@@ -43,11 +43,62 @@ const reports: string[] = [];
 const actions: string[] = [];
 const statements: string[] = [];
 
+const listings: string[] = [];
+
+/**
+ * A REAL listing for a notice to name.
+ *
+ * It was `listing-${randomUUID()}` — an id nothing had — and every test here
+ * passed, because nothing looked. #2865 made `CONTENT_REMOVED` actually remove
+ * the content, and a removal changing no rows now refuses: recording that
+ * outcome against content we never had would deliver an Art 17 statement
+ * claiming we removed something that did not exist.
+ *
+ * No tenant or user row needed — `sellerTenantId` / `sellerUserId` are plain
+ * columns with no FK on this table.
+ */
+async function makeListing(): Promise<string> {
+    const id = `el-p54-${randomUUID()}`;
+    await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "ExchangeListing"
+           ("id","sellerTenantId","sellerUserId","side","kind","commodity",
+            "quantityTonnes","regionCode","regionName","lat","lon","updatedAt")
+         VALUES ($1,$2,$3,'SELL'::"ExchangeSide",'CULTURE'::"ExchangeKind",
+                 'wheat',10,'BG-16','Пловдив',42.1,24.7,NOW())`,
+        id, `t-p54-${randomUUID()}`, `u-p54-${randomUUID()}`,
+    );
+    listings.push(id);
+    return id;
+}
+
+/**
+ * A notice naming content that is NOT there.
+ *
+ * Kept as its own helper because `fileOne` now names a real listing (#2865
+ * refuses a removal that changes no rows, so the action tests need a real
+ * subject) — and the capture outcome for a missing subject is a property worth
+ * keeping: a notice about content that is already gone still has to be
+ * answerable, and the reporter must not be able to tell that from success.
+ */
+async function fileOneAgainstNothing(reporter: string | null = REPORTER) {
+    const filed = await fileNotice(
+        {
+            subjectKind: 'LISTING',
+            subjectId: `listing-gone-${randomUUID()}`,
+            reasonCode: 'MISLEADING_LISTING',
+            detail: 'the grade is not as stated',
+        },
+        reporter,
+    );
+    reports.push(filed.id);
+    return filed.id;
+}
+
 async function fileOne(reporter: string | null = REPORTER) {
     const filed = await fileNotice(
         {
             subjectKind: 'LISTING',
-            subjectId: `listing-${randomUUID()}`,
+            subjectId: await makeListing(),
             reasonCode: 'MISLEADING_LISTING',
             detail: 'the grade is not as stated',
         },
@@ -86,6 +137,11 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
                 `DELETE FROM "StatementOfReasons" WHERE "id" = ANY($1::text[])`, statements,
             );
         }
+        if (listings.length) {
+            await globalPrisma.$executeRawUnsafe(
+                `DELETE FROM "ExchangeListing" WHERE "id" = ANY($1::text[])`, listings,
+            );
+        }
         if (suspendableUsers.length) {
             // Before the actions, which is only cosmetic here (no FK to User —
             // P5.1 ships none on purpose), but keeps the order readable.
@@ -114,15 +170,28 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
 
     describe('the triage queue', () => {
         it('shows a filed notice, with its snapshot outcome', async () => {
-            const id = await fileOne();
+            const id = await fileOneAgainstNothing();
             const queue = await listNotices({ status: 'RECEIVED', limit: 200 });
             const mine = queue.find((n) => n.id === id);
             expect(mine).toBeDefined();
-            // The snapshot exists and says the subject was not found — the
-            // listing id is random. That IS the expected shape: a notice about
-            // content that is already gone still has to be answerable.
+            // The snapshot exists and says the subject was not found — this
+            // notice names an id nothing has, deliberately. That IS the
+            // expected shape: a notice about content that is already gone
+            // still has to be answerable, and the reporter cannot tell it from
+            // a successful capture.
             expect(mine!.snapshot).not.toBeNull();
             expect(mine!.snapshot!.captureError).toBe('SUBJECT_NOT_FOUND');
+        });
+
+        it('CAPTURES a notice whose subject is really there — the control', async () => {
+            // The other half, and the reason the test above needed its own
+            // helper. Without this, "captureError is SUBJECT_NOT_FOUND" is
+            // satisfied by a capture path that never works for anybody.
+            const id = await fileOne();
+            const queue = await listNotices({ status: 'RECEIVED', limit: 200 });
+            const mine = queue.find((n) => n.id === id);
+            expect(mine!.snapshot).not.toBeNull();
+            expect(mine!.snapshot!.captureError).toBeNull();
         });
 
         it('NEVER returns reporterUserId — only whether it was anonymous', async () => {
@@ -176,7 +245,11 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             // generation narrows a compromise window to one side of a rotation.
             const id = await fileOne();
             const { actionId } = await actOnNotice({
-                reportId: id, actionKind: 'CONTENT_DEMOTED',
+                // CONTENT_REMOVED, not CONTENT_DEMOTED: #2865 refuses the
+                // latter outright — there is no ranking in this product to
+                // demote within, so a recorded demotion would announce a
+                // sanction that does not exist.
+                reportId: id, actionKind: 'CONTENT_REMOVED',
                 rationale: 'demoted pending evidence', generation: 'previous',
             });
             actions.push(actionId);
