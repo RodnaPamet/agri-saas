@@ -89,6 +89,53 @@ const WithinField = z
             'satellite had no clear view of the rest, and leave the cause out.',
     });
 
+/**
+ * The nine compass cells of a 3x3 grid over a parcel's bounding box.
+ *
+ * Declared as an ENUM so a client's switch can be exhaustive — `agrent-ios`
+ * asked for exactly that, 2026-11-08.
+ */
+const ZoneCode = z
+    .enum(['NW', 'N', 'NE', 'W', 'C', 'E', 'SW', 'S', 'SE'])
+    .openapi('ParcelZoneCode', {
+        description:
+            'Which ninth of the parcel, on a 3x3 grid. `C` is the centre. The compass is ' +
+            'GEOGRAPHIC: the grid is cut from the parcel\u2019s WGS84 lat/lon bounding box, so ' +
+            '`SE` means the south-east of the FIELD and does not depend on how any map is ' +
+            'rotated or oriented.',
+    });
+
+const Weakest = z
+    .object({
+        zone: ZoneCode,
+        ndvi: z.number(),
+        delta: z.number(),
+        bounds: z.array(z.number()).length(4),
+    })
+    .openapi('ParcelWeakestZone', {
+        description:
+            'The weakest ninth of the parcel. `delta` is the zone\u2019s mean NDVI minus the ' +
+            'field median, so it is always NEGATIVE — a zone is only reported when it is ' +
+            'materially below.\n\n' +
+            '**`null` means "cannot localise", NOT "the field is even."** Three different ' +
+            'situations all return null and are not distinguishable from the outside: a ' +
+            'parcel too small to subdivide usefully (a cell needs ~1 ha of clear pixels, so ' +
+            'the floor is roughly 9 ha of bounding box, more for an irregular shape), a pass ' +
+            'too cloudy for any cell to qualify, and a genuinely uniform field. So say ' +
+            'nothing on null \u2014 a sentence like "no weak area" asserts the third when it ' +
+            'could be any of them.\n\n' +
+            'The floors are deliberate and both agronomic: a cell must hold at least 25 ' +
+            'clear 20 m pixels, or the weakest cell is whichever corner the cloud left ' +
+            'smallest; and it must sit at least 0.10 NDVI below the median, which is about a ' +
+            'third of the width of the `watch` band, so a uniformly mediocre field nominates ' +
+            'no arbitrary corner.\n\n' +
+            '`bounds` is `[west, south, east, north]` in WGS84 \u2014 the GRID CELL\u2019s box, one ' +
+            'ninth of the parcel\u2019s bounding box. It is **not** the parcel\u2019s shape inside ' +
+            'that cell: a rectangle drawn from it will extend past an irregular outline. ' +
+            'Clip it against the parcel before drawing, or use it as a marker rather than a ' +
+            'region.',
+    });
+
 const ParcelRisk = z
     .object({
         parcelId: z.string(),
@@ -103,6 +150,7 @@ const ParcelRisk = z
         overall: RiskLevel,
         acquiredDate: z.string().nullable(),
         withinField: WithinField.nullable(),
+        weakest: Weakest.nullable(),
         generatedAt: z.string().datetime(),
     })
     .openapi('ParcelRisk');
@@ -216,6 +264,11 @@ export function registerFarmRiskPaths(registry: OpenAPIRegistry): void {
             'or an excellent one with a failing corner. `null` when there was no ' +
             'usable imagery. Its figures are over the CLEAR area rather than the whole ' +
             'field — see the schema.\n\n' +
+            '`weakest` names the weakest ninth of the parcel, and costs a SECOND Earth ' +
+            'Engine call \u2014 per-cell means need a nine-geometry reduction that cannot ride ' +
+            'the whole-parcel one. That is why it is here and not on every pass of the ' +
+            'history endpoint. It is `null` far more often than not, and `null` means ' +
+            '\u201ccannot localise\u201d rather than \u201ceven\u201d \u2014 see the schema.\n\n' +
             'The parcel id is a PATH segment, deliberately. iOS writes the full request ' +
             'URL — query included — to the unified log from its own networking layer, ' +
             'below anything an app can suppress.',
