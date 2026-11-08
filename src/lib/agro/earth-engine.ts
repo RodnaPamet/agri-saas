@@ -815,6 +815,200 @@ export async function getIndexMeansForPolygon(
     };
 }
 
+/**
+ * The nine compass cells of a 3x3 grid over a parcel's bounding box, north
+ * first. A CODE, not prose: the client localises it.
+ */
+export const ZONE_CODES = [
+    'NW', 'N', 'NE',
+    'W', 'C', 'E',
+    'SW', 'S', 'SE',
+] as const;
+export type ZoneCode = (typeof ZONE_CODES)[number];
+
+/** One grid cell's reading. */
+export interface ZoneMean {
+    zone: ZoneCode;
+    /** Mean NDVI over the part of this cell inside the parcel, or null. */
+    ndvi: number | null;
+    /**
+     * How many clear 20 m pixels the mean is computed from. The CALLER uses
+     * this as a materiality floor — a three-pixel corner must not be
+     * nominated as a field's weak zone.
+     */
+    clearPixels: number;
+    /**
+     * The CELL's own box, `[west, south, east, north]` in WGS84 — one ninth
+     * of the parcel's bounding box.
+     *
+     * Free: the rectangle is computed in TypeScript to build the request, so
+     * returning it costs no Earth Engine work. `agrent-ios` asked for it to
+     * mark the zone on an outline map later (#567's successor), and the owner
+     * chose words before a drawing, so nothing renders it yet.
+     *
+     * **It is the GRID CELL, not the parcel's shape inside that cell.** A
+     * rectangle drawn from this will extend past an irregular parcel's
+     * outline. Clip it against the parcel before drawing, or draw it as a
+     * marker rather than a region.
+     */
+    bounds: [number, number, number, number];
+}
+
+/**
+ * The bounding box of a GeoJSON Polygon or MultiPolygon as
+ * `[west, south, east, north]`.
+ *
+ * Computed HERE rather than from `region.bounds()` because the geometry is
+ * already in hand: asking Earth Engine for a box it was just given would be
+ * a metered round trip to learn something this process can compute exactly.
+ */
+function geoJsonBbox(geometry: unknown): [number, number, number, number] | null {
+    let w = Infinity;
+    let s = Infinity;
+    let e = -Infinity;
+    let n = -Infinity;
+    const visit = (node: unknown): void => {
+        if (!Array.isArray(node)) return;
+        // A coordinate PAIR is two finite numbers; anything else is a nest.
+        if (node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
+            const [lon, lat] = node as [number, number];
+            if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+            if (lon < w) w = lon;
+            if (lon > e) e = lon;
+            if (lat < s) s = lat;
+            if (lat > n) n = lat;
+            return;
+        }
+        for (const child of node) visit(child);
+    };
+    const coords = (geometry as { coordinates?: unknown })?.coordinates;
+    visit(coords);
+    if (!Number.isFinite(w) || !Number.isFinite(s) || !Number.isFinite(e) || !Number.isFinite(n)) {
+        return null;
+    }
+    // A degenerate box cannot be subdivided — a point or a line parcel is
+    // bad data, and nine cells of zero width would each reduce to nothing.
+    if (e <= w || n <= s) return null;
+    return [w, s, e, n];
+}
+
+/**
+ * Mean NDVI per 3x3 grid cell over a parcel — #2837 stage 2b.
+ *
+ * ## One extra round trip, and why it cannot ride the other one
+ *
+ * The whole-parcel figures (`getIndexMeansForPolygon`) come from a
+ * `reduceRegion` over ONE geometry. Per-cell means need `reduceRegions` over
+ * NINE, which is a different call returning a FeatureCollection. There is no
+ * combined reducer that produces both, so this is the second metered call
+ * stage 2b costs — stated rather than buried, because it is the reason
+ * `weakest` is on `/analysis` only and not on every pass of the history.
+ *
+ * ## The cells are rectangles, not intersections
+ *
+ * The composite is already `.clip(region)`, so pixels outside the parcel are
+ * masked and `reduceRegions` ignores them. Intersecting each rectangle with
+ * the parcel geometry server-side would produce the same numbers for nine
+ * more geometry operations.
+ *
+ * ## It measures; it does not judge
+ *
+ * Nine means and nine pixel counts come back, and the CALLER decides whether
+ * any of them is a real weak zone. That split is deliberate: the materiality
+ * floors are agronomic thresholds, they belong beside the other agronomic
+ * thresholds in the usecase, and keeping them out of here makes them testable
+ * without an Earth Engine graph — which nothing in this repo can evaluate.
+ */
+export async function getZoneMeans(geometry: unknown, win: NdviWindow): Promise<ZoneMean[]> {
+    const bbox = geoJsonBbox(geometry);
+    if (!bbox) return [];
+
+    await initEarthEngine();
+
+    const region = new (ee.Geometry as unknown as { new (g: unknown): EeImage })(geometry);
+    const collection = adaptiveS2Collection(region, win, { judgeCloudOverRegion: true });
+    const masked = collection.map((img: EeImage) => img.updateMask(sclClearMask(img)));
+    const ndvi = masked.map((img: EeImage) => bandFn('ndvi')(img)).median().clip(region);
+
+    const [w, s, e, n] = bbox;
+    const dx = (e - w) / 3;
+    const dy = (n - s) / 3;
+    const eeX = ee as unknown as {
+        Feature: (g: unknown, p: Record<string, unknown>) => unknown;
+        FeatureCollection: (fs: unknown[]) => unknown;
+    };
+    // The box per zone, kept so the result can carry it without a second
+    // derivation — two places computing the same nine rectangles is two
+    // places to get the row order wrong.
+    const boxes = new Map<string, [number, number, number, number]>();
+    const cells = ZONE_CODES.map((zone, i) => {
+        const col = i % 3;
+        // Row 0 is the NORTH row, so y runs from the top down. North here is
+        // GEOGRAPHIC north — the grid is cut from the WGS84 lat/lon bounding
+        // box, so the labels do not depend on how any map is rotated.
+        const row = Math.floor(i / 3);
+        const cellW = w + col * dx;
+        const cellE = cellW + dx;
+        const cellN = n - row * dy;
+        const cellS = cellN - dy;
+        boxes.set(zone, [cellW, cellS, cellE, cellN]);
+        return eeX.Feature(ee.Geometry.Rectangle([cellW, cellS, cellE, cellN]), { zone });
+    });
+
+    const eeR = ee.Reducer as unknown as {
+        mean: () => { combine: (a: Record<string, unknown>) => unknown };
+        count: () => unknown;
+    };
+    const reduced = (
+        ndvi as unknown as {
+            reduceRegions: (a: Record<string, unknown>) => {
+                evaluate: (cb: (v: unknown, err?: unknown) => void) => void;
+            };
+        }
+    ).reduceRegions({
+        collection: eeX.FeatureCollection(cells),
+        // `count` alongside `mean` so the caller can refuse a cell whose mean
+        // rests on a handful of pixels. Without it the weakest cell is
+        // whichever corner the cloud left smallest.
+        reducer: eeR.mean().combine({ reducer2: eeR.count(), sharedInputs: true }),
+        scale: 20,
+    });
+
+    const raw = await withEeDeadline<{ features?: unknown[] }>(
+        'EE reduceRegions (zones)',
+        EE_CALL_TIMEOUT_MS,
+        (resolve, reject) => {
+            reduced.evaluate((value: unknown, err?: unknown) => {
+                if (err) {
+                    reject(new Error(`EE reduceRegions failed: ${String(err)}`));
+                    return;
+                }
+                resolve((value ?? {}) as { features?: unknown[] });
+            });
+        },
+    );
+
+    const round3 = (v: unknown): number | null =>
+        typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null;
+
+    const out: ZoneMean[] = [];
+    for (const f of raw.features ?? []) {
+        const props = (f as { properties?: Record<string, unknown> })?.properties ?? {};
+        const zone = props.zone;
+        if (typeof zone !== 'string' || !(ZONE_CODES as readonly string[]).includes(zone)) continue;
+        const count = props.NDVI_count;
+        const box = boxes.get(zone);
+        if (!box) continue;
+        out.push({
+            zone: zone as ZoneCode,
+            ndvi: round3(props.NDVI_mean),
+            clearPixels: typeof count === 'number' && Number.isFinite(count) ? Math.round(count) : 0,
+            bounds: box,
+        });
+    }
+    return out;
+}
+
 /** One Sentinel-2 pass, reduced over a parcel. */
 export interface IndexPass {
     /** `YYYY-MM-DD` of the acquisition. */

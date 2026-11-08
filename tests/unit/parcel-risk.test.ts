@@ -46,6 +46,7 @@ jest.mock('@/app-layer/repositories/LocationRepository', () => ({
 const mockIsGeeConfigured = jest.fn<boolean, []>();
 const mockGetIndexMeansForPolygon = jest.fn();
 const mockGetIndexMeansPerPass = jest.fn();
+const mockGetZoneMeans = jest.fn();
 jest.mock('@/lib/agro/earth-engine', () => ({
     isGeeConfigured: () => mockIsGeeConfigured(),
     getIndexMeansForPolygon: (...a: unknown[]) => mockGetIndexMeansForPolygon(...a),
@@ -55,6 +56,12 @@ jest.mock('@/lib/agro/earth-engine', () => ({
     // would die on "is not a function" before any assertion ran, and the
     // failure would read as a bug in the usecase.
     getIndexMeansPerPass: (...a: unknown[]) => mockGetIndexMeansPerPass(...a),
+    // Stage 2b. Absent, this is `undefined`, `await getZoneMeans(...)` throws
+    // a TypeError, and the usecase's own try/catch — which exists so a zone
+    // failure cannot cost the card its ndvi/ndmi — SWALLOWS it. The suite
+    // then passes with `weakest: null` and says nothing about stage 2b.
+    // Measured: 24 tests green before this line existed.
+    getZoneMeans: (...a: unknown[]) => mockGetZoneMeans(...a),
 }));
 
 const redisGet = jest.fn<Promise<string | null>, [string]>();
@@ -69,6 +76,7 @@ import {
     analyzeParcelRisk,
     MAX_BATCH_PARCELS,
     NDVI_STRESS_THRESHOLD,
+    pickWeakestZone,
 } from '@/app-layer/usecases/parcel-risk';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -97,6 +105,158 @@ beforeEach(() => {
     mockParcelFindFirst.mockResolvedValue(PARCEL);
     mockGeometryForParcel.mockResolvedValue(GEOMETRY);
     mockIsGeeConfigured.mockReturnValue(true);
+    mockGetZoneMeans.mockResolvedValue([]);
+});
+
+describe('pickWeakestZone — the two materiality floors (#2837 stage 2b)', () => {
+    const cell = (zone: string, ndvi: number | null, clearPixels: number) => ({
+        zone: zone as never,
+        ndvi,
+        clearPixels,
+        bounds: [25, 43, 25.01, 43.01] as [number, number, number, number],
+    });
+
+    it('control: a real weak zone IS returned, so every refusal below means something', () => {
+        // Without this the suite is all-negatives, and an implementation that
+        // returned null unconditionally would satisfy every other case here.
+        const got = pickWeakestZone(
+            [cell('NW', 0.7, 400), cell('SE', 0.4, 400), cell('C', 0.72, 400)],
+            0.7,
+        );
+        expect(got).toEqual({
+            zone: 'SE',
+            ndvi: 0.4,
+            delta: -0.3,
+            bounds: [25, 43, 25.01, 43.01],
+        });
+    });
+
+    it('refuses a cell resting on too few clear pixels', () => {
+        // 24 pixels is just under a hectare at 20 m. Without this floor the
+        // weakest cell is whichever corner the cloud left smallest, and the
+        // app points a farmer at noise.
+        const stingy = pickWeakestZone([cell('SE', 0.2, 24)], 0.7);
+        expect(stingy).toBeNull();
+        // One pixel more and the same cell qualifies — the floor is AT 25,
+        // not somewhere near it.
+        expect(pickWeakestZone([cell('SE', 0.2, 25)], 0.7)?.zone).toBe('SE');
+    });
+
+    it('refuses a cell that is not materially below the median', () => {
+        // 0.09 below is inside the noise; 0.10 is the floor and qualifies.
+        expect(pickWeakestZone([cell('SE', 0.61, 400)], 0.7)).toBeNull();
+        expect(pickWeakestZone([cell('SE', 0.6, 400)], 0.7)?.delta).toBe(-0.1);
+    });
+
+    it('says nothing about a uniform field rather than nominating a corner', () => {
+        const even = pickWeakestZone(
+            [cell('NW', 0.70, 400), cell('N', 0.69, 400), cell('SE', 0.71, 400)],
+            0.7,
+        );
+        expect(even).toBeNull();
+    });
+
+    it('returns null with no median to compare against', () => {
+        // Nothing to be below, so every floor is unevaluable. This is also
+        // why the usecase skips the Earth Engine call in that state.
+        expect(pickWeakestZone([cell('SE', 0.2, 400)], null)).toBeNull();
+    });
+
+    it('skips cells the composite could not read', () => {
+        expect(pickWeakestZone([cell('SE', null, 400)], 0.7)).toBeNull();
+    });
+
+    it('breaks a tie by ZONE_CODES order, not by the order EE returned', () => {
+        /*
+         * A strict `<` never replaces on a tie, so the first qualifying cell
+         * wins — and `getZoneMeans` builds its request in `ZONE_CODES` order,
+         * north-west first. Fed the same two cells in both orders the answer
+         * must not change: without the comparison being strict it would
+         * depend on whatever order Earth Engine happened to return the
+         * features in, which is not a documented guarantee.
+         */
+        const a = cell('NW', 0.4, 400);
+        const b = cell('SE', 0.4, 400);
+        expect(pickWeakestZone([a, b], 0.7)?.zone).toBe('NW');
+        expect(pickWeakestZone([b, a], 0.7)?.zone).toBe('SE');
+    });
+});
+
+describe('analyzeParcelRisk — the weakest zone is wired (#2837 stage 2b)', () => {
+    const withMedian = (p50: number) => ({
+        ndvi: 0.72,
+        ndmi: 0.18,
+        acquiredDate: '2026-07-18',
+        withinField: {
+            ndviP10: 0.3,
+            ndviP50: p50,
+            ndviP90: 0.9,
+            belowThresholdShare: 0.1,
+            threshold: NDVI_STRESS_THRESHOLD,
+            coverage: 0.97,
+        },
+    });
+
+    it('the barrel mock really provides getZoneMeans (mock completeness)', () => {
+        /*
+         * Without this the suite passes with `weakest: null` whatever the
+         * usecase does: an absent member is `undefined`, the call throws a
+         * TypeError, and the usecase's own try/catch swallows it so a zone
+         * failure cannot cost the card its other numbers. Measured — 24 tests
+         * were green before the mock carried this.
+         */
+        expect(typeof mockGetZoneMeans).toBe('function');
+    });
+
+    it('asks for the zone grid and surfaces the weakest', async () => {
+        mockGetIndexMeansForPolygon.mockResolvedValue(withMedian(0.7));
+        mockGetZoneMeans.mockResolvedValue([
+            { zone: 'NW', ndvi: 0.71, clearPixels: 400, bounds: [25, 43, 25.01, 43.01] },
+            { zone: 'SE', ndvi: 0.45, clearPixels: 400, bounds: [25.01, 43, 25.02, 43.01] },
+        ]);
+
+        const result = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+
+        expect(mockGetZoneMeans).toHaveBeenCalledTimes(1);
+        expect(result.weakest).toMatchObject({ zone: 'SE', ndvi: 0.45, delta: -0.25 });
+    });
+
+    it('does NOT spend a second Earth Engine call when there is no median', async () => {
+        // Nothing to be below, so the answer is null either way and the call
+        // would be metered work for a known result.
+        mockGetIndexMeansForPolygon.mockResolvedValue({
+            ndvi: null,
+            ndmi: null,
+            acquiredDate: null,
+            withinField: {
+                ndviP10: null,
+                ndviP50: null,
+                ndviP90: null,
+                belowThresholdShare: null,
+                threshold: NDVI_STRESS_THRESHOLD,
+                coverage: 0,
+            },
+        });
+
+        const result = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+
+        expect(mockGetZoneMeans).not.toHaveBeenCalled();
+        expect(result.weakest).toBeNull();
+    });
+
+    it('keeps the card when the ZONE call fails — the reason it has its own catch', async () => {
+        mockGetIndexMeansForPolygon.mockResolvedValue(withMedian(0.7));
+        mockGetZoneMeans.mockRejectedValue(new Error('EE reduceRegions failed'));
+
+        const result = await analyzeParcelRisk(ctx, 'p-1', { now: NOW });
+
+        // The zone grid is additive. Its failure must not take out the
+        // numbers that already landed from the first call.
+        expect(result.weakest).toBeNull();
+        expect(result.ndvi).toBe(0.72);
+        expect(result.withinField?.ndviP50).toBe(0.7);
+        expect(result.overall).toBe('good');
+    });
 });
 
 describe('analyzeParcelRisk — the within-field distribution (#2837 stage 2)', () => {
@@ -202,7 +362,8 @@ describe('analyzeParcelRisk — cache condition (degraded readings must not stic
         expect(redisSet).toHaveBeenCalledTimes(1);
         const [key, value, ex, ttl] = redisSet.mock.calls[0];
         /*
-         * `v2` since #2837 stage 2 added `withinField`. The bump is the point
+         * `v3` since stage 2b added `weakest` (`v2` was `withinField`). The
+         * bump is the point
          * rather than an incidental: a `v1` entry written before that deploy
          * has no such key, so a read inside the 6h TTL would return the field
          * ABSENT where the contract says `WithinFieldStats | null` — and the
@@ -210,7 +371,7 @@ describe('analyzeParcelRisk — cache condition (degraded readings must not stic
          * that adds a field to this payload without bumping the version fails
          * rather than shipping an under-specified response for six hours.
          */
-        expect(key).toBe('parcel-risk:v2:t-1:p-1:2026-07-20');
+        expect(key).toBe('parcel-risk:v3:t-1:p-1:2026-07-20');
         expect(JSON.parse(value as string)).toMatchObject({ ndvi: 0.72, ndmi: 0.18 });
         expect(ex).toBe('EX');
         expect(ttl).toBe(21_600);
