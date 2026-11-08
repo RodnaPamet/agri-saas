@@ -30,6 +30,13 @@
  *
  * ## What it CANNOT see, stated so it is not assumed
  *
+ * It reads CODE, not prose. The source is run through `blankNonCode` with
+ * `strings: true` first — `#1774`'s cap caught the version that did not, and
+ * rightly: a commented-out `attachmentMime: true` would otherwise count as a
+ * selected column, so the guard would report a defect as fixed by the very
+ * comment explaining it. Strings go too, because the subject is an object
+ * literal and a brace inside a string ends the block early.
+ *
  * This is a SOURCE guard: it proves a column reaches a `select`, not that it
  * reaches the person. A column selected and then dropped before the envelope
  * would pass here. The behavioural half is `tests/integration/p5-6a-export`
@@ -43,6 +50,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { EXPORTED_MODELS } from '@/lib/privacy/personal-data-registry';
+
+import { blankNonCode } from '../helpers/blank-non-code';
 
 const EXPORT_SOURCE = join(process.cwd(), 'src/app-layer/usecases/personal-data-export.ts');
 
@@ -169,7 +178,11 @@ function delegateName(model: string): string {
  * relation's columns are not counted as the parent's. The union is the whole
  * point — see the docblock.
  */
-function selectedColumnsByDelegate(source: string): Map<string, Set<string>> {
+export function selectedColumnsByDelegate(raw: string): Map<string, Set<string>> {
+    // Comments AND strings blanked, character-for-character — see the
+    // docblock. A `// attachmentMime: true,` left behind by somebody disabling
+    // a column must not read as that column being exported.
+    const source = blankNonCode(raw, { strings: true });
     const found = new Map<string, Set<string>>();
     const call = /(?:prisma|db|tx)\.([a-zA-Z][A-Za-z0-9]*)\.(?:findMany|findUnique|findFirst|findUniqueOrThrow)\(\{/g;
     let match: RegExpExecArray | null;
@@ -261,11 +274,32 @@ describe('the Art 15 export covers every column of an exported model (#2840)', (
         expect(isSelected('PromotionLead.requestMessage')).toBe(true);
     });
 
+    it('§0b a COMMENTED-OUT or quoted key is not a selected column', () => {
+        // The control for the blanking, on a synthetic source rather than the
+        // real file, because the real file has no commented-out select line —
+        // and a protection is invisible while nothing violates it.
+        const synthetic = `
+            prisma.directMessage.findMany({
+                select: {
+                    id: true,
+                    // attachmentMime: true,
+                    /* linkTitle: true, */
+                    label: 'linkDescription: true',
+                    body: true,
+                },
+            });
+        `;
+        const keys = selectedColumnsByDelegate(synthetic).get('directMessage')!;
+        expect([...keys].sort()).toEqual(['body', 'id', 'label']);
+        expect(keys.has('attachmentMime')).toBe(false);
+        expect(keys.has('linkTitle')).toBe(false);
+        expect(keys.has('linkDescription')).toBe(false);
+    });
+
     it('§1 reports its denominator', () => {
         const sel = everyColumn.filter(isSelected).length;
         const ruled = everyColumn.filter((c) => !isSelected(c) && exemptRule(c)).length;
         const left = everyColumn.length - sel - ruled;
-        // eslint-disable-next-line no-console
         console.log(
             `[art15-export-columns] ${everyColumn.length} column(s) across `
             + `${POPULATION.length} exported model(s): ${sel} selected, `
