@@ -215,10 +215,10 @@ export default function FirstRunCard({
                                             done && 'text-content-muted line-through',
                                         )}
                                     >
-                                        {step.label}
+                                        {t(step.labelKey)}
                                     </p>
                                     {!done && (
-                                        <p className="text-xs text-content-muted">{step.hint}</p>
+                                        <p className="text-xs text-content-muted">{t(step.hintKey)}</p>
                                     )}
                                 </div>
                                 {!done && (
@@ -228,7 +228,7 @@ export default function FirstRunCard({
                                         className="shrink-0"
                                         onClick={() => router.push(href(step.href))}
                                     >
-                                        {step.cta}
+                                        {t(step.ctaKey)}
                                     </Button>
                                 )}
                             </li>

@@ -395,6 +395,21 @@ export async function sendDirectMessage(
     // in it rather than throwing, for every failure except a URL that is not
     // `https:` — which is a bad request and should be one.
     const card = input.linkUrl ? await fetchLinkCard(input.linkUrl) : null;
+    // THE ONE sanitising pass over the card's text (#2874). `fetchLinkCard`
+    // trims and caps and deliberately does not sanitise — two passes decode
+    // an entity-encoded payload one step closer to markup rather than further
+    // from it, and its docblock carries the measurement.
+    //
+    // Bound to consts so `sanitize-rich-text-coverage` sees the field by name
+    // at its write path, which is the form that guard verifies rather than
+    // trusts. `|| null` because "they sent only markup" and "there was no
+    // title" are the same fact to every reader, and an empty string is a
+    // third state nobody wants to handle.
+    const linkTitle = card?.title == null ? null : (sanitizePlainText(card.title) || null);
+    // ONE LINE, like its sibling: `sanitize-rich-text-coverage`'s
+    // `const safe = sanitizePlainText(v)` form is matched per line, so the
+    // wrapped version read as no binding at all and the guard said so.
+    const linkDescription = card?.description == null ? null : (sanitizePlainText(card.description) || null);
 
     const sent = await prisma.$transaction(async (tx) => {
         const conversation = await tx.conversation.findUnique({
@@ -441,25 +456,33 @@ export async function sendDirectMessage(
                 // Art 15 export and by SDK consumers and not only by a
                 // renderer (C.5). Encryption happens on the way to the column
                 // and is a different problem (D.2).
-                // Sanitised BY NAME here, and also at the boundary in
-                // `fetchLinkCard`. Twice on purpose, and it costs nothing —
-                // `sanitizePlainText` strips tags and trims, so it is
-                // idempotent:
+                // SANITISED EXACTLY ONCE, at the boundary in `fetchLinkCard`,
+                // and deliberately NOT again here (#2874).
                 //
-                //   * the FETCHER sanitises because that is where untrusted
-                //     remote text enters the process;
-                //   * the WRITE names the field because
-                //     `sanitize-rich-text-coverage`'s field-level detector
-                //     then covers it directly, which that guard says is
-                //     "stronger than per-field, not weaker" — the alternative
-                //     was a `SEAM_COVERED` exemption, and an exemption that
-                //     describes a seam can outlive the seam (its own
-                //     `FarmProfile.eik` entry did exactly that).
+                // This used to sanitise a second time, under a comment saying
+                // it cost nothing because `sanitizePlainText` is idempotent.
+                // It is NOT. Each pass decodes one level of HTML entities
+                // AFTER stripping tags, so a second pass walks an encoded
+                // payload one step closer to markup — measured:
+                //
+                //   `&amp;lt;script&amp;gt;a&amp;lt;/script&amp;gt;`
+                //      pass 1 → `&lt;script&gt;a&lt;/script&gt;`   (inert text)
+                //      pass 2 → `<script>a</script>`               (STORED markup)
+                //
+                // One pass leaves the entity-encoded form, which every
+                // consumer renders as text. Two passes store literal markup.
+                // So the extra call did not add a protection, it removed one —
+                // and this is the one caller whose input is chosen by a
+                // hostile third party rather than typed by the operator.
+                //
+                // The underlying ordering defect is #2854. This change does
+                // not depend on how that is resolved: a single pass is correct
+                // either way.
                 ...(card
                     ? {
                           linkUrl: card.url,
-                          linkTitle: card.title === null ? null : sanitizePlainText(card.title),
-                          linkDescription: card.description === null ? null : sanitizePlainText(card.description),
+                          linkTitle,
+                          linkDescription,
                           linkFetchedAt: card.fetchedAt,
                       }
                     : {}),
