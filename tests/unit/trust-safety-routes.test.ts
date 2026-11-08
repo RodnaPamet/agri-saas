@@ -140,6 +140,51 @@ describe('POST /api/public/notices — the anonymous Art 16 duty', () => {
     });
 });
 
+describe('a DIRECT message is not notifiable anonymously (#2833)', () => {
+    const DM = {
+        subjectKind: 'DIRECT_MESSAGE',
+        subjectId: 'dm-abc',
+        reasonCode: 'HARASSMENT_OR_HATE',
+    };
+
+    it('the ANONYMOUS route refuses it, and does not file', async () => {
+        // `fileNotice` NOT CALLED is the assertion that matters. A 400 with the
+        // notice already written would leave a snapshot recording a miss, and
+        // the refusal would be cosmetic.
+        const res = await postNotice(post('http://t/api/public/notices', DM), NO_CTX);
+        expect(res.status).toBe(400);
+        expect(mockFileNotice).not.toHaveBeenCalled();
+    });
+
+    it('refuses in the route’s UNIFORM shape — not a code of its own', async () => {
+        // A distinct code would confirm to an unauthenticated caller that
+        // `DIRECT_MESSAGE` is a real kind which exists and is merely not
+        // accepted here, which is the same disclosure one step removed. This
+        // compares against a genuinely malformed body rather than asserting a
+        // literal, so the two cannot drift apart.
+        const refused = await postNotice(post('http://t/api/public/notices', DM), NO_CTX);
+        const malformed = await postNotice(
+            post('http://t/api/public/notices', { subjectKind: 'NOPE' }),
+            NO_CTX,
+        );
+        expect(refused.status).toBe(malformed.status);
+        expect(await refused.json()).toEqual(await malformed.json());
+    });
+
+    it('the SIGNED-IN route accepts it — the control', async () => {
+        // Without this the two refusals above are satisfied by a kind nothing
+        // accepts anywhere, which is the state #2833 describes rather than the
+        // one it asks for.
+        mockAuth.mockResolvedValue({ user: { id: 'u-1' } });
+        const res = await postReport(post('http://t/api/social/reports', DM), NO_CTX);
+        expect(res.status).toBe(201);
+        expect(mockFileNotice).toHaveBeenCalledWith(
+            expect.objectContaining({ subjectKind: 'DIRECT_MESSAGE' }),
+            'u-1',
+        );
+    });
+});
+
 describe('POST /api/social/reports — the signed-in half', () => {
     it('REFUSES without a session', async () => {
         mockAuth.mockResolvedValue(null);

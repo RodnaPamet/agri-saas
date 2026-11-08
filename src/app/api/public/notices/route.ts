@@ -66,6 +66,30 @@ export const POST = withApiErrorHandling(
             return jsonResponse({ error: 'invalid_request' }, { status: 400 });
         }
 
+        // A DIRECT MESSAGE IS NOT NOTIFIABLE ANONYMOUSLY (#2833).
+        //
+        // `captureSnapshot` runs on the privileged client, and the
+        // `DIRECT_MESSAGE` arm is the one kind that asserts the reporter is a
+        // participant — because without that, a crafted id captures two
+        // strangers' private conversation into the moderation queue. This route
+        // has no principal to assert anything about, so the kind cannot be
+        // accepted here at all.
+        //
+        // It is also the legally coherent answer rather than merely the safe
+        // one: Art 16 is a mechanism for notifying illegal CONTENT, and a
+        // private message between two other people is not content this
+        // notifier could lawfully have seen. The duty does not reach it.
+        //
+        // REFUSED IN THE ROUTE'S UNIFORM SHAPE, not with a code of its own.
+        // The parse failure above returns a bare `invalid_request` precisely so
+        // an unauthenticated caller cannot learn the schema; a distinct code
+        // here would confirm that `DIRECT_MESSAGE` is a real kind which exists
+        // and is merely not accepted on this route, which is the same
+        // disclosure one step removed. The signed-in route accepts it.
+        if (parsed.data.subjectKind === 'DIRECT_MESSAGE') {
+            return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+        }
+
         // `null` reporter: this is the anonymous path, and DECISION 5 on #1553
         // is that an anonymous notice stores NO identifier at all — not an IP,
         // not a hash of one. The rate limiter sees the IP; the row never does.

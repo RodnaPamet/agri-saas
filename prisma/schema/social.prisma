@@ -111,6 +111,21 @@ enum ReportSubjectKind {
   PROFILE
   THREAD
 
+  /// A DIRECT message (#2833). SEPARATE from `MESSAGE`, which means a message
+  /// on the exchange, because the two live in different tables under different
+  /// policies — `ExchangeMessage.body` is per-tenant DEK, `DirectMessage.body`
+  /// is under the GLOBAL KEK — and a resolver that tried both would be
+  /// guessing which table an id belongs to. Same reasoning as ACCOUNT below:
+  /// overloading a kind makes two questions one query.
+  ///
+  /// Reportable only by a PARTICIPANT, which no other kind has had to check.
+  /// `captureSnapshot` runs privileged, so without that check a crafted id
+  /// would capture a stranger's private message into the moderation queue.
+  /// The anonymous Art 16 route refuses this kind outright: it has no principal
+  /// to check participation against, and a private message is not publicly
+  /// accessible content, so the Art 16 duty does not reach it.
+  DIRECT_MESSAGE
+
   /// An ACCOUNT, as the subject of a moderation ACTION — never of a notice
   /// (#1667).
   ///

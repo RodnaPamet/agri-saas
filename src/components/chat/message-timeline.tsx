@@ -150,6 +150,17 @@ export interface MessageTimelineProps {
      * that must accompany it. Omitted ⇒ neither renders.
      */
     onRequestReactions?: (messageId: string) => void;
+    /**
+     * «Сигнализирай» for one message (#2833). Per-message like the reaction
+     * callback, and for the same reason: a notice names ONE message, so a
+     * timeline-level control would have to hit-test which bubble it meant.
+     *
+     * The bubble decides WHETHER to render it — never on your own message, never
+     * on a deleted one (P5.3) — so a caller may pass this unconditionally.
+     */
+    onRequestReport?: (messageId: string) => void;
+    /** Accessible name for the report control, forwarded to each bubble. */
+    reportLabel?: string;
     /** Clock for "today"/"yesterday". Injected so a test can fix it. */
     now?: Date;
     /** `false` forces plain DOM, `{ threshold }` overrides the default. */
@@ -219,6 +230,8 @@ export const MessageTimeline = React.forwardRef<
     firstUnreadId = null,
     senderLabel,
     onRequestReactions,
+    onRequestReport,
+    reportLabel,
     now,
     virtualize,
     height,
@@ -321,6 +334,12 @@ export const MessageTimeline = React.forwardRef<
                             ? () => onRequestReactions(row.message.id)
                             : undefined
                     }
+                    onRequestReport={
+                        onRequestReport
+                            ? () => onRequestReport(row.message.id)
+                            : undefined
+                    }
+                    reportLabel={reportLabel}
                 />
             );
         },

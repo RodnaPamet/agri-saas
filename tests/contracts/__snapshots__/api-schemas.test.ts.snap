@@ -9171,7 +9171,8 @@ exports[`API contract — per-schema snapshots schema: FileReport 1`] = `
         "LISTING",
         "MESSAGE",
         "PROFILE",
-        "THREAD"
+        "THREAD",
+        "DIRECT_MESSAGE"
       ]
     },
     "subjectId": {

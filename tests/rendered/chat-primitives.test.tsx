@@ -739,3 +739,91 @@ describe('MessageBubble long-press reaction gesture', () => {
         expect(screen.queryByRole('button', { name: COPY.addReaction })).not.toBeInTheDocument();
     });
 });
+
+// ────── §12 «Сигнализирай» per message, and the rule it must not forget ──────
+
+/**
+ * #2833. The gating lives in `MessageBubble` rather than at the call site,
+ * because P5.3's rule is about the CONTROL and not about one surface: never on
+ * your own message, never on a deleted one. A caller may therefore pass the
+ * callback unconditionally — which `DmConversationClient` does — and `mine` is
+ * the half a caller would forget.
+ */
+describe('MessageBubble — the report control (#2833)', () => {
+    const AT = new Date('2026-11-07T09:00:00Z');
+    const LABEL = 'Report this message';
+
+    it('is offered on SOMEBODY ELSE’S message', () => {
+        const onRequestReport = jest.fn();
+        mount(
+            <MessageBubble
+                body="заплаха"
+                createdAt={AT}
+                mine={false}
+                onRequestReport={onRequestReport}
+                reportLabel={LABEL}
+            />,
+        );
+        const btn = screen.getByRole('button', { name: LABEL });
+        fireEvent.click(btn);
+        expect(onRequestReport).toHaveBeenCalledTimes(1);
+    });
+
+    it('is NOT offered on your OWN message — `remove` is the control for that', () => {
+        mount(
+            <MessageBubble
+                body="my own words"
+                createdAt={AT}
+                mine
+                onRequestReport={jest.fn()}
+                reportLabel={LABEL}
+            />,
+        );
+        expect(screen.queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
+    });
+
+    it('is NOT offered on a DELETED message — nothing to capture', () => {
+        // A deleted message's snapshot would be an empty body indistinguishable
+        // from a capture failure, which is the state #2833 exists to remove.
+        mount(
+            <MessageBubble
+                body=""
+                createdAt={AT}
+                deletedAt={AT}
+                mine={false}
+                onRequestReport={jest.fn()}
+                reportLabel={LABEL}
+            />,
+        );
+        expect(screen.queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
+    });
+
+    it('renders nothing when no callback is supplied — the control', () => {
+        // Without this the three assertions above are satisfied by a control
+        // that never renders for anybody.
+        mount(<MessageBubble body="hello" createdAt={AT} mine={false} />);
+        expect(screen.queryByRole('button', { name: LABEL })).not.toBeInTheDocument();
+    });
+
+    it('is a real focusable BUTTON, not a gesture — it has no long press', () => {
+        // `<SwipeRow>`'s rule: a gesture is an enhancement over a control,
+        // never the control. A long press already means reactions, and two
+        // gestures on one bubble is a guess about which the operator made — so
+        // this control is keyboard-reachable and has no touch-only path.
+        mount(
+            <MessageBubble
+                body="заплаха"
+                createdAt={AT}
+                mine={false}
+                onRequestReport={jest.fn()}
+                reportLabel={LABEL}
+            />,
+        );
+        const btn = screen.getByRole('button', { name: LABEL });
+        // `opacity-0`, NOT `hidden` — hidden is not tabbable, which is the
+        // whole reason the reaction control uses opacity too.
+        expect(btn.className).toContain('opacity-0');
+        btn.focus();
+        expect(btn).toHaveFocus();
+    });
+});
