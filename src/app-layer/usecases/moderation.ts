@@ -54,7 +54,6 @@ export type ReportStatus = 'RECEIVED' | 'TRIAGED' | 'ACTIONED' | 'REJECTED';
 export type ModerationActionKind =
     | 'NONE'
     | 'CONTENT_REMOVED'
-    | 'CONTENT_DEMOTED'
     | 'ACCOUNT_SUSPENDED'
     | 'ACCOUNT_TERMINATED';
 
@@ -228,28 +227,22 @@ const REMOVABLE_SUBJECT_KINDS = ['LISTING', 'MESSAGE'] as const;
 /**
  * Refuse an outcome this platform cannot carry out, before anything is written.
  *
- * `MODERATION_ACTION_KINDS` is deliberately NOT narrowed to match. It is a
- * PUBLISHED enum — the API contract and the iOS client mirror it — so dropping
- * `CONTENT_DEMOTED` is a breaking change for a value no caller can usefully
- * send, and the honest fix is to delete it once somebody confirms nothing
- * depends on it (#2868). Until then the value parses and the usecase refuses
- * it, which is one refusal rather than a contract break.
+ * `CONTENT_DEMOTED` used to be refused here and is now GONE from the enum
+ * (#2868, owner decision 2026-11-09) — so this function no longer carries an
+ * arm for it, and the 400 a sender now gets comes from
+ * `MODERATION_ACTION_KINDS` one layer out. Confirmed before deleting:
+ * production held ZERO `ModerationAction` rows, so no stored value needed
+ * rewriting, and the cast in the migration would have aborted rather than
+ * silently remapping one.
+ *
+ * What remains is the SUBJECT-dependent refusal: `CONTENT_REMOVED` is
+ * performable on some subject kinds and not others, which no enum can express
+ * because it is a property of the pair.
  */
 function assertPerformable(
     actionKind: ModerationActionKind,
     subjectKind: string,
 ): void {
-    if (actionKind === 'CONTENT_DEMOTED') {
-        // There is no ranking in this product. The exchange feed orders by
-        // recency and the trends surface is computed, so there is nothing a
-        // demotion could change — which is why this is a refusal and not a
-        // no-op: a recorded `CONTENT_DEMOTED` would announce a sanction that
-        // does not exist.
-        throw codedBadRequest(
-            'MODERATION_ACTION_NOT_PERFORMABLE',
-            'This platform cannot carry out that outcome.',
-        );
-    }
     if (
         actionKind === 'CONTENT_REMOVED'
         && !(REMOVABLE_SUBJECT_KINDS as readonly string[]).includes(subjectKind)
@@ -404,10 +397,6 @@ export async function actOnNotice(input: {
         if (input.actionKind === 'CONTENT_REMOVED') {
             await removeSubjectOnTx(tx, report.subjectKind, report.subjectId);
         }
-
-        // CONTENT_DEMOTED is refused BEFORE the transaction opens — see
-        // `assertPerformable`. There is no ranking in this product to demote
-        // within, so no row here could be honest.
 
         // ACCOUNT_TERMINATED withholds access too, so it suspends here as
         // well. The ERASURE half is P5.6 (#1597, now settled on the Art
@@ -932,9 +921,11 @@ export async function restoreRemovedContent(input: {
         );
     }
     // ONLY a removal is reversible by this verb. A suspension is lifted by
-    // `liftSuspension` (#1676), `NONE` removed nothing, and `CONTENT_DEMOTED`
-    // was never performed at all (#2868) — so each of those would be a restore
-    // with nothing to restore, announced to somebody by an Art 17 statement.
+    // `liftSuspension` (#1676) and `NONE` removed nothing — so either would be
+    // a restore with nothing to restore, announced to somebody by an Art 17
+    // statement. `CONTENT_RESTORED` is excluded for a different reason: it is
+    // already a reversal, and restoring one would be an appeal against an
+    // appeal with no second removal in between.
     if (action.actionKind !== 'CONTENT_REMOVED') {
         throw codedBadRequest(
             'MODERATION_ACTION_NOT_REVERSIBLE',

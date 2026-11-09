@@ -30,10 +30,11 @@
  */
 import { randomUUID } from 'crypto';
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ModerationActionKind } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { actOnNotice } from '@/app-layer/usecases/moderation';
+import { MODERATION_ACTION_KINDS } from '@/lib/schemas';
 import { encryptField } from '@/lib/security/encryption';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
@@ -213,18 +214,30 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
     });
 
     describe('it refuses what it cannot perform, and writes NOTHING', () => {
-        it('refuses CONTENT_DEMOTED — there is no ranking to demote within', async () => {
-            const reportId = await fileNotice('LISTING', await makeListing());
+        it('cannot even be asked for CONTENT_DEMOTED — the value is gone', async () => {
+            // #2868 DELETED the value (owner decision 2026-11-09), so the
+            // refusal moved OUT of `assertPerformable` and into the schema one
+            // layer up. This case is kept rather than deleted because the
+            // PROPERTY it protects is unchanged: a demotion must never be
+            // recorded, since there is no ranking to demote within and the row
+            // would announce a sanction that does not exist.
+            //
+            // It is asserted at both layers it now lives at, because the TS
+            // union makes the old call un-writable here — passing the string
+            // would not compile, which is a real part of the protection and
+            // exactly why it cannot be the whole of it: `tsc` says nothing
+            // about a value arriving over HTTP.
+            expect(MODERATION_ACTION_KINDS as readonly string[])
+                .not.toContain('CONTENT_DEMOTED');
+            expect(Object.keys(ModerationActionKind))
+                .not.toContain('CONTENT_DEMOTED');
 
-            await expect(actOnNotice({
-                reportId, actionKind: 'CONTENT_DEMOTED',
-                rationale: 'r', generation: 'current',
-            })).rejects.toMatchObject({ code: 'MODERATION_ACTION_NOT_PERFORMABLE' });
-
-            // NOT merely that it threw. A throw AFTER the write leaves exactly
-            // the state this issue is about.
-            expect(await actionCount(reportId)).toBe(0);
-            expect(await noticeStatus(reportId)).toBe('RECEIVED');
+            // And the control, so this is not satisfied by an empty or broken
+            // import: the value that REPLACED it as the performable outcome is
+            // present in both.
+            expect(MODERATION_ACTION_KINDS as readonly string[])
+                .toContain('CONTENT_REMOVED');
+            expect(Object.keys(ModerationActionKind)).toContain('CONTENT_REMOVED');
         }, 60_000);
 
         it('refuses CONTENT_REMOVED on a THREAD — nothing here can remove a collection', async () => {

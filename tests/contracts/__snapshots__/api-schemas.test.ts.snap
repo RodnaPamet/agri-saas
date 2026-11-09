@@ -649,7 +649,6 @@ exports[`API contract — per-schema snapshots schema: ActOnNotice 1`] = `
       "enum": [
         "NONE",
         "CONTENT_REMOVED",
-        "CONTENT_DEMOTED",
         "ACCOUNT_SUSPENDED",
         "ACCOUNT_TERMINATED"
       ]
