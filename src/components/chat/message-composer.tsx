@@ -70,9 +70,21 @@ export const COMPOSER_MAX_LENGTH = 4000;
 const MAX_AUTOSIZE_PX = 112;
 
 export interface MessageComposerProps {
-    /** Called with the trimmed body. The caller clears nothing — see `pending`. */
-    onSend: (body: string) => void;
-    /** While true the control is inert and the text is retained, not cleared. */
+    /**
+     * Called with the trimmed body.
+     *
+     * **Return `false` — or a promise of it — to KEEP the text.** Anything
+     * else clears, which is every existing caller's behaviour unchanged.
+     *
+     * This exists because the text was cleared UNCONDITIONALLY and
+     * synchronously, so a failed send lost the operator's words while this
+     * file's own docblock said `pending` retained them. `pending` never got
+     * the chance: `setBody('')` ran in the same tick as `onSend`, before any
+     * request resolved. Found by a rendered test for a failed send that could
+     * not retry, because the composer was empty.
+     */
+    onSend: (body: string) => void | boolean | Promise<void | boolean>;
+    /** While true the control is inert. */
     pending?: boolean;
     /** Rendered instead of the composer. Used for a declined or blocked thread. */
     disabledReason?: string;
@@ -126,8 +138,30 @@ export function MessageComposer({
     // updaters twice to surface exactly that impurity.
     const send = React.useCallback(() => {
         if (trimmed.length === 0 || pending) return;
-        onSend(trimmed);
-        setBody('');
+        const result = onSend(trimmed);
+
+        // A NON-THENABLE result clears SYNCHRONOUSLY, which is not an
+        // optimisation. `Promise.resolve(undefined).then(…)` defers the clear
+        // by a microtask, and that is observable twice: every existing
+        // `void`-returning caller's test asserts the cleared box in the same
+        // tick (one of them went red on the deferred version), and a deferred
+        // clear leaves the sent words on screen for a frame.
+        if (typeof (result as { then?: unknown } | undefined)?.then !== 'function') {
+            if (result !== false) setBody('');
+            return;
+        }
+
+        void Promise.resolve(result).then(
+            // `!== false` rather than a truthiness check: `undefined` is what
+            // a `void` caller returns and must keep clearing.
+            (ok) => {
+                if (ok !== false) setBody('');
+            },
+            // A caller that THROWS keeps the text too. It is the same event as
+            // returning `false`, and losing the words because the caller chose
+            // to reject rather than report would be the worse of two answers.
+            () => {},
+        );
     }, [trimmed, pending, onSend]);
 
     const { handleKeyDown } = useEnterSubmit({ onSubmit: send });

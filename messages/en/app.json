@@ -7119,6 +7119,7 @@
         "addReaction": "React",
         "reportMessage": "Report this message",
         "replyToMessage": "Reply",
+        "sendFailed": "Could not send. Please try again.",
         "clearQuote": "Stop replying",
         "replyingTo": "Replying to",
         "edited": "edited",

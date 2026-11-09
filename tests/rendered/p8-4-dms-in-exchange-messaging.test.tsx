@@ -559,6 +559,40 @@ describe('DmConversationClient', () => {
         fireEvent.click(screen.getByRole('button', { name: 'send' }));
         await waitFor(() => expect(apiPost).toHaveBeenCalled());
         expect(screen.getByText('replyingTo')).toBeInTheDocument();
+        // And the operator is TOLD. The first draft caught the rejection and
+        // logged it, which `observability-foundation`'s console guard refused
+        // — correctly, because a console reaches no farmer. The sibling
+        // exchange screen already answers a failed send with
+        // `exchange…sendFailed`, so this mirrors it rather than inventing
+        // copy: two message screens in one product disagreeing about what a
+        // failure says would be the defect.
+        await waitFor(() => expect(screen.getByText('sendFailed')).toBeInTheDocument());
+        // AND THE TEXT SURVIVES. Found while writing the case below, which
+        // could not retry because the composer was empty: `MessageComposer`
+        // cleared the body UNCONDITIONALLY and synchronously, in the same tick
+        // as `onSend`, so `pending`'s documented "the text is retained"
+        // never got a chance. A failure message telling the operator to try
+        // again, with nothing left to try, is worse than either half alone.
+        expect(screen.getByRole('textbox')).toHaveValue('да');
+    });
+
+    it('clears the failure message on the next ATTEMPT, not on a timer', async () => {
+        // Reset where the attempt starts, so the message stays until the
+        // operator does something about it. A timer would clear it while they
+        // were still reading.
+        apiPost.mockImplementation((url: unknown) =>
+            String(url).endsWith('/messages')
+                ? Promise.reject(new Error('offline'))
+                : Promise.resolve({}));
+        mountConversation();
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'едно' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        await waitFor(() => expect(screen.getByText('sendFailed')).toBeInTheDocument());
+
+        apiPost.mockResolvedValue({});
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        await waitFor(() =>
+            expect(screen.queryByText('sendFailed')).not.toBeInTheDocument());
     });
 
     it('drops the quote when the quoted message is DELETED under it', async () => {

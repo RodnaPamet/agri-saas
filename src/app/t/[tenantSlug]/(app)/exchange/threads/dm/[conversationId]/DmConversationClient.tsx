@@ -316,14 +316,23 @@ export function DmConversationClient({
     /**
      * The message being answered (#2829), held HERE rather than in the
      * composer: the quote has to survive a timeline re-render and a poll, and
-     * `MessageComposer` clears nothing it was given — the same contract as
-     * `pending`.
+     * `MessageComposer` does the clearing and this screen decides WHETHER:
+     * `send` returns `false` on failure, which keeps both the text and the
+     * quote. That contract exists because the composer used to clear
+     * unconditionally and synchronously, so a failed send lost the operator's
+     * words — see `message-composer.tsx`'s `onSend`.
      *
      * The ID is the state and the quoted TEXT is derived from `messages` on
      * every render. Storing a snapshot of the body instead would show the
      * operator a quote of something the other party has since retracted, and
      * the payload already re-reads `replyTo` for exactly that reason.
      */
+    /**
+     * A failed send, surfaced the way the sibling exchange screen surfaces
+     * one. Reset on the next ATTEMPT rather than on a timer, so the message
+     * stays until the operator does something about it.
+     */
+    const [sendError, setSendError] = React.useState(false);
     const [replyToId, setReplyToId] = React.useState<string | null>(null);
 
     /**
@@ -349,6 +358,7 @@ export function DmConversationClient({
     const send = React.useCallback(
         async (body: string) => {
             setSending(true);
+            setSendError(false);
             try {
                 await apiPost(`${path}/messages`, {
                     body,
@@ -371,21 +381,32 @@ export function DmConversationClient({
                 // silently dropped.
                 setReplyToId(null);
                 await mutate();
-            } catch (err) {
+                return true;
+            } catch {
                 // CAUGHT so the rejection does not escape. `onSend` discards
                 // the promise (`void send(body)`), so without this a failed
-                // send is an unhandled rejection — found by the rendered test
+                // send was an unhandled rejection — found by the rendered test
                 // for the retained quote, which jest failed on the escape
-                // rather than on the assertion.
+                // rather than on its own assertion.
                 //
-                // Swallowing is NOT the end state and this is deliberately
-                // the smaller change: the composer keeps the body and now the
-                // quote, so a retry is one tap, but the operator is still told
-                // nothing about WHY. That is #2899, and it is a product
-                // decision about what the failure should say rather than
-                // something to invent inside a reply PR. `respond` below has
-                // the identical shape and the same gap.
-                console.error('dm send failed', err);
+                // And the operator is TOLD, which is the sibling exchange
+                // screen's own pattern rather than something invented here:
+                // `ThreadClient` does `catch { setSendError(true) }` and
+                // renders `exchange…sendFailed`. Two message screens in one
+                // product answering a failed send differently would be the
+                // defect; the copy question #2899 asks was already settled
+                // next door.
+                //
+                // A console line was the first draft and is wrong twice over:
+                // `observability-foundation`'s console guard refuses it (and
+                // an allowlist entry on a shrink-only list is a cost paid for
+                // nothing), and a console reaches no farmer.
+                setSendError(true);
+                // `false`, so the composer KEEPS the text. Returning nothing
+                // clears it — which is what happened before this, and it meant
+                // a failed send lost the operator's words and left them with a
+                // message saying to try again and nothing to try.
+                return false;
             } finally {
                 setSending(false);
             }
@@ -522,8 +543,22 @@ export function DmConversationClient({
                     </div>
                 </div>
             ) : (
+                <>
+                    {/*
+                      * Above the composer and OUTSIDE it, matching the sibling
+                      * exchange screen: the composer is a primitive shared
+                      * with any future chat surface, and a per-screen failure
+                      * message is the screen's to render.
+                      */}
+                    {sendError ? (
+                        <p className="px-default pt-default text-sm text-content-error">
+                            {t('sendFailed')}
+                        </p>
+                    ) : null}
                 <MessageComposer
-                    onSend={(body) => void send(body)}
+                    // NOT `void send(body)`. The composer reads the result to
+                    // decide whether to clear the text, and `void` discards it.
+                    onSend={(body) => send(body)}
                     pending={sending}
                     placeholder={t('composerPlaceholder')}
                     sendLabel={t('send')}
@@ -540,6 +575,7 @@ export function DmConversationClient({
                     replyingToLabel={t('replyingTo')}
                     {...(myRequest ? { disabledReason: t('awaitingAcceptance') } : {})}
                 />
+                </>
             )}
         </div>
     );
