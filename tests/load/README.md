@@ -21,7 +21,20 @@ highest-traffic authenticated paths against documented SLOs.
 | `lists.js`        | Steady-state authenticated list reads (practices / evidence).        |
 | `mutations.js`    | Authenticated mutations: practice creation + multipart evidence upload.      |
 | `realtime-streams.js` | Concurrent SSE streams held open on `/api/me/stream` + TTFB under load. |
+| `realtime-delivery.js` | DM **delivery** p95: write → frame on an already-open stream (#2881). Needs the `xk6-sse` binary, which `load-test.yml` builds. |
 
+- `realtime-streams.js` and `realtime-delivery.js` answer DIFFERENT
+  questions and neither subsumes the other. The first measures stream
+  OPEN TTFB while N streams are held; the second measures the time from a
+  write to the frame arriving on a stream already open. P8.9's exit
+  criterion is the second, and until #2881 nothing asserted it — which in
+  a phase note reads as satisfied once the phase closes. They are kept
+  separate because a scenario doing both would make neither figure
+  interpretable at its own concurrency: delivery is deliberately 25 pairs
+  (a latency), streams is a thousand (a capacity).
+  **`realtime-delivery.js` runs only under the `xk6-sse` binary** and
+  fails at its `k6/x/sse` import under stock k6, which is the failure mode
+  worth having over one that measures something else.
 - `auth.js` opens a fresh cookie jar per iteration so every iteration is
   a real cold login (csrf → callback/credentials → session).
 - `lists.js` logs in once in `setup()` and shares the session cookie via
@@ -392,7 +405,9 @@ The directory is gitignored; the CI workflow uploads it as an artifact.
 | `RAMP_DOWN`             | `15s`                    | VUS → 0 ramp.                                    |
 | `RUN_ID`                | `local-<timestamp>`      | Tag prefix on `mutations.js` rows for cleanup.   |
 | `STREAM_HOLD`           | `45s`                    | `realtime-streams.js` only: how long a VU holds its stream. |
-| `SETUP_TIMEOUT`         | `15m`                    | `realtime-streams.js` only: budget for N serial logins. |
+| `SETUP_TIMEOUT`         | `15m`                    | `realtime-streams.js` / `realtime-delivery.js`: budget for N serial logins. |
+| `PAIRS`                 | `25`                     | `realtime-delivery.js` only: conversations measured; needs `--pairs` seeded. |
+| `DELIVERY_TIMEOUT_MS`   | `10000`                  | `realtime-delivery.js` only: how long one iteration waits for its frame. |
 | `LOAD_SEED_CONFIRM`     | _(none — required)_      | Typed phrase `scripts/seed-load-streams.ts` demands. |
 
 ## Adding a new scenario

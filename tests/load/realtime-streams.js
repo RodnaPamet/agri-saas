@@ -50,8 +50,12 @@
 //
 // DOES NOT MEASURE: how long an EVENT takes to reach a held stream under load.
 // That needs an SSE client that can read frames while k6 keeps the VU busy —
-// xk6-sse, a binary this repo does not build. Said plainly rather than letting
-// a green run imply a property it never tested: a pass here means "a thousand
+// xk6-sse. **`realtime-delivery.js` is that measurement now (#2881)**, and
+// `load-test.yml` builds the binary for it; this file is deliberately NOT
+// converted, because the two readings answer different questions and a
+// scenario that did both would make neither interpretable at its own
+// concurrency. Said plainly rather than letting a green run imply a property
+// it never tested: a pass here means "a thousand
 // streams can be held and a new one still opens fast", not "delivery stays
 // under a second at a thousand streams".
 //
