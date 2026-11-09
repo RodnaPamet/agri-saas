@@ -494,12 +494,35 @@ describe('one round runs its tools in PARALLEL, and folds them in order (#2670)'
         // where an absolute bound does not.
         expect(marks[1].at).toBeLessThan(marks[0].done);
 
-        // And the loop's own figure agrees: `toolPhaseMs` is the slowest tool
-        // rather than the sum, so it must come in under the two tools' total
-        // measured duration. Compared against what the tools ACTUALLY took on
-        // this run rather than against a constant, for the same reason.
-        const totalToolMs = marks.reduce((sum, m) => sum + (m.done - m.at), 0);
-        expect(out.timing.toolPhaseMs).toBeLessThan(totalToolMs);
+        /*
+         * `expect(toolPhaseMs).toBeLessThan(totalToolMs)` USED TO SIT HERE AND
+         * IT WAS AN ABSOLUTE BOUND IN DISGUISE. Removed rather than widened.
+         *
+         * It read as scale-free — a measured sum rather than a constant — and
+         * the two sides do not measure the same thing. `toolPhaseMs` brackets
+         * `Promise.all(admitted.map(runTool))`, so it includes per-call
+         * `runTool` dispatch for EVERY tool: argument parsing, zod validation,
+         * registry lookup, the usecase wrapper. `m.done - m.at` starts inside
+         * the mock and measures only the 60ms sleep.
+         *
+         * So the inequality expands to `sleep + overhead < 2 x sleep`, i.e. it
+         * quietly requires `overhead < 60ms`. That is a constant, measured on
+         * an idle machine, and a loaded runner inflates the overhead without
+         * touching the sleeps. It failed exactly that way on `Test (shard
+         * 5/6)` of run 42580659585: expected < 138, received 182 — 44ms of
+         * dispatch for two tools.
+         *
+         * Nothing is lost. The parallelism PROPERTY is the assertion above —
+         * the second tool started before the first finished — which is
+         * scale-free because load delays both marks together. This line was a
+         * second, weaker probe of the same property through an instrument that
+         * cannot separate the tool from its dispatch, and no assertion written
+         * from outside the loop can: the overhead is inside the window and
+         * outside the marks.
+         *
+         * If `toolPhaseMs`'s own semantics ever need pinning, that wants a
+         * test with an injected clock rather than a race against real sleeps.
+         */
 
         // `elapsed` is read so the variable is not dead, and bounded loosely
         // rather than tightly: it is a sanity check that the round finished at
