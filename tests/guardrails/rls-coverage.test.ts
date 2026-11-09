@@ -247,6 +247,59 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
         ['message_reaction_select', 'message_reaction_insert',
          'message_reaction_delete'],
     ],
+    // ── P9.1 (#2935) — channels ──
+    //
+    // Party-scoped, keyed on `app.user_id` like the DM family above, and for
+    // the same reason: a channel spans every farm growing a crop or sitting in
+    // an oblast, so there is no tenant to key on even in principle.
+    //
+    // THE DIFFERENCE FROM A CONVERSATION IS THAT A CHANNEL IS PUBLIC.
+    // `conversation_select` admits participants only; `channel_select` admits
+    // any authenticated caller, because P9.2 cannot suggest a channel nobody
+    // can read and nobody joins one they cannot look into. The gate is on
+    // POSTING, not on reading — which is why `Channel` and `ChannelPost` have
+    // a SELECT arm that is a session-presence check rather than a membership
+    // test, and why that is not an oversight.
+    //
+    // `Channel` has no `app_user` write arm: channels are seeded and
+    // administered, and a caller able to insert one could mint a channel
+    // impersonating a crop or an oblast.
+    ['Channel', ['channel_select']],
+    // The caller's OWN row only, and the narrowness is load-bearing for the
+    // same reason as `ConversationParticipant`: a policy admitting "every
+    // member of a channel I am in" must ask this table whether I am in it,
+    // which Postgres refuses with `infinite recursion detected in policy for
+    // relation`. `Channel.memberCount` is denormalised BECAUSE of this.
+    //
+    // Insert is privileged — joining maintains `memberCount` in the same
+    // transaction, and a direct insert would leave the count wrong with
+    // nothing detecting it.
+    [
+        'ChannelMembership',
+        ['channel_membership_select', 'channel_membership_update',
+         'channel_membership_delete'],
+    ],
+    // `channel_post_insert` is where P9.10's three access rules live in SQL
+    // rather than only in a usecase: the author is the session (no forged
+    // author), a membership row exists (no non-member), and that row's
+    // `bannedAt` is NULL (no banned member).
+    [
+        'ChannelPost',
+        ['channel_post_select', 'channel_post_insert', 'channel_post_update'],
+    ],
+    // SPLIT per command, exactly as `MessageReaction` above: a reader must be
+    // able to SEE a reaction they did not write without being able to DELETE
+    // it, and one USING clause would govern both.
+    [
+        'ChannelPostReaction',
+        ['channel_post_reaction_select', 'channel_post_reaction_insert',
+         'channel_post_reaction_delete'],
+    ],
+    // READ-ONLY to `app_user`, and that is the whole point: a mention is a PUSH
+    // TRIGGER, so a caller able to insert one could push to any person on the
+    // platform without posting anything they would read. Written in the same
+    // privileged transaction as the post, where the five-mention cap is counted.
+    ['ChannelPostMention', ['channel_post_mention_select']],
 ]);
 
 // Models reached ONLY through a platform-admin surface, with RLS that no

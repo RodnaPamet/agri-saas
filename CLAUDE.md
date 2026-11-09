@@ -3812,6 +3812,68 @@ that matters. Proved against RLS rather than the ORM by dropping
 that count is zero and the criterion passes vacuously, which is why the
 ciphertext check asserts the row count too.
 
+### P9.1 — the channel schema, where a PUBLIC read and a recursive policy pull apart
+
+Five tenantless models in a new domain file `prisma/schema/channels.prisma`
+(#2935): `Channel`, `ChannelMembership`, `ChannelPost`, `ChannelPostReaction`,
+`ChannelPostMention`. Schema only — P9's rule, like P8's and P5's, ships tables
+one release before the code that writes them.
+
+**A CHANNEL IS PUBLIC, which is the one place channels diverge from the DM
+family.** `conversation_select` admits participants only; `channel_select` and
+`channel_post_select` admit any authenticated caller. P9.2 cannot suggest a
+channel nobody can read and nobody joins one they cannot look into first, so
+**the gate is on POSTING rather than on reading** — and the integration test
+asserts the public read as a POSITIVE, because a non-member reading a channel is
+the feature. There is no private channel in this design; adding one means a
+visibility column plus a second SELECT arm, not an edit to these policies.
+
+**`channel_membership_select` admits the caller's OWN ROW ONLY, and that is
+forced.** "You may read the members if you are a member" needs
+`ChannelMembership`'s policy to query `ChannelMembership`, which Postgres
+refuses — `infinite recursion detected in policy for relation`. So
+**`Channel.memberCount` is DENORMALISED because of the policy, not as an
+optimisation**: a member physically cannot count rows they cannot see, and a
+member list would have to come from a privileged read rather than from widening
+that arm. Posts, reactions and mentions may query `ChannelMembership` freely —
+a different table from the one being guarded.
+
+**`ChannelPost.body` is PLAINTEXT, departing from both message models here.**
+`DirectMessage.body` and `ExchangeMessage.body` are global-KEK encrypted because
+a two-party row under either party's DEK is unreadable by the other; a channel
+has no second party to lock out. The deciding reason is **search** — P9.7
+requires posts searchable, and an encrypted column cannot be searched without a
+second plaintext copy that would become the real store with nothing guarding it.
+It carries a `DELIBERATELY_PLAINTEXT` entry keyed `ChannelPost.body`, which is
+required rather than courteous: `body` is a manifest field name for other
+models, and since #1222 the manifest is per `(model, field)`.
+
+**`channel_post_insert` carries all three of P9.10's access rules** — the author
+equals the session (no forged author), a membership row exists (no non-member),
+that row is unbanned (no banned member). Slow mode and the five-mention cap are
+deliberately NOT there: both compare against other rows of the same table, which
+is the shape that recurses. **The ban keeps its membership row** — deleting it
+would let the person rejoin and post again, and `@@unique([channelId, userId])`
+stops a second row being minted to escape through.
+
+**Mentions are a TABLE and are READ-ONLY to a session.** A cap of five is only
+enforceable if mentions are constrained rather than derived from body text, and
+there is no `app_user` INSERT arm because a mention is a PUSH TRIGGER: a caller
+able to insert one could push to any person on the platform without posting
+anything they would read.
+
+**Three removal columns, not one.** `removedByModerationAt` (a human decision,
+reversed by #2867's restore route), `autoHiddenAt` (P9.3's threshold, reversed by
+a different act) and `deletedAt` (the author's own retraction). Collapsing them
+would make a statement of reasons claim a moderator looked when none did.
+
+**The instrument was wrong before the policies were.** All seven refusal cases
+failed on the first run reporting `P2010` — Prisma's wrapper for a raw-query
+failure — because the helper read `err.meta.code` for the SQLSTATE, which
+survives only in the message. `p5-1-trust-safety-rls` already matched on the
+message for this reason. When an RLS negative fails, check what the reader is
+reading before changing a policy.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on
