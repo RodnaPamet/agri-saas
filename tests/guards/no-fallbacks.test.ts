@@ -221,6 +221,22 @@ describe('Static Analysis: No process.env fallbacks', () => {
             // client test-env gate must read NODE_ENV directly, same as the
             // ServiceWorkerRegistrar prod-gate above.
             if (file.endsWith('ui/DeferredOnMobile.tsx')) continue;
+            // #2353 — both of these read a NEXT_PUBLIC_* via process.env for
+            // the same build-time-inlining reason as the entries above, and
+            // for a second one: they are in the CLIENT graph, and importing
+            // `@/env` there pulled 944 lines of environment schema plus zod
+            // (via its first import, `@/lib/zod-jitless`) into the browser
+            // bundle to resolve one optional string.
+            //
+            // `instrumentation-client.ts` is the worse of the two: Next
+            // auto-loads it in the browser on EVERY route, so that cost was
+            // paid on every page. The declarations stay in `env.ts`'s
+            // `client` block — @t3-oss validates client vars on the server
+            // too, so startup validation is unchanged, and
+            // `next-public-vars-are-settable` still sees the names it checks
+            // for a Dockerfile `ARG`. All three carry one.
+            if (file.endsWith('instrumentation-client.ts')) continue;
+            if (file.endsWith('offers/AskForOfferModal.tsx')) continue;
             // The stale-chunk recovery hook gates its auto-reload on
             // `process.env.NODE_ENV === 'production'` — a reload in dev fights
             // Next.js HMR, and it shares the same reload window as the
