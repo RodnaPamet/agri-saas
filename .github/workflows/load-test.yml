@@ -99,6 +99,35 @@ jobs:
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
 
+      # FIRST, because everything scenario-gated below depends on it and it
+      # depends on nothing: it reads `inputs` and `github.event_name` only.
+      # It used to sit after `Wait for /api/health`, which forced every
+      # scenario-gated step below the app boot — and that is what put the DM
+      # flag's INSERT after the app had already cached the flag table
+      # (30s Redis TTL, one key), so the delivery run read a flag that was on
+      # in Postgres and off in the process. Measured on run 42576945583: a
+      # 404 from `/api/social/inbox`, which is what a disabled flag answers.
+      - name: Pick parameters (manual vs scheduled)
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "scenario=${{ inputs.scenario }}" >> "$GITHUB_OUTPUT"
+            echo "vus=${{ inputs.vus }}" >> "$GITHUB_OUTPUT"
+            echo "duration=${{ inputs.duration }}" >> "$GITHUB_OUTPUT"
+          else
+            # Nightly smoke — keep it light and fast.
+            echo "scenario=both" >> "$GITHUB_OUTPUT"
+            echo "vus=25" >> "$GITHUB_OUTPUT"
+            echo "duration=1m" >> "$GITHUB_OUTPUT"
+          fi
+
+      # k6's handleSummary writes tests/load/results/<scenario>-summary.json.
+      # The directory is gitignored (a developer artefact) and nothing created
+      # it here, so every run ended with:
+      #   failed to handle the end-of-test summary … no such file or directory
+      # The run still exited on its thresholds, but the per-step numbers needed
+      # to CALIBRATE those thresholds were never written — which is why the
+      # login budget has never been checked against a real measurement.
       - name: Enable pgvector (PGDG)
         uses: ./.github/actions/enable-pgvector
 
@@ -125,6 +154,30 @@ jobs:
           npx prisma migrate deploy
           npm run db:seed
 
+      # The DM flag is switched on HERE rather than by the seeder, which reads
+      # it and refuses to write it: enabling a second global flag is an
+      # operator decision, not a side effect of seeding. On a throwaway CI
+      # database that decision is this line.
+      #
+      # BEFORE `Build app` / `Start app`, and that is the fix for run
+      # 42576945583. The flag table is cached in Redis for 30s under ONE key,
+      # so a process that read it before the INSERT serves the pre-insert
+      # answer for up to half a minute — and `assertFeatureEnabled` answers a
+      # disabled flag with 404, deliberately, so the surface is not advertised
+      # before it is built. The run therefore failed on a flag that was ON in
+      # Postgres and OFF in the app, which is the hardest version of this to
+      # diagnose from either side alone. Writing it before anything boots
+      # removes the window rather than waiting one out.
+      - name: Enable social.direct-messages (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          INSERT INTO "FeatureFlag" ("id", "key", "enabled", "cohorts", "description", "createdAt", "updatedAt")
+          VALUES (gen_random_uuid()::text, 'social.direct-messages', true, '{}',
+                  'Enabled by load-test.yml for the #2881 delivery run.', NOW(), NOW())
+          ON CONFLICT ("key") DO UPDATE SET "enabled" = true, "cohorts" = '{}', "updatedAt" = NOW();
+          SQL
+
       - name: Build app
         env:
           NODE_ENV: production
@@ -150,27 +203,6 @@ jobs:
           tail -n 100 /tmp/app.log || true
           exit 1
 
-      - name: Pick parameters (manual vs scheduled)
-        id: params
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "scenario=${{ inputs.scenario }}" >> "$GITHUB_OUTPUT"
-            echo "vus=${{ inputs.vus }}" >> "$GITHUB_OUTPUT"
-            echo "duration=${{ inputs.duration }}" >> "$GITHUB_OUTPUT"
-          else
-            # Nightly smoke — keep it light and fast.
-            echo "scenario=both" >> "$GITHUB_OUTPUT"
-            echo "vus=25" >> "$GITHUB_OUTPUT"
-            echo "duration=1m" >> "$GITHUB_OUTPUT"
-          fi
-
-      # k6's handleSummary writes tests/load/results/<scenario>-summary.json.
-      # The directory is gitignored (a developer artefact) and nothing created
-      # it here, so every run ended with:
-      #   failed to handle the end-of-test summary … no such file or directory
-      # The run still exited on its thresholds, but the per-step numbers needed
-      # to CALIBRATE those thresholds were never written — which is why the
-      # login budget has never been checked against a real measurement.
       # ── k6 WITH the SSE extension, for the delivery scenario (#2881) ──
       #
       # IT SITS AFTER `Pick parameters`, NOT BESIDE `Setup k6`, and that is not
@@ -321,20 +353,6 @@ jobs:
             --users $(( ${{ steps.params.outputs.vus }} * 2 )) \
             --pairs ${{ steps.params.outputs.vus }} \
             --enable-flag
-
-      # The DM flag is switched on HERE rather than by the seeder, which reads
-      # it and refuses to write it: enabling a second global flag is an
-      # operator decision, not a side effect of seeding. On a throwaway CI
-      # database that decision is this line.
-      - name: Enable social.direct-messages (delivery scenario)
-        if: steps.params.outputs.scenario == 'delivery'
-        run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
-          INSERT INTO "FeatureFlag" ("id", "key", "enabled", "cohorts", "description", "createdAt", "updatedAt")
-          VALUES (gen_random_uuid()::text, 'social.direct-messages', true, '{}',
-                  'Enabled by load-test.yml for the #2881 delivery run.', NOW(), NOW())
-          ON CONFLICT ("key") DO UPDATE SET "enabled" = true, "cohorts" = '{}', "updatedAt" = NOW();
-          SQL
 
       - name: Run k6 — delivery scenario
         if: steps.params.outputs.scenario == 'delivery'

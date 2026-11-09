@@ -197,8 +197,16 @@ export function setup() {
         if (inbox.status !== 200) {
             fail(
                 `setup: GET /api/social/inbox answered ${inbox.status} for ${aEmail}. ` +
-                    `403 means social.direct-messages is off — the seeder reports that and ` +
-                    `deliberately does not switch it on.`,
+                    `A 404 is the one to expect and the one that misleads: ` +
+                    `assertFeatureEnabled answers a DISABLED flag with not-found, ` +
+                    `deliberately, so an unbuilt surface is not advertised — so 404 here ` +
+                    `means social.direct-messages is off, NOT that the route is missing. ` +
+                    `The seeder reads that flag and refuses to write it; the workflow sets ` +
+                    `it in its own step, BEFORE the app boots, because the flag table is ` +
+                    `cached in Redis for 30s and a process that read it earlier serves the ` +
+                    `old answer. Measured on run 42576945583: on in Postgres, off in the ` +
+                    `app. A 401 means the session did not survive; a 429 means the mutation ` +
+                    `tier is on (the workflow sets RATE_LIMIT_ENABLED=0).`,
             );
         }
         const items = inbox.json('items');
