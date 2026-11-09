@@ -144,3 +144,19 @@ export {
     type UseLongPressOptions,
     type UseLongPressResult,
 } from "./use-long-press";
+
+// ─── Swipe action (coarse-pointer, non-destructive, fires on release) ──
+// A narrow sibling of `<SwipeRow>` rather than a generalisation of it; see
+// `use-swipe-action.ts` for why bending that primitive would have made its
+// one load-bearing property configurable. `composeHandlers` is exported
+// because a call site that spreads two pointer-handler sets keeps only the
+// last one, silently.
+export {
+    useSwipeAction,
+    composeHandlers,
+    SWIPE_ACTION_THRESHOLD_PX,
+    SWIPE_ACTION_MAX_OFFSET_PX,
+    type UseSwipeActionOptions,
+    type UseSwipeActionResult,
+    type SwipePointerHandlers,
+} from "./use-swipe-action";

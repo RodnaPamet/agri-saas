@@ -7118,6 +7118,7 @@
         "directConversation": "Direct conversation",
         "addReaction": "React",
         "reportMessage": "Report this message",
+        "replyToMessage": "Reply",
         "edited": "edited",
         "messageDeleted": "Message deleted",
         "newMessages": "New messages",

@@ -55,16 +55,40 @@
  * rendered test under a coarse `matchMedia`, since the branch is dead under
  * jsdom's always-false stub. Do not read the API half landing as the gesture
  * being available.
+ *
+ * **IT IS HERE NOW** — the gesture, the focusable control and the quoted
+ * preview all landed together, and that grouping is the point rather than
+ * convenience: a swipe with no keyboard path is an action some people cannot
+ * perform, and a reply with no visible quote is a message whose context only
+ * the sender can see.
+ *
+ * What is still NOT here is the composer's side of it — holding the quoted
+ * message while the operator types, and passing `replyToMessageId` on send.
+ * That belongs to the page (P8.4), like the reaction picker and the report
+ * dialog, and this component only decides WHEN a reply is asked for.
+ *
+ * ## Two gestures on one element, and the spread that loses one
+ *
+ * `useLongPress` (reactions) and `useSwipeAction` (reply) both return
+ * `onPointerDown` / `onPointerMove` / `onPointerUp` / `onPointerCancel`.
+ * `{...a.handlers} {...b.handlers}` keeps only the second set — a plain object
+ * spread, no composition, no warning — so one gesture silently stops working.
+ * `composeHandlers` merges them, and the rendered test asserts BOTH still fire
+ * from this one node.
+ *
+ * They do not otherwise compete: a horizontal drag passes `useLongPress`'s
+ * 10px move tolerance and cancels the hold, so hold means reactions and drag
+ * means reply without either hook knowing about the other.
  */
 import { useTranslations } from 'next-intl';
 import * as React from 'react';
 
-import { useLongPress } from '@/components/ui/hooks';
+import { composeHandlers, useLongPress, useSwipeAction } from '@/components/ui/hooks';
 import { IconAction } from '@/components/ui/icon-action';
 // nucleo, not the legacy icon package — see the note in
 // `message-composer.tsx`. `MessageSmile` rather than `FaceSmile`: the
 // control reacts to THIS message.
-import { Flag, MessageSmile } from '@/components/ui/icons/nucleo';
+import { ArrowTurnLeft, Flag, MessageSmile } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
 import { useDateFormat } from '@/lib/i18n/use-date-format';
 
@@ -103,6 +127,37 @@ export interface MessageBubbleProps {
     readonly onRequestReport?: () => void;
     /** Accessible name for the report control. Required when it renders. */
     readonly reportLabel?: string;
+    /**
+     * Quote THIS message in the composer (#2829). The composer's quoted state
+     * belongs to the page, as the reaction picker and the report dialog do.
+     * Omitted ⇒ neither the gesture nor the button renders.
+     *
+     * Offered on your OWN message too, unlike «Сигнализирай». Replying to
+     * something you said is ordinary in a conversation and carries no
+     * ambiguity about which control you meant — the argument that keeps
+     * `onRequestReport` off own messages is that `remove` is the control for
+     * those, and there is no competing reply control to confuse it with.
+     *
+     * NOT offered on a deleted message: `replyTo` would render as «изтрито»
+     * before anybody read what was being answered, and the API accepts a
+     * deleted target precisely so a reply SURVIVES a retraction — not so one
+     * can be started against a message with nothing left in it.
+     */
+    readonly onRequestReply?: () => void;
+    /** Accessible name for the reply control. Required when it renders. */
+    readonly replyLabel?: string;
+    /**
+     * The message this one answers, from `DirectMessageView.replyTo`.
+     *
+     * `deleted` is a FIELD and not inferred from a null `body`, because a
+     * photo-only message has a null body too (P8.6 made the column nullable).
+     * Reading only `body` would render «изтрито» over a photograph.
+     */
+    readonly replyTo?: {
+        readonly senderLabel?: string | null;
+        readonly body: string | null;
+        readonly deleted: boolean;
+    } | null;
 }
 
 export function MessageBubble({
@@ -118,6 +173,9 @@ export function MessageBubble({
     reactionsLabel,
     onRequestReport,
     reportLabel,
+    onRequestReply,
+    replyLabel,
+    replyTo,
 }: MessageBubbleProps) {
     const t = useTranslations('chat');
     const { formatDateTime } = useDateFormat();
@@ -129,10 +187,28 @@ export function MessageBubble({
     // NOT on your own message and NOT on a deleted one — see the prop's
     // docblock. `mine` is the half a caller would forget.
     const canReport = Boolean(onRequestReport) && !isDeleted && !mine;
-    const { handlers, pressing } = useLongPress({
+    // Own messages INCLUDED — see the prop's docblock for why this one
+    // differs from `canReport`.
+    const canReply = Boolean(onRequestReply) && !isDeleted;
+    const { handlers: pressHandlers, pressing } = useLongPress({
         onLongPress: () => onRequestReactions?.(),
         enabled: canReact,
     });
+    const {
+        handlers: swipeHandlers,
+        offsetPx,
+        armed,
+    } = useSwipeAction({
+        onSwipe: () => onRequestReply?.(),
+        enabled: canReply,
+    });
+    // `composeHandlers`, NEVER two spreads. Both hooks name the same four
+    // pointer handlers, and an object spread keeps only the last set — the
+    // first gesture then stops working with nothing saying so.
+    const gestureHandlers = React.useMemo(
+        () => composeHandlers(pressHandlers, swipeHandlers),
+        [pressHandlers, swipeHandlers],
+    );
 
     // `MessageReaction` is unique on (message, user, emoji), so the server
     // sends one row PER PERSON. Rendering them one-to-one puts three identical
@@ -160,8 +236,42 @@ export function MessageBubble({
                     <span className="px-1 text-xs text-content-muted">{senderLabel}</span>
                 ) : null}
 
+                {/*
+                  * The QUOTE, above the body and inside the same column, so it
+                  * moves with the bubble and reads as part of the message
+                  * rather than as a sibling of it.
+                  *
+                  * `replyTo.deleted` is read rather than `!replyTo.body`,
+                  * because a photo-only message also has a null body. Both
+                  * states render a muted line; only one of them says the
+                  * message was taken back.
+                  */}
+                {replyTo ? (
+                    <div
+                        className={cn(
+                            // `border-l` rather than a full box: a quote is a
+                            // fragment of the conversation, not a second
+                            // discrete surface, and `border-border-default` is
+                            // reserved for those (and carries a downward
+                            // budget ratchet).
+                            'max-w-full truncate border-l-2 border-border-subtle px-2 py-0.5',
+                            'text-xs text-content-muted',
+                        )}
+                    >
+                        {replyTo.senderLabel ? (
+                            <span className="font-[560]">{replyTo.senderLabel}: </span>
+                        ) : null}
+                        {replyTo.deleted ? (
+                            <span className="italic">{t('messageDeleted')}</span>
+                        ) : (
+                            replyTo.body
+                        )}
+                    </div>
+                ) : null}
+
                 <div
-                    {...(canReact ? handlers : {})}
+                    {...(canReact || canReply ? gestureHandlers : {})}
+                    style={offsetPx === 0 ? undefined : { transform: `translateX(${offsetPx}px)` }}
                     className={cn(
                         // `border-border-subtle`, which is the DEFAULT tone
                         // and the three-tone rule's own tie-break ("if you
@@ -189,7 +299,9 @@ export function MessageBubble({
                         isDeleted && 'italic text-content-muted',
                         // `border-border-emphasis` is reserved for STATE, and a
                         // message being held IS state — the three-tone rule.
-                        pressing && 'border-border-emphasis',
+                        // A swipe past the threshold is state for the same
+                        // reason: it says "release now and this fires".
+                        (pressing || armed) && 'border-border-emphasis',
                     )}
                 >
                     {isDeleted ? t('messageDeleted') : body}
@@ -226,6 +338,25 @@ export function MessageBubble({
                             label={reactionsLabel ?? t('addReaction')}
                             variant="ghost"
                             onClick={onRequestReactions}
+                            className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                        />
+                    ) : null}
+                    {canReply ? (
+                        // In the DOM always, so Tab reaches it — the rule
+                        // `<SwipeRow>` states and `useLongPress` inherits: a
+                        // gesture is invisible to a keyboard and to a screen
+                        // reader, so a gesture-only action is one some people
+                        // cannot perform. `opacity-0` rather than `hidden`,
+                        // because hidden is not focusable.
+                        //
+                        // FIRST of the three controls, matching the order a
+                        // reader is most likely to want them in and keeping
+                        // the tab order stable as the other two come and go.
+                        <IconAction
+                            icon={<ArrowTurnLeft />}
+                            label={replyLabel ?? t('replyToMessage')}
+                            variant="ghost"
+                            onClick={onRequestReply}
                             className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                         />
                     ) : null}
