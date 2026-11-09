@@ -58,11 +58,31 @@ function readExport(name: string): any {
     return JSON.parse(r.stdout);
 }
 
-/** The cuts this product does not render in Onest. Literals, deliberately. */
-const DROPPED = ['latin', 'latin-ext', 'math', 'symbols', 'vietnamese'] as const;
+/**
+ * The cuts this product does not render, per family. Literals, deliberately —
+ * see the docblock: deriving them from `NOT_SHIPPED` goes vacuous the moment
+ * somebody empties that constant.
+ *
+ * `Bricolage Grotesque` joined in #2336. It is the NUMERALS face — five call
+ * sites, every one a metric value carrying `tabular-nums` — so its `latin` cut
+ * earns its bytes and these two cannot serve a number.
+ */
+const DROPPED = {
+    Onest: ['latin', 'latin-ext', 'math', 'symbols', 'vietnamese'],
+    'Bricolage Grotesque': ['latin-ext', 'vietnamese'],
+} as const;
 
-describe('Onest ships cyrillic only (#1969)', () => {
-    it('declares no Onest face for a dropped cut, and no such file ships', () => {
+/** `Onest` -> `onest`, `Bricolage Grotesque` -> `bricolage-grotesque`. */
+const slug = (family: string) => family.toLowerCase().replace(/ /g, '-');
+
+/** The cut each family MUST keep, so a trim cannot take everything. */
+const KEPT = {
+    Onest: ['cyrillic', 'cyrillic-ext'],
+    'Bricolage Grotesque': ['latin'],
+} as const;
+
+describe('vendored fonts ship only the cuts this product renders (#1969, #2336)', () => {
+    it('declares no face for a dropped cut, and no such file ships', () => {
         // Comments stripped: this file's own prose names `onest-latin.woff2`,
         // and so does the generated stylesheet's header. A comment hit would
         // mean the opposite of a defect — the pattern was removed.
@@ -77,15 +97,25 @@ describe('Onest ships cyrillic only (#1969)', () => {
         // `file-collection-is-not-silently-empty.test.ts` matches its pattern
         // against raw source, so naming that function even in a comment records
         // this file as a hand-rolled collector.)
-        for (const subset of DROPPED) {
-            const file = `onest-${subset}.woff2`;
-            expect({ subset, inCss: css.includes(file) }).toEqual({ subset, inCss: false });
-            expect({ subset, onDisk: existsSync(fontPath(file)) }).toEqual({
-                subset,
-                onDisk: false,
-            });
-            expect(lock.faces.some((f) => f.family === 'Onest' && f.subset === subset)).toBe(false);
+        let probed = 0;
+        for (const [family, subsets] of Object.entries(DROPPED)) {
+            for (const subset of subsets) {
+                const file = `${slug(family)}-${subset}.woff2`;
+                const where = `${family} ${subset}`;
+                expect({ where, inCss: css.includes(file) }).toEqual({ where, inCss: false });
+                expect({ where, onDisk: existsSync(fontPath(file)) }).toEqual({
+                    where,
+                    onDisk: false,
+                });
+                expect(
+                    lock.faces.some((x) => x.family === family && x.subset === subset),
+                ).toBe(false);
+                probed += 1;
+            }
         }
+        // The DENOMINATOR. Two families, seven cuts between them; a map that
+        // lost a family would check fewer and still pass every assertion above.
+        expect(probed).toBe(7);
         // An absence is only evidence if the path is real, and it must be the
         // SAME path the probes used — hence `fontPath` for both. Two separate
         // literals let a mutation aim the probes at an empty directory while a
@@ -94,14 +124,31 @@ describe('Onest ships cyrillic only (#1969)', () => {
         expect(existsSync(fontPath('onest-cyrillic.woff2'))).toBe(true);
     });
 
-    it('still ships the cuts a Bulgarian UI actually needs', () => {
-        // The other failure direction: a trim that took the Cyrillic with it
-        // would make every heading system-ui and pass the test above.
-        for (const subset of ['cyrillic', 'cyrillic-ext']) {
-            const face = lock.faces.find((f) => f.family === 'Onest' && f.subset === subset);
-            expect(face).toBeDefined();
-            expect(existsSync(fontPath(face!.file))).toBe(true);
+    it('still ships the cuts each family actually needs', () => {
+        // The other failure direction, and the one a trim gets wrong: taking
+        // the Cyrillic with it would make every heading system-ui, and taking
+        // Bricolage's `latin` would leave the dashboard NUMBERS with no face —
+        // both of which pass the test above, because that one only checks
+        // absences.
+        let kept = 0;
+        for (const [family, subsets] of Object.entries(KEPT)) {
+            for (const subset of subsets) {
+                const face = lock.faces.find((x) => x.family === family && x.subset === subset);
+                expect({ family, subset, locked: Boolean(face) }).toEqual({
+                    family,
+                    subset,
+                    locked: true,
+                });
+                expect({ family, subset, onDisk: existsSync(fontPath(face!.file)) }).toEqual({
+                    family,
+                    subset,
+                    onDisk: true,
+                });
+                kept += 1;
+            }
         }
+        // The denominator, for the same reason as the dropped-cut loop.
+        expect(kept).toBe(3);
     });
 
     /**
@@ -145,6 +192,59 @@ describe('Onest ships cyrillic only (#1969)', () => {
         expect(hrefs).toContain(`/fonts/${interLatin!.file}`);
     });
 
+    it('the Inter fallback that makes the BRICOLAGE trim safe is still in place', () => {
+        /*
+         * #2336's whole safety argument, asserted rather than left in prose.
+         *
+         * Dropping Bricolage's `latin-ext` and `vietnamese` cuts cannot produce
+         * a tofu ONLY because Inter is next in the `display` stack and vendors
+         * both ranges. Reorder that stack, or stop vendoring either Inter cut,
+         * and an accented character in a metric becomes a missing glyph on a
+         * dashboard — with nothing else in the suite noticing, because every
+         * other assertion here is about an ABSENCE.
+         *
+         * Sibling of the heading-stack test above, and it exists for the reason
+         * that one gives: a safety argument nobody re-tests expires silently.
+         */
+        const sites: [string, string][] = [
+            ['tailwind.config.js', blankNonCode(read('tailwind.config.js'))],
+            ['src/styles/tokens.css', blankNonCode(read('src/styles/tokens.css'))],
+        ];
+        let checked = 0;
+        for (const [name, src] of sites) {
+            const stack = src.match(/(?:display:|--font-display:)\s*([^;\]]+)/)?.[1];
+            // Only assert where the stack is declared — but COUNT the sites
+            // that were, so a regex that stopped matching cannot pass over
+            // nothing.
+            if (!stack) continue;
+            const bricolage = stack.indexOf('Bricolage');
+            const inter = stack.indexOf('Inter');
+            expect({ site: name, hasBricolage: bricolage >= 0, hasInter: inter >= 0 }).toEqual({
+                site: name,
+                hasBricolage: true,
+                hasInter: true,
+            });
+            // Inter AFTER Bricolage: before it, Bricolage never renders a digit.
+            expect({ site: name, interAfterBricolage: inter > bricolage }).toEqual({
+                site: name,
+                interAfterBricolage: true,
+            });
+            checked += 1;
+        }
+        expect(checked).toBeGreaterThan(0);
+
+        // The cuts that ABSORB the drop must themselves be shipped. Without
+        // this the stack could be right and the glyphs still missing.
+        for (const subset of ['latin-ext', 'vietnamese']) {
+            const face = lock.faces.find((x) => x.family === 'Inter' && x.subset === subset);
+            expect({ subset, locked: Boolean(face) }).toEqual({ subset, locked: true });
+            expect({ subset, onDisk: existsSync(fontPath(face!.file)) }).toEqual({
+                subset,
+                onDisk: true,
+            });
+        }
+    });
+
     it('every exemption in NOT_SHIPPED still names a family the lock carries', () => {
         // An exemption for a family nothing ships is an excuse that outlived
         // its target — the same check #2323's guard makes for its own list.
@@ -162,8 +262,18 @@ describe('Onest ships cyrillic only (#1969)', () => {
         for (const family of Object.keys(NOT_SHIPPED)) {
             expect({ family, shipped: families.has(family) }).toEqual({ family, shipped: true });
         }
-        // And it must still cover the cuts this issue is about, so a re-vendor
-        // cannot quietly restore them.
-        expect([...NOT_SHIPPED.Onest].sort()).toEqual([...DROPPED].sort());
+        // And it must still cover the cuts these issues are about, so a
+        // re-vendor cannot quietly restore them. Compared per family, and
+        // against the LITERALS above rather than against itself.
+        for (const [family, subsets] of Object.entries(DROPPED)) {
+            expect({ family, cuts: [...(NOT_SHIPPED[family] ?? [])].sort() }).toEqual({
+                family,
+                cuts: [...subsets].sort(),
+            });
+        }
+        // Every family the constant exempts is one this guard has literals
+        // for — otherwise an exemption could be added for a third family and
+        // nothing here would range over it.
+        expect(Object.keys(NOT_SHIPPED).sort()).toEqual(Object.keys(DROPPED).sort());
     });
 });

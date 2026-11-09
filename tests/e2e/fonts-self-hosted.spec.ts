@@ -69,7 +69,7 @@ const PROBES = [
      * now falls back to Inter, which every `bg` page already preloads.
      *
      * Expected ABSENT, so a re-vendor that silently restores the cut reddens
-     * here as well as in `tests/guards/onest-ships-cyrillic-only.test.ts`.
+     * here as well as in `tests/guards/vendored-fonts-ship-only-what-renders.test.ts`.
      */
     { family: 'Onest', script: 'latin', text: 'Handgloves', faces: 'absent' },
     { family: 'Onest', script: 'cyrillic', text: 'Обработка', faces: 'present' },
