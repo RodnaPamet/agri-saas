@@ -9259,7 +9259,8 @@ exports[`API contract — per-schema snapshots schema: FileReport 1`] = `
         "MESSAGE",
         "PROFILE",
         "THREAD",
-        "DIRECT_MESSAGE"
+        "DIRECT_MESSAGE",
+        "CHANNEL_POST"
       ]
     },
     "subjectId": {

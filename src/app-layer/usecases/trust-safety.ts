@@ -111,6 +111,41 @@ async function captureSnapshot(
                 if (!row) captureError = 'SUBJECT_NOT_FOUND';
                 break;
             }
+            case 'CHANNEL_POST': {
+                // PUBLIC content, so this is the `LISTING` shape and NOT the
+                // `DIRECT_MESSAGE` one. No participation is asserted and none
+                // should be: `channel_post_select` admits any authenticated
+                // caller, so the reporter could already read every word of
+                // this. Adding a membership check would refuse a notice about
+                // a post the reporter can see, which is the opposite of what
+                // Art 16 asks for.
+                //
+                // `body` is PLAINTEXT by design (P9.1 — P9.7 needs channel
+                // posts searchable), so there is no decryption here and no
+                // read-the-metadata-first dance. That dance exists for
+                // `DIRECT_MESSAGE` precisely to stop a non-participant causing
+                // the plaintext to exist; here the plaintext is already
+                // readable by everyone.
+                const row = await prisma.channelPost.findUnique({
+                    where: { id: subjectId },
+                    select: {
+                        body: true,
+                        authorUserId: true,
+                        kind: true,
+                        channel: { select: { key: true, nameBg: true } },
+                    },
+                });
+                body = row
+                    ? [
+                        `channel: ${row.channel.nameBg} (${row.channel.key})`,
+                        `kind: ${row.kind}`,
+                        '',
+                        row.body,
+                    ].join('\n')
+                    : null;
+                if (!row) captureError = 'SUBJECT_NOT_FOUND';
+                break;
+            }
             case 'MESSAGE': {
                 const row = await prisma.exchangeMessage.findUnique({
                     where: { id: subjectId },

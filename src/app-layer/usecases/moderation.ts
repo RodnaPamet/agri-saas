@@ -222,7 +222,13 @@ export async function listNotices(opts: {
  * — a profile's removable surface is P6's `FarmBrand` and a thread is a
  * collection whose removal shape nobody has decided.
  */
-const REMOVABLE_SUBJECT_KINDS = ['LISTING', 'MESSAGE'] as const;
+// `CHANNEL_POST` joins these (P9.3c, #2937) and `DIRECT_MESSAGE` deliberately
+// does not. The difference is the AUDIENCE: a channel post is readable by every
+// farm, so removing it is the proportionate answer and suspending its author
+// while leaving it up would leave the content visible. A direct message reaches
+// one person, and the owner ruled (2026-11-08) that suspension is the remedy
+// there — `dm-is-reportable-not-removable` holds that absence.
+const REMOVABLE_SUBJECT_KINDS = ['LISTING', 'MESSAGE', 'CHANNEL_POST'] as const;
 
 /**
  * Refuse an outcome this platform cannot carry out, before anything is written.
@@ -286,6 +292,29 @@ async function removeSubjectOnTx(
                 where: { id: subjectId },
                 data: { removedByModerationAt: now },
             });
+            touched = count;
+            break;
+        }
+        case 'CHANNEL_POST': {
+            // A nullable timestamp, never a delete — an Art 17 statement
+            // carries redress, and #2867's restore route clears exactly this
+            // column. The feed already blanks the body for a removed post and
+            // keeps the row, so a reply above it does not dangle; that is
+            // asserted by `p9-3a-channel-core`.
+            //
+            // SEPARATE from `autoHiddenAt` (P9.3d) on purpose: one is a human
+            // decision and the other a report threshold, they are reversed by
+            // different acts, and collapsing them would make a statement of
+            // reasons claim a moderator looked when none did.
+            const { count } = await tx.channelPost.updateMany({
+                where: { id: subjectId },
+                data: { removedByModerationAt: now },
+            });
+            // `touched` is what the caller's `MODERATION_SUBJECT_GONE` check
+            // reads. Omitting it left `touched` at 0, so EVERY removal of a
+            // channel post reported the content as gone — caught by
+            // `p9-3c-channel-moderation`'s first run. The sibling arms assign
+            // it and this one did not.
             touched = count;
             break;
         }
@@ -1038,11 +1067,21 @@ async function readRemovalState(
                     where: { id: subjectId },
                     select: { removedByModerationAt: true },
                 })
-                : null;
+                : subjectKind === 'CHANNEL_POST'
+                    ? await tx.channelPost.findUnique({
+                        where: { id: subjectId },
+                        select: { removedByModerationAt: true },
+                    })
+                    : null;
     // A kind with no arm reads as GONE rather than throwing, and that is the
     // honest answer: `REMOVABLE_SUBJECT_KINDS` is what decides which kinds can
     // be removed at all, so a removal of some other kind cannot exist for this
     // verb to reverse.
+    //
+    // Which is also why an arm here must land in the SAME change as the one in
+    // `clearRemovalOnTx`: with the clear arm and not this one, every restore of
+    // a channel post would refuse with `MODERATION_SUBJECT_GONE` while the post
+    // sat there hidden — fail-closed, and wrong.
     if (!row) return 'gone';
     return row.removedByModerationAt === null ? 'visible' : 'hidden';
 }
@@ -1066,6 +1105,22 @@ async function clearRemovalOnTx(
     }
     if (subjectKind === 'MESSAGE') {
         await tx.exchangeMessage.updateMany({
+            where: { id: subjectId, removedByModerationAt: { not: null } },
+            data: { removedByModerationAt: null },
+        });
+        return;
+    }
+    if (subjectKind === 'CHANNEL_POST') {
+        // The `{ not: null }` guard is what makes `restored: false` meaningful
+        // — #2867's rule that restoring something already visible writes
+        // nothing and says so, rather than reporting a reversal that reversed
+        // nothing.
+        //
+        // It clears `removedByModerationAt` ONLY. `autoHiddenAt` (P9.3d) is a
+        // different act reversed by a different decision, and `deletedAt` is
+        // the AUTHOR's retraction — a moderator undoing that would republish
+        // something its writer took down.
+        await tx.channelPost.updateMany({
             where: { id: subjectId, removedByModerationAt: { not: null } },
             data: { removedByModerationAt: null },
         });

@@ -8796,7 +8796,8 @@
               "MESSAGE",
               "PROFILE",
               "THREAD",
-              "DIRECT_MESSAGE"
+              "DIRECT_MESSAGE",
+              "CHANNEL_POST"
             ]
           },
           "subjectId": {
