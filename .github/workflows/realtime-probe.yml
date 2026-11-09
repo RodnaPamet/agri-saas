@@ -163,9 +163,10 @@ jobs:
             "" \
             "**\`UNCONFIGURED\` has its own title**, so it never shares a thread with a" \
             "real outage. It means this repository has no \`PROBE_EMAIL\` /" \
-            "\`PROBE_PASSWORD\` secret: the account must exist, belong to a farm, and be" \
-            "in the cohort the \`notifications.sse\` flag is narrowed to — otherwise the" \
-            "stream correctly answers 204 and the probe reports \`OFF\` for ever.")
+            "\`PROBE_PASSWORD\` secret: the account must exist, belong to a farm, and" \
+            "sign in with a PASSWORD — the probe posts to the credentials provider, so a" \
+            "Google-only account cannot be used. No cohort is required:" \
+            "\`notifications.sse\` is enabled with an empty cohort list since #2137.")
 
           if [ -n "$existing" ]; then
             echo "commenting on #$existing"
