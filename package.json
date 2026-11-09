@@ -342,6 +342,7 @@
         "node-forge": "^1.4.2",
         "@sentry/bundler-plugins": {
             "glob": "^14.0.3"
-        }
+        },
+        "@smithy/core": "~3.37.0"
     }
 }
