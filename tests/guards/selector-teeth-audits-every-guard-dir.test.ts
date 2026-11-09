@@ -59,7 +59,27 @@ function declaredGuardDirs(): string[] {
     return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
 }
 
+/**
+ * The `git ls-files` pathspecs the SCHEDULED rotation selects from — #2678.
+ *
+ * The scheduled run has no base to diff against, so it rotates over the whole
+ * population instead, and that population is spelled in its own line. Two
+ * copies of one list is how the diff-based audit and the scheduled audit end
+ * up ranging over different directories, with both looking right in isolation
+ * — so they are compared below rather than hoisted, because the `git diff`
+ * line's literal spelling is what `auditedPathspecs` above parses.
+ */
+function rotationPathspecs(): string[] {
+    const ci = fs.readFileSync(CI_YML, 'utf8');
+    const line = ci
+        .split('\n')
+        .find((l) => l.includes('git ls-files') && l.includes('ALL <'));
+    if (!line) return [];
+    return [...line.matchAll(/'([^']+\.test\.ts)'/g)].map((m) => m[1]);
+}
+
 const PATHSPECS = auditedPathspecs();
+const ROTATION_PATHSPECS = rotationPathspecs();
 const GUARD_DIRS = declaredGuardDirs();
 
 /**
@@ -92,6 +112,12 @@ describe('selector-teeth audits every guard directory', () => {
             expect(GUARD_DIRS.length).toBeGreaterThan(1);
         });
 
+        it('the scheduled rotation step yielded pathspecs', () => {
+            // Same reason as the diff line's own control: an extractor that
+            // stopped matching would compare two empty sets below and pass.
+            expect(ROTATION_PATHSPECS.length).toBeGreaterThan(0);
+        });
+
         it('every declared guard directory exists and holds .test.ts files', () => {
             for (const dir of GUARD_DIRS) {
                 // `guardFilesIn` throws on a missing root AND on an empty
@@ -101,6 +127,14 @@ describe('selector-teeth audits every guard directory', () => {
                 expect(guardFilesIn(dir).length).toBeGreaterThan(0);
             }
         });
+    });
+
+    it('the scheduled rotation selects from the SAME population the diff audits', () => {
+        // #2678. The scheduled arm cannot reuse the `git diff` line (there is
+        // no base on a schedule), so the list is written twice. If the two
+        // drift, one of the two audits silently stops covering a directory
+        // while both still look correct where they are written.
+        expect([...ROTATION_PATHSPECS].sort()).toEqual([...PATHSPECS].sort());
     });
 
     it('every guard directory is covered by a CI pathspec', () => {
