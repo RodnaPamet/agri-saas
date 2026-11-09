@@ -89,6 +89,32 @@ export interface AcknowledgedBreakingChange {
  */
 export const ACKNOWLEDGED_BREAKING_CHANGES: readonly AcknowledgedBreakingChange[] = [
     {
+        kind: 'enum-narrowed',
+        schema: 'ActOnNotice',
+        property: 'actionKind',
+        contractVersion: 3,
+        pr: 2928,
+        date: '2026-11-09',
+        why:
+            'Removing `CONTENT_DEMOTED`, a published outcome this platform cannot '
+            + 'perform \u2014 owner decision 2026-11-09 (#2868). There is no ranking to '
+            + 'demote within (the exchange feed orders by `createdAt`; trends is computed '
+            + 'from price aggregates), so a recorded demotion announced a sanction that '
+            + 'does not exist. #2865 had already made `actOnNotice` refuse it, so no '
+            + 'caller could succeed with it before this change either \u2014 what moves '
+            + 'is WHERE the refusal happens: a 400 from this schema rather than a 403 '
+            + '`MODERATION_ACTION_NOT_PERFORMABLE` from the usecase.\n\n'
+            + 'The confirmation #2868 required before deleting: production held ZERO '
+            + '`ModerationAction` rows and ZERO `StatementOfReasons`, measured before the '
+            + 'edit, so nothing has ever sent it and no Art 17 statement referenced the '
+            + 'outcome. The only senders are the web console and the iOS mirror, neither '
+            + 'of which offers it.\n\n'
+            + 'This is the SAME SHAPE as the `ParcelGeo.geometry.type` narrowing this '
+            + 'mechanism was built for \u2014 a value the system physically cannot hold '
+            + 'being taken out of a published enum \u2014 and the reason the mechanism '
+            + 'exists rather than the assertion being edited.',
+    },
+    {
         kind: 'type-changed',
         schema: 'GET /api/social/inbox -> 400',
         property: 'error',

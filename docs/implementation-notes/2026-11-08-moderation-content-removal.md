@@ -86,6 +86,14 @@ the content kinds.
   enum — the OpenAPI contract and the iOS mirror both move — so it is #2868,
   and a refusal is reversible in a way a deleted enum value is not.
 
+  > **SUPERSEDED 2026-11-09.** The owner chose deletion, and #2868 carried it
+  > out — see `docs/implementation-notes/2026-11-09-delete-content-demoted.md`.
+  > The reasoning above is why *this* change refused rather than deleted, which
+  > is still the right account of what shipped on 2026-11-08; it is no longer a
+  > description of the enum. The reversibility argument held exactly as stated:
+  > the refusal bought the time in which somebody confirmed that production
+  > held zero `ModerationAction` rows.
+
 - **A removed message renders exactly like a deleted one.** Telling the
   counterparty WHICH it was would disclose a moderation action to a third party
   that nothing requires it to know, and the notifier is already answered by

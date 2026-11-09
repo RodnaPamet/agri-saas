@@ -169,11 +169,11 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
         const secret = `moderator-words-${randomUUID()}`;
 
         const { actionId } = await actOnNotice({
-            // CONTENT_REMOVED, not CONTENT_DEMOTED: #2865 refuses the latter
-            // outright, because there is no ranking in this product to demote
-            // within and a recorded demotion would announce a sanction that
-            // does not exist. This test's subject is the RATIONALE, not the
-            // kind.
+            // CONTENT_REMOVED, because it is the only content outcome this
+            // platform can perform. `CONTENT_DEMOTED` was deleted outright by
+            // #2868 — there is no ranking to demote within, so a recorded
+            // demotion announced a sanction that does not exist. This test's
+            // subject is the RATIONALE, not the kind.
             reportId, actionKind: 'CONTENT_REMOVED',
             rationale: secret, generation: 'current',
         });

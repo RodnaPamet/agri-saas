@@ -245,10 +245,10 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             // generation narrows a compromise window to one side of a rotation.
             const id = await fileOne();
             const { actionId } = await actOnNotice({
-                // CONTENT_REMOVED, not CONTENT_DEMOTED: #2865 refuses the
-                // latter outright — there is no ranking in this product to
-                // demote within, so a recorded demotion would announce a
-                // sanction that does not exist.
+                // CONTENT_REMOVED, the only content outcome this platform can
+                // perform. `CONTENT_DEMOTED` was deleted outright by #2868:
+                // there is no ranking to demote within, so a recorded
+                // demotion announced a sanction that does not exist.
                 reportId: id, actionKind: 'CONTENT_REMOVED',
                 rationale: 'demoted pending evidence', generation: 'previous',
             });
