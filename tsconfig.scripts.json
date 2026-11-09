@@ -34,6 +34,12 @@
     // "Knowledge-base / RAG seeding" section of CLAUDE.md). It met the
     // criterion already written down here and simply was not listed.
     "scripts/seed.ts",
+    // P9.2 (#2936). `seed.ts` imports it, so `tsc` would reach it
+    // transitively — but it is LISTED because the include list is the
+    // auditable record of what is covered, and transitive coverage
+    // disappears SILENTLY the day somebody moves the import. It writes
+    // (43 channel upserts), which is this section's criterion.
+    "scripts/channels/seed-channels.ts",
 
     // ── Scripts that WRITE to a database (#1485) ─────────────────────────
     //

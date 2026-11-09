@@ -52,8 +52,9 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { importKnowledge } from './import-knowledge';
 import { ingestSatelliteGuide } from './rag/ingest-satellite-guide';
 import { ingestGlobalCorpus, GLOBAL_CORPUS } from './rag/corpus';
+import { seedChannels } from './channels/seed-channels';
 
-const SUBCOMMANDS = ['knowledge', 'satellite', 'corpus', 'all'] as const;
+const SUBCOMMANDS = ['knowledge', 'satellite', 'corpus', 'channels', 'all'] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 function isSubcommand(v: string | undefined): v is Subcommand {
@@ -72,7 +73,10 @@ function printUsage(): void {
             '  corpus      Seed the GLOBAL RAG corpus WITH embeddings. Idempotent on (source, sourceRef).',
             '              Requires AI_EMBED_BASE_URL + AI_EMBED_API_KEY (or AI_BASE_URL) — see',
             '              deploy/env.prod.example. Fails loudly, naming the missing var, if unset.',
-            '  all         Run knowledge, then satellite, then corpus. Each step is attempted and',
+            '  channels    Seed the GLOBAL channel catalogue — 10 crop, 5 input, 28 oblast (P9.2).',
+            '              Idempotent on `Channel.key`; a re-run updates NAMES only and leaves',
+            '              memberCount, slowModeSeconds and archivedAt alone. Joins nobody.',
+            '  all         Run knowledge, then satellite, then corpus, then channels. Each step is',
             "              reported independently — one step's failure does not skip the others.",
             '              Exits non-zero if any step failed.',
             '',
@@ -124,6 +128,21 @@ async function runSatellite(prisma: PrismaClient): Promise<StepResult> {
     }
 }
 
+async function runChannels(prisma: PrismaClient): Promise<StepResult> {
+    try {
+        const res = await seedChannels(prisma);
+        return {
+            name: 'channels',
+            ok: true,
+            detail:
+                `GLOBAL: ${res.created} created, ${res.updated} already present `
+                + `(${res.total} in the catalogue).`,
+        };
+    } catch (err) {
+        return { name: 'channels', ok: false, detail: describeError(err) };
+    }
+}
+
 async function runCorpus(prisma: PrismaClient): Promise<StepResult> {
     try {
         const res = await ingestGlobalCorpus(prisma, GLOBAL_CORPUS);
@@ -167,7 +186,19 @@ async function main(): Promise<number> {
                   ? [await runSatellite(prisma)]
                   : cmd === 'corpus'
                     ? [await runCorpus(prisma)]
-                    : [await runKnowledge(prisma), await runSatellite(prisma), await runCorpus(prisma)];
+                    : cmd === 'channels'
+                      ? [await runChannels(prisma)]
+                      : [
+                              await runKnowledge(prisma),
+                              await runSatellite(prisma),
+                              await runCorpus(prisma),
+                              // `channels` is in `all` — it is idempotent, needs
+                              // no tenant and no embeddings backend, so there is
+                              // no deployment where running it is wrong. The
+                              // corpus step, by contrast, fails loudly without
+                              // `AI_EMBED_BASE_URL`.
+                              await runChannels(prisma),
+                          ];
 
         results.forEach(printResult);
 
