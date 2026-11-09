@@ -601,6 +601,26 @@
       "documented": true
     },
     {
+      "path": "/api/social/channels",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/channels/{channelId}",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/channels/{channelId}/join",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/social/channels/{channelId}/posts",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/conversations",
       "status": "live",
       "documented": true

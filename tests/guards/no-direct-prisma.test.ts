@@ -291,6 +291,35 @@ describe('CI Guard: No direct prisma in tenant-scoped code', () => {
         // defect this exemption could hide, and it is the thing to check in
         // review. `OpenConversationSchema` accepts a HANDLE for exactly that
         // reason.
+        // P9.3a (#2937) — channels. A NARROWER exemption than
+        // `direct-messages.ts` below, and the difference is worth stating
+        // because it is the better arrangement where it was available.
+        //
+        // Exactly TWO verbs are privileged — `joinChannel` and `leaveChannel`
+        // — and for one reason: `Channel.memberCount` is DENORMALISED, forced
+        // by P8.1's recursion rule. `channel_membership_select` admits the
+        // caller's OWN row only (a policy admitting "every member of a channel
+        // I am in" must ask that table whether I am in it, which Postgres
+        // refuses outright), so a member cannot count the others and the
+        // counter has to be maintained by whoever writes the membership. A
+        // user-context insert could write the row and not the counter, leaving
+        // it wrong with nothing able to notice.
+        //
+        // Everything else runs in `runInUserContext`: the directory, the feed,
+        // and POSTING. That last one matters — a direct message had to be sent
+        // privileged because the request rule reads
+        // `Conversation.lastMessageAt` and the insert must stamp it, whereas
+        // `channel_post_insert`'s WITH CHECK reads a DIFFERENT table, so the
+        // post is inserted AS THE CALLER and all three access rules (no forged
+        // author, no non-member, no banned member) are enforced by the
+        // DATABASE rather than by the usecase.
+        //
+        // What stands in for tenant scoping is that `userId` and
+        // `authorUserId` come from the verified session — `ctx.userId`, never
+        // from a request body. A write here taking a person id from a body is
+        // the defect this exemption could hide, and it is the thing to check
+        // in review.
+        'channels.ts',
         'direct-messages.ts',
         // P8.6 (#2800) — conversation photographs. Privileged for ONE narrow
         // thing and otherwise user-scoped: the insert needs the `lastMessageAt`
