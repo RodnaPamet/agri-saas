@@ -175,6 +175,49 @@ echo '{}'
         return { stdout: `${r.stdout ?? ''}${r.stderr ?? ''}`, status: r.status };
     }
 
+    it('reports PIN DRIFT when protection lists a context the guard does not pin', () => {
+        // #2643. `required-checks-always-report.test.ts` answers "can this check
+        // ever report?" against a PINNED copy of the contexts, and its own
+        // docblock names what it cannot tell you: a required check missing from
+        // that list is invisible to it. A test reaches no API, so the pin can
+        // only go stale silently — and this script already holds the live list.
+        //
+        // The stub's protection is `["Build"]`, so every other pinned entry is
+        // reported as a dead entry; what this asserts is the OTHER direction,
+        // which is the one that makes the guard blind.
+        const { stdout } = runWithStub('0');
+        expect(stdout).toContain('PIN DRIFT');
+        expect(stdout).toContain('pinned but no longer required');
+    });
+
+    it('names a drifted context INTACT, spaces and all', () => {
+        // Every required context here contains a space — `Selector teeth`,
+        // `Coverage (≥60%)`, `Docker Build & Scan`. An unquoted
+        // `printf '%s\n' $LIST` word-splits and prints `Selector` and `teeth`
+        // as two separate contexts, which names nothing that exists. Measured
+        // while building this, which is why it is asserted rather than assumed.
+        const { stdout } = runWithStub('0');
+        expect(stdout).toContain('Selector teeth');
+        expect(stdout).toContain('Coverage (≥60%)');
+        expect(stdout).not.toMatch(/^\s+Selector$/m);
+    });
+
+    it('does NOT change the exit code — a blind guard is not an unmergeable PR', () => {
+        // "Is this PR mergeable" and "is our guard blind" are different
+        // questions. Failing the first on the second would hold an unrelated
+        // merge over repo configuration.
+        //
+        // 1 is the PRE-EXISTING code here and the reason is worth stating: the
+        // stub's rollup is empty, so the one required context never registered
+        // and the script exits on `waiting` — which is #2643's own subject,
+        // arriving in the fixture. The drift block adds no exit of its own, so
+        // the assertion is that this code is UNCHANGED by it, not that it is 0.
+        // My first version asserted 0 and was wrong about the fixture rather
+        // than about the code.
+        const { status } = runWithStub('0');
+        expect(status).toBe(1);
+    });
+
     it('reports STALE when the head is behind the base — the case #2812 missed', () => {
         const { stdout } = runWithStub('7');
         expect(stdout).toMatch(/base freshness\s+STALE/);
