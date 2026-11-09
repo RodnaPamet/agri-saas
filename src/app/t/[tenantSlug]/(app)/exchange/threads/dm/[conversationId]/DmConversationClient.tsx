@@ -313,17 +313,105 @@ export function DmConversationClient({
         void apiPost(`${path}/read`, { readAt: new Date().toISOString() }).catch(() => undefined);
     }, [data, path]);
 
+    /**
+     * The message being answered (#2829), held HERE rather than in the
+     * composer: the quote has to survive a timeline re-render and a poll, and
+     * `MessageComposer` does the clearing and this screen decides WHETHER:
+     * `send` returns `false` on failure, which keeps both the text and the
+     * quote. That contract exists because the composer used to clear
+     * unconditionally and synchronously, so a failed send lost the operator's
+     * words — see `message-composer.tsx`'s `onSend`.
+     *
+     * The ID is the state and the quoted TEXT is derived from `messages` on
+     * every render. Storing a snapshot of the body instead would show the
+     * operator a quote of something the other party has since retracted, and
+     * the payload already re-reads `replyTo` for exactly that reason.
+     */
+    /**
+     * A failed send, surfaced the way the sibling exchange screen surfaces
+     * one. Reset on the next ATTEMPT rather than on a timer, so the message
+     * stays until the operator does something about it.
+     */
+    const [sendError, setSendError] = React.useState(false);
+    const [replyToId, setReplyToId] = React.useState<string | null>(null);
+
+    /**
+     * The quoted message, DERIVED — no effect, and that is the second draft.
+     *
+     * A quoted message that has since been DELETED, or that has left the page,
+     * must stop being quoted: the operator chose to answer something that is
+     * no longer there, and quoting it as «изтрито» shows them a quote they did
+     * not pick. The first draft cleared `replyToId` from a `useEffect`, which
+     * `react-hooks/set-state-in-effect` flagged — correctly. Deriving it means
+     * one source of truth, no cascading render and no warning to suppress.
+     *
+     * The consequence is that `replyToId` may name a message this returns null
+     * for, so **every consumer reads `replyingTo`, never `replyToId`** — the
+     * send below included, or a vanished target would still be sent.
+     */
+    const replyingTo = React.useMemo(() => {
+        if (!replyToId) return null;
+        const found = messages.find((m) => m.id === replyToId) ?? null;
+        return found && !found.deletedAt ? found : null;
+    }, [replyToId, messages]);
+
     const send = React.useCallback(
         async (body: string) => {
             setSending(true);
+            setSendError(false);
             try {
-                await apiPost(`${path}/messages`, { body });
+                await apiPost(`${path}/messages`, {
+                    body,
+                    // `replyingTo`, NOT `replyToId` — see that memo. The id
+                    // can name a message that has since been deleted or paged
+                    // out, and the derived value is the only one that has
+                    // applied those rules.
+                    //
+                    // Spread rather than `replyToMessageId: …`, so an absent
+                    // reply sends no key at all. The route forwards per field
+                    // and the schema is `.strip()`, so a null would be dropped
+                    // silently — but #2890 was a field the route never
+                    // forwarded, and sending a key the server ignores is the
+                    // same class read from the other end.
+                    ...(replyingTo ? { replyToMessageId: replyingTo.id } : {}),
+                });
+                // Cleared on SUCCESS only. A failed send retains the body
+                // (that is `pending`'s contract) and must retain the quote
+                // with it, or a retry sends the same words with their context
+                // silently dropped.
+                setReplyToId(null);
                 await mutate();
+                return true;
+            } catch {
+                // CAUGHT so the rejection does not escape. `onSend` discards
+                // the promise (`void send(body)`), so without this a failed
+                // send was an unhandled rejection — found by the rendered test
+                // for the retained quote, which jest failed on the escape
+                // rather than on its own assertion.
+                //
+                // And the operator is TOLD, which is the sibling exchange
+                // screen's own pattern rather than something invented here:
+                // `ThreadClient` does `catch { setSendError(true) }` and
+                // renders `exchange…sendFailed`. Two message screens in one
+                // product answering a failed send differently would be the
+                // defect; the copy question #2899 asks was already settled
+                // next door.
+                //
+                // A console line was the first draft and is wrong twice over:
+                // `observability-foundation`'s console guard refuses it (and
+                // an allowlist entry on a shrink-only list is a cost paid for
+                // nothing), and a console reaches no farmer.
+                setSendError(true);
+                // `false`, so the composer KEEPS the text. Returning nothing
+                // clears it — which is what happened before this, and it meant
+                // a failed send lost the operator's words and left them with a
+                // message saying to try again and nothing to try.
+                return false;
             } finally {
                 setSending(false);
             }
         },
-        [path, mutate],
+        [path, mutate, replyingTo],
     );
 
     const respond = React.useCallback(
@@ -430,6 +518,8 @@ export function DmConversationClient({
                 firstUnreadId={frozenUnread?.id ?? null}
                 onRequestReport={setReportingMessageId}
                 reportLabel={tReport('triggerAria')}
+                onRequestReply={setReplyToId}
+                replyLabel={t('replyToMessage')}
             />
 
             {theirRequest ? (
@@ -453,13 +543,39 @@ export function DmConversationClient({
                     </div>
                 </div>
             ) : (
+                <>
+                    {/*
+                      * Above the composer and OUTSIDE it, matching the sibling
+                      * exchange screen: the composer is a primitive shared
+                      * with any future chat surface, and a per-screen failure
+                      * message is the screen's to render.
+                      */}
+                    {sendError ? (
+                        <p className="px-default pt-default text-sm text-content-error">
+                            {t('sendFailed')}
+                        </p>
+                    ) : null}
                 <MessageComposer
-                    onSend={(body) => void send(body)}
+                    // NOT `void send(body)`. The composer reads the result to
+                    // decide whether to clear the text, and `void` discards it.
+                    onSend={(body) => send(body)}
                     pending={sending}
                     placeholder={t('composerPlaceholder')}
                     sendLabel={t('send')}
+                    quoted={
+                        replyingTo
+                            ? {
+                                body: replyingTo.body,
+                                deleted: Boolean(replyingTo.deletedAt),
+                            }
+                            : null
+                    }
+                    onClearQuote={() => setReplyToId(null)}
+                    clearQuoteLabel={t('clearQuote')}
+                    replyingToLabel={t('replyingTo')}
                     {...(myRequest ? { disabledReason: t('awaitingAcceptance') } : {})}
                 />
+                </>
             )}
         </div>
     );

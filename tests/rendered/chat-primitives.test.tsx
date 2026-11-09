@@ -460,6 +460,28 @@ describe('MessageComposer', () => {
         expect(box.value).toBe('');
     });
 
+    it('KEEPS the text when onSend returns false synchronously', () => {
+        // The contract is "return `false` to keep the text", and a SYNCHRONOUS
+        // `false` is a legal use of it. No live caller does — the DM page
+        // returns a promise — so this branch is unreachable from the product
+        // and a mutation that cleared unconditionally on the sync path
+        // survived 92 cases. A contract with an untested arm is a trap for the
+        // next caller, not a feature.
+        const onSend = jest.fn(() => false);
+        mount(
+            <MessageComposer
+                onSend={onSend}
+                placeholder="write"
+                sendLabel="send"
+            />,
+        );
+        const box = screen.getByRole('textbox');
+        fireEvent.change(box, { target: { value: 'задръж това' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        expect(onSend).toHaveBeenCalledWith('задръж това');
+        expect(box).toHaveValue('задръж това');
+    });
+
     it('inserts a newline on bare Enter and sends on Ctrl+Enter', () => {
         const { onSend } = mountComposer();
         const box = screen.getByLabelText('Write a message…');

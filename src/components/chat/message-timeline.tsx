@@ -61,6 +61,20 @@ export interface TimelineMessage {
     editedAt?: Date | string | null;
     deletedAt?: Date | string | null;
     reactions?: MessageBubbleProps['reactions'];
+    /**
+     * `DirectMessageView.replyTo`, as the API returns it — the SENDER's id
+     * rather than a label, because this component already owns the one
+     * `senderLabel` resolver and resolving the quote's name anywhere else
+     * would be a second place for a display name to come from.
+     *
+     * `deleted` is a field and not inferred from a null `body`: a photo-only
+     * message has a null body too since P8.6.
+     */
+    replyTo?: {
+        senderUserId: string;
+        body: string | null;
+        deleted: boolean;
+    } | null;
 }
 
 type Row =
@@ -159,6 +173,15 @@ export interface MessageTimelineProps {
      * on a deleted one (P5.3) — so a caller may pass this unconditionally.
      */
     onRequestReport?: (messageId: string) => void;
+    /**
+     * Quote a message in the composer (#2829). Takes the message ID, like its
+     * two neighbours, because the quoted STATE lives on the page: the composer
+     * has to keep it while the operator types, and a component that paged away
+     * would lose it.
+     */
+    onRequestReply?: (messageId: string) => void;
+    /** Accessible name for the reply control. */
+    replyLabel?: string;
     /** Accessible name for the report control, forwarded to each bubble. */
     reportLabel?: string;
     /** Clock for "today"/"yesterday". Injected so a test can fix it. */
@@ -232,6 +255,8 @@ export const MessageTimeline = React.forwardRef<
     onRequestReactions,
     onRequestReport,
     reportLabel,
+    onRequestReply,
+    replyLabel,
     now,
     virtualize,
     height,
@@ -340,9 +365,29 @@ export const MessageTimeline = React.forwardRef<
                             : undefined
                     }
                     reportLabel={reportLabel}
+                    onRequestReply={
+                        onRequestReply
+                            ? () => onRequestReply(row.message.id)
+                            : undefined
+                    }
+                    replyLabel={replyLabel}
+                    replyTo={
+                        row.message.replyTo
+                            ? {
+                                senderLabel: senderLabel?.(row.message.replyTo.senderUserId),
+                                body: row.message.replyTo.body,
+                                deleted: row.message.replyTo.deleted,
+                            }
+                            : null
+                    }
                 />
             );
         },
+        // `onRequestReport` / `onRequestReply` / the two labels are read here
+        // and are deliberately NOT in the deps, matching `onRequestReactions`'
+        // own omission: a caller passing an inline arrow would otherwise
+        // rebuild this callback on every render and defeat the memo. The
+        // handlers are called, never compared.
         [now, senderLabel, onRequestReactions],
     );
 

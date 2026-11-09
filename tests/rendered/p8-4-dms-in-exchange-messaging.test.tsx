@@ -17,7 +17,7 @@
  *     mark-read this screen performs on arrival.
  *   - a REQUEST has three shapes and only one gets a composer.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as React from 'react';
 
@@ -473,5 +473,225 @@ describe('DmConversationClient', () => {
         // nothing.
         mountConversation({ hasOlder: false, olderCursor: null });
         expect(screen.queryByRole('button', { name: /older/i })).not.toBeInTheDocument();
+    });
+
+    // ── the quoted reply, #2829's page half ──────────────────────────────
+    //
+    // The component stage (#2898) gave the bubble a reply control and the
+    // composer a quote slot. What only this screen can hold is the STATE
+    // between them, and the two things that can go wrong here are both
+    // silent: the quote never reaching the request, and the quote surviving a
+    // send.
+
+    it('quotes the message the reply control names, in the composer', async () => {
+        mountConversation();
+        fireEvent.click(screen.getByRole('button', { name: 'replyToMessage' }));
+        // The composer renders the quoted BODY, derived from `messages` rather
+        // than snapshotted at click time — so a message the other party
+        // retracts stops being quoted instead of showing stale text.
+        await waitFor(() =>
+            expect(screen.getByText('replyingTo')).toBeInTheDocument());
+        expect(screen.getAllByText('Имате ли още пшеница?').length).toBeGreaterThan(1);
+    });
+
+    it('sends replyToMessageId, which is the only thing the server can act on', async () => {
+        mountConversation();
+        fireEvent.click(screen.getByRole('button', { name: 'replyToMessage' }));
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'да, имам' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+
+        // THE ASSERTION THAT MATTERS, and it is on the REQUEST rather than on
+        // the screen. A quote rendered in the composer and dropped from the
+        // body looks identical to a working reply from the sender's side —
+        // which is #2890 verbatim, one field and one layer along.
+        await waitFor(() =>
+            expect(apiPost).toHaveBeenCalledWith(
+                '/api/social/conversations/c1/messages',
+                { body: 'да, имам', replyToMessageId: 'm1' },
+            ));
+    });
+
+    it('sends NO replyToMessageId when nothing is quoted', async () => {
+        // The control. Without it the case above is satisfied by a screen that
+        // attaches the key unconditionally — and the schema `.strip()`s a null,
+        // so the server would accept it and the defect would be invisible.
+        mountConversation();
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'здравей' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        await waitFor(() =>
+            expect(apiPost).toHaveBeenCalledWith(
+                '/api/social/conversations/c1/messages',
+                { body: 'здравей' },
+            ));
+    });
+
+    it('clears the quote after a SUCCESSFUL send', async () => {
+        mountConversation();
+        fireEvent.click(screen.getByRole('button', { name: 'replyToMessage' }));
+        await waitFor(() => expect(screen.getByText('replyingTo')).toBeInTheDocument());
+
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'да' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        await waitFor(() =>
+            expect(screen.queryByText('replyingTo')).not.toBeInTheDocument());
+    });
+
+    it('RETAINS the quote when the send fails', async () => {
+        // `pending`'s own contract, extended: a failed send keeps the body, so
+        // it has to keep the quote with it. Clearing on attempt rather than on
+        // success would make a retry send the same words with their context
+        // silently dropped — and the operator cannot see that it happened.
+        // AIMED AT THE RECIPIENT, not at a call index. `mockRejectedValueOnce`
+        // was the first draft and it failed this test for the wrong reason:
+        // the screen marks itself read on mount, so the `/read` POST consumed
+        // the rejection and the send succeeded. Same shape as the statement
+        // queue's own note — a once-mock lands on whichever call arrives
+        // first, and here that is never the one under test.
+        apiPost.mockImplementation((url: unknown) =>
+            String(url).endsWith('/messages')
+                ? Promise.reject(new Error('offline'))
+                : Promise.resolve({}));
+        mountConversation();
+        fireEvent.click(screen.getByRole('button', { name: 'replyToMessage' }));
+        await waitFor(() => expect(screen.getByText('replyingTo')).toBeInTheDocument());
+
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'да' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        await waitFor(() => expect(apiPost).toHaveBeenCalled());
+        expect(screen.getByText('replyingTo')).toBeInTheDocument();
+        // And the operator is TOLD. The first draft caught the rejection and
+        // logged it, which `observability-foundation`'s console guard refused
+        // — correctly, because a console reaches no farmer. The sibling
+        // exchange screen already answers a failed send with
+        // `exchange…sendFailed`, so this mirrors it rather than inventing
+        // copy: two message screens in one product disagreeing about what a
+        // failure says would be the defect.
+        await waitFor(() => expect(screen.getByText('sendFailed')).toBeInTheDocument());
+        // AND THE TEXT SURVIVES. Found while writing the case below, which
+        // could not retry because the composer was empty: `MessageComposer`
+        // cleared the body UNCONDITIONALLY and synchronously, in the same tick
+        // as `onSend`, so `pending`'s documented "the text is retained"
+        // never got a chance. A failure message telling the operator to try
+        // again, with nothing left to try, is worse than either half alone.
+        expect(screen.getByRole('textbox')).toHaveValue('да');
+    });
+
+    it('clears the failure message on the next ATTEMPT, not on a timer', async () => {
+        // Reset where the attempt starts, so the message stays until the
+        // operator does something about it. A timer would clear it while they
+        // were still reading.
+        apiPost.mockImplementation((url: unknown) =>
+            String(url).endsWith('/messages')
+                ? Promise.reject(new Error('offline'))
+                : Promise.resolve({}));
+        mountConversation();
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'едно' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        await waitFor(() => expect(screen.getByText('sendFailed')).toBeInTheDocument());
+
+        apiPost.mockResolvedValue({});
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+        await waitFor(() =>
+            expect(screen.queryByText('sendFailed')).not.toBeInTheDocument());
+    });
+
+    it('drops the quote when the quoted message is DELETED under it', async () => {
+        // The operator chose to answer something that is no longer there.
+        // Quoting it as «изтрито» would show them a quote they did not pick,
+        // and sending would point a reply at a retraction.
+        const { rerender } = mountConversation();
+        fireEvent.click(screen.getByRole('button', { name: 'replyToMessage' }));
+        await waitFor(() => expect(screen.getByText('replyingTo')).toBeInTheDocument());
+
+        plainSwr.mockReturnValue({
+            // A FRESH object, not a mutated one: the memo and the effect key on
+            // `messages`, and handing back the same array lets React bail out
+            // — the shape that made `tree()` a function in this file.
+            data: conversation({
+                messages: [
+                    {
+                        id: 'm1',
+                        senderUserId: THEM,
+                        body: null,
+                        createdAt: '2026-11-07T09:00:00.000Z',
+                        editedAt: null,
+                        deletedAt: '2026-11-07T11:00:00.000Z',
+                        reactions: [],
+                    },
+                ],
+            }),
+            error: undefined,
+            isLoading: false,
+            mutate: jest.fn(),
+        });
+        rerender();
+        await waitFor(() =>
+            expect(screen.queryByText('replyingTo')).not.toBeInTheDocument());
+    });
+
+    it('does not SEND a target that was deleted under the composer', async () => {
+        // FOUND BY MUTATION, and it is the half the screen-level case above
+        // cannot see. Swapping the send back to the raw `replyToId` passed all
+        // 29 other cases: the quote vanished from the screen and the request
+        // still carried the id, so the server would have quoted a retracted
+        // message in the thread while the sender saw no quote at all.
+        //
+        // The rule the code states — every consumer reads the DERIVED
+        // `replyingTo`, never `replyToId` — had no test until this one.
+        const { rerender } = mountConversation();
+        fireEvent.click(screen.getByRole('button', { name: 'replyToMessage' }));
+        await waitFor(() => expect(screen.getByText('replyingTo')).toBeInTheDocument());
+
+        plainSwr.mockReturnValue({
+            data: conversation({
+                messages: [
+                    {
+                        id: 'm1',
+                        senderUserId: THEM,
+                        body: null,
+                        createdAt: '2026-11-07T09:00:00.000Z',
+                        editedAt: null,
+                        deletedAt: '2026-11-07T11:00:00.000Z',
+                        reactions: [],
+                    },
+                ],
+            }),
+            error: undefined,
+            isLoading: false,
+            mutate: jest.fn(),
+        });
+        // RERENDER, never a second `render`. The first draft mounted a fresh
+        // tree here and the mutation survived: a new component gets a fresh
+        // `useState(null)`, so `replyToId` was never set in the tree under
+        // test and the assertion passed over nothing. The harness had reset
+        // the very state the case is about.
+        rerender();
+
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'все пак отговарям' } });
+        fireEvent.click(screen.getByRole('button', { name: 'send' }));
+
+        await waitFor(() =>
+            expect(apiPost).toHaveBeenCalledWith(
+                '/api/social/conversations/c1/messages',
+                { body: 'все пак отговарям' },
+            ));
+    });
+
+    it('offers an explicit dismiss, because a tap elsewhere does NOT clear it', async () => {
+        // The product choice recorded on #2829: the quote persists until
+        // cleared or sent, because one lost to a stray tap sends a message
+        // without its context and the reader cannot tell. That makes the
+        // dismiss control load-bearing rather than a convenience, and it is a
+        // real button so a keyboard reaches it.
+        mountConversation();
+        fireEvent.click(screen.getByRole('button', { name: 'replyToMessage' }));
+        await waitFor(() => expect(screen.getByText('replyingTo')).toBeInTheDocument());
+
+        const clear = screen.getByRole('button', { name: 'clearQuote' });
+        clear.focus();
+        expect(clear).toHaveFocus();
+        fireEvent.click(clear);
+        await waitFor(() =>
+            expect(screen.queryByText('replyingTo')).not.toBeInTheDocument());
     });
 });
