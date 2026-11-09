@@ -3874,6 +3874,59 @@ survives only in the message. `p5-1-trust-safety-rls` already matched on the
 message for this reason. When an RLS negative fails, check what the reader is
 reading before changing a policy.
 
+### P9.2 — the channel catalogue, and why the KEY PREFIX decides a query
+
+`dist/seed.mjs channels` (#2936) writes **43** channels: 10 `CROP` from
+`CANONICAL_COMMODITIES`, 5 `TOPIC` from `INPUT_COMMODITIES`, 28 `OBLAST` from
+`src/lib/geo/bulgaria-regions.ts`. A fifth subcommand on the existing CLI, in
+`all` as well, because it is idempotent and needs neither a tenant nor an
+embeddings backend.
+
+**«15 crops» in the P9 plan was 10 + 5, and the five are not crops** — diesel,
+urea, dap, map, ammonium-nitrate. Owner ruling 2026-11-09: seed all fifteen,
+the inputs as channels of their own, on `commodity-vocabulary.ts`'s own
+argument that fuel and fertiliser are the two largest cash costs in an arable
+budget.
+
+**`CropType` is the obvious source for the crop half and the WRONG one.** It is
+tenant-scoped (`tenantId String`, not nullable), so seeding from it would create
+a channel per farm per crop. The join that makes suggestion work is
+`CropType.commodityCanonical` → `Channel.key`, an equality join with no string
+matching.
+
+**THE KEY PREFIX IS LOAD-BEARING.** An input channel is `TOPIC` with an
+`input:` key, never `CROP` with `crop:`, because suggestion treats them
+differently: a crop channel is suggested to a farm that grows that crop, and an
+input channel has no such join because EVERY arable farm buys diesel and
+fertiliser — so it goes to everybody or to nobody. The prefix lets one query
+separate them without a second column.
+
+**The upsert's `update` touches NAMES ONLY.** `memberCount` is maintained by the
+join path, `slowModeSeconds` is an operator throttling a flooded channel, and
+`archivedAt` is somebody's decision to retire one. A seed writing the
+create-shape every run would reset all three on every deploy, silently undoing
+an operator's action. Idempotence itself is the UNIQUE INDEX on `Channel.key`,
+not a flag — so a renamed channel keeps its membership.
+
+**NOTHING joins anybody**, which is the clause this phase is actually about:
+*"Channels are suggested from the farm's crops and oblast, never joined
+automatically."* Suggestion is a READ returning candidates; the join is a WRITE
+the person performs. `tests/guards/channels-are-never-auto-joined.test.ts` holds
+it, as a SEPARATE file from `no-auto-join` — that guardrail's allowlist entries
+answer "gated by what? audit-logged how? email-bound?", which are questions
+about tenant privilege, and mixing the two would leave a reader unable to tell
+which rule an entry obeys. Its allowlist is empty, so its detector is proved
+against crafted sources.
+
+**Two instrument faults worth carrying forward.** A `git ls-files` population
+**cannot see an unstaged new file** — the guard's assertion that the seed was in
+its own population failed until the seed was `git add`ed, which is the same
+family as `git checkout -- <path>` being a no-op on an untracked file. And
+`seed-deployment` claimed "all four subcommands" while a fifth went unpinned;
+extending it needed the needle ANCHORED ON THE DECLARATION, because
+`toMatch(/'channels'/)` passed with the value removed from `SUBCOMMANDS` — the
+string also occurs in the dispatch arm and the result name.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

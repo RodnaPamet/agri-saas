@@ -35,18 +35,33 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 describe('knowledge-base seed CLI is deployed', () => {
-    it('scripts/seed.ts exists and wires all four subcommands', () => {
+    it('scripts/seed.ts exists and wires all five subcommands', () => {
+        // It said "four" until P9.2 added `channels` (#2936), and it PASSED —
+        // the assertions name the subcommands they know about and nothing
+        // asserted a count, so a fifth was unpinned while the title claimed
+        // completeness. A test name carrying a number is a claim, and this one
+        // had gone stale by one.
         expect(fs.existsSync(path.join(ROOT, 'scripts/seed.ts'))).toBe(true);
         const src = read('scripts/seed.ts');
         expect(src).toMatch(/'knowledge'/);
         expect(src).toMatch(/'satellite'/);
         expect(src).toMatch(/'corpus'/);
         expect(src).toMatch(/'all'/);
-        // The three underlying idempotent seed functions must actually
+        // ANCHORED ON THE DECLARATION, not on the bare string. `'channels'`
+        // also occurs in `runChannels`'s result name and in the dispatch arm,
+        // so `toMatch(/'channels'/)` passed with the value REMOVED from
+        // `SUBCOMMANDS` — measured, by trimming it and watching this suite stay
+        // green. An unrecognised subcommand prints usage and exits, so the
+        // declaration is the thing that makes `channels` reachable at all.
+        const subcommands = src.match(/const SUBCOMMANDS = \[([^\]]*)\]/);
+        expect(subcommands).not.toBeNull();
+        expect(subcommands![1]).toContain("'channels'");
+        // The four underlying idempotent seed functions must actually
         // be called, not just named in a comment.
         expect(src).toMatch(/importKnowledge\(/);
         expect(src).toMatch(/ingestSatelliteGuide\(/);
         expect(src).toMatch(/ingestGlobalCorpus\(/);
+        expect(src).toMatch(/seedChannels\(/);
     });
 
     it('scripts/build-seed.mjs exists and declares the seed entrypoint', () => {
