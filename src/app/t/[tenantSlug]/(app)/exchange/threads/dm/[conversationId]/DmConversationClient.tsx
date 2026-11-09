@@ -313,17 +313,84 @@ export function DmConversationClient({
         void apiPost(`${path}/read`, { readAt: new Date().toISOString() }).catch(() => undefined);
     }, [data, path]);
 
+    /**
+     * The message being answered (#2829), held HERE rather than in the
+     * composer: the quote has to survive a timeline re-render and a poll, and
+     * `MessageComposer` clears nothing it was given — the same contract as
+     * `pending`.
+     *
+     * The ID is the state and the quoted TEXT is derived from `messages` on
+     * every render. Storing a snapshot of the body instead would show the
+     * operator a quote of something the other party has since retracted, and
+     * the payload already re-reads `replyTo` for exactly that reason.
+     */
+    const [replyToId, setReplyToId] = React.useState<string | null>(null);
+
+    /**
+     * The quoted message, DERIVED — no effect, and that is the second draft.
+     *
+     * A quoted message that has since been DELETED, or that has left the page,
+     * must stop being quoted: the operator chose to answer something that is
+     * no longer there, and quoting it as «изтрито» shows them a quote they did
+     * not pick. The first draft cleared `replyToId` from a `useEffect`, which
+     * `react-hooks/set-state-in-effect` flagged — correctly. Deriving it means
+     * one source of truth, no cascading render and no warning to suppress.
+     *
+     * The consequence is that `replyToId` may name a message this returns null
+     * for, so **every consumer reads `replyingTo`, never `replyToId`** — the
+     * send below included, or a vanished target would still be sent.
+     */
+    const replyingTo = React.useMemo(() => {
+        if (!replyToId) return null;
+        const found = messages.find((m) => m.id === replyToId) ?? null;
+        return found && !found.deletedAt ? found : null;
+    }, [replyToId, messages]);
+
     const send = React.useCallback(
         async (body: string) => {
             setSending(true);
             try {
-                await apiPost(`${path}/messages`, { body });
+                await apiPost(`${path}/messages`, {
+                    body,
+                    // `replyingTo`, NOT `replyToId` — see that memo. The id
+                    // can name a message that has since been deleted or paged
+                    // out, and the derived value is the only one that has
+                    // applied those rules.
+                    //
+                    // Spread rather than `replyToMessageId: …`, so an absent
+                    // reply sends no key at all. The route forwards per field
+                    // and the schema is `.strip()`, so a null would be dropped
+                    // silently — but #2890 was a field the route never
+                    // forwarded, and sending a key the server ignores is the
+                    // same class read from the other end.
+                    ...(replyingTo ? { replyToMessageId: replyingTo.id } : {}),
+                });
+                // Cleared on SUCCESS only. A failed send retains the body
+                // (that is `pending`'s contract) and must retain the quote
+                // with it, or a retry sends the same words with their context
+                // silently dropped.
+                setReplyToId(null);
                 await mutate();
+            } catch (err) {
+                // CAUGHT so the rejection does not escape. `onSend` discards
+                // the promise (`void send(body)`), so without this a failed
+                // send is an unhandled rejection — found by the rendered test
+                // for the retained quote, which jest failed on the escape
+                // rather than on the assertion.
+                //
+                // Swallowing is NOT the end state and this is deliberately
+                // the smaller change: the composer keeps the body and now the
+                // quote, so a retry is one tap, but the operator is still told
+                // nothing about WHY. That is #2899, and it is a product
+                // decision about what the failure should say rather than
+                // something to invent inside a reply PR. `respond` below has
+                // the identical shape and the same gap.
+                console.error('dm send failed', err);
             } finally {
                 setSending(false);
             }
         },
-        [path, mutate],
+        [path, mutate, replyingTo],
     );
 
     const respond = React.useCallback(
@@ -430,6 +497,8 @@ export function DmConversationClient({
                 firstUnreadId={frozenUnread?.id ?? null}
                 onRequestReport={setReportingMessageId}
                 reportLabel={tReport('triggerAria')}
+                onRequestReply={setReplyToId}
+                replyLabel={t('replyToMessage')}
             />
 
             {theirRequest ? (
@@ -458,6 +527,17 @@ export function DmConversationClient({
                     pending={sending}
                     placeholder={t('composerPlaceholder')}
                     sendLabel={t('send')}
+                    quoted={
+                        replyingTo
+                            ? {
+                                body: replyingTo.body,
+                                deleted: Boolean(replyingTo.deletedAt),
+                            }
+                            : null
+                    }
+                    onClearQuote={() => setReplyToId(null)}
+                    clearQuoteLabel={t('clearQuote')}
+                    replyingToLabel={t('replyingTo')}
                     {...(myRequest ? { disabledReason: t('awaitingAcceptance') } : {})}
                 />
             )}

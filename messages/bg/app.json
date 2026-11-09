@@ -7119,6 +7119,8 @@
         "addReaction": "Реакция",
         "reportMessage": "Сигнализирайте това съобщение",
         "replyToMessage": "Отговори",
+        "clearQuote": "Спри отговора",
+        "replyingTo": "Отговор на",
         "edited": "редактирано",
         "messageDeleted": "Съобщението е изтрито",
         "newMessages": "Нови съобщения",

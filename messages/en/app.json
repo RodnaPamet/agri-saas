@@ -7119,6 +7119,8 @@
         "addReaction": "React",
         "reportMessage": "Report this message",
         "replyToMessage": "Reply",
+        "clearQuote": "Stop replying",
+        "replyingTo": "Replying to",
         "edited": "edited",
         "messageDeleted": "Message deleted",
         "newMessages": "New messages",
