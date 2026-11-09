@@ -12,6 +12,8 @@ const warn = jest.fn();
 let notificationCount = 0;
 let countArgs: unknown = null;
 let userRow: { uiLanguage: string | null } | null = { uiLanguage: 'bg' };
+/** The tenant whose bell the summary points at. See the mock below. */
+let tenantRow: { slug: string } | null = { slug: 'acme' };
 /**
  * The preference and device counts the job reads alongside the count.
  *
@@ -42,7 +44,14 @@ jest.mock('@/lib/db-context', () => ({
 }));
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    prisma: { user: { findUnique: async () => userRow } },
+    prisma: {
+        user: { findUnique: async () => userRow },
+        // The slug the push link is built from. Mutable at module level so one
+        // case can make it unresolvable — the no-link fallback is a real
+        // branch, and a fixed mock would leave it unexecuted while the suite
+        // read as covering it.
+        tenant: { findUnique: async () => tenantRow },
+    },
 }));
 jest.mock('@/lib/notifications/web-push', () => ({
     __esModule: true,
@@ -77,6 +86,7 @@ beforeEach(() => {
     notificationCount = 3;
     countArgs = null;
     userRow = { uiLanguage: 'bg' };
+    tenantRow = { slug: 'acme' };
     preferenceRow = null;
     deviceRows = [
         { platform: 'WEB', _count: { _all: 1 } },
@@ -159,12 +169,45 @@ describe('runPushSummary', () => {
         expect(dayIn(lt)).toBe('2026-11-06');
     });
 
-    it('opens the bell rather than a single task', async () => {
-        // The summary is about several notifications; there is no one target.
+    it('opens that FARM\u2019s bell rather than a single task', async () => {
+        // The summary is about several notifications, so there is no one
+        // target — and the bell is TENANT-SCOPED, so the link carries the slug.
+        //
+        // This assertion pinned the bare `'/notifications'` until 2026-11-09,
+        // and that was the defect rather than the contract: no root-level
+        // `/notifications` page exists, so the service worker opened a 404 and
+        // iOS had no `PushLink` case and merely opened the app. A test can hold
+        // a defect in place by asserting it, which is what this one did.
         await runPushSummary(payload);
 
-        expect(webPush.mock.calls[0][2]).toMatchObject({ url: '/notifications' });
-        expect(apns.mock.calls[0][2]).toMatchObject({ link: '/notifications' });
+        expect(webPush.mock.calls[0][2]).toMatchObject({
+            url: '/t/acme/notifications',
+        });
+        expect(apns.mock.calls[0][2]).toMatchObject({
+            link: '/t/acme/notifications',
+        });
+    });
+
+    it('sends NO link when the slug does not resolve, never the bare path', async () => {
+        // A tenant hard-deleted between the count and the send. Vanishingly
+        // unlikely, and the branch has to exist because the alternative is
+        // emitting a path that goes nowhere on both clients.
+        //
+        // Asserted as the ABSENCE OF THE KEY, not as `url: undefined`:
+        // `toMatchObject` treats an explicitly-undefined expected value as
+        // satisfied by a missing one, so that spelling would pass either way.
+        tenantRow = null;
+
+        await runPushSummary(payload);
+
+        expect(webPush).toHaveBeenCalledTimes(1);
+        expect(Object.keys(webPush.mock.calls[0][2])).not.toContain('url');
+        expect(Object.keys(apns.mock.calls[0][2])).not.toContain('link');
+
+        // The point is that the push STILL GOES OUT. A fallback that suppressed
+        // it would turn a missing destination into a missing notification,
+        // which is the thing this job exists to prevent.
+        expect(apns).toHaveBeenCalledTimes(1);
     });
 
     it('collapses on the night, so a second summary replaces rather than stacks', async () => {
