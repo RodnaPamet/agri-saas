@@ -16,6 +16,7 @@ on:
           - auth
           - lists
           - streams
+          - delivery
         default: both
       vus:
         description: Virtual users (concurrency target)
@@ -97,6 +98,47 @@ jobs:
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
+
+      # ── k6 WITH the SSE extension, for the delivery scenario (#2881) ──
+      #
+      # Stock k6 cannot read frames from a held response: `http.get` on an SSE
+      # endpoint blocks until the request times out, so a VU that opened a
+      # stream could not also write into it. P8.9's criterion is DELIVERY —
+      # write to frame — and measuring it needs a client that reads while the
+      # VU stays in the event loop. That is `xk6-sse`, and a binary carrying it
+      # has to be built.
+      #
+      # Built only for the scenario that needs it, so the other three keep the
+      # stock action's cached binary and pay nothing. The build is ~1 min on a
+      # runner that already has Go preinstalled — no `setup-go` step, which is
+      # one fewer action to pin.
+      #
+      # `./k6-sse` rather than overwriting `k6` on PATH: the two binaries are
+      # not interchangeable in the direction that matters. A scenario run under
+      # the WRONG one should fail at the `k6/x/sse` import rather than silently
+      # measure something else, and keeping them as separate paths is what makes
+      # that true by construction.
+      #
+      # The extension is PINNED by commit, not by a floating default branch:
+      # `xk6 build` with no version pulls whatever HEAD happens to be, which
+      # makes the measurement irreproducible and the build a supply-chain edge
+      # nobody reviewed.
+      - name: Build k6 with xk6-sse (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        env:
+          K6_VERSION: v1.4.0
+          XK6_SSE: github.com/phymbert/xk6-sse@v0.1.2
+        run: |
+          go version
+          go install go.k6.io/xk6/cmd/xk6@latest
+          "$(go env GOPATH)/bin/xk6" build "$K6_VERSION" --with "$XK6_SSE" --output ./k6-sse
+          ./k6-sse version
+          # A POSITIVE CONTROL on the build, not just on the binary existing:
+          # a k6 without the extension exits non-zero on this import, so a
+          # silently-stock binary cannot reach the scenario below.
+          printf 'import sse from "k6/x/sse";\nexport default function(){};\n' > /tmp/sse-probe.js
+          ./k6-sse run --quiet --vus 1 --iterations 1 /tmp/sse-probe.js
+          echo "xk6-sse resolves in ./k6-sse"
 
       - name: Enable pgvector (PGDG)
         uses: ./.github/actions/enable-pgvector
@@ -227,6 +269,55 @@ jobs:
             -e RAMP_DOWN=10s \
             -e STREAM_HOLD=15s \
             tests/load/realtime-streams.js
+
+      # ── delivery scenario (#2881) ──────────────────────────────────────
+      #
+      # PAIRS accounts in pairs, each with an ACCEPTED conversation, so one VU
+      # can hold a stream as A and write as B. `--pairs` needs two accounts per
+      # pair, which is why `--users` is twice it.
+      #
+      # Deliberately small (25 pairs) rather than matching the streams
+      # scenario's thousand: this measures a LATENCY, and a thousand
+      # simultaneous writes on a CI runner would measure the runner. The
+      # concurrency question is `realtime-streams.js`'s and is already answered
+      # there.
+      - name: Seed DM pairs (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        env:
+          LOAD_SEED_CONFIRM: yes-this-is-a-throwaway-vm
+          LOAD_TEST_PASSWORD: ci_load_password
+        run: |
+          npx tsx scripts/seed-load-streams.ts \
+            --users $(( ${{ steps.params.outputs.vus }} * 2 )) \
+            --pairs ${{ steps.params.outputs.vus }} \
+            --enable-flag
+
+      # The DM flag is switched on HERE rather than by the seeder, which reads
+      # it and refuses to write it: enabling a second global flag is an
+      # operator decision, not a side effect of seeding. On a throwaway CI
+      # database that decision is this line.
+      - name: Enable social.direct-messages (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        run: |
+          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          INSERT INTO "FeatureFlag" ("id", "key", "enabled", "cohorts", "description", "createdAt", "updatedAt")
+          VALUES (gen_random_uuid()::text, 'social.direct-messages', true, '{}',
+                  'Enabled by load-test.yml for the #2881 delivery run.', NOW(), NOW())
+          ON CONFLICT ("key") DO UPDATE SET "enabled" = true, "cohorts" = '{}', "updatedAt" = NOW();
+          SQL
+
+      - name: Run k6 — delivery scenario
+        if: steps.params.outputs.scenario == 'delivery'
+        env:
+          BASE_URL: http://localhost:3006
+          LOAD_TEST_PASSWORD: ci_load_password
+        run: |
+          ./k6-sse run \
+            -e PAIRS=${{ steps.params.outputs.vus }} \
+            -e DURATION=${{ steps.params.outputs.duration }} \
+            -e RAMP_UP=20s \
+            -e RAMP_DOWN=10s \
+            tests/load/realtime-delivery.js
 
       - name: Stop app
         if: always()
