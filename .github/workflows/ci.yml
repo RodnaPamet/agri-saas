@@ -22,8 +22,10 @@
 #      e2e/load-smoke/docker — a skipped required check passes protection.
 #    • cancel-in-progress: PRs only (push/schedule runs always finish).
 #    • coverage: main-push only. load-smoke: main-push only.
-#    • schedule (weekly): scan-refresh only — build + docker/Trivy + codeql;
-#      test/e2e/load-smoke/coverage are skipped.
+#    • schedule (weekly): scan-refresh — build + docker/Trivy + codeql — PLUS
+#      a rotating 1/8 slice of the selector audit (#2678: the diff-based plan
+#      partitions nothing on a schedule, so the weekly run used to audit ZERO
+#      guard files and report success). test/e2e/load-smoke/coverage skipped.
 # ───────────────────────────────────────────────────────────────
 name: CI
 
@@ -349,6 +351,61 @@ jobs:
                 echo "::error::defect this job exists to find. Failing instead."
                 exit 1
                 ;;
+              schedule)
+                # #2678 — THE WEEKLY RUN USED TO AUDIT ZERO GUARD FILES.
+                #
+                # A `schedule` event carries no `github.event.before`, so BASE
+                # is empty, the diff partitions nothing, and this job reported
+                # success over an audit that examined NOTHING — the exact
+                # defect it exists to find, in its own trigger.
+                #
+                # It does not fall through to the diff below: there is no base
+                # to diff against and there never will be. It selects a
+                # ROTATING SLICE of the whole population instead, so every
+                # guard is audited within ROTATION_BUCKETS weeks.
+                #
+                # WHY A SLICE AND NOT EVERYTHING. Measured before choosing
+                # (the issue asked for the cost rather than a guess): 886
+                # guard files, 686 with an auditable selector, 1,621
+                # mutations = 2,307 jest invocations at ~44-54s each, so ~31
+                # runner-hours — and at FILES_PER_SHARD 3 that wants 229
+                # shards against the 256-job matrix ceiling this step refuses
+                # to exceed, i.e. 12% of headroom, so ordinary guard growth
+                # would break the job outright. A 1/8 rotation is ~4
+                # runner-hours and ~29 shards. Owner ruling 2026-11-09.
+                #
+                # WHAT IT CATCHES that the diff cannot: a guard made vacuous
+                # by an input that changed in an EARLIER PR. The by-input
+                # selection below is same-PR only and says so.
+                #
+                # The pathspecs are REPEATED from the `git diff` line below
+                # rather than hoisted into one variable: that line's literal
+                # spelling is what `selector-teeth-audits-every-guard-dir`
+                # parses, and hoisting would blind it. The same guard asserts
+                # these two lists stay IDENTICAL, so the duplication cannot
+                # drift.
+                mapfile -t ALL < <(git ls-files 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts' 'tests/contracts/*.test.ts' 'tests/regression/*.test.ts')
+                echo "rotating over ${#ALL[@]} guard file(s)"
+                # CAPTURED, NOT PIPED INTO `mapfile` THROUGH PROCESS
+                # SUBSTITUTION. The script fails on an empty slice and on a
+                # non-integer week override, and `< <(... | node ...)` DISCARDS
+                # that exit status — `set -o pipefail` does not reach inside a
+                # process substitution. Measured: a node process exiting 1
+                # there leaves the step at exit 0 with the array EMPTY, so
+                # `total=0` is written and the audit matrix is skipped. That
+                # turns both of the script's refusals into the very thing this
+                # change removes — a green audit of nothing. So the status is
+                # checked before the output is used.
+                if ! ROT_OUT="$(printf '%s\n' "${ALL[@]}" | node scripts/selector-teeth-rotation.mjs)"; then
+                  echo "::error::the rotation could not produce a slice of the guard population."
+                  echo "::error::Refusing to continue: an empty partition here would be reported"
+                  echo "::error::as a clean audit of every guard, which is the defect this job"
+                  echo "::error::exists to find. See the error above for the cause."
+                  exit 1
+                fi
+                mapfile -t ALL < <(printf '%s\n' "$ROT_OUT" | grep -v '^$')
+                ROTATED=1
+                ;;
               *)
                 echo "::notice::${GITHUB_EVENT_NAME} carries no base (BASE='${BASE:-}') — first push to a branch; nothing to diff."
                 # WRITE THE OUTPUTS BEFORE LEAVING (#2676). This `exit 0` is
@@ -392,6 +449,10 @@ jobs:
           # finish being no gate at all. A deleted guard has no selectors to
           # audit; the renamed file arrives in the same diff as an addition and
           # IS audited.
+          # Skipped entirely when the schedule arm above already chose the
+          # population. The body keeps its original indentation so this diff
+          # shows the change and not a re-indent of fifty commented lines.
+          if [ -z "${ROTATED:-}" ]; then
           mapfile -t ALL < <(git diff --name-only --diff-filter=d "$BASE" HEAD -- 'tests/guards/*.test.ts' 'tests/guardrails/*.test.ts' 'tests/contracts/*.test.ts' 'tests/regression/*.test.ts')
           # ALSO audit guards whose INPUTS changed, not only guards whose file
           # changed — #2377 §2.
@@ -426,6 +487,7 @@ jobs:
           # entry, or the partition-cover assertion below would count it twice and
           # fail on a correct partition.
           mapfile -t ALL < <(printf '%s\n' "${ALL[@]}" "${BY_INPUT[@]}" | grep -v '^$' | sort -u)
+          fi
           TOTAL=${#ALL[@]}
           echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
           if [ "$TOTAL" -eq 0 ]; then
