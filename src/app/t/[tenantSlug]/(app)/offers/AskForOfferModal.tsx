@@ -14,7 +14,6 @@ import { useTranslations } from 'next-intl';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Checkbox } from '@/components/ui/checkbox';
-import { env } from '@/env';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -60,7 +59,16 @@ export function AskForOfferModal({ promotionId, company, hasRequested = false }:
     const [consent, setConsent] = useState(false);
     // The in-app /privacy page now exists, so this always resolves. The env
     // var stays as an override for an operator who hosts their own policy.
-    const privacyUrl = env.NEXT_PUBLIC_PRIVACY_URL ?? '/privacy';
+    //
+    // READ FROM `process.env`, NOT `@/env` — #2353. This is a `'use client'`
+    // component, and `@/env` is 944 lines of validation schema whose first
+    // import pulls in zod, so importing it here carried the whole environment
+    // contract and a zod dependency into a client chunk to resolve one string.
+    // Next inlines `NEXT_PUBLIC_*` at build time, so the direct read is the
+    // idiomatic one on the client and is what the five other client components
+    // reading a `NEXT_PUBLIC_` var already do. `src/env.ts` is `server-only`
+    // as of the same change, so this is now the only form that compiles.
+    const privacyUrl = process.env.NEXT_PUBLIC_PRIVACY_URL ?? '/privacy';
 
     const canSubmit = message.trim().length > 0 && consent && !submitting;
 
