@@ -27,6 +27,15 @@
  * GHCR`, the one workflow that produces what production runs, was missing from
  * a curated watchlist.
  *
+ * Collected through `collectTrackedFiles`, not a hand-rolled `readdirSync`.
+ * The first draft used the latter and `file-collection-is-not-silently-empty`
+ * refused it, correctly: a hand-rolled collector can be gutted to return `[]`
+ * with every assertion built on it still green, measured at 81% of the guards
+ * an automated sweep could audit. The shared helper refuses an empty result,
+ * which is the floor this guard would otherwise have had to assert for itself
+ * — and does anyway, below, because a floor on the WORKFLOW count is not the
+ * same claim as a floor on the number of step-output REFERENCES.
+ *
  * ## What it does NOT claim
  *
  * Only `steps.<id>.outputs.*` inside `if:`. A `run:` body referencing a later
@@ -37,10 +46,12 @@
  * empty substitution in an `if:` is a silent skip. Narrow and honest beats
  * broad and noisy.
  */
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import * as path from 'path';
 
 import * as yaml from 'js-yaml';
+
+import { collectTrackedFiles } from '../helpers/collect-files';
 
 const WORKFLOW_DIR = path.join(process.cwd(), '.github/workflows');
 
@@ -56,9 +67,13 @@ interface Workflow {
     jobs?: Record<string, Job>;
 }
 
-const files = readdirSync(WORKFLOW_DIR)
-    .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
-    .sort();
+const files = collectTrackedFiles({
+    roots: ['.github/workflows'],
+    extensions: ['.yml', '.yaml'],
+    // A floor, because the helper's own refusal is "not empty" and this guard
+    // is worthless over two files as well as over zero.
+    minFiles: 10,
+}).map((abs) => path.basename(abs));
 
 /** Every `steps.<id>.outputs` reference inside a condition string. */
 function referencedStepIds(condition: string): string[] {
