@@ -3519,6 +3519,94 @@ exports[`API contract — per-schema snapshots schema: CatalogItemWriteAck 1`] =
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: ChannelListItem 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string",
+      "description": "The topic key — \`crop:wheat\`, \`input:urea\`, \`oblast:BG-16\`. The PREFIX is meaningful: a crop channel is suggested to a farm that grows that crop, while an input channel has no such join because every arable farm buys diesel and fertiliser, so it is offered to everybody or to nobody."
+    },
+    "nameBg": {
+      "type": "string"
+    },
+    "nameEn": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "description": "CROP, OBLAST or TOPIC."
+    },
+    "memberCount": {
+      "type": "integer",
+      "description": "Denormalised, and necessarily so: the membership policy admits the caller's OWN row only, so a member cannot count the others."
+    },
+    "slowModeSeconds": {
+      "type": "integer",
+      "description": "Seconds a member must wait between posts. 0 is off."
+    },
+    "joined": {
+      "type": "boolean"
+    },
+    "banned": {
+      "type": "boolean",
+      "description": "Returned so a ban is not a silent refusal — a banned member sees why posting fails before they try."
+    }
+  },
+  "required": [
+    "id",
+    "key",
+    "nameBg",
+    "nameEn",
+    "kind",
+    "memberCount",
+    "slowModeSeconds",
+    "joined",
+    "banned"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: ChannelPost 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "authorUserId": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string",
+      "description": "EMPTY when \`deleted\` is true. The row is kept rather than omitted so a reply above it does not dangle; the text is still stored, so a moderation removal remains restorable."
+    },
+    "kind": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "deleted": {
+      "type": "boolean",
+      "description": "True for an author retraction, a moderator removal OR an auto-hide. The three are separate columns and are deliberately COLLAPSED here: telling a reader which one it was would disclose a moderation action to a third party."
+    }
+  },
+  "required": [
+    "id",
+    "authorUserId",
+    "body",
+    "kind",
+    "createdAt",
+    "deleted"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: CompanyUpdated 1`] = `
 "{
   "type": "object",

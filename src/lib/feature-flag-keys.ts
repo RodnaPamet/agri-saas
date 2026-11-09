@@ -125,6 +125,19 @@ export const REFERENCED_FLAG_KEYS = [
     // operator inserts the row — the correct reading, as for the three keys
     // above, because a key gating routes with no row is what that capability
     // exists to surface.
+    /**
+     * P9 (#1200) — channels. Gates the channel directory, the feed, joining
+     * and posting (P9.3a), and every later channel surface.
+     *
+     * `feature-flags-capability` reports this in `missingRows` until the row
+     * exists, and that reading is CORRECT rather than noise — it is what
+     * separates "deliberately off" from "nobody ever inserted it". The row
+     * goes in DISABLED when this ships: #2861 is the instance where a missing
+     * row made a built surface DARK rather than off, because
+     * `assertFeatureEnabled` answers 404 for a disabled flag and a 404 is
+     * indistinguishable from a route that does not exist.
+     */
+    'social.channels',
     'social.direct-messages',
     'social.farm-media',
     'social.farm-registration',

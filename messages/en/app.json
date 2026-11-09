@@ -6719,6 +6719,13 @@
         "signOut": "Sign out"
     },
     "errors": {
+        "CHANNEL_ARCHIVED": "That channel is closed.",
+        "CHANNEL_BANNED": "You can no longer post in that channel.",
+        "CHANNEL_NOT_A_MEMBER": "Join the channel before posting in it.",
+        "CHANNEL_NOT_FOUND": "That channel does not exist.",
+        "CHANNEL_POST_REQUIRED": "A post cannot be empty.",
+        "CHANNEL_POST_TOO_LONG": "That post is too long.",
+        "CHANNEL_SLOW_MODE": "That channel is in slow mode. Wait a little before posting again.",
         "ACCESS_REVIEW_ALREADY_CLOSED": "This campaign is already closed.",
         "ACCESS_REVIEW_DECISIONS_IMMUTABLE": "This campaign is closed; decisions are immutable.",
         "ACCESS_REVIEW_DECISIONS_PENDING": "Cannot close: {pending} decisions are still pending. Every subject must be confirmed, revoked, or modified before close.",

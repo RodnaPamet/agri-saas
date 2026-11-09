@@ -1784,6 +1784,20 @@ export const MessageReactionSchema = z.object({
  * INPUT on a notice because a restore is addressed by the action id it
  * reverses, not recorded as a fresh decision.
  */
+/**
+ * A channel post's body — P9.3a (#2937).
+ *
+ * `.max` matches `CHANNEL_POST_MAX_LENGTH` in the usecase, which also refuses
+ * an empty body AFTER sanitising: a body of only markup sanitises to nothing
+ * and would pass a `min(1)` here while being empty by the time it is stored.
+ * So this bounds the REQUEST and the usecase bounds the VALUE — the C.5 rule
+ * that sanitisation lives at the usecase, where `sanitize-rich-text-coverage`
+ * verifies the field by name.
+ */
+export const CreateChannelPostSchema = z.object({
+    body: z.string().min(1).max(8000),
+});
+
 export const MODERATION_ACTION_KINDS = [
     'NONE',
     'CONTENT_REMOVED',

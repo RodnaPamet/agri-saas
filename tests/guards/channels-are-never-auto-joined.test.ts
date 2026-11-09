@@ -92,10 +92,30 @@ interface AllowlistedSite {
 }
 
 /**
- * EMPTY until a join path exists. An entry here must say what makes the write
- * the person's own act — a request they made, not a list they appeared on.
+ * An entry here must say what makes the write the person's OWN ACT — a request
+ * they made, not a list they appeared on.
+ *
+ * It was empty until P9.3a (#2937) shipped the join path, which is why the
+ * detector below is still proved against crafted sources as well: the
+ * population is now one, and a single-entry allowlist is not much of a test of
+ * whether the allowlist works.
  */
-const ALLOWLISTED_JOIN_SITES: readonly AllowlistedSite[] = [];
+const ALLOWLISTED_JOIN_SITES: readonly AllowlistedSite[] = [
+    {
+        file: 'src/app-layer/usecases/channels.ts',
+        reason:
+            'P9.3a. `joinChannel` writes the membership for the AUTHENTICATED '
+            + 'caller and nobody else — `ctx.userId`, never an id from a body '
+            + 'or a list. It is privileged only because it must increment '
+            + '`Channel.memberCount` in the same transaction, which a '
+            + 'user-context insert could not do: the counter is denormalised '
+            + 'because `channel_membership_select` admits the caller\'s own row '
+            + 'only, so a member cannot count the others. `leaveChannel` is the '
+            + 'inverse and equally theirs. Reached only from '
+            + 'POST/DELETE /api/social/channels/{id}/join, which resolve the '
+            + 'person with `getUserCtx` before anything is written.',
+    },
+];
 
 /**
  * Every TRACKED TypeScript file that could hold such a write.
@@ -196,6 +216,30 @@ describe('a channel membership is never written on somebody’s behalf', () => {
             );
         }
         expect(offenders).toEqual([]);
+    });
+
+    it('every ALLOWLISTED file is in the population and really does write', () => {
+        // Two failures this catches, and I hit the second one TWICE in a day.
+        //
+        // STALE: an entry outliving the write it excused keeps that path
+        // pre-approved for whatever is created there next. That is the
+        // `require('@/env')` failure verbatim — four entries outlived the
+        // usecases the GRC teardown deleted, and nothing noticed because that
+        // was the one baseline in the repo with no existence test.
+        //
+        // UNSTAGED: `git ls-files` cannot see a new file, so an allowlist entry
+        // naming one points at a path the population does not contain — and
+        // the guard then reports "0 with a membership write" while the write is
+        // sitting in the working tree. It did exactly that on this PR until the
+        // file was `git add`ed, which is the same family as
+        // `git checkout -- <path>` being a no-op on an untracked file.
+        //
+        // Either way the allowlist is excusing nothing and the guard is
+        // grading a population that is missing its only real member.
+        for (const site of ALLOWLISTED_JOIN_SITES) {
+            expect(files).toContain(site.file);
+            expect(JOIN_WRITE.test(codeOf(site.file))).toBe(true);
+        }
     });
 
     it('the SEED is in the population, not exempt from it', () => {
