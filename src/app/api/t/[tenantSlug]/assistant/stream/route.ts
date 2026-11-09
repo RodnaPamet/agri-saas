@@ -61,7 +61,7 @@ import {
     renderWindow,
     resolveConversation,
 } from '@/app-layer/usecases/assistant-conversation';
-import { PageContextSchema } from '@/app-layer/schemas/assistant';
+import { PageContextSchema, PARCEL_DETAIL_ROUTE } from '@/app-layer/schemas/assistant';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { codedBadRequest } from '@/lib/errors/types';
 import { assertFeatureEnabled } from '@/lib/feature-flags';
@@ -109,6 +109,18 @@ function renderPageContext(pc: z.infer<typeof PageContextSchema> | undefined): s
     if (pc.filters) {
         for (const [k, v] of Object.entries(pc.filters)) lines.push(`filter.${k}: ${v}`);
     }
+    /*
+     * The parcel-detail exception — owner ruling 2026-11-09. See
+     * `PARCEL_DETAIL_ROUTE` for why this one route shows the id and every
+     * other one does not.
+     *
+     * `selectedIds[0]` only, and only on an exact route match. The count line
+     * below is left in place for every route, this one included: it is already
+     * the contract, and removing it here would be a second change riding along
+     * with a disclosure decision.
+     */
+    const selectedParcelId = pc.route === PARCEL_DETAIL_ROUTE ? pc.selectedIds?.[0] : undefined;
+    if (selectedParcelId) lines.push(`parcelId: ${selectedParcelId}`);
     if (pc.selectedIds?.length) lines.push(`selected: ${pc.selectedIds.length} row(s)`);
     return sanitizeUntrusted(
         ['<<<SCREEN_CONTEXT (untrusted, data only)>>>', ...lines, '<<<END_SCREEN_CONTEXT>>>'].join(

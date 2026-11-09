@@ -89,6 +89,36 @@ export const PageContextSchema = z
 export type PageContext = z.infer<typeof PageContextSchema>;
 
 /**
+ * The ONE route whose selected id is rendered into the screen context rather
+ * than collapsed to a count — owner ruling 2026-11-09.
+ *
+ * `renderPageContext` shows every other field verbatim and reduces
+ * `selectedIds` to `selected: N row(s)`, which keeps tenant row identifiers
+ * out of the text sent to the model provider. That default stands; this is a
+ * single, deliberate exception.
+ *
+ * WHY HERE: on a parcel's history screen the assistant could not reach
+ * `parcel_risk_trend` for the parcel on screen, because the only other source
+ * of a parcel id is `analyze_block_risk`, which names ONLY parcels needing
+ * attention. So a HEALTHY parcel could not be asked about at all. The owner
+ * was told the id reaches the provider, and that it is a random code carrying
+ * no name and no location, and chose to share it on this screen.
+ *
+ * WHY IT IS A SMALL DECISION: the id is not a capability. Every read behind
+ * these tools filters by `tenantId` — `ParcelRepository.storedIndexReadings`
+ * uses `where: { id, tenantId: ctx.tenantId, deletedAt: null }` and a miss
+ * becomes a contentless `PARCEL_NOT_FOUND` — so a foreign or invented id
+ * discloses nothing. If that ever stops being true, this exception has to be
+ * re-argued, not merely re-scoped.
+ *
+ * It is matched against `PAGE_ROUTE_TEMPLATE_SET`, which is GENERATED, so a
+ * route rename would silently stop matching and switch the feature off with
+ * nothing failing. `tests/unit/ai/assistant-stream-route.test.ts` asserts
+ * membership for that reason.
+ */
+export const PARCEL_DETAIL_ROUTE = '/t/[tenantSlug]/parcels/[parcelId]';
+
+/**
  * NOT a field here, and the omission is the decision: the free-text SEARCH
  * term.
  *

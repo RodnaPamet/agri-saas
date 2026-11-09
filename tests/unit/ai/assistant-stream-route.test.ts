@@ -443,6 +443,61 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         expect(screen).toContain('route: /t/[tenantSlug]/journal');
         expect(screen).toContain('filter.status: DRAFT');
     });
+
+    /*
+     * #2917 / owner ruling 2026-11-09 — the parcel-detail exception.
+     *
+     * THE PAIR IS THE TEST. The first case alone is satisfied just as well by
+     * a renderer that prints the id on EVERY route, which is precisely the
+     * disclosure regression — so the second case, on a route that is NOT the
+     * parcel page, is what gives the first one meaning. Mutation-proved:
+     * dropping the `pc.route === PARCEL_DETAIL_ROUTE` test fails case 2 while
+     * case 1 stays green.
+     */
+    it('the selected parcel id IS rendered on the parcel detail route', async () => {
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        await POST(
+            ...ask({
+                question: 'как се движи',
+                pageContext: {
+                    route: '/t/[tenantSlug]/parcels/[parcelId]',
+                    selectedIds: ['par-7'],
+                },
+            }),
+        );
+        const [, , opts] = completeWithRouting.mock.calls[0] as [unknown, unknown, { messages: { role: string; content: string }[] }];
+        const screen = opts.messages.map((m) => m.content).join('\n');
+        expect(screen).toContain('parcelId: par-7');
+    });
+
+    it('the selected id is NOT rendered on any other route — only the count', async () => {
+        completeWithRouting.mockResolvedValue({ text: 'ок' });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        await POST(
+            ...ask({
+                question: 'какво е това',
+                pageContext: { route: '/t/[tenantSlug]/journal', selectedIds: ['par-7'] },
+            }),
+        );
+        const [, , opts] = completeWithRouting.mock.calls[0] as [unknown, unknown, { messages: { role: string; content: string }[] }];
+        const screen = opts.messages.map((m) => m.content).join('\n');
+        // The id must not appear in ANY form, not merely unlabelled.
+        expect(screen).not.toContain('par-7');
+        // Control: the context WAS rendered, so the absence above is the rule
+        // working rather than an empty block. Without this, a renderer that
+        // emitted nothing at all would pass.
+        expect(screen).toContain('selected: 1 row(s)');
+    });
+
+    it('PARCEL_DETAIL_ROUTE still names a route this app serves', async () => {
+        const { PARCEL_DETAIL_ROUTE } = await import('@/app-layer/schemas/assistant');
+        const { PAGE_ROUTE_TEMPLATE_SET } = await import('@/lib/assistant/generated/page-routes');
+        // The constant is matched against a GENERATED set. A route rename would
+        // otherwise stop matching silently and switch the feature off with
+        // nothing failing — the id would simply never be rendered again.
+        expect(PAGE_ROUTE_TEMPLATE_SET.has(PARCEL_DETAIL_ROUTE)).toBe(true);
+    });
     /*
      * #2681 — the client went away, and that is not a provider failure.
      *
