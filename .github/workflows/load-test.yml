@@ -99,47 +99,6 @@ jobs:
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
 
-      # ── k6 WITH the SSE extension, for the delivery scenario (#2881) ──
-      #
-      # Stock k6 cannot read frames from a held response: `http.get` on an SSE
-      # endpoint blocks until the request times out, so a VU that opened a
-      # stream could not also write into it. P8.9's criterion is DELIVERY —
-      # write to frame — and measuring it needs a client that reads while the
-      # VU stays in the event loop. That is `xk6-sse`, and a binary carrying it
-      # has to be built.
-      #
-      # Built only for the scenario that needs it, so the other three keep the
-      # stock action's cached binary and pay nothing. The build is ~1 min on a
-      # runner that already has Go preinstalled — no `setup-go` step, which is
-      # one fewer action to pin.
-      #
-      # `./k6-sse` rather than overwriting `k6` on PATH: the two binaries are
-      # not interchangeable in the direction that matters. A scenario run under
-      # the WRONG one should fail at the `k6/x/sse` import rather than silently
-      # measure something else, and keeping them as separate paths is what makes
-      # that true by construction.
-      #
-      # The extension is PINNED by commit, not by a floating default branch:
-      # `xk6 build` with no version pulls whatever HEAD happens to be, which
-      # makes the measurement irreproducible and the build a supply-chain edge
-      # nobody reviewed.
-      - name: Build k6 with xk6-sse (delivery scenario)
-        if: steps.params.outputs.scenario == 'delivery'
-        env:
-          K6_VERSION: v1.4.0
-          XK6_SSE: github.com/phymbert/xk6-sse@v0.1.2
-        run: |
-          go version
-          go install go.k6.io/xk6/cmd/xk6@latest
-          "$(go env GOPATH)/bin/xk6" build "$K6_VERSION" --with "$XK6_SSE" --output ./k6-sse
-          ./k6-sse version
-          # A POSITIVE CONTROL on the build, not just on the binary existing:
-          # a k6 without the extension exits non-zero on this import, so a
-          # silently-stock binary cannot reach the scenario below.
-          printf 'import sse from "k6/x/sse";\nexport default function(){};\n' > /tmp/sse-probe.js
-          ./k6-sse run --quiet --vus 1 --iterations 1 /tmp/sse-probe.js
-          echo "xk6-sse resolves in ./k6-sse"
-
       - name: Enable pgvector (PGDG)
         uses: ./.github/actions/enable-pgvector
 
@@ -212,6 +171,56 @@ jobs:
       # The run still exited on its thresholds, but the per-step numbers needed
       # to CALIBRATE those thresholds were never written — which is why the
       # login budget has never been checked against a real measurement.
+      # ── k6 WITH the SSE extension, for the delivery scenario (#2881) ──
+      #
+      # IT SITS AFTER `Pick parameters`, NOT BESIDE `Setup k6`, and that is not
+      # tidiness. Its `if` reads `steps.params.outputs.scenario`, and a step
+      # whose condition references an output produced LATER evaluates against
+      # an empty string — so the step is SKIPPED, silently, and the only
+      # symptom is the next step failing on a missing file. Measured on run
+      # 42574529418: the build was skipped and `Run k6 — delivery` died in two
+      # seconds on `./k6-sse`. `tests/guards/workflow-step-outputs-are-ordered.test.ts`
+      # now derives that rule across every workflow.
+      #
+      # Stock k6 cannot read frames from a held response: `http.get` on an SSE
+      # endpoint blocks until the request times out, so a VU that opened a
+      # stream could not also write into it. P8.9's criterion is DELIVERY —
+      # write to frame — and measuring it needs a client that reads while the
+      # VU stays in the event loop. That is `xk6-sse`, and a binary carrying it
+      # has to be built.
+      #
+      # Built only for the scenario that needs it, so the other three keep the
+      # stock action's cached binary and pay nothing. The build is ~1 min on a
+      # runner that already has Go preinstalled — no `setup-go` step, which is
+      # one fewer action to pin.
+      #
+      # `./k6-sse` rather than overwriting `k6` on PATH: the two binaries are
+      # not interchangeable in the direction that matters. A scenario run under
+      # the WRONG one should fail at the `k6/x/sse` import rather than silently
+      # measure something else, and keeping them as separate paths is what makes
+      # that true by construction.
+      #
+      # The extension is PINNED by commit, not by a floating default branch:
+      # `xk6 build` with no version pulls whatever HEAD happens to be, which
+      # makes the measurement irreproducible and the build a supply-chain edge
+      # nobody reviewed.
+      - name: Build k6 with xk6-sse (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        env:
+          K6_VERSION: v1.4.0
+          XK6_SSE: github.com/phymbert/xk6-sse@v0.1.2
+        run: |
+          go version
+          go install go.k6.io/xk6/cmd/xk6@latest
+          "$(go env GOPATH)/bin/xk6" build "$K6_VERSION" --with "$XK6_SSE" --output ./k6-sse
+          ./k6-sse version
+          # A POSITIVE CONTROL on the build, not just on the binary existing:
+          # a k6 without the extension exits non-zero on this import, so a
+          # silently-stock binary cannot reach the scenario below.
+          printf 'import sse from "k6/x/sse";\nexport default function(){};\n' > /tmp/sse-probe.js
+          ./k6-sse run --quiet --vus 1 --iterations 1 /tmp/sse-probe.js
+          echo "xk6-sse resolves in ./k6-sse"
+
       - name: Create k6 results directory
         run: mkdir -p tests/load/results
 
