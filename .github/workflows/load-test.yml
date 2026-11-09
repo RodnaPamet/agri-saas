@@ -140,7 +140,7 @@ jobs:
       # migrations have always failed — the load scenarios below never ran.
       - name: Create PostgreSQL roles for RLS
         run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb <<'SQL'
           DO $$ BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;

@@ -120,7 +120,7 @@ jobs:
 
       - name: Create PostgreSQL roles for RLS
         run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb <<'SQL'
           DO $$ BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN CREATE ROLE app_user NOLOGIN; END IF;
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF;
@@ -157,7 +157,7 @@ jobs:
       # match one against.
       - name: Enable the public-profile flag
         run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb <<'SQL'
           INSERT INTO "FeatureFlag" ("key", "enabled", "description", "cohorts", "updatedAt")
           VALUES ('social.public-profile', true, 'Lighthouse budget run', '{}', NOW()),
                  -- P6.3 (#1812). The media route 404s without this, so every
@@ -170,7 +170,7 @@ jobs:
 
       - name: Seed one public farm profile
         run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
+          PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb <<'SQL'
           INSERT INTO "PublicFarmProfile"
             ("handle", "displayName", "tagline", "about", "oblast", "crops", "displayNameLatin", "indexable", "projectedAt")
           VALUES
@@ -186,7 +186,7 @@ jobs:
       # but a silently empty table would leave the budget measuring a 404.
       - name: Verify the seeded profile is readable
         run: |
-          COUNT=$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+          COUNT=$(PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb -tAc \
             "SELECT count(*) FROM \"PublicFarmProfile\" WHERE handle = 'lighthouse';")
           echo "seeded rows: $COUNT"
           if [ "$COUNT" != "1" ]; then
@@ -195,7 +195,7 @@ jobs:
           fi
           # BOTH preconditions, because either one missing produces the same
           # 404 and the same Lighthouse collection error.
-          FLAG=$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+          FLAG=$(PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb -tAc \
             "SELECT enabled FROM \"FeatureFlag\" WHERE key = 'social.public-profile';")
           echo "flag enabled: $FLAG"
           if [ "$FLAG" != "t" ]; then
@@ -224,7 +224,7 @@ jobs:
       # precisely the false green this seeding exists to prevent.
       - name: Verify the images are published and servable
         run: |
-          read -r LOGO PHOTOS <<<"$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+          read -r LOGO PHOTOS <<<"$(PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb -tAc \
             "SELECT coalesce(\"logoMediaHash\",'none'), coalesce(array_length(\"photoMediaHashes\",1),0)
                FROM \"PublicFarmProfile\" WHERE handle = 'lighthouse';" | tr '|' ' ')"
           echo "logo hash: ${LOGO:0:12}…  photos: ${PHOTOS}"
@@ -234,7 +234,7 @@ jobs:
           fi
           # The FileRecord rows the media route resolves, and the bytes on disk
           # the provider streams. Either missing is a 404 per image.
-          FILES=$(PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb -tAc \
+          FILES=$(PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb -tAc \
             "SELECT count(*) FROM \"FileRecord\"
               WHERE domain = 'farm-media' AND status = 'STORED' AND \"deletedAt\" IS NULL;")
           # The same root the seeding wrote to and the app will stream from —

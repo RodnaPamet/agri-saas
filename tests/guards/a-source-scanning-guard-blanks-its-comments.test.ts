@@ -81,6 +81,16 @@ const AWAITING_CONVERSION: readonly string[] = [
  */
 const SUBJECT_IS_NOT_BLANKABLE: ReadonlyArray<{ file: string; why: string }> = [
     {
+        file: 'tests/guards/psql-steps-stop-on-error.test.ts',
+        why:
+            'its subject is YAML, where a comment is `#`, and `blankNonCode` '
+            + 'implements JS/TS comment syntax only. Measured by converting it: run '
+            + 'over `load-test.yml` the helper leaves all 156 `#` lines '
+            + 'byte-identical, so routing through it would strip nothing while making '
+            + 'the guard LOOK like it had comment coverage. It filters `#` lines '
+            + 'itself, with a case asserting a commented `psql` is not counted.',
+    },
+    {
         file: 'tests/guards/sw-revision-stamp.test.ts',
         why:
             'its subject is the BYTES of `public/sw.js` — it compares a content hash '
