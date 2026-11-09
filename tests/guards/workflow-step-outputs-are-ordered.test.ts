@@ -70,9 +70,15 @@ interface Workflow {
 const files = collectTrackedFiles({
     roots: ['.github/workflows'],
     extensions: ['.yml', '.yaml'],
-    // A floor, because the helper's own refusal is "not empty" and this guard
-    // is worthless over two files as well as over zero.
-    minFiles: 10,
+    // `floor`, not `minFiles` — the option is spelled the way
+    // `CollectOptions` spells it, which a cold typecheck caught and a jest
+    // run did not: ts-jest compiles per file and an excess property on an
+    // interface is exactly the class `tsc --noEmit` exists for.
+    //
+    // Raised above the helper's default of 1, because "not empty" is a
+    // weaker claim than this guard needs: a rule over two workflows is
+    // worthless in the same way as a rule over zero.
+    floor: 10,
 }).map((abs) => path.basename(abs));
 
 /** Every `steps.<id>.outputs` reference inside a condition string. */
