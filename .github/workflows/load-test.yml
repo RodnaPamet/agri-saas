@@ -171,11 +171,42 @@ jobs:
       - name: Enable social.direct-messages (delivery scenario)
         if: steps.params.outputs.scenario == 'delivery'
         run: |
-          PGPASSWORD=ci_password psql -h localhost -U ci -d ci_testdb <<'SQL'
-          INSERT INTO "FeatureFlag" ("id", "key", "enabled", "cohorts", "description", "createdAt", "updatedAt")
-          VALUES (gen_random_uuid()::text, 'social.direct-messages', true, '{}',
-                  'Enabled by load-test.yml for the #2881 delivery run.', NOW(), NOW())
-          ON CONFLICT ("key") DO UPDATE SET "enabled" = true, "cohorts" = '{}', "updatedAt" = NOW();
+          # `-v ON_ERROR_STOP=1`, AND a verification read. Without the first,
+          # psql exits 0 on a failed statement and the step reports SUCCESS —
+          # which is exactly what happened on runs 42576945583 and
+          # 42578066347: the INSERT named an `id` column that does not exist
+          # (`FeatureFlag` has `key String @id` and no surrogate id, and no
+          # `createdAt`), the statement errored, the step went green, and the
+          # delivery run failed 404 on a flag nobody had written. Two runs
+          # spent diagnosing a Redis cache that was never involved.
+          #
+          # The read is the half that makes it provable rather than merely
+          # loud: `\gset` + a test puts the flag's own state in the log, so a
+          # future 404 is diagnosable from this step's output alone.
+          PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb <<'SQL'
+          INSERT INTO "FeatureFlag" ("key", "enabled", "cohorts", "description", "updatedAt")
+          VALUES ('social.direct-messages', true, '{}',
+                  'Enabled by load-test.yml for the #2881 delivery run.', NOW())
+          ON CONFLICT ("key") DO UPDATE
+            SET "enabled" = true, "cohorts" = '{}', "updatedAt" = NOW();
+
+          SELECT "key", "enabled", "cohorts" FROM "FeatureFlag"
+           WHERE "key" = 'social.direct-messages';
+
+          -- A flag that is enabled with a NON-EMPTY cohort list is a limited
+          -- rollout, not a global one (the two compose as AND). Getting that
+          -- backwards would leave every VU refused while the row looked set,
+          -- so the assertion is on both fields rather than on `enabled`.
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM "FeatureFlag"
+               WHERE "key" = 'social.direct-messages'
+                 AND "enabled" AND cardinality("cohorts") = 0
+            ) THEN
+              RAISE EXCEPTION 'social.direct-messages is not enabled-for-everyone after the upsert';
+            END IF;
+          END $$;
           SQL
 
       - name: Build app
