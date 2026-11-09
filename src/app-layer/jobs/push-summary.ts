@@ -147,6 +147,45 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
     });
     const locale = resolveRecipientLocale(user?.uiLanguage);
 
+    // The destination, and it MUST carry the tenant slug.
+    //
+    // `task.ts:972` states the convention this job was breaking: "`linkUrl` is
+    // passed unchanged: it is root-relative everywhere it is built
+    // (`/t/{slug}/farm-tasks/{id}` and friends), which is the rule agrent-ios
+    // asked for — the server owns the shape, so correcting it never needs a
+    // client release."
+    //
+    // This job sent a bare `/notifications`, which is not a page: the web one
+    // is `src/app/t/[tenantSlug]/(app)/notifications/page.tsx`, there is no
+    // root-level page, and `page-segregation.ts` lists `/notifications` among
+    // the routes stored WITHOUT the `/t/[tenantSlug]` prefix. So the service
+    // worker's `clients.openWindow(url)` opened a 404, and iOS had no
+    // `PushLink` case and merely opened the app. Measured on production: 19 of
+    // 19 `Notification.linkUrl` rows start with `/t/`, so this was the only
+    // violator — and the summary that exists to deliver what a suppressed push
+    // held back was the one push that led nowhere.
+    //
+    // An unresolvable slug sends NO link rather than the bare path. Both
+    // payload fields are optional and APNs emits the key only when truthy, so
+    // the push still arrives and simply does not navigate: reach without a
+    // destination that goes nowhere. Agreed with the iOS session, whose reason
+    // for leaving bare `/notifications` unhandled is the same one — it names no
+    // farm, so there is nothing to resolve.
+    const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { slug: true },
+    });
+    const link = tenant?.slug ? `/t/${tenant.slug}/notifications` : undefined;
+    if (!link) {
+        // The push still goes out, so without this a reader of the log cannot
+        // tell a destination-less summary from a normal one.
+        logger.warn('push.summary_link_unresolved', {
+            component: 'push',
+            nightKey,
+            reason: 'tenant slug did not resolve',
+        });
+    }
+
     const title = await translateFor(locale, 'push.quietSummary.title');
     // Two keys rather than one with an ICU plural. `translateFor`'s
     // interpolation is a plain `{name}` replacement — it does not evaluate
@@ -181,8 +220,9 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
                           body,
                           // The bell, not a specific task: the summary is
                           // about several notifications and there is no single
-                          // target.
-                          url: '/notifications',
+                          // target. See above for why it is tenant-prefixed,
+                          // and why an unresolved slug sends no link at all.
+                          ...(link ? { url: link } : {}),
                           // One collapse key per night, so a retry or a second
                           // process cannot stack two summaries for one window.
                           tag: `quiet-summary-${nightKey}`,
@@ -190,7 +230,7 @@ export async function runPushSummary(payload: PushSummaryPayload): Promise<PushS
                     : await sendApnsToUser(ctx, recipientUserId, {
                           title,
                           body,
-                          link: '/notifications',
+                          ...(link ? { link } : {}),
                           collapseId: `quiet-summary-${nightKey}`,
                       });
             if (outcome.sent > 0) delivered += 1;
