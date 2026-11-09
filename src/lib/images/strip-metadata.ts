@@ -78,9 +78,16 @@ export const IMAGE_MAX_INPUT_PIXELS = 50 * 1000 * 1000;
  * - **SVG** — not a raster image. Re-encoding would rasterise it, and SVG's
  *   privacy problem is embedded scripts and external references, which is a
  *   sanitiser's job rather than an encoder's.
- * - **PDF** — carries author metadata and needs stripping, but it is not an
- *   image and must not be rasterised, because that destroys the text layer
- *   that for an invoice or a БАБХ form IS the content. Tracked as #2035.
+ * - **PDF** — not an image, and it must not be rasterised, because that
+ *   destroys the text layer that for an invoice or a БАБХ form IS the
+ *   content. It DOES carry author metadata and that metadata IS stripped —
+ *   by `stripPdfMetadata` in `@/lib/files/strip-pdf-metadata` (#2035, shipped
+ *   in #2197), which rewrites the document rather than re-encoding pixels.
+ *   `ingest.ts` runs both in sequence and each returns the other's formats
+ *   untouched, so "absent here" means "handled next door", NOT "unstripped".
+ *   This entry claimed the latter for as long as #2035 was open and for two
+ *   weeks after it closed COMPLETED — a reader of this file concluded PDFs
+ *   keep their author metadata, which is the opposite of what ships.
  */
 const STRIPPABLE: Record<string, 'jpeg' | 'png' | 'webp' | 'tiff'> = {
     'image/jpeg': 'jpeg',
