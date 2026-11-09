@@ -977,6 +977,36 @@ map is parsed as a second population for the anonymous routes that do NOT live
 under that segment (signed webhooks, health probes), with a floor so an
 extraction that stopped matching fails instead of passing over nothing.
 
+**And the NINTH instance moved the population again, because neither of those
+two could contain it (#2644/#2645).** The native Google Drive callback was
+complete — atomic single-use state claim, closed error set, active-admin
+re-check — and on no public list, so the Edge answered `unauthorizedJson()`
+before any of it ran. `public-routes-self-authenticate` ranges over routes that
+are ALREADY public, so a route that SHOULD be public and is not is invisible to
+it; `public-route-exemptions-are-edge-reachable` derives from
+`src/app/api/public/`, and the callback is not under that segment.
+
+`tests/guards/cookieless-auth-routes-are-edge-reachable.test.ts` is the third
+direction: **a route whose handler reaches a function that authenticates
+WITHOUT a session cookie must satisfy `isPublicPath`.** The property is
+cookie-less authentication and deliberately NOT "externally called", which
+over-reports — `/api/integrations/sharepoint/callback` is correctly private,
+because it is web-only (an `sp_oauth_state` cookie plus `getTenantCtx`), so
+Microsoft's top-level redirect always carries the session cookie. What
+separated Google's branch is that it authenticates with a server-held
+single-use token INSTEAD of a session, which is why `GoogleOAuthState` is a
+database row rather than a cookie.
+
+The authenticator list is an enumeration (no pattern tells "verifies a
+single-use token in place of a session" from "reads a row by id"), so every
+NAME is asserted to exist — my first draft guessed five and **four did not
+exist**, each a silently inert entry that reads exactly like a covered case.
+The route population is derived from the filesystem through the shared
+`scripts/lib/api-routes.ts`, and the real `isPublicPath` is IMPORTED rather
+than re-parsed: a regex over `PUBLIC_PATH_PREFIXES` truncated at 25 of ~50
+entries, dropped `/api/auth`, and reported four blocked routes including both
+SSO callbacks, where running the function reports one.
+
 **See [`docs/epic-c-security.md`](docs/epic-c-security.md)** for the operator
 runbook and the reasoning — including three occasions when a working mechanism
 was Edge-severed and nobody noticed for months.
