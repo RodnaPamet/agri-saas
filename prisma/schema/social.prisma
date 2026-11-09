@@ -190,10 +190,23 @@ enum ReportStatus {
 /// What a moderator did. `NONE` is a real outcome and the reason this is not
 /// nullable: "looked and did nothing" must be distinguishable from "never
 /// looked", and an absent row cannot express the first.
+///
+/// `CONTENT_DEMOTED` was REMOVED on 2026-11-09 (#2868, owner decision). There
+/// is no ranking in this product to demote within — the exchange feed orders
+/// by recency and the trends surface is computed from price aggregates — so a
+/// recorded demotion announced a sanction that does not exist. #2865 made the
+/// usecase refuse it; this deletes it, which is the honest ending for a
+/// published outcome no caller can use. Production held ZERO
+/// `ModerationAction` rows when it went, so no value was rewritten.
+///
+/// Do NOT re-add it without the ranking. A demotion is a real and
+/// proportionate moderation tool — it is the right answer to content that is
+/// unpleasant rather than unlawful, which is most of what a notice queue
+/// holds — but it needs a per-listing score the feed orders by, and that is a
+/// marketplace product decision rather than a trust-and-safety one.
 enum ModerationActionKind {
   NONE
   CONTENT_REMOVED
-  CONTENT_DEMOTED
   ACCOUNT_SUSPENDED
   ACCOUNT_TERMINATED
 

@@ -1770,10 +1770,23 @@ export const MessageReactionSchema = z.object({
 // caller-supplied subject would let an action be recorded against content it
 // was not about.
 
+/**
+ * `CONTENT_DEMOTED` was removed on 2026-11-09 (#2868). It is a NARROWING of a
+ * published enum, done deliberately: there is no ranking in this product to
+ * demote within, so the value could never be performed, and #2865 had already
+ * made the usecase refuse it. A caller that still sends it now gets a 400 from
+ * this schema rather than a 403 `MODERATION_ACTION_NOT_PERFORMABLE` — a worse
+ * error for a better contract, and the only callers are the web console and
+ * the iOS mirror.
+ *
+ * `CONTENT_RESTORED` is deliberately absent and is NOT the same case: it is a
+ * real stored value written by the restore route (#2867), and is refused as an
+ * INPUT on a notice because a restore is addressed by the action id it
+ * reverses, not recorded as a fresh decision.
+ */
 export const MODERATION_ACTION_KINDS = [
     'NONE',
     'CONTENT_REMOVED',
-    'CONTENT_DEMOTED',
     'ACCOUNT_SUSPENDED',
     'ACCOUNT_TERMINATED',
 ] as const;

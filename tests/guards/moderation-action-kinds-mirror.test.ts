@@ -32,12 +32,23 @@
  *
  * ## It is NOT the same question as "can the platform perform it"
  *
- * `CONTENT_DEMOTED` is in BOTH lists and the usecase refuses it anyway
- * (#2868): nothing in this product can demote, so `assertPerformable` throws.
- * That is a third axis — what a caller may SEND, what the enum can HOLD, and
- * what the platform can DO — and conflating the first two with the third is
- * how a value ends up unsendable for the wrong reason. This guard is about the
- * first two only.
+ * There are THREE axes — what a caller may SEND, what the enum can HOLD, and
+ * what the platform can DO — and this guard is about the first two only.
+ * Conflating them with the third is how a value ends up unsendable for the
+ * wrong reason.
+ *
+ * `CONTENT_DEMOTED` was the worked example: it sat in BOTH lists while
+ * `assertPerformable` refused it, because nothing in this product can demote.
+ * It was DELETED on 2026-11-09 (#2868, owner decision), so the example is now
+ * history — and it is worth keeping as history, because the resolution shows
+ * the axes are genuinely independent. The value left the first two lists and
+ * the third axis did not move: `CONTENT_REMOVED` is still performable on some
+ * subject kinds and not others, which no enum can express because it is a
+ * property of the PAIR.
+ *
+ * The live divergence is now `CONTENT_RESTORED` alone, in
+ * `NOT_A_NOTICE_DECISION` below — a value the enum holds and a notice
+ * decision may not carry.
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
