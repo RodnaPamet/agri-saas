@@ -59,7 +59,6 @@ import http from 'k6/http';
 import sse from 'k6/x/sse';
 import exec from 'k6/execution';
 import { Counter, Trend } from 'k6/metrics';
-import { setTimeout } from 'k6/timers';
 import { fail } from 'k6';
 
 import { textSummary } from './vendor/k6-summary.js';
@@ -301,9 +300,12 @@ export default function (data) {
             // smaller denominator, the exact shape `dm_undelivered` exists to
             // make visible.
             //
-            // `k6/timers`, not a busy loop: the VU has to stay in the event
-            // loop for the `event` handler to fire at all, so sleeping would
-            // deadlock the thing it is waiting for.
+            // The GLOBAL `setTimeout`, not `k6/timers`: the global has been
+            // present since k6 0.52 and survives into the v2 line this binary
+            // is built on, while the module path is the kind of thing a major
+            // moves. And a timer rather than a sleep, because the VU has to
+            // stay in the event loop for the `event` handler to fire at all —
+            // sleeping would deadlock the thing it is waiting for.
             setTimeout(function () {
                 if (!matched) client.close();
             }, DELIVERY_TIMEOUT_MS);

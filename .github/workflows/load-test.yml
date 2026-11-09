@@ -214,8 +214,22 @@ jobs:
           # module downloads, so the failure is slow as well as opaque. The
           # version lives in exactly one place now, and it is this variable
           # because that is the one xk6 consumes.
-          K6_VERSION: v1.4.0
-          XK6_SSE: github.com/phymbert/xk6-sse@v0.1.2
+          # THE EXTENSION AND k6 ARE A COUPLED PAIR, and pinning one without
+          # the other is the failure. Measured from the module proxy rather
+          # than guessed, after run 42576244555 failed with the uninformative
+          # `resolving dependency: executing go command: exit status 1`:
+          #
+          #   xk6-sse v0.1.2   -> go.k6.io/k6     v0.51.0
+          #   xk6-sse v0.1.12  -> go.k6.io/k6     v1.2.1
+          #   xk6-sse v0.2.0   -> go.k6.io/k6/v2  v2.0.0
+          #
+          # So the version below is not "the latest k6" — it is the version
+          # THIS extension declares, which is the only pairing its author
+          # built against. Moving either line means re-reading
+          # `https://proxy.golang.org/github.com/phymbert/xk6-sse/@v/<v>.mod`
+          # and moving the other to match.
+          K6_VERSION: v2.0.0
+          XK6_SSE: github.com/phymbert/xk6-sse@v0.2.0
         run: |
           go version
           go install go.k6.io/xk6/cmd/xk6@latest
