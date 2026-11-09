@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "12.161.3",
+    "version": "12.162.0",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -342,6 +342,7 @@
         "node-forge": "^1.4.2",
         "@sentry/bundler-plugins": {
             "glob": "^14.0.3"
-        }
+        },
+        "@smithy/core": "~3.37.0"
     }
 }

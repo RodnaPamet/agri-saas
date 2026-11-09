@@ -62,6 +62,13 @@ import { TERMS_VERSION } from '@/lib/legal/terms';
 
 const CONFIRM_PHRASE = 'yes-this-is-a-throwaway-vm';
 const FLAG_KEY = 'notifications.sse';
+/**
+ * The DM flag, read but never WRITTEN by this seeder — see the pair loop.
+ * `social.direct-messages`, spelled as a literal because
+ * `social-routes-flag-gated` extracts literals and an operator holding the
+ * console has to be able to find the key by reading the code that needs it.
+ */
+const DM_FLAG_KEY = 'social.direct-messages';
 const TENANT_SLUG = process.env.LOAD_SEED_TENANT || 'load-streams';
 /** RFC 2606 reserved TLD: nothing here can ever receive mail. */
 const EMAIL_DOMAIN = 'load.invalid';
@@ -77,6 +84,17 @@ interface SeedState {
     tenantId: string;
     tenantSlug: string;
     users: number;
+    /**
+     * Accepted DM conversations between adjacent accounts, for the delivery
+     * scenario (#2881). `[]` for a streams-only seed.
+     *
+     * Recorded in the state file so `--teardown` deletes exactly what a run
+     * created — the same contract the user rows have, and it matters more here
+     * because a `Conversation` is TENANTLESS: deleting the load tenant does
+     * not cascade to it, so an unrecorded conversation would outlive the
+     * teardown with no row pointing at it.
+     */
+    conversations: { id: string; aEmail: string; bEmail: string }[];
     /** The flag's state BEFORE this run, so teardown restores it. */
     flagBefore: { present: boolean; enabled: boolean; cohorts: string[] } | null;
 }
@@ -147,6 +165,8 @@ async function seed(): Promise<void> {
     const consent = { acceptedTermsAt: new Date(), acceptedTermsVersion: TERMS_VERSION };
 
     let created = 0;
+    /** Email → id, so the pair loop below needs no second lookup per account. */
+    const userIds: { email: string; id: string }[] = [];
     for (let i = 1; i <= count; i++) {
         const email = emailFor(i);
         // guardrail-allow: n+1 — a seeder, and `createMany` cannot upsert on
@@ -173,7 +193,89 @@ async function seed(): Promise<void> {
             create: { tenantId: tenant.id, userId: user.id, role: 'READER' },
         });
         created++;
+        userIds.push({ email, id: user.id });
         if (created % 100 === 0) console.log(`  … ${created}/${count}`);
+    }
+
+    /*
+     * ── DM pairs, for the delivery measurement (#2881) ──
+     *
+     * `--pairs N` makes N ACCEPTED conversations between accounts (2i-1, 2i),
+     * so one VU can hold a stream as A and write as B. That is the shape
+     * #2881 names, and it needs both halves:
+     *
+     *   - ACCEPTED rather than REQUEST, because a REQUEST admits exactly one
+     *     message until the other party accepts (P8.1's rule, enforced by
+     *     `direct_message_insert`'s WITH CHECK via `lastMessageAt`). A load
+     *     run sending many messages would get `DM_REQUEST_AWAITING_REPLY` on
+     *     the second iteration of every VU and measure a refusal.
+     *   - `lastMessageAt` set, for the same reason: the request rule reads
+     *     that column, and leaving it NULL on an ACCEPTED row is a state the
+     *     product never writes.
+     *
+     * Each pair consumes TWO accounts, so `--pairs` is capped at
+     * `floor(users / 2)` rather than silently reusing one side — a VU writing
+     * to itself would measure a self-delivery the product refuses (`DM_SELF`).
+     */
+    const pairCount = Number(arg('pairs') || '0');
+    if (!Number.isInteger(pairCount) || pairCount < 0) {
+        throw new Error(`--pairs must be a non-negative integer, got ${arg('pairs')}`);
+    }
+    if (pairCount * 2 > count) {
+        throw new Error(
+            `--pairs ${pairCount} needs ${pairCount * 2} accounts but --users is ${count}. ` +
+                `Each pair is two DISTINCT people: a conversation with itself is refused ` +
+                `(DM_SELF), so the shortfall cannot be papered over by reusing one side.`,
+        );
+    }
+
+    const conversations: SeedState['conversations'] = [];
+    for (let p = 0; p < pairCount; p++) {
+        const a = userIds[p * 2];
+        const b = userIds[p * 2 + 1];
+        // guardrail-allow: n+1 — a seeder, and the participant rows need the
+        // conversation id that `createMany` does not return.
+        const existing = await prisma.conversation.findFirst({
+            where: {
+                participants: { some: { userId: a.id } },
+                AND: [{ participants: { some: { userId: b.id } } }],
+            },
+            select: { id: true },
+        });
+        const conversation = existing
+            ? await prisma.conversation.update({
+                  where: { id: existing.id },
+                  data: { state: 'ACCEPTED', lastMessageAt: new Date() },
+                  select: { id: true },
+              })
+            : await prisma.conversation.create({
+                  data: {
+                      state: 'ACCEPTED',
+                      initiatedByUserId: a.id,
+                      lastMessageAt: new Date(),
+                      participants: { create: [{ userId: a.id }, { userId: b.id }] },
+                  },
+                  select: { id: true },
+              });
+        conversations.push({ id: conversation.id, aEmail: a.email, bEmail: b.email });
+        if ((p + 1) % 50 === 0) console.log(`  … ${p + 1}/${pairCount} conversations`);
+    }
+    if (pairCount > 0) {
+        console.log(`✅ ${pairCount} ACCEPTED conversation(s) for the delivery scenario.`);
+        const dmFlag = await prisma.featureFlag.findUnique({ where: { key: DM_FLAG_KEY } });
+        if (!dmFlag?.enabled || (dmFlag.cohorts?.length ?? 0) > 0) {
+            // STATED rather than fixed. `--enable-flag` already switches ONE
+            // flag on for every user on the database and says so loudly; a
+            // seeder that quietly switched on a second would be worse. The
+            // delivery run fails fast on a 403 instead, which is a legible
+            // failure rather than a measurement of nothing.
+            console.log(
+                `⚠ ${DM_FLAG_KEY} is ${dmFlag ? `enabled=${dmFlag.enabled} cohorts=[${dmFlag.cohorts.join(',')}]` : 'absent'}. ` +
+                    `The delivery scenario needs it enabled with NO cohorts, and this seeder ` +
+                    `deliberately does not set it — enabling a second global flag is an ` +
+                    `operator decision, not a side effect of seeding.`,
+            );
+        }
     }
 
     if (has('enable-flag')) {
@@ -207,6 +309,7 @@ async function seed(): Promise<void> {
         tenantId: tenant.id,
         tenantSlug: TENANT_SLUG,
         users: count,
+        conversations,
         flagBefore,
     };
     fs.writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
@@ -240,6 +343,30 @@ async function teardown(): Promise<void> {
         where: { userId: { in: userIds } },
     });
     const deleted = await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    /*
+     * The conversations go FIRST and BY ID, and both halves matter.
+     *
+     * `Conversation` is TENANTLESS (P8.1 — two people in one may share no
+     * farm), so deleting the load tenant cascades to nothing here: an
+     * unrecorded conversation would survive the teardown with no row pointing
+     * at it, which is the opposite of the "fully reversible" property this
+     * script's docblock claims. By id rather than by participant, because a
+     * participant query would also match a conversation a REAL user happens
+     * to share with a seeded account — on a VM restored from a production
+     * dump, that is not hypothetical.
+     *
+     * `DirectMessage` and `ConversationParticipant` cascade from
+     * `Conversation` (both declare `onDelete: Cascade`), so the messages the
+     * delivery run sent go with it.
+     */
+    const conversationIds = (state.conversations ?? []).map((c) => c.id);
+    if (conversationIds.length > 0) {
+        const convs = await prisma.conversation.deleteMany({
+            where: { id: { in: conversationIds } },
+        });
+        console.log(`🗑 ${convs.count} conversation(s) (messages and participants cascade).`);
+    }
+
     const tenants = await prisma.tenant.deleteMany({ where: { slug: state.tenantSlug } });
 
     if (state.flagBefore === null || !state.flagBefore.present) {
