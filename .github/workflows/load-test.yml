@@ -207,12 +207,19 @@ jobs:
       - name: Build k6 with xk6-sse (delivery scenario)
         if: steps.params.outputs.scenario == 'delivery'
         env:
+          # `K6_VERSION` is READ BY xk6 ITSELF, not just by this script.
+          # Measured on run 42575556014: setting it here AND passing the same
+          # value as a positional argument fails with `k6 version was
+          # specified with both flag and argument` — after four minutes of
+          # module downloads, so the failure is slow as well as opaque. The
+          # version lives in exactly one place now, and it is this variable
+          # because that is the one xk6 consumes.
           K6_VERSION: v1.4.0
           XK6_SSE: github.com/phymbert/xk6-sse@v0.1.2
         run: |
           go version
           go install go.k6.io/xk6/cmd/xk6@latest
-          "$(go env GOPATH)/bin/xk6" build "$K6_VERSION" --with "$XK6_SSE" --output ./k6-sse
+          "$(go env GOPATH)/bin/xk6" build --with "$XK6_SSE" --output ./k6-sse
           ./k6-sse version
           # A POSITIVE CONTROL on the build, not just on the binary existing:
           # a k6 without the extension exits non-zero on this import, so a
