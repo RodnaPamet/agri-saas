@@ -254,7 +254,23 @@ describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () =
             // unreachable by the «Какво помни асистентът» screen that exists to
             // let them delete it.
             'AssistantMemoryFact',
-            'AuthSession', 'FeatureFlagCohortMember',
+            'AuthSession',
+            // P9.1 (#2935) — where the person was MENTIONED. The only entry in
+            // this set whose person column was written by somebody ELSE, and it
+            // still passes the criterion: the row is an index existing solely
+            // to address a push, so without the person it addresses nothing.
+            // The post body that named them is a different row and belongs to
+            // its author, so deleting this destroys no second owner's record.
+            'ChannelPostMention',
+            // P9.1 — a reaction on a CHANNEL post. Identical in kind to
+            // `MessageReaction` below, one domain over: a statement BY the
+            // person that IS the whole row, so deleting it destroys no second
+            // owner's record — the post it sits on survives untouched. And
+            // @@unique([postId, userId, emoji]) would force a per-user random
+            // id if pseudonymised, leaving an anonymous reaction nobody can
+            // remove and no reader can interpret.
+            'ChannelPostReaction',
+            'FeatureFlagCohortMember',
             // P8.1 (#2795) — a reaction on a direct message. It passes the
             // criterion on its face, like AssistantMemoryFact: a reaction is a
             // statement BY the person and IS the whole row, so deleting it
@@ -297,14 +313,34 @@ describe('§5 every ERASE entry says HOW, and no RETAIN entry pretends to', () =
         // property would have forced exactly the mistake its sibling forbids.
         //
         // The widening is DERIVED, not an allowlist: a model qualifies by
-        // hanging off `Conversation` (or being it), which is a shared object by
-        // construction. A new tenantless table with a person column and no
-        // conversation still fails, which is the regression this exists for.
+        // hanging off a SHARED OBJECT, which makes the second owner structural
+        // rather than asserted. A new tenantless table with a person column and
+        // no shared parent still fails, which is the regression this exists for.
+        //
+        // P9.1 (#2935) added the second such object. A channel is shared by
+        // every member — more widely than a conversation, not less — so
+        // `ChannelMembership` and `ChannelPost` are the same case as their
+        // conversation counterparts, and under the conversation-only predicate
+        // the only available classification would again have been DELETE_ROW:
+        // deleting a post would remove content other members read and replied
+        // to, and deleting a membership would drift `Channel.memberCount`,
+        // which is denormalised precisely because the membership policy admits
+        // only the caller's own row.
+        //
+        // Each new shared-object domain widens this list, and that is the
+        // intended cost: it is one line per domain, visible in a diff, against
+        // an allowlist that would grow one line per TABLE and say nothing about
+        // why.
+        const SHARED_OBJECTS: readonly { readonly model: string; readonly fk: string }[] = [
+            { model: 'Conversation', fk: 'conversationId' },
+            { model: 'Channel', fk: 'channelId' },
+        ];
         const conversationGraph = (
             model: { readonly name: string; readonly fields: readonly { readonly name: string }[] },
         ): boolean =>
-            model.name === 'Conversation'
-            || model.fields.some((f) => f.name === 'conversationId');
+            SHARED_OBJECTS.some(
+                (o) => model.name === o.model || model.fields.some((f) => f.name === o.fk),
+            );
 
         for (const entry of PERSONAL_DATA_REGISTRY) {
             if (entry.action !== 'PSEUDONYMISE_COLUMN') continue;

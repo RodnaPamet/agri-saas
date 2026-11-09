@@ -1,0 +1,315 @@
+// ═══════════════════════════════════════════════════════════════════
+//  CHANNELS — P9.1 (#2935)
+// ═══════════════════════════════════════════════════════════════════
+//
+//  GAP-09 multi-file schema: new domain file. Generator + datasource
+//  remain in base.prisma.
+//
+//  ── SCHEMA ONLY ──
+//
+//  P9's standing rule, inherited from P8 and P5: tables ship one release
+//  before the code that writes them. So this file lands five models, their
+//  RLS and their encryption classification, and NO route, usecase, UI or
+//  flag. #2795 (P8.1) and #1553 (P5.1) are the worked precedents.
+//
+//  ── WHY TENANTLESS, which is a PRIOR decision and not a new one ──
+//
+//  `social.prisma`'s own preamble already commits a channel to this, in
+//  terms: "the social surfaces it gates are person-scoped rather than
+//  farm-scoped — a profile, a direct message and A CHANNEL do not belong to
+//  one farm. So there is no `tenantId` here, and the RLS classification is
+//  deliberately not the tenant-scoped one."
+//
+//  A crop channel spans every farm growing that crop; an oblast channel
+//  spans every farm in that oblast. A `tenantId` would make the channel a
+//  farm's private room, which is the opposite of the feature.
+//
+//  Its own FILE rather than more of `social.prisma` for the reason
+//  `public-profile.prisma` is its own file: that one is already 809 lines
+//  over sixteen models spanning flags, trust-and-safety and direct
+//  messages. The tenantlessness argument is CITED above rather than copied,
+//  because two copies of a design decision is how they come to disagree.
+//
+//  ── THE SESSION VARIABLE, and picking wrong fails SILENTLY ──
+//
+//  Every policy here reads `app.user_id`, which ONLY `runInUserContext`
+//  sets. It is NOT `app.actor_user_id`, which `runInTenantContext` sets
+//  alongside a tenant.
+//
+//  This is #1664 and it cost a whole feature: `UserBlock`'s SELECT policy
+//  keyed on `app.user_id` while the enforcement ran under
+//  `app.actor_user_id`, so the block predicates selected from an empty view
+//  and returned `false` for every pair, always. Blocking somebody had no
+//  effect on any path and NOTHING ERRORED — an unset session variable
+//  yields NULL and the arm matches nothing.
+//
+//  So the integration test runs in the context the PRODUCTION caller will
+//  run in, not merely in one that makes the policy pass.
+//
+//  ── A POLICY ON A TABLE MAY NOT QUERY THAT TABLE ──
+//
+//  P8.1 learned this expensively: a WITH CHECK on `DirectMessage` that read
+//  `DirectMessage` produced `ERROR: infinite recursion detected in policy
+//  for relation "DirectMessage"` and refused EVERY insert, whatever the
+//  command.
+//
+//  A channel is where that bites hardest, because the natural membership
+//  rule is exactly that shape — "you may read the members if you are a
+//  member" wants `ChannelMembership`'s policy to query `ChannelMembership`.
+//
+//  So `channel_membership_select` admits the caller's OWN ROW ONLY, exactly
+//  as `conversation_participant_select` does, and `Channel.memberCount` is
+//  DENORMALISED because a member cannot count rows they cannot see. Posts
+//  and reactions may query `ChannelMembership` freely: that is a DIFFERENT
+//  table from the one being guarded, so no recursion arises.
+//
+//  ── A CHANNEL IS PUBLIC, which is the real difference from a conversation ──
+//
+//  `conversation_select` admits participants only. A channel must be
+//  readable by somebody who has NOT joined, or P9.2 cannot suggest one and
+//  nobody can look before joining. So `channel_select` admits any
+//  authenticated caller, and the gate is on POSTING rather than on reading.
+//
+//  Consequence worth stating once: there is no private channel in this
+//  design. Adding one later means a visibility column plus a second SELECT
+//  arm, not a change to these policies.
+//
+
+/// What a channel is ABOUT. Decides how P9.2 suggests it: a crop channel from
+/// the farm's crops, an oblast channel from its location, a topic channel from
+/// neither — which is why `TOPIC` exists rather than being a null `kind`.
+enum ChannelKind {
+  CROP
+  OBLAST
+  TOPIC
+}
+
+/// A post's kind. `QUESTION` is «Въпрос» and is the only kind `resolvedAt` may
+/// be set on; `CARD` is P9.4's generated content, which shares the feed and so
+/// shares the table — it is moderatable and reportable for free that way.
+enum ChannelPostKind {
+  POST
+  QUESTION
+  CARD
+}
+
+/// A topic channel. PUBLIC and discoverable — see the header.
+model Channel {
+  id String @id @default(cuid())
+
+  /// The topic key, e.g. `crop:wheat`, `oblast:BG-16`, `topic:subsidies`.
+  ///
+  /// UNIQUE, and that is what makes P9.2's seed idempotent BY CONSTRUCTION
+  /// rather than by a `seeded` flag somebody forgets to set — the
+  /// `NoticeScore.reportId` precedent (#1596). It also makes suggestion a JOIN
+  /// rather than a string match: an oblast channel's key carries the same
+  /// `BG-16` code `ExchangeListing.oblast` stores.
+  key String @unique
+
+  /// Both locales, in the schema, because a channel NAME is reference data
+  /// seeded by `dist/seed.mjs` rather than UI copy in `messages/`. A seeded
+  /// row cannot reach a `next-intl` catalogue.
+  nameBg String
+  nameEn String
+
+  descriptionBg String?
+  descriptionEn String?
+
+  kind ChannelKind
+
+  /// DENORMALISED, and not an optimisation: `channel_membership_select` admits
+  /// the caller's own row only (the recursion rule in the header), so a member
+  /// physically cannot count the others. Maintained by the usecase that joins
+  /// and leaves, in the same transaction as the membership write.
+  memberCount Int @default(0)
+
+  /// «Slow mode» — P9.3. Seconds a member must wait between posts; 0 is off.
+  ///
+  /// Seconds rather than a boolean because P5.5a's rule is that slow mode is a
+  /// reduced BUDGET and the per-channel knob is the operator's. A column rather
+  /// than a constant so a channel that is being flooded can be slowed without a
+  /// deploy — the same reasoning that makes feature flags a table.
+  slowModeSeconds Int @default(0)
+
+  /// Archived channels stay readable and stop accepting posts. A delete would
+  /// take every post with it, and a channel's history is the reason anybody
+  /// joined it.
+  archivedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships ChannelMembership[]
+  posts       ChannelPost[]
+
+  /// P9.2 lists by kind to build the suggestion sets.
+  @@index([kind])
+  /// The feed's own ordering, for a channel directory sorted by activity.
+  @@index([archivedAt, memberCount])
+}
+
+/// One person's membership of one channel.
+model ChannelMembership {
+  id String @id @default(cuid())
+
+  channelId String
+  /// No relation to `User`: these models are tenantless and person-scoped, and
+  /// `DirectMessage.senderUserId` is the precedent — a bare id, so a channel
+  /// never needs a tenant context to resolve its author.
+  userId String
+
+  joinedAt DateTime @default(now())
+
+  /// P9.3's ban. The ROW SURVIVES a ban deliberately: deleting it would let the
+  /// banned person rejoin and start posting again, and `@@unique([channelId,
+  /// userId])` means a rejoin cannot create a second row to escape through.
+  ///
+  /// `channel_post_insert` requires this to be NULL, so the ban is enforced in
+  /// SQL and not only in a usecase — the layer a refactor removes.
+  bannedAt DateTime?
+
+  /// The read cursor. The caller's own act on their own row, which is why
+  /// `channel_membership_update` exists at all.
+  lastReadAt DateTime?
+
+  /// Muted: still a member, no push. P9.3 pushes only for mentions and replies,
+  /// so this narrows an already-narrow trigger.
+  mutedAt DateTime?
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  /// The identity, and the ban's enforcement: one row per person per channel.
+  @@unique([channelId, userId])
+  /// "which channels am I in" — the inbox-side read, and the FK index layer B
+  /// requires for `userId` not leading a composite.
+  @@index([userId])
+}
+
+/// A post in a channel. `body` is PLAINTEXT — see below.
+model ChannelPost {
+  id String @id @default(cuid())
+
+  channelId String
+
+  /// The author, as a bare id. A forged author is refused by
+  /// `channel_post_insert`'s WITH CHECK, which pins it to the session variable.
+  authorUserId String
+
+  /// PLAINTEXT, and this is a DEPARTURE from both message models in this repo.
+  ///
+  /// `DirectMessage.body` and `ExchangeMessage.body` are encrypted under the
+  /// global KEK, because a two-party row under either party's DEK is unreadable
+  /// by the other. A channel post is different in KIND: it is addressed to a
+  /// group, intended to be widely read, and P9.7 requires it SEARCHABLE.
+  /// Encrypting it would make search impossible without a second plaintext
+  /// copy, which is worse than not encrypting — the copy would be the real
+  /// store and nothing would guard it.
+  ///
+  /// So `ChannelPost.body` carries a `DELIBERATELY_PLAINTEXT` entry keyed
+  /// `ChannelPost.body`. That entry is REQUIRED, not optional: `body` is a
+  /// field name the manifest carries for other models, and since #1222 the
+  /// manifest is per `(model, field)` — so an unclassified model no longer
+  /// resolves to `'*'` and the guard refuses the silence.
+  ///
+  /// It is still SANITISED at the usecase (C.5), where
+  /// `sanitize-rich-text-coverage` verifies the field BY NAME. There is no
+  /// write path in a schema-only PR, so `RICH_TEXT_COVERAGE` gains its entry in
+  /// the PR that adds the writer — exactly as P8.6's link-card columns had to
+  /// (#2800).
+  body String
+
+  kind ChannelPostKind @default(POST)
+
+  /// «Решено» — P9.3. Only meaningful on a `QUESTION`; the usecase enforces
+  /// that, because a CHECK naming an enum value would have to be rewritten
+  /// every time the enum grows.
+  resolvedAt DateTime?
+
+  /// A thread reply. NULL for a top-level post.
+  ///
+  /// Self-referential rather than a separate `ChannelThread`: a thread here is
+  /// one level deep, so a parent pointer says everything a table would and the
+  /// feed query stays one read. P9.3's «Също изпрати в канала» is a reply that
+  /// ALSO gets a top-level copy, which is two rows and not a flag.
+  parentPostId String?
+  parentPost   ChannelPost?  @relation("ChannelPostThread", fields: [parentPostId], references: [id], onDelete: Cascade)
+  replies      ChannelPost[] @relation("ChannelPostThread")
+
+  /// A MODERATOR's removal (P9.3). A nullable timestamp rather than a delete,
+  /// because an Art 17 statement of reasons carries redress and #2867 built the
+  /// restore route that clears exactly this shape of column.
+  removedByModerationAt DateTime?
+
+  /// P9.3's auto-hide after three reports from verified farms. SEPARATE from
+  /// `removedByModerationAt` on purpose: one is a human decision and the other
+  /// is a threshold, they are reversed by different acts, and collapsing them
+  /// would make a statement of reasons claim a moderator looked when none did.
+  autoHiddenAt DateTime?
+
+  /// The AUTHOR's own retraction, distinct from both of the above. A reader is
+  /// told «изтрито»; a moderator's removal and an auto-hide are not the
+  /// author's doing and must not read as theirs.
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  channel   Channel               @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  reactions ChannelPostReaction[]
+  mentions  ChannelPostMention[]
+
+  /// The feed: a channel's top-level posts, newest first.
+  @@index([channelId, createdAt])
+  /// A thread's replies.
+  @@index([parentPostId])
+  /// "my posts", and the FK index layer B requires.
+  @@index([authorUserId])
+}
+
+/// One reaction by one person to one post.
+model ChannelPostReaction {
+  id String @id @default(cuid())
+
+  postId String
+  userId String
+
+  /// The emoji itself. Bounded by the usecase to the agreed set; a column
+  /// rather than an enum because the set is product copy and an enum change is
+  /// a migration plus an OpenAPI narrowing — #2868 is what that costs.
+  emoji String
+
+  createdAt DateTime @default(now())
+
+  post ChannelPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  /// One reaction per person per post per emoji.
+  @@unique([postId, userId, emoji])
+  @@index([userId])
+}
+
+/// A person mentioned in a post. A TABLE, not a derived list.
+///
+/// P9.3 caps mentions at five, and a cap is only enforceable if mentions are a
+/// constrained thing. Derived from the body text at render time, the cap would
+/// be advisory and a post could mention a hundred people; as rows, the usecase
+/// counts them before inserting and the count is checkable in SQL.
+///
+/// It is also what makes the mention PUSH addressable without parsing prose in
+/// the notification path — P9.3 pushes only for mentions and replies.
+model ChannelPostMention {
+  id String @id @default(cuid())
+
+  postId String
+  /// The mentioned person.
+  userId String
+
+  createdAt DateTime @default(now())
+
+  post ChannelPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  /// One mention of one person per post — so a body naming somebody twice
+  /// cannot push twice.
+  @@unique([postId, userId])
+  /// "where was I mentioned" — the «Активност» read (P9.7).
+  @@index([userId])
+}

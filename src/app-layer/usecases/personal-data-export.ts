@@ -130,6 +130,24 @@ export interface PersonalDataExport {
     readonly conversationMemberships: ExportCollection<Record<string, unknown>>;
     readonly directMessages: ExportCollection<Record<string, unknown>>;
     readonly messageReactions: ExportCollection<Record<string, unknown>>;
+
+    /**
+     * Channels — P9.1 (#2935). Four collections, one per registry entry, EMPTY
+     * until P9.3 ships a writer.
+     *
+     * They are here in the SCHEMA PR rather than later because the registry
+     * drives two consumers and only one of them is automatic: `eraseAccount`
+     * iterates the registry and resolves a delegate by camelCasing the model
+     * name, so classification wires erasure for free — while this file reads
+     * every model with an EXPLICIT `select`, which is a list that goes stale.
+     * `export-select-covers-every-column` (#2840) is what refuses the gap, and
+     * #2840 is the instance where it was real: P8.6 added eight columns to
+     * `DirectMessage` and this select omitted all eight.
+     */
+    readonly channelMemberships: ExportCollection<Record<string, unknown>>;
+    readonly channelPosts: ExportCollection<Record<string, unknown>>;
+    readonly channelPostReactions: ExportCollection<Record<string, unknown>>;
+    readonly channelPostMentions: ExportCollection<Record<string, unknown>>;
 }
 
 const NOT_INCLUDED: readonly string[] = [
@@ -217,6 +235,10 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         conversationMemberships,
         directMessages,
         messageReactions,
+        channelMemberships,
+        channelPosts,
+        channelPostReactions,
+        channelPostMentions,
     ] = await Promise.all([
         // At most one row — `userId` is `@unique` — but returned as a
         // collection so the envelope has one shape for every model and a
@@ -493,6 +515,67 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
             orderBy: { createdAt: 'desc' },
             take,
         }),
+        prisma.channelMembership.findMany({
+            where: { userId },
+            // Which channels they joined, with their read cursor and mute. Both
+            // are their own settings on their own row.
+            //
+            // `bannedAt` IS exported, deliberately: a ban is a decision taken
+            // ABOUT this person and Art 15 is a right to know what is held, so
+            // withholding it would be the one field they would most want. It is
+            // not a moderation RATIONALE — that lives on `ModerationAction`,
+            // which denies `app_user` outright and is not in this export.
+            select: {
+                id: true, channelId: true, joinedAt: true,
+                lastReadAt: true, mutedAt: true, bannedAt: true,
+            },
+            orderBy: { joinedAt: 'desc' },
+            take,
+        }),
+        prisma.channelPost.findMany({
+            where: { authorUserId: userId },
+            // Their own posts. `body` is PLAINTEXT here, unlike every other
+            // message model in this export — P9.7 needs channel posts
+            // searchable — so no decryption is involved and the words come back
+            // as written.
+            //
+            // The three removal columns all come too. Each is a different fact
+            // about the same row: a moderator removed it, a report threshold
+            // hid it, or they retracted it themselves. Exporting one and not
+            // the others would let a reader infer the wrong cause.
+            select: {
+                id: true, channelId: true, body: true, kind: true,
+                resolvedAt: true, parentPostId: true,
+                removedByModerationAt: true, autoHiddenAt: true,
+                deletedAt: true, createdAt: true,
+                // `updatedAt` deliberately omitted — `EXEMPT_BY_RULE` in
+                // `export-select-covers-every-column` states the principle:
+                // when something happened is the person's information, when a
+                // row was last touched by the system is not. The guard would
+                // accept it either way; the principle is why it is absent.
+            },
+            orderBy: { createdAt: 'desc' },
+            take,
+        }),
+        prisma.channelPostReaction.findMany({
+            where: { userId },
+            // Which posts they reacted to. The post is not included — it may be
+            // somebody else's, exactly as for `messageReaction` above.
+            select: { id: true, postId: true, emoji: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take,
+        }),
+        prisma.channelPostMention.findMany({
+            where: { userId },
+            // Where they were mentioned. This column names the MENTIONED
+            // person, so unlike every other collection here these rows were
+            // created by somebody else about them — which is precisely why Art
+            // 15 covers them. The post body that named them is NOT included: it
+            // belongs to its author.
+            select: { id: true, postId: true, createdAt: true },
+            orderBy: { createdAt: 'desc' },
+            take,
+        }),
     ]);
 
     logger.info('personal-data-export.produced', {
@@ -560,6 +643,14 @@ export async function exportPersonalData(userId: string): Promise<PersonalDataEx
         ),
         directMessages: collection(directMessages as Record<string, unknown>[]),
         messageReactions: collection(messageReactions as Record<string, unknown>[]),
+        channelMemberships: collection(channelMemberships as Record<string, unknown>[]),
+        channelPosts: collection(channelPosts as Record<string, unknown>[]),
+        channelPostReactions: collection(
+            channelPostReactions as Record<string, unknown>[],
+        ),
+        channelPostMentions: collection(
+            channelPostMentions as Record<string, unknown>[],
+        ),
         insuranceLeads: collection(insuranceLeads as Record<string, unknown>[]),
         promotionLeads: collection(promotionLeadsWithMessage as Record<string, unknown>[]),
         assistantMemory: collection(assistantMemory as Record<string, unknown>[]),

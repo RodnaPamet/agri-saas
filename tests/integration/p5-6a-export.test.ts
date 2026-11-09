@@ -280,6 +280,21 @@ describeFn('P5.6a — the personal-data export (#1597)', () => {
             ConversationParticipant: out.conversationMemberships,
             DirectMessage: out.directMessages,
             MessageReaction: out.messageReactions,
+            // P9.1 (#2935) — four more, EMPTY in this suite, which seeds no
+            // channel. Same reading as the four above: this test grades whether
+            // every exported model has a collection in the envelope, not
+            // whether a row reaches one. The COLUMNS are graded by
+            // `export-select-covers-every-column`.
+            //
+            // They are exported from the SCHEMA stage rather than later because
+            // `personal-data-registry-complete` requires the classification the
+            // moment a tenantless person column exists, and a classified model
+            // is in `EXPORTED_MODELS` — so the alternative to wiring them here
+            // was a registry entry promising an export nothing performs.
+            ChannelMembership: out.channelMemberships,
+            ChannelPost: out.channelPosts,
+            ChannelPostReaction: out.channelPostReactions,
+            ChannelPostMention: out.channelPostMentions,
         };
 
         const unrepresented = EXPORTED_MODELS.filter((m) => !(m in collections));

@@ -293,6 +293,74 @@ export const PERSONAL_DATA_REGISTRY: readonly PersonalDataEntry[] = [
             + 'remove and the counterparty cannot interpret. Exported because which '
             + 'messages they reacted to is information about them.',
     },
+    // ── P9.1 (#2935) — channels ──
+    //
+    // Tenantless and person-naming, so `personal-data-registry-complete`
+    // requires all four classified in the same diff as the migration. `Channel`
+    // itself is absent from this list and from that guard's population: it
+    // carries no person column at all, because a channel is seeded reference
+    // data with no creator.
+    {
+        model: 'ChannelMembership',
+        columns: ['userId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
+        reason:
+            'Which channels this person joined. PSEUDONYMISED rather than deleted '
+            + 'for a reason specific to this table: `Channel.memberCount` is '
+            + 'DENORMALISED (the membership policy admits only the caller\'s own '
+            + 'row, so a member cannot count the others), and a deleted row would '
+            + 'drift that counter with nothing detecting it. An anonymous '
+            + 'membership keeps the count honest and discloses nothing. The '
+            + 'pseudonym must be per-user and random: @@unique([channelId, userId]) '
+            + 'means two erased people in one channel would collide on a shared '
+            + 'sentinel — the ExchangeThread collision exactly. Exported because '
+            + 'which channels they joined is information about them.',
+    },
+    {
+        model: 'ChannelPost',
+        columns: ['authorUserId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'PSEUDONYMISE_COLUMN',
+        reason:
+            'Posts this person wrote. The post belongs to a channel whose other '
+            + 'members read and replied to it, so the row survives with its '
+            + 'authorship column overwritten — the DirectMessage shape. ONE '
+            + 'DIFFERENCE WORTH STATING: `ChannelPost.body` is PLAINTEXT by design '
+            + '(P9.7 needs it searchable), so unlike a direct message the words '
+            + 'remain plainly readable after erasure, attributed to nobody. That is '
+            + 'accepted because a channel post is a statement made deliberately to '
+            + 'a group, which is the same basis on which an ExchangeListing\'s text '
+            + 'survives. Exported because the words are theirs.',
+    },
+    {
+        model: 'ChannelPostReaction',
+        columns: ['userId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
+        reason:
+            'A reaction is a statement BY this person on somebody else\'s post and '
+            + 'it is the whole row, so deleting it destroys no second owner\'s '
+            + 'record — MessageReaction verbatim. Pseudonymising would be worse '
+            + 'than useless: @@unique([postId, userId, emoji]) would force a '
+            + 'per-user random id, leaving an anonymous reaction nobody can remove '
+            + 'and no reader can interpret. Exported because which posts they '
+            + 'reacted to is information about them.',
+    },
+    {
+        model: 'ChannelPostMention',
+        columns: ['userId'],
+        disposition: 'ERASE_AND_EXPORT',
+        action: 'DELETE_ROW',
+        reason:
+            'Where this person was mentioned. The column names the MENTIONED '
+            + 'person rather than an author, so the row is an index somebody else '
+            + 'created about them — and it exists only to address a push, which '
+            + 'will never be sent again. Deleting it destroys no second owner\'s '
+            + 'record: the post body that named them is untouched and belongs to '
+            + 'its author. Exported because being mentioned is information about '
+            + 'them.',
+    },
     {
         model: 'FeatureFlag',
         columns: ['updatedByUserId'],

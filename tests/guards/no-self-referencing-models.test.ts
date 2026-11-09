@@ -38,6 +38,27 @@ const EXEMPT_SELF_REF = new Map<string, string>([
         + 'one level deep for the quoted preview. `ON DELETE SET NULL` is what '
         + 'keeps a lost target from taking the reply with it.',
     ],
+    [
+        'ChannelPost',
+        'A reply points at the post it answers — P9.1 (#2935), one level deep, '
+        + 'which is what makes a `parentPostId` column say everything a separate '
+        + 'thread table would. The guard\'s concern is a bulk writer having to '
+        + 'topologically sort its own rows, and nothing here produces that pair: '
+        + 'P9.2\'s seed writes CHANNELS and never posts, P9.4\'s card queue writes '
+        + 'only top-level cards, and a human reply is written one at a time to a '
+        + 'target they just read. There is no importer for this table.\n\n'
+        + 'IT DIVERGES FROM `DirectMessage` ABOVE ON DELETE, DELIBERATELY: that '
+        + 'one is `SET NULL` so a lost target cannot take the reply with it, and '
+        + 'this one CASCADES. A quoted DM reply still reads as a message if its '
+        + 'quote goes; a thread reply orphaned into a public channel becomes a '
+        + 'bare «да, съгласен съм» with no question above it — stray at best and '
+        + 'misleading at worst, since a reader supplies their own context. The '
+        + 'practical difference is small either way: a channel post is never hard '
+        + 'deleted in normal operation (moderation sets '
+        + '`removedByModerationAt`, the author sets `deletedAt`, and erasure '
+        + 'PSEUDONYMISES the row), so this edge fires only when the whole '
+        + '`Channel` is deleted and cascades everything regardless.',
+    ],
 ]);
 
 describe('Prisma schema — no unregistered self-referencing models', () => {

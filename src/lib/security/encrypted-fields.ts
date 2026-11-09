@@ -496,6 +496,24 @@ export const ENCRYPTED_MODELS: ReadonlySet<string> = new Set(
  * it, which is why it is a committed script rather than a one-off query.
  */
 export const DELIBERATELY_PLAINTEXT: Readonly<Record<string, string>> = {
+    //  Prod: 0 rows (P9.1 is schema-only). A channel post is addressed to a
+    //  GROUP and is meant to be widely read — the opposite of the two message
+    //  models beside it, both of which ARE encrypted under the global KEK
+    //  because a two-party row under either party's DEK is unreadable by the
+    //  other. Here there is no second party to lock out.
+    //
+    //  The deciding reason is SEARCH. P9.7 (#2941) requires channel posts
+    //  searchable, and an encrypted column cannot be searched without a second
+    //  plaintext copy — which would become the real store, with nothing
+    //  guarding it. So the choice is not "encrypt or not" but "one plaintext
+    //  column, or one encrypted column plus an unguarded plaintext index".
+    //
+    //  It is still SANITISED at its write path, which does not exist yet:
+    //  `RICH_TEXT_COVERAGE` gains its `ChannelPost` entry in the PR that adds
+    //  the writer, exactly as P8.6's link-card columns had to (#2800), because
+    //  `SEAM_COVERED` verifies a seam that exists rather than promising one.
+    'ChannelPost.body': 'Addressed to a group and meant to be widely read; P9.7 requires it searchable, and an encrypted column needs a second plaintext copy to search, which would be the real store with nothing guarding it.',
+
     //  Prod: 0 rows. A public agricultural-events feed — the whole point is
     //  that every tenant reads it, and it carries no farm's private data.
     'AgriEvent.description': 'Platform-wide public events feed; no tenant owns a row and nothing in it is private.',
