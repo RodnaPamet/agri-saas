@@ -16,6 +16,7 @@ on:
           - auth
           - lists
           - streams
+          - delivery
         default: both
       vus:
         description: Virtual users (concurrency target)
@@ -98,6 +99,35 @@ jobs:
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
 
+      # FIRST, because everything scenario-gated below depends on it and it
+      # depends on nothing: it reads `inputs` and `github.event_name` only.
+      # It used to sit after `Wait for /api/health`, which forced every
+      # scenario-gated step below the app boot — and that is what put the DM
+      # flag's INSERT after the app had already cached the flag table
+      # (30s Redis TTL, one key), so the delivery run read a flag that was on
+      # in Postgres and off in the process. Measured on run 42576945583: a
+      # 404 from `/api/social/inbox`, which is what a disabled flag answers.
+      - name: Pick parameters (manual vs scheduled)
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "scenario=${{ inputs.scenario }}" >> "$GITHUB_OUTPUT"
+            echo "vus=${{ inputs.vus }}" >> "$GITHUB_OUTPUT"
+            echo "duration=${{ inputs.duration }}" >> "$GITHUB_OUTPUT"
+          else
+            # Nightly smoke — keep it light and fast.
+            echo "scenario=both" >> "$GITHUB_OUTPUT"
+            echo "vus=25" >> "$GITHUB_OUTPUT"
+            echo "duration=1m" >> "$GITHUB_OUTPUT"
+          fi
+
+      # k6's handleSummary writes tests/load/results/<scenario>-summary.json.
+      # The directory is gitignored (a developer artefact) and nothing created
+      # it here, so every run ended with:
+      #   failed to handle the end-of-test summary … no such file or directory
+      # The run still exited on its thresholds, but the per-step numbers needed
+      # to CALIBRATE those thresholds were never written — which is why the
+      # login budget has never been checked against a real measurement.
       - name: Enable pgvector (PGDG)
         uses: ./.github/actions/enable-pgvector
 
@@ -124,6 +154,61 @@ jobs:
           npx prisma migrate deploy
           npm run db:seed
 
+      # The DM flag is switched on HERE rather than by the seeder, which reads
+      # it and refuses to write it: enabling a second global flag is an
+      # operator decision, not a side effect of seeding. On a throwaway CI
+      # database that decision is this line.
+      #
+      # BEFORE `Build app` / `Start app`, and that is the fix for run
+      # 42576945583. The flag table is cached in Redis for 30s under ONE key,
+      # so a process that read it before the INSERT serves the pre-insert
+      # answer for up to half a minute — and `assertFeatureEnabled` answers a
+      # disabled flag with 404, deliberately, so the surface is not advertised
+      # before it is built. The run therefore failed on a flag that was ON in
+      # Postgres and OFF in the app, which is the hardest version of this to
+      # diagnose from either side alone. Writing it before anything boots
+      # removes the window rather than waiting one out.
+      - name: Enable social.direct-messages (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        run: |
+          # `-v ON_ERROR_STOP=1`, AND a verification read. Without the first,
+          # psql exits 0 on a failed statement and the step reports SUCCESS —
+          # which is exactly what happened on runs 42576945583 and
+          # 42578066347: the INSERT named an `id` column that does not exist
+          # (`FeatureFlag` has `key String @id` and no surrogate id, and no
+          # `createdAt`), the statement errored, the step went green, and the
+          # delivery run failed 404 on a flag nobody had written. Two runs
+          # spent diagnosing a Redis cache that was never involved.
+          #
+          # The read is the half that makes it provable rather than merely
+          # loud: `\gset` + a test puts the flag's own state in the log, so a
+          # future 404 is diagnosable from this step's output alone.
+          PGPASSWORD=ci_password psql -v ON_ERROR_STOP=1 -h localhost -U ci -d ci_testdb <<'SQL'
+          INSERT INTO "FeatureFlag" ("key", "enabled", "cohorts", "description", "updatedAt")
+          VALUES ('social.direct-messages', true, '{}',
+                  'Enabled by load-test.yml for the #2881 delivery run.', NOW())
+          ON CONFLICT ("key") DO UPDATE
+            SET "enabled" = true, "cohorts" = '{}', "updatedAt" = NOW();
+
+          SELECT "key", "enabled", "cohorts" FROM "FeatureFlag"
+           WHERE "key" = 'social.direct-messages';
+
+          -- A flag that is enabled with a NON-EMPTY cohort list is a limited
+          -- rollout, not a global one (the two compose as AND). Getting that
+          -- backwards would leave every VU refused while the row looked set,
+          -- so the assertion is on both fields rather than on `enabled`.
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM "FeatureFlag"
+               WHERE "key" = 'social.direct-messages'
+                 AND "enabled" AND cardinality("cohorts") = 0
+            ) THEN
+              RAISE EXCEPTION 'social.direct-messages is not enabled-for-everyone after the upsert';
+            END IF;
+          END $$;
+          SQL
+
       - name: Build app
         env:
           NODE_ENV: production
@@ -149,27 +234,77 @@ jobs:
           tail -n 100 /tmp/app.log || true
           exit 1
 
-      - name: Pick parameters (manual vs scheduled)
-        id: params
+      # ── k6 WITH the SSE extension, for the delivery scenario (#2881) ──
+      #
+      # IT SITS AFTER `Pick parameters`, NOT BESIDE `Setup k6`, and that is not
+      # tidiness. Its `if` reads `steps.params.outputs.scenario`, and a step
+      # whose condition references an output produced LATER evaluates against
+      # an empty string — so the step is SKIPPED, silently, and the only
+      # symptom is the next step failing on a missing file. Measured on run
+      # 42574529418: the build was skipped and `Run k6 — delivery` died in two
+      # seconds on `./k6-sse`. `tests/guards/workflow-step-outputs-are-ordered.test.ts`
+      # now derives that rule across every workflow.
+      #
+      # Stock k6 cannot read frames from a held response: `http.get` on an SSE
+      # endpoint blocks until the request times out, so a VU that opened a
+      # stream could not also write into it. P8.9's criterion is DELIVERY —
+      # write to frame — and measuring it needs a client that reads while the
+      # VU stays in the event loop. That is `xk6-sse`, and a binary carrying it
+      # has to be built.
+      #
+      # Built only for the scenario that needs it, so the other three keep the
+      # stock action's cached binary and pay nothing. The build is ~1 min on a
+      # runner that already has Go preinstalled — no `setup-go` step, which is
+      # one fewer action to pin.
+      #
+      # `./k6-sse` rather than overwriting `k6` on PATH: the two binaries are
+      # not interchangeable in the direction that matters. A scenario run under
+      # the WRONG one should fail at the `k6/x/sse` import rather than silently
+      # measure something else, and keeping them as separate paths is what makes
+      # that true by construction.
+      #
+      # The extension is PINNED by commit, not by a floating default branch:
+      # `xk6 build` with no version pulls whatever HEAD happens to be, which
+      # makes the measurement irreproducible and the build a supply-chain edge
+      # nobody reviewed.
+      - name: Build k6 with xk6-sse (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        env:
+          # `K6_VERSION` is READ BY xk6 ITSELF, not just by this script.
+          # Measured on run 42575556014: setting it here AND passing the same
+          # value as a positional argument fails with `k6 version was
+          # specified with both flag and argument` — after four minutes of
+          # module downloads, so the failure is slow as well as opaque. The
+          # version lives in exactly one place now, and it is this variable
+          # because that is the one xk6 consumes.
+          # THE EXTENSION AND k6 ARE A COUPLED PAIR, and pinning one without
+          # the other is the failure. Measured from the module proxy rather
+          # than guessed, after run 42576244555 failed with the uninformative
+          # `resolving dependency: executing go command: exit status 1`:
+          #
+          #   xk6-sse v0.1.2   -> go.k6.io/k6     v0.51.0
+          #   xk6-sse v0.1.12  -> go.k6.io/k6     v1.2.1
+          #   xk6-sse v0.2.0   -> go.k6.io/k6/v2  v2.0.0
+          #
+          # So the version below is not "the latest k6" — it is the version
+          # THIS extension declares, which is the only pairing its author
+          # built against. Moving either line means re-reading
+          # `https://proxy.golang.org/github.com/phymbert/xk6-sse/@v/<v>.mod`
+          # and moving the other to match.
+          K6_VERSION: v2.0.0
+          XK6_SSE: github.com/phymbert/xk6-sse@v0.2.0
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "scenario=${{ inputs.scenario }}" >> "$GITHUB_OUTPUT"
-            echo "vus=${{ inputs.vus }}" >> "$GITHUB_OUTPUT"
-            echo "duration=${{ inputs.duration }}" >> "$GITHUB_OUTPUT"
-          else
-            # Nightly smoke — keep it light and fast.
-            echo "scenario=both" >> "$GITHUB_OUTPUT"
-            echo "vus=25" >> "$GITHUB_OUTPUT"
-            echo "duration=1m" >> "$GITHUB_OUTPUT"
-          fi
+          go version
+          go install go.k6.io/xk6/cmd/xk6@latest
+          "$(go env GOPATH)/bin/xk6" build --with "$XK6_SSE" --output ./k6-sse
+          ./k6-sse version
+          # A POSITIVE CONTROL on the build, not just on the binary existing:
+          # a k6 without the extension exits non-zero on this import, so a
+          # silently-stock binary cannot reach the scenario below.
+          printf 'import sse from "k6/x/sse";\nexport default function(){};\n' > /tmp/sse-probe.js
+          ./k6-sse run --quiet --vus 1 --iterations 1 /tmp/sse-probe.js
+          echo "xk6-sse resolves in ./k6-sse"
 
-      # k6's handleSummary writes tests/load/results/<scenario>-summary.json.
-      # The directory is gitignored (a developer artefact) and nothing created
-      # it here, so every run ended with:
-      #   failed to handle the end-of-test summary … no such file or directory
-      # The run still exited on its thresholds, but the per-step numbers needed
-      # to CALIBRATE those thresholds were never written — which is why the
-      # login budget has never been checked against a real measurement.
       - name: Create k6 results directory
         run: mkdir -p tests/load/results
 
@@ -227,6 +362,41 @@ jobs:
             -e RAMP_DOWN=10s \
             -e STREAM_HOLD=15s \
             tests/load/realtime-streams.js
+
+      # ── delivery scenario (#2881) ──────────────────────────────────────
+      #
+      # PAIRS accounts in pairs, each with an ACCEPTED conversation, so one VU
+      # can hold a stream as A and write as B. `--pairs` needs two accounts per
+      # pair, which is why `--users` is twice it.
+      #
+      # Deliberately small (25 pairs) rather than matching the streams
+      # scenario's thousand: this measures a LATENCY, and a thousand
+      # simultaneous writes on a CI runner would measure the runner. The
+      # concurrency question is `realtime-streams.js`'s and is already answered
+      # there.
+      - name: Seed DM pairs (delivery scenario)
+        if: steps.params.outputs.scenario == 'delivery'
+        env:
+          LOAD_SEED_CONFIRM: yes-this-is-a-throwaway-vm
+          LOAD_TEST_PASSWORD: ci_load_password
+        run: |
+          npx tsx scripts/seed-load-streams.ts \
+            --users $(( ${{ steps.params.outputs.vus }} * 2 )) \
+            --pairs ${{ steps.params.outputs.vus }} \
+            --enable-flag
+
+      - name: Run k6 — delivery scenario
+        if: steps.params.outputs.scenario == 'delivery'
+        env:
+          BASE_URL: http://localhost:3006
+          LOAD_TEST_PASSWORD: ci_load_password
+        run: |
+          ./k6-sse run \
+            -e PAIRS=${{ steps.params.outputs.vus }} \
+            -e DURATION=${{ steps.params.outputs.duration }} \
+            -e RAMP_UP=20s \
+            -e RAMP_DOWN=10s \
+            tests/load/realtime-delivery.js
 
       - name: Stop app
         if: always()
