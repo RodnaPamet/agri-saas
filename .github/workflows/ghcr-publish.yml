@@ -154,6 +154,14 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@v7
+              with:
+                  # Needed by the forward-only `:latest` check (#2901): it asks
+                  # whether the commit `:latest` currently serves is an ANCESTOR
+                  # of this one, and `merge-base --is-ancestor` cannot answer
+                  # that in a shallow clone. The script fails SAFE on an unknown
+                  # object — it skips `:latest` — so without this every publish
+                  # would decline to move the tag.
+                  fetch-depth: 0
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@v4
@@ -263,13 +271,39 @@ jobs:
                   trivyignores: ".trivyignore"
 
             # ── Push the exact bytes the gates just passed ──
+            # ── May this build move `:latest`? (#2901) ──
+            # Two publishes overlapped on 2026-11-09 and finished out of order,
+            # so an OLDER commit's image overwrote `:latest` and production ran
+            # the wrong code while the newer commit's `sha-` tag sat correct and
+            # unused. Queueing orders starts, not completions.
+            - name: Decide whether :latest may move
+              id: latest
+              run: |
+                  set -euo pipefail
+                  OUT="$(REF="${REGISTRY}/${IMAGE_NAME}" THIS_SHA="${{ github.sha }}" \
+                      bash .github/scripts/latest-is-forward-only.sh)"
+                  echo "$OUT"
+                  echo "decision=$(printf '%s' "$OUT" | sed 's/^LATEST_DECISION=\([a-z]*\).*/\1/')" >> "$GITHUB_OUTPUT"
+
             - name: Push the gated image
               id: push
               run: |
                   set -euo pipefail
                   PUSHED=""
+                  SKIPPED_LATEST=0
                   while IFS= read -r tag; do
                       [ -n "$tag" ] || continue
+                      # The ONLY tag that can regress is `:latest` — a `sha-`
+                      # tag names its own commit and is always correct to push.
+                      case "$tag" in
+                          *:latest)
+                              if [ "${{ steps.latest.outputs.decision }}" != "push" ]; then
+                                  echo "::warning::not moving $tag — the image it serves is from a commit this build does not descend from (#2901), so moving it would take production backwards. The sha- tag IS pushed, so this commit remains deployable by digest. In the ordinary case the server is the newer tip and image-tip-check stays green; if it is not, image-tip-check will say so."
+                                  SKIPPED_LATEST=1
+                                  continue
+                              fi
+                              ;;
+                      esac
                       docker tag "$LOCAL_TAG" "$tag"
                       docker push "$tag"
                       # `docker inspect` reports the repo digest the registry
@@ -280,6 +314,7 @@ jobs:
                   done <<< "${{ steps.meta.outputs.tags }}"
                   test -n "$PUSHED" || { echo "::error::no tags were pushed"; exit 1; }
                   echo "digest=$PUSHED" >> "$GITHUB_OUTPUT"
+                  echo "skipped_latest=$SKIPPED_LATEST" >> "$GITHUB_OUTPUT"
 
             # ── Prove what the registry now serves (#826's hard requirement) ──
             # An absence only means something once the probe has proven it can
