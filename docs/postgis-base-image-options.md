@@ -294,6 +294,59 @@ identically under glibc 2.31 and 2.41 — `a,á,B,Ечемик,ябълка,Яб
 **That is not evidence the collation is equivalent.** Six strings cannot
 speak for the domain; the REINDEX is still required.
 
+#### It was FIVE databases, not one — resolved 2026-11-09 (#2821)
+
+`REFRESH COLLATION VERSION` was applied to `postgres` at the time (#2762) and
+to nothing else, because the rest was outside that change's authorisation.
+#2821 recorded `template1` as the remainder. **Measured on the VM, there were
+two drifted databases rather than one**, and they were not the same decision:
+
+| database | recorded → actual | indexes over a collatable column | action |
+|---|---|---|---|
+| `agrent_production` | 2.41 = 2.41 | 901 | none; already matched |
+| `postgres` | 2.41 = 2.41 | — | #2762 |
+| `template0` | **NULL** vs 2.41 | — | **none, deliberately** |
+| `template1` | 2.31 → 2.41 | **0** | `REFRESH` alone |
+| `template_postgis` | 2.31 → 2.41 | **~40 over 17,385 rows** | `REINDEX` **then** `REFRESH` |
+
+Three things that decided those actions, each measured rather than reasoned:
+
+- **`template1` holds no index over a collatable column at all**, so its
+  refresh is a catalog update that cannot be wrong. #2821's "the fix is the
+  same one line" is true here and only here.
+- **`template_postgis` holds 17,385 rows** across the tiger geocoder's lookup
+  tables, with ~40 collatable indexes all built under 2.31. Refreshing its
+  recorded version ALONE would have silenced a warning that, for that database,
+  was pointing at something real. `REINDEX DATABASE` first, then the refresh —
+  which is the sequence this section already prescribes, applied to the
+  database that needed it rather than to the one that did not.
+- **`agrent_production` has 0 tiger tables**, so it was never created from
+  `template_postgis` and did not inherit those indexes. That is why the drift
+  was cosmetic for production — a fact worth checking rather than assuming,
+  because the opposite answer would have made this a correctness issue.
+
+**`template0` is left alone on purpose and must stay that way.** Its
+`datcollversion` is NULL, which means no version is recorded and therefore no
+check is performed — so it emits no warning, and `datallowconn = false` means
+it cannot be connected to in any case. A `matches = f` reading for it in the
+query below is NULL-vs-value, not a drift.
+
+Verified after: all four connectable databases report `recorded = actual`, and
+a plain `SELECT 1` against each emits **zero** `WARNING` lines — which is the
+observable an operator actually has, and the reason the warning was worth
+removing at all. Half-removed camouflage is worse than none: nobody remembers
+which databases are clean.
+
+```bash
+# the whole cluster, in one read
+gcloud compute ssh agrent --zone europe-west1-b --command \
+  "sudo docker exec \$(sudo docker ps --filter name=db --format '{{.Names}}' | head -1) \
+   psql -U postgres -tA -c \"SELECT datname, coalesce(datcollversion,'(null)'), \
+     pg_database_collation_actual_version(oid), \
+     datcollversion IS NOT DISTINCT FROM pg_database_collation_actual_version(oid) \
+     FROM pg_database ORDER BY datname\""
+```
+
 ### PostGIS 3.4.3 catalog under the 3.6.4 library
 
 The forward direction is safe, and this was measured rather than assumed. Of
