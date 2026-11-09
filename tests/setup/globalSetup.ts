@@ -23,6 +23,90 @@ import { assertNoForeignMutation } from '../helpers/selector-teeth-marker';
 
 interface GlobalConfig { maxWorkers?: number }
 
+/**
+ * Delete undrainable `StatementOfReasons` litter from the BASE database —
+ * #2574.
+ *
+ * ## What the litter is, and why it never leaves on its own
+ *
+ * `runStatementDispatch` resolves a recipient per row and, finding none, skips
+ * the row and leaves it undelivered. That is deliberate and correct: the
+ * console's undelivered view is where a real Art 17 compliance gap must stay
+ * visible. But a statement whose recipient `User` no longer EXISTS can never
+ * drain — there is no mailbox to resolve, ever — so in a test database it is
+ * not a compliance gap, it is litter the dispatch will skip forever.
+ *
+ * ## Why it breaks a suite rather than merely accumulating
+ *
+ * The dispatch takes the **50 oldest** undelivered rows (`orderBy: createdAt
+ * asc`, `DEFAULT_BATCH = 50`). Once the undrainable pile crosses that, a batch
+ * is spent entirely on rows that skip and a suite's freshly-seeded statement is
+ * never reached — which surfaces as `Cannot read properties of undefined`
+ * three frames from its cause (#2522). Measured on this checkout before the
+ * fix: 130 undelivered, **128 of them orphaned**, oldest 2026-11-02. The issue
+ * was filed at 111; it only grows.
+ *
+ * ## Why HERE, and not in the suites
+ *
+ * The suites are not the leak. Every suite that mints statements already
+ * deletes them in `afterAll`, by id. The rows come from runs that were
+ * INTERRUPTED — a killed run never reaches `afterAll`, and the suites that own
+ * this queue mock `sendEmail`, so nothing is ever stamped delivered. A
+ * per-suite pre-clean is only available to a suite that injects its own id
+ * prefix (p5-4b does, and scopes to `sor-p54b-%`); the real `queueStatement`
+ * mints an untagged `sor-<id>`, so there is no prefix for the others to scope
+ * by. All 128 orphans carry that untagged shape.
+ *
+ * And it must be the BASE, not a worker clone: the per-worker databases are
+ * `CREATE DATABASE … TEMPLATE <base>`, so litter in the base is copied into
+ * every clone on every run. Cleaning a clone leaves the base to re-seed it.
+ * Hence this runs after the migration and BEFORE the clone loop.
+ *
+ * ## Why not a cascade
+ *
+ * `StatementOfReasons.recipientUserId` deliberately carries no
+ * `onDelete: Cascade`: P5.6b's erasure design KEEPS the row and pseudonymises,
+ * because a statement is the record of a decision. That is right for
+ * production and must not be changed for a test's convenience.
+ *
+ * Tolerant by construction: it only runs when the migration reported
+ * `migrated`, and any failure is reported and swallowed — a hygiene step must
+ * never be the reason a test run cannot start.
+ */
+export async function pruneUndrainableStatements(baseUrl: string): Promise<void> {
+    const client = new Client({ connectionString: baseUrl });
+    try {
+        await client.connect();
+        const res = await client.query(`
+            DELETE FROM "StatementOfReasons" s
+             WHERE s."deliveredAt" IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM "User" u WHERE u.id = s."recipientUserId"
+               )
+        `);
+        // Printed with its denominator rather than only when non-zero: zero is
+        // the reading that says the base is clean, and a step that prints
+        // nothing on a clean run is indistinguishable from one that did not run.
+        const remaining = await client.query<{ n: string }>(
+            `SELECT count(*)::text AS n FROM "StatementOfReasons" WHERE "deliveredAt" IS NULL`,
+        );
+        console.log(
+            `[test-setup] statement litter: pruned ${res.rowCount ?? 0} undrainable row(s); `
+            + `${remaining.rows[0]?.n ?? '?'} undelivered remain (#2574)`,
+        );
+    } catch (err) {
+        // Never fatal. A missing table (a tree that predates P5.1) and an
+        // unreachable server both land here, and neither is a reason to refuse
+        // to run the tests.
+        console.warn(
+            `[test-setup] statement-litter prune skipped: `
+            + `${err instanceof Error ? err.message.split('\n')[0] : String(err)}`,
+        );
+    } finally {
+        await client.end().catch(() => {});
+    }
+}
+
 export default async function globalSetup(globalConfig?: GlobalConfig) {
     const base = getBaseTestDatabaseUrl();
 
@@ -69,6 +153,8 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     // because DB_AVAILABLE is a liveness probe and cannot see it.
     if (migrateTestDb() === 'migrated') {
         console.log(`[test-setup] Migrations complete`);
+        // BEFORE the clone loop below, so no worker inherits the litter.
+        await pruneUndrainableStatements(base);
     } else {
         console.warn(
             `[test-setup] Migrations NOT run — database unreachable. ` +
