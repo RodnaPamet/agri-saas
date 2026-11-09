@@ -70,6 +70,16 @@ import type { UserContext } from '@/app-layer/types';
 /** Matches `DM_MAX_BODY_LENGTH`. A channel post is not an essay. */
 export const CHANNEL_POST_MAX_LENGTH = 4000;
 
+/**
+ * How many people one post may mention — P9.3 (#2937).
+ *
+ * Enforced HERE and not in SQL: counting the mention rows already inserted for
+ * a post is a query against the table the policy would be guarding, which is
+ * the shape Postgres refuses. So `channel_post_mention_insert` bounds WHO may
+ * write one (only a post's author) and this bounds HOW MANY.
+ */
+export const CHANNEL_MENTION_MAX = 5;
+
 /** Feed page size, and the ceiling a caller may ask for. */
 export const CHANNEL_FEED_PAGE_SIZE = 50;
 export const CHANNEL_FEED_MAX_PAGE_SIZE = 100;
@@ -296,6 +306,53 @@ export async function readChannelFeed(
 }
 
 /**
+ * Refuse a post that is inside the channel's slow-mode window.
+ *
+ * ONE definition, because P9.3b added a second caller: a reply IS a post, and
+ * a throttle that applied to posting and not to replying would be worked
+ * around by replying to anything. Two copies of this rule is how one of them
+ * comes to differ.
+ *
+ * It CANNOT live in SQL — it compares against other rows of `ChannelPost`,
+ * which is the shape a policy on that table may not query (P8.1's recursion
+ * rule). So it is a usecase check, and therefore a THROTTLE rather than an
+ * access control: two concurrent posts can both pass it. That race is fine for
+ * a rate limit and would not be for an access rule, which is why the access
+ * rules are in `channel_post_insert`'s WITH CHECK and this is not.
+ */
+async function assertNotSlowed(
+    tx: Parameters<Parameters<typeof runInUserContext>[1]>[0],
+    channelId: string,
+    userId: string,
+    slowModeSeconds: number,
+): Promise<void> {
+    if (slowModeSeconds <= 0) return;
+    const since = new Date(Date.now() - slowModeSeconds * 1000);
+    const recent = await tx.channelPost.findFirst({
+        where: { channelId, authorUserId: userId, createdAt: { gt: since } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+    });
+    if (!recent) return;
+
+    const waitSeconds = Math.max(
+        1,
+        Math.ceil(
+            (recent.createdAt.getTime() + slowModeSeconds * 1000 - Date.now()) / 1000,
+        ),
+    );
+    // The wait is in the DETAILS rather than interpolated into the message:
+    // the message is displayed copy, and a number built at the throw site
+    // would be English prose on a Bulgarian screen —
+    // `no-server-authored-user-copy`'s rule.
+    throw codedBadRequest(
+        'CHANNEL_SLOW_MODE',
+        'That channel is in slow mode.',
+        { waitSeconds, slowModeSeconds },
+    );
+}
+
+/**
  * Post to a channel.
  *
  * Runs in USER context, so the three access rules are enforced by
@@ -305,9 +362,14 @@ export async function readChannelFeed(
 export async function postToChannel(
     ctx: UserContext,
     channelId: string,
-    input: { body: string },
-): Promise<{ postId: string; createdAt: Date }> {
+    input: { body: string; mentionUserIds?: readonly string[] },
+): Promise<{ postId: string; createdAt: Date; mentionsRecorded: number }> {
     const body = cleanBody(input.body);
+    // OUTSIDE the transaction — see `resolveMentionable`. Inside it the
+    // membership policy hides everybody but the caller.
+    const recordable = await resolveMentionable(
+        channelId, ctx.userId, input.mentionUserIds ?? [],
+    );
 
     return runInUserContext(ctx, async (tx) => {
         const channel = await tx.channel.findUnique({
@@ -352,42 +414,320 @@ export async function postToChannel(
             );
         }
 
-        if (channel.slowModeSeconds > 0) {
-            const since = new Date(Date.now() - channel.slowModeSeconds * 1000);
-            const recent = await tx.channelPost.findFirst({
-                where: {
-                    channelId,
-                    authorUserId: ctx.userId,
-                    createdAt: { gt: since },
-                },
-                orderBy: { createdAt: 'desc' },
-                select: { createdAt: true },
-            });
-            if (recent) {
-                const waitSeconds = Math.max(
-                    1,
-                    Math.ceil(
-                        (recent.createdAt.getTime()
-                            + channel.slowModeSeconds * 1000
-                            - Date.now()) / 1000,
-                    ),
-                );
-                // The wait is in the DETAILS rather than the message, because
-                // the message is displayed copy and a number interpolated at
-                // the throw site would be English prose on a Bulgarian screen
-                // — `no-server-authored-user-copy`'s rule.
-                throw codedBadRequest(
-                    'CHANNEL_SLOW_MODE',
-                    'That channel is in slow mode.',
-                    { waitSeconds, slowModeSeconds: channel.slowModeSeconds },
-                );
-            }
-        }
+        await assertNotSlowed(tx, channelId, ctx.userId, channel.slowModeSeconds);
 
         const post = await tx.channelPost.create({
             data: { channelId, authorUserId: ctx.userId, body },
             select: { id: true, createdAt: true },
         });
-        return { postId: post.id, createdAt: post.createdAt };
+        // In the SAME transaction and the SAME session context. That is why
+        // `channel_post_mention_insert` exists at all (P9.3b): the post is
+        // inserted as the caller so the WITH CHECK enforces the access rules,
+        // and mentions cannot then be written privileged without either
+        // splitting the transaction or taking a second pool connection while
+        // holding one — #1191's P0.8 deadlock.
+        const mentionsRecorded = await recordMentions(tx, post.id, recordable);
+        return { postId: post.id, createdAt: post.createdAt, mentionsRecorded };
     });
+}
+
+/**
+ * Reply to a post — P9.3b (#2937), and optionally «Също изпрати в канала».
+ *
+ * ## «Също изпрати в канала» is TWO ROWS, not a flag
+ *
+ * The feed filters `parentPostId: null`, so one row cannot be both a reply and
+ * a top-level post without that filter learning about a flag. Two rows keeps
+ * the feed query as it is and makes the thread and the channel copy
+ * independently moderatable — which matters, because a moderator removing the
+ * channel copy should not silently remove the reply from its thread.
+ *
+ * Both rows are written in ONE transaction, so a copy cannot outlive a
+ * rolled-back reply.
+ *
+ * ## Mentions are recorded on the REPLY only
+ *
+ * Recording them on both rows would push twice for one act. The reply is where
+ * the mention was made; the copy exists for visibility.
+ *
+ * ## Threads are ONE level deep
+ *
+ * A reply to a reply is refused rather than nested. `parentPostId` pointing at
+ * a row that itself has a parent would make the feed's "top-level only" filter
+ * hide an arbitrarily deep tree, and the P8.3 timeline this will eventually
+ * render flattens to a ROW LIST — there is no second indent to render into.
+ */
+export async function replyToPost(
+    ctx: UserContext,
+    parentPostId: string,
+    input: {
+        body: string;
+        alsoToChannel?: boolean;
+        mentionUserIds?: readonly string[];
+    },
+): Promise<{
+    postId: string;
+    channelCopyPostId: string | null;
+    createdAt: Date;
+    mentionsRecorded: number;
+}> {
+    const body = cleanBody(input.body);
+
+    // The channel is derived from the parent, and the mention resolution has to
+    // happen OUTSIDE the transaction (see `resolveMentionable`) — so the
+    // parent's channel is read first, privileged. `ChannelPost` is readable by
+    // any authenticated caller, so this discloses nothing a user-context read
+    // would not; it is outside the transaction purely to avoid holding two
+    // connections.
+    const parentChannel = await prisma.channelPost.findUnique({
+        where: { id: parentPostId },
+        select: { channelId: true },
+    });
+    if (!parentChannel) {
+        throw codedNotFound('CHANNEL_POST_NOT_FOUND', 'That post does not exist.');
+    }
+    const recordable = await resolveMentionable(
+        parentChannel.channelId, ctx.userId, input.mentionUserIds ?? [],
+    );
+
+    return runInUserContext(ctx, async (tx) => {
+        const parent = await tx.channelPost.findUnique({
+            where: { id: parentPostId },
+            select: { id: true, channelId: true, parentPostId: true, deletedAt: true },
+        });
+        if (!parent) {
+            throw codedNotFound('CHANNEL_POST_NOT_FOUND', 'That post does not exist.');
+        }
+        if (parent.parentPostId != null) {
+            throw codedBadRequest(
+                'CHANNEL_THREAD_TOO_DEEP',
+                'Reply to the original post rather than to a reply.',
+            );
+        }
+        if (parent.deletedAt != null) {
+            // A retracted post has nothing to reply to, and a reply under it
+            // would render beneath «изтрито» with no context.
+            throw codedBadRequest(
+                'CHANNEL_POST_DELETED',
+                'That post was removed, so it cannot be replied to.',
+            );
+        }
+
+        const channel = await tx.channel.findUniqueOrThrow({
+            where: { id: parent.channelId },
+            select: { id: true, archivedAt: true, slowModeSeconds: true },
+        });
+        if (channel.archivedAt) {
+            throw codedBadRequest('CHANNEL_ARCHIVED', 'That channel is closed.');
+        }
+
+        const membership = await tx.channelMembership.findUnique({
+            where: { channelId_userId: { channelId: channel.id, userId: ctx.userId } },
+            select: { bannedAt: true },
+        });
+        if (!membership) {
+            throw codedForbidden(
+                'CHANNEL_NOT_A_MEMBER',
+                'Join the channel before posting in it.',
+            );
+        }
+        if (membership.bannedAt != null) {
+            throw codedForbidden(
+                'CHANNEL_BANNED',
+                'You can no longer post in that channel.',
+            );
+        }
+
+        // A reply IS a post, so slow mode applies to it — otherwise the way
+        // round a throttle is to reply to anything rather than post.
+        await assertNotSlowed(tx, channel.id, ctx.userId, channel.slowModeSeconds);
+
+        const reply = await tx.channelPost.create({
+            data: {
+                channelId: channel.id,
+                authorUserId: ctx.userId,
+                body,
+                parentPostId: parent.id,
+            },
+            select: { id: true, createdAt: true },
+        });
+
+        const mentionsRecorded = await recordMentions(tx, reply.id, recordable);
+
+        let channelCopyPostId: string | null = null;
+        if (input.alsoToChannel) {
+            const copy = await tx.channelPost.create({
+                data: { channelId: channel.id, authorUserId: ctx.userId, body },
+                select: { id: true },
+            });
+            channelCopyPostId = copy.id;
+        }
+
+        return {
+            postId: reply.id,
+            channelCopyPostId,
+            createdAt: reply.createdAt,
+            mentionsRecorded,
+        };
+    });
+}
+
+/**
+ * Mark a «Въпрос» as «Решено» — P9.3b (#2937).
+ *
+ * THE ASKER ONLY. The reversible direction, and it matches how the exchange
+ * treats a thread's owner: a moderator can already remove a post, and
+ * resolving is not a moderation act.
+ *
+ * Enforced here rather than in SQL. `channel_post_update`'s WITH CHECK already
+ * pins the author, so the author can write `resolvedAt` — but so could they
+ * write it on a `POST` that is no question, and a CHECK naming an enum value
+ * would need rewriting every time the enum grows.
+ */
+export async function setQuestionResolved(
+    ctx: UserContext,
+    postId: string,
+    resolved: boolean,
+): Promise<{ resolvedAt: Date | null }> {
+    return runInUserContext(ctx, async (tx) => {
+        const post = await tx.channelPost.findUnique({
+            where: { id: postId },
+            select: { id: true, kind: true, authorUserId: true },
+        });
+        if (!post) {
+            throw codedNotFound('CHANNEL_POST_NOT_FOUND', 'That post does not exist.');
+        }
+        if (post.authorUserId !== ctx.userId) {
+            // The same not-found a missing post gives would be wrong here: the
+            // caller can SEE the post (the feed is public), so pretending it is
+            // absent would contradict what they are looking at.
+            throw codedForbidden(
+                'CHANNEL_NOT_THE_ASKER',
+                'Only the person who asked can mark a question answered.',
+            );
+        }
+        if (post.kind !== 'QUESTION') {
+            throw codedBadRequest(
+                'CHANNEL_NOT_A_QUESTION',
+                'Only a question can be marked answered.',
+            );
+        }
+
+        const updated = await tx.channelPost.update({
+            where: { id: postId },
+            data: { resolvedAt: resolved ? new Date() : null },
+            select: { resolvedAt: true },
+        });
+        return { resolvedAt: updated.resolvedAt };
+    });
+}
+
+/**
+ * Record who a post mentions — P9.3b (#2937).
+ *
+ * ## Mentions are EXPLICIT IDS, never parsed from the body
+ *
+ * Measured 2026-11-09: **there is no person handle in this product.**
+ * `PersonProfile` carries `userId` and `displayName` and no handle, and the DM
+ * surface's `resolveHandleRecipient` resolves a FARM handle to that farm's
+ * active owner — not a person handle. So `@Иван` is display text with nothing
+ * to resolve it against.
+ *
+ * Three reasons that is the better shape anyway, and the third is a trap this
+ * repo has already paid for:
+ *
+ *   1. the CAP is enforceable — a cap over a parsed list is advisory;
+ *   2. the PUSH target is unambiguous, and P9.3 pushes for mentions and
+ *      replies and nothing else;
+ *   3. **JavaScript's `\b` and `\w` are ASCII-ONLY**, so `/@\w+/` matches
+ *      nothing in `@Иван`. A parser would have looked correct, passed its
+ *      English fixtures, and mentioned nobody in Bulgarian — which is every
+ *      real user. Recorded in this repo as a negated guard passing vacuously
+ *      against `/\bимот/`.
+ *
+ * ## A mention must name a MEMBER, and a non-member is DROPPED not refused
+ *
+ * A channel is public, so anyone may post; five mentions per post across many
+ * channels reaches a lot of people who never joined anything. Restricting the
+ * addressable set to members bounds the reach rather than just the rate, and it
+ * matches what the gesture means. A non-member can still READ the post.
+ *
+ * Dropped rather than refused so a stale picker does not fail the whole post —
+ * the caller is told how many were recorded.
+ */
+/**
+ * Which of the requested mentions may be RECORDED — resolved BEFORE the
+ * transaction opens, and that placement is the whole point.
+ *
+ * ## Why this cannot happen inside the transaction
+ *
+ * `channel_membership_select` admits the caller's OWN ROW ONLY, forced by
+ * P8.1's recursion rule. So inside `runInUserContext` an author cannot see
+ * whether the person they are mentioning is a member — the read returns
+ * nothing and every mention is silently dropped. I wrote exactly that first,
+ * and `p9-3b-threads-mentions` reported `mentionsRecorded: 0` with no error,
+ * which is the shape that constraint always produces.
+ *
+ * Reading it PRIVILEGED inside the transaction is the other trap: a second
+ * pool connection taken while the first is held is #1191's P0.8 deadlock at
+ * `PG_POOL_MAX`.
+ *
+ * So the resolution happens here, outside any transaction, on the global
+ * client. The TOCTOU window — somebody leaving the channel between this check
+ * and the insert — is harmless for a mention and is the price of not holding
+ * two connections.
+ */
+async function resolveMentionable(
+    channelId: string,
+    authorUserId: string,
+    mentionUserIds: readonly string[],
+): Promise<string[]> {
+    if (mentionUserIds.length === 0) return [];
+    if (mentionUserIds.length > CHANNEL_MENTION_MAX) {
+        throw codedBadRequest(
+            'CHANNEL_TOO_MANY_MENTIONS',
+            'A post may mention at most five people.',
+            { max: CHANNEL_MENTION_MAX, given: mentionUserIds.length },
+        );
+    }
+
+    // Deduplicated before the read, so a body naming somebody twice costs one
+    // lookup and cannot push twice. `@@unique([postId, userId])` would refuse
+    // the second row anyway; this keeps the COUNT honest.
+    //
+    // A SELF-mention is dropped rather than refused: a picker allows it, and
+    // pushing somebody about their own post is the kind of detail nobody files
+    // a bug for and everybody notices.
+    const wanted = [...new Set(mentionUserIds)].filter((id) => id !== authorUserId);
+    if (wanted.length === 0) return [];
+
+    const members = await prisma.channelMembership.findMany({
+        where: { channelId, userId: { in: wanted }, bannedAt: null },
+        select: { userId: true },
+    });
+
+    // ONE query for every candidate, then a filter — not a lookup per mention,
+    // which is the N+1 the D1 guardrail refuses.
+    const memberIds = new Set(members.map((m) => m.userId));
+    return wanted.filter((id) => memberIds.has(id));
+}
+
+/**
+ * Write the mention rows, inside the caller's transaction.
+ *
+ * `channel_post_mention_insert` (P9.3b) bounds this to a post the caller
+ * AUTHORED, which is what made a user-context write possible at all — P9.1
+ * withheld the arm because a mention is a push trigger, and authorship plus an
+ * unbanned membership is what answers that.
+ */
+async function recordMentions(
+    tx: Parameters<Parameters<typeof runInUserContext>[1]>[0],
+    postId: string,
+    recordable: readonly string[],
+): Promise<number> {
+    if (recordable.length === 0) return 0;
+    await tx.channelPostMention.createMany({
+        data: recordable.map((userId) => ({ postId, userId })),
+    });
+    return recordable.length;
 }

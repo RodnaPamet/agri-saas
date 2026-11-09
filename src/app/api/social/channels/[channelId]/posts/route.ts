@@ -34,7 +34,10 @@ export const POST = withApiErrorHandling(
             throw codedBadRequest('INVALID_BODY', 'body is required.');
         }
 
-        const post = await postToChannel(ctx, channelId, { body: parsed.data.body });
+        const post = await postToChannel(ctx, channelId, {
+            body: parsed.data.body,
+            mentionUserIds: parsed.data.mentionUserIds,
+        });
         return jsonResponse(post, { status: 201 });
     },
 );

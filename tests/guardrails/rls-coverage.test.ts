@@ -299,7 +299,18 @@ const PARTY_SCOPED_MODELS: ReadonlyMap<string, readonly string[]> = new Map([
     // TRIGGER, so a caller able to insert one could push to any person on the
     // platform without posting anything they would read. Written in the same
     // privileged transaction as the post, where the five-mention cap is counted.
-    ['ChannelPostMention', ['channel_post_mention_select']],
+    // P9.3b (#2937) added the INSERT and DELETE arms. P9.1 withheld them on the
+    // grounds that a mention is a PUSH TRIGGER — and the arms answer that
+    // rather than overriding it: both are bounded to a post the caller
+    // AUTHORED, and authoring requires `channel_post_insert` to admit them,
+    // which requires an unbanned membership. The cap of five stays in the
+    // usecase, because counting rows already inserted for a post is a query
+    // against the table being guarded.
+    [
+        'ChannelPostMention',
+        ['channel_post_mention_select', 'channel_post_mention_insert',
+         'channel_post_mention_delete'],
+    ],
 ]);
 
 // Models reached ONLY through a platform-admin surface, with RLS that no

@@ -1796,6 +1796,41 @@ export const MessageReactionSchema = z.object({
  */
 export const CreateChannelPostSchema = z.object({
     body: z.string().min(1).max(8000),
+    /**
+     * Who the post mentions — P9.3b (#2937). EXPLICIT IDS, never parsed from
+     * the body, because **there is no person handle in this product**:
+     * `PersonProfile` carries `userId` and `displayName` and no handle, and the
+     * DM surface resolves a FARM handle to that farm's owner. So `@Иван` is
+     * display text with nothing to resolve it against.
+     *
+     * It also avoids a trap: JavaScript's `\b` and `\w` are ASCII-only, so
+     * `/@\w+/` matches nothing in `@Иван` — a parser would have passed its
+     * English fixtures and mentioned nobody in Bulgarian.
+     *
+     * Capped here AND in the usecase. This bounds the REQUEST; the usecase
+     * bounds what is RECORDED, after dropping non-members and the author.
+     */
+    mentionUserIds: z.array(z.string().min(1)).max(5).optional(),
+});
+
+/** A reply, and optionally «Също изпрати в канала» — P9.3b (#2937). */
+export const CreateChannelReplySchema = z.object({
+    body: z.string().min(1).max(8000),
+    /**
+     * ALSO post a top-level copy. Two rows, not a flag — the feed filters
+     * `parentPostId: null`, so one row cannot be both.
+     *
+     * Explicit per reply and never a remembered preference: it moves text from
+     * a thread to the whole channel, and an audience change must be a decision
+     * taken at the moment of sending.
+     */
+    alsoToChannel: z.boolean().optional(),
+    mentionUserIds: z.array(z.string().min(1)).max(5).optional(),
+});
+
+/** «Решено» — P9.3b (#2937). Asker only; the usecase enforces that. */
+export const SetChannelQuestionResolvedSchema = z.object({
+    resolved: z.boolean(),
 });
 
 export const MODERATION_ACTION_KINDS = [
