@@ -6719,6 +6719,12 @@
         "signOut": "Sign out"
     },
     "errors": {
+        "CHANNEL_NOT_A_QUESTION": "Only a question can be marked answered.",
+        "CHANNEL_NOT_THE_ASKER": "Only the person who asked can mark a question answered.",
+        "CHANNEL_POST_DELETED": "That post was removed, so it cannot be replied to.",
+        "CHANNEL_POST_NOT_FOUND": "That post does not exist.",
+        "CHANNEL_THREAD_TOO_DEEP": "Reply to the original post rather than to a reply.",
+        "CHANNEL_TOO_MANY_MENTIONS": "A post may mention at most five people.",
         "CHANNEL_ARCHIVED": "That channel is closed.",
         "CHANNEL_BANNED": "You can no longer post in that channel.",
         "CHANNEL_NOT_A_MEMBER": "Join the channel before posting in it.",

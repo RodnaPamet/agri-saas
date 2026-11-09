@@ -12,7 +12,7 @@
  * Channel policies key on `app.user_id`, which only `runInUserContext` sets.
  * There is no tenant in any of these paths and that is deliberate: a crop
  * channel spans every farm growing that crop. The one tenant-scoped piece of
- * P9.2's rule — suggesting channels from a farm's crops and oblast — is a
+ * P9.2's rule — suggesting channels from a farm\'s crops and oblast — is a
  * separate tenant route, because a tenant-context read of `ChannelMembership`
  * returns zero rows with no error (#1664).
  *
@@ -201,7 +201,19 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
             + 'pass — acceptable for a rate limit and not for an access rule, which is '
             + 'why the access rules are in the WITH CHECK and this is not.',
         tags: TAGS,
-        body: z.object({ body: z.string().min(1).max(8000) }),
+        body: z.object({
+            body: z.string().min(1).max(8000),
+            mentionUserIds: z.array(z.string()).max(5).optional().openapi({
+                description:
+                    'EXPLICIT user ids, at most five — never parsed from the body, because '
+                    + 'there is no person handle in this product: `PersonProfile` has '
+                    + '`userId` and `displayName` and no handle, and the DM surface resolves '
+                    + 'a FARM handle to that farm\'s owner. A mention must name a MEMBER of '
+                    + 'the channel; a non-member (or yourself) is silently DROPPED rather '
+                    + 'than refused, so a stale picker does not fail the whole post. '
+                    + '`mentionsRecorded` says how many were kept.',
+            }),
+        }),
         extraResponses: codedErrorResponses({
             400: 'CHANNEL_POST_REQUIRED (empty AFTER sanitising — a body of only markup sanitises to nothing), CHANNEL_POST_TOO_LONG, CHANNEL_ARCHIVED, or CHANNEL_SLOW_MODE with `waitSeconds` in the details.',
             403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.',
@@ -210,7 +222,87 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
         success: {
             status: 201,
             description: 'The post.',
-            schema: z.object({ postId: z.string(), createdAt: z.string().datetime({ offset: true }) }),
+            schema: z.object({
+                postId: z.string(),
+                createdAt: z.string().datetime({ offset: true }),
+                mentionsRecorded: z.number().int(),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/social/channel-posts/{postId}/replies',
+        operationId: 'replyToChannelPost',
+        summary: 'Reply to a post, optionally also posting it to the channel',
+        description:
+            'Addressed by the POST id, not `/channels/{channelId}/posts/{postId}` — the '
+            + 'channel is derived from the parent row, so a channel id in the path would '
+            + 'be redundant and could DISAGREE with it, and then one of the two wins '
+            + 'silently.\n\n'
+            + '`alsoToChannel` («Също изпрати в канала») writes a SECOND, top-level row '
+            + 'rather than setting a flag: the feed filters `parentPostId: null`, so one '
+            + 'row cannot be both a reply and a top-level post. Both rows are written in '
+            + 'one transaction, and the two are independently moderatable — removing the '
+            + 'channel copy does not remove the reply from its thread.\n\n'
+            + 'Mentions are recorded on the REPLY only; recording them on the copy too '
+            + 'would push twice for one act.\n\n'
+            + 'Threads are ONE level deep. Replying to a reply is refused rather than '
+            + 'nested, because the feed\'s top-level filter would hide an arbitrarily deep '
+            + 'tree and the timeline this renders into flattens to a row list.\n\n'
+            + 'A reply IS a post, so slow mode applies — otherwise the way round a '
+            + 'throttle is to reply to anything rather than post.',
+        tags: TAGS,
+        body: z.object({
+            body: z.string().min(1).max(8000),
+            alsoToChannel: z.boolean().optional(),
+            mentionUserIds: z.array(z.string()).max(5).optional(),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'CHANNEL_POST_REQUIRED, CHANNEL_POST_TOO_LONG, CHANNEL_ARCHIVED, CHANNEL_SLOW_MODE, CHANNEL_TOO_MANY_MENTIONS, CHANNEL_THREAD_TOO_DEEP (replying to a reply) or CHANNEL_POST_DELETED (the parent was retracted, so a reply would render beneath «изтрито» with no context).',
+            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.',
+            404: 'CHANNEL_POST_NOT_FOUND, or the flag is off.',
+        }),
+        success: {
+            status: 201,
+            description: 'The reply, and the channel copy when one was asked for.',
+            schema: z.object({
+                postId: z.string(),
+                channelCopyPostId: z.string().nullable(),
+                createdAt: z.string().datetime({ offset: true }),
+                mentionsRecorded: z.number().int(),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'put',
+        path: '/api/social/channel-posts/{postId}/resolved',
+        operationId: 'setChannelQuestionResolved',
+        summary: 'Mark a «Въпрос» answered, or un-mark it',
+        description:
+            'THE ASKER ONLY — the reversible direction, and it matches how the exchange '
+            + 'treats a thread\'s owner. A moderator can already remove a post; resolving '
+            + 'is not a moderation act.\n\n'
+            + 'A PUT with a boolean rather than POST/DELETE, because the state is one '
+            + 'nullable column and setting it to what it already is should be a no-op '
+            + 'rather than a conflict.\n\n'
+            + 'Refusing a non-asker with 403 rather than the 404 a missing post gives: '
+            + 'the caller can SEE the post, because the feed is public, so pretending it '
+            + 'is absent would contradict what they are looking at.',
+        tags: TAGS,
+        body: z.object({ resolved: z.boolean() }),
+        extraResponses: codedErrorResponses({
+            400: 'CHANNEL_NOT_A_QUESTION — only a `QUESTION` carries this state.',
+            403: 'CHANNEL_NOT_THE_ASKER.',
+            404: 'CHANNEL_POST_NOT_FOUND, or the flag is off.',
+        }),
+        success: {
+            status: 200,
+            description: 'The new state. `resolvedAt` is null when un-marked.',
+            schema: z.object({
+                resolvedAt: z.string().datetime({ offset: true }).nullable(),
+            }),
         },
     });
 }

@@ -62002,6 +62002,14 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 8000
+                  },
+                  "mentionUserIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 5,
+                    "description": "EXPLICIT user ids, at most five — never parsed from the body, because there is no person handle in this product: `PersonProfile` has `userId` and `displayName` and no handle, and the DM surface resolves a FARM handle to that farm's owner. A mention must name a MEMBER of the channel; a non-member (or yourself) is silently DROPPED rather than refused, so a stale picker does not fail the whole post. `mentionsRecorded` says how many were kept."
                   }
                 },
                 "required": [
@@ -62025,11 +62033,15 @@
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "mentionsRecorded": {
+                      "type": "integer"
                     }
                   },
                   "required": [
                     "postId",
-                    "createdAt"
+                    "createdAt",
+                    "mentionsRecorded"
                   ]
                 }
               }
@@ -62067,6 +62079,342 @@
           },
           "404": {
             "description": "CHANNEL_NOT_FOUND, or the flag is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/social/channel-posts/{postId}/replies": {
+      "post": {
+        "operationId": "replyToChannelPost",
+        "summary": "Reply to a post, optionally also posting it to the channel",
+        "description": "Addressed by the POST id, not `/channels/{channelId}/posts/{postId}` — the channel is derived from the parent row, so a channel id in the path would be redundant and could DISAGREE with it, and then one of the two wins silently.\n\n`alsoToChannel` («Също изпрати в канала») writes a SECOND, top-level row rather than setting a flag: the feed filters `parentPostId: null`, so one row cannot be both a reply and a top-level post. Both rows are written in one transaction, and the two are independently moderatable — removing the channel copy does not remove the reply from its thread.\n\nMentions are recorded on the REPLY only; recording them on the copy too would push twice for one act.\n\nThreads are ONE level deep. Replying to a reply is refused rather than nested, because the feed's top-level filter would hide an arbitrarily deep tree and the timeline this renders into flattens to a row list.\n\nA reply IS a post, so slow mode applies — otherwise the way round a throttle is to reply to anything rather than post.",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
+                  },
+                  "alsoToChannel": {
+                    "type": "boolean"
+                  },
+                  "mentionUserIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 5
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The reply, and the channel copy when one was asked for.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "postId": {
+                      "type": "string"
+                    },
+                    "channelCopyPostId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "mentionsRecorded": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "postId",
+                    "channelCopyPostId",
+                    "createdAt",
+                    "mentionsRecorded"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "CHANNEL_POST_REQUIRED, CHANNEL_POST_TOO_LONG, CHANNEL_ARCHIVED, CHANNEL_SLOW_MODE, CHANNEL_TOO_MANY_MENTIONS, CHANNEL_THREAD_TOO_DEEP (replying to a reply) or CHANNEL_POST_DELETED (the parent was retracted, so a reply would render beneath «изтрито» with no context).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CHANNEL_POST_NOT_FOUND, or the flag is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Client too old — the declared `x-agrent-client-version` is below the supported floor. The request was not processed; it is NOT a payload rejection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying. `max(1, ceil(retryAfterMs / 1000))`, so it is never 0 — a client that retries immediately on 0 would spend the next window the moment it opens. The same number is in the body as `retryAfterSeconds`.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Limit": {
+                "description": "The preset ceiling for this scope, in requests per window.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Remaining": {
+                "description": "Always `0` on a 429 — present for symmetry with the other headers.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Unix time in SECONDS at which the window frees up.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unhandled server error. Carries `x-request-id`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/social/channel-posts/{postId}/resolved": {
+      "put": {
+        "operationId": "setChannelQuestionResolved",
+        "summary": "Mark a «Въпрос» answered, or un-mark it",
+        "description": "THE ASKER ONLY — the reversible direction, and it matches how the exchange treats a thread's owner. A moderator can already remove a post; resolving is not a moderation act.\n\nA PUT with a boolean rather than POST/DELETE, because the state is one nullable column and setting it to what it already is should be a no-op rather than a conflict.\n\nRefusing a non-asker with 403 rather than the 404 a missing post gives: the caller can SEE the post, because the feed is public, so pretending it is absent would contradict what they are looking at.",
+        "tags": [
+          "Channels"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "bearerToken": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "resolved": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "resolved"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new state. `resolvedAt` is null when un-marked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resolvedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "resolvedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "CHANNEL_NOT_A_QUESTION — only a `QUESTION` carries this state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in, or the session was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "CHANNEL_NOT_THE_ASKER.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "CHANNEL_POST_NOT_FOUND, or the flag is off.",
             "content": {
               "application/json": {
                 "schema": {
