@@ -22,18 +22,30 @@
  * that accepts "abc" is bad data on a page whose figures reach a state form,
  * and one grain string cannot express a farm that grows three.
  *
- * ── Absent is not "leave alone" ──
+ * ── Absent IS "leave alone", since #1181 ──
  *
- * Every field below is `.optional()`, and `upsertFarmProfile` maps each one
- * through a normaliser that returns `null` for `undefined`. So an omitted
- * field is CLEARED, not preserved: `{ "urn": "123" }` nulls the other twelve
- * and empties `grainProduced`. The only caller today is the web page, which
- * GETs the whole profile and PUTs all thirteen fields every time, so nothing
- * has hit it. Tracked as #1176, which has to choose between merge semantics
- * and a contract that says `required`. Until then a client MUST
- * read-modify-write, and the schema description below says so — because a
- * caveat the contract does not carry is a caveat a generated client never
- * sees.
+ * Every field below is `.optional()`, and an ABSENT field is LEFT UNCHANGED:
+ * only an explicit `null` clears one, and a blank string clears one too. The
+ * discriminator is `Object.hasOwn` in `upsertFarmProfile` — not `!= null`,
+ * which cannot separate "said nothing" from "said null". An empty `{}` body
+ * writes nothing at all, not even the optimistic lock's version bump (#1184),
+ * though the precondition is still checked so a caller holding a stale token
+ * is told.
+ *
+ * This docblock described the OPPOSITE until 2026-11-09, and the history is
+ * why the paragraph is still here. Every field mapped through a normaliser
+ * returning `null` for `undefined`, so `{ "urn": "123" }` nulled the other
+ * twelve and emptied `grainProduced` — a partial body silently wiping the
+ * record (#1176). It was unreachable in practice because the only caller was
+ * the web page, which GETs the whole profile and PUTs all thirteen fields.
+ *
+ * The stale text ended "a client MUST read-modify-write, and the schema
+ * description below says so", and **neither half was true any more**: the
+ * semantics changed under it, and there is no description below — the
+ * MERGE SEMANTICS text went to `farm-profile.paths.ts` with #1178, which is
+ * the file a generated client reads. It named #1176 as its tracker, and
+ * #1176 closed COMPLETED six weeks before, so the pointer read as live work
+ * while being a record of finished work.
  */
 import { z } from 'zod';
 

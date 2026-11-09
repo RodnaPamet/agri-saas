@@ -2471,9 +2471,12 @@ authorised the request (additive; 17 call sites ignored the return, and no
 timing change because both comparisons already run by that line *deliberately*).
 `platform-key:current` narrows a compromise window to one side of a rotation
 and is strictly more than a constant — but a regulator asking "who decided
-this" still gets "somebody holding the key". **P5.8 owns the credential model
+this" still gets "somebody holding the key". **#2735 owns the credential model
 that would make it a person**, and until then the trail is honest about its
-limit.
+limit. P5.8 (#1599) was expected to own it and closed COMPLETED without it —
+it shipped the triage alert and the DSA contact point, and
+`verifyPlatformApiKey` still returns a key generation and no person — so for a
+while this sentence pointed the reader at finished work.
 
 **`StatementOfReasons` IS the outbox.** `NotificationOutbox` is tenant-scoped
 with a non-nullable `tenantId`, and an Art 17 statement goes to a PERSON who
@@ -3088,7 +3091,8 @@ management view as deliberately UNfiltered.
 **Still open: inbound messages on EXISTING threads.** Hiding the listings stops
 new conversations, which is what the notice claims; a counterparty mid-
 negotiation silently losing their correspondent is the #1325-shaped harm and a
-separate product question. Tracked on #1655.
+separate product question. Tracked on **#2755** — #1655 built the freeze and
+closed COMPLETED, so it is not where this is held.
 
 ### P5.8 — the triage alert, and why it is one mail per RUN
 
