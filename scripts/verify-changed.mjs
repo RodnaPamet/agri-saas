@@ -31,9 +31,43 @@
  *
  * ## It over-includes on purpose
  *
- * A population that is too large costs minutes. One that is too small costs a
+ * A population that is too large costs MINUTES. One that is too small costs a
  * CI round trip and, worse, reads as a pass. Where a rule is uncertain it
  * includes more.
+ *
+ * That first sentence was false for two months and #2550 measured it: under
+ * `--runInBand` a wide population cost HOURS, not minutes — `tests/unit` alone
+ * ran at ~8.6 suites/min, about 1.9 h for 995 suites. A gate nobody can afford
+ * to run is bypassed, and a bypassed gate reads as a pass, which is the exact
+ * failure the over-inclusion was protecting against.
+ *
+ * It is true again because the run is PARALLEL now, not because the wording was
+ * softened. Measured on this repo, 8 cores, `--maxWorkers=50%`:
+ *
+ *     tests/guards   765 suites    ~466 s serial  ->   190 s     2.4x
+ *     tests/unit    1041 suites    ~1.9 h serial  ->   263 s      26x
+ *
+ * ## Why `--runInBand` was there, and why removing it is safe
+ *
+ * No comment ever said, and the answer turned out to be neither of the two
+ * candidates. `tests/setup/globalSetup.ts` ALREADY template-clones one database
+ * per worker when `maxWorkers > 1`, and `jest.setup.js` repoints each worker's
+ * `DATABASE_URL` at its clone. `--runInBand` forces `maxWorkers = 1`, so the
+ * flag was DISABLING the isolation that makes parallel safe.
+ *
+ * "The isolation exists" and "the isolation works" are different claims, and
+ * only the second one makes the flag safe to remove — that clone path had
+ * plausibly never executed. It has now: the `tests/unit` run above logged
+ * `Per-worker DB isolation: …_w1..w4` and passed 1041 suites with zero
+ * failures, which is the DB-bound root exercising it at scale.
+ *
+ * ## The heap cap binds PER WORKER, which is why one is set here
+ *
+ * Sampled every 2 s across a parallel `tests/rendered` run, a single jsdom
+ * worker peaked at **2,944 MB against node's 4,144 MB default** — 71% of the
+ * per-process ceiling, while the run's total looked comfortable. This repo has
+ * an exit-134 history and pins `--max-old-space-size=8192` in three workflows
+ * for the same reason; a local gate without it would OOM where CI does not.
  *
  * ## Usage
  *
@@ -356,6 +390,57 @@ if (population.length === 0) {
     process.exit(1);
 }
 
+/**
+ * Workers, and the heap each one gets.
+ *
+ * `50%` rather than a fixed number so this is the same decision on a 4-core
+ * laptop and a 16-core desktop. Both are overridable from the environment: the
+ * point of the defaults is that the common case needs no thought, not that the
+ * values are sacred.
+ *
+ * 8192 matches `ci.yml`, `coverage-reference.yml` and `ghcr-publish.yml`
+ * rather than being chosen here — a local gate with a smaller cap than CI
+ * would fail where CI passes, which is the one direction that makes a gate
+ * worth bypassing.
+ */
+const MAX_WORKERS = process.env.VERIFY_CHANGED_WORKERS ?? '50%';
+const HEAP_MB = process.env.VERIFY_CHANGED_HEAP_MB ?? '8192';
+
+/**
+ * What this run is about to cost, printed BEFORE it starts.
+ *
+ * #2550's third direction, and the one that is an improvement whatever happens
+ * to the runner: today the only way to learn a population is 1,828 suites is to
+ * start it and wait. `--listTests` is a resolution pass, not a run — about a
+ * second — so the count is cheap enough to always print.
+ *
+ * It never fails the run. A count that cannot be taken is a missing READING,
+ * not a reason to refuse: printing `?` and continuing is strictly better than
+ * blocking the gate on its own instrumentation.
+ */
+function suiteCount(paths) {
+    try {
+        const out = execFileSync('npx', ['jest', ...paths, '--listTests'], {
+            cwd: REPO_ROOT,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        return out.split('\n').filter((l) => l.trim().length > 0).length;
+    } catch {
+        return null;
+    }
+}
+
+const COUNT = suiteCount(population);
+if (COUNT === null) {
+    console.log('\n[verify:changed] suite count unavailable — running anyway');
+} else {
+    console.log(
+        `\n[verify:changed] ${COUNT} suite(s), ${MAX_WORKERS} workers, `
+        + `${HEAP_MB} MB heap each`,
+    );
+}
+
 if (explainOnly) {
     console.log('\n[verify:changed] --explain: nothing run.');
     process.exit(0);
@@ -370,14 +455,26 @@ for (const p of population) {
     }
 }
 
+
+
 console.log('\n[verify:changed] running…\n');
 try {
     // Paths FIRST. `--selectProjects` swallows paths placed after it, which
     // turns a targeted run into a silent full sweep.
     execFileSync(
         'npx',
-        ['jest', ...population, '--runInBand', '--no-coverage'],
-        { cwd: REPO_ROOT, stdio: 'inherit' },
+        ['jest', ...population, `--maxWorkers=${MAX_WORKERS}`, '--no-coverage'],
+        {
+            cwd: REPO_ROOT,
+            stdio: 'inherit',
+            // The cap binds PER PROCESS, so it has to reach the WORKERS and not
+            // just this script. Appended rather than assigned: an operator who
+            // has already set NODE_OPTIONS keeps it.
+            env: {
+                ...process.env,
+                NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=${HEAP_MB}`.trim(),
+            },
+        },
     );
 } catch {
     console.error('\n[verify:changed] FAILED — see above.');
