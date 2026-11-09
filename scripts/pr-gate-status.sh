@@ -214,6 +214,53 @@ if [ "$stale" -gt 0 ]; then
     echo "     replays the same stale merge commit."
 fi
 
+# ── Has the GUARD's pinned context list drifted from live protection? (#2643)
+#
+# `tests/guards/required-checks-always-report.test.ts` answers "can this check
+# ever report?" from `ci.yml`, against a PINNED copy of the required contexts —
+# and its own docblock names the one thing it cannot tell you: "A required check
+# missing from here is invisible to this guard." A test reaches no API, so the
+# pin can only go stale silently.
+#
+# This script already holds the live list, for its own reasons. Comparing the
+# two costs one file read and is the only place in the repo where both halves
+# are in scope at once.
+#
+# It WARNS and does not change the exit code, deliberately. "Is this PR
+# mergeable" and "is our guard blind" are different questions, and failing the
+# first on the second would block an unrelated merge over repo configuration.
+# The gate is read before every merge here, so a prominent line is seen.
+PIN_FILE="$(dirname "$0")/../tests/guards/required-checks-always-report.test.ts"
+if [ -f "$PIN_FILE" ]; then
+    # The pinned array, one entry per line. `sed -n` over the REQUIRED_CHECKS
+    # block only — the file names several contexts in prose and in self-tests,
+    # and matching those would invent drift that is not there.
+    PINNED="$(sed -n '/^const REQUIRED_CHECKS = \[/,/^\];/p' "$PIN_FILE" \
+        | grep -oE "'[^']+'" | tr -d "'" | sort)"
+    LIVE="$(printf '%s\n' "${REQUIRED[@]}" | sort)"
+    MISSING="$(comm -23 <(printf '%s\n' "$LIVE") <(printf '%s\n' "$PINNED"))"
+    STALE_PIN="$(comm -13 <(printf '%s\n' "$LIVE") <(printf '%s\n' "$PINNED"))"
+    if [ -n "$MISSING" ] || [ -n "$STALE_PIN" ]; then
+        echo
+        echo "  ── PIN DRIFT: required-checks-always-report.test.ts no longer mirrors protection."
+        # Read LINE BY LINE. Every context name here contains spaces —
+        # `Selector teeth`, `Coverage (≥60%)`, `Docker Build & Scan` — so an
+        # unquoted `printf '%s\n' $MISSING` word-splits and prints `Selector`
+        # and `teeth` as two separate contexts. Measured while building this:
+        # the one job of these lines is to name the context precisely enough to
+        # fix, and splitting it names nothing that exists.
+        if [ -n "$MISSING" ]; then
+            echo "     required but NOT pinned (the guard is BLIND to these):"
+            while IFS= read -r c; do [ -n "$c" ] && echo "       $c"; done <<<"$MISSING"
+        fi
+        if [ -n "$STALE_PIN" ]; then
+            echo "     pinned but no longer required (dead entry):"
+            while IFS= read -r c; do [ -n "$c" ] && echo "       $c"; done <<<"$STALE_PIN"
+        fi
+        echo "     Fix REQUIRED_CHECKS in that file. Not a reason to hold this PR."
+    fi
+fi
+
 [ "$bad" -gt 0 ] && exit 2
 [ "$waiting" -gt 0 ] && exit 1
 [ "$other_bad" -gt 0 ] && exit 4
