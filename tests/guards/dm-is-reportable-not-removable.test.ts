@@ -27,6 +27,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
+import { readPrismaSchema } from '../helpers/prisma-schema';
 import { collectSourceFiles } from '../helpers/collect-files';
 
 const MODERATION = join(process.cwd(), 'src/app-layer/usecases/moderation.ts');
@@ -124,16 +125,37 @@ describe('a direct message is reportable and not removable (#2833)', () => {
         // than a preference: a kind is removable exactly when its table carries
         // `removedByModerationAt`. Derived from the schema so that adding a
         // kind to the list without the column fails here.
-        const schema = readFileSync(join(process.cwd(), 'prisma/schema/exchange.prisma'), 'utf8');
+        // The map is HAND-KEPT on purpose: a new removable kind cannot ship
+        // without somebody naming the model whose column gets written, which
+        // is the forcing function this test is for. P9.3c added
+        // `CHANNEL_POST` and this failed with `model: undefined` until the
+        // entry existed — working exactly as intended.
         const MODEL_FOR: Record<string, string> = {
             LISTING: 'ExchangeListing',
             MESSAGE: 'ExchangeMessage',
+            CHANNEL_POST: 'ChannelPost',
         };
+
+        // The WHOLE multi-file schema, through the shared helper. This read
+        // `exchange.prisma` alone, and `ChannelPost` lives in
+        // `channels.prisma` — a hardcoded file is right only while every
+        // removable kind happens to sit in one domain, which GAP-09's
+        // multi-file schema makes a coincidence rather than a rule.
+        //
+        // `readPrismaSchema()` rather than a local `readdirSync`: that is the
+        // repo's one definition (it caches, and it sorts so the concatenation
+        // is stable), and a hand-rolled file walk in a guard is what
+        // `file-collection-is-not-silently-empty` refuses.
+        const schema = readPrismaSchema();
+
         for (const kind of removable) {
             const model = MODEL_FOR[kind];
             expect(model).toBeDefined();
-            const body = schema.slice(schema.indexOf(`model ${model} {`));
-            const own = body.slice(0, body.indexOf('\n}'));
+            const at = schema.indexOf(`model ${model} {`);
+            // A model named in the map but absent from every schema file would
+            // otherwise slice from -1 and silently grade the wrong text.
+            expect(at).toBeGreaterThanOrEqual(0);
+            const own = schema.slice(at, schema.indexOf('\n}', at));
             expect(own).toContain('removedByModerationAt');
         }
     });

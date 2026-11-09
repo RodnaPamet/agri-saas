@@ -236,6 +236,25 @@ export async function resolveContentRecipient(
             });
             return row?.senderUserId ?? null;
         }
+        if (subjectKind === 'CHANNEL_POST') {
+            // P9.3c (#2937). WITHOUT THIS ARM THE REMOVAL STILL HAPPENS AND
+            // NOBODY IS TOLD.
+            //
+            // `actOnNotice` guards the queue with `if (recipientUserId)`, so an
+            // unknown kind resolves to null, the statement is skipped, and
+            // nothing errors — the notice reads ACTIONED, the post is removed,
+            // and the author never hears why. That is #2865's shape inverted:
+            // there the outcome was recorded without being performed; here it
+            // is performed without being explained.
+            //
+            // Caught by `p9-3c-channel-moderation`, which asserts the statement
+            // rather than the action row for exactly that reason.
+            const row = await prisma.channelPost.findUnique({
+                where: { id: subjectId },
+                select: { authorUserId: true },
+            });
+            return row?.authorUserId ?? null;
+        }
         // PROFILE and THREAD — see the docblock. Logged at info, not warn: it
         // is the designed outcome for these kinds today, not a fault.
         logger.info('moderation.statement_recipient_unsupported', {

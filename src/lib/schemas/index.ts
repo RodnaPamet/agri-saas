@@ -1600,6 +1600,16 @@ export const REPORT_SUBJECT_KINDS = [
      * schema cannot see which route parsed it.
      */
     'DIRECT_MESSAGE',
+    /**
+     * A post in a CHANNEL — P9.3c (#2937).
+     *
+     * Reportable by ANYBODY, which is the opposite of `DIRECT_MESSAGE` above:
+     * a channel is public, so there is no participation to assert and no
+     * disclosure in capturing the body. The anonymous Art 16 route therefore
+     * ACCEPTS this kind — publicly accessible content is what that duty is
+     * about — while continuing to refuse a direct message.
+     */
+    'CHANNEL_POST',
 ] as const;
 
 /**

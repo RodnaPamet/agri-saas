@@ -1,0 +1,20 @@
+-- P9.3c (#2937) — CHANNEL_POST as the subject of a notice.
+--
+-- Additive: a new enum VALUE. No rollback inverse per
+-- deploy/rollback/README.md — nothing is renamed, dropped or rewritten.
+--
+-- The honest account of what a rollback leaves, following the DIRECT_MESSAGE
+-- migration's reasoning rather than the ACCOUNT one's: this value IS WRITTEN,
+-- by `fileNotice`, from the release that adds it. So a rollback to the
+-- previous image leaves `ContentReport` rows carrying a value that image's
+-- generated client does not know — a read deserialising `subjectKind` into its
+-- enum is working from a shorter list. The rows are readable (the column is
+-- still the same type) and the moderation console would not recognise the
+-- kind. Rolling forward again fixes it; nothing needs undoing.
+--
+-- `ALTER TYPE ... ADD VALUE` is NOT wrapped in BEGIN/COMMIT. Postgres 12+
+-- permits it inside a transaction but then refuses to USE the new value until
+-- that transaction commits, and `prisma migrate deploy` runs each file as one
+-- unit — so a wrapped version works here and would fail the moment somebody
+-- added a statement below that referenced the value.
+ALTER TYPE "ReportSubjectKind" ADD VALUE 'CHANNEL_POST';

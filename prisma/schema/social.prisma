@@ -143,6 +143,22 @@ enum ReportSubjectKind {
   /// checked before: the list carried a comment saying it "Mirrors the
   /// `ReportSubjectKind` enum" and no test compared them.
   ACCOUNT
+
+  /// A post in a CHANNEL — P9.3c (#2937).
+  ///
+  /// Reportable by ANYBODY who can see it, which is everybody: a channel is
+  /// public, so `channel_post_select` admits any authenticated caller. That
+  /// is the opposite of `DIRECT_MESSAGE`, whose capture asserts the reporter
+  /// is a PARTICIPANT precisely because a private message is not publicly
+  /// accessible content — and it is why the anonymous Art 16 route ACCEPTS
+  /// this kind while refusing that one. Publicly accessible content is
+  /// exactly what Art 16 is about.
+  ///
+  /// REMOVABLE, unlike `DIRECT_MESSAGE` (owner ruling 2026-11-08: suspension
+  /// is the remedy there). The difference is the audience: removing a post
+  /// every farm can read is the proportionate answer, and leaving it up while
+  /// suspending its author would leave the content visible.
+  CHANNEL_POST
 }
 
 /// Why the notifier says the content is unlawful or violating.
