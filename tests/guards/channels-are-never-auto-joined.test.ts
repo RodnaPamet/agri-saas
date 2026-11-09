@@ -124,6 +124,41 @@ function candidateFiles(): string[] {
 describe('a channel membership is never written on somebody’s behalf', () => {
     const files = candidateFiles();
 
+    it('control: `codeOf` RETURNS CODE — without this the whole guard is inert', () => {
+        // `Selector teeth` caught this as a SURVIVED mutation: `codeOf()`
+        // forced to return `''` left every assertion below GREEN, because a
+        // blank file matches no pattern, so `offenders` is empty and the guard
+        // reports a clean sweep over content it never read. The floor above
+        // does not help — it counts FILES, and `candidateFiles` does not go
+        // through `codeOf`.
+        //
+        // So this is the control the tool asks for: proof that the reader can
+        // actually select on the population.
+        const raw = readFileSync('scripts/channels/seed-channels.ts', 'utf8');
+        const code = codeOf('scripts/channels/seed-channels.ts');
+
+        // BOTH halves, which is the shape a stripper's control needs: either
+        // assertion alone passes for a degenerate stripper that ate everything
+        // or stripped nothing.
+        //
+        // NOT a length comparison. `blankNonCode` overwrites with SPACES
+        // rather than removing, so `code.length === raw.length` by design —
+        // my first attempt asserted `toBeLessThan` and failed at 10835 vs
+        // 10835, which is the instrument being wrong rather than the stripper.
+        expect(code.trim().length).toBeGreaterThan(0);
+        expect(code).not.toBe(raw);
+
+        // And a real code token survives the blanking. `prisma.channel.upsert`
+        // is executable code in that file, so a `codeOf` that returned '' — or
+        // that blanked code along with comments — fails here.
+        expect(code).toContain('prisma.channel.upsert');
+
+        // While a token that exists ONLY inside a comment there does NOT, which
+        // is the other direction and what makes the blanking worth having.
+        expect(raw).toContain('NoticeScore.reportId');
+        expect(code).not.toContain('NoticeScore.reportId');
+    });
+
     it('the scan selected files — an empty scan passes vacuously', () => {
         // The floor is on the POPULATION, not on the findings: a renamed `src/`
         // or a `git ls-files` that stopped resolving would make this guard a
