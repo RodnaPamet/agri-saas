@@ -221,6 +221,11 @@ model Tenant {
   googleOAuthStates          GoogleOAuthState[]
   /// #493 — product-usage telemetry. 90-day retention, swept daily.
   usageEvents                UsageEvent[]
+  machineTrackers       MachineTracker[]
+  machinePositions      MachinePosition[]
+  workedParcels         WorkedParcel[]
+  taskAssets            TaskAsset[]
+  machineGeofenceStates MachineGeofenceState[]
 
   @@index([organizationId])
 }
@@ -921,6 +926,7 @@ model User {
   /// question the moderation console needs — without a full scan. PARTIAL in
   /// the migration (`WHERE "suspendedAt" IS NOT NULL`), because the rows that
   /// matter are the handful that are set, not the thousands that are NULL.
+  machineTrackersInformed MachineTracker[] @relation("MachineTrackerDriversInformedBy")
   @@index([suspendedAt])
   /// P5.6b (#1597). Both PARTIAL in the migration (`WHERE … IS NOT NULL`),
   /// which Prisma's DSL cannot express — the sweep only ever wants rows where
