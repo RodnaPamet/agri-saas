@@ -6724,6 +6724,7 @@
         "CHANNEL_POST_DELETED": "That post was removed, so it cannot be replied to.",
         "CHANNEL_POST_NOT_FOUND": "That post does not exist.",
         "CHANNEL_THREAD_TOO_DEEP": "Reply to the original post rather than to a reply.",
+        "CHANNEL_POST_IS_A_REPLY": "That post is a reply, so it has no replies of its own.",
         "CHANNEL_TOO_MANY_MENTIONS": "A post may mention at most five people.",
         "CHANNEL_ARCHIVED": "That channel is closed.",
         "CHANNEL_BANNED": "You can no longer post in that channel.",

@@ -239,6 +239,68 @@ export interface ChannelPostView {
     readonly kind: string;
     readonly createdAt: Date;
     readonly deleted: boolean;
+    /**
+     * When a «Въпрос» was marked «Решено», or null (#2961).
+     *
+     * `setQuestionResolved` has written this column since P9.3b and NOTHING
+     * returned it, so a resolved question was byte-identical to an open one
+     * through every read path — the write was unobservable and no UI could
+     * render the state the roadmap names. Only `QUESTION` may carry it; it is
+     * null on a `POST` and a `CARD` by construction rather than by filtering.
+     */
+    readonly resolvedAt: Date | null;
+    /**
+     * How many replies hang off this post (#2961).
+     *
+     * Here so a feed can show that a thread EXISTS without a request per
+     * post, which is the N+1 the D1 guardrail refuses. It counts every reply
+     * including hidden ones, matching how the feed itself reports a hidden
+     * post rather than omitting it: a count that shrank when a moderator
+     * hid one reply would tell every reader that something had been removed.
+     */
+    readonly replyCount: number;
+}
+
+/**
+ * The ONE place a `ChannelPost` row becomes a `ChannelPostView`.
+ *
+ * Shared by the feed and by `readPostReplies` deliberately. The collapse of
+ * three removal columns into `deleted` plus an EMPTY body is a disclosure
+ * rule, not a formatting one: #2961 added the second read path, and a second
+ * spelling of this mapping is how one of them comes to serve the text of a
+ * post the other hides. P9.3d's auto-hide sets `autoHiddenAt` on any post
+ * including a reply, so a thread read that forgot the collapse would hand
+ * back content the moderation path had taken down.
+ *
+ * That is the #1664 class — two spellings of one rule, where the divergence
+ * is a disclosure rather than a wrong sentence.
+ */
+function toPostView(r: {
+    id: string;
+    authorUserId: string;
+    body: string;
+    kind: unknown;
+    createdAt: Date;
+    deletedAt: Date | null;
+    removedByModerationAt: Date | null;
+    autoHiddenAt: Date | null;
+    resolvedAt: Date | null;
+    _count: { replies: number };
+}): ChannelPostView {
+    const hidden =
+        r.deletedAt != null
+        || r.removedByModerationAt != null
+        || r.autoHiddenAt != null;
+    return {
+        id: r.id,
+        authorUserId: r.authorUserId,
+        body: hidden ? '' : r.body,
+        kind: String(r.kind),
+        createdAt: r.createdAt,
+        deleted: hidden,
+        resolvedAt: r.resolvedAt,
+        replyCount: r._count.replies,
+    };
 }
 
 /**
@@ -284,23 +346,15 @@ export async function readChannelFeed(
                 id: true, authorUserId: true, body: true, kind: true,
                 createdAt: true, deletedAt: true,
                 removedByModerationAt: true, autoHiddenAt: true,
+                resolvedAt: true,
+                // ONE aggregate for the page, not a query per post — the N+1
+                // the D1 guardrail refuses. Prisma folds this into the same
+                // statement, and `@@index([parentPostId])` serves it.
+                _count: { select: { replies: true } },
             },
         });
         const hasMore = rows.length > limit;
-        const posts = rows.slice(0, limit).map((r) => {
-            const hidden =
-                r.deletedAt != null
-                || r.removedByModerationAt != null
-                || r.autoHiddenAt != null;
-            return {
-                id: r.id,
-                authorUserId: r.authorUserId,
-                body: hidden ? '' : r.body,
-                kind: String(r.kind),
-                createdAt: r.createdAt,
-                deleted: hidden,
-            };
-        });
+        const posts = rows.slice(0, limit).map((r) => toPostView(r));
         return { posts, hasMore };
     });
 }
@@ -359,10 +413,111 @@ async function assertNotSlowed(
  * `channel_post_insert`'s WITH CHECK rather than by this function — see the
  * header. What this function adds is slow mode, which cannot live in SQL.
  */
+/**
+ * A page of ONE post's replies, OLDEST first (#2961).
+ *
+ * ## It is a different order from the feed, and that is the design
+ *
+ * A feed is read newest-first because the reader wants what is new. A thread
+ * is read oldest-first because it is a conversation and the answers only make
+ * sense in the order they were given. So the keyset runs FORWARD — `after`,
+ * not `before` — and the two read paths deliberately do not share a direction.
+ *
+ * ## Readable by a NON-MEMBER, exactly as the feed is
+ *
+ * `channel_post_select` admits any authenticated caller, so a reply is already
+ * readable at the database and a narrower API rule here would be a second,
+ * disagreeing answer to one question — while a wider one is not available.
+ * There is no private channel in this design (P9.1); adding one means a
+ * visibility column and a second SELECT arm, and this function would then
+ * inherit it rather than needing its own rule.
+ *
+ * ## A reply to a missing or hidden PARENT still reads
+ *
+ * The parent must EXIST — otherwise the id is unverifiable and the answer
+ * would be an empty page, which reads as "no replies" rather than "no such
+ * post". But a hidden parent still serves its replies: the feed already shows
+ * a hidden post as `deleted: true` rather than omitting it, precisely so a
+ * reply does not dangle, and withholding the thread would make the moderation
+ * of one post silently remove other people's words.
+ *
+ * ## No composite index, and the condition that would change that
+ *
+ * The query filters `parentPostId` and sorts `(createdAt, id)` within it, and
+ * `@@index([parentPostId])` serves the filter. A thread is ONE level deep
+ * (`replyToPost` refuses a reply to a reply), so the sorted set is small and
+ * the sort is cheap. `@@index([parentPostId, createdAt])` would make the
+ * single-column index a redundant prefix and cost a write on every post for a
+ * gain nothing measures yet. Revisit if a real thread ever grows past a few
+ * hundred replies.
+ */
+export async function readPostReplies(
+    ctx: UserContext,
+    postId: string,
+    opts?: { limit?: number; after?: Date },
+): Promise<{ replies: ChannelPostView[]; hasMore: boolean }> {
+    const limit = Math.min(
+        Math.max(opts?.limit ?? CHANNEL_FEED_PAGE_SIZE, 1),
+        CHANNEL_FEED_MAX_PAGE_SIZE,
+    );
+    return runInUserContext(ctx, async (tx) => {
+        const parent = await tx.channelPost.findUnique({
+            where: { id: postId },
+            select: { id: true, parentPostId: true },
+        });
+        if (!parent) {
+            throw codedNotFound('CHANNEL_POST_NOT_FOUND', 'That post does not exist.');
+        }
+        // A reply has no replies of its own, so asking for a reply's thread is
+        // a caller error rather than an empty page. Answered as the PARENT's
+        // id being wrong, not as "no replies", because the two are different
+        // facts and only one of them is fixable by the caller.
+        if (parent.parentPostId != null) {
+            throw codedBadRequest(
+                'CHANNEL_POST_IS_A_REPLY',
+                'That post is itself a reply, and a thread is only one level deep.',
+            );
+        }
+        const rows = await tx.channelPost.findMany({
+            where: {
+                parentPostId: postId,
+                ...(opts?.after ? { createdAt: { gt: opts.after } } : {}),
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            // The `hasMore` probe, and NOTHING is filtered after this query —
+            // a post-filter would shrink the page and make `hasMore` wrong,
+            // which P8.5 shipped once and corrected.
+            take: limit + 1,
+            select: {
+                id: true, authorUserId: true, body: true, kind: true,
+                createdAt: true, deletedAt: true,
+                removedByModerationAt: true, autoHiddenAt: true,
+                resolvedAt: true,
+                // Always 0 for a reply — a thread is one level deep — and
+                // selected anyway because `toPostView` is the ONE mapper and
+                // a second shape for replies is how the collapse rule drifts.
+                _count: { select: { replies: true } },
+            },
+        });
+        const hasMore = rows.length > limit;
+        return { replies: rows.slice(0, limit).map((r) => toPostView(r)), hasMore };
+    });
+}
+
 export async function postToChannel(
     ctx: UserContext,
     channelId: string,
-    input: { body: string; mentionUserIds?: readonly string[] },
+    input: {
+        body: string;
+        mentionUserIds?: readonly string[];
+        /**
+         * «Въпрос» when `QUESTION`, else «Публикация» — #2961. `CARD` is NOT
+         * accepted: a card is machine-written by P9.4's queue, so taking one
+         * from a caller would let a member forge a post that renders as the
+         * platform's own data.
+         */
+        kind?: 'POST' | 'QUESTION';
+    },
 ): Promise<{ postId: string; createdAt: Date; mentionsRecorded: number }> {
     const body = cleanBody(input.body);
     // OUTSIDE the transaction — see `resolveMentionable`. Inside it the
@@ -417,7 +572,13 @@ export async function postToChannel(
         await assertNotSlowed(tx, channelId, ctx.userId, channel.slowModeSeconds);
 
         const post = await tx.channelPost.create({
-            data: { channelId, authorUserId: ctx.userId, body },
+            // `kind` defaults in the DATABASE (`@default(POST)`), so an absent
+            // value is not spelled here — writing `kind: input.kind ?? 'POST'`
+            // would put a second definition of the default in the app layer.
+            data: {
+                channelId, authorUserId: ctx.userId, body,
+                ...(input.kind ? { kind: input.kind } : {}),
+            },
             select: { id: true, createdAt: true },
         });
         // In the SAME transaction and the SAME session context. That is why
