@@ -86,6 +86,7 @@ model Task {
   // Agriculture (Feature 1) — per-parcel prescription lines when this
   // task is a FIELD_OPERATION (spray job).
   operationParcels     OperationParcel[]
+  assetLinks TaskAsset[]
 
   @@unique([tenantId, key])
   // Offline idempotency ledger — a replayed FIELD_OPERATION create dedupes
@@ -109,6 +110,11 @@ model Task {
   /// the non-null rows only: every task that is not part of a diary treatment
   /// carries null here, and Task is among the busiest tables in the schema.
   @@index([tenantId, treatmentGroupId])
+  /// Added by #2948 so `TaskAsset` can carry a `[taskId, tenantId]`
+  /// composite FK — the cross-tenant barrier `Asset` and `Parcel` already
+  /// use. Redundant as a uniqueness claim (`id` is the PK); its job is to
+  /// make the composite reference expressible.
+  @@unique([id, tenantId])
 }
 
 /// Per-tenant monotonic counter for minting `TSK-N` work-item keys.
