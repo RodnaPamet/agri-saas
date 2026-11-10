@@ -102,7 +102,29 @@ describe('§1 the schema still refuses a payload with no category', () => {
         ).not.toThrow();
     });
 
-    it('accepts every member of the enum', () => {
+    it('accepts every member whose arm needs no other field', () => {
+        /*
+         * The NAME was "accepts every member of the enum", and that is not
+         * what this does — #2377 §1 found it by trying to fix it.
+         *
+         * `AuditDetailsSchema` is a 10-arm discriminated union. Six arms
+         * validate with nothing but a `category`; the other four REQUIRE a
+         * field, measured rather than read off the types:
+         *
+         *     accepts bare: entity_lifecycle status_change relationship
+         *                   access data_lifecycle custom
+         *     refuses bare: membership tenant content scim_provisioning
+         *
+         * `tenant` needs name/slug/ownerUserId, `content` needs entityName,
+         * `scim_provisioning` needs schemaVersion, and `membership` refuses a
+         * bare payload too although its own fields read as optional.
+         *
+         * So this list is DELIBERATE and complete for what the assertion can
+         * express, and deriving it from the union — which I tried — makes the
+         * test fail on four arms that are behaving correctly. The old name
+         * read as a completeness claim about the enum and invited exactly that
+         * change; it now says what it checks.
+         */
         const members = [
             'entity_lifecycle',
             'data_lifecycle',
