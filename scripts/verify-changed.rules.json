@@ -132,6 +132,14 @@
             "why": "Rendered tests, the design-system drift guardrail and the public-surface guards all range over components rather than over the file you edited."
         },
         {
+            "when": "^src\\/app-layer\\/jobs\\/",
+            "run": [
+                "tests/unit",
+                "tests/regression"
+            ],
+            "why": "`tests/regression/infrastructure-guards.test.ts` pins the scheduled-job COUNT and the exact NAME SET, and nothing in the roots the `^(src|scripts)/` rule selects reaches it — so adding or renaming a schedule is green locally and red in CI, which is the one failure shape this script exists to prevent. MEASURED on #2959 (P9.3d `channel-auto-hide`): 2182/2182 suites passed locally, then `Test (shard 2/6)` failed on both pins after the push. The job AUDITS (`job-scope-audit`, `job-tenant-isolation-regression`) live under tests/unit and were already reached; this rule is specifically about the regression root, which no path rule named."
+        },
+        {
             "when": "^(src|scripts)\\/",
             "run": [
                 "tests/unit"

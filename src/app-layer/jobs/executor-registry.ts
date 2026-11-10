@@ -973,6 +973,14 @@ executorRegistry.register('notice-score', async (payload) => {
     return result;
 });
 
+// ── channel-auto-hide ────────────────────────────────────────────────
+
+executorRegistry.register('channel-auto-hide', async (payload) => {
+    const { runChannelAutoHide } = await import('./channel-auto-hide');
+    const { result } = await runChannelAutoHide({ limit: payload.limit });
+    return result;
+});
+
 // ── memory-extract ───────────────────────────────────────────────────
 
 executorRegistry.register('memory-extract', async (payload) => {

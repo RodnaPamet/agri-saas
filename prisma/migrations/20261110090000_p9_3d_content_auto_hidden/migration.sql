@@ -1,0 +1,42 @@
+-- P9.3d (#2937) — CONTENT_AUTO_HIDDEN as a moderation ACTION kind.
+--
+-- Additive: a new enum VALUE. No inverse required.
+--
+-- ── WHY NOT REUSE `CONTENT_REMOVED` ──
+--
+-- An auto-hide sets `ChannelPost.autoHiddenAt`, which is a DIFFERENT column
+-- from `removedByModerationAt` — deliberately, since one is a human decision
+-- and the other a report threshold, and they are reversed by different acts.
+--
+-- Recording the threshold's act as `CONTENT_REMOVED` would break the restore
+-- path in a way that reads as success: `restoreRemovedContent` clears
+-- `removedByModerationAt`, finds it already null, and `readRemovalState`
+-- answers 'visible' — so the restore reports `restored: false`, "already
+-- visible", while the post sits there auto-hidden. A reversal that reverses
+-- nothing and says so cheerfully.
+--
+-- ── IT IS DB-ONLY, NOT AN ACCEPTED INPUT, and `CONTENT_RESTORED` is the
+--    precedent ──
+--
+-- `MODERATION_ACTION_KINDS` (the published input list) deliberately omits
+-- `CONTENT_RESTORED`, because a restore is addressed by the ACTION id it
+-- reverses rather than recorded as a fresh decision on a notice. The same
+-- applies here one step over: an auto-hide is produced by a job counting
+-- reports, never asked for by a caller, so a moderator POSTing it would be
+-- claiming a threshold fired when none did.
+--
+-- `moderation-action-kinds-mirror` is the guard that polices exactly this
+-- divergence, and `NOT_A_NOTICE_DECISION` is where the reason goes.
+--
+-- ── WHAT A ROLLBACK LEAVES ──
+--
+-- Following the `DIRECT_MESSAGE` precedent rather than the `ACCOUNT` one:
+-- this value IS WRITTEN, by the auto-hide job, from the release that adds it.
+-- So a rollback leaves `ModerationAction` rows carrying a value the previous
+-- image's client does not know, and its console would not render the kind. The
+-- rows are readable and nothing needs undoing; rolling forward fixes it.
+--
+-- In practice today it writes NOTHING: production has zero verified farms, so
+-- the threshold is arithmetically unreachable. That is the owner's accepted
+-- position (#2937) and the job prints a reading saying so.
+ALTER TYPE "ModerationActionKind" ADD VALUE 'CONTENT_AUTO_HIDDEN';

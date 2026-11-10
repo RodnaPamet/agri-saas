@@ -6707,8 +6707,8 @@
         "action": {
             "NONE": "We looked at a report about your content and decided to take no action. Your content stays as it is.",
             "CONTENT_REMOVED": "We removed the content.",
+            "CONTENT_AUTO_HIDDEN": "We have temporarily hidden the content after several reports from verified farms. A person will review it. This is not a final decision, and nothing you wrote has been deleted.",
             "CONTENT_RESTORED": "We have restored the content. The decision to remove it has been reversed.",
-            "CONTENT_DEMOTED": "We left the content in place but reduced how widely it is shown.",
             "ACCOUNT_SUSPENDED": "We suspended your account. You cannot open your farm while the suspension is in force. Everything already recorded is kept.",
             "ACCOUNT_TERMINATED": "We closed your account."
         }

@@ -444,6 +444,11 @@ export interface NoticeScorePayload {
     limit?: number;
 }
 
+export interface ChannelAutoHidePayload {
+    /** How many candidate posts one run considers. Defaults to 50. */
+    limit?: number;
+}
+
 export interface MemoryExtractPayload {
     /** Conversations per run. Defaults to 20. */
     limit?: number;
@@ -975,6 +980,7 @@ export interface JobPayloadMap {
     'notification-dispatch': NotificationDispatchPayload;
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
+    'channel-auto-hide': ChannelAutoHidePayload;
     'memory-extract': MemoryExtractPayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
     'usage-event-retention': UsageEventRetentionPayload;
@@ -1410,6 +1416,24 @@ export const JOB_DEFAULTS: Record<JobName, {
     // extractedAt", so the next scheduled run picks up anything this one
     // missed at no extra cost.
     'memory-extract': {
+        attempts: 1,
+        // INERT — the type requires it and `attempts: 1` leaves nothing to
+        // delay. Values copied from the neighbours rather than chosen.
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'channel-auto-hide': {
+        // `attempts: 1`, and for a THIRD reason distinct from its two
+        // neighbours. `statement-dispatch` uses 1 because a retry would
+        // re-SEND; `notice-score` because a retry would re-SPEND an AI budget.
+        // Here a retry would re-HIDE: the run is not idempotent across a
+        // partial failure in the way those are, because each post's hide and
+        // action commit individually — so a whole-run retry would walk posts
+        // that already succeeded. They are skipped by the already-hidden
+        // check, which makes a retry harmless rather than correct, and the
+        // honest retry granularity is the next scheduled run ten minutes
+        // later. Per-post failures are tolerated and counted inside the run.
         attempts: 1,
         // INERT — the type requires it and `attempts: 1` leaves nothing to
         // delay. Values copied from the neighbours rather than chosen.

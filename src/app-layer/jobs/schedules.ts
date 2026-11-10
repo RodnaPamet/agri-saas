@@ -207,6 +207,31 @@ export const ALL_SCHEDULES: ScheduleDefinition[] = [
          * which is the worst possible sampling for judging whether the scorer
          * works.
          */
+        name: 'channel-auto-hide',
+        pattern: '*/10 * * * *',  // every 10 minutes
+        description:
+            'Hide a channel post after 3 reports from VERIFIED farms (#2937). DORMANT: '
+            + 'production has zero verified farms, so the threshold is unreachable — the '
+            + 'job logs a denominator saying so rather than letting hidden=0 read as '
+            + '"the rule is working"',
+        defaultPayload: {},
+    },
+    {
+        /**
+         * P9.3d (#2937) — the cadence, and why it is not `notice-score`'s.
+         *
+         * Every ten minutes, matching `statement-dispatch` rather than the
+         * quarter-hourly sampling next door. The difference is what the
+         * interval is FOR: `notice-score` spends an AI budget and spreads it
+         * across the month, so a sparser schedule with a bigger batch would be
+         * worse sampling. This spends nothing and is a LATENCY choice — a post
+         * three verified farms have reported is one somebody wants gone now,
+         * and up to ten minutes of exposure is the cost of not polling.
+         *
+         * It is not an `afterCommit` hook on the notice write, for
+         * `notice-triage-alert`'s reason: that would make the rate the
+         * reporter's to choose, and `PUBLIC_NOTICE_LIMIT` is 10/min per IP.
+         */
         name: 'notice-score',
         pattern: '*/15 * * * *',  // every 15 minutes
         description: 'Shadow-score DSA notices for abuse likelihood; read by nothing (#1596)',
