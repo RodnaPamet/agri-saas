@@ -55,4 +55,22 @@ await build({
     outfile: 'dist/worker-healthcheck.mjs',
 });
 
-console.log('✓ built dist/worker.mjs + dist/scheduler.mjs + dist/worker-healthcheck.mjs');
+// #2948 stage 2 — the Codec 8 listener. Bundled here rather than in its own
+// build script for one reason: the Dockerfile invokes `build:worker` and
+// COPYs `dist/` wholesale, so a third entrypoint ships with no Dockerfile
+// change, while a separate script is a second place to remember.
+//
+// It is NOT yet referenced by `deploy/docker-compose.vm.yml`, deliberately —
+// the listener needs an inbound public TCP port with no TLS and no secret on
+// a host that also serves app.agrent.bg and two other products' containers,
+// and opening that is the owner's decision. The bundle existing and the port
+// being open are separate days.
+await build({
+    ...common,
+    entryPoints: ['scripts/machine-listener.ts'],
+    outfile: 'dist/machine-listener.mjs',
+});
+
+console.log(
+    '✓ built dist/worker.mjs + dist/scheduler.mjs + dist/worker-healthcheck.mjs + dist/machine-listener.mjs',
+);
