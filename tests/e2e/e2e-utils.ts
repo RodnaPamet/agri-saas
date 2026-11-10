@@ -1170,7 +1170,18 @@ async function describeDetailPaintState(
  */
 export async function instrumentRowGestures(page: Page): Promise<void> {
     await page.evaluate(() => {
-        interface Rec { type: string; detail: number; rowKey: string; tag: string }
+        interface Rec {
+            type: string;
+            detail: number;
+            rowKey: string;
+            tag: string;
+            /** The row UNDER THE POINTER at event time — #1700. */
+            atPoint: string;
+            /** Viewport y of the event, so a layout shift is visible as a number. */
+            y: number;
+            /** Top of the selection toolbar, or -1 when it is not in the layout. */
+            toolbarTop: number;
+        }
         const w = window as unknown as { __rowGestures?: Rec[] };
         if (w.__rowGestures) return; // idempotent — a spec may call this twice
         w.__rowGestures = [];
@@ -1184,6 +1195,46 @@ export async function instrumentRowGestures(page: Page): Promise<void> {
             const id = href.split('/').pop() ?? '';
             return id || (node.textContent ?? '').trim().slice(0, 24) || '(empty row)';
         };
+        /*
+         * The two captures that DISCRIMINATE the remaining #1700 hypotheses.
+         *
+         * A capture on 2026-11-09 (run 42607075042) settled that nothing is
+         * ever pushed — `spa +0, history +0` — so `back()` and
+         * commit-then-revert are both dead, and all three recorded events hit
+         * the SAME row id. What is left is a selection toolbar entering the
+         * layout between the two clicks of the gesture, with `CLS 0.478`
+         * (`poor`) on the failing attempt against `0.002` on the ones either
+         * side.
+         *
+         * `rowKey` cannot see that: it reads `e.target`, which is whatever the
+         * browser hit, so it is identical whether or not the row moved. These
+         * two read the OTHER side of the same question:
+         *
+         *   atPoint  — the row under the pointer COORDINATES at event time. If
+         *              click 1 and click 2 share a rowKey but differ here, the
+         *              content moved beneath a stationary pointer.
+         *   toolbarTop — whether the toolbar is in the layout yet, and where.
+         *              `-1` before it appears, a pixel value after. A change
+         *              between the two clicks is the shift, measured rather
+         *              than inferred from CLS.
+         *
+         * Both are read INSIDE the capture-phase listener, so they sample at
+         * the moment of the event rather than after the fact — which is the
+         * flaw every earlier probe on this issue shared.
+         */
+        const toolbarTopNow = (): number => {
+            // Matched on the attribute `selection-toolbar.tsx:203` actually
+            // carries, verified by grep — NOT on the "N selected" text, which
+            // is localised, and not on a speculative `[data-selection-toolbar]`
+            // that exists nowhere. A probe whose first selector matches nothing
+            // is the defect this file keeps finding in other people's guards.
+            const el = document.querySelector('[data-testid="selection-toolbar"]');
+            if (!(el instanceof Element)) return -1;
+            const r = el.getBoundingClientRect();
+            // A zero-size box is present-but-not-laid-out, which is a third
+            // state and must not read as "at y=0".
+            return r.height === 0 && r.width === 0 ? -1 : Math.round(r.top);
+        };
         for (const type of ['click', 'dblclick'] as const) {
             document.addEventListener(
                 type,
@@ -1194,6 +1245,11 @@ export async function instrumentRowGestures(page: Page): Promise<void> {
                         detail: me.detail,
                         rowKey: describeRow(e.target),
                         tag: e.target instanceof Element ? e.target.tagName : '?',
+                        atPoint: describeRow(
+                            document.elementFromPoint(me.clientX, me.clientY),
+                        ),
+                        y: Math.round(me.clientY),
+                        toolbarTop: toolbarTopNow(),
                     });
                 },
                 true, // CAPTURE — cannot be stopped by a handler on the way down
@@ -1560,7 +1616,9 @@ async function describeListState(page: Page): Promise<string> {
                       : (snap.gestures as Array<Record<string, unknown>>)
                             .map(
                                 (g) =>
-                                    `${g.type}(detail=${g.detail}) on ${g.tag} row=${g.rowKey}`,
+                                    `${g.type}(detail=${g.detail}) on ${g.tag} row=${g.rowKey}`
+                                    + ` atPoint=${g.atPoint} y=${g.y}`
+                                    + ` toolbarTop=${g.toolbarTop === -1 ? 'absent' : g.toolbarTop}`,
                             )
                             .join('\n                       ')
             }`

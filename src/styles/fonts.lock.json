@@ -3,36 +3,6 @@
     "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "faces": [
         {
-            "file": "bricolage-grotesque-latin-ext.woff2",
-            "family": "Bricolage Grotesque",
-            "subset": "latin-ext",
-            "style": "normal",
-            "weight": "500",
-            "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF",
-            "bytes": 18668,
-            "sha256": "e808f16b56f84dc7933e498cc8a41d4a5cd853adc6eef154584baa5de1008b15"
-        },
-        {
-            "file": "bricolage-grotesque-latin-ext.woff2",
-            "family": "Bricolage Grotesque",
-            "subset": "latin-ext",
-            "style": "normal",
-            "weight": "600",
-            "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF",
-            "bytes": 18668,
-            "sha256": "e808f16b56f84dc7933e498cc8a41d4a5cd853adc6eef154584baa5de1008b15"
-        },
-        {
-            "file": "bricolage-grotesque-latin-ext.woff2",
-            "family": "Bricolage Grotesque",
-            "subset": "latin-ext",
-            "style": "normal",
-            "weight": "700",
-            "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF",
-            "bytes": 18668,
-            "sha256": "e808f16b56f84dc7933e498cc8a41d4a5cd853adc6eef154584baa5de1008b15"
-        },
-        {
             "file": "bricolage-grotesque-latin.woff2",
             "family": "Bricolage Grotesque",
             "subset": "latin",
@@ -61,36 +31,6 @@
             "unicodeRange": "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD",
             "bytes": 41344,
             "sha256": "a97804dc9fbe5fc972a08018c5eda4dab7ef2346f64c57e61419d05e6de4ea1c"
-        },
-        {
-            "file": "bricolage-grotesque-vietnamese.woff2",
-            "family": "Bricolage Grotesque",
-            "subset": "vietnamese",
-            "style": "normal",
-            "weight": "500",
-            "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
-            "bytes": 8608,
-            "sha256": "33ae5254fa09938c5abef5f1acaf848c0303aa21e3eb5632edb7d434deb3f572"
-        },
-        {
-            "file": "bricolage-grotesque-vietnamese.woff2",
-            "family": "Bricolage Grotesque",
-            "subset": "vietnamese",
-            "style": "normal",
-            "weight": "600",
-            "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
-            "bytes": 8608,
-            "sha256": "33ae5254fa09938c5abef5f1acaf848c0303aa21e3eb5632edb7d434deb3f572"
-        },
-        {
-            "file": "bricolage-grotesque-vietnamese.woff2",
-            "family": "Bricolage Grotesque",
-            "subset": "vietnamese",
-            "style": "normal",
-            "weight": "700",
-            "unicodeRange": "U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB",
-            "bytes": 8608,
-            "sha256": "33ae5254fa09938c5abef5f1acaf848c0303aa21e3eb5632edb7d434deb3f572"
         },
         {
             "file": "inter-cyrillic-ext.woff2",
