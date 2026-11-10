@@ -243,7 +243,15 @@ describe('one file per (family, subset) — no weight duplicates (#2199)', () =>
                 + `${lock.faces.length} locked face(s) referencing `
                 + `${new Set(declared.map((d) => d.file)).size} distinct file(s)`,
         );
-        expect(onDisk.length).toBeGreaterThan(10);
+        // The FLOOR, lowered from 10 to 9 by #2336 — a deliberate reduction,
+        // not slack. Dropping Bricolage's `latin-ext` and `vietnamese` cuts
+        // took the file count 12 -> 10, so `> 10` failed on a correct tree.
+        //
+        // Set one BELOW the real count rather than at it, so the next
+        // deliberate trim fails here and has to say so, while an accidental
+        // emptying still fails. The count itself is printed above, which is
+        // what makes a quiet shrink visible without the floor having to move.
+        expect(onDisk.length).toBeGreaterThan(9);
         expect(lock.faces.length).toBeGreaterThan(onDisk.length);
     });
 

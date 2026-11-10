@@ -136,6 +136,26 @@ export const NOT_SHIPPED = {
     // Cyrillic + cyrillic-ext are kept; everything else in Onest is reachable
     // only through Inter, which every `bg` page already preloads.
     Onest: ['latin', 'latin-ext', 'math', 'symbols', 'vietnamese'],
+    // #2336 — Bricolage is the NUMERALS face. `font-display` resolves to
+    // `['Bricolage Grotesque', 'Inter', 'system-ui', 'sans-serif']` and has
+    // five call sites, every one a metric value carrying `tabular-nums`, so
+    // the `latin` cut earns its bytes (digits, `.`, `,`, `-`, `%`) and these
+    // two cannot serve a number.
+    //
+    // DROPPING THEM CANNOT PRODUCE A TOFU, which is the thing to know before
+    // reading this as risky: Inter is next in that chain and vendors both
+    // ranges (`inter-latin-ext.woff2` 85,068 B, `inter-vietnamese.woff2`
+    // 10,252 B), so an accented character degrades to Inter — a cosmetic face
+    // mismatch on one glyph. Two further measurements, neither load-bearing on
+    // its own: the dashboard path is typed `number` (`KpiCard.value` and
+    // `HeroMetric.value` are `number | null | undefined`, and those compose
+    // `<MetricCard>`), and no catalogue in either locale contains a character
+    // in these ranges at all — all eight bundles scanned.
+    //
+    // The saving is IMAGE and REPOSITORY weight, ~0 on the wire: `unicode-range`
+    // means these cuts were almost certainly never requested. Do not quote a
+    // page-weight number for this.
+    'Bricolage Grotesque': ['latin-ext', 'vietnamese'],
 };
 
 /** A face survives unless its family names its subset in `NOT_SHIPPED`. */
