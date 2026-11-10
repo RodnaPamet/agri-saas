@@ -23,7 +23,45 @@
  * Missing key or missing locale file falls back to {@link DEFAULT_LOCALE} and
  * finally to the key itself — a wrong-looking string in the UI is strictly
  * better than a thrown error inside a fail-open notification path.
+ *
+ * ## BOTH DEGRADATIONS ARE REPORTED, since #2958
+ *
+ * That fallback chain was entirely SILENT: no throw, no log, no metric. Two
+ * different failures came out of it looking like success.
+ *
+ * P9.3d is what it cost. A new `ModerationActionKind` shipped with no
+ * `statementOfReasons.action.<KIND>` entry, so `composeStatementBody` returned
+ * the KEY, and the first Art 17 statements queued carried an action line
+ * reading `statementOfReasons.action.CONTENT_AUTO_HIDDEN` — delivered, to the
+ * author, as the artefact a regulator reads. Three gates were individually
+ * fine and the gap sat between them: key parity compares the two catalogues to
+ * EACH OTHER, so a key missing from both is perfectly balanced; the copy
+ * assertion covered one hardcoded kind; and the COUNTS matched, six values
+ * against six keys, one of them dead.
+ *
+ * So:
+ *
+ *   - **falling back off the requested locale is a `warn`.** A Bulgarian
+ *     recipient receiving English copy is a real defect and was invisible,
+ *     because the English string looks like a successful translation. `bg` is
+ *     also the fallback for a recipient whose preference never loaded, so this
+ *     is the common case rather than an edge one.
+ *   - **returning the key is an `error`.** The reader gets a dotted path where
+ *     a sentence belongs.
+ *
+ * **No behaviour changes.** A missing string still renders exactly as it did;
+ * what is new is that it stops being silent. One change covers all ~92
+ * dynamic-key call sites and every future one, with no population to maintain
+ * — which is why this was chosen over a derived guard whose population cannot
+ * be inferred from the key string (`${key}` says nothing about what `key`
+ * ranges over).
+ *
+ * Deduped per `(locale, key)` per process, because a hot path with one missing
+ * string would otherwise log on every render. Same shape as the
+ * `AUDIT_FAIL_CLOSED_ENABLED` once-per-process warning.
  */
+import { logger } from '@/lib/observability/logger';
+
 import { DEFAULT_LOCALE, type Locale } from './locales';
 import { bundleFiles } from './bundles';
 
@@ -92,15 +130,63 @@ function interpolate(
     );
 }
 
+/**
+ * `(locale, key)` pairs already reported, so one missing string in a hot path
+ * logs once rather than per render.
+ *
+ * Unbounded by design: the population is the set of BROKEN keys, which is
+ * small and ought to be zero. A cap would silently stop reporting exactly when
+ * a release broke many at once, which is the moment the signal matters most.
+ */
+const reported = new Set<string>();
+
+/** Report at most once per `(locale, key)`, and NEVER throw. */
+function reportOnce(
+    level: 'warn' | 'error',
+    event: string,
+    locale: Locale,
+    key: string,
+    extra?: Record<string, unknown>,
+): void {
+    const seen = `${level}:${locale}:${key}`;
+    if (reported.has(seen)) return;
+    reported.add(seen);
+    try {
+        // The KEY is logged, never the resolved string: a translated value can
+        // carry interpolated personal data (a name, an address), and a key is
+        // a constant from the catalogue.
+        logger[level](event, { component: 'i18n', locale, key, ...extra });
+    } catch {
+        // A missing translation must not become a thrown error because the
+        // telemetry about it broke. This is the audit extension's rule, and
+        // the whole point of the fallback chain below is that this path is
+        // fail-open.
+    }
+}
+
 export async function translateFor(
     locale: Locale,
     key: string,
     params?: Record<string, string | number>,
 ): Promise<string> {
-    for (const candidate of locale === DEFAULT_LOCALE ? [locale] : [locale, DEFAULT_LOCALE]) {
+    const chain = locale === DEFAULT_LOCALE ? [locale] : [locale, DEFAULT_LOCALE];
+    for (const candidate of chain) {
         const messages = await loadMessages(candidate);
         const found = messages ? lookup(messages, key) : undefined;
-        if (found !== undefined) return interpolate(found, params);
+        if (found !== undefined) {
+            if (candidate !== locale) {
+                // Resolved, but NOT in the language asked for. The string that
+                // comes back looks like a successful translation, which is
+                // precisely why this needed a log rather than a test.
+                reportOnce('warn', 'i18n.locale_fallback', locale, key, {
+                    servedLocale: candidate,
+                });
+            }
+            return interpolate(found, params);
+        }
     }
+    // Present in NO catalogue in the chain: the caller is about to render a
+    // dotted path where a sentence belongs.
+    reportOnce('error', 'i18n.key_missing', locale, key, { chain });
     return key;
 }
