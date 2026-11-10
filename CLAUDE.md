@@ -4052,6 +4052,59 @@ arm in `statement-queue.ts` the Art 17 statement was **silently never queued** �
 tracks the guard that would pair them; until it lands, the pairing is a thing
 to remember.
 
+### P9.5 — «Канали», and the first nav item gated on a FLAG
+
+Owner rulings 2026-11-10 (#2939): the noun is **«Канали»**, and it is a
+**sidebar item in the «Пазар» section** — not a bottom tab, because the cap is
+five and those path strings are shared vocabulary with iOS, so a new tab
+displaces something AND needs a coordinated agrent-ios change (#2942).
+
+**THE NAV ITEM IS GATED ON A FEATURE FLAG, AND ITS POLARITY IS INVERTED
+AGAINST EVERY NEIGHBOUR.** Each other `visible:` in `useNavSections()` reads
+`tenant.availableModules` and degrades to "available" when absent;
+`channelsEnabled` degrades to HIDDEN. `social.channels` is default-OFF, so for
+most tenants the surface answers 404, and a nav item leading to a 404 is worse
+than an absent one. Flags are server-only by design — there is no client-side
+flags hook, and adding one would be a second source of truth for a kill switch
+(P5.3) — so the layout resolves it with `isFeatureEnabled` inside its existing
+`Promise.all` and carries it on `TenantProvider`, exactly as
+`googleIntegrationEnabled` does (#2019).
+
+**Do NOT AND it with the EXCHANGE module**, even though it renders in the
+«Пазар» section. P8.4 is the instance: a farm that switched the marketplace off
+would lose a surface unrelated to it, and because a module gate REDIRECTS the
+symptom is "my channels vanished" rather than an error.
+
+**The feed is newest-first and the timeline is oldest-first**, so the adapter
+reverses ONCE. Reversing in the usecase, or asking the API for ascending order,
+changes what `before` means and breaks the keyset.
+
+**`TimelineMessage.deleted` exists because a channel post has no deletion
+TIMESTAMP.** The primitives take `deletedAt` and read it as pure truthiness, so
+passing `deletedAt: post.createdAt` renders correctly today — and writes a
+false fact into a field named for a time, which the next renderer displays with
+nothing failing. The three removal columns are collapsed into one boolean
+precisely so a reader cannot tell a moderator's act from the author's.
+
+**The composer's return value is load-bearing**: it clears on anything that is
+not `false`, so a handler that swallows a failure loses the operator's words. A
+channel post fails for reasons they can act on — slow mode, a ban, a refused
+mention.
+
+**The directory groups by the KEY PREFIX, not by `kind`** (P9.2 made the prefix
+load-bearing), and an unrecognised prefix falls into a final group rather than
+vanishing — a channel the directory omits is one nobody can join.
+
+**LEAVING a channel is NOT lossless, so it goes through the undo toast.** The
+`ChannelMembership` row carries `lastReadAt` and `mutedAt`, and rejoining
+writes a FRESH row (`@@unique([channelId, userId])`) — so a misclicked Leave
+loses the read cursor and any mute. The exemption nearly written here —
+"reversible from the same button, so ceremony around it is ceremony around an
+undoable action", which is `BlockPersonButton`'s almost verbatim — was false
+for exactly that reason. `joinedAt` is the one field nothing reads, which is
+what made "lossless" sound plausible. **Join stays immediate**: additive, and
+an undo window would delay what was asked for.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

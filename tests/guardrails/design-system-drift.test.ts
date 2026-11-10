@@ -104,6 +104,24 @@ const MIGRATED_PAGES = [
     //
     // GRC teardown phase 2 removed two entries whose pages no longer
     // exist: `vendors/VendorsClient.tsx` and `clauses/loading.tsx`.
+    //
+    // P9.5 «Канали» (#2939) — PROMOTED ON ARRIVAL rather than parked in the
+    // unmigrated tally and the cap raised, which this file's own rule calls
+    // the path forward: "promotion to MIGRATED_PAGES is the path forward,
+    // never silent floor-bumping". All four are clean on the three checks —
+    // no raw colour utilities (semantic `content-*`/`bg-*`/`border-*` only),
+    // no legacy `.btn`, no legacy `.badge` — and built from platform
+    // primitives: ListPageShell, PageBreadcrumbs, Heading, Button,
+    // EmptyState, ErrorState, Skeleton, StatusBadge, plus P8.3's
+    // MessageTimeline and MessageComposer.
+    //
+    // The two `page.tsx` files are server gates with no markup at all: they
+    // resolve the `social.channels` flag, answer `notFound()` when it is off,
+    // and render their island.
+    'channels/page.tsx',
+    'channels/ChannelsDirectoryClient.tsx',
+    'channels/[channelId]/page.tsx',
+    'channels/[channelId]/ChannelFeedClient.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;

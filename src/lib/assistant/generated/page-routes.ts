@@ -92,6 +92,8 @@ export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/t/[tenantSlug]/assets/new",
     "/t/[tenantSlug]/auth/mfa",
     "/t/[tenantSlug]/calendar",
+    "/t/[tenantSlug]/channels",
+    "/t/[tenantSlug]/channels/[channelId]",
     "/t/[tenantSlug]/climate",
     "/t/[tenantSlug]/dashboard",
     "/t/[tenantSlug]/diagnostics/offline",

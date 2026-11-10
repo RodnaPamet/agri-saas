@@ -1,0 +1,67 @@
+/*
+ * Control for `negated-read-assertions-have-a-control` — #2558.
+ *
+ * BOTH DIRECTIONS, because the live population is 0 after #2507 and an
+ * absence asserted over a clean tree is satisfied perfectly by a detector that
+ * has stopped matching. Each block below is named for the verdict it must
+ * receive, and the guard asserts the exact set.
+ *
+ * `.fixture`, not `.ts`: every `.ts`/`.tsx` under `tests/` is in the tsc
+ * program, and a deliberate defect in a real test file would also be collected
+ * by jest. The extension is what keeps this inert.
+ *
+ * The shapes are taken from the real guards #2507 fixed and the three sound
+ * guards the pattern-based detector falsely accused — `expect(fn(x)).toMatch(…)`
+ * is here on purpose, because `[^)]*` cannot cross a nested paren and that one
+ * character class is what moved the old detector's count from 6 to 0.
+ */
+
+// ── REPORT: every read-derived assertion is a negation, nothing claims presence
+export function reportMe_allNegated() {
+    const content = readFileSync('src/thing.ts', 'utf8');
+    expect(content).not.toContain('requireAdminCtx');
+    expect(/legacyHelper/.test(content)).toBe(false);
+}
+
+// ── REPORT: the read goes through a local, and through a blanker
+export function reportMe_viaLocals() {
+    const SRC = blankNonCode(readFileSync('src/other.ts', 'utf8'));
+    expect(SRC).not.toMatch(/process\.env\./);
+}
+
+// ── PASS: a presence claim on the same read is the control #2507 prescribes
+export function passMe_hasPresenceClaim() {
+    const content = readFileSync('src/thing.ts', 'utf8');
+    expect(content).not.toContain('requireAdminCtx');
+    expect(content).toContain('requirePermission');
+}
+
+// ── PASS: presence asserted through a NESTED CALL — the false-positive shape
+export function passMe_presenceThroughNestedCall() {
+    const content = readFileSync('src/thing.ts', 'utf8');
+    expect(content).not.toContain('forbidden');
+    // `expect(fn(x)).toMatch(…)`: the old regex could not cross this paren.
+    expect(redisCommandLine(content)).toMatch(/--maxmemory-policy noeviction/);
+}
+
+// ── PASS: a positive pattern test, which is a presence claim with a boolean matcher
+export function passMe_positivePatternIsTrue() {
+    const content = readFileSync('src/sort.ts', 'utf8');
+    expect(positive.test(content)).toBe(true);
+    expect(/forbidden/.test(content)).toBe(false);
+}
+
+// ── PASS: the subject is a PREDICATE over supplied inputs, not a file's text
+export function passMe_predicateOverSuppliedInput() {
+    expect(isPublicPath('/api/x')).toBe(false);
+    expect(isAllowed('/private')).toBe(false);
+}
+
+// ── PASS: a denominator makes the loop's emptiness fail on its own
+export function passMe_hasDenominator() {
+    const files = collectSourceFiles({ roots: ['src'], floor: 200 });
+    expect(files.length).toBeGreaterThan(200);
+    for (const f of files) {
+        expect(readFileSync(f, 'utf8')).not.toContain('as any');
+    }
+}

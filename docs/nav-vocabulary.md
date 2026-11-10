@@ -46,6 +46,41 @@ The guard reads this table. Keep the column order and one row per concept.
 | locationNav | Блокове | Location | sidebarNav.location |  |  |
 | parcel | Парцел | Parcel | ag.map.parcel, ag.rent.colParcel, ag.rent.fieldParcel, notificationEmail.insuranceLead.parcelLabel, offline.parcelDefault, planning.board.colParcel, planning.detail.parcel, planning.newPlan.parcel | Имот, Имоти | ag.map., ag.rent., ag.parcelHistory., locations., planning., grain.costs.form.linkKind., offline. |
 | parcels | Парцели | Parcels | ag.parcelHistory.breadcrumbParcels, locations.colParcels, locations.detail.overviewParcels, locations.detail.parcelsAccordion |  |  |
+| channel | Канал | Channel | channels.breadcrumbChannel | Общност, Група, Форум, Разговор | channels., sidebarNav. |
+| channels | Канали | Channels | channels.title, channels.breadcrumbCurrent | Общности, Групи, Форум, Разговори | channels. |
+| channelNav | Канали | Channel | sidebarNav.channels |  |  |
+
+## Channels: «Канали», and the recommendation that lost to a measurement
+
+Owner ruling 2026-11-10 (#2939): the surface is **«Канали»**, a sidebar item in
+the «Пазар» section.
+
+I had recommended «Общности» on the grounds that «канал» is an irrigation
+channel — a ditch — to a Bulgarian farmer, and that this product's vocabulary
+is otherwise plain concrete farm nouns («Блокове», «Парцели», «Силози»). The
+measurement went the other way and is the reason the ruling stands rather than
+being a close call: **six catalogue values contain «канал», five of them P9.3's
+own refusals** — `CHANNEL_ARCHIVED` («Този канал е затворен»),
+`CHANNEL_BANNED`, `CHANNEL_NOT_A_MEMBER`, `CHANNEL_NOT_FOUND`,
+`CHANNEL_SLOW_MODE` — and the sixth is «по друг канал» in an access-review
+email, the communication sense. The irrigation sense appears nowhere.
+
+So the word already ships as this product's name for this concept, and
+renaming the surface would have left five refusals using a noun the nav did
+not.
+
+**The `Never` list therefore bans SYNONYMS, not the ditch.** «Общности»,
+«Групи», «Форум» and «Разговори» are the words a later surface would drift
+toward, and «Разговори» matters most because it sits closest to «Съобщения» —
+the exchange's DMs — which is the collision P2.6 and P8.4 were both about. The
+irrigation sense needs no entry: it is prose ambiguity rather than a second
+name for the destination, and «нива» above already sets the precedent that a
+word may stay legal in PROSE while being banned as a key's whole value.
+
+Three rows for one entity, following «Блок»/«Блокове»/`locationNav`: the table
+pins ONE value per row and checks both catalogues exactly, and
+`sidebarNav.channels` is «Канали»/`Channel` — BG-plural with EN-singular, the
+house pattern for a nav item.
 
 ## Land: Блок and Парцел, and why five rows for two entities
 

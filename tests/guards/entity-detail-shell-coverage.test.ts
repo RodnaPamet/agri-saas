@@ -82,7 +82,24 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
  * planned follow-up. The post-loop assertion caps the list at 5
  * entries — graduate, don't grow.
  */
-const WAVE_2_DEFERRED: ReadonlyArray<{ page: string; entity: string; reason: string }> = [];
+const WAVE_2_DEFERRED: ReadonlyArray<{ page: string; entity: string; reason: string }> = [
+  {
+    page: 'src/app/t/[tenantSlug]/(app)/channels/[channelId]/page.tsx',
+    entity: 'channel feed',
+    reason:
+      'A CHAT surface, not an entity detail page. `EntityDetailLayout` owns a '
+      + 'back link, a title, a meta row, an actions slot, a tab bar and the '
+      + 'loading/error/empty states — and a channel feed needs none of them '
+      + 'except the title, while needing the one thing the shell cannot give: '
+      + 'a flex column whose MIDDLE scrolls and whose composer is pinned to '
+      + 'the bottom above the keyboard inset. CLAUDE.md names this case '
+      + 'already ("when NOT to reach for these shells": a page that is not a '
+      + 'single list or detail), and the DM conversation screen next door — '
+      + 'the same shape, built in P8.4 — does not use it either. Adopting it '
+      + 'here would mean fighting the shell for the scroll container, which is '
+      + 'exactly what #2826 spent a phase getting right.',
+  },
+];
 
 function read(rel: string): string | null {
   const abs = path.resolve(ROOT, rel);
