@@ -183,9 +183,21 @@ describe('Infrastructure Regression Guards', () => {
             // somebody who ends a conversation and comes back the same
             // afternoon should find the assistant already knows what they said.
             //
+            // 33 → 34 (#2937, P9.3d): `channel-auto-hide`. Every 10 minutes,
+            // hides a channel post once three DISTINCT VERIFIED farms have
+            // reported it. It is DORMANT in production — one
+            // `FarmIdentityClaim`, status PENDING, so zero verified farms and
+            // the threshold is arithmetically unreachable — which is why the
+            // job logs a denominator rather than letting `hidden: 0` read as
+            // "the rule is working".
+            //
             // MEASURED from the failing assertion rather than computed from the
-            // line above, for the reason the previous entry records.
-            expect(SCHEDULED_JOBS).toHaveLength(33);
+            // line above, for the reason the previous entry records. This one
+            // was measured in CI and not locally, because `tests/regression` is
+            // not in `verify:changed`'s derived population for a schedule
+            // change — fixed in the same commit, since a pin nothing local
+            // reaches is a pin that only ever fails after a push.
+            expect(SCHEDULED_JOBS).toHaveLength(34);
         });
 
         test('scheduled job names match expected set', () => {
@@ -203,6 +215,13 @@ describe('Infrastructure Regression Guards', () => {
                 // Art 17(3)(b) keeps the DSA trail answerable, so erasure is
                 // incomplete by design.
                 'account-erasure-sweep',
+                // P9.3d — every 10 minutes, hides a channel post after three
+                // DISTINCT verified farms report it, recording a
+                // CONTENT_AUTO_HIDDEN action from `auto:report-threshold` and
+                // queueing the author's Art 17 statement. Built DORMANT by
+                // owner ruling: production has no verified farm, so it hides
+                // nothing and says so in its reading.
+                'channel-auto-hide',
                 // 'compliance-digest' removed in GRC teardown phase 2.
                 'compliance-snapshot',
                 // Grain fulfilment — daily 07:30 UTC sweep firing
