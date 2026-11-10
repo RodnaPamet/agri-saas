@@ -4471,6 +4471,19 @@ mechanism.
   stores RENDERED text, so a forgotten locale is indistinguishable from a chosen
   one and would silently ship the wrong language. A producer with only an email
   must write `RECIPIENT_FALLBACK_LOCALE` so the decision shows in the diff.
+  **A MISSING STRING IS REPORTED, since #2958 — it used to be silent.**
+  `translateFor`'s chain is `[requested, DEFAULT_LOCALE]` and then `return
+  key`: no throw, no log, no metric, so two different failures came out looking
+  like success. A `bg` miss serves ENGLISH, which looks like a successful
+  translation; a miss in both returns the KEY, which a recipient reads as a
+  dotted path where a sentence belongs. The second shipped in P9.3d — the first
+  Art 17 statements carried `statementOfReasons.action.CONTENT_AUTO_HIDDEN` as
+  their action line. Now `i18n.locale_fallback` logs at **warn** and
+  `i18n.key_missing` at **error**, deduped per `(locale, key)` per process.
+  Behaviour is unchanged; only the silence is. **Do not read a green i18n gate
+  as coverage of this**: key parity compares the two catalogues to EACH OTHER,
+  so a key absent from both is perfectly balanced, and when P9.3d hit it the
+  COUNTS matched too — six enum values, six catalogue keys, one of them dead.
   Inside an HTML template, **resolve each translated string to a local `const`
   before interpolating it** — `${escapeHtml(t)}`, never
   `${escapeHtml(await t('k', { n }))}`. Until #717 the escaping guard's
