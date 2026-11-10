@@ -58,6 +58,27 @@ export interface TenantContextValue {
      * worse than an absent one.
      */
     googleIntegrationEnabled?: boolean;
+    /**
+     * P9.5 (#2939) — is the `social.channels` runtime flag on for this caller?
+     *
+     * Here for its neighbour's reason exactly: there is no client-side flags
+     * hook, and adding one would be a second source of truth for a kill
+     * switch (P5.3). `useNavSections()` is a client hook, so the «Канали»
+     * sidebar item cannot ask the server itself.
+     *
+     * **It is a FLAG and not a module**, which makes it the first `visible:`
+     * in that hook not derived from `availableModules`. Do NOT gate the item
+     * on the EXCHANGE module just because it sits in the «Пазар» section:
+     * P8.4's lesson is that a surface which depends on no module must not
+     * inherit one's gate, and because that gate REDIRECTS, the symptom would
+     * be "my channels vanished" rather than an error.
+     *
+     * Absent ⇒ false, degrading CLOSED, like `googleIntegrationEnabled` and
+     * for the same reason: the flag is default-OFF, so for most tenants the
+     * surface answers 404, and a nav item that leads to a 404 is worse than
+     * an absent one.
+     */
+    channelsEnabled?: boolean;
     permissions: {
         canRead: boolean;
         canWrite: boolean;

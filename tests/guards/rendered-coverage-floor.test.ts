@@ -371,7 +371,7 @@ const ROOT = path.resolve(__dirname, '../..');
 // is asserted FROZEN across a poll whose `lastReadAt` has moved past the
 // unread message — with a control that a caught-up reader gets no divider, so
 // "always on" cannot satisfy the freeze.
-const RENDERED_TEST_FLOOR = 278;
+const RENDERED_TEST_FLOOR = 280;
 // Raised 264 → 265 for `price-overrides-console.test.tsx` (#1587): the «Цени»
 // console, where every dangerous outcome is a shape the server would accept —
 // a stale price re-asserted as today's, a comma silently dropped, a per-litre

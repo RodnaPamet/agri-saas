@@ -62,7 +62,10 @@ export default async function TenantLayout({
         if (isNextControlFlow(error)) throw error;
         notFound();
     }
-    const [planRaw, availableModules, promotionsAvailable, googleIntegrationEnabled] =
+    const [
+        planRaw, availableModules, promotionsAvailable, googleIntegrationEnabled,
+        channelsEnabled,
+    ] =
         await Promise.all([
             getTenantPlan(serverCtx.tenant.id),
             getAvailableModulesForTenant(serverCtx.tenant.id),
@@ -75,6 +78,13 @@ export default async function TenantLayout({
             // which has no server component to pass a prop from. Joins the
             // existing Promise.all for the same reason as the line above.
             isFeatureEnabled('integrations.google', session.user.id),
+            // P9.5 (#2939) — the «Канали» sidebar item is rendered by a CLIENT
+            // hook, and there is no client-side flags hook by design, so the
+            // flag is resolved here and carried on the tenant context. Joins
+            // the existing `Promise.all` for the same reason as the line
+            // above: it costs no extra latency on a call that is already
+            // awaited.
+            isFeatureEnabled('social.channels', session.user.id),
         ]);
     const plan = planRaw ?? undefined;
 
@@ -90,6 +100,7 @@ export default async function TenantLayout({
             promotionsAvailable,
             isPlatformTenant: isPlatformTenant(tenantSlug),
             googleIntegrationEnabled,
+            channelsEnabled,
             permissions: serverCtx.permissions,
             appPermissions: serverCtx.appPermissions,
         }}>
