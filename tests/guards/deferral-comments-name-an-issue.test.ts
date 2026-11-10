@@ -69,7 +69,12 @@ const ISSUE = /#\d+/;
  * gets deleted, and the narrow version still catches the only offender in the
  * tree.
  */
-const TRACKER_CLAIM = /\btracked\s+(?:in|at|as|under|on)\b/i;
+// `(?!once\b)` after the preposition group: "how many IMEIs are tracked at
+// once" is ordinary English and carries no tracker claim, and this pattern
+// reported it (#2948). The rest of the group stays — "tracked at #123" is a
+// real shape — and the lookahead removes exactly the quantity phrase, which
+// is the only false positive the tree has produced.
+const TRACKER_CLAIM = /\btracked\s+(?:in|at|as|under|on)\s+(?!once\b)/i;
 
 function sourceFiles(): string[] {
     // git ls-files, so the scan follows the repo rather than a hand-kept list.
@@ -109,6 +114,16 @@ describe('a deferral comment names the issue that holds the work', () => {
         // And the shapes the cheap `#`-token detector would have flagged.
         // These carry no claim, so this arm never looks at them.
         for (const line of ['const bg = \'#FBFAF8\';', 'fill="#FFFFFF"', '// see #PwnedPasswords']) {
+            expect(TRACKER_CLAIM.test(line)).toBe(false);
+        }
+        // Ordinary English that is not a tracker claim. "tracked at once" is a
+        // QUANTITY, and the pattern reported it as a deferral needing an issue
+        // number (#2948). Negative controls, so a later widening of the
+        // preposition group cannot silently reintroduce it.
+        for (const line of [
+            '// How many IMEIs are tracked at once.',
+            '// at most 10,000 are tracked at once',
+        ]) {
             expect(TRACKER_CLAIM.test(line)).toBe(false);
         }
     });

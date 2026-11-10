@@ -34,6 +34,14 @@
     // "Knowledge-base / RAG seeding" section of CLAUDE.md). It met the
     // criterion already written down here and simply was not listed.
     "scripts/seed.ts",
+    // #2948 stage 2. The Codec 8 listener, which §3 requires to be its own
+    // process so a parser bug cannot take `app.agrent.bg` down — so it meets
+    // this section's criterion twice over: it runs in production as a bundled
+    // entrypoint, and it WRITES (one batched `createMany` per frame). It is
+    // also the first entrypoint here whose input is the public internet, which
+    // makes an unchecked type error in it reachable by a stranger rather than
+    // only by an operator.
+    "scripts/machine-listener.ts",
     // P9.2 (#2936). `seed.ts` imports it, so `tsc` would reach it
     // transitively — but it is LISTED because the include list is the
     // auditable record of what is covered, and transitive coverage
