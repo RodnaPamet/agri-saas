@@ -97,6 +97,11 @@ export interface MessageBubbleProps {
     readonly createdAt: Date;
     readonly editedAt?: Date | null;
     readonly deletedAt?: Date | null;
+    /**
+     * Deleted with no timestamp — see `TimelineMessage.deleted` (#2939). ORed
+     * with `deletedAt` rather than replacing it, so the DM path is untouched.
+     */
+    readonly deleted?: boolean;
     /** Written by the reader themselves. Decides the side and the tone. */
     readonly mine: boolean;
     /** The message above is from the same sender — drop the sender line. */
@@ -165,6 +170,7 @@ export function MessageBubble({
     createdAt,
     editedAt,
     deletedAt,
+    deleted,
     mine,
     grouped = false,
     senderLabel,
@@ -179,7 +185,9 @@ export function MessageBubble({
 }: MessageBubbleProps) {
     const t = useTranslations('chat');
     const { formatDateTime } = useDateFormat();
-    const isDeleted = Boolean(deletedAt);
+    // Either shape counts. A channel post carries the boolean and no date; a
+    // direct message carries the date and no boolean.
+    const isDeleted = Boolean(deletedAt) || deleted === true;
 
     // A deleted message has nothing to react to, which is the same reason P5.3
     // does not offer «Сигнализирай» on one.
