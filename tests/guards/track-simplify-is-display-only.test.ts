@@ -35,7 +35,7 @@
  * a wrapper, and a rule about wrappers passes a re-export. Importing this
  * module from a measuring path is never right, so there is nothing to permit.
  */
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, relative } from 'path';
 
 import { blankNonCode } from '../helpers/blank-non-code';
@@ -63,33 +63,39 @@ const MEASURING_ROOTS = [
     'src/lib/machines/worked-parcel-match.ts',
 ] as const;
 
-function walk(dir: string): string[] {
-    if (!existsSync(dir)) return [];
-    const out: string[] = [];
-    for (const entry of readdirSync(dir)) {
-        const full = join(dir, entry);
-        if (statSync(full).isDirectory()) out.push(...walk(full));
-        else if (/\.tsx?$/.test(full)) out.push(full);
-    }
-    return out;
-}
-
-/** Every declared measuring file that currently EXISTS. */
+/**
+ * Every declared measuring file that currently EXISTS.
+ *
+ * NO DIRECTORY WALK, and that is not an accident — two of this repo's
+ * meta-guards failed the first version of this file and both were right:
+ *
+ *  - `scan-roots-resolve` flagged "a missing scan root returns empty instead
+ *    of failing". My `walk()` opened with `if (!existsSync(dir)) return []`,
+ *    which is precisely the swallowing shape, in a guard written ABOUT empty
+ *    populations.
+ *  - `file-collection-is-not-silently-empty` flagged the hand-rolled
+ *    collector, whose register says such a collector "can be gutted to return
+ *    [] with every assertion built on it still green — measured at 81 percent
+ *    of the guards an automated sweep could audit".
+ *
+ * Joining either debt list was the wrong fix; both are shrink-only and say
+ * so. The right fix was to stop needing a collector: every declared root is a
+ * FILE, so this is an explicit per-path existence check whose result the
+ * denominator reading prints. A root that stops existing shows up as a
+ * smaller scanned count beside an unchanged declared count, which is visible
+ * rather than swallowed.
+ */
 function measuringFiles(): string[] {
-    const out: string[] = [];
-    for (const rel of MEASURING_ROOTS) {
-        const full = join(ROOT, rel);
-        if (!existsSync(full)) continue;
-        if (statSync(full).isDirectory()) out.push(...walk(full));
-        else out.push(full);
-    }
-    return out;
+    return MEASURING_ROOTS.map((rel) => join(ROOT, rel)).filter((full) => existsSync(full));
 }
 
 describe('the simplified track is DISPLAY ONLY (#2948)', () => {
     const files = measuringFiles();
 
     it('prints the denominator, so an empty population is visible', () => {
+        // The declared count and the scanned count are printed SEPARATELY on
+        // purpose: equal means every measuring path exists and was read, and a
+        // gap names how many are still to come. One number cannot say that.
         // Deliberately NOT a floor. The population is zero until stage 4 and
         // failing on zero would make this guard red on the day it is written —
         // which is how a guard gets deleted. The reading is what makes the
