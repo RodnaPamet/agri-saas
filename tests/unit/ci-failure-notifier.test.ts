@@ -38,8 +38,19 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 const SCRIPT = path.join(REPO_ROOT, '.github/scripts/ci-failure-issue.sh');
 
 interface Scenario {
-    /** What `gh issue list` should report: an issue number, or empty for none. */
+    /** What `gh issue list --state open` should report: a number, or empty. */
     openIssue?: string;
+    /**
+     * What `gh issue list --state closed` should report — #2714.
+     *
+     * SEPARATE from `openIssue` because the whole new behaviour lives in the
+     * case where they DIFFER: no open match, a retired one to reopen. The stub
+     * answered every `issue list` with one value, so that case was
+     * inexpressible — and a harness that cannot express a branch is how the
+     * branch ends up asserted by accident, which this file's own `api` stub
+     * warns about two fields down.
+     */
+    closedIssue?: string;
     /**
      * The cancel discriminator, as two numbers, because ONE number cannot
      * express the case that matters (#748).
@@ -142,7 +153,16 @@ function run(s: Scenario): { out: string; calls: string[] } {
 args="$*"
 printf '%s\\n' "\${args//$'\\n'/ }" >> ${JSON.stringify(callLog)}
 case "$1 $2" in
-  "issue list")   printf '%s' ${JSON.stringify(s.openIssue ?? '')} ;;
+  "issue list")
+    # By STATE, not one answer for both (#2714). --state open and
+    # --state closed are two different questions, and the new path asks both.
+    # No backticks in here: this whole stub is a TS template literal, and a
+    # backtick in a shell comment closes it.
+    case "$args" in
+      *"--state closed"*) printf '%s' ${JSON.stringify(s.closedIssue ?? '')} ;;
+      *)                  printf '%s' ${JSON.stringify(s.openIssue ?? '')} ;;
+    esac
+    ;;
   "issue view")   printf '%s' ${JSON.stringify(s.existingBody ?? '')} ;;
   api*)
     # TWO different probes reach the gh api stub: the cancel-shape probe
@@ -150,6 +170,18 @@ case "$1 $2" in
     # because answering one with the other's shape is how a suppression branch
     # ends up tested by accident.
     case "$args" in
+      *'join(", ")'*)
+        # The #2714 body probe. It shares the flaky probe's
+        # select(.conclusion == "failure") filter, so it MUST be matched first
+        # and on its own jq — answering it with the other's [length, join("|")]
+        # TSV is how a body ends up asserted against the wrong shape, which is
+        # exactly what this case block was already warning about.
+        ${
+            s.failedProbeFails
+                ? `exit 1`
+                : `printf '%s' ${JSON.stringify(failedJobs.join(', '))}`
+        }
+        ;;
       *'select(.conclusion == "failure")'*)
         ${
             s.failedProbeFails
@@ -212,6 +244,7 @@ exit 0
 const created = (c: string[]) => c.some((l) => l.startsWith('issue create'));
 const commented = (c: string[]) => c.some((l) => l.startsWith('issue comment'));
 const closed = (c: string[]) => c.some((l) => l.startsWith('issue close'));
+const reopened = (c: string[]) => c.some((l) => l.startsWith('issue reopen'));
 
 describe('CI-failure notifier — files for real failures, and only those', () => {
     it('a genuine failure with nothing open FILES one issue', () => {
@@ -826,5 +859,88 @@ describe('flaky-only failures are not reported, and nothing else is silenced', (
         });
 
         expect(created(calls)).toBe(true);
+    });
+});
+
+describe('a repeat failure finds its own history (#2714)', () => {
+    /*
+     * The half #2823 deliberately left open. Its own commit put it plainly:
+     * the notifier "has now eaten a diagnosis twice, #2712 and #2746".
+     *
+     * Retiring on a later green is CORRECT here — the script records the axis
+     * for #2884, that self-closing "is correct for a state question and wrong
+     * for a run outcome", and CI's subject genuinely moves because each run
+     * asks about a different commit. So neither test below stops the close.
+     * They cover the two things that made a recurrence illegible: the body
+     * never said WHAT failed, and the de-dupe could not see a retired issue.
+     */
+
+    it('names the failing jobs in the body, so a retired issue still says why', () => {
+        // Without this the body is run / trigger / branch / commit and a link.
+        // Once the run's logs age out there is NO cause in the issue at all,
+        // which is what #2712 and #2746 each left behind.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '900',
+            failedJobs: ['Test (shard 3/6)', 'Coverage (>=60%)'],
+        });
+
+        const create = calls.find((l) => l.startsWith('issue create'));
+        expect(create).toBeDefined();
+        expect(create).toContain('failed jobs');
+        expect(create).toContain('Test (shard 3/6), Coverage (>=60%)');
+    });
+
+    it('REOPENS a retired issue instead of filing a second one', () => {
+        // THE ASSERTION THIS ISSUE IS ABOUT. The body promises "repeat
+        // failures arrive as comments here rather than as new issues", and
+        // that held only while the issue was open: after a self-close the next
+        // occurrence filed a FRESH issue with the comment count back at zero,
+        // so a flake that had recurred five times read as five unrelated
+        // one-offs.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '901',
+            openIssue: '',
+            closedIssue: '4242',
+        });
+
+        expect(reopened(calls)).toBe(true);
+        expect(commented(calls)).toBe(true);
+        // The load-bearing half: it must NOT also file a new one. Reopening
+        // while still creating would double the record rather than join it.
+        expect(created(calls)).toBe(false);
+        expect(calls.some((l) => l.startsWith('issue reopen 4242'))).toBe(true);
+    });
+
+    it('files fresh when there is no history to find — the control', () => {
+        // Without this, a bug that reopened unconditionally (or that matched
+        // the wrong issue) would satisfy the test above while breaking the
+        // ordinary path, which is every first failure.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '902',
+            openIssue: '',
+            closedIssue: '',
+        });
+
+        expect(created(calls)).toBe(true);
+        expect(reopened(calls)).toBe(false);
+    });
+
+    it('prefers an OPEN match and does not ask about closed ones', () => {
+        // The ordinary path must stay one lookup. This also pins the
+        // precedence: an open issue is the live record, and consulting closed
+        // ones first could reopen an older duplicate instead of commenting on
+        // the current one.
+        const { calls } = run({
+            conclusion: 'failure',
+            runId: '903',
+            openIssue: '77',
+        });
+
+        expect(commented(calls)).toBe(true);
+        expect(created(calls)).toBe(false);
+        expect(calls.some((l) => l.includes('--state closed'))).toBe(false);
     });
 });

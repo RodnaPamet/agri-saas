@@ -152,6 +152,55 @@ all_failed_jobs_are_flaky() {
     return 0
 }
 
+# ── what failed, recorded so a retired issue still says it (#2714) ──
+#
+# The body used to carry run / trigger / branch / commit and a link, and
+# nothing about the failure itself. Once a run's logs age out, a retired issue
+# holds NO cause — which is how #2712 and #2746 each left nothing behind, and
+# why a second occurrence read as a first.
+#
+# The names come from the same call `all_failed_jobs_are_flaky` already makes,
+# cached so the failure path does not ask twice. An unreadable probe yields the
+# empty string and the row is omitted: a body that says nothing is the status
+# quo, while a body asserting "none" would be a claim this cannot support.
+FAILED_JOBS_CACHE=""
+FAILED_JOBS_READ=""
+
+failed_job_names() {
+    if [ -z "$FAILED_JOBS_READ" ]; then
+        FAILED_JOBS_READ=1
+        # shell-check-ok: this is a DIAGNOSTIC read, not a check. The script
+        # runs under `set -euo pipefail`, so without the `|| true` an
+        # unreachable API would abort the notifier — and the notifier failing
+        # is strictly worse than a body missing one row, because then nothing
+        # reports the CI failure at all. An empty value is handled: the caller
+        # omits the row rather than writing "none", which would be a claim
+        # this cannot support.
+        FAILED_JOBS_CACHE="$("$GH" api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' 2>/dev/null || true)"
+    fi
+    printf '%s' "$FAILED_JOBS_CACHE"
+}
+
+find_issue() {
+    # OPEN first, then CLOSED — #2714.
+    #
+    # Searching open only made the body's own promise false the moment the
+    # issue was retired: "Repeat failures arrive as comments here rather than
+    # as new issues - many comments means the problem is persistent, not new"
+    # holds while it is open, and after a self-close the next occurrence filed
+    # a FRESH issue with the comment count back at zero. A flake that had
+    # recurred five times read as five unrelated one-offs.
+    #
+    # Open is preferred so the ordinary path is unchanged and costs one call.
+    local n
+    n="$(find_open_issue)"
+    if [ -n "$n" ]; then printf '%s' "$n"; return 0; fi
+    "$GH" issue list --repo "$REPO" --label ci-failure --state closed --limit 100 \
+        --json number,title \
+        --jq "[.[] | select(.title == \"${TITLE}\")] | .[0].number // empty"
+}
+
 find_open_issue() {
     # Exact title over the LABEL, never `--search`: the search index lags by
     # seconds to minutes, which is precisely the window in which a nightly
@@ -171,6 +220,8 @@ recorded_run_id() {
 # disambiguate.
 CANCEL_ROW=""
 SHAPE=""
+# Set on the failure path only, where `failed_job_names` has something to say.
+FAILED_ROW=""
 
 body() {
     cat <<EOF
@@ -181,7 +232,7 @@ body() {
 | run | [${RUN_ID}](${RUN_URL}) |
 | trigger | \`${EVENT}\` |
 | branch | \`${BRANCH}\` |
-| commit | ${SHA} |${CANCEL_ROW}
+| commit | ${SHA} |${FAILED_ROW}${CANCEL_ROW}
 
 This trigger has no PR page, so nothing else would have said so.
 
@@ -193,7 +244,7 @@ ${MARKER_PREFIX} ${RUN_ID} -->
 EOF
 }
 
-EXISTING="$(find_open_issue)"
+EXISTING="$(find_issue)"
 
 case "$CONCLUSION" in
     success)
@@ -234,7 +285,28 @@ case "$CONCLUSION" in
             echo "run ${RUN_ID}: every failed job is in FLAKY_JOBS (${FLAKY_JOBS}) — not reporting (#1472)"
             exit 0
         fi
+        # Named in the body from here on (#2714). Set AFTER the flaky gate so a
+        # suppressed run costs no extra API call.
+        FAILED_NAMES="$(failed_job_names)"
+        [ -n "$FAILED_NAMES" ] && FAILED_ROW="
+| failed jobs | \`${FAILED_NAMES}\` |"
         if [ -n "$EXISTING" ]; then
+            # A match may be RETIRED — `find_issue` looks at closed issues too.
+            # Reopening keeps one issue per workflow accumulating its history,
+            # which is what makes a second occurrence legible.
+            #
+            # ACCEPTED COST, stated rather than hidden: on an intermittently
+            # failing workflow the issue now FLAPS — a green retires it, the
+            # next failure reopens it. That is noisier than before, and it is
+            # the point: each flap leaves a comment, so the count answers "has
+            # this happened before" instead of resetting. `gh issue reopen` on
+            # an already-open issue is a no-op, so this needs no state check.
+            # shell-check-ok: reopening is best-effort for the same reason.
+            # It fails when the issue is already open — the ordinary path, and
+            # a no-op — and under `set -e` that would abort before the comment
+            # below, losing the failure report to tidy bookkeeping. The comment
+            # is the record; the reopen only makes it findable.
+            "$GH" issue reopen "$EXISTING" --repo "$REPO" >/dev/null 2>&1 || true
             "$GH" issue comment "$EXISTING" --repo "$REPO" --body "$(body)"
             # Refresh the high-water mark so a later success must be newer than
             # the LATEST failure, not the first one.
