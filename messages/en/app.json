@@ -20,6 +20,7 @@
         "calculator": "Calculator",
         "sectionMarket": "Market",
         "exchange": "Exchange",
+        "channels": "Channel",
         "schedule": "Schedule",
         "docs": "Docs",
         "sectionManage": "Manage",
@@ -6717,6 +6718,33 @@
         "title": "Your account is suspended",
         "body": "You cannot open your farm while the suspension is in force. Everything already recorded is kept.",
         "signOut": "Sign out"
+    },
+    "channels": {
+        "title": "Channels",
+        "intro": "Crop, region and input channels. You choose which to join — nothing joins you automatically.",
+        "breadcrumbDashboard": "Dashboard",
+        "breadcrumbCurrent": "Channels",
+        "breadcrumbChannel": "Channel",
+        "loadError": "The channels could not be loaded.",
+        "empty": "There are no channels yet.",
+        "feedEmpty": "Nothing has been posted in this channel yet.",
+        "join": "Join",
+        "leave": "Leave",
+        "leftChannel": "You have left the channel.",
+        "undo": "Undo",
+        "banned": "Blocked",
+        "members": "members: {count}",
+        "loadOlder": "Show older",
+        "composerPlaceholder": "Write to the channel…",
+        "send": "Post",
+        "joinToPost": "Join this channel to post in it:",
+        "bannedHere": "You can no longer post in this channel.",
+        "group": {
+            "crop": "Crops",
+            "oblast": "Regions",
+            "input": "Fuels and fertilisers",
+            "other": "Other"
+        }
     },
     "errors": {
         "CHANNEL_NOT_A_QUESTION": "Only a question can be marked answered.",

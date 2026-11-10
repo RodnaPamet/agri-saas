@@ -60,6 +60,24 @@ export interface TimelineMessage {
     createdAt: Date | string;
     editedAt?: Date | string | null;
     deletedAt?: Date | string | null;
+    /**
+     * Deleted with NO timestamp to give — the channel case (P9.5, #2939).
+     *
+     * `ChannelPostView` reports `deleted: boolean` rather than a date, and
+     * that is deliberate: the feed COLLAPSES three removal columns
+     * (`deletedAt`, `removedByModerationAt`, `autoHiddenAt`) into one boolean,
+     * because telling a reader WHICH one it was would disclose a moderation
+     * action to a third party. So a channel post genuinely has no deletion
+     * time.
+     *
+     * The alternative was passing `deletedAt: post.createdAt` from the
+     * adapter. It renders correctly today — `MessageBubble` reads only
+     * `Boolean(deletedAt)` — and writes a FALSE FACT into a field named for a
+     * time, which the next person to render «изтрито преди 5 минути» would
+     * display, with nothing failing. This field costs three lines and lets
+     * neither path lie: the DM adapter keeps passing a timestamp.
+     */
+    deleted?: boolean;
     reactions?: MessageBubbleProps['reactions'];
     /**
      * `DirectMessageView.replyTo`, as the API returns it — the SENDER's id
@@ -348,6 +366,7 @@ export const MessageTimeline = React.forwardRef<
                     createdAt={asDate(row.message.createdAt)}
                     editedAt={row.message.editedAt ? asDate(row.message.editedAt) : null}
                     deletedAt={row.message.deletedAt ? asDate(row.message.deletedAt) : null}
+                    deleted={row.message.deleted}
                     mine={row.mine}
                     grouped={row.grouped}
                     senderLabel={

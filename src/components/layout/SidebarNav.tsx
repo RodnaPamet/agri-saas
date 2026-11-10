@@ -39,6 +39,7 @@ import {
     TrendingUp,
     Newspaper,
     ScrollText,
+    MessagesSquare,
     type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -112,6 +113,21 @@ export function useNavSections(): NavSectionDef[] {
     const exchangeAvailable =
         tenant.availableModules === undefined ||
         tenant.availableModules.includes('EXCHANGE');
+
+    // P9.5 (#2939) — «Канали». The FIRST `visible:` in this hook that is a
+    // FEATURE FLAG rather than a module, so the graceful-degrade convention
+    // above is inverted on purpose: an absent value is FALSE here, not
+    // "available". `social.channels` is default-OFF, so for most tenants the
+    // surface answers 404, and a nav item leading to a 404 is worse than an
+    // absent one.
+    //
+    // It is deliberately NOT ANDed with `exchangeAvailable`, even though it
+    // renders inside the «Пазар» section: a channel depends on no module, and
+    // P8.4 is the case where inheriting the exchange gate would have made a
+    // farm that switched the marketplace off silently lose a surface that has
+    // nothing to do with the marketplace — as a REDIRECT, so the symptom is
+    // "my channels vanished" rather than an error.
+    const channelsEnabled = tenant.channelsEnabled === true;
 
     // R13-PR7 — tenant sidebar restructure.
     //
@@ -246,6 +262,19 @@ export function useNavSections(): NavSectionDef[] {
                 // uproot, so support measures took over the shorter route and
                 // there is now exactly ONE "Схеми" destination.
                 { href: tenantHref('/schemes'), label: t('schemes'), icon: Coins },
+                // «Канали» (#2939) — crop, oblast and input channels. Last in
+                // the section because it is the newest and the least
+                // established; the four above it are where a farmer already
+                // goes. `pages-are-reachable` counts THIS line as the way in:
+                // the page shipped by #2844 was resolving, flag-on and in the
+                // sitemap with nothing linking it, and zero farms ever found
+                // it.
+                {
+                    href: tenantHref('/channels'),
+                    label: t('channels'),
+                    icon: MessagesSquare,
+                    visible: channelsEnabled,
+                },
             ]),
         },
         {
