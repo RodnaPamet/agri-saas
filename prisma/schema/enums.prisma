@@ -1068,3 +1068,28 @@ enum ConversationState {
   ACCEPTED
   DECLINED
 }
+
+/// How a `MachinePosition` reached us — #2948, owner ruling 2026-11-10
+/// ("build for the modern fleet first").
+///
+/// REQUIRED on the row, with NO Prisma-level default, deliberately. A default
+/// means a writer that forgets silently MISLABELS the provenance of location
+/// data rather than failing, which is `a-default-cannot-carry-a-safety-property`
+/// — and provenance is the one thing that cannot be recovered afterwards from
+/// the coordinates. The migration backfills existing rows as TRACKER (the only
+/// writer that existed) and then DROPS the default, so history is right and
+/// future writers must say.
+///
+/// Coarse on purpose: WHICH vendor is recoverable from the asset's telematics
+/// link and its `IntegrationConnection.provider`, so putting a provider per
+/// position would duplicate that on ~2,900 rows per machine per day. What the
+/// row needs to answer is "could this have been forged by someone who learnt an
+/// IMEI" — and that is exactly the TRACKER/TELEMATICS distinction, because the
+/// vendor path authenticates with an OAuth credential and the Codec 8 path
+/// cannot authenticate at all.
+enum MachinePositionSource {
+  /// Aftermarket tracker over Codec 8. Identity is an IMEI and nothing else.
+  TRACKER
+  /// A manufacturer's telematics API, reached through an IntegrationConnection.
+  TELEMATICS
+}

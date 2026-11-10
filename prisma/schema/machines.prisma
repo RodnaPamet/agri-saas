@@ -177,6 +177,16 @@ model MachinePosition {
   ignition   Boolean?
   satellites Int?
 
+  /// WHERE this position came from. See `MachinePositionSource` for why it is
+  /// required with no default.
+  ///
+  /// `trackerId` was already nullable so a position could outlive the box it
+  /// arrived through; that same nullability is what makes a TELEMATICS row
+  /// legal without a tracker, so the second source needed no change of meaning
+  /// here — only this discriminator, which says which of the two a null
+  /// `trackerId` means.
+  source MachinePositionSource
+
   createdAt DateTime @default(now())
 
   tenant  Tenant          @relation(fields: [tenantId], references: [id])
@@ -194,6 +204,8 @@ model MachinePosition {
   @@index([tenantId])
   @@index([tenantId, assetId, recordedAt])
   @@index([trackerId])
+  /// "which machines have a telematics position today" without a scan.
+  @@index([tenantId, source])
 }
 
 /// What survives the 30-day sweep: what was worked, for how long, roughly

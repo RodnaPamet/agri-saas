@@ -63,7 +63,13 @@ async function sqlstateOf(fn: () => Promise<unknown>): Promise<string> {
         return 'NO_ERROR';
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        const m = msg.match(/\b(\d{5})\b/);
+        // Anchored on Prisma's own `Code: \`XXXXX\`` rather than on a bare
+        // five-digit run. A SQLSTATE is five ALPHANUMERICS — `22P02` has a
+        // letter in it — so a `\d{5}` pattern silently missed every code
+        // containing one and fell through to returning the raw message, which
+        // then failed the assertion with a diff about prose instead of a code.
+        // Found by the enum test: the message said 22P02 and the helper did not.
+        const m = msg.match(/Code: `([0-9A-Z]{5})`/);
         return m ? m[1] : msg.slice(0, 160);
     }
 }
@@ -187,8 +193,8 @@ async function makeTracker(f: Farm, imei: string, id = `mt-${randomUUID().slice(
 async function seedAllFive(f: Farm, trackerId: string) {
     await globalPrisma.$executeRawUnsafe(
         `INSERT INTO "MachinePosition"
-           ("id","tenantId","assetId","trackerId","recordedAt","lat","lon","createdAt")
-         VALUES ($1,$2,$3,$4,now(),42.6977,23.3219,now())`,
+           ("id","tenantId","assetId","trackerId","recordedAt","lat","lon","source","createdAt")
+         VALUES ($1,$2,$3,$4,now(),42.6977,23.3219,'TRACKER',now())`,
         `mp-${randomUUID().slice(0, 8)}`,
         f.tenantId,
         f.assetId,
@@ -292,8 +298,8 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
                 runInTenantContext(tenantCtx(outsider.userId, outsider.tenantId), (db) =>
                     (db as PrismaClient).$executeRawUnsafe(
                         `INSERT INTO "MachinePosition"
-                           ("id","tenantId","assetId","recordedAt","lat","lon","createdAt")
-                         VALUES ($1,$2,$3,now(),1,1,now())`,
+                           ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                         VALUES ($1,$2,$3,now(),1,1,'TRACKER',now())`,
                         `mp-forge-${randomUUID().slice(0, 8)}`,
                         owner.tenantId,
                         owner.assetId,
@@ -316,8 +322,8 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
             const code = await sqlstateOf(() =>
                 globalPrisma.$executeRawUnsafe(
                     `INSERT INTO "MachinePosition"
-                       ("id","tenantId","assetId","recordedAt","lat","lon","createdAt")
-                     VALUES ($1,$2,$3,now(),1,1,now())`,
+                       ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                     VALUES ($1,$2,$3,now(),1,1,'TRACKER',now())`,
                     `mp-cross-${randomUUID().slice(0, 8)}`,
                     outsider.tenantId,
                     owner.assetId,
@@ -422,6 +428,64 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
                 ),
             );
             expect(code).toBe('23502');
+        });
+    });
+
+    describe('§4a the position SOURCE is required, with no default', () => {
+        it('refuses a position that does not say where it came from', () => {
+            // The safety property, and the reason the migration adds the
+            // column with a default and then DROPS it. With a default left in
+            // place, a telematics writer that forgets the field silently
+            // mislabels location data as having arrived over an
+            // unauthenticated Codec 8 socket — and provenance is the one thing
+            // that cannot be recovered from the coordinates afterwards.
+            return sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachinePosition"
+                       ("id","tenantId","assetId","recordedAt","lat","lon","createdAt")
+                     VALUES ($1,$2,$3,now(),42.6977,23.3219,now())`,
+                    `mp-nosource-${randomUUID().slice(0, 8)}`,
+                    owner.tenantId,
+                    owner.assetId,
+                ),
+            ).then((code) => {
+                // 23502 — not_null_violation.
+                expect(code).toBe('23502');
+            });
+        });
+
+        it('ACCEPTS a TELEMATICS row with no tracker — the second source', async () => {
+            // The control that makes the refusal above meaningful, and the
+            // property that lets a manufacturer's API write at all: `trackerId`
+            // was already nullable so a position could outlive the box it
+            // arrived through, and that same nullability makes a vendor row
+            // legal without inventing a tracker for it.
+            const code = await sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachinePosition"
+                       ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                     VALUES ($1,$2,$3,now(),42.6977,23.3219,'TELEMATICS',now())`,
+                    `mp-telem-${randomUUID().slice(0, 8)}`,
+                    owner.tenantId,
+                    owner.assetId,
+                ),
+            );
+            expect(code).toBe('NO_ERROR');
+        });
+
+        it('refuses a source the enum does not have', async () => {
+            const code = await sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachinePosition"
+                       ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                     VALUES ($1,$2,$3,now(),1,1,'GUESSWORK',now())`,
+                    `mp-bad-${randomUUID().slice(0, 8)}`,
+                    owner.tenantId,
+                    owner.assetId,
+                ),
+            );
+            // 22P02 — invalid_text_representation for an enum.
+            expect(code).toBe('22P02');
         });
     });
 
