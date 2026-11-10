@@ -71,25 +71,22 @@ export interface ParcelCluster {
 export type SettlementRow = readonly [name: string, lon: number, lat: number, rank: number];
 
 /**
- * Metres per degree of latitude. Longitude degrees shrink with
- * cos(latitude), which is corrected below — at Bulgaria's ~43°N a
- * degree of longitude is about 73% of a degree of latitude, so ignoring
- * it would stretch every east–west distance by a third and merge
- * clusters that are not actually close.
+ * The constant and the distance function MOVED to `@/lib/geo/local-metres`
+ * (#2948), because the track simplifier needs point-to-SEGMENT distance in
+ * the same metres and `bg-projection.ts`'s rule applies: two copies of a
+ * projection drift, and the symptom is a marker in the wrong field, which a
+ * farmer reads as bad DATA rather than as a bug.
+ *
+ * `distanceMetres` is RE-EXPORTED so this module's importers and its own test
+ * are untouched by the move.
  */
-const M_PER_DEG_LAT = 111_320;
+// Imported AND re-exported, which is two statements on purpose:
+// `export { x } from './y'` re-exports for importers WITHOUT binding `x` in
+// this module's scope, so the settlement-labelling code below called an
+// undefined `distanceMetres`. Five tests caught it.
+import { distanceMetres, M_PER_DEG_LAT } from './local-metres';
 
-/** Great-circle-ish distance in metres. Equirectangular — exact enough
- *  at farm scale, and far cheaper than haversine for a 7239-row scan. */
-export function distanceMetres(
-    aLon: number, aLat: number,
-    bLon: number, bLat: number,
-): number {
-    const midLatRad = ((aLat + bLat) / 2) * (Math.PI / 180);
-    const dx = (bLon - aLon) * Math.cos(midLatRad) * M_PER_DEG_LAT;
-    const dy = (bLat - aLat) * M_PER_DEG_LAT;
-    return Math.hypot(dx, dy);
-}
+export { distanceMetres };
 
 /**
  * A cluster's identity: a short, stable hash of its SORTED member ids.
