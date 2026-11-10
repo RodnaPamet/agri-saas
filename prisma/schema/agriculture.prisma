@@ -518,6 +518,7 @@ model Parcel {
   weedObservations     ParcelWeedObservation[]
   costEntryAllocations CostEntryAllocationParcel[]
   costEntries          CostEntry[]
+  workedParcels WorkedParcel[]
 
   @@unique([id, tenantId])
   @@index([tenantId, locationId])

@@ -79,6 +79,11 @@ model Asset {
 
   /// Unique within a tenant — `AST-N` collisions are race-free
   /// via the AssetKeySequence counter.
+  machineTrackers      MachineTracker[]
+  machinePositions     MachinePosition[]
+  workedParcels        WorkedParcel[]
+  taskAssets           TaskAsset[]
+  machineGeofenceState MachineGeofenceState?
   @@unique([tenantId, key])
   /// Composite target for the journal link tables' `[id, tenantId]`
   /// FK style — the same barrier `Location` / `Parcel` / the retired

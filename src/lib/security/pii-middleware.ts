@@ -226,6 +226,12 @@ export const RELATION_KEY_TO_MODEL: Record<string, string> = {
     createdBy: 'User',
     decidedBy: 'User',
     deletedBy: 'User',
+    // #2948 — `MachineTracker.driversInformedBy`, the person who recorded
+    // that the drivers were told before a tracker started reporting. That
+    // record exists to be AUDITABLE, so it is read back with the tracker and
+    // shown; without this key the include renders the envelope verbatim and
+    // the one field proving the obligation was met reads as ciphertext.
+    driversInformedBy: 'User',
     executedBy: 'User',
     invitedBy: 'User',
     owner: 'User',

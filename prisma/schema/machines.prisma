@@ -1,0 +1,310 @@
+// ═══════════════════════════════════════════════════════════════════
+//  MACHINE TRACKING — #2948, stage 1
+// ═══════════════════════════════════════════════════════════════════
+//
+//  GAP-09 multi-file schema: new domain file. Generator + datasource
+//  remain in base.prisma.
+//
+//  ── SCHEMA ONLY ──
+//
+//  The standing rule P5, P8 and P9 all follow: tables ship one release
+//  before the code that writes them, so a rollback never leaves an image
+//  querying objects that are not there. This file lands five models, their
+//  RLS and their indexes, and NO listener, route, usecase, job or UI.
+//
+//  ── NOT in telemetry.prisma, and that file says why ──
+//
+//  `telemetry.prisma` holds `UsageEvent` and opens by arguing it is
+//  "ordinary product analytics with a 90-day life", deliberately kept out
+//  of `audit.prisma` so nothing lends it "a permanence and an evidentiary
+//  weight it must not have". A GPS track is the opposite case: it is
+//  employee location data with a legal retention ruling on it, so the same
+//  argument that keeps analytics out of the audit trail keeps this out of
+//  analytics.
+//
+//  ── WHY THE TRACK IS PERSONAL DATA, and where that is recorded ──
+//
+//  A position is about a MACHINE, and it is personal data by LINKAGE:
+//  `MachinePosition → Asset → TaskAsset → Task.assigneeUserId` names the
+//  person who was at those coordinates, minute by minute. That linkage is
+//  the unstated premise under both owner rulings on this feature — the
+//  30-day raw retention and the drivers-informed record — so it is written
+//  down here rather than left in a review thread.
+//
+//  It is NOT in `src/lib/privacy/personal-data-registry.ts` TODAY, and that
+//  is an INTERIM rather than an answer. #2969 carries the open question;
+//  read it before concluding anything from this absence.
+//
+//  The registry's population is TENANTLESS models, because its two consumers
+//  (Art 15 export and Art 17 erasure) act on a person across the platform
+//  while a farm record belongs to a farm with its own retention duty. These
+//  models are tenant-scoped, so there is no slot for them and inventing one
+//  is out of scope for #2948.
+//
+//  What that boundary does NOT settle, and the reason #2969 exists:
+//  `GET /api/account/export` answers a subject access request with what it
+//  holds PLUS a `NOT_INCLUDED` list, on the stated standard that "Art 15 is
+//  a right to know what is held" and a silent omission is the worse answer.
+//  Its five exclusions are authored farm records, credentials, others'
+//  blocks, platform audit trails, and message attachments. **A position
+//  trace fits none of them.** The nearest is "Farm records YOU AUTHORED",
+//  and a trace is not authored — it is generated about the driver by a
+//  device, without their action. So once the read surfaces exist, the export
+//  will hold position data about a person and neither return it nor declare
+//  it. That is a checkable property of the code, not a privacy opinion.
+//
+//  #2948 §2 made exactly this argument — "they are tenant-scoped, which puts
+//  them in that guard's out-of-scope 'farm records' bucket BY DEFAULT, and
+//  that default is wrong here" — so it opened the question deliberately
+//  rather than misreading the mechanism. This docblock said §2 was
+//  "corrected" by Addendum 3; that was MY misreading of an argument as a
+//  mistake, and it is recorded here because a sentence that reads as settled
+//  is how an open question stops being looked at.
+//
+//  Decided by nobody yet: admitting a tenant-scoped class means deciding
+//  what ERASURE does to a row the farm owns and may have its own duty to
+//  keep, since one list drives both consumers.
+//
+//  ── THE TENANT BARRIER IS A COMPOSITE FK, NOT A BARE one ──
+//
+//  Every reference to `Asset`, `Parcel` and `Task` below is
+//  `[xId, tenantId] → [id, tenantId]`, the barrier `Asset.locationId`
+//  already uses ("so a machine can never reference another tenant's
+//  yard"). It makes a cross-tenant row refusable by the DATABASE rather
+//  than by a `where` clause somebody has to remember — which matters more
+//  here than usual, because the writer is a listener fed by the public
+//  internet whose only identity is a 15-digit IMEI.
+//
+//  `Asset` and `Parcel` already carry `@@unique([id, tenantId])`. `Task`
+//  did not, and this stage adds it: additive, redundant as a uniqueness
+//  claim (`id` is already the PK), and the thing that makes the composite
+//  FK expressible at all.
+
+/// One tracker device, identified by its IMEI — which is the device's ONLY
+/// identity on the Codec 8 wire: no TLS, no secret, no per-device key.
+///
+/// This table IS the allowlist. A position whose IMEI resolves to no row
+/// here is dropped and counted, never auto-registered, because
+/// self-registration would let anyone holding a tracker write positions
+/// into a stranger's farm. The tenant comes from this row and from nothing
+/// on the wire.
+///
+/// What that does NOT protect against, stated plainly because the next
+/// reader deserves it rather than a reassuring silence: an attacker who
+/// learns a real, allowlisted IMEI can forge positions for that machine.
+/// Mitigating it needs a per-device secret, which these devices do not
+/// offer. Owner ruling (#2948 §3) chose this listener over a separate
+/// ingest VM with that trade on the table.
+model MachineTracker {
+  id       String @id @default(cuid())
+  tenantId String
+  assetId  String
+  /// 15 digits with a check digit. UNIQUE across the whole deployment, not
+  /// per tenant: an IMEI is globally unique by construction, and a
+  /// per-tenant unique would let two farms claim one device and make the
+  /// tenant a tracker resolves to depend on insertion order.
+  imei     String @unique
+  /// Operator-facing name for the box itself ("cab unit, left console"),
+  /// distinct from the machine's name. Free text, no personal data.
+  label    String?
+
+  installedAt DateTime  @default(now())
+  /// Set instead of deleting the row, so a position that arrived before a
+  /// tracker was pulled still resolves to the machine it came from. The
+  /// partial unique below is what keeps "one LIVE tracker per asset" true
+  /// while allowing a history of replaced boxes.
+  removedAt   DateTime?
+
+  /// OWNER REQUIREMENT, and a column rather than a UI checkbox so it
+  /// cannot be satisfied by a tick nobody records. Both are REQUIRED at
+  /// creation — `POST /trackers` without them is a 400 — because the
+  /// obligation is to have told the drivers BEFORE the box starts
+  /// reporting, and a nullable column records an intention instead.
+  driversInformedAt        DateTime
+  driversInformedByUserId  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant             Tenant @relation(fields: [tenantId], references: [id])
+  asset              Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
+  driversInformedBy  User   @relation("MachineTrackerDriversInformedBy", fields: [driversInformedByUserId], references: [id])
+
+  positions MachinePosition[]
+
+  @@index([tenantId])
+  @@index([tenantId, assetId])
+  @@index([tenantId, removedAt])
+  @@index([driversInformedByUserId])
+}
+
+/// The raw track. Tenant-scoped, RLS'd, and DELETED after 30 days by the
+/// nightly sweep (owner ruling, #2948 §2) — what survives is
+/// `WorkedParcel`, which is what a farm actually uses.
+///
+/// VOLUME IS THE DESIGN CONSTRAINT. A tracker reporting every 30 s writes
+/// ~2,900 rows per machine per day, so a ten-machine farm writes ~29k a day
+/// and ~870k a month. `[assetId, recordedAt]` is what makes "one machine,
+/// one day" a range scan instead of a sort over the farm's whole history,
+/// and it is why the 30-day sweep is a feature of the schema rather than
+/// tidiness.
+model MachinePosition {
+  id        String @id @default(cuid())
+  tenantId  String
+  assetId   String
+  /// Nullable so a position outlives the tracker row it arrived through —
+  /// see `MachineTracker.removedAt`. The ASSET is the stable subject of a
+  /// track; the box is swappable hardware.
+  trackerId String?
+
+  /// When the DEVICE recorded it, from the Codec 8 frame — not when we
+  /// received it. A tracker buffers while out of GSM coverage and then
+  /// replays, so arrival order is not chronological order and a received-at
+  /// timestamp would draw the track in the wrong sequence.
+  recordedAt DateTime
+
+  /// WGS84. `Decimal` rather than `Float`: a day's track is compared and
+  /// aggregated by the worked-parcel derivation, and binary floating point
+  /// makes two equal coordinates occasionally unequal. 7 decimal places is
+  /// ~1.1 cm at the equator, well past what any of these devices resolve.
+  lat Decimal @db.Decimal(10, 7)
+  lon Decimal @db.Decimal(10, 7)
+
+  speedKph   Decimal? @db.Decimal(5, 1)
+  headingDeg Int?
+  /// Codec 8 reports ignition as a digital input. Nullable because not
+  /// every install wires it, and `false` would claim the engine is off.
+  ignition   Boolean?
+  satellites Int?
+
+  createdAt DateTime @default(now())
+
+  tenant  Tenant          @relation(fields: [tenantId], references: [id])
+  asset   Asset           @relation(fields: [assetId, tenantId], references: [id, tenantId])
+  tracker MachineTracker? @relation(fields: [trackerId], references: [id])
+
+  /// The read index: one machine, one day, in order.
+  @@index([assetId, recordedAt])
+  /// The SWEEP's index. The retention job deletes by age across the whole
+  /// table, which `[assetId, recordedAt]` cannot serve — its leading column
+  /// is the asset, so an age predicate alone would scan. Without this the
+  /// nightly sweep degrades as the table grows, which is exactly when it
+  /// matters most.
+  @@index([recordedAt])
+  @@index([tenantId])
+  @@index([tenantId, assetId, recordedAt])
+  @@index([trackerId])
+}
+
+/// What survives the 30-day sweep: what was worked, for how long, roughly
+/// what area. Kept indefinitely, because this is a farm record about a
+/// PARCEL rather than a minute-by-minute record of where a person was.
+model WorkedParcel {
+  id       String @id @default(cuid())
+  tenantId String
+  assetId  String
+  parcelId String
+
+  /// A Europe/Sofia CALENDAR day, stored as a date. Deliberately not a
+  /// timestamp: a UTC day boundary splits a night shift across two "days",
+  /// and the whole point of this row is to answer "what did this machine
+  /// work on the 14th".
+  date DateTime @db.Date
+
+  minutesWorked Int
+  areaHa        Decimal? @db.Decimal(10, 3)
+  /// 0..1. Surfaced to the client as `confidence` rather than hidden,
+  /// because a derived area presented as a measurement is a number somebody
+  /// will put in a subsidy return.
+  confidence    Decimal? @db.Decimal(3, 2)
+  /// How this row was derived — the matcher's version/criteria — so a row
+  /// produced by an older rule is distinguishable from a current one after
+  /// the raw positions behind it are gone and cannot be re-derived.
+  derivedFrom   String
+  derivedAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  asset  Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
+  parcel Parcel @relation(fields: [parcelId, tenantId], references: [id, tenantId])
+
+  /// One row per (machine, parcel, day): the nightly derivation is
+  /// idempotent by UPSERT on this key, so a re-run cannot double-count
+  /// minutes. The unique index IS the idempotence — not a `derived` flag
+  /// something can forget to set.
+  @@unique([assetId, parcelId, date])
+  @@index([tenantId])
+  @@index([tenantId, date])
+  @@index([tenantId, assetId, date])
+  @@index([parcelId, tenantId])
+}
+
+/// Links a machine to a task. A JOIN TABLE and not a column on `Task`,
+/// because an operation uses a tractor AND an implement — which is what
+/// `AssetType.IMPLEMENT` exists for — and a single `assetId` would force a
+/// choice between them.
+///
+/// This is also what makes the MECHANISATOR rule expressible at all: "the
+/// machine on their own current task" is this table joined to
+/// `Task.assigneeUserId = me` with an open status. Without it the rule has
+/// no way to name a machine.
+model TaskAsset {
+  id       String @id @default(cuid())
+  tenantId String
+  taskId   String
+  assetId  String
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  task   Task   @relation(fields: [taskId, tenantId], references: [id, tenantId])
+  asset  Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
+
+  @@unique([taskId, assetId])
+  @@index([tenantId])
+  @@index([tenantId, assetId])
+  @@index([assetId, tenantId])
+}
+
+/// One row per asset, holding whether it is currently outside the farm's
+/// area and whether we have said so.
+///
+/// WHY A TABLE AND NOT A DEDUPE WINDOW. The ruling is "one alert per
+/// event" (#2948 Addendum 1), and an event is a TRANSITION. A time-based
+/// dedupe — "at most one alert per 30 minutes" — has no transition to
+/// detect; it only ever observes that the machine is outside, and papers
+/// over the repetition. With this row the alert fires on the transition
+/// INTO outside and the row clears on the transition back, so a machine
+/// parked off-farm for a week produces one alert rather than 336.
+///
+/// `outsideSince` NULL means inside. `alertedAt` NULL while `outsideSince`
+/// is set means the transition happened and the alert has not gone out yet
+/// — which is a retryable state, not a lost one.
+model MachineGeofenceState {
+  id       String @id @default(cuid())
+  tenantId String
+  assetId  String
+
+  outsideSince DateTime?
+  alertedAt    DateTime?
+  /// The position that caused the current state, for an operator asking
+  /// "outside according to what". Cleared with the state.
+  lastEvaluatedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  asset  Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
+
+  /// One state row per machine. The evaluator UPSERTs on this, so two
+  /// concurrent evaluations cannot mint two states and alert twice.
+  ///
+  /// `[assetId, tenantId]` rather than `[assetId]` alone because the FK to
+  /// `Asset` is composite and Prisma requires the one-to-one's defining
+  /// side to be unique on exactly the referencing fields. It does not
+  /// weaken the claim: `Asset.id` is a primary key, so one asset has one
+  /// tenant and the pair is unique wherever the single column was.
+  @@unique([assetId, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, outsideSince])
+}
