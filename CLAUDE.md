@@ -3964,6 +3964,36 @@ channel from the directory and refuses joins, posts and replies, while
 everything already written stays readable. Retiring a channel is not a
 judgement about anybody's post.
 
+**THE COLLAPSE LIVES IN ONE MAPPER, `toPostView`, and that is a disclosure
+rule rather than formatting.** There are TWO read paths since #2961 — the feed
+and `readPostReplies` — and a second spelling of "which columns mean hidden" is
+how one of them comes to serve the text of a post the other hides. P9.3d's
+auto-hide sets `autoHiddenAt` on any post INCLUDING a reply, so a thread read
+with its own mapping would hand back content the moderation path had taken
+down. Same class as #1664, where two spellings of one rule made the divergence
+a disclosure instead of a wrong sentence.
+
+**A write with no reader is the shape this phase shipped three times (#2961).**
+`replyToPost` wrote replies that no read path returned — the feed filters
+`parentPostId: null`, correctly, and nothing else looked — so a reply went into
+silence unless the author ticked «Също изпрати в канала», which writes a second
+top-level row. `setQuestionResolved` wrote `resolvedAt` and `ChannelPostView`
+had no such field, so a resolved «Въпрос» was byte-identical to an open one.
+And `postToChannel` took no `kind`, so **nothing could create a question at
+all** — P9.3b's own suite reaches for a raw `prisma.channelPost.update` to make
+one, which is the tell that the API had no way in.
+
+All three were green because the tests asserted the half that existed:
+*"a reply … stays OUT of the top-level feed"* is true, and is a statement about
+where a reply is NOT. **When you add a write, name the read path that makes its
+effect observable** — and if the answer is "a test queries the column
+directly", that is the finding, not the coverage.
+
+`CARD` is deliberately NOT accepted on the post request (`z.enum(['POST',
+'QUESTION'])`, never `nativeEnum`): a card is machine-written by P9.4's queue,
+so taking one from a caller would let a member forge a post that renders as the
+platform's own data.
+
 **`CONTENT_AUTO_HIDDEN` is its own action kind for that reason.** Recorded as
 `CONTENT_REMOVED`, the restore path clears `removedByModerationAt`, finds it
 already null, and reports `restored: false` — "already visible" — while the

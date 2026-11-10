@@ -1821,6 +1821,20 @@ export const CreateChannelPostSchema = z.object({
      * bounds what is RECORDED, after dropping non-members and the author.
      */
     mentionUserIds: z.array(z.string().min(1)).max(5).optional(),
+    /**
+     * «Публикация» or «Въпрос» — #2961.
+     *
+     * `ChannelPostKind` has a THIRD member, `CARD`, and it is deliberately not
+     * accepted here. A card is machine-written by P9.4's queue — a price
+     * card, a scheme, an event — so accepting it from a caller would let any
+     * member forge a post that renders as the platform's own data. The narrow
+     * union is the control; a `nativeEnum(ChannelPostKind)` would admit it.
+     *
+     * Optional, defaulting to `POST` in the usecase rather than here, so a
+     * client that omits it keeps the behaviour it had before this field
+     * existed.
+     */
+    kind: z.enum(['POST', 'QUESTION']).optional(),
 });
 
 /** A reply, and optionally «Също изпрати в канала» — P9.3b (#2937). */

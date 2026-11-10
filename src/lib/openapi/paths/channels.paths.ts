@@ -80,6 +80,23 @@ const ChannelPostSchema = z
                 + 'a reader which one it was would disclose a moderation action to a third '
                 + 'party.',
         }),
+        resolvedAt: z.string().datetime({ offset: true }).nullable().openapi({
+            description:
+                'When a «Въпрос» was marked «Решено», else null — always null on a `POST` '
+                + 'or a `CARD`, which cannot carry the state. Added by #2961: the column '
+                + 'had been written since P9.3b and returned by nothing, so a resolved '
+                + 'question was indistinguishable from an open one through every read '
+                + 'path and no client could render it.',
+        }),
+        replyCount: z.number().int().openapi({
+            description:
+                'How many replies hang off this post, so a feed can show that a thread '
+                + 'exists without a request per post. Always 0 on a reply, since threads '
+                + 'are one level deep. It counts HIDDEN replies too, matching how a '
+                + 'hidden post is reported rather than omitted — a count that shrank when '
+                + 'a moderator hid one reply would tell every reader that something had '
+                + 'been removed.',
+        }),
     })
     .openapi('ChannelPost');
 
@@ -226,6 +243,56 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
                 postId: z.string(),
                 createdAt: z.string().datetime({ offset: true }),
                 mentionsRecorded: z.number().int(),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/social/channel-posts/{postId}/replies',
+        operationId: 'readChannelPostReplies',
+        summary: 'A page of one post\'s replies',
+        description:
+            'Added by #2961, which is the defect: `replyToChannelPost` had shipped with '
+            + 'NO reader. The feed filters `parentPostId: null` — correctly, since one '
+            + 'row cannot be both a reply and a top-level post — and nothing else '
+            + 'returned a reply, so a reply went into a row no read path served. The only '
+            + 'escape was `alsoToChannel`, which writes a second top-level row.\n\n'
+            + 'OLDEST first, and `after` rather than `before`: a thread is a conversation '
+            + 'and the answers only make sense in the order they were given, while a feed '
+            + 'is read newest-first because the reader wants what is new. The parameter is '
+            + 'named differently from the feed\'s on purpose, so a cursor cannot be pasted '
+            + 'from one into the other.\n\n'
+            + 'Readable by a NON-MEMBER, exactly as the feed is: `channel_post_select` '
+            + 'admits any authenticated caller, so a narrower rule here would be a second '
+            + 'and disagreeing answer to one question, and a wider one is not available.\n\n'
+            + 'A HIDDEN parent still serves its thread. The feed already shows a hidden '
+            + 'post as `deleted` rather than omitting it, precisely so its replies do not '
+            + 'dangle, and withholding the thread would let the moderation of one post '
+            + 'silently remove other people\'s words. Each reply is collapsed by the same '
+            + 'rule as a feed post, so an auto-hidden reply comes back empty rather than '
+            + 'serving text the moderation path took down.',
+        tags: TAGS,
+        query: z.object({
+            limit: z.string().optional().openapi({
+                description: 'Positive integer, clamped to 100. Default 50.',
+            }),
+            after: z.string().optional().openapi({
+                description:
+                    'ISO timestamp from the previous page\'s NEWEST reply. An unparseable '
+                    + 'value is a 400, never ignored.',
+            }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_LIMIT, INVALID_CURSOR (an unreadable `after`), or CHANNEL_POST_IS_A_REPLY — asking for a reply\'s own thread, which is a caller error rather than an empty page, because the two are different facts and only one is fixable.',
+            404: 'CHANNEL_POST_NOT_FOUND, or the flag is off.',
+        }),
+        success: {
+            status: 200,
+            description: 'One page of the thread, oldest first.',
+            schema: z.object({
+                replies: z.array(ChannelPostSchema),
+                hasMore: z.boolean(),
             }),
         },
     });
