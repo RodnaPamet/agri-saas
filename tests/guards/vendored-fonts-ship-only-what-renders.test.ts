@@ -116,6 +116,25 @@ describe('vendored fonts ship only the cuts this product renders (#1969, #2336)'
         // The DENOMINATOR. Two families, seven cuts between them; a map that
         // lost a family would check fewer and still pass every assertion above.
         expect(probed).toBe(7);
+
+        /*
+         * CONTROL FOR `slug`, and `Selector teeth` is why it exists.
+         *
+         * Every assertion in the loop above is an ABSENCE, so a `slug` that
+         * returned nothing would build `-latin-ext.woff2` — absent from the
+         * stylesheet and absent from disk — and all seven cuts would pass
+         * vacuously. The audit reported exactly that on the first push of
+         * this change: `slug() → return 0 | null | undefined | … SURVIVED`.
+         *
+         * The third assertion is the load-bearing one: it ties the derivation
+         * to a file that must EXIST, which an empty slug cannot satisfy. The
+         * first two pin the shape for a reader.
+         */
+        expect(slug('Onest')).toBe('onest');
+        expect(slug('Bricolage Grotesque')).toBe('bricolage-grotesque');
+        expect(
+            existsSync(fontPath(`${slug('Bricolage Grotesque')}-latin.woff2`)),
+        ).toBe(true);
         // An absence is only evidence if the path is real, and it must be the
         // SAME path the probes used — hence `fontPath` for both. Two separate
         // literals let a mutation aim the probes at an empty directory while a
