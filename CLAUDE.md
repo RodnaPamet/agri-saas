@@ -3927,6 +3927,101 @@ extending it needed the needle ANCHORED ON THE DECLARATION, because
 `toMatch(/'channels'/)` passed with the value removed from `SUBCOMMANDS` — the
 string also occurs in the dispatch arm and the result name.
 
+### P9.3 — the channel API, and the four ways a post stops being visible
+
+#2937 in four parts: the core read/post/join usecases (3a), threads and
+mentions (3b), moderator removal (3c) and the report-threshold auto-hide (3d).
+
+**POSTING RUNS IN USER CONTEXT, and that is what makes the rules the
+DATABASE's.** `channel_post_insert`'s WITH CHECK carries all three access
+rules — author equals the session, a membership row exists, that row is
+unbanned — so a non-member cannot post even through a usecase that forgot to
+check. P8.2 had to make DM sending privileged because its request rule reads
+`Conversation.lastMessageAt`, which only a privileged write can stamp; a
+channel post has no such column, so it keeps the stronger arrangement. The
+usecase's own membership read is for the MESSAGE, not the security — a policy
+refusal arrives as a Prisma error and would reach the operator as a 500.
+
+**THE MENTION RESOLUTION RUNS OUTSIDE THE TRANSACTION, and inside it returns
+nothing.** `channel_membership_select` admits the caller's OWN ROW ONLY (P9.1:
+a policy on a table may not query that table), so a membership read inside the
+posting transaction sees one row and `mentionsRecorded` comes back **0 with no
+error**. Moving it out is also what keeps `queueStatementForAction` and the
+mention resolution off a SECOND pool connection while the first is held —
+#1191's P0.8 deadlock.
+
+**THREE columns say a post is not visible, and each is reversed by a different
+act.** `deletedAt` (the author retracted it), `removedByModerationAt` (a human
+decided; #2867's restore route clears it) and `autoHiddenAt` (the threshold
+fired; a moderator review clears it). The feed collapses all three into
+`deleted: true` with an empty body — so a reply above a hidden post still has
+its parent — and that collapse is the only place they look alike. Do not merge
+the columns: a statement of reasons would then claim a moderator looked when
+none did.
+
+`Channel.archivedAt` is a FOURTH state and not a fourth removal: it drops the
+channel from the directory and refuses joins, posts and replies, while
+everything already written stays readable. Retiring a channel is not a
+judgement about anybody's post.
+
+**`CONTENT_AUTO_HIDDEN` is its own action kind for that reason.** Recorded as
+`CONTENT_REMOVED`, the restore path clears `removedByModerationAt`, finds it
+already null, and reports `restored: false` — "already visible" — while the
+post sits hidden. It is additionally NOT sendable on a notice decision
+(`NOT_A_NOTICE_DECISION`): a moderator sending it would record a decision they
+DID make as one nobody made.
+
+**AUTO-HIDE IS BUILT, DORMANT, AND VISIBLY SO** (owner ruling 2026-11-09).
+Production holds one `FarmIdentityClaim`, status PENDING — **zero verified
+farms** — so three distinct verified reporters is arithmetically unreachable
+and the job hides nothing. It was built rather than deferred, and that was
+chosen over lowering the bar to any reporter, because «verified» is precisely
+what stops three throwaway accounts hiding a competitor's post. So
+`channel_auto_hide.reading` carries `verifiedReporters` and a `dormant` flag
+every run: `hidden: 0` is otherwise ambiguous between "the rule works and
+nothing warranted hiding" and "the threshold cannot be reached".
+
+**That reading is a STRUCTURED LOG, and a job may not use the `[tag]` console
+convention.** `denominator-summary.cjs` collects tagged lines out of a JEST
+run, so a scheduled job's tagged line is collected by nothing — while
+breaching the no-`console`-in-server-code rule that `observability-foundation`,
+`logging-import-hygiene` and `observability-guards` each enforce. A denominator
+still belongs in a job; it belongs in the log FIELDS, where it is also
+queryable.
+**Its integration test proves the MECHANISM, not the reach**, and says so in
+its own docblock, because a green suite there is exactly the evidence somebody
+would later cite as "auto-hide works".
+
+**A NEW `ModerationActionKind` NEEDS COPY, AND NOTHING USED TO SAY SO.**
+`composeStatementBody` looks up `statementOfReasons.action.<KIND>` and
+`translateFor` is a plain interpolator that **returns the key** when it is
+missing — so P9.3d queued Art 17 statements whose action line read
+`statementOfReasons.action.CONTENT_AUTO_HIDDEN`, delivered, as the artefact a
+regulator reads. Three things were individually fine: key parity compares the
+two catalogues to EACH OTHER, so a key missing from both is balanced;
+`moderation-action-kinds-mirror` asserted the copy for one hardcoded kind; and
+the counts matched — six values, six keys, one of them `CONTENT_DEMOTED`, dead
+since #2868, while the new one was absent.
+
+That guard now derives from the enum, both directions, **per locale** — and the
+per-locale half is the strong one, measured: `translateFor` falls back across
+locales, so a line missing from `bg` alone composes the notice in English and
+the behavioural test still passes. `bg` is the fallback for a recipient whose
+preference never loaded, so that is the common case. **So the three axes that
+guard already named — what a caller may SEND, what the enum can HOLD, what the
+platform can DO — have a fourth: whether the outcome can be EXPLAINED.**
+**#2958** carries the general case: `translateFor` returns a key with no throw,
+no log and no metric, and the other five enum-keyed lookups have no derived
+check (all five are covered today, measured). Before adding a catalogue key
+built from a runtime value, read that issue.
+
+**A removal arm owes `resolveContentRecipient` an arm in the same diff.**
+`REMOVABLE_SUBJECT_KINDS` gained `CHANNEL_POST` in 3c, and without the matching
+arm in `statement-queue.ts` the Art 17 statement was **silently never queued** —
+`queueStatementForAction` returns null and `actOnNotice` says nothing. #2955
+tracks the guard that would pair them; until it lands, the pairing is a thing
+to remember.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

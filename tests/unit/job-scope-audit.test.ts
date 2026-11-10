@@ -155,7 +155,17 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // leave every other farm's conversations unextracted. The profile it
             // writes has no tenantId at all, by the owner's "one memory per
             // person, across farms" decision.
-            if (['usage-event-retention', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
+            // channel-auto-hide (P9.3d) hides a CHANNEL POST once three
+            // verified farms have reported it. Channels are tenantless by
+            // design (P9.1's five models carry no tenantId) and so is
+            // `ContentReport`, so there is no tenant axis to scope by. A farm
+            // does appear — «verified» is a property of the REPORTER's farm —
+            // but per ROW and on the reporting side, never as the subject's
+            // owner, so a payload tenantId would name the wrong party. It is
+            // also a NARROWER claim than the job makes: the sweep is every
+            // channel on the platform, and charging one arbitrary farm for
+            // platform moderation work is the `notice-score` reason exactly.
+            if (['channel-auto-hide', 'usage-event-retention', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

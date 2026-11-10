@@ -191,6 +191,15 @@ describe('Executor Registry — structural tenant-scope guards', () => {
         // is monitoring the platform's own transport, and a tenantId on this
         // payload would be meaningless in the same way it is for health-check.
         'mail-canary',
+        // channel-auto-hide (P9.3d) hides a channel post once three verified
+        // farms have reported it. Channels are tenantless by design — P9.1's
+        // five models carry no tenantId — and neither does `ContentReport`, so
+        // there is no tenant axis to scope by. A farm DOES appear, since
+        // «verified» is a property of the REPORTER's farm, but per ROW and on
+        // the reporting side: a payload tenantId would name the wrong party
+        // entirely. It is also a narrower claim than the job makes, which is
+        // every channel on the platform.
+        'channel-auto-hide',
         // statement-dispatch (P5.4b) delivers a DSA Art 17 statement of reasons,
         // which is addressed to a PERSON rather than to a farm.
         // `StatementOfReasons` carries no tenantId at all — that absence is the
@@ -336,6 +345,11 @@ describe('Payload Type Contract — tenantId field audit', () => {
         // Drains the whole outbox; each ROW carries the tenantId, so a
         // payload-level tenantId would be a narrower claim than the job makes.
         'ProcessOutboxPayload',
+        // Platform-wide moderation sweep over tenantless tables. See
+        // 'channel-auto-hide' in EXEMPT_JOBS above: the only farm in sight
+        // belongs to the REPORTER, per row, so a payload tenantId could only
+        // ever name the wrong one.
+        'ChannelAutoHidePayload',
         // Person-scoped legal obligation: `StatementOfReasons` has no tenantId
         // and the recipient may hold no farm. See 'statement-dispatch' above.
         'StatementDispatchPayload',

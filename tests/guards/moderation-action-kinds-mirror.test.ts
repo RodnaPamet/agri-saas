@@ -46,9 +46,17 @@
  * subject kinds and not others, which no enum can express because it is a
  * property of the PAIR.
  *
- * The live divergence is now `CONTENT_RESTORED` alone, in
- * `NOT_A_NOTICE_DECISION` below — a value the enum holds and a notice
- * decision may not carry.
+ * The live divergence is now `CONTENT_RESTORED` and `CONTENT_AUTO_HIDDEN`, in
+ * `NOT_A_NOTICE_DECISION` below — values the enum holds and a notice decision
+ * may not carry.
+ *
+ * ## The fourth axis: whether the OUTCOME can be EXPLAINED
+ *
+ * The three axes above are what a caller may SEND, what the enum can HOLD and
+ * what the platform can DO. P9.3d found a fourth, one table over: whether the
+ * kind has the Art 17 copy its statement of reasons is composed from. A kind
+ * can be holdable, performable and unexplainable all at once, and the failure
+ * is delivered rather than raised — see the `describe` at the bottom.
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -64,6 +72,17 @@ import { MODERATION_ACTION_KINDS } from '@/lib/schemas';
  * say what sending it to the notices route would record.
  */
 const NOT_A_NOTICE_DECISION: Readonly<Record<string, string>> = {
+    CONTENT_AUTO_HIDDEN:
+        'The report-threshold job\'s own outcome (P9.3d, #2937), written with '
+        + '`moderatorRef: \'auto:report-threshold\'` because no person decided. '
+        + 'A moderator sending it would record a decision they DID make as one '
+        + 'nobody made — the inverse of the honesty rule that gives the '
+        + 'automatic action its own kind in the first place, and it would leave '
+        + 'the notice RECEIVED, since the job deliberately does not triage. A '
+        + 'human withholding a channel post records `CONTENT_REMOVED`, which '
+        + 'sets `removedByModerationAt` and is what the restore route reverses; '
+        + 'this kind sets `autoHiddenAt`, a different column cleared by a '
+        + 'different act.',
     CONTENT_RESTORED:
         'The reversal of a `CONTENT_REMOVED` (#2867), recorded by '
         + '`POST /api/admin/moderation/restore` and addressed by the ACTION id '
@@ -171,21 +190,48 @@ describe('MODERATION_ACTION_KINDS mirrors the enum, minus a named difference', (
         }
     });
 
-    it('CONTENT_RESTORED has the Art 17 copy its statement is built from', () => {
-        // A kind with no `statementOfReasons.action.<KIND>` entry composes a
-        // statement with the KEY where its action line should be — and
-        // `translateFor` is a plain interpolator with no ICU, so a missing key
-        // comes back as the key itself rather than throwing. The person would
-        // receive a legal notice reading `statementOfReasons.action.
-        // CONTENT_RESTORED`.
+    describe('EVERY kind has the Art 17 copy its statement is built from', () => {
+        // ## Why this ranges over the enum and not over one name
         //
-        // Asserted HERE rather than left to key parity because parity compares
-        // the two CATALOGUES to each other: a key missing from both is
-        // perfectly balanced.
-        for (const locale of ['en', 'bg'] as const) {
+        // It asserted `CONTENT_RESTORED` alone, hardcoded, and that covered one
+        // of six kinds. P9.3d added `CONTENT_AUTO_HIDDEN` and the catalogues
+        // went on satisfying it — so the first author auto-hidden would have
+        // received a legal notice whose action line read
+        // `statementOfReasons.action.CONTENT_AUTO_HIDDEN`.
+        //
+        // `translateFor` is a plain interpolator with NO ICU and no throw on a
+        // missing key: it returns the KEY. So the failure is silent, arrives in
+        // somebody's inbox, and the statement is the artefact a regulator reads.
+        //
+        // Key parity cannot see it either, and that is not a gap in parity: it
+        // compares the two CATALOGUES to each other, and a key missing from
+        // both is perfectly balanced. The population has to come from the ENUM.
+        //
+        // ## Why this is asserted PER LOCALE, and why that is the strong half
+        //
+        // `translateFor` falls back across locales (measured 2026-11-10 on the
+        // P9.3d statement): with the line removed from `bg` alone the notice
+        // composes in ENGLISH and nothing fails, including the behavioural
+        // assertion in `p9-3d-channel-auto-hide`, which can only see a key
+        // missing from BOTH. So a Bulgarian farmer receiving an Art 17 notice
+        // in English is invisible everywhere except here — and `bg` is the
+        // fallback locale for a recipient whose preference never loaded, i.e.
+        // the common case rather than an edge one.
+        //
+        // ## And the OTHER direction, which is how the count stayed honest
+        //
+        // When P9.3d found this, the catalogues held SIX keys for SIX enum
+        // values — and one of them was `CONTENT_DEMOTED`, deleted from the enum
+        // by #2868, while `CONTENT_AUTO_HIDDEN` was absent. A count check
+        // passes that exactly. A stale key is also COVER (#1285): it keeps
+        // copy alive for whatever is added under that name next, and nobody
+        // reviews prose that is already there.
+        const ACTION_PATH = 'statementOfReasons.action';
+
+        function actionCopy(locale: string): Record<string, string> {
             // `readFileSync` + `JSON.parse`, not `require`: a `require` of a
-            // JSON module needed an `eslint-disable` for two rules that are
-            // not enabled on test files, and `lint-ceiling` counts an INERT
+            // JSON module needed an `eslint-disable` for two rules that are not
+            // enabled on test files, and `lint-ceiling` counts an INERT
             // directive — ceiling 0 — so the suppression itself failed CI.
             const raw = readFileSync(
                 join(process.cwd(), `messages/${locale}/app.json`),
@@ -194,9 +240,33 @@ describe('MODERATION_ACTION_KINDS mirrors the enum, minus a named difference', (
             const messages = JSON.parse(raw) as {
                 statementOfReasons?: { action?: Record<string, string> };
             };
-            const line = messages.statementOfReasons?.action?.CONTENT_RESTORED;
-            expect(typeof line).toBe('string');
-            expect((line as string).length).toBeGreaterThan(10);
+            return messages.statementOfReasons?.action ?? {};
+        }
+
+        for (const locale of ['en', 'bg'] as const) {
+            it(`${locale}: every enum value has a line, and no line is orphaned`, () => {
+                const copy = actionCopy(locale);
+                const keys = Object.keys(copy);
+                // The denominator, so a catalogue that stopped parsing — which
+                // would make both comparisons range over nothing — is visible
+                // rather than green.
+                console.log(
+                    `[moderation-action-copy] ${locale}: ${keys.length} line(s) `
+                    + `for ${enumValues.length} enum value(s) under ${ACTION_PATH}.`,
+                );
+                expect(keys.length).toBeGreaterThan(1);
+
+                const missing = enumValues.filter((v) => typeof copy[v] !== 'string');
+                const orphaned = keys.filter((k) => !enumValues.includes(k));
+                expect({ missing, orphaned }).toEqual({ missing: [], orphaned: [] });
+
+                // A present-but-empty line is the same defect one level in: the
+                // action line simply vanishes from the notice.
+                for (const v of enumValues) {
+                    expect(copy[v].trim().length).toBeGreaterThan(10);
+                }
+            });
         }
     });
+
 });

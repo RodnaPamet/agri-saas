@@ -226,6 +226,24 @@ enum ModerationActionKind {
   ACCOUNT_SUSPENDED
   ACCOUNT_TERMINATED
 
+  /// A report THRESHOLD hid a channel post — P9.3d (#2937), not a person.
+  ///
+  /// Its own kind rather than `CONTENT_REMOVED` because it sets
+  /// `ChannelPost.autoHiddenAt` and not `removedByModerationAt`. Recording it
+  /// as a removal would make `restoreRemovedContent` clear the wrong column,
+  /// find it already null, and report `restored: false` — "already visible" —
+  /// while the post sat there hidden.
+  ///
+  /// DB-ONLY, like `CONTENT_RESTORED` below and for the same shape of reason:
+  /// it is produced by a job counting reports, never asked for by a caller, so
+  /// a moderator sending it would be claiming a threshold fired when none did.
+  /// It is therefore absent from `MODERATION_ACTION_KINDS`.
+  ///
+  /// `moderatorRef` is `auto:report-threshold` — honest that no person decided
+  /// (owner ruling 2026-11-10). The author still gets an Art 17 statement:
+  /// hiding content and telling nobody is the gap #2955 is about.
+  CONTENT_AUTO_HIDDEN
+
   /// The reversal of a `CONTENT_REMOVED`, as the subject of a moderation
   /// ACTION — never of a notice (#2867).
   ///
