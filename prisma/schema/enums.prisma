@@ -1092,4 +1092,28 @@ enum MachinePositionSource {
   TRACKER
   /// A manufacturer's telematics API, reached through an IntegrationConnection.
   TELEMATICS
+  /// The demo simulator. ON THE POSITION and not merely on the asset, because
+  /// the owner's rule is that every simulated position is marked — and marking
+  /// only the asset leaves rows that outlive a reconfiguration still claiming
+  /// to be real. The thing that must never happen is simulated work reaching a
+  /// real farm's ДНЕВНИК, even as a «Нов запис» draft.
+  SIMULATED
+}
+
+/// Which manufacturer's telematics platform a machine is linked to — #2948,
+/// owner ruling 2026-11-10 (four makes to cover).
+///
+/// Grouped by PLATFORM rather than by brand, because that is what an adapter
+/// talks to: Case IH and New Holland are both CNH Industrial, and Fendt and
+/// Massey Ferguson are both AGCO. A brand-per-value would mean two adapters
+/// with identical code and two places to fix one bug.
+enum TelematicsProvider {
+  /// John Deere Operations Center / JDLink.
+  JOHN_DEERE
+  /// CNH Industrial — Case IH AFS Connect, New Holland PLM.
+  CNH
+  /// CLAAS Telematics.
+  CLAAS
+  /// AGCO — Fendt Connect, Massey Ferguson.
+  AGCO
 }

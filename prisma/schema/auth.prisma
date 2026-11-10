@@ -226,6 +226,7 @@ model Tenant {
   workedParcels         WorkedParcel[]
   taskAssets            TaskAsset[]
   machineGeofenceStates MachineGeofenceState[]
+  machineTelematicsLinks MachineTelematicsLink[]
 
   @@index([organizationId])
 }
@@ -927,6 +928,7 @@ model User {
   /// the migration (`WHERE "suspendedAt" IS NOT NULL`), because the rows that
   /// matter are the handful that are set, not the thousands that are NULL.
   machineTrackersInformed MachineTracker[] @relation("MachineTrackerDriversInformedBy")
+  machineTelematicsInformed MachineTelematicsLink[] @relation("MachineTelematicsDriversInformedBy")
   @@index([suspendedAt])
   /// P5.6b (#1597). Both PARTIAL in the migration (`WHERE … IS NOT NULL`),
   /// which Prisma's DSL cannot express — the sweep only ever wants rows where
