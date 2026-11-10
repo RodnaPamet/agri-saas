@@ -37,6 +37,11 @@ export const POST = withApiErrorHandling(
         const post = await postToChannel(ctx, channelId, {
             body: parsed.data.body,
             mentionUserIds: parsed.data.mentionUserIds,
+            // Mapped EXPLICITLY, like its siblings. A spread would be shorter
+            // and would also skip TypeScript's excess-property check, which is
+            // how a field added to the schema reaches the usecase as
+            // `undefined` with a green typecheck.
+            kind: parsed.data.kind,
         });
         return jsonResponse(post, { status: 201 });
     },

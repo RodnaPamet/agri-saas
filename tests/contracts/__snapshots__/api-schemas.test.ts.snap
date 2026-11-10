@@ -3594,6 +3594,18 @@ exports[`API contract — per-schema snapshots schema: ChannelPost 1`] = `
     "deleted": {
       "type": "boolean",
       "description": "True for an author retraction, a moderator removal OR an auto-hide. The three are separate columns and are deliberately COLLAPSED here: telling a reader which one it was would disclose a moderation action to a third party."
+    },
+    "resolvedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When a «Въпрос» was marked «Решено», else null — always null on a \`POST\` or a \`CARD\`, which cannot carry the state. Added by #2961: the column had been written since P9.3b and returned by nothing, so a resolved question was indistinguishable from an open one through every read path and no client could render it."
+    },
+    "replyCount": {
+      "type": "integer",
+      "description": "How many replies hang off this post, so a feed can show that a thread exists without a request per post. Always 0 on a reply, since threads are one level deep. It counts HIDDEN replies too, matching how a hidden post is reported rather than omitted — a count that shrank when a moderator hid one reply would tell every reader that something had been removed."
     }
   },
   "required": [
@@ -3602,7 +3614,9 @@ exports[`API contract — per-schema snapshots schema: ChannelPost 1`] = `
     "body",
     "kind",
     "createdAt",
-    "deleted"
+    "deleted",
+    "resolvedAt",
+    "replyCount"
   ]
 }"
 `;
