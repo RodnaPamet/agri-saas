@@ -203,6 +203,27 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // farm's admin launch a feature for every other farm. The key-gated
     // `/api/admin/feature-flags` stays for scripts — a browser cannot hold
     // that key without inlining it into every user's bundle.
+    // «Потвърждаване на стопанства» (#2963) — the session-authenticated door
+    // onto the farm-identity review queue, which is what the review page can
+    // actually call. Same two-gate reasoning as «Функции» below, and with more
+    // force: `FarmIdentityClaim` has no `tenantId` at all, so `admin.manage`
+    // alone would let an ADMIN of any farm verify ANOTHER farm's identity —
+    // not launch a feature for them, but assert who they are. The key-gated
+    // `/api/admin/farm-claims` stays for scripts, for the same reason its
+    // sibling does: a browser cannot hold that key without inlining it into
+    // every user's bundle.
+    //
+    // Measured 2026-11-10: one claim, PENDING since 2026-10-13, because the
+    // only way to review it was composing a keyed request by hand.
+    {
+        path: new RegExp(`^${T}\\/admin\\/farm-claims(\\/.*)?$`),
+        permission: 'admin.manage',
+        note:
+            'Farm-identity review — a verification here decides what «verified farm» ' +
+            'means product-wide, and the model is tenantless. Platform-tenant gated ' +
+            'in-handler via assertPlatformSupport; admin.manage is the audited role ' +
+            'floor, not the isolation practice.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/feature-flags(\\/.*)?$`),
         permission: 'admin.manage',

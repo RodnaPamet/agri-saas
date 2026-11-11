@@ -48,6 +48,23 @@ import { appendAuditEntry } from '@/lib/audit/audit-writer';
 const DEFAULT_PAGE = 50;
 const MAX_PAGE = 200;
 
+/**
+ * The REACHABLE claim statuses — three of the enum's four.
+ *
+ * `FarmIdentityClaimStatus` also has `REJECTED`, which nothing in this product
+ * writes or reads (#2974). This type narrows to what can actually arrive, and
+ * the narrowing is deliberate rather than an oversight: offering a fourth
+ * filter value nothing can produce would be a promise to a client, and the
+ * admin API returns `ClaimForReview.status`.
+ *
+ * The premise — that `REJECTED` is unreachable — is CHECKED rather than
+ * assumed, by `tests/unit/farm-identity-rejected-is-unreachable.test.ts`. That
+ * matters because the read below casts to this type: if rejection is ever
+ * implemented, a `REJECTED` row would arrive typed as one of three, every
+ * consumer's `switch` would have no arm for it, and the cast is exactly what
+ * removes the target such a mistake would otherwise fail against. The test
+ * fails first and points here.
+ */
 export type ClaimStatus = 'PENDING' | 'VERIFIED' | 'DISPUTED';
 
 /**

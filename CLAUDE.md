@@ -4105,6 +4105,56 @@ for exactly that reason. `joinedAt` is the one field nothing reads, which is
 what made "lossless" sound plausible. **Join stays immediate**: additive, and
 an undo window would delay what was asked for.
 
+### The farm-claim review console, and a SECOND DOOR for a person
+
+#2963. P3.9 shipped the farm-identity review mechanism — usecase, keyed queue,
+keyed verify, keyed dispute, all Edge-reachable — and no way in for a human.
+Measured 2026-11-10: **one claim, PENDING for 28 days**, because reviewing it
+meant holding `PLATFORM_ADMIN_API_KEY` and composing a request by hand. That is
+the #2844 shape, not the Edge-severance shape, and the two are worth telling
+apart: ask whether the mechanism is REACHABLE and separately whether anything
+OFFERS it.
+
+**A PLATFORM-KEY ROUTE CANNOT BACK A PAGE, and the answer is a second door —
+never a key in the browser.** `route-permissions.ts` says it for the flag
+console: a browser holds no key, and shipping one inlines a platform credential
+into every user's bundle. So a keyed route stays for scripts and a
+session-gated sibling serves the page, gated on `requirePermission('admin.manage')`
+**plus** `assertPlatformSupport(ctx)`. Both halves are load-bearing: permissions
+resolve from Role, so every tenant's admin holds `admin.manage`, and these
+models are TENANTLESS — for farm claims that means an ADMIN of any farm could
+otherwise verify another farm's identity.
+
+**The session door is also where attribution becomes a person.** The keyed
+verify route reads `reviewedBy` from the BODY, so whoever holds the key can
+type any name into the audit trail; the session routes take `ctx.userId` and
+their schemas have no such field. When you add a second door, check what the
+first one accepts from the caller — #2735 is the general fix.
+
+**A write whose evidence is SUPPLIED cannot have a one-click control.**
+`verifyFarmClaim` takes "the ЕИК the reviewer found in the register. Never read
+from the row" — the claim stores a blind index, so the reviewer looks the farm
+up independently and types what they find. An «Одобри» button would let
+somebody promote a claim without doing the lookup, which is the single thing
+that input shape prevents. Before building a console for a usecase, read its
+INPUT: the shape says whether a one-click action is even coherent.
+
+**And the refusal path must be no harder than the approval path.**
+`disputeFarmClaim` deliberately takes no ЕИК for exactly that reason. A console
+wiring only `verify` makes approving a field and a button while refusing needs a
+terminal, and that asymmetry nudges a reviewer toward approval. It still
+requires a REASON, because a reviewer's verdict and the automatic
+`DISPUTED_COLLISION` both leave `status = DISPUTED` and the row cannot
+otherwise say which happened.
+
+**`FarmIdentityClaimStatus.REJECTED` is RESERVED and unimplemented** (#2974,
+owner ruling): nothing writes or reads it, `ClaimStatus` narrows to the three
+reachable members, and `farm-identity-rejected-is-unreachable.test.ts` holds
+that premise — because `listFarmClaims` CASTS (`r.status as ClaimStatus`), and
+a cast removes the target a later mistake would fail against. A docblock
+claiming "nothing writes X" is a safety argument that expires silently; make it
+a test.
+
 ## Failing tests
 
 A failing test on a branch is a failing test, full stop. "Pre-existing on

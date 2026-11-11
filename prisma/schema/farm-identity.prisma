@@ -122,7 +122,26 @@ enum FarmIdentityClaimStatus {
   /// Collided with an existing VERIFIED claim. Terminal without staff
   /// action — see the model docblock on why the incumbent is not demoted.
   DISPUTED
-  /// Rejected by a reviewer. Distinct from DISPUTED: a rejection is a
-  /// judgement about this claim, a dispute is a fact about another one.
+  /// RESERVED AND UNIMPLEMENTED (#2974, owner ruling 2026-11-10: document it
+  /// rather than delete it or build it).
+  ///
+  /// The distinction it names is a real one — a rejection is a judgement about
+  /// this claim, a dispute is a fact about another one — but **nothing in this
+  /// product writes or reads this value**: no usecase arm, no route, no
+  /// client. The review API offers `verify` and `dispute` only, and a
+  /// reviewer's "this is not your farm" verdict is recorded as DISPUTED with a
+  /// reason.
+  ///
+  /// So it is kept deliberately, not forgotten. `ClaimStatus` in
+  /// `farm-identity-review.ts` narrows to the three REACHABLE members and
+  /// `farm-identity-rejected-is-unreachable.test.ts` holds that premise — if
+  /// somebody implements rejection, that test fails and points at the
+  /// narrowing rather than letting a REJECTED row arrive typed as something
+  /// it is not.
+  ///
+  /// Implementing it is a product decision with a notice obligation attached:
+  /// a farm told "your claim was rejected" is being told something about
+  /// itself, and the reason recorded for a dispute is explicitly NOT shown to
+  /// the farm today.
   REJECTED
 }
