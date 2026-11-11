@@ -43,8 +43,18 @@ const URGENCY_COLOR: Record<DueItemUrgency, string> = {
  * They are catalogue lookups now (#694): the digest is written in the
  * RECIPIENT's language, and a constant cannot know who is reading.
  *
- * The enum MEMBER is the key, so a new member fails at the lookup rather than
- * silently rendering its raw identifier.
+ * The enum MEMBER is the key. **That does NOT make a new member fail at the
+ * lookup**, which this comment claimed until #2958 — `translateFor` returns
+ * the KEY when it is missing (`server-messages.ts`, the end of the fallback
+ * chain), so a new `DueItemUrgency` would render
+ * `notificationEmail.digest.urgency.<NEW>` into a digest email. The argument
+ * was reasonable and was never true.
+ *
+ * Since #2958 it is REPORTED rather than silent: a total miss logs
+ * `i18n.key_missing` at error level, and resolving in the wrong language logs
+ * `i18n.locale_fallback` at warn. Measured when that landed, both unions were
+ * fully covered — `DueItemUrgency` 3/3 and `MonitoredEntityType` 2/2 — so
+ * nothing here was broken; the safety ARGUMENT was.
  */
 const urgencyLabel = (u: DueItemUrgency, locale: Locale) =>
     translateFor(locale, `notificationEmail.digest.urgency.${u}`);

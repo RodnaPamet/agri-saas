@@ -1,6 +1,6 @@
 {
     "name": "inflect-compliance",
-    "version": "14.5.0",
+    "version": "14.5.2",
     "private": true,
     "engines": {
         "node": ">=22.0.0 <23.0.0",
@@ -339,7 +339,7 @@
         "fast-uri": "^3.1.7",
         "brace-expansion@^5": "^5.0.12",
         "source-map-js": "^1.2.2",
-        "node-forge": "^1.4.2",
+        "node-forge": "^1.4.3",
         "@sentry/bundler-plugins": {
             "glob": "^14.0.3"
         },
