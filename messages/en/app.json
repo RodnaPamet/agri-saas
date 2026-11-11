@@ -6761,6 +6761,7 @@
         "confirmDispute": "Record dispute",
         "reasonLabel": "Why this claim is wrong",
         "reasonNotShown": "Kept for the audit trail and the next reviewer. The farm is not shown this.",
+        "filterAria": "Filter by status",
         "verify": "Verify",
         "status": {
             "PENDING": "Awaiting review",

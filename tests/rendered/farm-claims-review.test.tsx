@@ -252,7 +252,10 @@ describe('the review console', () => {
     it('asks the SERVER for the filtered status, not the client', async () => {
         setViewport('desktop');
         mount([claim()]);
-        await userEvent.click(screen.getByRole('button', { name: 'status.DISPUTED' }));
+        // A RADIO now, not a button: the filter is a `<ToggleGroup>`, which is
+        // a radiogroup — the primitive Epic 60 requires for a segmented filter
+        // row, and what `primary-action-budget` pushed this screen toward.
+        await userEvent.click(screen.getByRole('radio', { name: 'status.DISPUTED' }));
         // The filter is a QUERY, not an in-memory predicate: the queue is
         // paginated server-side, so filtering a page here would hide rows the
         // next page holds.

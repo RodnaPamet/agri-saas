@@ -78,19 +78,18 @@ const STATUS_FOR: Record<VerifyOutcome['result'], number> = {
 };
 
 export const POST = withApiErrorHandling(
-    requirePermission(
+    // The params type rides the GENERIC and the handler destructures `{ params }`
+    // unannotated — the convention every other permissioned route here uses.
+    // My first draft annotated `routeArgs: { params: { … } }` inline, which
+    // `async-params-route-typing` correctly flags: a SYNC annotation on a route
+    // handler compiles while the access is undefined at runtime, and the guard
+    // cannot tell a hand-resolved inner handler from a mistake. Inference costs
+    // nothing and keeps the route inside the rule.
+    requirePermission<{ tenantSlug: string; claimId: string }>(
         'admin.manage',
-        // `params` arrives RESOLVED, not as a Promise: `requirePermission`
-        // awaits it once and forwards the hydrated object, which is the Next 16
-        // contract this repo settled in GAP-05 — the transparent-await shim is
-        // gone and `AsyncifyParams` with it.
-        async (
-            req: NextRequest,
-            routeArgs: { params: { tenantSlug: string; claimId: string } },
-            ctx,
-        ) => {
+        async (req: NextRequest, { params }, ctx) => {
             assertPlatformSupport(ctx);
-            const { claimId } = routeArgs.params;
+            const { claimId } = params;
 
             let raw: unknown;
             try {

@@ -44,11 +44,13 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { FormField } from '@/components/ui/form-field';
 import { ErrorState } from '@/components/ui/error-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Heading } from '@/components/ui/typography';
 import { apiPost } from '@/lib/api-client';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
@@ -85,6 +87,9 @@ type Outcome =
 const SUCCEEDED: ReadonlySet<Outcome> = new Set<Outcome>([
     'VERIFIED', 'ALREADY_VERIFIED', 'DISPUTED',
 ]);
+
+/** The three reachable statuses, in queue-then-resolved order. */
+const STATUS_OPTIONS: readonly ClaimWire['status'][] = ['PENDING', 'VERIFIED', 'DISPUTED'];
 
 const STATUS_TONE: Record<ClaimWire['status'], 'warning' | 'success' | 'error'> = {
     PENDING: 'warning',
@@ -198,17 +203,24 @@ export function FarmClaimsReviewClient({ tenantSlug }: { tenantSlug: string }) {
             </ListPageShell.Header>
             <ListPageShell.Body>
                 <div className="min-h-0 flex-1 space-y-default overflow-y-auto pr-1">
-                    <div className="flex gap-tight">
-                        {(['PENDING', 'VERIFIED', 'DISPUTED'] as const).map((s) => (
-                            <Button
-                                key={s}
-                                variant={s === status ? 'primary' : 'secondary'}
-                                onClick={() => setStatus(s)}
-                            >
-                                {t(`status.${s}`)}
-                            </Button>
-                        ))}
-                    </div>
+                    {/*
+                      * `<ToggleGroup>`, not three buttons. Epic 60's rule is
+                      * explicit — never hand-roll a segmented filter row —
+                      * and my first draft did, with the active one as
+                      * `variant="primary"`. `primary-action-budget` caught it,
+                      * correctly: a screen with five primary buttons has no
+                      * primary action, and a filter is a selection rather
+                      * than an action at all.
+                      */}
+                    <ToggleGroup
+                        options={STATUS_OPTIONS.map((value) => ({
+                            value,
+                            label: t(`status.${value}`),
+                        }))}
+                        selected={status}
+                        selectAction={(value) => setStatus(value as ClaimWire['status'])}
+                        ariaLabel={t('filterAria')}
+                    />
 
                     {error ? (
                         <ErrorState description={t('loadError')} onRetry={() => void mutate()} />
@@ -250,35 +262,32 @@ export function FarmClaimsReviewClient({ tenantSlug }: { tenantSlug: string }) {
                                 {c.status === 'PENDING' ? (
                                     <div className="flex items-end gap-tight">
                                         {/*
-                                          * An explicit <label>, because
-                                          * `<Input>` takes no `label` prop —
-                                          * it has `error` and `description`
-                                          * and leaves labelling to the
-                                          * caller, which `<FormField>` nor-
-                                          * mally supplies. One field inside a
-                                          * row is lighter than a FormField
-                                          * wrapper, so the label is written
-                                          * here and tied by `htmlFor`.
+                                          * `<FormField>`, not a hand-written
+                                          * <label>. Epic 55's rule is to wrap
+                                          * every field with it, and
+                                          * `formfield-coverage` budgets raw
+                                          * labels for exactly this reason. My
+                                          * first draft reasoned that one
+                                          * field in a row was "lighter" than
+                                          * the wrapper — which is how a
+                                          * budget gets spent one justified
+                                          * exception at a time.
                                           */}
-                                        <div className="flex-1 space-y-tight">
-                                            <label
-                                                htmlFor={`eik-${c.id}`}
-                                                className="block text-xs text-content-muted"
-                                            >
-                                                {t('eikLabel')}
-                                            </label>
-                                            <Input
-                                                id={`eik-${c.id}`}
-                                                value={eik[c.id] ?? ''}
-                                                onChange={(e) =>
-                                                    setEik((prev) => ({
-                                                        ...prev,
-                                                        [c.id]: e.target.value,
-                                                    }))
-                                                }
-                                                inputMode="numeric"
-                                                autoComplete="off"
-                                            />
+                                        <div className="flex-1">
+                                            <FormField label={t('eikLabel')}>
+                                                <Input
+                                                    id={`eik-${c.id}`}
+                                                    value={eik[c.id] ?? ''}
+                                                    onChange={(e) =>
+                                                        setEik((prev) => ({
+                                                            ...prev,
+                                                            [c.id]: e.target.value,
+                                                        }))
+                                                    }
+                                                    inputMode="numeric"
+                                                    autoComplete="off"
+                                                />
+                                            </FormField>
                                         </div>
                                         <Button
                                             variant="primary"
@@ -315,35 +324,31 @@ export function FarmClaimsReviewClient({ tenantSlug }: { tenantSlug: string }) {
 
                                 {c.status === 'PENDING' && disputing === c.id ? (
                                     <div className="space-y-tight rounded-lg border border-border-subtle p-4">
-                                        <label
-                                            htmlFor={`reason-${c.id}`}
-                                            className="block text-xs text-content-muted"
+                                        <FormField
+                                            label={t('reasonLabel')}
+                                            description={t('reasonNotShown')}
                                         >
-                                            {t('reasonLabel')}
-                                        </label>
-                                        <Input
-                                            id={`reason-${c.id}`}
-                                            value={reason[c.id] ?? ''}
-                                            onChange={(e) =>
-                                                setReason((prev) => ({
-                                                    ...prev,
-                                                    [c.id]: e.target.value,
-                                                }))
-                                            }
-                                            autoComplete="off"
-                                        />
+                                            <Input
+                                                id={`reason-${c.id}`}
+                                                value={reason[c.id] ?? ''}
+                                                onChange={(e) =>
+                                                    setReason((prev) => ({
+                                                        ...prev,
+                                                        [c.id]: e.target.value,
+                                                    }))
+                                                }
+                                                autoComplete="off"
+                                            />
+                                        </FormField>
                                         {/*
-                                          * Said out loud, because the usecase
-                                          * says it and a reviewer cannot know
-                                          * it: the reason is NOT shown to the
-                                          * claiming farm. It is a note to the
-                                          * next reviewer, so writing it as if
-                                          * the farm will read it would be
-                                          * writing for nobody.
+                                          * «Not shown to the farm» rides the
+                                          * FormField's `description` rather
+                                          * than a loose <p>: it is helper
+                                          * text for that field, and the
+                                          * primitive ties it to the input for
+                                          * a screen reader, which a sibling
+                                          * paragraph does not.
                                           */}
-                                        <p className="text-xs text-content-muted">
-                                            {t('reasonNotShown')}
-                                        </p>
                                         <Button
                                             variant="primary"
                                             onClick={() => void dispute(c.id)}
