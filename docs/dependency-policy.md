@@ -126,7 +126,6 @@ introduced and every row reconciled.
 | `source-map-js` → `^1.2.2` | GHSA-68fv-2mgg-jv7q — event-loop DoS through indexed source-map section offsets (high); affects `>=1.0.0 <1.2.2`; patched **1.2.2** | production | 2026-10-06 | Bare, not scoped: both production requesters want the same 1.x line — `@tailwindcss/postcss` → `@tailwindcss/node`, and `postcss` itself (already overridden to `$postcss`) — so there is no second major to strand, which is what makes a bare key safe here rather than the scoped form the `js-yaml` and `openai` rows needed. This is a FIX, not a floor against drift: the tree resolved the vulnerable 1.2.1 and 1.2.2 is published, so the advisory was cleared by moving rather than by argument — `REAL_EXEMPT` was not touched. Entered the npm feed after main's last green run and reddened the `Security` gate on every open branch at once with no PR having changed a dependency (#1315); `npm audit` is a live registry query, so an unchanged lockfile audits differently on different days. Lockfile resolves 1.2.2. Drop this entry once every requester declares `>=1.2.2` on its own. |
 | `qs` → `^6.16.1` | GHSA-6pq8-jhm2-2vcw — `qs.stringify` with `arrayFormat: 'comma'` throws an uncaught TypeError on array elements; affects `>=6.7.0 <=6.16.0` (moderate); patched 6.16.1 | production | 2026-10-29 | Transitive via `@google/earthengine` → `googleapis` → `googleapis-common`, which declares `qs: ^6.7.0` — so the whole band it admits below 6.16.1 is vulnerable and the lockfile had pinned 6.16.0. The override is a FLOOR inside the requester's own range, not a forced version: `^6.7.0` already admits 6.16.1+, so this excludes the vulnerable band rather than restating the requester (the mistake the removed `nanoid` entry made). Fixed rather than exempted because a patch release is cheaper than a reachability argument. Lockfile resolves 6.17.1. |
 | `node-forge` → `^1.4.2` | GHSA-4642-5mcj-2rqw, GHSA-6wvx-3r32-xmcg, GHSA-525v-9gp9-w22h, GHSA-7wch-p9px-956x, GHSA-h6cr-wjv9-3cpp, GHSA-4487-j8r4-4g2f, GHSA-5cwg-6vw7-rj6p, GHSA-jc66-7q78-782g, GHSA-8hrf-8g6f-7xwp, GHSA-hqq3-7jhf-c5jx, GHSA-5x38-2vff-x55p (all high) and GHSA-86w9-cpqp-85rv — ASN.1 OID truncation, `forge.http` prototype pollution, a TLS client crash, PEM ReDoS, a `modInverse` infinite loop, CA-store removal in `verifyCertificateChain`, AES-GCM authentication bypass via `tagLength`, PKCS#12 MAC forgery at zero iterations, two TLS record-processing DoS paths, and PKCS#1 v1.5 signature verification accepting nested DigestAlgorithm elements. Every one affects `<=1.4.0`; patched **1.4.1** | production | 2026-10-31 | Transitive via `@google/earthengine` → `googleapis@92` → `google-auth-library@7` → `gtoken` → `google-p12-pem`, and `googleapis@92` is what earthengine pins, so the depth is not ours to flatten. **Bare, not scoped**: `google-p12-pem` is the only requester in the production tree and the bump is within the same major, so there is no second line to strand. It declares `node-forge: ^1.3.1`, so `^1.4.2` is a FLOOR INSIDE the requester's own range — it excludes the vulnerable 1.3.1–1.4.0 band rather than forcing a version nobody asked for, which is what rule C requires of a floor (#2527). Two of the eleven are in `google-p12-pem`'s own call path rather than merely in the package: `asn1.fromDer` reaches the OID-truncation advisory (GHSA-4642-5mcj-2rqw) and `pkcs12.pkcs12FromAsn1` the PKCS#12 MAC-forgery one (GHSA-jc66-7q78-782g). The retired exemption's analysis — four calls, none of them signature verification — would have covered the TLS, cookie, AES-GCM and certificate-chain advisories and NOT those two, which is a sharper reason to fix than "a fix exists". This replaces an EXEMPTION rather than adding to one — `GHSA-86w9-cpqp-85rv` sat in `REAL_EXEMPT` arguing that the range was `*` with `fixAvailable: false`, which was true when written and stopped being true when 1.4.1 shipped. Eleven more advisories then arrived in one window on 2026-10-31 (#2524), blocking every PR, and rule 1 — a new advisory on an already-exempt package still blocks — is what surfaced the stale premise, three days ahead of that entry's own review date. The reachability argument under it was sound and is not the reason it went; "no fix exists" was. Lockfile resolves 1.4.2. Drop this entry once `google-p12-pem` declares `>=1.4.1` itself. |
-| `@sentry/bundler-plugins` → `{glob: ^14.0.3}` | GHSA-3g3m-2fjr-6pw4 — `AbortSignal` cancellation bypass lets a glob keep traversing the filesystem after its timeout (moderate); affects `>=3.0.0 <=14.0.1`; patched **14.0.2** | production | 2026-10-31 | **Scoped, not bare, and the scoping is the whole point.** The vulnerable copy reaches production only through `@sentry/nextjs` → `@sentry/bundler-plugins`, but the hoisted `glob@13.0.6` is SHARED with `@jest/reporters` and the lint parser — so a bare `glob` key, or the version-scoped `glob@^13` form I tried first, majors the test runner and `@typescript-eslint/typescript-estree` to satisfy a gate that runs `--omit=dev` and never looks at either. Measured both ways before choosing. With the override scoped, `node_modules/glob` stays 13.0.6 and `node_modules/minimatch` 10.2.5 for dev consumers, while Sentry gets a private glob 14.0.3. That also clears GHSA-g3hv-75wg-m249 (minimatch globparts amplification DoS, `<11.0.1`) on the production path without a second override, because glob 14 brings minimatch 11.0.3 down with it — the only production requester of the vulnerable minimatch was this same glob. Note `npm audit fix --force` proposes solving both by DOWNGRADING `@sentry/nextjs` to 10.76.1; it must not be run. Raising this glob also forced `brace-expansion@^5`'s floor from `^5.0.9` to `^5.0.12`, because minimatch 11.0.3 declares `brace-expansion@^5.0.12` and the old floor would have RELAXED a requester's own range — caught by `overrides-structural-decay`, not by hand. Lockfile resolves 14.0.3. **REACHABILITY, measured 2026-10-31 and recorded because it is what a future reader needs in order to drop this override** (enumerated by #2527, re-measured here — its claim was broader than the tree): the package's entire glob surface is one wrapper, `core/glob.js`, whose whole body is `glob.glob(patterns, { absolute: true, nodir: true, ...options })`. It has THREE call sites — `core/build-plugin-manager.js:408` (sourcemap assets), `:507` (files to delete) and `rollup/index.js:187` (build artifacts) — not one per bundler: the esbuild, vite, webpack, bun and babel entries reach it through `core`, and both the cjs and esm builds carry it. So every pattern is a Sentry config path over our own `.next` output at BUILD time, never request input. And the package passes no `AbortSignal` anywhere (`grep -rl 'AbortSignal\|signal:'` over `build/` is empty), so the cancellation that GHSA-3g3m-2fjr-6pw4 bypasses does not exist on this path at any version. That is an argument for the exposure being LOW, not for leaving it: a patched glob is published, and this repo's own rule is that an override is not a bridge to drop on convenience. It is why the override can be dropped safely once `@sentry/bundler-plugins` declares a patched range itself, rather than needing a fresh analysis then. |
 
 A security override is NOT a bridge to drop on convenience — keep it
 until the upstream package legitimately depends on a patched range.
@@ -142,6 +141,44 @@ so `npm audit` was green and nothing in the repo was wrong-looking —
 which is exactly why the floor, not just the lockfile, has to be
 checked when a follow-up advisory lands on a package already pinned
 here.
+
+### Dropped: `@sentry/bundler-plugins` → `{glob: ^14.0.3}`
+
+Removed 2026-11-11 with the Dependabot production-group bump that took
+`@sentry/bundler-plugins` to **11.11.0**, which declares `glob@^14.0.3`
+itself — a range entirely above GHSA-3g3m-2fjr-6pw4's patched 14.0.2.
+
+**That row named this exact condition in advance**: *"the override can be
+dropped safely once `@sentry/bundler-plugins` declares a patched range itself,
+rather than needing a fresh analysis then."* So no re-measurement of
+reachability was needed, which is what writing the condition down bought.
+
+Measured before dropping, not assumed:
+
+| | `@sentry/bundler-plugins` | declares `glob` | the override |
+|---|---|---|---|
+| before the bump | 11.10.0 | `^13.0.6` | lifted 13 → 14, doing work |
+| after | 11.11.0 | `^14.0.3` | excluded nothing |
+
+`overrides-structural-decay` caught it as a **check C** finding the moment the
+bump landed — "every one of the 1 requester range(s) is already a subset of
+`^14.0.3`" — which is the guard doing precisely the job it was built for, on a
+PR nobody had read yet.
+
+Dropping it is lockfile-NEUTRAL and that was verified rather than hoped: the
+lockfile records no root `overrides` key, and `@sentry/bundler-plugins` keeps a
+private `node_modules/@sentry/bundler-plugins/node_modules/glob@14.0.4`
+regardless, because the hoisted `node_modules/glob` stays 13.0.6 for
+`@jest/reporters` and the lint parser. Re-running `analyseOverrides` over the
+bump's own `package.json` and `package-lock.json` with the key removed returns
+exactly `main`'s three findings — the same set, not merely the same count — so
+no `npm install` was needed and none was run. That matters here: a full install
+on a glibc host takes the 34 `libc` entries to zero.
+
+The sibling `brace-expansion` floor STAYS. That row records it as forced by
+minimatch 11.0.3, which glob 14 still brings down — and the measurement above
+confirms it: dropping this key produced no new finding against
+`brace-expansion`.
 
 ## Structural decay — what a guard CAN decide offline
 
