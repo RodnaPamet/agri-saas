@@ -2531,7 +2531,7 @@
                 "watch": "Watch",
                 "stress": "Stress",
                 "unknown": "No data",
-                    "notAssessed": "No crop to assess"
+                "notAssessed": "No crop to assess"
             },
             "ask": {
                 "alreadySent": "You have already asked about this parcel. You can send another request, for example with a different area or cover.",
@@ -6746,7 +6746,17 @@
             "oblast": "Regions",
             "input": "Fuels and fertilisers",
             "other": "Other"
-        }
+        },
+        "displayNameTitle": "What should we call you?",
+        "displayNameHint": "Your name will be visible to members of other farms in channels, next to your farm's name.",
+        "displayNameLabel": "Display name",
+        "displayNamePlaceholder": "e.g. Ivan Petrov",
+        "displayNameSave": "Save",
+        "displayNameSkip": "Not now",
+        "displayNameSaved": "Your name has been saved.",
+        "displayNameError": "Your name could not be saved.",
+        "displayNameSkipped": "Your posts will be signed with your farm's name only.",
+        "authorNameAndFarm": "{name}, {farm}"
     },
     "farmClaims": {
         "title": "Farm verification",

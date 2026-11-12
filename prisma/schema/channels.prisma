@@ -195,6 +195,33 @@ model ChannelPost {
   /// `channel_post_insert`'s WITH CHECK, which pins it to the session variable.
   authorUserId String
 
+  /// The farm the post was made AS, recorded at write time (#2989).
+  ///
+  /// RECORDED, never resolved at read. The only rule available at read time
+  /// is the DM recipient's (oldest membership, then id), and under it a person
+  /// who leaves a farm has every past post silently relabelled, and a post
+  /// made as farm A can come to read as farm B. The farm a post was made as
+  /// is a fact at write time and a guess at read time.
+  ///
+  /// A bare id with no `@relation`, matching `authorUserId` directly above:
+  /// this is a TENANTLESS table and a declared foreign key to `Tenant` would
+  /// make a farm undeletable while any post referenced it.
+  ///
+  /// NULLABLE, and it carries three different truths — all of which render
+  /// the same way, as the person's name with no farm beside it. A post that
+  /// predates this column; a post whose author sent no farm (the field is
+  /// optional on the request, and a MISSING one is recorded as null rather
+  /// than guessed — see `postToChannel`); and a person who belongs to no farm
+  /// at all.
+  ///
+  /// COUNTERPARTY-SAFE, which this table's guard requires to be argued rather
+  /// than assumed: `channel_post_select` admits any authenticated caller, so
+  /// every column here is readable by every reader. A farm NAME is the
+  /// deliberate disclosure — the owner decided (2026-11-12) that a channel
+  /// post shows name + farm — and an id is strictly less than the name it
+  /// resolves to, which is already being published beside it.
+  authorTenantId String?
+
   /// PLAINTEXT, and this is a DEPARTURE from both message models in this repo.
   ///
   /// `DirectMessage.body` and `ExchangeMessage.body` are encrypted under the
