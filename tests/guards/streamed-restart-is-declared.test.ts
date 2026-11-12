@@ -23,40 +23,78 @@ import { blankNonCode } from '../helpers/blank-non-code';
  */
 const ROUTING = join(process.cwd(), 'src/app-layer/ai/routing.ts');
 
+/**
+ * Where each anchor sits, as line numbers — and a MODULE-LEVEL function
+ * because that is what makes the selection auditable.
+ *
+ * `Selector teeth` reaches a named selector at module or describe level and
+ * cannot reach one that happens inline inside `it()`; a guard in the second
+ * shape passes whether or not it selects anything. The first draft of this
+ * file was in that shape and pushed the unauditable-guard count from 200 to
+ * 201, which is how CI said so. Extracting it is also what makes the
+ * positive control below possible.
+ *
+ * Comments are blanked and strings are KEPT: the anchors are `''` literals,
+ * and blanking strings removes the quotes with the contents, so every needle
+ * would match nothing and the guard would report an absence it had created.
+ * Comments are the real hazard anyway — this file's own prose names the call
+ * it looks for.
+ */
+export function anchorLines(src: string): {
+    loop: number;
+    declare: number;
+    call: number;
+    accumulator: number;
+} {
+    const lines = blankNonCode(src, { strings: false }).split('\n');
+    const find = (re: RegExp): number => lines.findIndex((l) => re.test(l));
+    return {
+        loop: find(/for \(let attempt = 0/),
+        declare: find(/onTextProgress\?\.\(''\)/),
+        call: find(/await completeOnce</),
+        accumulator: find(/let streamedRaw = ''/),
+    };
+}
+
+/** How many times a needle occurs in code, comments blanked. */
+export function codeOccurrences(src: string, re: RegExp): number {
+    return blankNonCode(src, { strings: false }).match(re)?.length ?? 0;
+}
+
 describe('a streamed restart is declared by routing', () => {
-    /*
-     * Comments blanked, strings KEPT (`strings: false`): the anchors below
-     * are `''` literals, and blanking strings removes the quotes with the
-     * contents, so every needle here would match nothing and the guard
-     * would report an absence it had created. Comments are the real hazard
-     * anyway — this file's own prose names the call it looks for.
-     */
-    const code = blankNonCode(readFileSync(ROUTING, 'utf8'), { strings: false });
+    const src = readFileSync(ROUTING, 'utf8');
 
     it('declares an empty cumulative once per attempt, inside the retry loop', () => {
-        const lines = code.split('\n');
-        const loop = lines.findIndex((l) => /for \(let attempt = 0/.test(l));
-        const declare = lines.findIndex((l) => /onTextProgress\?\.\(''\)/.test(l));
-        const call = lines.findIndex((l) => /await completeOnce</.test(l));
+        const at = anchorLines(src);
 
-        // A positive control: the three anchors still exist. Without it a
-        // renamed loop variable makes every comparison below -1 < -1.
-        expect(loop).toBeGreaterThan(-1);
-        expect(declare).toBeGreaterThan(-1);
-        expect(call).toBeGreaterThan(-1);
+        // Positive control: every anchor still resolves. Without it a renamed
+        // loop variable makes each comparison below -1 < -1, and the guard
+        // passes by having found nothing.
+        expect(at.loop).toBeGreaterThan(-1);
+        expect(at.declare).toBeGreaterThan(-1);
+        expect(at.call).toBeGreaterThan(-1);
 
         // Inside the loop, so a retry re-declares; before the call, so the
         // declaration cannot arrive after the first delta of the new text.
-        expect(declare).toBeGreaterThan(loop);
-        expect(declare).toBeLessThan(call);
-        expect(code.match(/onTextProgress\?\.\(''\)/g)).toHaveLength(1);
+        expect(at.declare).toBeGreaterThan(at.loop);
+        expect(at.declare).toBeLessThan(at.call);
+        expect(codeOccurrences(src, /onTextProgress\?\.\(''\)/g)).toBe(1);
     });
 
     it('the accumulator is per attempt, so two answers cannot concatenate', () => {
-        const lines = code.split('\n');
-        const loop = lines.findIndex((l) => /for \(let attempt = 0/.test(l));
-        const accumulator = lines.findIndex((l) => /let streamedRaw = ''/.test(l));
-        expect(accumulator).toBeGreaterThan(loop);
-        expect(code.match(/let streamedRaw = ''/g)).toHaveLength(1);
+        const at = anchorLines(src);
+        expect(at.accumulator).toBeGreaterThan(at.loop);
+        expect(at.accumulator).toBeLessThan(at.call);
+        expect(codeOccurrences(src, /let streamedRaw = ''/g)).toBe(1);
+    });
+
+    it('the selector can tell a declaration from its absence', () => {
+        // The control the extraction exists for: prove the needle resolves on
+        // a source that HAS the call and not on one that merely discusses it.
+        const withCall = ['for (let attempt = 0; ;) {', "    opts.onTextProgress?.('');", '    await completeOnce<T>(', '}'].join('\n');
+        const commentOnly = ['for (let attempt = 0; ;) {', "    // opts.onTextProgress?.('') belongs here", '    await completeOnce<T>(', '}'].join('\n');
+
+        expect(anchorLines(withCall).declare).toBeGreaterThan(-1);
+        expect(anchorLines(commentOnly).declare).toBe(-1);
     });
 });
