@@ -34,7 +34,7 @@
  * a bug to the next reader and would start showing a name again the moment
  * any other writer set one.
  */
-import { prisma } from '@/lib/prisma';
+import { runInUserContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { codedBadRequest } from '@/lib/errors/types';
 import type { UserContext } from '@/app-layer/types';
@@ -56,15 +56,22 @@ export interface PersonProfileView {
  * first post. A missing row and an unpublished row answer identically,
  * because they mean the same thing to a reader of a channel.
  *
- * On the global client: `PersonProfile` has row-level security DISABLED
- * (measured, `relrowsecurity` false), and this reads exactly one row by the
- * caller's own id.
+ * Through `runInUserContext`, not the global client. `PersonProfile` has
+ * row-level security DISABLED (measured, `relrowsecurity` false), so neither
+ * choice is enforced by a policy here — but `no-direct-prisma` holds usecases
+ * to the context helpers and its own exemptions argue that "a narrower
+ * exemption is the better arrangement where it was available". It was
+ * available: this reads and writes exactly one row, keyed by the caller's own
+ * `ctx.userId` and never by anything from a request body. If #3007 lands the
+ * policy, this call site already runs in the context that policy keys on.
  */
 export async function readOwnProfile(ctx: UserContext): Promise<PersonProfileView> {
-    const row = await prisma.personProfile.findUnique({
-        where: { userId: ctx.userId },
-        select: { displayName: true, published: true },
-    });
+    const row = await runInUserContext(ctx, (tx) =>
+        tx.personProfile.findUnique({
+            where: { userId: ctx.userId },
+            select: { displayName: true, published: true },
+        }),
+    );
     const name = row?.displayName?.trim();
     return {
         // Reported as absent unless it would actually RENDER. A caller
@@ -99,7 +106,7 @@ export async function setOwnDisplayName(
     }
 
     const clearing = name.length === 0;
-    const row = await prisma.personProfile.upsert({
+    const row = await runInUserContext(ctx, (tx) => tx.personProfile.upsert({
         where: { userId: ctx.userId },
         // `published` is written on BOTH paths rather than only on create:
         // an existing row that was published once must stop being published
@@ -114,7 +121,7 @@ export async function setOwnDisplayName(
             published: !clearing,
         },
         select: { displayName: true, published: true },
-    });
+    }));
     return {
         displayName: row.published && row.displayName ? row.displayName : null,
         published: row.published,
