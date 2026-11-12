@@ -96,7 +96,7 @@ beforeEach(() => {
 
 describe('suspending wires both post-commit effects', () => {
     it('invalidates the cached verdict', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         // THE MUTATION TARGET. Without this assertion, dropping the
         // invalidation is green everywhere.
@@ -104,7 +104,7 @@ describe('suspending wires both post-commit effects', () => {
     });
 
     it('appends to the moderation chain, naming the key generation', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'previous', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'previous' }, reason: 'repeat abuse' });
 
         expect(appendPlatformAuditEntry).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -122,7 +122,7 @@ describe('suspending wires both post-commit effects', () => {
     });
 
     it('records WHETHER there was a reason, never the reason itself', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         const details = appendPlatformAuditEntry.mock.calls[0][0].detailsJson;
         expect(details.hasReason).toBe(true);
@@ -136,7 +136,7 @@ describe('suspending wires both post-commit effects', () => {
         // [encrypted]". That was ASPIRATIONAL — this path created no action
         // row, so the reason was accepted and dropped (#1667). Now it is a
         // claim with a test.
-        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         expect(moderationActionCreate).toHaveBeenCalledTimes(1);
         expect(moderationActionCreate.mock.calls[0][0].data).toMatchObject({
@@ -158,7 +158,7 @@ describe('suspending wires both post-commit effects', () => {
         // applies to `PlatformAuditLog`.
         userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: new Date() });
 
-        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         expect(moderationActionCreate).not.toHaveBeenCalled();
     });
@@ -170,7 +170,7 @@ describe('suspending wires both post-commit effects', () => {
         // decision was taken, the account was locked, and the obligation to
         // explain it depended on a moderator opening a second screen.
         userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: null });
-        await suspendAccount({ userId: 'u1', reason: 'repeat illegal content', generation: 'current' });
+        await suspendAccount({ userId: 'u1', reason: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' } });
 
         expect(queueStatementForAction).toHaveBeenCalledTimes(1);
         expect(queueStatementForAction.mock.calls[0][0]).toMatchObject({
@@ -193,7 +193,7 @@ describe('suspending wires both post-commit effects', () => {
         // would send a second legal notice for one decision. Gated on the
         // action having been recorded instead.
         userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: new Date() });
-        await suspendAccount({ userId: 'u1', reason: 'repeat illegal content', generation: 'current' });
+        await suspendAccount({ userId: 'u1', reason: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' } });
 
         expect(moderationActionCreate).not.toHaveBeenCalled();
         expect(queueStatementForAction).not.toHaveBeenCalled();
@@ -201,7 +201,7 @@ describe('suspending wires both post-commit effects', () => {
 
     it('queues nothing for an account that does not exist', async () => {
         userFindUnique.mockResolvedValue(null);
-        await suspendAccount({ userId: 'ghost', reason: 'repeat illegal content', generation: 'current' });
+        await suspendAccount({ userId: 'ghost', reason: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' } });
         expect(queueStatementForAction).not.toHaveBeenCalled();
     });
 
@@ -215,7 +215,7 @@ describe('suspending wires both post-commit effects', () => {
         queueStatementForAction.mockRejectedValue(new Error('catalogue unreadable'));
 
         const result = await suspendAccount({
-            userId: 'u1', reason: 'repeat illegal content', generation: 'current',
+            userId: 'u1', reason: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' },
         });
 
         expect(result.applied).toBe(true);
@@ -226,7 +226,7 @@ describe('suspending wires both post-commit effects', () => {
         // A decision about nobody. `applied: false` is the caller's 404.
         userFindUnique.mockResolvedValue(null);
 
-        await suspendAccount({ userId: 'nope', generation: 'current', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'nope', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         expect(moderationActionCreate).not.toHaveBeenCalled();
     });
@@ -234,7 +234,7 @@ describe('suspending wires both post-commit effects', () => {
     it('does NEITHER when the account is already suspended', async () => {
         userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: new Date() });
 
-        const result = await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+        const result = await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         expect(result.alreadySuspended).toBe(true);
         // A second chain entry would make the history claim two suspensions.
@@ -246,7 +246,7 @@ describe('suspending wires both post-commit effects', () => {
     it('does NEITHER when the account does not exist', async () => {
         userFindUnique.mockResolvedValue(null);
 
-        const result = await suspendAccount({ userId: 'nope', generation: 'current', reason: 'repeat abuse' });
+        const result = await suspendAccount({ userId: 'nope', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         expect(result.applied).toBe(false);
         expect(appendPlatformAuditEntry).not.toHaveBeenCalled();
@@ -259,12 +259,12 @@ describe('suspending wires both post-commit effects', () => {
         // not propagate.
         appendPlatformAuditEntry.mockRejectedValue(new Error('chain locked'));
 
-        await expect(suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' }))
+        await expect(suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' }))
             .resolves.toMatchObject({ applied: true });
     });
 
     it('bumps sessionVersion AND stamps suspendedAt in one update', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         const data = userUpdate.mock.calls[0][0].data;
         expect(data.suspendedAt).toBeInstanceOf(Date);
@@ -274,7 +274,7 @@ describe('suspending wires both post-commit effects', () => {
     });
 
     it('revokes only the LIVE session rows', async () => {
-        await suspendAccount({ userId: 'u1', generation: 'current', reason: 'repeat abuse' });
+        await suspendAccount({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' }, reason: 'repeat abuse' });
 
         expect(sessionUpdateMany).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -290,7 +290,7 @@ describe('lifting wires them too', () => {
     });
 
     it('invalidates the cached verdict, so access returns immediately', async () => {
-        await liftSuspension({ userId: 'u1', generation: 'current' });
+        await liftSuspension({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' } });
 
         // An appeal upheld is exactly the moment a stale '1' must not hold
         // someone out for the remaining TTL.
@@ -298,7 +298,7 @@ describe('lifting wires them too', () => {
     });
 
     it('appends the LIFTED verb, so the history is not all suspensions', async () => {
-        await liftSuspension({ userId: 'u1', generation: 'current' });
+        await liftSuspension({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' } });
 
         expect(appendPlatformAuditEntry).toHaveBeenCalledWith(
             expect.objectContaining({ action: 'ACCOUNT_SUSPENSION_LIFTED' }),
@@ -306,7 +306,7 @@ describe('lifting wires them too', () => {
     });
 
     it('clears suspendedAt and does NOT decrement sessionVersion', async () => {
-        await liftSuspension({ userId: 'u1', generation: 'current' });
+        await liftSuspension({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' } });
 
         const data = userUpdate.mock.calls[0][0].data;
         expect(data.suspendedAt).toBeNull();
@@ -319,7 +319,7 @@ describe('lifting wires them too', () => {
     it('does nothing when the account was not suspended', async () => {
         userFindUnique.mockResolvedValue({ id: 'u1', suspendedAt: null });
 
-        const result = await liftSuspension({ userId: 'u1', generation: 'current' });
+        const result = await liftSuspension({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' } });
 
         expect(result.wasSuspended).toBe(false);
         expect(appendPlatformAuditEntry).not.toHaveBeenCalled();
@@ -339,7 +339,7 @@ describe('lifting a suspension stops a moderator erasure (#1667)', () => {
             deletionRequestedBy: 'MODERATION',
         });
 
-        const result = await liftSuspension({ userId: 'u1', generation: 'current' });
+        const result = await liftSuspension({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' } });
 
         expect(result.erasureStopped).toBe(true);
         expect(invalidateDeletionPendingCache).toHaveBeenCalledWith('u1');
@@ -368,7 +368,7 @@ describe('lifting a suspension stops a moderator erasure (#1667)', () => {
             deletionRequestedBy: null,
         });
 
-        const result = await liftSuspension({ userId: 'u1', generation: 'current' });
+        const result = await liftSuspension({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' } });
 
         expect(result.erasureStopped).toBe(false);
         expect(invalidateDeletionPendingCache).not.toHaveBeenCalled();
@@ -382,7 +382,7 @@ describe('lifting a suspension stops a moderator erasure (#1667)', () => {
             deletionRequestedBy: 'SELF',
         });
 
-        const result = await liftSuspension({ userId: 'u1', generation: 'current' });
+        const result = await liftSuspension({ userId: 'u1', actor: { kind: 'platform-key', generation: 'current' } });
 
         expect(result.erasureStopped).toBe(false);
         // `terminatedAt` is cleared alongside — unconditionally, so a lift of a

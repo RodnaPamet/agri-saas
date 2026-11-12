@@ -149,7 +149,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
 
             const { actionId, status } = await actOnNotice({
                 reportId, actionKind: 'CONTENT_REMOVED',
-                rationale: 'misleading grade', generation: 'current',
+                rationale: 'misleading grade', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
 
@@ -166,7 +166,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
 
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'CONTENT_REMOVED',
-                rationale: 'abuse', generation: 'current',
+                rationale: 'abuse', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
             expect(await removedAt('ExchangeMessage', messageId)).not.toBeNull();
@@ -177,7 +177,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
             const reportId = await fileNotice('MESSAGE', messageId);
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'CONTENT_REMOVED',
-                rationale: 'abuse', generation: 'current',
+                rationale: 'abuse', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
 
@@ -198,7 +198,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
 
             const a = await actOnNotice({
                 reportId: first, actionKind: 'CONTENT_REMOVED',
-                rationale: 'one', generation: 'current',
+                rationale: 'one', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(a.actionId);
             // Two notices about one listing is the ORDINARY case, so the second
@@ -206,7 +206,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
             // already-removed subject would leave a notice unanswerable.
             const b = await actOnNotice({
                 reportId: second, actionKind: 'CONTENT_REMOVED',
-                rationale: 'two', generation: 'current',
+                rationale: 'two', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(b.actionId);
             expect(b.status).toBe('ACTIONED');
@@ -245,7 +245,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
 
             await expect(actOnNotice({
                 reportId, actionKind: 'CONTENT_REMOVED',
-                rationale: 'r', generation: 'current',
+                rationale: 'r', actor: { kind: 'platform-key', generation: 'current' },
             })).rejects.toMatchObject({ code: 'MODERATION_ACTION_NOT_PERFORMABLE' });
             expect(await actionCount(reportId)).toBe(0);
             expect(await noticeStatus(reportId)).toBe('RECEIVED');
@@ -266,7 +266,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
 
             await expect(actOnNotice({
                 reportId, actionKind: 'CONTENT_REMOVED',
-                rationale: 'r', generation: 'current',
+                rationale: 'r', actor: { kind: 'platform-key', generation: 'current' },
             })).rejects.toMatchObject({ code: 'MODERATION_ACTION_NOT_PERFORMABLE' });
 
             expect(await actionCount(reportId)).toBe(0);
@@ -278,7 +278,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
 
             await expect(actOnNotice({
                 reportId, actionKind: 'CONTENT_REMOVED',
-                rationale: 'r', generation: 'current',
+                rationale: 'r', actor: { kind: 'platform-key', generation: 'current' },
             })).rejects.toMatchObject({ code: 'MODERATION_SUBJECT_GONE' });
             // The notice stays open, which is the right place for it: a
             // moderator can still answer it with NONE, which is what "looked
@@ -295,7 +295,7 @@ describeFn('CONTENT_REMOVED removes the content (#2865)', () => {
             const reportId = await fileNotice('LISTING', `el-gone-${randomUUID()}`);
             const { actionId, status } = await actOnNotice({
                 reportId, actionKind: 'NONE',
-                rationale: 'nothing there to act on', generation: 'current',
+                rationale: 'nothing there to act on', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
             expect(status).toBe('REJECTED');

@@ -114,7 +114,41 @@ function constantTimeKeyMatch(provided: string, expected: string): boolean {
 }
 
 /**
- * How a platform-key decision is attributed in a moderation record.
+ * WHO authorised a moderation decision — a key generation, or a person.
+ *
+ * ## It is a UNION and must stay one (#2735)
+ *
+ * Two doors reach the same moderation usecases and they can attribute
+ * differently, which is the whole point:
+ *
+ * - a **script** holds the one shared `PLATFORM_ADMIN_API_KEY`, so the most
+ *   that can honestly be recorded is which GENERATION authorised it. That
+ *   narrows a compromise window to one side of a rotation and is no more than
+ *   that.
+ * - the **console** is session-gated (`requirePermission('admin.manage')` +
+ *   `assertPlatformSupport`), so there is a real `ctx.userId` and the trail can
+ *   name a person.
+ *
+ * Collapsing the two — one nullable `userId`, or a bare string slot — produces
+ * a trail where "who" is ambiguous, which is WORSE than today's honest limit:
+ * a reader cannot tell "a person decided this" from "somebody holding the key
+ * decided this, and we lost the detail". The discriminant is what keeps those
+ * two readings apart, so a future kind (SSO, a per-person key) adds an arm
+ * rather than widening an existing one.
+ *
+ * Owner ruling 2026-11-12: per-person API KEYS were considered and rejected.
+ * Making `verifyPlatformApiKey` async for a credential lookup would convert its
+ * 20 bare assertion call sites into floating promises that fail OPEN —
+ * measured: `tsc --strict` exits 0 on an un-awaited async assertion, and
+ * `eslint.config.mjs` configures no type-aware rules, so nothing catches it.
+ * The session door creates no such hazard, so the verifier stays SYNCHRONOUS.
+ */
+export type ModerationActor =
+    | { readonly kind: 'platform-key'; readonly generation: PlatformKeyGeneration }
+    | { readonly kind: 'user'; readonly userId: string };
+
+/**
+ * How a decision is attributed in a moderation record.
  *
  * Lives HERE, beside `PlatformKeyGeneration`, rather than in
  * `usecases/moderation.ts` where it was first written (#1667). Two usecases now
@@ -122,13 +156,31 @@ function constantTimeKeyMatch(provided: string, expected: string): boolean {
  * imports `suspendAccountOnTx` from `account-suspension.ts`, so importing it
  * back would make a cycle between the two.
  *
- * It names a KEY GENERATION, not a person: there is one
- * `PLATFORM_ADMIN_API_KEY` for every operator, so this narrows a compromise
- * window to one side of a rotation and is honest about being no more than that.
- * #1599 (P5.8) owns the credential model that would make it a person.
+ * **Both arms are PREFIXED, and the prefixes must stay distinguishable.** A
+ * bare `current` in an attribution column would read as a person's handle, and
+ * a bare cuid would read as neither. `platform-key:` and `user:` are what make
+ * the stored value self-describing to a reader who has only the column —
+ * which, for a regulator reading an export, is the usual case.
+ *
+ * Taking the union rather than a generation is deliberately a BREAKING
+ * signature change: every call site has to say which kind of actor it has, and
+ * `tsc` names the ones that do not. A defaulted or optional parameter would
+ * have let a new session-gated route silently record a key generation.
  */
-export function moderatorRefFor(generation: PlatformKeyGeneration): string {
-    // Prefixed so the shape says what kind of thing it is. A bare "current"
-    // in an attribution column would read as a person's handle.
-    return `platform-key:${generation}`;
+export function moderatorRefFor(actor: ModerationActor): string {
+    return actor.kind === 'user'
+        ? `user:${actor.userId}`
+        : `platform-key:${actor.generation}`;
+}
+
+/**
+ * The `PlatformAuditLog.actorUserId` for an actor, or null when there is none.
+ *
+ * NULL is not a fallback here — it is the truthful answer for a key-authorised
+ * action, because there is no person in scope. Accepting an actor id from a
+ * request body would put a caller-supplied name in an attribution field, which
+ * is worse than an absent one (the `FeatureFlag.updatedByUserId` rule).
+ */
+export function actorUserIdFor(actor: ModerationActor): string | null {
+    return actor.kind === 'user' ? actor.userId : null;
 }

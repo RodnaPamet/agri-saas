@@ -80,7 +80,10 @@ export const POST = withApiErrorHandling(
         const result = await restoreRemovedContent({
             actionId: parsed.data.actionId,
             rationale: parsed.data.rationale,
-            generation: gate.generation,
+            // The KEY door, so attribution is the key generation and
+            // `actorUserId` stays null. The console's session door passes
+            // `{ kind: 'user' }` instead (#2735).
+            actor: { kind: 'platform-key', generation: gate.generation },
         });
         return jsonResponse(result, { status: 200 });
     },

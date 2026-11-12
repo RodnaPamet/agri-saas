@@ -147,16 +147,21 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
         const { actionId } = await actOnNotice({
             reportId, actionKind: 'CONTENT_REMOVED',
-            rationale: 'the grade could not be substantiated', generation: 'previous',
+            rationale: 'the grade could not be substantiated', actor: { kind: 'platform-key', generation: 'previous' },
         });
         actions.push(actionId);
 
         const rows = await chainRows('MODERATION_ACTION_RECORDED', actionId);
         expect(Number(rows[0].n)).toBe(1);
 
-        // The generation, not a person — and this is exactly what #1599's
-        // remaining scope changes. Pinned so that change is visible when it
-        // lands rather than silent.
+        // The generation, not a person — because this is the KEY door, where
+        // that is the most that can honestly be recorded. Pinned here since
+        // #1619 so a change would be visible rather than silent, and the
+        // change has now landed: #2735 added a session door whose actor IS a
+        // person. This assertion is the CONTROL for it — the key arm must go
+        // on recording a key, or the union has collapsed into one kind.
+        // (The comment used to name #1599 as the owner of that change. #1599
+        // closed without it, which is the whole reason #2735 exists.)
         const detail = await globalPrisma.$queryRawUnsafe<Array<{ d: string }>>(
             `SELECT "detailsJson"::text AS d FROM "PlatformAuditLog"
              WHERE "action" = 'MODERATION_ACTION_RECORDED'
@@ -175,7 +180,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
             // demotion announced a sanction that does not exist. This test's
             // subject is the RATIONALE, not the kind.
             reportId, actionKind: 'CONTENT_REMOVED',
-            rationale: secret, generation: 'current',
+            rationale: secret, actor: { kind: 'platform-key', generation: 'current' },
         });
         actions.push(actionId);
 
@@ -194,7 +199,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
         const recipient = await makeUser();
         const { actionId } = await actOnNotice({
             reportId, actionKind: 'CONTENT_REMOVED',
-            rationale: 'removed', generation: 'current',
+            rationale: 'removed', actor: { kind: 'platform-key', generation: 'current' },
         });
         actions.push(actionId);
 
@@ -216,7 +221,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
         const reportId = await fileNotice();
         const recipient = await makeUser();
         const { actionId } = await actOnNotice({
-            reportId, actionKind: 'CONTENT_REMOVED', rationale: 'r', generation: 'current',
+            reportId, actionKind: 'CONTENT_REMOVED', rationale: 'r', actor: { kind: 'platform-key', generation: 'current' },
         });
         actions.push(actionId);
         const body = `statement-body-${randomUUID()}`;
@@ -239,7 +244,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
         const recipient = await makeUser();
         const { actionId } = await actOnNotice({
             reportId, actionKind: 'NONE', rationale: 'looked, did nothing',
-            generation: 'current',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         actions.push(actionId);
         const { statementId } = await queueStatement({
@@ -263,7 +268,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_TERMINATED',
-                rationale: 'repeat illegal content', generation: 'current',
+                rationale: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
@@ -289,7 +294,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_TERMINATED',
-                rationale: 'repeat illegal content', generation: 'current',
+                rationale: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
@@ -315,7 +320,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
             const reportId = await fileNotice();
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_TERMINATED',
-                rationale: 'repeat illegal content', generation: 'current',
+                rationale: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
@@ -352,12 +357,12 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
             const reportId = await fileNotice();
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_TERMINATED',
-                rationale: 'repeat illegal content', generation: 'current',
+                rationale: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
 
-            const lifted = await liftSuspension({ userId: target, generation: 'current' });
+            const lifted = await liftSuspension({ userId: target, actor: { kind: 'platform-key', generation: 'current' } });
             // NOT stopped: the erasure is the person's own.
             expect(lifted.erasureStopped).toBe(false);
 
@@ -395,12 +400,12 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_TERMINATED',
-                rationale: 'repeat illegal content', generation: 'current',
+                rationale: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
 
-            const lifted = await liftSuspension({ userId: target, generation: 'current' });
+            const lifted = await liftSuspension({ userId: target, actor: { kind: 'platform-key', generation: 'current' } });
             expect(lifted.erasureStopped).toBe(true);
 
             const row = await globalPrisma.$queryRawUnsafe<Array<{
@@ -427,10 +432,10 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
             const target = await makeUser();
             await requestAccountDeletion(target);
             await suspendAccount({
-                userId: target, generation: 'current', reason: 'unrelated',
+                userId: target, actor: { kind: 'platform-key', generation: 'current' }, reason: 'unrelated',
             });
 
-            const lifted = await liftSuspension({ userId: target, generation: 'current' });
+            const lifted = await liftSuspension({ userId: target, actor: { kind: 'platform-key', generation: 'current' } });
             expect(lifted.erasureStopped).toBe(false);
 
             const row = await globalPrisma.$queryRawUnsafe<Array<{ d: Date | null }>>(
@@ -448,7 +453,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_TERMINATED',
-                rationale: 'repeat illegal content', generation: 'current',
+                rationale: 'repeat illegal content', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
@@ -471,7 +476,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_SUSPENDED',
-                rationale: 'abusive messages', generation: 'current',
+                rationale: 'abusive messages', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
@@ -502,7 +507,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'ACCOUNT_TERMINATED',
-                rationale: 'terminated', generation: 'current', suspendUserId: target,
+                rationale: 'terminated', actor: { kind: 'platform-key', generation: 'current' }, suspendUserId: target,
             });
             actions.push(actionId);
 
@@ -511,5 +516,178 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
                  WHERE "userId" = $1 AND "revokedAt" IS NULL`, target);
             expect(Number(live[0].n)).toBe(0);
         });
+    });
+});
+
+describeFn('#2735 — the session door attributes a decision to a PERSON', () => {
+    /**
+     * The new arm of `ModerationActor`, and the reason this file gained a
+     * second `describe` rather than another case in the first: every test above
+     * is about what the chain does NOT carry (the rationale, the statement
+     * body) or about the key arm. This one is about WHO, which is the thing
+     * #2735 changed.
+     *
+     * ## Both directions, or neither assertion means anything
+     *
+     * A bug that made `moderatorRefFor` always return `user:<id>` would pass a
+     * user-only test, and a bug that made it always return
+     * `platform-key:<gen>` would pass the key-only tests already in this file.
+     * So the pair is the unit of proof: the SAME call, differing only in its
+     * actor, must produce two different attributions — and `actorUserId` must
+     * move with `moderatorRef`, since a chain naming a person in one field and
+     * NULL in the other is not readable either way.
+     */
+    it('records the moderator as `user:<id>` in the action row AND the chain', async () => {
+        const moderator = await makeUser();
+        const reportId = await fileNotice();
+
+        const { actionId } = await actOnNotice({
+            reportId,
+            actionKind: 'CONTENT_REMOVED',
+            rationale: 'the grade could not be substantiated',
+            actor: { kind: 'user', userId: moderator },
+        });
+        actions.push(actionId);
+
+        // The stored decision, which is what an export hands a regulator.
+        const row = await globalPrisma.$queryRawUnsafe<Array<{ ref: string }>>(
+            `SELECT "moderatorRef" AS ref FROM "ModerationAction" WHERE "id" = $1`,
+            actionId,
+        );
+        expect(row[0].ref).toBe(`user:${moderator}`);
+
+        // And the hash-chained entry. `actorUserId` is a COLUMN here, not a
+        // detail: it was hardcoded NULL before #2735 because there was no
+        // person in scope, and reading it back is the only way to tell "we
+        // recorded the person" from "we recorded the ref and left the column".
+        const chain = await globalPrisma.$queryRawUnsafe<Array<{ actor: string | null; d: string }>>(
+            `SELECT "actorUserId" AS actor, "detailsJson"::text AS d
+               FROM "PlatformAuditLog"
+              WHERE "action" = 'MODERATION_ACTION_RECORDED'
+                AND "detailsJson"::text LIKE '%' || $1 || '%' LIMIT 1`,
+            actionId,
+        );
+        expect(chain[0].actor).toBe(moderator);
+        expect(chain[0].d).toContain(`user:${moderator}`);
+        // Not the key shape, in the same breath — otherwise a writer emitting
+        // BOTH prefixes would satisfy every assertion above.
+        expect(chain[0].d).not.toContain('platform-key:');
+    });
+
+    it('the KEY door still records a key and a NULL actor — the paired control', async () => {
+        const reportId = await fileNotice();
+
+        const { actionId } = await actOnNotice({
+            reportId,
+            actionKind: 'CONTENT_REMOVED',
+            rationale: 'the grade could not be substantiated',
+            actor: { kind: 'platform-key', generation: 'current' },
+        });
+        actions.push(actionId);
+
+        const row = await globalPrisma.$queryRawUnsafe<Array<{ ref: string }>>(
+            `SELECT "moderatorRef" AS ref FROM "ModerationAction" WHERE "id" = $1`,
+            actionId,
+        );
+        expect(row[0].ref).toBe('platform-key:current');
+        expect(row[0].ref).not.toContain('user:');
+
+        const chain = await globalPrisma.$queryRawUnsafe<Array<{ actor: string | null }>>(
+            `SELECT "actorUserId" AS actor FROM "PlatformAuditLog"
+              WHERE "action" = 'MODERATION_ACTION_RECORDED'
+                AND "detailsJson"::text LIKE '%' || $1 || '%' LIMIT 1`,
+            actionId,
+        );
+        // NULL is the TRUTHFUL answer for a shared key, not a fallback. If this
+        // ever reads as a user id, something has invented an actor.
+        expect(chain[0].actor).toBeNull();
+    });
+
+    it('`suspendAccount` attributes the person in the action row AND the chain', async () => {
+        // THE TEST THAT JUSTIFIES THE WHOLE EDIT, and it took a wrong first
+        // draft to find. `account-suspension.ts` had THREE spellings of the
+        // attribution: `moderatorRefFor(...)` once, and two inline
+        // `platform-key:${input.generation}` template literals that bypassed
+        // the helper entirely. Changing only the helper would have left a
+        // session-door suspension recorded as a KEY — the #1664 class, where
+        // two spellings of one rule make the divergence a false record rather
+        // than a wrong sentence.
+        //
+        // My first draft aimed at `actOnNotice({ actionKind:
+        // 'ACCOUNT_SUSPENDED' })` and found ZERO rows, because that path goes
+        // through `suspendAccountOnTx`, which writes no `ModerationAction` —
+        // the notice's own row is the record there. The inline spellings live
+        // in `queuePostCommit` and `liftSuspension`, which only the STANDALONE
+        // `suspendAccount` reaches. Aiming at the wrong function would have
+        // left both of them unexercised while the suite looked thorough.
+        const moderator = await makeUser();
+        const target = await makeUser();
+
+        const result = await suspendAccount({
+            userId: target,
+            actor: { kind: 'user', userId: moderator },
+            reason: 'repeated misleading listings',
+        });
+        expect(result.applied).toBe(true);
+
+        // 1. The decision row — `moderatorRefFor` at its one honest call site.
+        const rows = await globalPrisma.$queryRawUnsafe<Array<{ ref: string; id: string }>>(
+            `SELECT "moderatorRef" AS ref, "id" AS id FROM "ModerationAction"
+              WHERE "subjectKind" = 'ACCOUNT' AND "subjectId" = $1`,
+            target,
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0].ref).toBe(`user:${moderator}`);
+        actions.push(rows[0].id);
+
+        // 2. The chain entry — written by `queuePostCommit`, which is where one
+        // of the two inline spellings was. Both halves asserted together: a
+        // `detailsJson` naming the person beside an `actorUserId` left NULL is
+        // a record a reader cannot interpret either way.
+        const chain = await globalPrisma.$queryRawUnsafe<Array<{ actor: string | null; d: string }>>(
+            `SELECT "actorUserId" AS actor, "detailsJson"::text AS d
+               FROM "PlatformAuditLog"
+              WHERE "action" = 'ACCOUNT_SUSPENDED'
+                AND "detailsJson"::text LIKE '%' || $1 || '%' LIMIT 1`,
+            target,
+        );
+        expect(chain).toHaveLength(1);
+        expect(chain[0].actor).toBe(moderator);
+        expect(chain[0].d).toContain(`user:${moderator}`);
+        expect(chain[0].d).not.toContain('platform-key:');
+    });
+
+    it('`liftSuspension` attributes the person too — the second inline spelling', async () => {
+        // The other bypassed site. Lifting is a separate decision with its own
+        // chain verb, so an appeal upheld by a named person must not be
+        // recorded as having been upheld by a key.
+        const moderator = await makeUser();
+        const target = await makeUser();
+
+        await suspendAccount({
+            userId: target,
+            actor: { kind: 'platform-key', generation: 'current' },
+            reason: 'suspended by a script',
+        });
+        await liftSuspension({
+            userId: target,
+            actor: { kind: 'user', userId: moderator },
+            reason: 'appeal upheld',
+        });
+
+        const chain = await globalPrisma.$queryRawUnsafe<Array<{ actor: string | null; d: string }>>(
+            `SELECT "actorUserId" AS actor, "detailsJson"::text AS d
+               FROM "PlatformAuditLog"
+              WHERE "action" = 'ACCOUNT_SUSPENSION_LIFTED'
+                AND "detailsJson"::text LIKE '%' || $1 || '%' LIMIT 1`,
+            target,
+        );
+        expect(chain).toHaveLength(1);
+        expect(chain[0].actor).toBe(moderator);
+        expect(chain[0].d).toContain(`user:${moderator}`);
+        // And the SUSPENSION that preceded it was a key, so this one row pair
+        // proves the two decisions are attributed independently rather than
+        // one inheriting the other's actor.
+        expect(chain[0].d).not.toContain('platform-key:');
     });
 });

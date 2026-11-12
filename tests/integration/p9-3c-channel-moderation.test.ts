@@ -132,7 +132,7 @@ describeFn('P9.3c — channel post moderation (#2937)', () => {
             reportId: notice.id,
             actionKind: 'CONTENT_REMOVED',
             rationale: 'реклама в канал',
-            generation: 'current',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         expect(acted.status).toBe('ACTIONED');
 
@@ -165,7 +165,7 @@ describeFn('P9.3c — channel post moderation (#2937)', () => {
             reportId: notice.id,
             actionKind: 'CONTENT_REMOVED',
             rationale: 'реклама',
-            generation: 'current',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
 
         // Linked by ACTION, not by subject: `StatementOfReasons` carries
@@ -195,13 +195,13 @@ describeFn('P9.3c — channel post moderation (#2937)', () => {
             reportId: notice.id,
             actionKind: 'CONTENT_REMOVED',
             rationale: 'грешка',
-            generation: 'current',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
 
         const first = await restoreRemovedContent({
             actionId: acted.actionId,
             rationale: 'жалбата е основателна',
-            generation: 'current',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         expect(first.restored).toBe(true);
 
@@ -221,7 +221,7 @@ describeFn('P9.3c — channel post moderation (#2937)', () => {
         const second = await restoreRemovedContent({
             actionId: acted.actionId,
             rationale: 'отново',
-            generation: 'current',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         expect(second.restored).toBe(false);
     }, 60_000);
@@ -235,14 +235,14 @@ describeFn('P9.3c — channel post moderation (#2937)', () => {
             reportId: notice.id,
             actionKind: 'CONTENT_REMOVED',
             rationale: 'r',
-            generation: 'current',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         await prisma.channelPost.update({
             where: { id: postId }, data: { deletedAt: new Date() },
         });
 
         await restoreRemovedContent({
-            actionId: acted.actionId, rationale: 'r2', generation: 'current',
+            actionId: acted.actionId, rationale: 'r2', actor: { kind: 'platform-key', generation: 'current' },
         });
 
         const row = await prisma.channelPost.findUniqueOrThrow({

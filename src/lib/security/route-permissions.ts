@@ -254,6 +254,33 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'in-handler via assertPlatformSupport; admin.manage is the audited role ' +
             'floor, not the isolation practice.',
     },
+    // The moderation console's SECOND DOOR — #2735. Same two-gate shape and
+    // same reason as farm-claims above: `ContentReport`, `ModerationAction` and
+    // `StatementOfReasons` are TENANTLESS and deny `app_user` outright, so
+    // `admin.manage` alone would let an ADMIN of any one farm triage every
+    // other farm's Art 16 notices.
+    //
+    // What this door buys that the keyed one cannot: a PERSON. The keyed
+    // `/api/admin/moderation/*` can attribute no further than
+    // `platform-key:<generation>`, because one `PLATFORM_ADMIN_API_KEY` is
+    // shared by every operator — so a regulator asking "who decided this" got
+    // "somebody holding the key". Here `ctx.userId` is the verified caller, and
+    // `ModerationActor` carries it into `moderatorRef` and `actorUserId` alike.
+    //
+    // The keyed routes STAY, for scripts and for an incident where the session
+    // path is the broken thing. Per-person API keys were the other candidate
+    // and were rejected: making `verifyPlatformApiKey` async would convert its
+    // 20 bare assertion sites into floating promises that fail OPEN, with
+    // `tsc` and `lint` both green (measured).
+    {
+        path: new RegExp(`^${T}\\/admin\\/moderation(\\/.*)?$`),
+        permission: 'admin.manage',
+        note:
+            'Moderation console — Art 16 triage and the Art 17 decision, on tenantless ' +
+            'models. Platform-tenant gated in-handler via assertPlatformSupport; ' +
+            'admin.manage is the audited role floor, not the isolation practice. This ' +
+            'door exists so a decision names a PERSON rather than a key generation.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/feature-flags(\\/.*)?$`),
         permission: 'admin.manage',
