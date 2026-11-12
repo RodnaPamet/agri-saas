@@ -73,6 +73,7 @@ export const mockCtx: RequestContext = {
         reports: { view: true, export: true },
         knowledge: { view: true },
         documents: { view: true, upload: true, manage: true },
+        machines: { view: true, manage: true },
         admin: { view: true, manage: true, members: true, sso: true, scim: true, tenant_lifecycle: true, owner_management: true },
     },
 };
