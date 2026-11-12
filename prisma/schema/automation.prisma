@@ -314,6 +314,7 @@ model IntegrationConnection {
   tenant          Tenant                   @relation(fields: [tenantId], references: [id])
   executions      IntegrationExecution[]
   syncMappings    IntegrationSyncMapping[]
+  machineTelematicsLinks MachineTelematicsLink[]
 
   @@unique([tenantId, provider, name])
   @@index([tenantId])

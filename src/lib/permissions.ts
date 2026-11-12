@@ -24,6 +24,33 @@ export type PermissionSet = {
      * something a role flag can express.
      */
     documents: { view: boolean; upload: boolean; manage: boolean };
+    /**
+     * Machine tracking — the live map, a day's route, worked parcels and the
+     * tracker/telematics register (#2948).
+     *
+     * ITS OWN FAMILY, not a reuse of `tasks.*` or an `assets.*`, for the
+     * reason `documents` gives one line above and with more at stake:
+     * sharing flags would mean a change to task permissions silently changing
+     * who can see where a named driver was, minute by minute.
+     *
+     * Because that is what this governs. A machine position is personal data
+     * by LINKAGE — `MachinePosition -> Asset -> TaskAsset ->
+     * Task.assigneeUserId` names the person at those coordinates — which is
+     * the unstated premise under both owner rulings on the feature (30-day
+     * raw retention; drivers must be told). #2969 carries the open question
+     * about what that means for export and erasure.
+     *
+     * `view` is the three reads, `manage` the register. Both are OWNER +
+     * ADMIN only, per #2948 §5, and EVERY other role is explicitly false —
+     * including READER, which is the first domain where READER gets nothing.
+     * That break with READER's "view everything" default is the point: this
+     * is surveillance of an employee, not a farm record.
+     *
+     * A MECHANISATOR reaches the one machine on their own open task through
+     * `/farm-tasks/{taskId}/machine`, which `isOperatorAllowedPath` already
+     * admits — not through this flag.
+     */
+    machines: { view: boolean; manage: boolean };
     admin: {
         view: boolean;
         manage: boolean;
@@ -80,6 +107,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
     reports: ['view', 'export'],
     knowledge: ['view'],
     documents: ['view', 'upload', 'manage'],
+    machines: ['view', 'manage'],
     admin: ['view', 'manage', 'members', 'sso', 'scim', 'tenant_lifecycle', 'owner_management'],
 };
 
@@ -103,6 +131,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 documents: { view: true, upload: true, manage: true },
+                machines: { view: true, manage: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     tenant_lifecycle: true, owner_management: true,
@@ -115,6 +144,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 documents: { view: true, upload: true, manage: true },
+                // #2948 §5 puts the reads at OWNER|ADMIN and the register at
+                // ADMIN, so ADMIN gets both.
+                machines: { view: true, manage: true },
                 admin: {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     // Explicit false: ADMIN is NOT the tenant owner.
@@ -131,6 +163,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 documents: { view: true, upload: true, manage: false },
+                // An EDITOR runs the farm's records; they are not entitled to
+                // the minute-by-minute whereabouts of the people driving.
+                machines: { view: false, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'AUDITOR':
@@ -143,6 +178,12 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 reports: { view: true, export: true },
                 knowledge: { view: true },
                 documents: { view: true, upload: false, manage: false },
+                // Deliberately FALSE despite the read-everything pattern
+                // above. An auditor inspects the farm's records; a position
+                // trace is surveillance of an employee, and #2948 §5 names
+                // OWNER|ADMIN. If an audit ever needs it, that is a ruling to
+                // take, not a default to inherit.
+                machines: { view: false, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'MECHANISATOR':
@@ -163,6 +204,12 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // as every other domain above applies to the knowledge base.
                 knowledge: { view: false },
                 documents: { view: false, upload: false, manage: false },
+                // FALSE, and that is not a restriction of this persona so much
+                // as the shape of the feature: a MECHANISATOR reaches the one
+                // machine on their OWN open task through
+                // `/farm-tasks/{taskId}/machine`, which `isOperatorAllowedPath`
+                // already admits. This flag would be the fleet.
+                machines: { view: false, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
         case 'READER':
@@ -173,6 +220,14 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 reports: { view: true, export: false },
                 knowledge: { view: true },
                 documents: { view: true, upload: false, manage: false },
+                // THE FIRST DOMAIN WHERE READER GETS NOTHING, which is worth
+                // pausing on: every other `view` above is true here, because
+                // READER is the view-everything role. Location data is the
+                // exception on purpose — it is about PEOPLE, not about the
+                // farm's records — and this arm is also the fall-through, so a
+                // future role added without its own case lands here and is
+                // denied rather than silently granted the fleet's whereabouts.
+                machines: { view: false, manage: false },
                 admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false },
             };
     }

@@ -57,6 +57,32 @@ describe('getPermissionsForRole', () => {
         expect(perms.admin.manage).toBe(false);
     });
 
+    test('machine location is OWNER and ADMIN only — #2948 §5', () => {
+        // The reads are OWNER|ADMIN and the register is ADMIN, and every other
+        // role is explicitly denied. Asserted per role rather than by the
+        // domain merely EXISTING, because a domain present with the wrong
+        // values is the failure that matters: a position trace names the
+        // person who was at those coordinates.
+        for (const role of ['OWNER', 'ADMIN'] as const) {
+            expect(getPermissionsForRole(role).machines).toEqual({ view: true, manage: true });
+        }
+        for (const role of ['EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR'] as const) {
+            expect(getPermissionsForRole(role).machines).toEqual({ view: false, manage: false });
+        }
+    });
+
+    test('an UNKNOWN role falls through to a DENY for machines', () => {
+        // The fall-through arm is `case 'READER': default:`, so a role added
+        // without its own case lands there. For every other domain that means
+        // inheriting READER's view-everything; for this one it must mean
+        // denied, or a new persona silently gets the fleet's whereabouts.
+        const unknown = getPermissionsForRole('SOMETHING_NEW' as never);
+        expect(unknown.machines).toEqual({ view: false, manage: false });
+        // …and the control: the fall-through really is READER, so this test
+        // is not passing because the call threw or returned an empty object.
+        expect(unknown.evidence.view).toBe(true);
+    });
+
     test('every role produces a valid PermissionSet shape', () => {
         const roles = ['ADMIN', 'EDITOR', 'AUDITOR', 'READER', 'MECHANISATOR'] as const;
         for (const role of roles) {
@@ -74,7 +100,12 @@ describe('getPermissionsForRole', () => {
                 // list is exhaustive on purpose — an added or dropped domain
                 // must fail here rather than pass silently, which is why it
                 // is written out instead of derived from the value.
-                'admin', 'documents', 'evidence', 'knowledge', 'reports', 'tasks',
+                // `machines` joined with #2948's machine tracking. It is the
+                // first domain where READER gets NOTHING — location data is
+                // about people, not about the farm's records — so the
+                // per-role assertions below cover it rather than relying on
+                // READER's view-everything default.
+                'admin', 'documents', 'evidence', 'knowledge', 'machines', 'reports', 'tasks',
             ]);
         }
     });

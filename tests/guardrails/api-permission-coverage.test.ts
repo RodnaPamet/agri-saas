@@ -76,6 +76,18 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/documents',
         why: 'Farm document library — reads for every member, writes for writers, and the surface that holds lease contracts naming third parties.',
     },
+    // Machine tracking (#2948 stage 3). In scope for `documents`' reason and
+    // one step beyond it: the rules in `ROUTE_PERMISSIONS` only mean something
+    // if this guard can see the routes they name, and these three routes serve
+    // EMPLOYEE LOCATION DATA — `MachinePosition → Asset → TaskAsset →
+    // Task.assigneeUserId` names the person who was at those coordinates,
+    // minute by minute. The audience is OWNER + ADMIN by owner ruling, which is
+    // narrower than any other read on this list, so a silently-unmatched rule
+    // would weaken the coverage signal over the most confined surface here.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/machines',
+        why: 'Machine tracking reads — the fleet, a day\'s track and a day\'s worked parcels. OWNER + ADMIN only, because a position trace is employee location data rather than an asset attribute.',
+    },
     {
         relPath: 'src/app/api/t/[tenantSlug]/sso',
         why: 'Tenant SSO configuration — admin-only.',

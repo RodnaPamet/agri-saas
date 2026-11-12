@@ -2016,6 +2016,21 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/machines",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/machines/{assetId}/track",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/machines/{assetId}/worked",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/me/interests",
       "status": "live",
       "documented": false
