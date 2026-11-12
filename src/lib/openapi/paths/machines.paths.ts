@@ -166,6 +166,73 @@ const WorkedSchema = z
     })
     .openapi('MachineWorkedDay');
 
+
+const TaskParams = TenantParams.extend({
+    taskId: z.string().openapi({
+        description:
+            'The task. A task that does not exist, belongs to another farm, is assigned to somebody else, or is closed all answer the SAME 404 — telling them apart would disclose which task ids exist and whose they are.',
+    }),
+});
+
+const TaskMachineSchema = z
+    .object({
+        assetId: z.string(),
+        name: z.string(),
+        type: z.enum(['TRACTOR', 'HARVESTER', 'IMPLEMENT', 'VEHICLE', 'IRRIGATION']),
+        lastPosition: PositionSchema.nullable(),
+        locatableCount: z.number().int().openapi({
+            description:
+                'How many locatable machines the task has, so a client can say "and one more" rather than presenting one of two as though it were the only one. A UI that shows one of N without saying so is how somebody walks to the wrong end of a field.',
+        }),
+    })
+    .openapi('TaskMachine');
+
+const TaskAssetSchema = z
+    .object({
+        assetId: z.string(),
+        name: z.string(),
+        type: z.enum(['TRACTOR', 'HARVESTER', 'IMPLEMENT', 'VEHICLE', 'IRRIGATION']),
+        positionSource: PositionSourceSchema.nullable().openapi({
+            description:
+                'CONFIGURATION, and the key is ALWAYS present — null means nothing is connected. Clients read key presence, so omitting it for an unconfigured machine would be a different answer rather than a smaller payload.',
+        }),
+    })
+    .openapi('TaskAsset');
+
+const TaskAssetListSchema = z
+    .object({ assets: z.array(TaskAssetSchema) })
+    .openapi('TaskAssetList');
+
+const TrackedMachinesSchema = z
+    .object({
+        machines: z
+            .array(
+                z
+                    .object({
+                        name: z.string(),
+                        type: z.enum([
+                            'TRACTOR',
+                            'HARVESTER',
+                            'IMPLEMENT',
+                            'VEHICLE',
+                            'IRRIGATION',
+                        ]),
+                    })
+                    .openapi('TrackedMachineName'),
+            )
+            .openapi({
+                description:
+                    'NAME AND TYPE ONLY — no positions, no IMEI, no last-seen. This endpoint discharges a transparency duty rather than giving anybody a map, which is why it is readable by every role including the restricted machine-operator persona.',
+            }),
+        visibleTo: z
+            .array(z.enum(['OWNER', 'ADMIN', 'EDITOR', 'READER', 'AUDITOR', 'MECHANISATOR']))
+            .openapi({
+                description:
+                    'The roles that can see machine POSITIONS, derived from the permission table rather than hardcoded in each client — so if the visibility rule is ever widened, every notice changes with it instead of one going quietly stale. A caller may read this notice and still not be allowed to see a position; that is the shape of a transparency duty.',
+            }),
+    })
+    .openapi('TrackedMachines');
+
 export function registerMachinePaths(registry: OpenAPIRegistry): void {
     op(registry, {
         method: 'get',
@@ -233,5 +300,58 @@ export function registerMachinePaths(registry: OpenAPIRegistry): void {
                 + 'carry a position source. Distinguishing them would make this endpoint an '
                 + 'enumerator for the asset register.',
         }),
+    });
+
+    // ── The MECHANISATOR reads ──────────────────────────────────────
+    //
+    // Under `/farm-tasks` and NOT `/machines`, which is a reachability
+    // decision rather than a filing one: `isOperatorAllowedPath` admits
+    // `farm-tasks` for the operator persona and admits no `machines` prefix at
+    // all. They are documented HERE, with the machine operations, because the
+    // subject is machines and a client looking for them should find them
+    // together — the path and the subject genuinely differ.
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/farm-tasks/{taskId}/machine',
+        operationId: 'readTaskMachine',
+        summary: 'The machine on the caller’s own open task',
+        description:
+            'Authorises on ASSIGNMENT, not on a role: the caller must be the assignee of an OPEN task. An administrator who is not the assignee is refused here and uses `/machines` instead. Returns ONE machine, chosen by a total order — self-propelled before trailed, then earliest tracker install, then assetId — and discloses the collapse through `locatableCount`.',
+        tags: ['Machines'],
+        params: TaskParams,
+        success: { status: 200, description: 'The task’s machine.', schema: TaskMachineSchema },
+        extraResponses: codedErrorResponses({
+            404:
+                '`TASK_NOT_FOUND` — the same refusal for a task that does not exist, '
+                + 'belongs to another farm, is assigned to somebody else, is closed, or '
+                + 'has no locatable machine on it.',
+        }),
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/farm-tasks/{taskId}/assets',
+        operationId: 'listTaskAssets',
+        summary: 'The locatable machines on a task, and whether each is findable',
+        description:
+            'A WIDER audience than the sibling `/machine` read — any member who can read the task, with no assignment check — and safe to be: it carries configuration and NO coordinates, so it answers which machines are findable without saying where any of them is.',
+        tags: ['Machines'],
+        params: TaskParams,
+        success: { status: 200, description: 'The task’s locatable assets.', schema: TaskAssetListSchema },
+        extraResponses: codedErrorResponses({
+            404: '`TASK_NOT_FOUND` — no such task, or it belongs to another farm.',
+        }),
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/farm-tasks/tracked-machines',
+        operationId: 'listTrackedMachines',
+        summary: 'The drivers’ notice — which machines on this farm are tracked',
+        description:
+            'Readable by EVERY role, the restricted machine-operator persona included, because it discharges a transparency duty. It answers for the whole tenant rather than one task: a driver is entitled to know which machines are tracked, not merely the one they happen to be on today. Lists only machines that actually have a tracker or a telematics link — listing an unconnected machine would overstate the surveillance.',
+        tags: ['Machines'],
+        params: TenantParams,
+        success: { status: 200, description: 'Tracked machines, and who can see positions.', schema: TrackedMachinesSchema },
     });
 }

@@ -1487,6 +1487,21 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/farm-tasks/tracked-machines",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/farm-tasks/{taskId}/assets",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/farm-tasks/{taskId}/machine",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/field-operations/{taskId}",
       "status": "live",
       "documented": true
