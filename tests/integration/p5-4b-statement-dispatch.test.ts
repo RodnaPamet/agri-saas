@@ -267,6 +267,7 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
             recipientUserId: id,
             actionKind: 'ACCOUNT_SUSPENDED',
             rationale: 'repeated unsubstantiated grade claims',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         expect(queued).not.toBeNull();
         statements.push(queued!.statementId);
@@ -316,6 +317,7 @@ describeFn('P5.4b — Art 17 statement dispatch (#1595)', () => {
             recipientUserId: id,
             actionKind: 'ACCOUNT_SUSPENDED',
             rationale: 'repeated unsubstantiated grade claims',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         statements.push(queued!.statementId);
         await backdate(queued!.statementId);

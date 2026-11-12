@@ -69,9 +69,23 @@ import { verifiedFarmMembers } from '@/lib/farm-identity/verification-status';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { queueStatementForAction } from '@/app-layer/usecases/statement-queue';
+import { moderatorRefFor, type ModerationActor } from '@/lib/auth/platform-admin';
 
 /** Reports from DISTINCT verified farms needed to hide a post. */
 export const AUTO_HIDE_THRESHOLD = 3;
+
+/**
+ * WHO this job's decisions are attributed to — #2735.
+ *
+ * Declared ONCE. `moderatorRef` was a hardcoded `'auto:report-threshold'`
+ * literal here and the statement it queues carried no actor at all, so the two
+ * halves of one decision were attributed by two different mechanisms — the
+ * shape that let `account-suspension.ts` end up with three spellings.
+ *
+ * `moderatorRefFor` renders this as `auto:report-threshold`, byte-identical to
+ * the literal it replaces, so rows already written are unaffected.
+ */
+const AUTO_ACTOR: ModerationActor = { kind: 'automatic', rule: 'report-threshold' };
 
 /** How many candidate posts one run considers. */
 const DEFAULT_BATCH = 50;
@@ -186,7 +200,7 @@ export async function runChannelAutoHide(
                         // The notice that tipped it, so the action is attached
                         // to a real report rather than floating.
                         reportId: reportIds[reportIds.length - 1],
-                        moderatorRef: 'auto:report-threshold',
+                        moderatorRef: moderatorRefFor(AUTO_ACTOR),
                         actionKind: 'CONTENT_AUTO_HIDDEN',
                         subjectKind: 'CHANNEL_POST',
                         subjectId: postId,
@@ -218,6 +232,9 @@ export async function runChannelAutoHide(
                 recipientUserId: post.authorUserId,
                 actionKind: 'CONTENT_AUTO_HIDDEN',
                 rationale: `Hidden pending review after ${count} reports.`,
+                // The SAME actor the action row carries. Two mechanisms for one
+                // decision is how they came to disagree.
+                actor: AUTO_ACTOR,
             });
             if (!queued) {
                 statementsUnqueued += 1;

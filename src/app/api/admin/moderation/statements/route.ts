@@ -36,6 +36,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
+import type { PlatformKeyGeneration } from '@/lib/auth/platform-admin';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
 import { parseLimitParam } from '@/lib/validation/query-params';
 import { QueueStatementSchema } from '@/lib/schemas';
@@ -52,13 +53,26 @@ export const runtime = 'nodejs';
  */
 const FALLBACK_LOCALE = 'bg';
 
-function platformGate(req: NextRequest): NextResponse | null {
+/**
+ * The gate, now YIELDING the key generation — #2735.
+ *
+ * It discarded `verifyPlatformApiKey`'s return, which is why
+ * `MODERATION_STATEMENT_QUEUED` recorded no attribution at all: there was
+ * nothing in scope to record. #1619 made "decided" and "explained" two chain
+ * verbs on purpose, and only the first named its authoriser.
+ *
+ * Same shape as the notices and restore routes — returns a response to send
+ * rather than throwing, so the handler stays linear.
+ */
+function platformGate(
+    req: NextRequest,
+): { refused: NextResponse } | { generation: PlatformKeyGeneration } {
     try {
-        verifyPlatformApiKey(req);
-        return null;
+        const { generation } = verifyPlatformApiKey(req);
+        return { generation };
     } catch (err) {
         if (err instanceof PlatformAdminError) {
-            return NextResponse.json({ error: err.message }, { status: err.status });
+            return { refused: NextResponse.json({ error: err.message }, { status: err.status }) };
         }
         throw err;
     }
@@ -66,8 +80,8 @@ function platformGate(req: NextRequest): NextResponse | null {
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest) => {
-        const refused = platformGate(req);
-        if (refused) return refused;
+        const gate = platformGate(req);
+        if ('refused' in gate) return gate.refused;
 
         const limit = parseLimitParam(req.nextUrl.searchParams.get('limit'), { max: 200 });
         return jsonResponse({ statements: await listUndeliveredStatements(limit) });
@@ -77,8 +91,8 @@ export const GET = withApiErrorHandling(
 
 export const POST = withApiErrorHandling(
     async (req: NextRequest) => {
-        const refused = platformGate(req);
-        if (refused) return refused;
+        const gate = platformGate(req);
+        if ('refused' in gate) return gate.refused;
 
         let raw: unknown;
         try {
@@ -94,6 +108,9 @@ export const POST = withApiErrorHandling(
         const result = await queueStatement({
             actionId: parsed.data.actionId,
             recipientUserId: parsed.data.recipientUserId,
+            // The KEY door. The session sibling passes `{ kind: 'user' }`, so
+            // the chain records which of the two queued it (#2735).
+            actor: { kind: 'platform-key', generation: gate.generation },
             // A placeholder, not a language choice: dispatch resolves the
             // recipient's own locale at SEND time and writes it back, because
             // Art 17 says "in the recipient's language" and a console default

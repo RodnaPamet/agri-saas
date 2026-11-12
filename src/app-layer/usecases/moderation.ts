@@ -610,6 +610,10 @@ export async function actOnNotice(input: {
                 recipientUserId,
                 actionKind: input.actionKind,
                 rationale: input.rationale,
+                // The DECIDER. Queueing the statement is part of their act, so
+                // the chain's two verbs name the same person rather than one
+                // naming nobody.
+                actor: input.actor,
             });
         }
     }
@@ -1048,6 +1052,7 @@ export async function restoreRemovedContent(input: {
             recipientUserId,
             actionKind: 'CONTENT_RESTORED',
             rationale: input.rationale,
+            actor: input.actor,
         });
     }
 
