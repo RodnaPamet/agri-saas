@@ -761,6 +761,21 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/farm-claims",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/farm-claims/{claimId}/dispute",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/farm-claims/{claimId}/verify",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/farm-profile",
       "status": "live",
       "documented": true

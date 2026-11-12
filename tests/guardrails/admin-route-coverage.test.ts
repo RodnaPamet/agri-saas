@@ -79,6 +79,15 @@ const ADMIN_ONLY_ROUTES = [
     // this list by a distance: the others curate data a farm reads, while a
     // switch here turns a FEATURE on or off for every farm at once.
     'admin/feature-flags/route.ts',
+    // «Потвърждаване на стопанства» (#2963) — the session-authenticated door
+    // onto the farm-identity review queue. Same two gates as its neighbours,
+    // and `admin.manage` alone is further from sufficient here than anywhere
+    // else in this list: `FarmIdentityClaim` carries no `tenantId`, so without
+    // `assertPlatformSupport` an ADMIN of any farm could verify ANOTHER farm's
+    // identity — not curate data a farm reads, but assert who it is.
+    'admin/farm-claims/route.ts',
+    'admin/farm-claims/[claimId]/verify/route.ts',
+    'admin/farm-claims/[claimId]/dispute/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
     // Platform-tenant gated: a price typed here renders in every tenant's
