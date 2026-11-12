@@ -109,6 +109,36 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'the row — which is what `mayDelete` reports on the list.',
     },
 
+    // ── Machine tracking (#2948) ────────────────────────────────────
+    //
+    // GET only, on purpose: stage 3 is the READ surface. The tracker and
+    // telematics-link writes are a later stage and will need `machines.manage`
+    // plus the drivers-informed columns, so there is deliberately no write
+    // rule here yet — a permissive rule waiting for its routes is a rule
+    // nobody re-reads when they arrive.
+    //
+    // MECHANISATOR is excluded TWICE, and the redundancy is the point:
+    // `isOperatorAllowedPath` admits no `machines` prefix (its API branch
+    // enumerates farm-tasks / field-operations / tasks / locations / agro), and
+    // the role holds `machines.view: false`. That role sees only the machine
+    // on its own open task, through the `farm-tasks` reads, which authorise on
+    // assignment rather than on this flag.
+    //
+    // A position trace is personal data by LINKAGE — MachinePosition → Asset →
+    // TaskAsset → Task.assigneeUserId names the person who was at those
+    // coordinates, minute by minute — so this is not an ordinary machine
+    // register read, and OWNER + ADMIN is the whole audience by owner ruling.
+    {
+        path: new RegExp(`^${T}\\/machines(\\/.*)?$`),
+        methods: ['GET'],
+        permission: 'machines.view',
+        note:
+            'The fleet list, a day\'s track, and a day\'s worked parcels. '
+            + 'OWNER + ADMIN only: a track is employee location data, not an '
+            + 'asset attribute, so it is NOT readable by every member the way '
+            + 'the asset register is.',
+    },
+
     // ── Member management ───────────────────────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/members(\\/.*)?$`),

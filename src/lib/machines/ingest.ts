@@ -96,6 +96,11 @@ export async function storePositions(
             tenantId: identity.tenantId,
             assetId: identity.assetId,
             trackerId: identity.trackerId,
+            // Stated, not defaulted. The column has no database default
+            // precisely so a writer that forgets fails instead of mislabelling
+            // provenance — and for this writer the honest value is the one
+            // that says "arrived over an unauthenticated Codec 8 socket".
+            source: 'TRACKER' as const,
             recordedAt: p.recordedAt,
             lat: p.lat,
             lon: p.lon,

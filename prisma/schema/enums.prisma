@@ -1068,3 +1068,52 @@ enum ConversationState {
   ACCEPTED
   DECLINED
 }
+
+/// How a `MachinePosition` reached us — #2948, owner ruling 2026-11-10
+/// ("build for the modern fleet first").
+///
+/// REQUIRED on the row, with NO Prisma-level default, deliberately. A default
+/// means a writer that forgets silently MISLABELS the provenance of location
+/// data rather than failing, which is `a-default-cannot-carry-a-safety-property`
+/// — and provenance is the one thing that cannot be recovered afterwards from
+/// the coordinates. The migration backfills existing rows as TRACKER (the only
+/// writer that existed) and then DROPS the default, so history is right and
+/// future writers must say.
+///
+/// Coarse on purpose: WHICH vendor is recoverable from the asset's telematics
+/// link and its `IntegrationConnection.provider`, so putting a provider per
+/// position would duplicate that on ~2,900 rows per machine per day. What the
+/// row needs to answer is "could this have been forged by someone who learnt an
+/// IMEI" — and that is exactly the TRACKER/TELEMATICS distinction, because the
+/// vendor path authenticates with an OAuth credential and the Codec 8 path
+/// cannot authenticate at all.
+enum MachinePositionSource {
+  /// Aftermarket tracker over Codec 8. Identity is an IMEI and nothing else.
+  TRACKER
+  /// A manufacturer's telematics API, reached through an IntegrationConnection.
+  TELEMATICS
+  /// The demo simulator. ON THE POSITION and not merely on the asset, because
+  /// the owner's rule is that every simulated position is marked — and marking
+  /// only the asset leaves rows that outlive a reconfiguration still claiming
+  /// to be real. The thing that must never happen is simulated work reaching a
+  /// real farm's ДНЕВНИК, even as a «Нов запис» draft.
+  SIMULATED
+}
+
+/// Which manufacturer's telematics platform a machine is linked to — #2948,
+/// owner ruling 2026-11-10 (four makes to cover).
+///
+/// Grouped by PLATFORM rather than by brand, because that is what an adapter
+/// talks to: Case IH and New Holland are both CNH Industrial, and Fendt and
+/// Massey Ferguson are both AGCO. A brand-per-value would mean two adapters
+/// with identical code and two places to fix one bug.
+enum TelematicsProvider {
+  /// John Deere Operations Center / JDLink.
+  JOHN_DEERE
+  /// CNH Industrial — Case IH AFS Connect, New Holland PLM.
+  CNH
+  /// CLAAS Telematics.
+  CLAAS
+  /// AGCO — Fendt Connect, Massey Ferguson.
+  AGCO
+}
