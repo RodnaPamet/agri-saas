@@ -906,6 +906,11 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/moderation/notices",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/modules",
       "status": "live",
       "documented": false

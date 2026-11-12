@@ -669,10 +669,12 @@ describeFn('#2735 — the session door attributes a decision to a PERSON', () =>
             actor: { kind: 'platform-key', generation: 'current' },
             reason: 'suspended by a script',
         });
+        // No `reason` here, and that is the signature rather than an omission:
+        // lifting restores the ability to sign in and is not a decision the
+        // Art 17 machinery composes a statement from.
         await liftSuspension({
             userId: target,
             actor: { kind: 'user', userId: moderator },
-            reason: 'appeal upheld',
         });
 
         const chain = await globalPrisma.$queryRawUnsafe<Array<{ actor: string | null; d: string }>>(
