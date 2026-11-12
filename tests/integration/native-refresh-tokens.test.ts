@@ -24,12 +24,17 @@ import {
     hashToken,
     REFRESH_REPLAY_GRACE_SECONDS,
 } from '@/lib/auth/native/refresh-tokens';
+import { SESSION_IDLE_MAX_AGE_MINUTES } from '@/lib/auth/session-lifetime';
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 const USER_ID = `u-nrt-${randomUUID()}`;
 const TENANT_ID = `t-nrt-${randomUUID()}`;
+/** Has a TenantSecuritySettings row with a number of its OWN (#3004). */
+const POLICY_TENANT = `t-nrt-pol-${randomUUID()}`;
+/** Has no settings row at all — the common case in production. */
+const BARE_TENANT = `t-nrt-bare-${randomUUID()}`;
 
 async function makeSession(overrides: { expiresAt?: Date; revokedAt?: Date | null } = {}) {
     return db.userSession.create({
@@ -68,6 +73,12 @@ afterAll(async () => {
     await db.nativeRefreshToken.deleteMany({ where: { userId: USER_ID } });
     await db.userSession.deleteMany({ where: { userId: USER_ID } });
     await db.user.deleteMany({ where: { id: USER_ID } });
+    // The slide tests below need real Tenant rows, because
+    // TenantSecuritySettings.tenantId is a foreign key.
+    await db.tenantSecuritySettings.deleteMany({
+        where: { tenantId: { in: [POLICY_TENANT, BARE_TENANT] } },
+    });
+    await db.tenant.deleteMany({ where: { id: { in: [POLICY_TENANT, BARE_TENANT] } } });
     await db.$disconnect();
 });
 
@@ -314,6 +325,156 @@ describeFn('native refresh tokens', () => {
             const res = await rotateRefreshToken('not-a-real-token');
             expect(res.ok).toBe(false);
             if (!res.ok) expect(res.reason).toBe('unknown');
+        });
+    });
+
+    describe('a native refresh slides the session (#3004)', () => {
+        const TIGHT_MINUTES = 7 * 24 * 60; // 7 days — this tenant's own choice
+
+        beforeAll(async () => {
+            if (!DB_AVAILABLE) return;
+            await db.tenant.createMany({
+                data: [
+                    { id: POLICY_TENANT, name: 'Policy Farm', slug: `pol-${randomUUID()}` },
+                    { id: BARE_TENANT, name: 'Bare Farm', slug: `bare-${randomUUID()}` },
+                ],
+            });
+            await db.tenantSecuritySettings.create({
+                data: { tenantId: POLICY_TENANT, sessionMaxAgeMinutes: TIGHT_MINUTES },
+            });
+        });
+
+        /** A session + its first token, owned by a given tenant. */
+        async function sessionFor(tenantId: string, expiresAt: Date) {
+            const session = await db.userSession.create({
+                data: {
+                    sessionId: `sid-${randomUUID()}`,
+                    userId: USER_ID,
+                    tenantId,
+                    expiresAt,
+                },
+                select: { id: true, expiresAt: true },
+            });
+            const token = await issueRefreshToken({
+                userSessionRowId: session.id,
+                userId: USER_ID,
+                tenantId,
+                sessionExpiresAt: session.expiresAt,
+            });
+            return { session, token };
+        }
+
+        const minutesFromNow = (d: Date) => Math.round((d.getTime() - Date.now()) / 60000);
+
+        it("slides by the TENANT's number, not by a constant", async () => {
+            // The whole design question in #3004: sliding to a hardcoded 30
+            // days would silently override a tenant that deliberately chose
+            // less, leaving a field called sessionMaxAgeMinutes that no longer
+            // bounds session age.
+            const { session, token } = await sessionFor(
+                POLICY_TENANT,
+                new Date(Date.now() + 60 * 60 * 1000),
+            );
+            const res = await rotateRefreshToken(token.raw);
+            expect(res.ok).toBe(true);
+
+            const after = await db.userSession.findUniqueOrThrow({
+                where: { id: session.id },
+                select: { expiresAt: true },
+            });
+            expect(minutesFromNow(after.expiresAt)).toBeGreaterThan(TIGHT_MINUTES - 5);
+            expect(minutesFromNow(after.expiresAt)).toBeLessThanOrEqual(TIGHT_MINUTES);
+            // It is NOT the default, which is the assertion that fails if the
+            // policy read is dropped and the constant used instead.
+            expect(minutesFromNow(after.expiresAt)).toBeLessThan(SESSION_IDLE_MAX_AGE_MINUTES);
+            // Positive control: the value moved at all.
+            expect(after.expiresAt.getTime()).toBeGreaterThan(session.expiresAt.getTime());
+        });
+
+        it('a tenant with NO settings row slides by the schema default', async () => {
+            // Most tenants have no row, so reading a missing one as "do not
+            // slide" would ship a feature that is inert for almost everybody
+            // while every other test here still passed.
+            const { session, token } = await sessionFor(
+                BARE_TENANT,
+                new Date(Date.now() + 60 * 60 * 1000),
+            );
+            expect((await rotateRefreshToken(token.raw)).ok).toBe(true);
+
+            const after = await db.userSession.findUniqueOrThrow({
+                where: { id: session.id },
+                select: { expiresAt: true },
+            });
+            expect(minutesFromNow(after.expiresAt)).toBeGreaterThan(
+                SESSION_IDLE_MAX_AGE_MINUTES - 5,
+            );
+            expect(minutesFromNow(after.expiresAt)).toBeLessThanOrEqual(
+                SESSION_IDLE_MAX_AGE_MINUTES,
+            );
+        });
+
+        it('a TIGHTENED policy shortens a session that was already longer', async () => {
+            // The slide assigns rather than taking a maximum, so lowering the
+            // policy takes effect on the next refresh instead of waiting for
+            // an expiry weeks out. A security control has to move both ways.
+            const far = new Date(Date.now() + 29 * 24 * 60 * 60 * 1000);
+            const { session, token } = await sessionFor(POLICY_TENANT, far);
+            expect((await rotateRefreshToken(token.raw)).ok).toBe(true);
+
+            const after = await db.userSession.findUniqueOrThrow({
+                where: { id: session.id },
+                select: { expiresAt: true },
+            });
+            expect(after.expiresAt.getTime()).toBeLessThan(far.getTime());
+            expect(minutesFromNow(after.expiresAt)).toBeLessThanOrEqual(TIGHT_MINUTES);
+        });
+
+        it('the successor token is capped to the NEW expiry, so it is not born stale', async () => {
+            // Capping to the expiry the caller proved live would hand back a
+            // token expiring in an hour on a session now good for 30 days,
+            // and the phone would be sent to sign-in anyway.
+            const soon = new Date(Date.now() + 60 * 60 * 1000);
+            const { token } = await sessionFor(BARE_TENANT, soon);
+            const res = await rotateRefreshToken(token.raw);
+            expect(res.ok).toBe(true);
+            if (res.ok) {
+                expect(res.expiresAt.getTime()).toBeGreaterThan(soon.getTime());
+            }
+        });
+
+        it('a REPLAYED token does not extend the session', async () => {
+            // The ordering property: the slide runs only after the atomic
+            // claim is won, so a token that loses the claim — the replay that
+            // burns the family and the session — cannot keep a session alive.
+            const start = new Date(Date.now() + 60 * 60 * 1000);
+            const { session, token } = await sessionFor(BARE_TENANT, start);
+            const first = await rotateRefreshToken(token.raw);
+            expect(first.ok).toBe(true);
+
+            const slid = await db.userSession.findUniqueOrThrow({
+                where: { id: session.id },
+                select: { expiresAt: true },
+            });
+
+            // Re-present the spent token past the good-faith grace window.
+            await db.nativeRefreshToken.updateMany({
+                where: { tokenHash: hashToken(token.raw) },
+                data: {
+                    consumedAt: new Date(
+                        Date.now() - (REFRESH_REPLAY_GRACE_SECONDS + 60) * 1000,
+                    ),
+                },
+            });
+            const replay = await rotateRefreshToken(token.raw);
+            expect(replay.ok).toBe(false);
+
+            const after = await db.userSession.findUniqueOrThrow({
+                where: { id: session.id },
+                select: { expiresAt: true, revokedAt: true },
+            });
+            expect(after.expiresAt.getTime()).toBe(slid.expiresAt.getTime());
+            // And the replay still did what it always did.
+            expect(after.revokedAt).not.toBeNull();
         });
     });
 });
