@@ -167,11 +167,6 @@
       "walk",
       "countStatusBadges"
     ],
-    "tests/guards/button-variant-cull.test.ts": [
-      "scanMultiLineButton",
-      "isExempt",
-      "walk"
-    ],
     "tests/guards/cancel-button-size-parity.test.ts": [
       "isExempt",
       "walk",
