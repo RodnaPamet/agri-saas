@@ -80,6 +80,125 @@ const NO_REPORTER =
 
 export function registerModerationConsolePaths(registry: OpenAPIRegistry): void {
     op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/admin/moderation/restore',
+        operationId: 'restoreRemovedContentFromConsole',
+        summary: 'Reverse a content removal',
+        description:
+            'Writes a SECOND `ModerationAction` (`CONTENT_RESTORED`) rather than editing '
+            + 'the first, and leaves `ContentReport.status` at ACTIONED: the notice WAS '
+            + 'acted on and the action was later reversed, which is what the second row '
+            + 'records. Moving the notice back to RECEIVED would put a decided notice into '
+            + 'the triage queue and ask a moderator to decide it again.'
+            + '\n\n**`restored: false` is a SUCCESS.** The usecase is idempotent, so '
+            + 'restoring something already visible reports `false` with a real '
+            + '`restoreActionId` — a client treating that as an error would make a double '
+            + 'submit read as a failure. A NULL `restoreActionId` is the error, and it is a '
+            + '404.'
+            + TWO_DOORS,
+        tags: ['Admin'],
+        params: TenantParams,
+        body: z.object({
+            actionId: z.string().min(1).max(200),
+            rationale: z.string().min(1).openapi({
+                description:
+                    'REQUIRED. A reversal is a decision too, and this is the text its own '
+                    + 'statement of reasons is composed from.',
+            }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_JSON or INVALID_BODY.',
+            404: 'MODERATION_ACTION_NOT_FOUND, or not the platform-support tenant.',
+        }),
+        success: {
+            status: 200,
+            description: 'The reversal, with the id of the second action row.',
+            schema: z.object({
+                restoreActionId: z.string().nullable(),
+                restored: z.boolean(),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/admin/moderation/suspensions',
+        operationId: 'suspendAccountFromConsole',
+        summary: 'Suspend an account',
+        description:
+            '**The account is SUPPLIED as a `userId`, and there is deliberately no people '
+            + 'lookup** (owner ruling 2026-11-12). Three reasons, and none of them is '
+            + 'convenience: a platform-wide search by name or email would be the first '
+            + 'surface in this product where one person can enumerate every account; the '
+            + 'common case already has the id, because the triage queue returns '
+            + '`subjectId`; and deriving "the responsible account" from a notice is the '
+            + 'judgement P5.1 left to a human, since a notice names CONTENT and a reported '
+            + 'listing belongs to a farm whose members are several.'
+            + '\n\n**`reason` is REQUIRED** (#1667): it is the `rationale` of the '
+            + '`ModerationAction` this records, encrypted at rest, and the text the Art 17 '
+            + 'statement is composed from. A decision that withholds a farm from a person '
+            + 'is not recordable without one.'
+            + '\n\n**Idempotent.** A repeat returns `applied: true` with '
+            + '`alreadySuspended: true` and does NOT re-stamp `suspendedAt` — the date an '
+            + 'appeal and a regulator both work from. So `applied: false` means no such '
+            + 'account and nothing else, which is the 404.'
+            + TWO_DOORS,
+        tags: ['Admin'],
+        params: TenantParams,
+        body: z.object({
+            userId: z.string().min(1).max(200),
+            reason: z.string().min(1),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_JSON or INVALID_BODY.',
+            404: 'ACCOUNT_NOT_FOUND, or not the platform-support tenant.',
+        }),
+        success: {
+            status: 200,
+            description: 'The outcome, including whether it was already suspended.',
+            schema: z.object({
+                applied: z.boolean(),
+                sessionsRevoked: z.number().int(),
+                alreadySuspended: z.boolean(),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'delete',
+        path: '/api/t/{tenantSlug}/admin/moderation/suspensions',
+        operationId: 'liftSuspensionFromConsole',
+        summary: 'Lift a suspension',
+        description:
+            '**Takes a BODY rather than a path or query parameter**, matching the keyed '
+            + 'sibling and P5.2b\'s rule: iOS logs the full URL unsuppressably, and a '
+            + 'third party\'s user id in a device log is a disclosure.'
+            + '\n\n**No `reason` field, and that is the signature rather than an '
+            + 'omission.** Restoring the ability to sign in is not a decision the Art 17 '
+            + 'machinery composes a statement from.'
+            + '\n\n**What it does NOT do:** decrement `sessionVersion`, un-revoke '
+            + 'sessions, or cancel an erasure the person requested themselves. '
+            + 'Reinstatement restores the ability to sign in, not credentials that may '
+            + 'since have been shared — and a self-requested deletion is the person\'s own '
+            + 'decision, which a moderator must not quietly reverse.'
+            + '\n\n`wasSuspended: false` is a SUCCESS (lifting a suspension that was not '
+            + 'there is idempotent); `applied: false` means no such account, and is a 404.'
+            + TWO_DOORS,
+        tags: ['Admin'],
+        params: TenantParams,
+        body: z.object({ userId: z.string().min(1).max(200) }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_JSON or INVALID_BODY.',
+            404: 'ACCOUNT_NOT_FOUND, or not the platform-support tenant.',
+        }),
+        success: {
+            status: 200,
+            description: 'The outcome, including whether it had been suspended.',
+            schema: z.object({ applied: z.boolean(), wasSuspended: z.boolean() }),
+        },
+    });
+
+    op(registry, {
         method: 'get',
         path: '/api/t/{tenantSlug}/admin/moderation/notices',
         operationId: 'listModerationNoticesForReview',

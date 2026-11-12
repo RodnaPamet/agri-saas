@@ -94,6 +94,8 @@ const ADMIN_ONLY_ROUTES = [
     // other farm's Art 16 notices, and `assertPlatformSupport` in the handler
     // is what supplies the isolation this list does not.
     'admin/moderation/notices/route.ts',
+    'admin/moderation/restore/route.ts',
+    'admin/moderation/suspensions/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
     // Platform-tenant gated: a price typed here renders in every tenant's
