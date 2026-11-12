@@ -26,6 +26,8 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { blankNonCode } from "../helpers/blank-non-code";
+import { assertAllowlistIsLive } from "../helpers/assert-allowlist-is-live";
 
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
@@ -41,11 +43,25 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
     /\.stories\.tsx?$/,
 ];
 
-const EXEMPT_FILES = new Set<string>([
-    // The primitive owns its own className. The Card module references
-    // shadow utilities only via the docstring rationale.
-    "src/components/ui/card.tsx",
-]);
+// Files that legitimately carry a `<Card>` with a shadow override in
+// EXECUTABLE code. Each entry must still match the ban — see the liveness
+// assertion below.
+//
+// EMPTY (#2414). It held `src/components/ui/card.tsx`, justified as "the Card
+// module references shadow utilities only via the docstring rationale". That
+// reason described a PAST state: measured 2026-11-12, `card.tsx` contains the
+// string `shadow-` ZERO times, in code or in prose, so the entry excused
+// nothing and removing it changes no verdict.
+//
+// It is the SECOND dead exemption found on this one file — `card-density-discipline`
+// held the same path for the same shape of stale reason. A file that is the
+// subject of several ratchets collects exemptions written when it still looked
+// a particular way, and nothing retires them when it changes.
+//
+// Kept as a mechanism rather than deleted, the `FLAG_EXEMPT` precedent. An
+// empty list makes the liveness assertion vacuous, so that `it()` carries
+// discrimination controls in both directions.
+const EXEMPT_FILES = new Set<string>([]);
 
 function isExempt(rel: string): boolean {
     if (EXEMPT_FILES.has(rel)) return true;
@@ -125,12 +141,51 @@ describe("v2-PR-9 Card elevation ratchet", () => {
         expect(files.some((f) => f.endsWith(".tsx"))).toBe(true);
     });
 
-    it("control: isExempt exempts the listed file and nothing else", () => {
-        expect(isExempt("src/components/ui/card.tsx")).toBe(true);
-        // The negative half is what matters: a blanket-true isExempt empties
-        // the walk, and "no offenders" is exactly what that produces.
+    it("control: isExempt exempts what it claims to and nothing else", () => {
+        // The positive half used to be `card.tsx`, from EXEMPT_FILES. That
+        // entry was dead and is gone (#2414), so the subject moved to the
+        // pattern arm rather than the control being deleted: what this proves
+        // is that `isExempt` is neither blanket-false nor blanket-true, and
+        // EXEMPT_FILES being empty does not make that question go away.
+        expect(isExempt("src/components/ui/card.test.tsx")).toBe(true);
+        expect(isExempt("src/components/__tests__/helper.tsx")).toBe(true);
+        // The negative half is what matters most: a blanket-true isExempt
+        // empties the walk, and "no offenders" is exactly what that produces.
         expect(isExempt("src/components/dashboard/SomeWidget.tsx")).toBe(false);
         expect(isExempt("src/app/t/[tenantSlug]/(app)/assets/page.tsx")).toBe(false);
+        // And the file the dead entry named must now be IN the population,
+        // which is the observable consequence of removing it.
+        expect(isExempt("src/components/ui/card.tsx")).toBe(false);
+    });
+
+    it("every exempt file still exists AND still violates — #2414", () => {
+        const entries = [...EXEMPT_FILES];
+        const report = assertAllowlistIsLive({
+            label: "card-elevation-discipline EXEMPT_FILES",
+            entries,
+            blankOptions: {},
+            violates: (code) => scanCardWithShadowOverride(code).length > 0,
+        });
+        console.log(
+            `[card-elevation-discipline] ${report.live.length} of ${entries.length} exempt file(s) still override a Card shadow`,
+        );
+        expect(report.live).toHaveLength(entries.length);
+    });
+
+    it("control: the liveness check reports a CLEAN file as irrelevant", () => {
+        // EXEMPT_FILES is empty, so the assertion above ranges over nothing
+        // and would pass however broken the helper or the predicate were.
+        // `card.tsx` is the honest subject: it is the file the dead entry
+        // named, so if it ever legitimately needs exempting again this fails.
+        expect(fs.existsSync(path.resolve(ROOT, "src/components/ui/card.tsx"))).toBe(true);
+        expect(() =>
+            assertAllowlistIsLive({
+                label: "card-elevation-discipline control",
+                entries: ["src/components/ui/card.tsx"],
+                blankOptions: {},
+                violates: (code) => scanCardWithShadowOverride(code).length > 0,
+            }),
+        ).toThrow(/IRRELEVANT/);
     });
 
     it("control: the scanner detects a shadow override and ignores a clean Card", () => {
@@ -155,7 +210,12 @@ describe("v2-PR-9 Card elevation ratchet", () => {
             }[] = [];
             for (const dir of SCAN_DIRS) {
                 for (const file of walk(path.join(ROOT, dir))) {
-                    const content = fs.readFileSync(file, "utf8");
+                    // Blanked, so a `<Card className="shadow-md">` quoted in a
+                    // COMMENT is not a violation — and so this guard and the
+                    // exemption-liveness check below judge the SAME text.
+                    // Supplying the helper a different transform is the
+                    // difference between judging code and judging comments.
+                    const content = blankNonCode(fs.readFileSync(file, "utf8"));
                     for (const m of scanCardWithShadowOverride(content)) {
                         offenders.push({
                             file: path.relative(ROOT, file),
