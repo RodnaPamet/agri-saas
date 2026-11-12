@@ -150,6 +150,11 @@ const MIGRATED_PAGES = [
     // renders its island.
     'admin/moderation/page.tsx',
     'admin/moderation/ModerationQueueClient.tsx',
+    // #2735 PR 3 — the restore + suspension section, promoted on arrival for
+    // the same reason as its sibling above: clean on all three checks and built
+    // from Heading / FormField / Input / Textarea / Button / InlineNotice with
+    // semantic tokens only.
+    'admin/moderation/AccountActionsClient.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;
