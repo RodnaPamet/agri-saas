@@ -28,8 +28,6 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import {
     deriveAssetDay, sofiaYesterday, DERIVED_FROM,
@@ -375,34 +373,28 @@ describeFn('#2948 stage 4 — worked-parcel derivation', () => {
         expect(row.minutesWorked).toBe(19);
     }, 60_000);
 
-    it('the SQL literals carry no backticks', () => {
-        /*
-         * The SQL lives in JS template literals, so ONE backtick in a comment
-         * closes the string and turns the next token into a tagged-template
-         * call. It cost two debugging rounds in this file — first
-         * `"SIMULATED" is not a function`, then four TS1005 syntax errors —
-         * and in both cases the suite did not fail, it failed to COMPILE,
-         * which reports `Tests: 0 total` rather than a red assertion.
-         *
-         * Asserted on the SOURCE because that is where the hazard is: by the
-         * time the module loads, a stray backtick is a syntax error and this
-         * test cannot run to report it. So this is a tripwire for the NEXT
-         * edit, which will be made by somebody writing prose in a comment.
-         */
-        const src = readFileSync(
-            join(process.cwd(), 'src/app-layer/jobs/worked-parcel-derivation.ts'),
-            'utf8',
-        );
-        // `[^>]*` missed the second query, whose type argument is
-        // `Array<{...}>` and contains its own `>`. Anchor on the call and the
-        // opening backtick instead, which both share.
-        const literals = [...src.matchAll(/queryRawUnsafe<[\s\S]*?>\(\s*`([\s\S]*?)`\s*,/g)]
-            .map((m) => m[1]);
-        // Positive control: the needle still finds the queries. Zero literals
-        // would make the assertion below vacuous.
-        expect(literals.length).toBeGreaterThanOrEqual(2);
-        for (const sql of literals) expect(sql).not.toContain('`');
-    });
+    /*
+     * A "the SQL carries no backticks" test stood here and is DELETED, because
+     * it could not fail.
+     *
+     * The hazard is real — a backtick inside a `Prisma.sql` template closes
+     * the string and turns the next token into a tagged-template call, which
+     * cost two debugging rounds here ('SIMULATED is not a function', then four
+     * TS1005 errors). But a test cannot see it: the stray backtick ENDS the
+     * literal, so any regex capturing `...` stops at it and the captured text
+     * is backtick-free by construction. `expect(sql).not.toContain('`')` was
+     * therefore true whatever the source said.
+     *
+     * What actually detects it is the file failing to PARSE, which ts-jest and
+     * `tsc` both do — and loudly, as "Tests: 0 total" rather than a red
+     * assertion, which is the thing to recognise rather than to re-test.
+     *
+     * Its own positive control is what exposed this: moving the SQL to
+     * `@/lib/db/geo` left zero matching literals here and the control failed,
+     * where the assertion it guarded would have gone on passing over nothing.
+     * A line that reads as a safety net while asserting nothing is worse than
+     * its absence.
+     */
 
     it('sofiaYesterday returns the day before, in Sofia', () => {
         // 00:30 Sofia on the 12th is 22:30 UTC on the 11th, so "yesterday" is

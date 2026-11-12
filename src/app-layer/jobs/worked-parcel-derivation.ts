@@ -95,8 +95,11 @@ import { randomUUID } from 'node:crypto';
 
 import { farmDayRange, farmToday } from '@/lib/calendar-day-key';
 import { withTenantDb } from '@/lib/db-context';
+import { workedParcelMatchesSql } from '@/lib/db/geo';
 import { logger } from '@/lib/observability/logger';
 import { runJob } from '@/lib/observability/job-runner';
+import { Prisma } from '@prisma/client';
+
 import { prisma } from '@/lib/prisma';
 
 import type { JobRunResult } from './types';
@@ -127,6 +130,17 @@ const MIN_RUN_MINUTES = 5;
 const RUN_GAP_MINUTES = 10;
 /** How far inside the boundary a point must be to count toward confidence. */
 const INWARD_BUFFER_M = 20;
+
+/**
+ * Which position sources may be derived — an ALLOWLIST.
+ *
+ * Never `!= 'SIMULATED'`: a sixth source added later must be excluded until
+ * somebody decides it belongs, which is the direction a denylist gets wrong.
+ * One constant, used by the matcher, by the count that reports what the
+ * matcher was allowed to see, and by the target enumeration — three places
+ * that must agree or the marker reports a number the matcher never looked at.
+ */
+const DERIVABLE_SOURCES = ['TRACKER', 'TELEMATICS'] as const;
 
 interface ParcelMatch {
     parcel_id: string;
@@ -194,133 +208,39 @@ export async function deriveAssetDay(
          * one day. Doing this in JS and passing two instants would work too,
          * and would put the timezone rule in a second place.
          */
-        const matches = await db.$queryRawUnsafe<ParcelMatch[]>(
-            `
-            WITH filtered AS (
-                SELECT p."recordedAt",
-                       ST_SetSRID(ST_MakePoint(p."lon"::float8, p."lat"::float8), 4326) AS geom
-                FROM "MachinePosition" p
-                WHERE p."tenantId" = $1
-                  AND p."assetId" = $2
-                  -- The day's instants come from farmDayRange, the same
-                  -- helper the /track read uses. They were computed here with
-                  -- a timezone cast until this edit, which made this a THIRD
-                  -- place the farm day was defined -- after the JS count
-                  -- above and the shared module that already owned it.
-                  --
-                  -- No backticks in this comment. This is inside a JS
-                  -- template literal, and I made that mistake twice in this
-                  -- file: once with 'SIMULATED is not a function', once right
-                  -- here. The suite asserts their absence now.
-                  AND p."recordedAt" >= $8
-                  AND p."recordedAt" < $9
-                  -- A tracker that never reports ignition must not be excluded
-                  -- wholesale: NULL means "not reported", not "off".
-                  AND COALESCE(p."ignition", TRUE)
-                  AND p."speedKph" IS NOT NULL
-                  AND p."speedKph" >= $3
-                  AND p."speedKph" <= $4
-                  -- Never SIMULATED: see the docblock. An ALLOWLIST rather
-                  -- than a not-equals, so a sixth source added later is
-                  -- excluded until somebody decides it belongs, which is the
-                  -- direction a denylist gets wrong.
-                  --
-                  -- No backticks in this comment: it sits inside a JS
-                  -- template literal, so one closes the string and turns the
-                  -- next token into a tagged-template call. The first draft
-                  -- did exactly that and every test failed with
-                  -- 'SIMULATED is not a function'.
-                  AND p."source" IN ('TRACKER', 'TELEMATICS')
-            ),
-            hits AS (
-                SELECT pa."id" AS parcel_id,
-                       f."recordedAt",
-                       f.geom,
-                       ST_Contains(
-                           ST_Buffer(ST_Transform(pa."geometry", 32635), -$7::float8),
-                           ST_Transform(f.geom, 32635)
-                       ) AS well_inside
-                FROM filtered f
-                JOIN "Parcel" pa
-                  ON pa."tenantId" = $1
-                 AND pa."deletedAt" IS NULL
-                 AND pa."geometry" IS NOT NULL
-                 AND ST_Intersects(pa."geometry", f.geom)
-            ),
-            marked AS (
-                SELECT parcel_id, "recordedAt", well_inside,
-                       CASE
-                           WHEN "recordedAt" - LAG("recordedAt") OVER (
-                                    PARTITION BY parcel_id ORDER BY "recordedAt")
-                                > ($5 * INTERVAL '1 minute')
-                           THEN 1 ELSE 0
-                       END AS breaks
-                FROM hits
-            ),
-            runs AS (
-                SELECT parcel_id, "recordedAt", well_inside,
-                       SUM(breaks) OVER (
-                           PARTITION BY parcel_id ORDER BY "recordedAt"
-                       ) AS run_id
-                FROM marked
-            ),
-            per_run AS (
-                SELECT parcel_id, run_id,
-                       MIN("recordedAt") AS started,
-                       MAX("recordedAt") AS ended,
-                       COUNT(*) AS points,
-                       COUNT(*) FILTER (WHERE well_inside) AS inside_points
-                FROM runs
-                GROUP BY parcel_id, run_id
-            ),
-            kept AS (
-                SELECT *
-                FROM per_run
-                WHERE ended - started >= ($6 * INTERVAL '1 minute')
-            )
-            SELECT parcel_id,
-                   -- Summed per RUN and then across runs, so a machine that
-                   -- left and came back is not credited with the gap.
-                   CAST(ROUND(SUM(EXTRACT(EPOCH FROM (ended - started)) / 60.0)) AS int)
-                       AS minutes,
-                   CAST(SUM(inside_points) AS int) AS inside_points,
-                   CAST(SUM(points) AS int) AS matched_points
-            FROM kept
-            GROUP BY parcel_id
-            `,
-            // `date` is NOT passed: the matcher takes the day as two
-            // instants ($8/$9) and never parses a date string, so passing it
-            // left an unreferenced parameter and Postgres answered 42P18 —
-            // "could not determine data type of parameter $1".
-            tenantId,
-            assetId,
-            MIN_SPEED_KPH,
-            MAX_SPEED_KPH,
-            RUN_GAP_MINUTES,
-            MIN_RUN_MINUTES,
-            INWARD_BUFFER_M,
-            start,
-            end,
+        /*
+         * The geometry lives in `@/lib/db/geo` — `geo-raw-sql-containment`
+         * allows raw `ST_*` in that file and nowhere else, so the spatial
+         * surface stays auditable in one place. This job owns the THRESHOLDS,
+         * which are policy rather than geometry, and passes them in.
+         *
+         * `$queryRaw` with a `Prisma.sql` fragment, not `$queryRawUnsafe` with
+         * positional parameters. That is not a style preference: the previous
+         * version numbered its own placeholders, and removing one left an
+         * unreferenced parameter that Postgres answered with 42P18 — "could
+         * not determine data type of parameter $1". Interpolation cannot
+         * produce that class of bug.
+         */
+        const matches = await db.$queryRaw<ParcelMatch[]>(
+            workedParcelMatchesSql({
+                tenantId,
+                assetId,
+                dayStart: start,
+                dayEnd: end,
+                sources: DERIVABLE_SOURCES,
+                minSpeedKph: MIN_SPEED_KPH,
+                maxSpeedKph: MAX_SPEED_KPH,
+                runGapMinutes: RUN_GAP_MINUTES,
+                minRunMinutes: MIN_RUN_MINUTES,
+                inwardBufferM: INWARD_BUFFER_M,
+            }),
         );
 
-        /*
-         * `positionsConsidered` counts what the matcher was ALLOWED to look
-         * at, so it applies the same source filter as the SQL above. A count
-         * of every row would report a demo machine as having sent 2,900
-         * positions and matched nothing, which reads as a broken matcher
-         * rather than an excluded source.
-         *
-         * The window comes from `farmDayRange`, the same helper the `/track`
-         * read uses. The first draft wrote `+02:00` by hand, which is
-         * Bulgaria's WINTER offset and an hour wrong all summer — and a
-         * second spelling of a boundary the SQL below also expresses. Now
-         * there is one source for both.
-         */
         const considered = await db.machinePosition.count({
             where: {
                 tenantId,
                 assetId,
-                source: { in: ['TRACKER', 'TELEMATICS'] },
+                source: { in: [...DERIVABLE_SOURCES] },
                 recordedAt: { gte: start, lt: end },
             },
         });
@@ -408,28 +328,24 @@ export async function runWorkedParcelDerivation(
          * Privileged, because this crosses tenants. The per-asset work below
          * then runs under each tenant's own context.
          */
-        const targets = await prisma.$queryRawUnsafe<
+        const targets = await prisma.$queryRaw<
             Array<{ tenantId: string; assetId: string }>
-        >(
-            `
+        >(Prisma.sql`
             SELECT DISTINCT p."tenantId", p."assetId"
             FROM "MachinePosition" p
-            WHERE p."recordedAt" >= $1
-              AND p."recordedAt" <  $2
-              -- Same filter as the matcher. A machine whose whole day was
-              -- simulated is not a machine that reported, so it gets no
-              -- marker at all rather than one claiming a run over nothing.
-              AND p."source" IN ('TRACKER', 'TELEMATICS')
-              ${payload.tenantId ? 'AND p."tenantId" = $3' : ''}
-            `,
-            // The arg list matches the SQL EMITTED, not a fixed shape: an
-            // unreferenced parameter makes Postgres answer 42P18 rather than
-            // ignoring it, so the optional tenant filter is appended last and
-            // only when its clause is present.
-            ...(payload.tenantId
-                ? [dayStart, dayEnd, payload.tenantId]
-                : [dayStart, dayEnd]),
-        );
+            WHERE p."recordedAt" >= ${dayStart}
+              AND p."recordedAt" <  ${dayEnd}
+              -- Same allowlist as the matcher, from the same constant. A
+              -- machine whose whole day was simulated is not a machine that
+              -- reported, so it gets no marker at all rather than one
+              -- claiming a run over nothing.
+              AND p."source"::text IN (${Prisma.join([...DERIVABLE_SOURCES])})
+              ${
+                  payload.tenantId
+                      ? Prisma.sql`AND p."tenantId" = ${payload.tenantId}`
+                      : Prisma.empty
+              }
+        `);
 
         let actioned = 0;
         let skipped = 0;
