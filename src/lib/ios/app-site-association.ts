@@ -92,10 +92,53 @@ export const APP_ID = '9423GKWL67.bg.agrent.app';
  * for as long as the page exists and nothing re-argues it — which is the right
  * default, because the iOS half landing is the thing that changes the answer.
  *
+ * ## `/f/*` IS BACK, 2026-11-12, because that condition is met
+ *
+ * Owner ruling 2026-11-12, relayed by the agrent-ios session, which is the
+ * step the paragraph above describes: the phone ships a screen first, then the
+ * claim returns on the owner's word.
+ *
+ * The iOS half, checked by that session against the project rather than
+ * recalled — the distinction this file has been bitten by twice:
+ *
+ *   the screen       `PublicFarmView`, agrent-ios#538, TestFlight 96.1+,
+ *                    reading `GET /api/public/farms/{handle}`
+ *   the link         `AgrentApp.onOpenURL` → `PublicProfileLink.handle(from:)`
+ *                    → `router.open(.publicFarm(handle:))`; universal links
+ *                    arrive at the same place
+ *   the entitlement  `applinks:app.agrent.bg`, already in `project.yml`
+ *
+ * So the premise the collision check rests on — "a claimed path with a working
+ * page hijacks it ON A PHONE WHOSE APP HAS NO SCREEN FOR IT" — is now false
+ * for this one prefix. The guard therefore gains a DECLARED EXCEPTION naming
+ * the evidence, rather than having its rule loosened: every other
+ * page-serving prefix must still be refused, and `/invite/*` is still the
+ * control that proves it.
+ *
+ * A build older than 96.1 opens the app at its home screen, as before. Every
+ * tester is past it.
+ *
+ * ## THE IMAGE IS EXCLUDED, and this is the subtle part
+ *
+ * `/f/[handle]` is not one path. `src/app/f/[handle]/opengraph-image.tsx`
+ * makes Next serve `/f/{handle}/opengraph-image`, and **AASA's `*` matches
+ * across `/`** — Apple's components are not path-segment globs. So a bare
+ * `/f/*` claims the OG image too, and then a crawler-facing PNG becomes a link
+ * that launches the app. Harmless-looking and wrong: the image is fetched by
+ * Facebook, Slack, iMessage and WhatsApp when a farm link is shared, which is
+ * precisely the flow this claim exists to improve.
+ *
+ * Hence an `exclude` component, and it is FIRST on purpose: Apple evaluates
+ * components in order and the first match wins, so an exclusion after the
+ * include never fires.
+ *
  * Exported so a client READS the claim rather than restating it (#1623).
  */
 export const APPLINK_COMPONENTS: ReadonlyArray<Record<string, unknown>> = [
+    // FIRST, because the first matching component wins and `*` crosses `/`.
+    { '/': '/f/*/opengraph-image', exclude: true, comment: 'the OG image is for crawlers, not the app' },
     { '/': '/m/*' },
+    { '/': '/f/*' },
 ];
 
 export interface AppSiteAssociation {
