@@ -52,6 +52,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { parseModerationWindowDays } from '@/lib/validation/query-params';
 import { jsonResponse } from '@/lib/api-response';
 import { verifyPlatformApiKey, PlatformAdminError } from '@/lib/auth/platform-admin';
 import { LOGIN_LIMIT } from '@/lib/security/rate-limit';
@@ -72,30 +73,17 @@ function platformGate(req: NextRequest): NextResponse | null {
     }
 }
 
-/**
- * Bounded, because an unbounded window is a different question.
- *
- * A lifetime median hides a regression — a service that answered quickly for a
- * year can be failing this month and the all-time figure will not move for a
- * long while. 365 is the ceiling rather than Infinity so the scan stays
- * bounded on a table that only grows.
- */
-const DEFAULT_WINDOW_DAYS = 30;
-const MAX_WINDOW_DAYS = 365;
-
-function parseWindowDays(raw: string | null): number {
-    if (raw === null) return DEFAULT_WINDOW_DAYS;
-    const n = Number(raw);
-    if (!Number.isInteger(n) || n < 1 || n > MAX_WINDOW_DAYS) return DEFAULT_WINDOW_DAYS;
-    return n;
-}
+// The window bound moved to `@/lib/validation/query-params` as
+// `parseModerationWindowDays` (#2735): this figure is now read through two
+// doors, and two local copies of the bound is how they come to answer different
+// questions with nothing failing.
 
 export const GET = withApiErrorHandling(
     async (req: NextRequest) => {
         const refused = platformGate(req);
         if (refused) return refused;
 
-        const windowDays = parseWindowDays(req.nextUrl.searchParams.get('windowDays'));
+        const windowDays = parseModerationWindowDays(req.nextUrl.searchParams.get('windowDays'));
         return jsonResponse(await moderationHandlingStats(windowDays));
     },
     { rateLimit: { config: LOGIN_LIMIT, scope: 'platform-moderation-metrics' } },

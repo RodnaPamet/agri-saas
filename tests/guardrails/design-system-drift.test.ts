@@ -155,6 +155,11 @@ const MIGRATED_PAGES = [
     // from Heading / FormField / Input / Textarea / Button / InlineNotice with
     // semantic tokens only.
     'admin/moderation/AccountActionsClient.tsx',
+    // #2735 PR 4 — the handling-time reading and the undelivered queue.
+    // Promoted on arrival like its two siblings: semantic tokens only, and
+    // built from Heading / FormField / Input / Textarea / Button /
+    // InlineNotice / EmptyState / ErrorState / Skeleton.
+    'admin/moderation/HandlingStatsClient.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;

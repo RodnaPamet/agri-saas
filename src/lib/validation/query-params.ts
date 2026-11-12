@@ -361,3 +361,42 @@ export function parseLimitParam(
     }
     return opts.max === undefined ? n : Math.min(n, opts.max);
 }
+
+/**
+ * The moderation handling-time window, in days — shared by both doors (#2735).
+ *
+ * Bounded, because an unbounded window is a different question: a lifetime
+ * median hides a regression — a service that answered quickly for a year can be
+ * failing this month and the all-time figure will not move for a long while.
+ * 365 is the ceiling rather than Infinity so the scan stays bounded on a table
+ * that only grows.
+ *
+ * ## It lived in the keyed route, and a second copy would have drifted
+ *
+ * `moderationHandlingStats` is now read through two doors — the platform-key
+ * route for scripts and the session-gated console — and the figure they report
+ * must be the same figure. Two local copies of the bound is the #1664 shape:
+ * one spelling moves, the two doors answer different questions, and nothing
+ * fails.
+ *
+ * ## It DEFAULTS on bad input rather than throwing, unlike `parseLimitParam`
+ *
+ * Preserved exactly as the keyed route behaved, because changing it here would
+ * change that route's contract as a side effect of extracting a function.
+ * Worth knowing that it is the weaker choice: a moderator who asks for 90 days
+ * and silently receives 30 reads the figure as a 90-day one. That is #3010,
+ * filed rather than altered here — changing it in the same edit that MOVED this
+ * function would have altered the keyed route's contract as a side effect of a
+ * refactor, which is the kind of change nobody reviews.
+ */
+export const MODERATION_DEFAULT_WINDOW_DAYS = 30;
+export const MODERATION_MAX_WINDOW_DAYS = 365;
+
+export function parseModerationWindowDays(raw: string | null): number {
+    if (raw === null) return MODERATION_DEFAULT_WINDOW_DAYS;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > MODERATION_MAX_WINDOW_DAYS) {
+        return MODERATION_DEFAULT_WINDOW_DAYS;
+    }
+    return n;
+}
