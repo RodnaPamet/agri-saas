@@ -195,6 +195,54 @@ describe("v2-PR-1 Button variant cull ratchet", () => {
         }
     });
 
+    // `selector-teeth` reported `walk`, `isExempt` and `scanMultiLineButton`
+    // as guttable-to-a-constant with no assertion noticing — pre-existing debt
+    // this file carried in the baseline. Cleared here rather than left listed:
+    // the templates already existed next door in `card-elevation-discipline`,
+    // and the baseline is meant to shrink.
+    it("control: walk returns a real population, and excludes what it claims to", () => {
+        const files = SCAN_DIRS.flatMap((d) => walk(path.join(ROOT, d)));
+        expect(files.length).toBeGreaterThan(50);
+        expect(files.every((f) => /\.(tsx|ts|jsx|js)$/.test(f))).toBe(true);
+        expect(files.some((f) => /\.(test|spec|stories)\.tsx?$/.test(f))).toBe(false);
+        // A gutted walk returns [], and "no offenders" is exactly what that
+        // produces — which is why a bare count is not enough on its own.
+        expect(files.some((f) => f.endsWith(".tsx"))).toBe(true);
+    });
+
+    it("control: isExempt exempts what it claims to and nothing else", () => {
+        // EXEMPT_FILES is empty now, so the positive comes from the pattern
+        // arm. The NEGATIVE half matters most: a blanket-true isExempt empties
+        // the walk and reports zero offenders.
+        expect(isExempt("src/components/ui/button.test.tsx")).toBe(true);
+        expect(isExempt("src/components/__tests__/x.tsx")).toBe(true);
+        expect(isExempt("src/components/dashboard/SomeWidget.tsx")).toBe(false);
+        // The two files the dead entries named are now IN the population,
+        // which is the observable consequence of removing them.
+        expect(isExempt("src/components/ui/button.tsx")).toBe(false);
+        expect(isExempt("src/components/ui/button-variants.ts")).toBe(false);
+    });
+
+    it("control: scanMultiLineButton catches a variant on a LATER line", () => {
+        // The single-line case is `buildPatterns`' job. This selector exists
+        // only for a start tag that spills across lines, so its control has to
+        // be multi-line or it proves nothing about this function.
+        const spilled = [
+            "<Button",
+            "    onClick={handleClick}",
+            '    variant="outline"',
+            ">",
+            "    Save",
+            "</Button>",
+        ].join("\n");
+        expect(scanMultiLineButton(spilled, "outline")).toHaveLength(1);
+
+        // Both negatives, so it cannot pass by flagging everything.
+        const clean = spilled.replace('variant="outline"', 'variant="primary"');
+        expect(scanMultiLineButton(clean, "outline")).toEqual([]);
+        expect(scanMultiLineButton(spilled, "danger")).toEqual([]);
+    });
+
     it("control: the predicate still fires on a real violation", () => {
         // The other direction, so the control above cannot pass by refusing
         // everything. Both ban shapes, since either going dead would make the

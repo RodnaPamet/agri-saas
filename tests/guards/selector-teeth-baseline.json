@@ -169,7 +169,6 @@
     ],
     "tests/guards/button-variant-cull.test.ts": [
       "scanMultiLineButton",
-      "buildPatterns",
       "isExempt",
       "walk"
     ],
