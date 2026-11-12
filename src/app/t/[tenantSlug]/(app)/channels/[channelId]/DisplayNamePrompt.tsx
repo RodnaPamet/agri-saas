@@ -111,7 +111,7 @@ export function DisplayNamePrompt({
     if (needed !== true || skipped) return null;
 
     return (
-        <div className="space-y-default rounded-md border border-border-default bg-bg-subtle p-default">
+        <div className="space-y-default rounded-md border border-border-subtle bg-bg-subtle p-default">
             <div className="space-y-tight">
                 <p className="text-sm font-[560] text-content-default">{t('displayNameTitle')}</p>
                 <p className="text-xs text-content-muted">{t('displayNameHint')}</p>

@@ -250,6 +250,68 @@ model WorkedParcel {
   @@index([parcelId, tenantId])
 }
 
+/// One row per (machine, day) the derivation PROCESSED — #2984.
+///
+/// ## It exists so "nothing was worked" can be said at all
+///
+/// `/machines/{assetId}/worked` has to carry three states out of two fields:
+/// no rows and no timestamp means "not computed yet"; no rows WITH a
+/// timestamp means "it ran and this machine worked no parcel", which is a
+/// real answer a farm can act on; rows with a timestamp is the normal case.
+///
+/// The middle one has nowhere to live without this table. `derivedAt` used to
+/// be read off the `WorkedParcel` rows, and a day with no work has no rows —
+/// so an idle machine reported `null`, which the phone renders as «изчисляват
+/// се през нощта». Silently, and for ever: no error, no log, no metric.
+///
+/// ## Written in the JOB'S transaction, never beside it
+///
+/// A marker written outside the upsert that writes the parcels can claim a
+/// run that rolled back — and this row is the only evidence the run happened,
+/// so a false one is worse than a missing one.
+///
+/// ## Idempotence is the unique index, not a flag
+///
+/// `@@unique([assetId, date])`, the same shape as `WorkedParcel`'s own key:
+/// a re-run updates the row rather than adding a second claim, and nothing
+/// has to remember to set anything.
+///
+/// `derivedFrom` carries the matcher version for the same reason it does on
+/// `WorkedParcel`: once the raw positions are swept, a row produced by an
+/// older rule must stay distinguishable from a current one, and that applies
+/// to an EMPTY day just as much — "the old rule found nothing" and "the
+/// current rule found nothing" are different statements.
+model MachineWorkedDay {
+  id       String @id @default(cuid())
+  tenantId String
+  assetId  String
+
+  /// A Europe/Sofia CALENDAR day, matching `WorkedParcel.date` exactly. A UTC
+  /// boundary would split a night shift across two days and the two tables
+  /// would then disagree about which day was processed.
+  date DateTime @db.Date
+
+  /// The matcher's version/criteria, as on `WorkedParcel`.
+  derivedFrom String
+  derivedAt   DateTime @default(now())
+
+  /// How many positions the matcher considered after filtering, and how many
+  /// parcels it produced. Kept because "it ran and found nothing" has two
+  /// very different causes — the machine idled, or the tracker reported
+  /// nothing usable — and a farm asking why its day is empty deserves an
+  /// answer that is not a guess. Nothing is derived FROM these; they are a
+  /// reading.
+  positionsConsidered Int
+  parcelsMatched      Int
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  asset  Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId])
+
+  @@unique([assetId, date])
+  @@index([tenantId])
+  @@index([tenantId, assetId, date])
+}
+
 /// Links a machine to a task. A JOIN TABLE and not a column on `Task`,
 /// because an operation uses a tractor AND an implement — which is what
 /// `AssetType.IMPLEMENT` exists for — and a single `assetId` would force a
