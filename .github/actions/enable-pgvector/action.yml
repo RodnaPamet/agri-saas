@@ -162,3 +162,72 @@ runs:
           exit 1
         fi
         echo "postgis + pgvector installed into container $cid"
+
+        # ── RESTART THE SERVER, because the install can replace it (#3001) ──
+        #
+        # Measured 2026-11-12: PGDG published 16.16, and the extension
+        # packages depend on the server package — so apt upgraded it
+        # underneath the LIVE postmaster:
+        #
+        #   Unpacking postgresql-16 (16.16-1.pgdg13+1) over (16.15-1.pgdg13+2)
+        #
+        # The process still running was the 16.15 binary while
+        # `/usr/lib/postgresql/16/lib/plpgsql.so` on disk had become 16.16, so
+        # every migration containing a plpgsql function died:
+        #
+        #   ERROR: could not load library ".../plpgsql.so":
+        #          undefined symbol: heap_datum_update_type   (SQLSTATE 58P01)
+        #
+        # `prisma migrate deploy` then exits P3018 and every db-dependent job
+        # fails. main, three PRs and a peer's PR went red together, and the
+        # retry loop above could not help: it defends against a FETCH that
+        # fails, and this is a fetch that succeeds.
+        #
+        # A PG MINOR upgrade is data-directory compatible, so restarting into
+        # the newly installed binaries is the fix rather than a workaround.
+        # UNCONDITIONAL on purpose: making it conditional on "did the server
+        # package change" means parsing apt output, and the next skew would
+        # arrive in whatever shape the parser did not expect. A restart of an
+        # unchanged server costs about a second.
+        echo "::group::restart postgres so the running binary matches the installed files"
+        if ! docker restart "$cid" >/dev/null; then
+          echo "::endgroup::"
+          echo "::error::could not restart container $cid after installing the extensions. The server binary on disk may now differ from the running process, which surfaces later as SQLSTATE 58P01 inside a migration rather than here." >&2
+          exit 1
+        fi
+
+        # WAIT for it, and fail CLOSED. `docker restart` returns when the
+        # container is running, not when Postgres accepts connections — so
+        # without this the next step races the server and the failure reads as
+        # a connection error of unknown cause.
+        ready=0
+        for _ in $(seq 1 30); do
+          if docker exec "$cid" sh -c 'pg_isready -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' 2>/dev/null; then
+            ready=1
+            break
+          fi
+          sleep 2
+        done
+        echo "::endgroup::"
+        if [ "$ready" != "1" ]; then
+          echo "::error::postgres did not accept connections within 60s of the restart in container $cid" >&2
+          docker logs --tail 40 "$cid" >&2 || true
+          exit 1
+        fi
+
+        # POSITIVE CONTROL on the thing that actually broke.
+        #
+        # Readiness alone does not prove the library loads: the postmaster
+        # accepts connections perfectly well while `plpgsql.so` is unloadable,
+        # which is exactly the state that produced 58P01 three steps later in
+        # `Apply Prisma migrations`. An empty `DO` block is the smallest
+        # statement that forces the handler to load, so this asserts the
+        # symptom directly rather than a proxy for it.
+        #
+        # It also covers the two extensions, for the same reason: `apt install`
+        # succeeding says the FILES arrived, not that the server can use them.
+        if ! docker exec "$cid" sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DO \$\$ BEGIN END \$\$;" -c "CREATE EXTENSION IF NOT EXISTS postgis;" -c "CREATE EXTENSION IF NOT EXISTS vector;"' ; then
+          echo "::error::postgres restarted and accepts connections, but plpgsql or an extension will not load in container $cid. That is the #3001 shape: the server binary and the installed libraries disagree. Compare the pin in .github/postgis-image against what PGDG now carries." >&2
+          exit 1
+        fi
+        echo "plpgsql, postgis and vector all load after the restart"
