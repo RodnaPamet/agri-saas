@@ -11557,7 +11557,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "When the nightly derivation last ran for this machine-day, or null for \"has not run\" — so «not computed yet» is distinguishable from a genuine day of no work. KNOWN LIMIT: this is read off the returned rows, and a day with no work has none, so \"it ran and found nothing\" currently also answers null. That is truthful today because the derivation does not exist yet; it needs a per-(machine, day) run marker, tracked separately, and the job must land it in the same change."
+            "description": "When the nightly derivation last ran for this machine-day, or null for \"has not run\" — so «not computed yet» is distinguishable from a genuine day of no work. KNOWN LIMIT: this is read off the returned rows, and a day with no work has none, so \"it ran and found nothing\" currently also answers null. That is truthful today because the derivation does not exist yet; it needs a per-(machine, day) run marker, tracked on #2984, and the nightly job must land it in the same change."
           }
         },
         "required": [
@@ -74298,7 +74298,7 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "The `date` parameter is missing or malformed. `DATE_REQUIRED` — absent, or not `YYYY-MM-DD`. It is deliberately not defaulted to today, because a default would answer confidently about a different day than the caller meant. `DATE_INVALID` — well-shaped but not a real date, such as `2026-02-31`. Checked by round-tripping rather than by the pattern alone, since `new Date(\"2026-02-31\")` rolls forward into March instead of failing.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74328,7 +74328,7 @@
             }
           },
           "404": {
-            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "description": "`MACHINE_NOT_FOUND` — and it is the SAME refusal for a machine that does not exist, one belonging to another farm, and one whose asset type cannot carry a position source. Distinguishing them would make this endpoint an enumerator for the asset register.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74458,7 +74458,7 @@
             }
           },
           "400": {
-            "description": "Invalid request body or query parameters.",
+            "description": "The `date` parameter is missing or malformed. `DATE_REQUIRED` — absent, or not `YYYY-MM-DD`. It is deliberately not defaulted to today, because a default would answer confidently about a different day than the caller meant. `DATE_INVALID` — well-shaped but not a real date, such as `2026-02-31`. Checked by round-tripping rather than by the pattern alone, since `new Date(\"2026-02-31\")` rolls forward into March instead of failing.",
             "content": {
               "application/json": {
                 "schema": {
@@ -74488,7 +74488,7 @@
             }
           },
           "404": {
-            "description": "Not found, or not visible to this tenant.\n\nTwo codes here come from the TENANT RESOLVER rather than from any handler, so they are reachable on every `/api/t/**` route and are the ones worth switching on (#1712):\n\n- `TENANT_NOT_FOUND` — no such farm, OR a farm this caller may not see, OR one removed from the organisation. The three are DELIBERATELY indistinguishable and share one code: a response that told them apart would let a caller enumerate farms by slug. So do not offer \"check the address\" as though the farm were certainly absent — the honest message is that it is not available to this account.\n- `TENANT_IDENTIFIER_REQUIRED` — the request reached the resolver with neither a slug nor an id. In practice this means a session carrying no tenant, so re-authenticating or picking a farm is the way out rather than retrying. The 404 status is historical and kept on purpose: changing it would break a client that already handles 404 here, and the #1712 migration is about the LANGUAGE a farmer reads.\n\nBoth carried an English sentence and no code until #1712. The iOS client resolves display from `error.message` and has no `NOT_FOUND` entry, so an uncoded 404 reached a Bulgarian farmer as English — which is the whole reason these are coded rather than merely translated.",
+            "description": "`MACHINE_NOT_FOUND` — and it is the SAME refusal for a machine that does not exist, one belonging to another farm, and one whose asset type cannot carry a position source. Distinguishing them would make this endpoint an enumerator for the asset register.",
             "content": {
               "application/json": {
                 "schema": {

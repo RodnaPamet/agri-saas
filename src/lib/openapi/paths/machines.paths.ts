@@ -19,7 +19,7 @@
 import { z } from '@/lib/openapi/zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 
-import { op } from './helpers';
+import { codedErrorResponses, op } from './helpers';
 
 const TenantParams = z.object({
     tenantSlug: z.string().openapi({ description: 'The farm whose machines these are.' }),
@@ -161,7 +161,7 @@ const WorkedSchema = z
         }),
         derivedAt: z.string().datetime().nullable().openapi({
             description:
-                'When the nightly derivation last ran for this machine-day, or null for "has not run" — so «not computed yet» is distinguishable from a genuine day of no work. KNOWN LIMIT: this is read off the returned rows, and a day with no work has none, so "it ran and found nothing" currently also answers null. That is truthful today because the derivation does not exist yet; it needs a per-(machine, day) run marker, tracked separately, and the job must land it in the same change.',
+                'When the nightly derivation last ran for this machine-day, or null for "has not run" — so «not computed yet» is distinguishable from a genuine day of no work. KNOWN LIMIT: this is read off the returned rows, and a day with no work has none, so "it ran and found nothing" currently also answers null. That is truthful today because the derivation does not exist yet; it needs a per-(machine, day) run marker, tracked on #2984, and the nightly job must land it in the same change.',
         }),
     })
     .openapi('MachineWorkedDay');
@@ -190,6 +190,21 @@ export function registerMachinePaths(registry: OpenAPIRegistry): void {
         params: MachineParams,
         query: DayQuery,
         success: { status: 200, description: 'The day’s track.', schema: TrackSchema },
+        extraResponses: codedErrorResponses({
+            400:
+                'The `date` parameter is missing or malformed. '
+                + '`DATE_REQUIRED` — absent, or not `YYYY-MM-DD`. It is deliberately not '
+                + 'defaulted to today, because a default would answer confidently about a '
+                + 'different day than the caller meant. '
+                + '`DATE_INVALID` — well-shaped but not a real date, such as `2026-02-31`. '
+                + 'Checked by round-tripping rather than by the pattern alone, since '
+                + '`new Date("2026-02-31")` rolls forward into March instead of failing.',
+            404:
+                '`MACHINE_NOT_FOUND` — and it is the SAME refusal for a machine that does '
+                + 'not exist, one belonging to another farm, and one whose asset type cannot '
+                + 'carry a position source. Distinguishing them would make this endpoint an '
+                + 'enumerator for the asset register.',
+        }),
     });
 
     op(registry, {
@@ -203,5 +218,20 @@ export function registerMachinePaths(registry: OpenAPIRegistry): void {
         params: MachineParams,
         query: DayQuery,
         success: { status: 200, description: 'The day’s worked parcels.', schema: WorkedSchema },
+        extraResponses: codedErrorResponses({
+            400:
+                'The `date` parameter is missing or malformed. '
+                + '`DATE_REQUIRED` — absent, or not `YYYY-MM-DD`. It is deliberately not '
+                + 'defaulted to today, because a default would answer confidently about a '
+                + 'different day than the caller meant. '
+                + '`DATE_INVALID` — well-shaped but not a real date, such as `2026-02-31`. '
+                + 'Checked by round-tripping rather than by the pattern alone, since '
+                + '`new Date("2026-02-31")` rolls forward into March instead of failing.',
+            404:
+                '`MACHINE_NOT_FOUND` — and it is the SAME refusal for a machine that does '
+                + 'not exist, one belonging to another farm, and one whose asset type cannot '
+                + 'carry a position source. Distinguishing them would make this endpoint an '
+                + 'enumerator for the asset register.',
+        }),
     });
 }

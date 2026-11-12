@@ -12197,7 +12197,7 @@ exports[`API contract — per-schema snapshots schema: MachineWorkedDay 1`] = `
         "null"
       ],
       "format": "date-time",
-      "description": "When the nightly derivation last ran for this machine-day, or null for \\"has not run\\" — so «not computed yet» is distinguishable from a genuine day of no work. KNOWN LIMIT: this is read off the returned rows, and a day with no work has none, so \\"it ran and found nothing\\" currently also answers null. That is truthful today because the derivation does not exist yet; it needs a per-(machine, day) run marker, tracked separately, and the job must land it in the same change."
+      "description": "When the nightly derivation last ran for this machine-day, or null for \\"has not run\\" — so «not computed yet» is distinguishable from a genuine day of no work. KNOWN LIMIT: this is read off the returned rows, and a day with no work has none, so \\"it ran and found nothing\\" currently also answers null. That is truthful today because the derivation does not exist yet; it needs a per-(machine, day) run marker, tracked on #2984, and the nightly job must land it in the same change."
     }
   },
   "required": [

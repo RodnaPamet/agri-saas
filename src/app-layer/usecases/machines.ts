@@ -88,8 +88,8 @@ export interface MachineWorkedView {
      * yet, so `null` — "has not run" — is the truthful answer for every date.
      * It becomes wrong the moment that job ships without a marker, and the
      * failure is silent: a farm whose machine genuinely idled would be told
-     * the figures are still being computed, for ever. Tracked on the issue
-     * this PR files; the job must land the marker in the same change.
+     * the figures are still being computed, for ever. **#2984** holds the
+     * marker; the nightly job must land it in the same change.
      */
     derivedAt: string | null;
 }
