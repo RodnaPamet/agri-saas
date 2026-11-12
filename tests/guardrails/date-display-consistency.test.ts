@@ -33,6 +33,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles } from '../helpers/collect-files';
+import { blankNonCode } from '../helpers/blank-non-code';
+import { assertAllowlistIsLive } from '../helpers/assert-allowlist-is-live';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIRS = [
@@ -41,25 +43,64 @@ const SCAN_DIRS = [
 ];
 
 /**
- * Files we explicitly exempt from the `toLocaleDateString` rule:
- *   - The formatter module is the canonical call site.
- *   - The table pagination helpers + KpiCard format integer row counts
- *     with `Number.prototype.toLocaleString()` — that's a numeric
- *     thousands-separator, not a date cast.
+ * Files exempt from the date-locale rule because they still make a DATE-SHAPED
+ * `toLocale…String` call in executable code.
  *
- * NOTE: `src/components/ui/charts/layout.ts` was dropped from this
- * allowlist on 2026-04-22 — its `formatShortDate` now delegates to
- * the canonical `formatDateCompact` and no longer carries a raw
- * `toLocaleDateString` call. Re-add only if a contributor
- * reintroduces a date-locale call there with a justification.
+ * EMPTY, and all five former entries were measured dead (#2414). Emptying the
+ * whole list changes no verdict — 3 passed before, 3 after — which is the
+ * definition of an allowlist that excuses nothing.
+ *
+ * Why each one looked necessary, because the reasons were plausible and are
+ * the useful part:
+ *
+ *   · `format-date.ts` — the canonical formatter. Its only `toLocale…`
+ *     mentions are in its own DOCBLOCK, describing the very rule this guard
+ *     enforces, and it formats through shared `Intl.DateTimeFormat` instances.
+ *     The scan already skips comment lines, so the exemption was suppressing a
+ *     false positive that could not fire.
+ *   · the three table helpers and `KpiCard` — their calls are
+ *     `.toLocaleString()` on ROW COUNTS, and the scan's own `isDateShaped`
+ *     condition deliberately does not flag integer formatting. The exemption
+ *     duplicated a narrowing the predicate already made.
+ *
+ * So both halves of the stated reason were already handled by the predicate —
+ * once by the comment skip, once by `isDateShaped`. An allowlist written
+ * against the BAN rather than against the predicate is how that happens, and
+ * it is the same shape as the four found on primitive files in #2983/#2988:
+ * `format-date.ts` and `KpiCard` are canonical modules, which collect
+ * defensive entries nobody retires.
+ *
+ * The 2026-04-22 note about `charts/layout.ts` is kept — it records that this
+ * list HAS been pruned by hand before, which is why the liveness assertion
+ * below now does it automatically.
+ *
+ * Kept as a mechanism rather than deleted, the `FLAG_EXEMPT` precedent, with
+ * discrimination controls because an empty list makes the assertion vacuous.
  */
-const ALLOWED_LOCALE_FILES = new Set<string>([
-    path.join(ROOT, 'src/lib/format-date.ts'),
-    path.join(ROOT, 'src/components/ui/table/pagination-controls.tsx'),
-    path.join(ROOT, 'src/components/ui/table/pagination-utils.ts'),
-    path.join(ROOT, 'src/components/ui/table/table.tsx'),
-    path.join(ROOT, 'src/components/ui/KpiCard.tsx'),
-]);
+const ALLOWED_LOCALE_FILES = new Set<string>([]);
+
+/**
+ * The ban, as ONE predicate, so the scan and the exemption-liveness check
+ * cannot disagree.
+ *
+ * It carries BOTH narrowings the scan applies, and leaving either out would
+ * make the liveness check call a live exemption dead:
+ *   · comments are blanked — a docblock naming the banned call is not a call;
+ *   · `.toLocaleString()` on a non-date is legitimate integer formatting.
+ */
+function violatesDateLocaleLine(line: string): boolean {
+    const pattern = /\.\s*toLocale(?:Date|Time)?String\s*\(/;
+    if (!pattern.test(line)) return false;
+    return (
+        /\.\s*toLocaleDateString\s*\(/.test(line)
+        || /\.\s*toLocaleTimeString\s*\(/.test(line)
+        || /new\s+Date\s*\(/.test(line)
+    );
+}
+
+function violatesDateLocaleBan(code: string): boolean {
+    return code.split('\n').some(violatesDateLocaleLine);
+}
 
 /**
  * The file set, via the SHARED collector rather than a hand-rolled walk.
@@ -106,32 +147,99 @@ describe('Date display consistency', () => {
         ).toBe(true);
     });
 
+    it('every exempt file still exists AND still violates — #2414', () => {
+        // Strictly stronger than an existence check: a deleted file cannot
+        // violate, so it fails this too. What existence could not see is an
+        // entry whose file is PRESENT and CLEAN — it reads as an accepted
+        // violation over a file nothing would flag, and removing it changes no
+        // verdict, which is why nothing notices.
+        const entries = [...ALLOWED_LOCALE_FILES].map((abs) => path.relative(ROOT, abs));
+        const report = assertAllowlistIsLive({
+            label: 'date-display-consistency ALLOWED_LOCALE_FILES',
+            entries,
+            // The SAME transform the scan applies.
+            blankOptions: {},
+            violates: violatesDateLocaleBan,
+        });
+        console.log(
+            `[date-display-consistency] ${report.live.length} of ${entries.length} `
+                + 'exempt file(s) still make a date-shaped toLocale call',
+        );
+        expect(report.live).toHaveLength(entries.length);
+    });
+
+    it('control: the liveness check reports the five former entries as irrelevant', () => {
+        // ALLOWED_LOCALE_FILES is empty, so the assertion above ranges over
+        // nothing and would pass however broken the helper or the predicate
+        // were. The subjects are the five files the dead entries named, so if
+        // any of them ever legitimately needs exempting again this fails and
+        // says which.
+        for (const clean of [
+            'src/lib/format-date.ts',
+            'src/components/ui/table/pagination-controls.tsx',
+            'src/components/ui/table/pagination-utils.ts',
+            'src/components/ui/table/table.tsx',
+            'src/components/ui/KpiCard.tsx',
+        ]) {
+            expect(fs.existsSync(path.resolve(ROOT, clean))).toBe(true);
+            expect(() =>
+                assertAllowlistIsLive({
+                    label: 'date-display-consistency control',
+                    entries: [clean],
+                    blankOptions: {},
+                    violates: violatesDateLocaleBan,
+                }),
+            ).toThrow(/IRRELEVANT/);
+        }
+    });
+
+    it('control: the predicate fires on a date call and NOT on a row count', () => {
+        // The other direction, so the control above cannot pass by refusing
+        // everything — and it pins both narrowings, because either going dead
+        // would make this guard silently useless in one of two ways.
+        expect(violatesDateLocaleBan('const s = d.toLocaleDateString("bg-BG");')).toBe(true);
+        expect(violatesDateLocaleBan('const s = d.toLocaleTimeString();')).toBe(true);
+        expect(violatesDateLocaleBan('const s = new Date(x).toLocaleString();')).toBe(true);
+        // Integer formatting is legitimate — this is what the table helpers do.
+        expect(violatesDateLocaleBan('{table.getRowCount().toLocaleString()}')).toBe(false);
+        // And a docblock naming the banned call is not a call. `format-date.ts`
+        // is the real instance: its own rule description is why it was exempt.
+        //
+        // The fixture is a COMPLETE block comment, opener included, because
+        // `blankNonCode` is state-aware and starts in CODE state — a lone
+        // ` * …` line is parsed as code and the call survives. My first
+        // version of this control omitted the `/**` and failed for that
+        // reason, which is worth keeping: a control needs a fixture the
+        // transform can actually act on, or it tests the fixture.
+        const docblock = ['/**', ' *   - Call `.toLocaleDateString()` on a Date', ' */'].join('\n');
+        expect(violatesDateLocaleBan(docblock)).toBe(true); // raw: the call is there
+        expect(violatesDateLocaleBan(blankNonCode(docblock))).toBe(false); // blanked: it is prose
+    });
+
     it('no ad-hoc toLocaleDateString / toLocaleString / toLocaleTimeString in app code', () => {
-        const pattern =
-            /\.\s*toLocale(?:Date|Time)?String\s*\(/;
         const violations: { file: string; line: number; snippet: string }[] = [];
         for (const file of allFiles) {
             if (ALLOWED_LOCALE_FILES.has(file)) continue;
             const src = fs.readFileSync(file, 'utf-8');
-            const lines = src.split('\n');
+            // Blanked through the shared state-aware pass rather than the
+            // per-line `//` / `*` heuristic this carried. Stronger in both
+            // directions — that heuristic missed a block-comment line not
+            // starting with `*` and a TRAILING comment entirely, while
+            // over-skipping a code line beginning with `*` — and it makes this
+            // scan and the liveness check below judge the SAME text, which is
+            // the one way that adoption fails.
+            const lines = blankNonCode(src).split('\n');
+            const rawLines = src.split('\n');
             for (let i = 0; i < lines.length; i++) {
-                const raw = lines[i];
-                const trimmed = raw.trim();
-                // Skip comments.
-                if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
-                if (pattern.test(raw)) {
-                    // Formatting integers via `.toLocaleString()` (row
-                    // counts, currency) is legitimate. Only flag
-                    // date-shaped calls.
-                    const isDateShaped =
-                        /\.\s*toLocaleDateString\s*\(/.test(raw) ||
-                        /\.\s*toLocaleTimeString\s*\(/.test(raw) ||
-                        /new\s+Date\s*\(/.test(raw);
-                    if (!isDateShaped) continue;
+                // Formatting integers via `.toLocaleString()` (row counts,
+                // currency) is legitimate; only date-shaped calls are flagged.
+                // Both narrowings live in the shared predicate.
+                if (violatesDateLocaleLine(lines[i])) {
                     violations.push({
                         file: path.relative(ROOT, file),
                         line: i + 1,
-                        snippet: trimmed.slice(0, 140),
+                        // The RAW line, so the message shows real source.
+                        snippet: (rawLines[i] ?? lines[i]).trim().slice(0, 140),
                     });
                 }
             }
