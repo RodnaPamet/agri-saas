@@ -252,6 +252,23 @@ describe('Epic 67 — every destructive flow answers for itself (#2193)', () => 
                 'the same call and says so in a comment: blocking is reversible from the same ' +
                 'button, so ceremony around it is ceremony around an undoable action.',
         },
+        {
+            file: 'src/app/t/[tenantSlug]/(app)/admin/moderation/AccountActionsClient.tsx',
+            reason:
+                'Its only DELETE is a LIFT — `DELETE .../admin/moderation/suspensions` ' +
+                'removes a suspension, so it RESTORES a person\'s access rather than ' +
+                'destroying anything. The entry above reasons identically about an ' +
+                'un-block and applies verbatim: an undo window would delay the moment ' +
+                'somebody regains their farm, and a confirm would ask a moderator to ' +
+                'confirm being less restrictive. ' +
+                'The SUSPEND action in the same file is the restrictive direction, is an ' +
+                '`apiPost` outside this detector, and its ceremony already exists and is ' +
+                'stronger than a five-second window: #1667 makes a written rationale ' +
+                'REQUIRED, so nobody suspends an account by misclicking. Deferring a ' +
+                'moderation decision would also be wrong in kind — the decision, its ' +
+                'action row and its audit-chain entry commit together, and a window that ' +
+                'silently discarded a recorded decision is worse than none (#2735).',
+        },
     ];
 
     const classified = (() => {
