@@ -391,6 +391,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
                 recipientUserId: RECIPIENT,
                 locale: 'bg',
                 bodyRendered: 'Вашата обява беше премахната.',
+                actor: { kind: 'platform-key', generation: 'current' },
             });
             statements.push(statementId);
 

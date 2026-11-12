@@ -205,7 +205,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
         const { statementId } = await queueStatement({
             actionId, recipientUserId: recipient, locale: 'bg',
-            bodyRendered: 'draft text',
+            bodyRendered: 'draft text', actor: { kind: 'platform-key', generation: 'current' },
         });
         statements.push(statementId);
 
@@ -228,6 +228,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
 
         const { statementId } = await queueStatement({
             actionId, recipientUserId: recipient, locale: 'bg', bodyRendered: body,
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         statements.push(statementId);
 
@@ -249,6 +250,7 @@ describeFn('#1619 — moderation decisions in the platform chain', () => {
         actions.push(actionId);
         const { statementId } = await queueStatement({
             actionId, recipientUserId: recipient, locale: 'bg', bodyRendered: 'x',
+            actor: { kind: 'platform-key', generation: 'current' },
         });
         statements.push(statementId);
 
@@ -655,6 +657,102 @@ describeFn('#2735 — the session door attributes a decision to a PERSON', () =>
         expect(chain[0].actor).toBe(moderator);
         expect(chain[0].d).toContain(`user:${moderator}`);
         expect(chain[0].d).not.toContain('platform-key:');
+    });
+
+    it('MODERATION_STATEMENT_QUEUED names the person too — both of #1619\'s verbs', async () => {
+        // #1619 made "decided" and "explained" two chain verbs deliberately,
+        // because Art 17 makes them two obligations. The first half of #2735
+        // gave `MODERATION_ACTION_RECORDED` a person and left this one at
+        // `actorUserId: null` with no `moderatorRef` at all — so the chain named
+        // who DECIDED and not who EXPLAINED.
+        //
+        // That asymmetry is worse than the original gap in one way: a reader
+        // comparing the two verbs would conclude the explanation was automatic.
+        const moderator = await makeUser();
+        const recipient = await makeUser();
+        const reportId = await fileNotice();
+
+        const { actionId } = await actOnNotice({
+            reportId,
+            actionKind: 'CONTENT_REMOVED',
+            rationale: 'the grade could not be substantiated',
+            actor: { kind: 'user', userId: moderator },
+        });
+        actions.push(actionId);
+
+        const { statementId } = await queueStatement({
+            actionId,
+            recipientUserId: recipient,
+            locale: 'bg',
+            bodyRendered: 'Вашата обява беше премахната.',
+            actor: { kind: 'user', userId: moderator },
+        });
+        statements.push(statementId);
+
+        const chain = await globalPrisma.$queryRawUnsafe<Array<{ actor: string | null; d: string }>>(
+            `SELECT "actorUserId" AS actor, "detailsJson"::text AS d
+               FROM "PlatformAuditLog"
+              WHERE "action" = 'MODERATION_STATEMENT_QUEUED'
+                AND "detailsJson"::text LIKE '%' || $1 || '%' LIMIT 1`,
+            statementId,
+        );
+        expect(chain).toHaveLength(1);
+        expect(chain[0].actor).toBe(moderator);
+        expect(chain[0].d).toContain(`user:${moderator}`);
+        expect(chain[0].d).not.toContain('platform-key:');
+        // The BODY is still absent — #1619's rule, unchanged by naming an
+        // actor. It is replaced at send time by P5.4b anyway, so a copy here
+        // would be a draft the chain presented as final.
+        expect(chain[0].d).not.toContain('Вашата обява беше премахната');
+    });
+
+    it('an AUTOMATIC decision names the rule, in both the row and the chain', async () => {
+        // P9.3d's report-threshold job. The third arm exists because threading
+        // the actor made `tsc` name that job as a caller with nothing to pass —
+        // it was writing `moderatorRef: 'auto:report-threshold'` as a literal
+        // while the statement it queued carried no actor at all, so one
+        // decision was attributed by two mechanisms.
+        const recipient = await makeUser();
+        const reportId = await fileNotice();
+
+        const { actionId } = await actOnNotice({
+            reportId,
+            actionKind: 'CONTENT_REMOVED',
+            rationale: 'threshold reached',
+            actor: { kind: 'automatic', rule: 'report-threshold' },
+        });
+        actions.push(actionId);
+
+        const row = await globalPrisma.$queryRawUnsafe<Array<{ ref: string }>>(
+            `SELECT "moderatorRef" AS ref FROM "ModerationAction" WHERE "id" = $1`,
+            actionId,
+        );
+        // The bytes P9.3d already wrote, so no stored row is reinterpreted.
+        expect(row[0].ref).toBe('auto:report-threshold');
+
+        const { statementId } = await queueStatement({
+            actionId,
+            recipientUserId: recipient,
+            locale: 'bg',
+            bodyRendered: 'Публикацията е скрита до преглед.',
+            actor: { kind: 'automatic', rule: 'report-threshold' },
+        });
+        statements.push(statementId);
+
+        const chain = await globalPrisma.$queryRawUnsafe<Array<{ actor: string | null; d: string }>>(
+            `SELECT "actorUserId" AS actor, "detailsJson"::text AS d
+               FROM "PlatformAuditLog"
+              WHERE "action" = 'MODERATION_STATEMENT_QUEUED'
+                AND "detailsJson"::text LIKE '%' || $1 || '%' LIMIT 1`,
+            statementId,
+        );
+        expect(chain).toHaveLength(1);
+        // NULL, and truthfully: no person exercised judgement. That is the fact
+        // an appeal against an automatic hide turns on, which is why this is a
+        // distinct kind rather than a `user` with a sentinel id.
+        expect(chain[0].actor).toBeNull();
+        expect(chain[0].d).toContain('auto:report-threshold');
+        expect(chain[0].d).not.toContain('user:');
     });
 
     it('`liftSuspension` attributes the person too — the second inline spelling', async () => {
