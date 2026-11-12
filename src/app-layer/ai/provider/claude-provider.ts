@@ -125,6 +125,7 @@ export class ClaudeProvider implements AiProvider {
             tools,
             stream: opts.stream === true,
             signal: opts.signal,
+            onTextDelta: opts.onTextDelta,
         });
 
         const result: AiCompletion<T> = { text, usage };
@@ -487,6 +488,7 @@ export class ClaudeProvider implements AiProvider {
         tools?: ToolParam[];
         stream: boolean;
         signal?: AbortSignal;
+        onTextDelta?: (delta: string) => void;
     }): Promise<{ text: string; toolCalls: AiToolCall[]; usage: AiUsage }> {
         const reqOpts = args.signal ? { signal: args.signal } : undefined;
         const base = {
@@ -524,6 +526,10 @@ export class ClaudeProvider implements AiProvider {
                     const delta = event.delta;
                     if (delta.type === 'text_delta') {
                         text += delta.text;
+                        // Beside the accumulation rather than instead of it:
+                        // the returned `text` stays authoritative, so a
+                        // caller that ignores this sees no change at all.
+                        args.onTextDelta?.(delta.text);
                     } else if (delta.type === 'input_json_delta') {
                         const slot = toolAcc.get(event.index);
                         if (slot) slot.input += delta.partial_json;

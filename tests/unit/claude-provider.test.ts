@@ -175,6 +175,49 @@ describe('streaming', () => {
 
         expect(result.text).toBe('Hello world');
         expect(mockMessagesStream).toHaveBeenCalledTimes(1);
+
+        // #2670 item 4 — the delta callback fires beside the accumulation.
+        // Asserted HERE, where the stream is mocked, because it is the only
+        // place the individual events exist: by the time `complete()` returns,
+        // the increments are gone.
+    });
+
+    it('reports each text delta through onTextDelta, in order — #2670', async () => {
+        mockMessagesStream.mockReturnValueOnce(
+            eventStream([
+                { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+                { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hel' } },
+                { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'lo ' } },
+                { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'world' } },
+            ]),
+        );
+
+        const seen: string[] = [];
+        const result = await provider().complete({
+            messages: [{ role: 'user', content: 'hi' }],
+            stream: true,
+            onTextDelta: (d) => seen.push(d),
+        });
+
+        expect(seen).toEqual(['Hel', 'lo ', 'world']);
+        // The returned text stays authoritative and unchanged — the callback
+        // is additive, so a caller that ignores it sees exactly what it did
+        // before. That is what makes this safe to add to a live path.
+        expect(result.text).toBe('Hello world');
+        expect(seen.join('')).toBe(result.text);
+    });
+
+    it('does not require onTextDelta — an absent callback changes nothing', async () => {
+        mockMessagesStream.mockReturnValueOnce(
+            eventStream([
+                { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'abc' } },
+            ]),
+        );
+        const result = await provider().complete({
+            messages: [{ role: 'user', content: 'hi' }],
+            stream: true,
+        });
+        expect(result.text).toBe('abc');
         expect(mockMessagesCreate).not.toHaveBeenCalled();
     });
 

@@ -52,6 +52,7 @@ import { emitAnswer } from '@/app-layer/ai/assistant/emit-answer';
 import { endingEvent } from '@/app-layer/ai/assistant/endings';
 import { emitHalt, runToolLoop } from '@/app-layer/ai/assistant/tool-loop';
 import { sseFormat, type AssistantStreamEvent } from '@/app-layer/ai/assistant/stream-events';
+import { createPrefixReleaser } from '@/app-layer/ai/safety/prefix-release';
 import { sanitizeUntrusted } from '@/app-layer/ai/safety/sanitize-untrusted';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { buildProfileBlock, PROFILE_PROMPT_RULE } from '@/app-layer/ai/memory-profile';
@@ -202,6 +203,76 @@ export const POST = withApiErrorHandling(
             subscribe: (send) => {
                 const emit = (e: AssistantStreamEvent): void => send(sseFormat(e));
 
+                /*
+                 * Incremental answer text — #2670 item 4, owner decision
+                 * 2026-11-12.
+                 *
+                 * ONE releaser for the whole response, not one per provider
+                 * call, and that is deliberate: the cumulative egress scan
+                 * must see everything the model has said, so a secret split
+                 * across two calls cannot slip between two fresh buffers.
+                 *
+                 * `observe` takes ABSOLUTE text because `completeWithRouting`
+                 * hands over rehydrated cumulative text rather than raw
+                 * deltas — a redaction placeholder can straddle a delta
+                 * boundary, so only the accumulation is safe to rehydrate.
+                 * A retry starts that text again, which arrives here as a
+                 * SHORTER value and is reported as `restarted`.
+                 *
+                 * `answer` stays authoritative. These are provisional, and the
+                 * client replaces them with `answer.text` — which is what
+                 * makes a duplicated or dropped delta recoverable by contract
+                 * instead of by detection.
+                 *
+                 * Nothing is emitted once the cumulative scan is dirty. The
+                 * refusal is NOT raised here: `emitAnswer` already scans the
+                 * composed answer and sends `refusal` with its cause, so the
+                 * authoritative gate is untouched and there is exactly one
+                 * place that decides an answer is refused.
+                 */
+                const releaser = createPrefixReleaser();
+                let deltaSeq = 0;
+                /*
+                 * A restart is CARRIED to the next delta that has text, not
+                 * emitted on its own.
+                 *
+                 * A retry rewinds the released count, so the `observe` call
+                 * that reports it usually has nothing to release yet — the
+                 * retry's first token does not complete a sentence. Emitting
+                 * on the spot would mean an `answer_delta` with empty `text`,
+                 * and dropping it would lose the signal entirely: the client
+                 * would keep rendering text the server has abandoned until
+                 * `answer` arrives. Carrying it gives one event that says
+                 * "discard what you have, here is the replacement".
+                 */
+                let restartPending = false;
+                const onTextProgress = (cumulative: string): void => {
+                    const step = releaser.observe(cumulative);
+                    /*
+                     * No verdict check here, deliberately. The releaser is the
+                     * SINGLE gate: `observe` returns an empty release whenever
+                     * the cumulative scan is dirty, so a `clean` test at this
+                     * call site is redundant BY CONSTRUCTION.
+                     *
+                     * It was here, and `selector-teeth`-style mutation found
+                     * it: deleting the check changed no assertion, including
+                     * the one that proves a secret never reaches the socket.
+                     * A line that reads as the security decision while
+                     * deciding nothing is worse than its absence — the next
+                     * reader trusts it and looks no further. The gate is
+                     * tested where it lives, in `prefix-release-is-sound`.
+                     */
+                    if (step.restarted) restartPending = true;
+                    if (step.release === '') return;
+                    emit({
+                        type: 'answer_delta',
+                        text: step.release,
+                        seq: deltaSeq++,
+                        ...(restartPending ? { restarted: true as const } : {}),
+                    });
+                    restartPending = false;
+                };
+
                 // `subscribe` is synchronous and returns a releaser, so the
                 // work is kicked off here and the releaser aborts it. Nothing
                 // is awaited in this function body.
@@ -246,6 +317,13 @@ export const POST = withApiErrorHandling(
                                         messages,
                                         ...(tools ? { tools } : {}),
                                         signal: controller.signal,
+                                        // Every call, because on the normal
+                                        // path a picking round that returns no
+                                        // tool calls IS the answer — see the
+                                        // #2751 note below. Streaming only the
+                                        // final tool-less call would therefore
+                                        // stream nothing for most questions.
+                                        onTextProgress,
                                     }),
                                 /*
                                  * `completeForToolSelection` is deliberately
