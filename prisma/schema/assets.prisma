@@ -82,7 +82,6 @@ model Asset {
   machineTrackers      MachineTracker[]
   machinePositions     MachinePosition[]
   workedParcels        WorkedParcel[]
-  machineWorkedDays    MachineWorkedDay[]
   taskAssets           TaskAsset[]
   machineGeofenceState MachineGeofenceState?
   telematicsLinks MachineTelematicsLink[]
