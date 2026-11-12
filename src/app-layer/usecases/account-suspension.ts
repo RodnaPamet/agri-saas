@@ -54,7 +54,7 @@ import {
     appendPlatformAuditEntry,
     type PlatformAuditScope,
 } from '@/lib/audit/platform-audit-writer';
-import { moderatorRefFor } from '@/lib/auth/platform-admin';
+import { moderatorRefFor, actorUserIdFor, type ModerationActor } from '@/lib/auth/platform-admin';
 import { queueStatementForAction } from './statement-queue';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
@@ -74,12 +74,15 @@ type TxClient = Prisma.TransactionClient;
 export interface SuspendAccountInput {
     readonly userId: string;
     /**
-     * Which key generation authorised it, from `verifyPlatformApiKey`.
-     * The same attribution unit `moderatorRef` uses, and the same limit: it
-     * names a key, not a person. #1599 (P5.8) owns the credential model that
-     * would make it a person.
+     * WHO authorised it — a key generation from `verifyPlatformApiKey`, or the
+     * `ctx.userId` of a session-gated console caller (#2735).
+     *
+     * A union rather than a nullable id, so a trail can never be read as "a
+     * person did this and we lost which one". The key arm keeps the old limit:
+     * it names a key, not a person, because one `PLATFORM_ADMIN_API_KEY` is
+     * shared. See `ModerationActor`.
      */
-    readonly generation: 'current' | 'previous';
+    readonly actor: ModerationActor;
     /**
      * Free text from the moderator. REQUIRED since #1667.
      *
@@ -173,15 +176,17 @@ function queuePostCommit(input: SuspendAccountInput, result: SuspendAccountResul
                 action: 'ACCOUNT_SUSPENDED',
                 actorType: 'PLATFORM_ADMIN',
                 // No `actorUserId`: the credential is an API key, so there is
-                // no user in scope. Accepting one from the caller would put an
-                // unverified name in an attribution field.
-                actorUserId: null,
+                // no user in scope FOR A KEY-AUTHORISED call. Accepting one from
+                // the caller would put an unverified name in an attribution
+                // field; `actorUserIdFor` reads it from the VERIFIED session
+                // actor instead, and stays null for the key door (#2735).
+                actorUserId: actorUserIdFor(input.actor),
                 // `PlatformAuditLog` has no target columns — the subject goes
                 // in `detailsJson`, as the feature-flag and key-rotation
                 // writers do.
                 detailsJson: {
                     targetUserId: input.userId,
-                    moderatorRef: `platform-key:${input.generation}`,
+                    moderatorRef: moderatorRefFor(input.actor),
                     sessionsRevoked: result.sessionsRevoked,
                     // The reason is NOT recorded here, only whether there was
                     // one. It is moderator free text and `detailsJson` is not
@@ -245,7 +250,7 @@ export async function suspendAccount(
                 data: {
                     id: actionId,
                     reportId: null,
-                    moderatorRef: moderatorRefFor(input.generation),
+                    moderatorRef: moderatorRefFor(input.actor),
                     actionKind: 'ACCOUNT_SUSPENDED',
                     subjectKind: 'ACCOUNT',
                     subjectId: input.userId,
@@ -344,7 +349,7 @@ export interface LiftSuspensionResult {
  */
 export async function liftSuspension(input: {
     readonly userId: string;
-    readonly generation: 'current' | 'previous';
+    readonly actor: ModerationActor;
 }): Promise<LiftSuspensionResult> {
     const result = await prisma.$transaction(async (tx) => {
         const existing = await tx.user.findUnique({
@@ -425,10 +430,10 @@ export async function liftSuspension(input: {
                 scope: SUSPENSION_SCOPE,
                 action: 'ACCOUNT_SUSPENSION_LIFTED',
                 actorType: 'PLATFORM_ADMIN',
-                actorUserId: null,
+                actorUserId: actorUserIdFor(input.actor),
                 detailsJson: {
                     targetUserId: input.userId,
-                    moderatorRef: `platform-key:${input.generation}`,
+                    moderatorRef: moderatorRefFor(input.actor),
                     // Part of the decision's record: an appeal upheld inside
                     // the grace period stopped an erasure, and the chain is
                     // where that is answerable afterwards.

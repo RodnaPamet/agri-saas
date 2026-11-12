@@ -88,6 +88,12 @@ const ADMIN_ONLY_ROUTES = [
     'admin/farm-claims/route.ts',
     'admin/farm-claims/[claimId]/verify/route.ts',
     'admin/farm-claims/[claimId]/dispute/route.ts',
+    // #2735 — the moderation console's session door. Listed here for the same
+    // reason as the farm-claims trio above: the models are TENANTLESS, so
+    // `admin.manage` alone would let an ADMIN of any one farm triage every
+    // other farm's Art 16 notices, and `assertPlatformSupport` in the handler
+    // is what supplies the isolation this list does not.
+    'admin/moderation/notices/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
     // Platform-tenant gated: a price typed here renders in every tenant's
