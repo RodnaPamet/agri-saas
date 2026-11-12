@@ -63,21 +63,35 @@
  * serve — the provider being unreachable — is already a halt whose notice says
  * the records were not read and nothing was created.
  *
- * ## `answer` is ONE event, not a token stream, and that is forced twice over
+ * ## `answer` is still AUTHORITATIVE, but it is no longer the only text event
  *
- * 1. **The egress scan cannot un-send bytes.** `scanEgress` runs on the
- *    composed answer; a secret already streamed to a client is out, whatever
- *    the verdict says afterwards. An incremental scan does not rescue it
- *    either — a credential can straddle any chunk boundary, and the earlier
- *    chunk has already gone.
- * 2. **`completeWithRouting` returns a `Promise<AiCompletion>`**, not a
- *    stream. So the answer is buffered by the helper this must go through
- *    regardless.
+ * Both reasons this used to give for one event have been answered rather than
+ * argued away — #2670 item 4, owner decision 2026-11-12. The history is kept
+ * because the first reason is still the binding constraint on HOW it is done.
  *
- * Both point the same way, which is why the typing effect is not worth
- * re-litigating. What the stream still buys is everything around the answer:
- * `thinking` and `tool_call` make the wait legible, and a refusal or halt
- * arrives as an event with a reason rather than as a dead socket.
+ * 1. **The egress scan cannot un-send bytes**, and that remains true. What
+ *    changed is the release rule: `createPrefixReleaser` scans ALL text
+ *    received so far and releases only complete sentences while that
+ *    cumulative scan is clean. The old objection — "a credential can straddle
+ *    any chunk boundary, and the earlier chunk has already gone" — was aimed
+ *    at a PER-CHUNK scan, and it is correct about one. A cumulative scan sees
+ *    both halves of a straddling match, which is measured: the two
+ *    named-assignment patterns allow a newline between the name and the
+ *    value, so they match whole and MISS line-by-line.
+ * 2. **`completeWithRouting` returns a `Promise`**, which is still how the
+ *    final answer arrives — but it now also takes `onTextProgress`, fed from
+ *    the provider's own event stream. So the buffering is no longer forced.
+ *
+ * The guarantee is weaker than it was, and precisely so: from "the whole
+ * answer was scanned clean" to "every byte sent was part of a cumulative scan
+ * that came back clean, and no complete pattern match was ever released". A
+ * released sentence CAN carry a partial token, bounded shorter than any key
+ * its pattern could match.
+ *
+ * **`answer` remains the authority.** `answer_delta` is PROVISIONAL: a client
+ * renders it for responsiveness and replaces it with `answer.text` on arrival,
+ * which is what makes a duplicated or dropped delta recoverable by contract
+ * rather than by detection. agrent-ios asked for it that way.
  *
  * ## `code` + `message`, uniformly
  *
@@ -104,6 +118,40 @@ export type AssistantStreamEvent =
      * the conversation belongs to this person in this farm.
      */
     | { readonly type: 'conversation'; readonly conversationId: string }
+    | {
+          /**
+           * Incremental answer text — #2670 item 4. PROVISIONAL.
+           *
+           * Carries only what is NEW since the last one, already cleared by
+           * the cumulative egress scan. A client may render it immediately and
+           * MUST replace it with `answer.text` when that arrives.
+           *
+           * It is a `type` on the existing union rather than a named SSE
+           * `event:` line, which is what makes it safe to add: an older client
+           * reaches its single `onmessage`, does not recognise the value, and
+           * ignores it — then renders from `answer` exactly as before. That is
+           * the property #2085 chose this shape for.
+           */
+          readonly type: 'answer_delta';
+          readonly text: string;
+          /**
+           * Monotonic within a response, starting at 0. A gap means a delta
+           * was lost, and the right response is to wait for `answer` rather
+           * than render a hole.
+           */
+          readonly seq: number;
+          /**
+           * Set when the server restarted its answer — `completeWithRouting`
+           * retries up to twice on a target before failing over, and a retry
+           * begins the text again.
+           *
+           * Present rather than left to a `seq` jump because the two are
+           * different events: a gap means something was LOST, a restart means
+           * what you have is now WRONG. A client should discard the deltas it
+           * has rendered and start again from this one.
+           */
+          readonly restarted?: true;
+      }
     | { readonly type: 'thinking' }
     | { readonly type: 'tool_call'; readonly name: string }
     | {
