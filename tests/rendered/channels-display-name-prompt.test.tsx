@@ -34,7 +34,9 @@ jest.mock('@/lib/api-client', () => ({
     apiPatch: jest.fn(),
 }));
 
-// eslint-disable-next-line import/first
+// Imported after the mocks above, like every other suite in this directory —
+// no directive, because the lint ceiling counts a suppression that suppresses
+// nothing and refused this one.
 import { DisplayNamePrompt } from '@/app/t/[tenantSlug]/(app)/channels/[channelId]/DisplayNamePrompt';
 
 const USER = 'u-1';

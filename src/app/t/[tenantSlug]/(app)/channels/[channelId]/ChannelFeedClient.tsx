@@ -263,7 +263,7 @@ export function ChannelFeedClient({
                 // precisely so the older post keeps the older farm.
                 senderLabel: authorLabel(p.author),
             }));
-    }, [data, older, sameChannel]);
+    }, [data, older, sameChannel, authorLabel]);
 
     const canPost = channel?.joined === true && channel?.banned !== true;
 
@@ -291,7 +291,7 @@ export function ChannelFeedClient({
                 setPosting(false);
             }
         },
-        [feedPath, mutate],
+        [feedPath, mutate, tenantSlug],
     );
 
     const name = channel
