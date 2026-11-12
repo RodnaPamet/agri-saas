@@ -90,6 +90,35 @@ const POPULATION = ALL.map(rel).filter(
 );
 
 describe('§1 the population this covers', () => {
+    it('every TENANT_INDEPENDENT_ROUTES entry names a file that EXISTS', () => {
+        // #2377's class, not #2414's, and the distinction matters for what this
+        // asserts. This list is not an exemption — it ADDS routes to the
+        // scanned population, because trends is cached across tenants and is
+        // therefore gated at the ROUTE rather than at its usecase. So the
+        // liveness question ("does this still violate?") is the wrong one; a
+        // listed route must not VIOLATE, it must be COVERED.
+        //
+        // What can go wrong is a rename. These are three hardcoded paths and
+        // nothing checked them, so a moved route would drop out of POPULATION
+        // silently and the guard would stop covering it while still passing —
+        // and the floor below is `> 0`, which four remaining entries satisfy.
+        // #1087 is what that costs: five renamed satellite routes, an iOS
+        // client 404ing for four days, both suites green throughout.
+        // Derived from the COLLECTOR's own output rather than from
+        // `existsSync`, which is both stronger and needs no second notion of
+        // the tree: a path can exist on disk and still not be collected, and
+        // what this list needs is for the route to be in the SCANNED set. The
+        // collector throws on an empty result, so it cannot answer "all
+        // missing" by having found nothing.
+        const collected = new Set(ALL.map(rel));
+        const absent = TENANT_INDEPENDENT_ROUTES.filter((p) => !collected.has(p));
+        expect(absent).toEqual([]);
+        // And therefore in the population the guard actually iterates.
+        for (const route of TENANT_INDEPENDENT_ROUTES) {
+            expect(POPULATION).toContain(route);
+        }
+    });
+
     it('prints the denominator', () => {
         console.log(
             `[past-due] watched=${POPULATION.length} gated-files=${GATED.size} ` +
