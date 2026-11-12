@@ -80,6 +80,131 @@ const NO_REPORTER =
 
 export function registerModerationConsolePaths(registry: OpenAPIRegistry): void {
     op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/admin/moderation/statements',
+        operationId: 'listUndeliveredStatementsFromConsole',
+        summary: 'Statements of reasons that have not been delivered',
+        description:
+            'Oldest first — the lag is the thing being measured.'
+            + '\n\n**Surfacing this is part of the Art 17 duty, not an operational '
+            + 'nicety.** A statement that never went out is a compliance failure whose '
+            + 'danger is that nothing else would show it: the action is recorded, the '
+            + 'notice reads ACTIONED, and the recipient simply never heard.'
+            + '\n\n`StatementOfReasons` IS the outbox. `NotificationOutbox` is '
+            + 'tenant-scoped with a non-nullable `tenantId`, and a statement goes to a '
+            + 'PERSON who may have no farm or several — resolving one would invent a tenant '
+            + 'for a person-scoped obligation. `deliveredAt IS NULL` is the queue, and '
+            + '`statement-dispatch` drains it every 10 minutes.'
+            + '\n\n**What this does NOT answer:** which DECISIONS produced no statement. '
+            + 'Nothing answers that; it is a separate gap. A view labelled "unexplained '
+            + 'decisions" would be claiming it while showing this, which would read as '
+            + 'coverage.'
+            + TWO_DOORS,
+        tags: ['Admin'],
+        params: TenantParams,
+        query: z.object({
+            limit: z.string().optional().openapi({
+                description: 'Positive integer, clamped to 200.',
+            }),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_LIMIT — a non-integer `limit`.',
+            404: 'Not the platform-support tenant.',
+        }),
+        success: {
+            status: 200,
+            description: 'The undelivered queue, oldest first.',
+            schema: z.object({
+                statements: z.array(z.object({
+                    id: z.string(),
+                    actionId: z.string(),
+                    recipientUserId: z.string(),
+                    locale: z.string(),
+                    createdAt: z.string().datetime({ offset: true }),
+                })),
+            }),
+        },
+    });
+
+    op(registry, {
+        method: 'post',
+        path: '/api/t/{tenantSlug}/admin/moderation/statements',
+        operationId: 'queueStatementFromConsole',
+        summary: 'Queue a statement of reasons by hand',
+        description:
+            '**`recipientUserId` is SUPPLIED, and that is deliberate.** An action\'s '
+            + 'subject is CONTENT, not a person — a removed listing names a FARM — so who '
+            + 'is entitled to the statement is a judgement the moderator makes, and there '
+            + 'is no field on `ModerationAction` it could be derived from without '
+            + 'guessing. Guessing who receives a legal notice is worse than being told.'
+            + '\n\n**`locale` is a PLACEHOLDER, not a language choice.** '
+            + '`statement-dispatch` resolves the recipient\'s own locale at SEND time and '
+            + 'writes it back before stamping `deliveredAt`, because Art 17 requires the '
+            + 'recipient\'s language and a console default is not that. The fallback is '
+            + '`bg` rather than `DEFAULT_LOCALE` — which is `en`, documented for '
+            + 'UNAUTHENTICATED surfaces — because a statement recipient is a known user '
+            + 'whose `uiLanguage` column defaults to `bg`.'
+            + '\n\n**The moderator is NOT a field.** It comes from the verified session, '
+            + 'and the keyed sibling takes it from the verified key; neither accepts it '
+            + 'from the body.'
+            + TWO_DOORS,
+        tags: ['Admin'],
+        params: TenantParams,
+        body: z.object({
+            actionId: z.string().min(1).max(200),
+            recipientUserId: z.string().min(1).max(200),
+            locale: z.string().min(2).max(10).optional(),
+            bodyRendered: z.string().min(1),
+        }),
+        extraResponses: codedErrorResponses({
+            400: 'INVALID_JSON or INVALID_BODY.',
+            404: 'Not the platform-support tenant.',
+        }),
+        success: {
+            status: 201,
+            description: 'The queued statement.',
+            schema: z.object({ statementId: z.string() }),
+        },
+    });
+
+    op(registry, {
+        method: 'get',
+        path: '/api/t/{tenantSlug}/admin/moderation/metrics',
+        operationId: 'moderationHandlingStatsFromConsole',
+        summary: 'Notice handling-time statistics',
+        description:
+            'P5\'s exit criterion is a MEDIAN HANDLING TIME, and this is the figure it is '
+            + 'measured on. A number nobody can see without holding the platform key is a '
+            + 'number nobody checks.'
+            + '\n\n**The window is bounded at 365 days and defaults to 30.** An '
+            + 'unbounded window is a different question: a lifetime median hides a '
+            + 'regression, because a service that answered quickly for a year can be '
+            + 'failing this month and the all-time figure will not move for a long while. '
+            + 'An out-of-range or non-integer `windowDays` falls back to the default '
+            + 'rather than erroring — preserved from the keyed route, and the weaker '
+            + 'choice of the two, since a caller who asks for 90 days and silently '
+            + 'receives 30 reads the figure as a 90-day one.'
+            + '\n\n**It reads nothing per-person** — no reporter, no subject, no '
+            + 'moderator — so unlike the triage queue there is nothing here to withhold.'
+            + TWO_DOORS,
+        tags: ['Admin'],
+        params: TenantParams,
+        query: z.object({
+            windowDays: z.string().optional().openapi({
+                description: 'Integer 1-365. Anything else falls back to 30.',
+            }),
+        }),
+        extraResponses: codedErrorResponses({
+            404: 'Not the platform-support tenant.',
+        }),
+        success: {
+            status: 200,
+            description: 'Counts by status and elapsed-time statistics for the window.',
+            schema: z.object({}).passthrough(),
+        },
+    });
+
+    op(registry, {
         method: 'post',
         path: '/api/t/{tenantSlug}/admin/moderation/restore',
         operationId: 'restoreRemovedContentFromConsole',

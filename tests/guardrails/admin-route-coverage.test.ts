@@ -96,6 +96,8 @@ const ADMIN_ONLY_ROUTES = [
     'admin/moderation/notices/route.ts',
     'admin/moderation/restore/route.ts',
     'admin/moderation/suspensions/route.ts',
+    'admin/moderation/statements/route.ts',
+    'admin/moderation/metrics/route.ts',
     'admin/companies/route.ts',
     'admin/companies/[id]/route.ts',
     // Platform-tenant gated: a price typed here renders in every tenant's

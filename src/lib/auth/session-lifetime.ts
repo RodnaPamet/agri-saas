@@ -44,7 +44,52 @@ export const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
 
 /**
  * The same number in the units `TenantSecuritySettings.sessionMaxAgeMinutes`
- * uses. This is the column's schema default; a migration that changes one and
- * not the other is a bug, which `tests/unit/session-lifetime.test.ts` pins.
+ * uses, kept so the four expressions of the web lifetime are pinned against
+ * each other.
+ *
+ * **It is no longer that column's schema default** — see
+ * `SESSION_IDLE_MAX_AGE_MINUTES` below, which is, and read that docblock
+ * before changing either number.
  */
 export const SESSION_MAX_AGE_MINUTES = SESSION_MAX_AGE_DAYS * 24 * 60;
+
+/**
+ * The schema default for `TenantSecuritySettings.sessionMaxAgeMinutes`, and
+ * since #3004 it means an IDLE window rather than an absolute age.
+ *
+ * ## Two numbers, because they answer different questions
+ *
+ * The constants above are the WEB session's absolute lifetime: a cookie minted
+ * now stops working in fourteen days however much it is used, which is the
+ * lost-phone window that issue #618 chose deliberately.
+ *
+ * This one is the tenant POLICY default, and a native refresh now slides
+ * `UserSession.expiresAt` to `now + sessionMaxAgeMinutes` on every successful
+ * rotation. So for a native client the number is "how long the app may sit
+ * unused before it signs out", and the owner's decision (2026-11-12) is that a
+ * phone in regular use never signs out.
+ *
+ * ## Raising it does NOT lengthen a web session, and here is why
+ *
+ * `recordNewSession` caps a new row to `min(input.expiresAt, now + policy)`.
+ * The web passes `SESSION_MAX_AGE_MS` — fourteen days — so with the policy at
+ * thirty the web's own number is the one that binds and nothing about a cookie
+ * changes. That is the whole reason this could be raised without touching the
+ * web rule, and it is also the thing that breaks if somebody later raises
+ * `SESSION_MAX_AGE_DAYS` to match: the two numbers are different ON PURPOSE.
+ *
+ * ## What the fixed cap was buying, and what replaces it
+ *
+ * An absolute age eventually ends a session a thief is keeping alive by
+ * refreshing. What bounds that now is the surrounding machinery rather than
+ * the clock — replay burn invalidates a reused token and takes the family and
+ * the session with it, `sessionVersion` and `UserSession.revokedAt` end every
+ * live session on a password change or a suspension, and
+ * `maxConcurrentSessions` bounds how many can exist. That is the standard
+ * trade for an idle window and it is the trade the owner chose. An absolute
+ * cap on top would need a second column, so it is a separate decision.
+ */
+export const SESSION_IDLE_MAX_AGE_DAYS = 30;
+
+/** The same number in the column's units. */
+export const SESSION_IDLE_MAX_AGE_MINUTES = SESSION_IDLE_MAX_AGE_DAYS * 24 * 60;

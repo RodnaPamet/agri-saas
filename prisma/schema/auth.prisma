@@ -1388,13 +1388,25 @@ model TenantSecuritySettings {
   id                         String    @id @default(cuid())
   tenantId                   String    @unique
   mfaPolicy                  MfaPolicy @default(DISABLED)
-  /// Hard cap on JWT lifetime in minutes. Every newly minted session row's
-  /// `expiresAt` is min(NextAuth max-age, now + this). Defaults to 20160
-  /// (14 days) — the product default from `@/lib/auth/session-lifetime`,
-  /// pinned to that constant by `tests/unit/session-lifetime.test.ts`.
-  /// Still nullable: null means "no tenant-specific cap", which now falls
-  /// back to the same 14 days rather than to a framework default (#618).
-  sessionMaxAgeMinutes       Int?      @default(20160)
+  /// Session age cap in minutes, and since #3004 it is an IDLE window for a
+  /// NATIVE client rather than an absolute age: every successful
+  /// `/api/auth/token/refresh` slides `UserSession.expiresAt` to
+  /// `now + this`, so a phone in regular use never signs out (owner
+  /// decision, 2026-11-12) while one left in a drawer does.
+  ///
+  /// A newly minted row is still min(NextAuth max-age, now + this), so the
+  /// WEB is unchanged: the web passes 14 days and 14 < 30, so the web's own
+  /// number is what binds. Raising this to 43200 therefore did not lengthen
+  /// any cookie — see `SESSION_IDLE_MAX_AGE_MINUTES` for why the two numbers
+  /// are deliberately different, and do not "tidy" them back together.
+  ///
+  /// Defaults to 43200 (30 days), pinned to that constant by
+  /// `tests/unit/session-lifetime.test.ts`. Still nullable: null means "no
+  /// tenant-specific cap", and the refresh path reads it as unset — so it
+  /// slides by this default rather than refusing to slide, because a control
+  /// that is inert for every tenant without a settings row looks identical
+  /// to a working one (#1669).
+  sessionMaxAgeMinutes       Int?      @default(43200)
   /// Maximum number of concurrent active sessions allowed per user
   /// in this tenant. When reached, the oldest session (by
   /// `lastActiveAt` ASC) is revoked to make room for the new sign-in.
