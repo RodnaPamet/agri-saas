@@ -25,6 +25,8 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { blankNonCode } from "../helpers/blank-non-code";
+import { assertAllowlistIsLive } from "../helpers/assert-allowlist-is-live";
 
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
@@ -44,10 +46,26 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
 // the test file references the retired variants in the docstring
 // rationale. The button.tsx primitive is also exempt (forwards the
 // variant prop directly to CVA, no string match needed).
-const EXEMPT_FILES = new Set<string>([
-    "src/components/ui/button-variants.ts",
-    "src/components/ui/button.tsx",
-]);
+// Files that legitimately RENDER a retired variant in executable code. Each
+// entry must still match the ban — see the liveness assertion below.
+//
+// EMPTY (#2414). It held the two Button primitive files, carrying no reason at
+// all, and both were dead: measured 2026-11-12, neither
+// `button-variants.ts` nor `button.tsx` matches either ban pattern —
+// `<Button variant="retired">` or `buttonVariants({ variant: 'retired' })` —
+// and emptying the whole list changes no verdict.
+//
+// The reason they looked necessary is worth keeping: these files DEFINE the
+// retired variants, as keys in a cva object. Defining a variant is not
+// rendering one, and the ban was always about the call site. An exemption
+// written from "this file mentions the word" rather than from the predicate is
+// how a list fills up with entries that excuse nothing.
+//
+// That makes THREE dead exemptions in this batch, all on primitive files, all
+// written defensively. Kept as a mechanism rather than deleted, the
+// `FLAG_EXEMPT` precedent, with discrimination controls below because an empty
+// list makes the liveness assertion vacuous.
+const EXEMPT_FILES = new Set<string>([]);
 
 const RETIRED_VARIANTS = [
     "outline",
@@ -134,22 +152,78 @@ function scanMultiLineButton(content: string, variant: string): number[] {
 }
 
 describe("v2-PR-1 Button variant cull ratchet", () => {
+    /** The ban, as ONE predicate, so the scan and the liveness check agree. */
+    const violatesVariantBan = (code: string): boolean =>
+        RETIRED_VARIANTS.some(
+            (v) =>
+                buildPatterns(v).some((rx) => code.split("\n").some((l) => rx.test(l)))
+                || scanMultiLineButton(code, v).length > 0,
+        );
+
+    it("every exempt file still exists AND still renders a retired variant — #2414", () => {
+        const entries = [...EXEMPT_FILES];
+        const report = assertAllowlistIsLive({
+            label: "button-variant-cull EXEMPT_FILES",
+            entries,
+            blankOptions: {},
+            violates: violatesVariantBan,
+        });
+        console.log(
+            `[button-variant-cull] ${report.live.length} of ${entries.length} exempt file(s) still render a retired variant`,
+        );
+        expect(report.live).toHaveLength(entries.length);
+    });
+
+    it("control: the liveness check reports the two former entries as irrelevant", () => {
+        // EXEMPT_FILES is empty, so the assertion above ranges over nothing and
+        // would pass however broken the helper or the predicate were. The
+        // subjects are the two files the dead entries named, so if either ever
+        // legitimately needs exempting again this control fails and says so.
+        for (const clean of [
+            "src/components/ui/button-variants.ts",
+            "src/components/ui/button.tsx",
+        ]) {
+            expect(fs.existsSync(path.resolve(ROOT, clean))).toBe(true);
+            expect(() =>
+                assertAllowlistIsLive({
+                    label: "button-variant-cull control",
+                    entries: [clean],
+                    blankOptions: {},
+                    violates: violatesVariantBan,
+                }),
+            ).toThrow(/IRRELEVANT/);
+        }
+    });
+
+    it("control: the predicate still fires on a real violation", () => {
+        // The other direction, so the control above cannot pass by refusing
+        // everything. Both ban shapes, since either going dead would make the
+        // ratchet silently toothless.
+        expect(violatesVariantBan('<Button variant="outline">x</Button>')).toBe(true);
+        expect(violatesVariantBan("buttonVariants({ variant: 'danger' })")).toBe(true);
+        expect(violatesVariantBan('<Button variant="primary">x</Button>')).toBe(false);
+    });
+
     describe("retired Button variants are not reintroduced", () => {
         it("zero `<Button variant=\"outline|success|danger|danger-outline\">` usages outside exempts", () => {
             const offenders: Hit[] = [];
             for (const dir of SCAN_DIRS) {
                 for (const file of walk(path.join(ROOT, dir))) {
-                    const content = fs.readFileSync(file, "utf8");
+                    // Blanked through the shared state-aware pass rather
+                    // than the per-line `//` / `*` heuristic this carried: that
+                    // missed a block-comment line not starting with `*` and a
+                    // TRAILING comment entirely, while over-skipping a code
+                    // line beginning with `*`. It also makes this scan and the
+                    // exemption-liveness check below judge the SAME text, which
+                    // is the one way that adoption can go wrong.
+                    const raw = fs.readFileSync(file, "utf8");
+                    const content = blankNonCode(raw);
                     const lines = content.split("\n");
+                    const rawLines = raw.split("\n");
                     for (const variant of RETIRED_VARIANTS) {
                         const patterns = buildPatterns(variant);
                         lines.forEach((line, i) => {
-                            const trimmed = line.trim();
-                            if (
-                                trimmed.startsWith("//") ||
-                                trimmed.startsWith("*")
-                            )
-                                return;
+                            const trimmed = (rawLines[i] ?? line).trim();
                             for (const rx of patterns) {
                                 if (rx.test(line)) {
                                     offenders.push({
