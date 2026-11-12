@@ -35,18 +35,27 @@
  * schema — fixing that alone would have left the identical 500 reachable by
  * `PATCH`. `count-the-routes-a-gate-covers`.
  */
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync } from 'fs';
 import * as path from 'path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const SCHEMA_DIR = path.join(ROOT, 'prisma/schema');
-const SCHEMAS_TS = path.join(ROOT, 'src/lib/schemas/index.ts');
+import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 
-/** Every `.prisma` file, concatenated — Prisma itself reads the folder. */
+const SCHEMAS_TS = path.join(REPO_ROOT, 'src/lib/schemas/index.ts');
+
+/**
+ * Every `.prisma` file, concatenated — Prisma itself reads the folder.
+ *
+ * Through the SHARED collector, not a hand-rolled `readdirSync`, because that
+ * refuses an empty result: a renamed schema folder would otherwise yield zero
+ * files, every enum would extract as `[]`, and "two empty lists are equal"
+ * would make this whole file pass over nothing. `no NEW guard collects files by
+ * hand` exists for exactly that, and caught this on its first CI run — I had
+ * run that meta-guard on a different branch before writing this file, which is
+ * precisely the hand-picked-subset mistake `derive-the-test-population` names.
+ */
 function prismaSource(): string {
-    return readdirSync(SCHEMA_DIR)
-        .filter((f) => f.endsWith('.prisma'))
-        .map((f) => readFileSync(path.join(SCHEMA_DIR, f), 'utf8'))
+    return collectSourceFiles({ roots: ['prisma/schema'], extensions: ['.prisma'] })
+        .map((f) => readFileSync(f, 'utf8'))
         .join('\n');
 }
 
