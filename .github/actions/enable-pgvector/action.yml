@@ -138,10 +138,35 @@ runs:
         # cannot see. The `ci.yml` playwright loop clears runner-side locks
         # for the same reason — this is that idea across the container
         # boundary.
+        # ── The pgvector FALLBACK pin, and why it is a fallback ──────────
+        #
+        # PGDG can publish a `postgresql-16-pgvector` whose dependency NOTHING
+        # in the repo satisfies. Measured 2026-11-12, main red on 4adc45a17:
+        #
+        #   postgresql-16-pgvector 0.8.7-1.pgdg13+2
+        #     Depends: postgresql-16 (>> 16.16)
+        #   ...but PGDG's newest postgresql-16 is 16.15.
+        #
+        # So the newest pgvector requires a server version PGDG itself does
+        # not ship. That is an upstream packaging bug, not a fetch problem:
+        # apt fails in ~3 seconds with "held broken packages", identically on
+        # every attempt, so the 3-attempt retry below cannot help and the
+        # 120s timeout never comes near.
+        #
+        # UNPINNED FIRST, pin only as a fallback. A hard pin would rot
+        # silently — it would keep us on an old pgvector long after PGDG fixed
+        # the dependency, and nothing would ever say so. Trying the newest
+        # first means this self-heals the day `+3` lands or postgresql-16
+        # passes 16.16, and the fallback costs ~3s on the way there.
+        #
+        # `+1` is the last version whose dependency is plain `postgresql-16`
+        # with no version bound, so it installs against whatever the pinned
+        # image ships.
+        pgvector_fallback='0.8.7-1.pgdg13+1'
         installed=0
         for attempt in 1 2 3; do
           echo "::group::apt install postgis + pgvector (attempt $attempt/3)"
-          if timeout 120 docker exec "$cid" sh -c 'apt-get update -qq && apt-get install -y -qq postgresql-16-postgis-3 postgresql-16-pgvector'; then
+          if timeout 120 docker exec -e PGV="$pgvector_fallback" "$cid" sh -c 'apt-get update -qq && { apt-get install -y -qq postgresql-16-postgis-3 postgresql-16-pgvector || { echo "newest pgvector unsatisfiable; falling back to ${PGV}"; apt-get install -y -qq postgresql-16-postgis-3 "postgresql-16-pgvector=${PGV}"; }; }'; then
             echo "::endgroup::"
             installed=1
             break
@@ -158,7 +183,7 @@ runs:
           # parcel-geometry migrations — so a skipped install produces a worse
           # failure later, in `Apply Prisma migrations`, with an even less
           # obvious cause.
-          echo "::error::postgis + pgvector could not be installed into container $cid after 3 attempts. This is a PGDG/apt fetch, so a sustained failure is usually upstream rather than this repo — check https://www.postgresql.org/support/ before changing the package list."
+          echo "::error::postgis + pgvector could not be installed into container $cid after 3 attempts. READ THE APT OUTPUT ABOVE — there are two different causes and they want opposite responses. (1) A FETCH failure (Failed to fetch / Could not resolve / a hung mirror, usually slow) is upstream network: re-run. (2) \"E: Unable to correct problems, you have held broken packages\" with a --solver conflict is an UNSATISFIABLE DEPENDENCY, fails in ~3s identically on all three attempts, and a re-run can never fix it — PGDG has published a package whose dependency nothing in the repo satisfies, and the fallback pin above needs updating. Do not conclude \"transient\" from the retry count alone."
           exit 1
         fi
         echo "postgis + pgvector installed into container $cid"
