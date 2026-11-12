@@ -22,7 +22,12 @@ type StepData = Record<string, any>;
 
 // ─── Asset type inference ───
 
-const ASSET_TYPE_KEYWORDS: Record<string, string[]> = {
+/**
+ * Keyed by `AssetType`, so a mistyped key is a COMPILE error rather than a
+ * value that reaches Prisma — #2950. `Partial` because `OTHER` is the fallback
+ * and deliberately has no keywords; a full `Record` would demand a list for it.
+ */
+const ASSET_TYPE_KEYWORDS: Partial<Record<AssetType, string[]>> = {
     TRACTOR: ['tractor'],
     HARVESTER: ['harvester', 'combine', 'forager'],
     IMPLEMENT: ['plough', 'plow', 'seeder', 'planter', 'sprayer', 'mower', 'baler', 'tiller', 'cultivator', 'harrow', 'implement', 'spreader'],
@@ -34,12 +39,27 @@ const ASSET_TYPE_KEYWORDS: Record<string, string[]> = {
     TOOL: ['tool', 'chainsaw', 'drill', 'generator', 'welder'],
 };
 
-function inferAssetType(name: string): string {
+/**
+ * Returns an `AssetType`, not a string — #2950.
+ *
+ * This returned `string` and the one call site wrote
+ * `inferAssetType(name) as AssetType`. The values happen to be valid today
+ * because every key of `ASSET_TYPE_KEYWORDS` is an enum member — but nothing
+ * enforced that, and the cast is what removed the target a mistake would have
+ * failed against. A mistyped key would have reached Prisma as a 500 from a
+ * background onboarding action, where nobody is watching.
+ *
+ * The map is typed `Partial<Record<AssetType, string[]>>` rather than
+ * `Record<...>`: it deliberately does NOT key every member — `OTHER` is the
+ * fallback and has no keywords, and a full `Record` would demand a keyword list
+ * for it.
+ */
+function inferAssetType(name: string): AssetType {
     const lower = name.toLowerCase();
     for (const [type, keywords] of Object.entries(ASSET_TYPE_KEYWORDS)) {
-        if (keywords.some(kw => lower.includes(kw))) return type;
+        if (keywords.some(kw => lower.includes(kw))) return type as AssetType;
     }
-    return 'OTHER'; // sensible default
+    return 'OTHER';
 }
 
 // ─── Run Step Action ───
@@ -111,7 +131,7 @@ async function executeAssetCreation(ctx: RequestContext, allData: StepData): Pro
                 continue;
             }
 
-            const type = inferAssetType(name) as AssetType;
+            const type = inferAssetType(name);
             await db.asset.create({
                 data: {
                     tenantId: ctx.tenantId,
