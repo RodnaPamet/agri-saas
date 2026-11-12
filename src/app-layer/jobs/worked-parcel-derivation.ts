@@ -93,6 +93,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { farmDayRange, farmToday } from '@/lib/calendar-day-key';
 import { withTenantDb } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import { runJob } from '@/lib/observability/job-runner';
@@ -145,18 +146,18 @@ export interface WorkedParcelDerivationPayload {
     date?: string;
 }
 
-/** Yesterday, as a Europe/Sofia calendar date. */
+/**
+ * Yesterday, as a farm calendar date.
+ *
+ * Built on `farmToday` rather than a local `Intl.DateTimeFormat`, which is
+ * what the first draft did: the farm day rule already lives in
+ * `@/lib/calendar-day-key` (`FARM_TIME_ZONE` is Europe/Sofia) and a second
+ * copy here would be a second place for it to be wrong. Arithmetic on the
+ * DAY KEY, not on an instant, so the subtraction cannot land an hour either
+ * side of a DST change.
+ */
 export function sofiaYesterday(now: Date = new Date()): string {
-    // `en-CA` yields YYYY-MM-DD, and the timeZone option is what makes this a
-    // SOFIA day rather than a UTC one — the whole reason `WorkedParcel.date`
-    // is a date and not a timestamp.
-    const sofiaToday = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Europe/Sofia',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).format(now);
-    const d = new Date(`${sofiaToday}T00:00:00Z`);
+    const d = new Date(`${farmToday(now)}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() - 1);
     return d.toISOString().slice(0, 10);
 }
@@ -172,6 +173,10 @@ export async function deriveAssetDay(
     assetId: string,
     date: string,
 ): Promise<{ parcels: number; positions: number }> {
+    // One source for the day's instants, used by the matcher and by the
+    // reading below. See `farmDayRange`.
+    const { start, end } = farmDayRange(date);
+
     return withTenantDb(tenantId, async (db) => {
         /*
          * One statement, read inside-out:
@@ -191,24 +196,30 @@ export async function deriveAssetDay(
          */
         const matches = await db.$queryRawUnsafe<ParcelMatch[]>(
             `
-            WITH bounds AS (
-                SELECT ($1::date::timestamp AT TIME ZONE 'Europe/Sofia') AS day_start,
-                       (($1::date + 1)::timestamp AT TIME ZONE 'Europe/Sofia') AS day_end
-            ),
-            filtered AS (
+            WITH filtered AS (
                 SELECT p."recordedAt",
                        ST_SetSRID(ST_MakePoint(p."lon"::float8, p."lat"::float8), 4326) AS geom
-                FROM "MachinePosition" p, bounds b
-                WHERE p."tenantId" = $2
-                  AND p."assetId" = $3
-                  AND p."recordedAt" >= b.day_start
-                  AND p."recordedAt" < b.day_end
+                FROM "MachinePosition" p
+                WHERE p."tenantId" = $1
+                  AND p."assetId" = $2
+                  -- The day's instants come from farmDayRange, the same
+                  -- helper the /track read uses. They were computed here with
+                  -- a timezone cast until this edit, which made this a THIRD
+                  -- place the farm day was defined -- after the JS count
+                  -- above and the shared module that already owned it.
+                  --
+                  -- No backticks in this comment. This is inside a JS
+                  -- template literal, and I made that mistake twice in this
+                  -- file: once with 'SIMULATED is not a function', once right
+                  -- here. The suite asserts their absence now.
+                  AND p."recordedAt" >= $8
+                  AND p."recordedAt" < $9
                   -- A tracker that never reports ignition must not be excluded
                   -- wholesale: NULL means "not reported", not "off".
                   AND COALESCE(p."ignition", TRUE)
                   AND p."speedKph" IS NOT NULL
-                  AND p."speedKph" >= $4
-                  AND p."speedKph" <= $5
+                  AND p."speedKph" >= $3
+                  AND p."speedKph" <= $4
                   -- Never SIMULATED: see the docblock. An ALLOWLIST rather
                   -- than a not-equals, so a sixth source added later is
                   -- excluded until somebody decides it belongs, which is the
@@ -226,12 +237,12 @@ export async function deriveAssetDay(
                        f."recordedAt",
                        f.geom,
                        ST_Contains(
-                           ST_Buffer(ST_Transform(pa."geometry", 32635), -$8::float8),
+                           ST_Buffer(ST_Transform(pa."geometry", 32635), -$7::float8),
                            ST_Transform(f.geom, 32635)
                        ) AS well_inside
                 FROM filtered f
                 JOIN "Parcel" pa
-                  ON pa."tenantId" = $2
+                  ON pa."tenantId" = $1
                  AND pa."deletedAt" IS NULL
                  AND pa."geometry" IS NOT NULL
                  AND ST_Intersects(pa."geometry", f.geom)
@@ -241,7 +252,7 @@ export async function deriveAssetDay(
                        CASE
                            WHEN "recordedAt" - LAG("recordedAt") OVER (
                                     PARTITION BY parcel_id ORDER BY "recordedAt")
-                                > ($6 * INTERVAL '1 minute')
+                                > ($5 * INTERVAL '1 minute')
                            THEN 1 ELSE 0
                        END AS breaks
                 FROM hits
@@ -265,7 +276,7 @@ export async function deriveAssetDay(
             kept AS (
                 SELECT *
                 FROM per_run
-                WHERE ended - started >= ($7 * INTERVAL '1 minute')
+                WHERE ended - started >= ($6 * INTERVAL '1 minute')
             )
             SELECT parcel_id,
                    -- Summed per RUN and then across runs, so a machine that
@@ -277,7 +288,10 @@ export async function deriveAssetDay(
             FROM kept
             GROUP BY parcel_id
             `,
-            date,
+            // `date` is NOT passed: the matcher takes the day as two
+            // instants ($8/$9) and never parses a date string, so passing it
+            // left an unreferenced parameter and Postgres answered 42P18 —
+            // "could not determine data type of parameter $1".
             tenantId,
             assetId,
             MIN_SPEED_KPH,
@@ -285,32 +299,29 @@ export async function deriveAssetDay(
             RUN_GAP_MINUTES,
             MIN_RUN_MINUTES,
             INWARD_BUFFER_M,
+            start,
+            end,
         );
 
         /*
          * `positionsConsidered` counts what the matcher was ALLOWED to look
-         * at, so it must apply the same source filter as the SQL above. A
-         * count of every row would report a demo machine as having reported
-         * 2,900 positions and matched nothing, which reads as a broken
-         * matcher rather than an excluded source.
+         * at, so it applies the same source filter as the SQL above. A count
+         * of every row would report a demo machine as having sent 2,900
+         * positions and matched nothing, which reads as a broken matcher
+         * rather than an excluded source.
          *
-         * The window is built from the Sofia offset here rather than in SQL,
-         * which is a SECOND spelling of the day boundary and the thing to
-         * watch: `+02:00` is Bulgaria's winter offset, so this count is an
-         * hour off during summer time. It is a READING, never a threshold —
-         * no row is created or withheld on it — and the authoritative
-         * boundary stays the `AT TIME ZONE` clause. Tracked rather than
-         * quietly tolerated.
+         * The window comes from `farmDayRange`, the same helper the `/track`
+         * read uses. The first draft wrote `+02:00` by hand, which is
+         * Bulgaria's WINTER offset and an hour wrong all summer — and a
+         * second spelling of a boundary the SQL below also expresses. Now
+         * there is one source for both.
          */
         const considered = await db.machinePosition.count({
             where: {
                 tenantId,
                 assetId,
                 source: { in: ['TRACKER', 'TELEMATICS'] },
-                recordedAt: {
-                    gte: new Date(`${date}T00:00:00+02:00`),
-                    lt: new Date(`${date}T23:59:59.999+02:00`),
-                },
+                recordedAt: { gte: start, lt: end },
             },
         });
 
@@ -385,6 +396,7 @@ export async function runWorkedParcelDerivation(
         const jobRunId = `wpd-${randomUUID()}`;
         const startedAt = new Date();
         const date = payload.date ?? sofiaYesterday();
+        const { start: dayStart, end: dayEnd } = farmDayRange(date);
 
         /*
          * The population is "machines that reported that day", derived from
@@ -402,15 +414,21 @@ export async function runWorkedParcelDerivation(
             `
             SELECT DISTINCT p."tenantId", p."assetId"
             FROM "MachinePosition" p
-            WHERE p."recordedAt" >= ($1::date::timestamp AT TIME ZONE 'Europe/Sofia')
-              AND p."recordedAt" <  (($1::date + 1)::timestamp AT TIME ZONE 'Europe/Sofia')
+            WHERE p."recordedAt" >= $1
+              AND p."recordedAt" <  $2
               -- Same filter as the matcher. A machine whose whole day was
               -- simulated is not a machine that reported, so it gets no
               -- marker at all rather than one claiming a run over nothing.
               AND p."source" IN ('TRACKER', 'TELEMATICS')
-              ${payload.tenantId ? 'AND p."tenantId" = $2' : ''}
+              ${payload.tenantId ? 'AND p."tenantId" = $3' : ''}
             `,
-            ...(payload.tenantId ? [date, payload.tenantId] : [date]),
+            // The arg list matches the SQL EMITTED, not a fixed shape: an
+            // unreferenced parameter makes Postgres answer 42P18 rather than
+            // ignoring it, so the optional tenant filter is appended last and
+            // only when its clause is present.
+            ...(payload.tenantId
+                ? [dayStart, dayEnd, payload.tenantId]
+                : [dayStart, dayEnd]),
         );
 
         let actioned = 0;
