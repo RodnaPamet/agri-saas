@@ -145,7 +145,24 @@ function constantTimeKeyMatch(provided: string, expected: string): boolean {
  */
 export type ModerationActor =
     | { readonly kind: 'platform-key'; readonly generation: PlatformKeyGeneration }
-    | { readonly kind: 'user'; readonly userId: string };
+    | { readonly kind: 'user'; readonly userId: string }
+    /**
+     * A RULE decided it, with no human and no credential in scope — P9.3d's
+     * report-threshold auto-hide is the only one today.
+     *
+     * Added when threading the actor through `queueStatement` made `tsc` name
+     * `channel-auto-hide.ts` as a caller with nothing to pass. The job was
+     * writing `moderatorRef: 'auto:report-threshold'` as a hardcoded literal —
+     * a FOURTH spelling of the attribution, outside the helper, exactly like
+     * the two in `account-suspension.ts` that #2735's first half removed.
+     *
+     * It is a distinct kind rather than a `user` with a sentinel id, because a
+     * statement of reasons for an automatic hide is answerable differently: no
+     * person exercised judgement, which is the fact an appeal turns on. The
+     * stored value is unchanged (`auto:<rule>` produces the same bytes the
+     * literal did), so no existing row is rewritten.
+     */
+    | { readonly kind: 'automatic'; readonly rule: string };
 
 /**
  * How a decision is attributed in a moderation record.
@@ -168,9 +185,18 @@ export type ModerationActor =
  * have let a new session-gated route silently record a key generation.
  */
 export function moderatorRefFor(actor: ModerationActor): string {
-    return actor.kind === 'user'
-        ? `user:${actor.userId}`
-        : `platform-key:${actor.generation}`;
+    switch (actor.kind) {
+        case 'user':
+            return `user:${actor.userId}`;
+        case 'automatic':
+            // `auto:` and NOT `system:`: the prefix is already in production
+            // rows written by P9.3d's job, and a rename would split one
+            // attribution across two spellings in the same column.
+            return `auto:${actor.rule}`;
+        case 'platform-key':
+        default:
+            return `platform-key:${actor.generation}`;
+    }
 }
 
 /**
@@ -182,5 +208,7 @@ export function moderatorRefFor(actor: ModerationActor): string {
  * is worse than an absent one (the `FeatureFlag.updatedByUserId` rule).
  */
 export function actorUserIdFor(actor: ModerationActor): string | null {
+    // NULL for both non-human arms, and truthfully so: a shared key names no
+    // person, and a rule is not one. Only `user` has an id to record.
     return actor.kind === 'user' ? actor.userId : null;
 }

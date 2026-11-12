@@ -288,6 +288,7 @@ export async function suspendAccount(
                 recipientUserId: input.userId,
                 actionKind: 'ACCOUNT_SUSPENDED',
                 rationale: input.reason,
+                actor: input.actor,
             });
         } catch (err) {
             logger.error('account-suspension.statement_queue_threw', {
