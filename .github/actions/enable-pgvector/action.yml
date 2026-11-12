@@ -183,10 +183,18 @@ runs:
         # library and scripts included, because pinning two of three produces
         # the version-mismatch error above.
         pg_hold() { docker exec "$1" sh -c 'apt-mark hold postgresql-16 >/dev/null 2>&1 || true'; }
+        # The credentials come from the CONTAINER's own environment, never
+        # hardcoded. `ci.yml` runs this service as POSTGRES_USER=ci /
+        # POSTGRES_DB=ci_testdb, so a `-U postgres -d postgres` probe finds no
+        # such role and no such database and reports the extensions broken when
+        # they are fine — which is exactly the false negative my first version
+        # shipped, and it failed this step for every shard.
+        #
+        # Verifying in the REAL database rather than a scratch one is also
+        # better: it is the database the migrations will use, so a success here
+        # is the thing step 8 actually needs.
         pg_verify() {
-          docker exec "$1" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -tAc \
-            'CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS vector;' \
-            >/dev/null 2>&1
+          docker exec "$1" sh -c 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-${POSTGRES_USER:-postgres}}" -v ON_ERROR_STOP=1 -tAc "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS vector;"' >/dev/null 2>&1
         }
         # The builds that match a 16.15 server. Used ONLY as a fallback.
         matched='postgresql-16-postgis-3=3.6.4+dfsg-2.pgdg13+1 postgresql-16-postgis-3-scripts=3.6.4+dfsg-2.pgdg13+1 postgresql-16-pgvector=0.8.7-1.pgdg13+1'
