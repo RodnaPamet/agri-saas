@@ -119,6 +119,45 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
  * 
  * Note: Backend/API authorization must still independently verify permissions.
  */
+/**
+ * Every `Role`, enumerated once — and exhaustively, by the TYPE SYSTEM.
+ *
+ * `Record<Role, true>` is the point: TypeScript refuses to compile this object
+ * if a role is missing, so adding a seventh `Role` to the Prisma enum is a
+ * build error here rather than a silent omission downstream. A
+ * `['OWNER', …] as const satisfies readonly Role[]` would only check that each
+ * member IS a role, never that none is absent — which is the direction that
+ * goes wrong.
+ *
+ * It exists for #2948's drivers' notice, which returns the roles that can see
+ * machine positions rather than letting each client hardcode them: "if the
+ * visibility rule is ever widened, every client's notice changes with it
+ * instead of one of them going quietly stale". That promise is only kept if
+ * the role list cannot itself go stale.
+ */
+const ROLE_PRESENCE: Record<Role, true> = {
+    OWNER: true,
+    ADMIN: true,
+    EDITOR: true,
+    READER: true,
+    AUDITOR: true,
+    MECHANISATOR: true,
+};
+
+export const ALL_ROLES = Object.keys(ROLE_PRESENCE) as Role[];
+
+/**
+ * Which roles hold a given permission — derived, never listed.
+ *
+ * The caller passes a reader rather than a key string so this stays honest
+ * about nested domains without restating `PermissionKey` parsing.
+ */
+export function rolesWithPermission(
+    holds: (perms: PermissionSet) => boolean,
+): Role[] {
+    return ALL_ROLES.filter((r) => holds(getPermissionsForRole(r)));
+}
+
 export function getPermissionsForRole(role: Role): PermissionSet {
     switch (role) {
         case 'OWNER':

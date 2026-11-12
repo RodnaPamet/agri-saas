@@ -18677,6 +18677,63 @@ exports[`API contract — per-schema snapshots schema: Task 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TaskAsset 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "assetId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "TRACTOR",
+        "HARVESTER",
+        "IMPLEMENT",
+        "VEHICLE",
+        "IRRIGATION"
+      ]
+    },
+    "positionSource": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/MachinePositionSourceView"
+        },
+        {
+          "description": "CONFIGURATION, and the key is ALWAYS present — null means nothing is connected. Clients read key presence, so omitting it for an unconfigured machine would be a different answer rather than a smaller payload."
+        }
+      ]
+    }
+  },
+  "required": [
+    "assetId",
+    "name",
+    "type",
+    "positionSource"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TaskAssetList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "assets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TaskAsset"
+      }
+    }
+  },
+  "required": [
+    "assets"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TaskAssignRequest 1`] = `
 "{
   "type": "object",
@@ -19289,6 +19346,44 @@ exports[`API contract — per-schema snapshots schema: TaskListItem 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: TaskMachine 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "assetId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "TRACTOR",
+        "HARVESTER",
+        "IMPLEMENT",
+        "VEHICLE",
+        "IRRIGATION"
+      ]
+    },
+    "lastPosition": {
+      "$ref": "#/components/schemas/MachinePositionView"
+    },
+    "locatableCount": {
+      "type": "integer",
+      "description": "How many locatable machines the task has, so a client can say \\"and one more\\" rather than presenting one of two as though it were the only one. A UI that shows one of N without saying so is how somebody walks to the wrong end of a field."
+    }
+  },
+  "required": [
+    "assetId",
+    "name",
+    "type",
+    "lastPosition",
+    "locatableCount"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: TaskParcel 1`] = `
 "{
   "type": "object",
@@ -19653,6 +19748,65 @@ exports[`API contract — per-schema snapshots schema: TraceLotResult 1`] = `
     "edges"
   ],
   "description": "A lot’s provenance in both directions. ancestors and descendants are flat arrays; \`edges\` is what makes them a graph."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TrackedMachineName 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "TRACTOR",
+        "HARVESTER",
+        "IMPLEMENT",
+        "VEHICLE",
+        "IRRIGATION"
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "type"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: TrackedMachines 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "machines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/TrackedMachineName"
+      },
+      "description": "NAME AND TYPE ONLY — no positions, no IMEI, no last-seen. This endpoint discharges a transparency duty rather than giving anybody a map, which is why it is readable by every role including the restricted machine-operator persona."
+    },
+    "visibleTo": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "OWNER",
+          "ADMIN",
+          "EDITOR",
+          "READER",
+          "AUDITOR",
+          "MECHANISATOR"
+        ]
+      },
+      "description": "The roles that can see machine POSITIONS, derived from the permission table rather than hardcoded in each client — so if the visibility rule is ever widened, every notice changes with it instead of one going quietly stale. A caller may read this notice and still not be allowed to see a position; that is the shape of a transparency duty."
+    }
+  },
+  "required": [
+    "machines",
+    "visibleTo"
+  ]
 }"
 `;
 

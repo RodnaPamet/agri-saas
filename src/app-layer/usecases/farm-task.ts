@@ -182,8 +182,15 @@ export interface FarmTaskQueueOptions {
     scope?: 'mine' | 'all';
 }
 
-/** Statuses that count as an operator's outstanding to-do. */
-const OPERATOR_OPEN_STATUSES = new Set(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED']);
+/**
+ * Statuses that count as an operator's outstanding to-do.
+ *
+ * EXPORTED because #2948's `GET /farm-tasks/{taskId}/machine` authorises on
+ * "you are the assignee of an OPEN task", and a second spelling of which
+ * statuses are open would let the two surfaces disagree about whether a
+ * driver may still see their machine.
+ */
+export const OPERATOR_OPEN_STATUSES = new Set(['OPEN', 'TRIAGED', 'IN_PROGRESS', 'BLOCKED']);
 
 /**
  * An operator's farm-work queue — FARM_TASK + FIELD_OPERATION assigned to
