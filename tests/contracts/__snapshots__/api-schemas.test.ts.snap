@@ -11938,6 +11938,277 @@ exports[`API contract — per-schema snapshots schema: LogEntryUpdateRequest 1`]
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: MachineList 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "machines": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/MachineRow"
+      }
+    }
+  },
+  "required": [
+    "machines"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: MachinePositionSourceView 1`] = `
+"{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "TRACKER",
+        "TELEMATICS",
+        "SIMULATED"
+      ],
+      "description": "Where this machine reports through. \`SIMULATED\` is the demo simulator and is marked on every position, not merely on the asset — so simulated work can never be mistaken for real."
+    },
+    "provider": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "JOHN_DEERE",
+        "CNH",
+        "CLAAS",
+        "AGCO",
+        null
+      ],
+      "description": "The manufacturer platform, set only for TELEMATICS — a retrofit tracker has no vendor. Grouped by PLATFORM, not brand: Case IH and New Holland are both CNH, Fendt and Massey Ferguson both AGCO."
+    }
+  },
+  "required": [
+    "kind",
+    "provider"
+  ],
+  "description": "CONFIGURATION. Null means nothing is connected — which is a DIFFERENT statement from \`lastPosition: null\`, meaning connected and never heard from. Those two fields carry three states between them, which is why there is no third field. When a machine has both a retrofit tracker and factory telematics, TELEMATICS wins: a singular field must pick, and picking by \\"whichever reported last\\" would make it flicker as data arrives."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: MachinePositionView 1`] = `
+"{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "lat": {
+      "type": "string",
+      "description": "WGS84 latitude as a DECIMAL STRING, not a number — e.g. \`\\"43.4120000\\"\`. The column is \`Decimal(10,7)\` because the worked-parcel derivation compares and aggregates coordinates, and binary floating point makes two equal coordinates occasionally unequal; a \`Number()\` at this boundary throws that guarantee away. Trailing zeros are significant of nothing and are simply what the stored decimal renders as. Decode to a decimal or string type."
+    },
+    "lon": {
+      "type": "string",
+      "description": "WGS84 longitude, as a decimal string. See \`lat\`."
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the DEVICE recorded it, not when we received it — a tracker buffers while out of GSM coverage and then replays, so arrival order is not chronological order. ISO 8601 with a \`Z\` offset."
+    },
+    "speedKph": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "A display scalar, so a NUMBER rather than a string: nothing compares it for equality or sums it into an identity. Null when the device does not report it."
+    },
+    "ignition": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Null when the install does not wire the ignition input — which is deliberately not \`false\`, since that would claim the engine is off."
+    },
+    "moving": {
+      "type": "boolean",
+      "description": "SERVER-DERIVED from \`speedKph\` against a 1.0 km/h floor. Not \`speedKph > 0\`: a receiver at a standstill reports a small nonzero speed as its position wanders inside its own error circle, so a zero threshold renders every parked machine as moving. Not derived from \`ignition\` either — an idling tractor has the engine on and is not moving, which is the exact case a driver looking for their machine cares about. An unknown speed yields \`false\`, because absence of evidence is not evidence of movement."
+    }
+  },
+  "required": [
+    "lat",
+    "lon",
+    "recordedAt",
+    "speedKph",
+    "ignition",
+    "moving"
+  ],
+  "description": "LIVENESS. Staleness is the client’s judgement from \`recordedAt\` — the server does not decide how old is too old, because that depends on what the reader is doing."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: MachineRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "assetId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "TRACTOR",
+        "HARVESTER",
+        "IMPLEMENT",
+        "VEHICLE",
+        "IRRIGATION"
+      ],
+      "description": "The locatable asset types. A narrowing of the machine register: TOOL and LIVESTOCK_EQUIPMENT are machine-shaped for a \\"what did you use today\\" picker and carry no position source."
+    },
+    "positionSource": {
+      "$ref": "#/components/schemas/MachinePositionSourceView"
+    },
+    "lastPosition": {
+      "$ref": "#/components/schemas/MachinePositionView"
+    }
+  },
+  "required": [
+    "assetId",
+    "name",
+    "type",
+    "positionSource",
+    "lastPosition"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: MachineTrack 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "points": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/MachineTrackPoint"
+      },
+      "description": "Ordered by \`recordedAt\`, then by id so the order is TOTAL — two positions can share a device timestamp. SIMPLIFIED for display: a day at 30-second intervals is ~2,900 points and ~250 KB of JSON that no screen can resolve. There is no raw option."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "Rows were never READ — the per-day ceiling was exceeded. This is NOT \`simplified\`, and collapsing the two would let a partial day render as a complete one. A 30-second tracker writes ~2,880 points a day, so this is a malfunction bound rather than a pagination strategy."
+    },
+    "retained": {
+      "type": "boolean",
+      "description": "False past the 30-day raw-position window, where the rows have been deleted by policy. Without this an empty \`points\` would mean both \\"the machine did not move\\" and \\"we no longer hold this day\\", and a farm looking at an old day would read a deliberate deletion as an idle machine. A FUTURE date reports \`true\`: it has nothing to retain, and saying otherwise would claim we discarded something that never existed."
+    },
+    "simplified": {
+      "type": "boolean",
+      "description": "True when the line was reduced — i.e. anything was dropped for display."
+    },
+    "rawCount": {
+      "type": "integer",
+      "description": "How many positions the simplifier was given, so a client can say how much was dropped rather than presenting a reduced line as the whole truth."
+    },
+    "toleranceM": {
+      "type": "number",
+      "description": "The perpendicular tolerance actually achieved, in metres. It may EXCEED the one requested: the simplifier doubles its tolerance when a point ceiling is not met, and reports where it ended rather than where it aimed."
+    }
+  },
+  "required": [
+    "date",
+    "points",
+    "truncated",
+    "retained",
+    "simplified",
+    "rawCount",
+    "toleranceM"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: MachineTrackPoint 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "lat": {
+      "type": "string",
+      "description": "WGS84 latitude as a DECIMAL STRING, not a number — e.g. \`\\"43.4120000\\"\`. The column is \`Decimal(10,7)\` because the worked-parcel derivation compares and aggregates coordinates, and binary floating point makes two equal coordinates occasionally unequal; a \`Number()\` at this boundary throws that guarantee away. Trailing zeros are significant of nothing and are simply what the stored decimal renders as. Decode to a decimal or string type."
+    },
+    "lon": {
+      "type": "string",
+      "description": "WGS84 longitude, as a decimal string. See \`lat\`."
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the DEVICE recorded it, not when we received it — a tracker buffers while out of GSM coverage and then replays, so arrival order is not chronological order. ISO 8601 with a \`Z\` offset."
+    },
+    "speedKph": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "A display scalar, so a NUMBER rather than a string: nothing compares it for equality or sums it into an identity. Null when the device does not report it."
+    },
+    "ignition": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Null when the install does not wire the ignition input — which is deliberately not \`false\`, since that would claim the engine is off."
+    }
+  },
+  "required": [
+    "lat",
+    "lon",
+    "recordedAt",
+    "speedKph",
+    "ignition"
+  ]
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: MachineWorkedDay 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "parcels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/components/schemas/WorkedParcelRow"
+      }
+    },
+    "retained": {
+      "type": "boolean",
+      "description": "Always true. This reads \`WorkedParcel\` and never raw positions, which is what lets it answer indefinitely while \`/track\` stops at the window — the point of aggregating rather than keeping: what the farm uses survives, the minute-by-minute movement of a person does not."
+    },
+    "derivedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "When the nightly derivation last ran for this machine-day, or null for \\"has not run\\" — so «not computed yet» is distinguishable from a genuine day of no work. KNOWN LIMIT: this is read off the returned rows, and a day with no work has none, so \\"it ran and found nothing\\" currently also answers null. That is truthful today because the derivation does not exist yet; it needs a per-(machine, day) run marker, tracked on #2984, and the nightly job must land it in the same change."
+    }
+  },
+  "required": [
+    "date",
+    "parcels",
+    "retained",
+    "derivedAt"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: MachineryDepreciation 1`] = `
 "{
   "type": "object",
@@ -20585,6 +20856,44 @@ exports[`API contract — per-schema snapshots schema: UserRefShort 1`] = `
     "name"
   ],
   "description": "User identity reference without email — used in audit-log entries and other places where leaking the email would be inappropriate."
+}"
+`;
+
+exports[`API contract — per-schema snapshots schema: WorkedParcelRow 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "parcelId": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "minutesWorked": {
+      "type": "integer"
+    },
+    "areaHa": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "A DERIVED area, which is why \`confidence\` sits beside it: presented as a measurement this is a number somebody will put in a subsidy return."
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "0..1."
+    }
+  },
+  "required": [
+    "parcelId",
+    "name",
+    "minutesWorked",
+    "areaHa",
+    "confidence"
+  ]
 }"
 `;
 

@@ -177,6 +177,16 @@ model MachinePosition {
   ignition   Boolean?
   satellites Int?
 
+  /// WHERE this position came from. See `MachinePositionSource` for why it is
+  /// required with no default.
+  ///
+  /// `trackerId` was already nullable so a position could outlive the box it
+  /// arrived through; that same nullability is what makes a TELEMATICS row
+  /// legal without a tracker, so the second source needed no change of meaning
+  /// here — only this discriminator, which says which of the two a null
+  /// `trackerId` means.
+  source MachinePositionSource
+
   createdAt DateTime @default(now())
 
   tenant  Tenant          @relation(fields: [tenantId], references: [id])
@@ -194,6 +204,8 @@ model MachinePosition {
   @@index([tenantId])
   @@index([tenantId, assetId, recordedAt])
   @@index([trackerId])
+  /// "which machines have a telematics position today" without a scan.
+  @@index([tenantId, source])
 }
 
 /// What survives the 30-day sweep: what was worked, for how long, roughly
@@ -307,4 +319,84 @@ model MachineGeofenceState {
   @@unique([assetId, tenantId])
   @@index([tenantId])
   @@index([tenantId, outsideSince])
+}
+
+/// A machine's link to a manufacturer's telematics platform — #2948.
+///
+/// The TELEMATICS counterpart of `MachineTracker`, and a SEPARATE table on
+/// purpose. `MachineTracker` is the aftermarket allowlist: its `imei` is
+/// globally unique, and it is the thing standing between an unauthenticated
+/// public socket and a stranger's farm. Overloading it with a nullable IMEI
+/// and a nullable external id would make that allowlist's meaning depend on
+/// which source a row came from.
+///
+/// Keeping them apart also makes the both-sources case expressible: a machine
+/// may carry a retrofit tracker AND factory telematics, and the read surface
+/// resolves a single `positionSource` with TELEMATICS taking precedence —
+/// authenticated, and carrying more than coordinates.
+///
+/// ## Credentials are NOT here
+///
+/// They live on `IntegrationConnection.secretEncrypted`, which already carries
+/// the repo's OAuth connections and is encrypted at the CALL SITE (the
+/// `*Encrypted` convention recorded in `classification.ts`, not the
+/// `ENCRYPTED_FIELDS` manifest). One farm's connection serves every machine on
+/// that platform, so credentials belong once per connection and not once per
+/// machine — and `lastTestedAt` / `lastTestStatus` are already there, which
+/// matters more than usual here: with no vendor accounts in existence, NOTHING
+/// is verified against a live platform until the first real connection, and
+/// "never successfully synced" has to be a visible state rather than an
+/// absence.
+model MachineTelematicsLink {
+  id       String @id @default(cuid())
+  tenantId String
+  assetId  String
+
+  provider TelematicsProvider
+  /// The vendor's own identifier for the machine. Opaque to us: never parsed,
+  /// never displayed as an identity, and the only thing joining our `Asset` to
+  /// their fleet.
+  externalMachineId String
+  /// Operator-facing label from the vendor, for an admin reconciling which of
+  /// their tractors is which. Free text, no personal data.
+  externalName      String?
+
+  /// The credentials this link authenticates through.
+  connectionId String
+
+  /// Incremental fetch position, so a sync asks for what it has not seen
+  /// rather than re-reading a day. Opaque — each vendor's own cursor or
+  /// timestamp, interpreted only by that vendor's adapter.
+  syncCursor   String?
+  lastSyncedAt DateTime?
+
+  installedAt DateTime  @default(now())
+  /// Set instead of deleting, for `MachineTracker.removedAt`'s reason: a
+  /// position that arrived before a machine was sold still resolves to the
+  /// link it came through. The partial unique indexes below are what keep
+  /// "one LIVE link" true while allowing that history.
+  removedAt   DateTime?
+
+  /// OWNER REQUIREMENT, carried here as well as on `MachineTracker` (owner
+  /// ruling 2026-11-10: the same confirmation when an admin connects a vendor
+  /// account as when adding a tracker). Both NOT NULL, so connecting without
+  /// recording it is a 400 rather than a row that quietly means nothing — the
+  /// obligation is to have told the drivers BEFORE data flows.
+  driversInformedAt       DateTime
+  driversInformedByUserId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant            Tenant                @relation(fields: [tenantId], references: [id])
+  asset             Asset                 @relation(fields: [assetId, tenantId], references: [id, tenantId])
+  connection        IntegrationConnection @relation(fields: [connectionId], references: [id])
+  driversInformedBy User                  @relation("MachineTelematicsDriversInformedBy", fields: [driversInformedByUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, assetId])
+  @@index([tenantId, provider])
+  @@index([tenantId, removedAt])
+  @@index([connectionId])
+  @@index([driversInformedByUserId])
 }

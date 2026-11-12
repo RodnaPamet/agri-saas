@@ -55,6 +55,7 @@ import { registerFarmBrandPaths } from './farm-brand.paths';
 import { registerPublicFarmsPaths } from './public-farms.paths';
 import { registerPublicMediaPaths } from './public-media.paths';
 import { registerDocumentPaths } from './documents.paths';
+import { registerMachinePaths } from './machines.paths';
 
 export function registerAllPaths(registry: OpenAPIRegistry): void {
     registerSecuritySchemes(registry);
@@ -124,4 +125,5 @@ export function registerAllPaths(registry: OpenAPIRegistry): void {
     // conflict on (see `npm run merge:main`), so the 342 lines are worth
     // not spending.
     registerDocumentPaths(registry);
+    registerMachinePaths(registry);
 }

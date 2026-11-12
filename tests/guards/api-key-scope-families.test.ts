@@ -78,6 +78,30 @@ const DELIBERATELY_EXCLUDED: readonly string[] = [
     // (fail-closed); this records that it is a decision. Revisit only with
     // an answer for whose consent a machine read carries.
     'documents',
+    // Machine tracking (#2948 stage 3). A position trace is EMPLOYEE LOCATION
+    // DATA: `MachinePosition → Asset → TaskAsset → Task.assigneeUserId` names
+    // the person who was at those coordinates, minute by minute, which is the
+    // unstated premise under both owner rulings on this feature — the 30-day
+    // raw retention and the drivers-informed columns.
+    //
+    // Excluded for `documents`' reason, one step further. That surface holds
+    // contracts naming third parties; this one holds the movements of the
+    // farm's own staff, and the owner's audience for it is OWNER + ADMIN —
+    // narrow enough that even EDITOR is denied. A key that could read it would
+    // let an integration pull every driver's whole day with no person in the
+    // loop and no screen showing it happened, which is the opposite of the
+    // confinement the two-role audience was chosen for.
+    //
+    // There is also no machine use case to withhold. The positions ARRIVE
+    // through the listener and the vendor adapters, which authenticate as
+    // themselves and do not use `iflk_` keys; these three routes exist so a
+    // PERSON can look at a map. Nothing a machine client does needs them.
+    //
+    // The refusal is already the behaviour (fail-closed); this records that it
+    // is a decision. Revisit only with an answer for whose consent a machine
+    // read of an employee's movements carries — and note that answer is a
+    // question for the owner, not for an integration's convenience.
+    'machines',
     // P6.1 (#1810). `PUT /farm-brand/publication` is the only route here, and
     // it is the act of making a real farm's identity public — a page that can
     // be shared, printed onto A6 paper and into a QR code (P6.7), and later

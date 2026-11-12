@@ -47,6 +47,7 @@ const TABLES = [
     'WorkedParcel',
     'TaskAsset',
     'MachineGeofenceState',
+    'MachineTelematicsLink',
 ] as const;
 
 const tenantCtx = (userId: string, tenantId: string) =>
@@ -63,7 +64,13 @@ async function sqlstateOf(fn: () => Promise<unknown>): Promise<string> {
         return 'NO_ERROR';
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        const m = msg.match(/\b(\d{5})\b/);
+        // Anchored on Prisma's own `Code: \`XXXXX\`` rather than on a bare
+        // five-digit run. A SQLSTATE is five ALPHANUMERICS — `22P02` has a
+        // letter in it — so a `\d{5}` pattern silently missed every code
+        // containing one and fell through to returning the raw message, which
+        // then failed the assertion with a diff about prose instead of a code.
+        // Found by the enum test: the message said 22P02 and the helper did not.
+        const m = msg.match(/Code: `([0-9A-Z]{5})`/);
         return m ? m[1] : msg.slice(0, 160);
     }
 }
@@ -78,6 +85,10 @@ async function visible(db: unknown, table: string, tenantId: string): Promise<nu
 }
 
 interface Farm {
+    /** A second asset with NO link, so an FK test is not masked by the
+     *  one-live-link-per-asset unique index firing first. */
+    spareAssetId: string;
+    connectionId: string;
     tenantId: string;
     userId: string;
     assetId: string;
@@ -94,6 +105,8 @@ async function makeFarm(label: string): Promise<Farm> {
     const parcelId = `p-2948-${sfx}`;
     const taskId = `k-2948-${sfx}`;
     const locationId = `l-2948-${sfx}`;
+    const connectionId = `ic-2948-${sfx}`;
+    const spareAssetId = `a2-2948-${sfx}`;
 
     await globalPrisma.$executeRawUnsafe(
         `INSERT INTO "Tenant" ("id","name","slug","createdAt","updatedAt")
@@ -149,6 +162,13 @@ async function makeFarm(label: string): Promise<Farm> {
         `Blok ${sfx}`,
     );
     await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "Asset" ("id","tenantId","name","type","createdAt","updatedAt")
+         VALUES ($1,$2,$3,'IMPLEMENT',now(),now())`,
+        spareAssetId,
+        tenantId,
+        `Spare ${sfx}`,
+    );
+    await globalPrisma.$executeRawUnsafe(
         `INSERT INTO "Parcel" ("id","tenantId","locationId","name","createdAt","updatedAt")
          VALUES ($1,$2,$3,$4,now(),now())`,
         parcelId,
@@ -165,7 +185,16 @@ async function makeFarm(label: string): Promise<Farm> {
         `Spray ${sfx}`,
         userId,
     );
-    return { tenantId, userId, assetId, parcelId, taskId, locationId };
+    // One IntegrationConnection per farm: credentials live there, not on the
+    // link, because one connection serves every machine on that platform.
+    await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "IntegrationConnection" ("id","tenantId","provider","name","createdAt","updatedAt")
+         VALUES ($1,$2,'JOHN_DEERE',$3,now(),now())`,
+        connectionId,
+        tenantId,
+        `JD ${sfx}`,
+    );
+    return { tenantId, userId, assetId, spareAssetId, parcelId, taskId, locationId, connectionId };
 }
 
 /** A live tracker for an asset, returning its id. */
@@ -187,8 +216,8 @@ async function makeTracker(f: Farm, imei: string, id = `mt-${randomUUID().slice(
 async function seedAllFive(f: Farm, trackerId: string) {
     await globalPrisma.$executeRawUnsafe(
         `INSERT INTO "MachinePosition"
-           ("id","tenantId","assetId","trackerId","recordedAt","lat","lon","createdAt")
-         VALUES ($1,$2,$3,$4,now(),42.6977,23.3219,now())`,
+           ("id","tenantId","assetId","trackerId","recordedAt","lat","lon","source","createdAt")
+         VALUES ($1,$2,$3,$4,now(),42.6977,23.3219,'TRACKER',now())`,
         `mp-${randomUUID().slice(0, 8)}`,
         f.tenantId,
         f.assetId,
@@ -212,6 +241,18 @@ async function seedAllFive(f: Farm, trackerId: string) {
         f.assetId,
     );
     await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "MachineTelematicsLink"
+           ("id","tenantId","assetId","provider","externalMachineId","connectionId",
+            "installedAt","driversInformedAt","driversInformedByUserId","createdAt","updatedAt")
+         VALUES ($1,$2,$3,'JOHN_DEERE',$4,$5,now(),now(),$6,now(),now())`,
+        `mtl-seed-${randomUUID().slice(0, 8)}`,
+        f.tenantId,
+        f.spareAssetId,
+        `JD-seed-${randomUUID().slice(0, 8)}`,
+        f.connectionId,
+        f.userId,
+    );
+    await globalPrisma.$executeRawUnsafe(
         `INSERT INTO "MachineGeofenceState"
            ("id","tenantId","assetId","lastEvaluatedAt","createdAt","updatedAt")
          VALUES ($1,$2,$3,now(),now(),now())`,
@@ -219,6 +260,23 @@ async function seedAllFive(f: Farm, trackerId: string) {
         f.tenantId,
         f.assetId,
     );
+}
+
+/** A live telematics link for an asset. */
+async function makeLink(
+    f: Farm,
+    externalMachineId: string,
+    provider = 'JOHN_DEERE',
+    id = `mtl-${randomUUID().slice(0, 8)}`,
+) {
+    await globalPrisma.$executeRawUnsafe(
+        `INSERT INTO "MachineTelematicsLink"
+           ("id","tenantId","assetId","provider","externalMachineId","connectionId",
+            "installedAt","driversInformedAt","driversInformedByUserId","createdAt","updatedAt")
+         VALUES ($1,$2,$3,$4::"TelematicsProvider",$5,$6,now(),now(),$7,now(),now())`,
+        id, f.tenantId, f.assetId, provider, externalMachineId, f.connectionId, f.userId,
+    );
+    return id;
 }
 
 describeFn('#2948 stage 1 — machine-tracking schema', () => {
@@ -237,7 +295,7 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
         // Reverse dependency order. Privileged client, so RLS does not hide
         // the rows being removed — a tenant-context delete would silently
         // affect zero and leave the base database dirty for the next suite.
-        for (const t of ['MachinePosition', 'MachineGeofenceState', 'TaskAsset', 'WorkedParcel', 'MachineTracker']) {
+        for (const t of ['MachinePosition', 'MachineGeofenceState', 'TaskAsset', 'WorkedParcel', 'MachineTracker', 'MachineTelematicsLink']) {
             await globalPrisma.$executeRawUnsafe(
                 `DELETE FROM "${t}" WHERE "tenantId" = ANY($1::text[])`,
                 [owner.tenantId, outsider.tenantId],
@@ -247,7 +305,9 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "Task" WHERE "id" = $1`, f.taskId);
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "Parcel" WHERE "id" = $1`, f.parcelId);
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "Location" WHERE "id" = $1`, f.locationId);
+            await globalPrisma.$executeRawUnsafe(`DELETE FROM "IntegrationConnection" WHERE "id" = $1`, f.connectionId);
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "id" = $1`, f.assetId);
+            await globalPrisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "id" = $1`, f.spareAssetId);
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, f.userId);
             await globalPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, f.tenantId);
         }
@@ -292,8 +352,8 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
                 runInTenantContext(tenantCtx(outsider.userId, outsider.tenantId), (db) =>
                     (db as PrismaClient).$executeRawUnsafe(
                         `INSERT INTO "MachinePosition"
-                           ("id","tenantId","assetId","recordedAt","lat","lon","createdAt")
-                         VALUES ($1,$2,$3,now(),1,1,now())`,
+                           ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                         VALUES ($1,$2,$3,now(),1,1,'TRACKER',now())`,
                         `mp-forge-${randomUUID().slice(0, 8)}`,
                         owner.tenantId,
                         owner.assetId,
@@ -316,8 +376,8 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
             const code = await sqlstateOf(() =>
                 globalPrisma.$executeRawUnsafe(
                     `INSERT INTO "MachinePosition"
-                       ("id","tenantId","assetId","recordedAt","lat","lon","createdAt")
-                     VALUES ($1,$2,$3,now(),1,1,now())`,
+                       ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                     VALUES ($1,$2,$3,now(),1,1,'TRACKER',now())`,
                     `mp-cross-${randomUUID().slice(0, 8)}`,
                     outsider.tenantId,
                     owner.assetId,
@@ -419,6 +479,164 @@ describeFn('#2948 stage 1 — machine-tracking schema', () => {
                     outsider.tenantId,
                     outsider.assetId,
                     `3550${Date.now()}`.slice(0, 15),
+                ),
+            );
+            expect(code).toBe('23502');
+        });
+    });
+
+    describe('§4a the position SOURCE is required, with no default', () => {
+        it('refuses a position that does not say where it came from', () => {
+            // The safety property, and the reason the migration adds the
+            // column with a default and then DROPS it. With a default left in
+            // place, a telematics writer that forgets the field silently
+            // mislabels location data as having arrived over an
+            // unauthenticated Codec 8 socket — and provenance is the one thing
+            // that cannot be recovered from the coordinates afterwards.
+            return sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachinePosition"
+                       ("id","tenantId","assetId","recordedAt","lat","lon","createdAt")
+                     VALUES ($1,$2,$3,now(),42.6977,23.3219,now())`,
+                    `mp-nosource-${randomUUID().slice(0, 8)}`,
+                    owner.tenantId,
+                    owner.assetId,
+                ),
+            ).then((code) => {
+                // 23502 — not_null_violation.
+                expect(code).toBe('23502');
+            });
+        });
+
+        it('ACCEPTS a TELEMATICS row with no tracker — the second source', async () => {
+            // The control that makes the refusal above meaningful, and the
+            // property that lets a manufacturer's API write at all: `trackerId`
+            // was already nullable so a position could outlive the box it
+            // arrived through, and that same nullability makes a vendor row
+            // legal without inventing a tracker for it.
+            const code = await sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachinePosition"
+                       ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                     VALUES ($1,$2,$3,now(),42.6977,23.3219,'TELEMATICS',now())`,
+                    `mp-telem-${randomUUID().slice(0, 8)}`,
+                    owner.tenantId,
+                    owner.assetId,
+                ),
+            );
+            expect(code).toBe('NO_ERROR');
+        });
+
+        it('refuses a source the enum does not have', async () => {
+            const code = await sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachinePosition"
+                       ("id","tenantId","assetId","recordedAt","lat","lon","source","createdAt")
+                     VALUES ($1,$2,$3,now(),1,1,'GUESSWORK',now())`,
+                    `mp-bad-${randomUUID().slice(0, 8)}`,
+                    owner.tenantId,
+                    owner.assetId,
+                ),
+            );
+            // 22P02 — invalid_text_representation for an enum.
+            expect(code).toBe('22P02');
+        });
+    });
+
+    describe('§5a the telematics link mirrors the tracker_s integrity', () => {
+        it('accepts a live link for an asset', async () => {
+            // The positive this section rests on.
+            expect(await sqlstateOf(() => makeLink(owner, 'JD-1'))).toBe('NO_ERROR');
+        });
+
+        it('refuses a SECOND live link for the same asset', async () => {
+            // One factory telematics platform per machine. `MachineTracker`'s
+            // partial index, verbatim reasoning.
+            expect(await sqlstateOf(() => makeLink(owner, 'JD-2'))).toBe('23505');
+        });
+
+        it('ACCEPTS one once the first is marked removed — the control', async () => {
+            // Without this the test above is equally satisfied by a PLAIN
+            // unique index, which would make a replaced machine unrecordable.
+            await globalPrisma.$executeRawUnsafe(
+                `UPDATE "MachineTelematicsLink" SET "removedAt" = now() WHERE "tenantId" = $1`,
+                owner.tenantId,
+            );
+            const second = `mtl-two-${randomUUID().slice(0, 8)}`;
+            expect(await sqlstateOf(() => makeLink(owner, 'JD-3', 'JOHN_DEERE', second))).toBe('NO_ERROR');
+            await globalPrisma.$executeRawUnsafe(`DELETE FROM "MachineTelematicsLink" WHERE "id" = $1`, second);
+            await globalPrisma.$executeRawUnsafe(
+                `UPDATE "MachineTelematicsLink" SET "removedAt" = NULL WHERE "tenantId" = $1`,
+                owner.tenantId,
+            );
+        });
+
+        it('refuses two farms claiming the SAME vendor machine', async () => {
+            // The integrity equivalent of a globally unique IMEI: one physical
+            // tractor belongs to one farm at a time, and without this, whose
+            // tenant its positions land in would depend on insertion order.
+            expect(await sqlstateOf(() => makeLink(outsider, 'JD-1'))).toBe('23505');
+        });
+
+        it('…but the same id under a DIFFERENT provider is fine', async () => {
+            // The claim is per (provider, id): vendor id spaces are separate,
+            // so a CLAAS machine numbered JD-1 is a different machine.
+            const id = `mtl-claas-${randomUUID().slice(0, 8)}`;
+            expect(await sqlstateOf(() => makeLink(outsider, 'JD-1', 'CLAAS', id))).toBe('NO_ERROR');
+            await globalPrisma.$executeRawUnsafe(`DELETE FROM "MachineTelematicsLink" WHERE "id" = $1`, id);
+        });
+
+        it('refuses a link whose asset belongs to another tenant', async () => {
+            const code = await sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachineTelematicsLink"
+                       ("id","tenantId","assetId","provider","externalMachineId","connectionId",
+                        "installedAt","driversInformedAt","driversInformedByUserId","createdAt","updatedAt")
+                     VALUES ($1,$2,$3,'JOHN_DEERE',$4,$5,now(),now(),$6,now(),now())`,
+                    `mtl-cross-${randomUUID().slice(0, 8)}`,
+                    owner.tenantId,
+                    outsider.assetId,
+                    `JD-cross-${randomUUID().slice(0, 6)}`,
+                    outsider.connectionId,
+                    outsider.userId,
+                ),
+            );
+            expect(code).toBe('23503');
+        });
+
+        it('refuses a link with no driversInformedAt', async () => {
+            // The owner's rule carried to the connection: connecting a vendor
+            // account without recording that the drivers were told is a 400,
+            // not a row that quietly means nothing.
+            const code = await sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachineTelematicsLink"
+                       ("id","tenantId","assetId","provider","externalMachineId","connectionId",
+                        "installedAt","driversInformedByUserId","createdAt","updatedAt")
+                     VALUES ($1,$2,$3,'JOHN_DEERE',$4,$5,now(),$6,now(),now())`,
+                    `mtl-noat-${randomUUID().slice(0, 8)}`,
+                    outsider.tenantId,
+                    outsider.spareAssetId,
+                    `JD-noat-${randomUUID().slice(0, 6)}`,
+                    outsider.connectionId,
+                    outsider.userId,
+                ),
+            );
+            expect(code).toBe('23502');
+        });
+
+        it('refuses a link with no driversInformedByUserId', async () => {
+            const code = await sqlstateOf(() =>
+                globalPrisma.$executeRawUnsafe(
+                    `INSERT INTO "MachineTelematicsLink"
+                       ("id","tenantId","assetId","provider","externalMachineId","connectionId",
+                        "installedAt","driversInformedAt","createdAt","updatedAt")
+                     VALUES ($1,$2,$3,'JOHN_DEERE',$4,$5,now(),now(),now(),now())`,
+                    `mtl-nowho-${randomUUID().slice(0, 8)}`,
+                    outsider.tenantId,
+                    outsider.spareAssetId,
+                    `JD-nowho-${randomUUID().slice(0, 6)}`,
+                    outsider.connectionId,
                 ),
             );
             expect(code).toBe('23502');
