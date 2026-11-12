@@ -1468,7 +1468,18 @@ exports[`API contract — per-schema snapshots schema: AssetCreateRequest 1`] = 
     },
     "type": {
       "type": "string",
-      "minLength": 1
+      "enum": [
+        "TRACTOR",
+        "HARVESTER",
+        "IMPLEMENT",
+        "VEHICLE",
+        "IRRIGATION",
+        "BUILDING",
+        "STORAGE",
+        "LIVESTOCK_EQUIPMENT",
+        "TOOL",
+        "OTHER"
+      ]
     },
     "status": {
       "type": "string",
@@ -1829,7 +1840,18 @@ exports[`API contract — per-schema snapshots schema: AssetUpdateRequest 1`] = 
     },
     "type": {
       "type": "string",
-      "minLength": 1
+      "enum": [
+        "TRACTOR",
+        "HARVESTER",
+        "IMPLEMENT",
+        "VEHICLE",
+        "IRRIGATION",
+        "BUILDING",
+        "STORAGE",
+        "LIVESTOCK_EQUIPMENT",
+        "TOOL",
+        "OTHER"
+      ]
     },
     "status": {
       "type": "string",
