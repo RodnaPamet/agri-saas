@@ -111,7 +111,7 @@ describe('the document Apple receives', () => {
         expect(APP_ID).toBe('9423GKWL67.bg.agrent.app');
     });
 
-    it('claims exactly ONE prefix — the only one with no web page to hijack', async () => {
+    it('claims exactly TWO prefixes, and excludes the OG image', async () => {
         const body = await (await GET()).json();
 
         // Was `toEqual([])`, and the change of answer is the whole history of
@@ -143,7 +143,22 @@ describe('the document Apple receives', () => {
         // falls back to the browser, which is the BETTER outcome of the two",
         // and there is now something in the browser worth falling back to.
         // `/f/*` returns with P6.9's iOS screen.
-        const expected = [{ '/': '/m/*' }];
+        //
+        // AND IT HAS, 2026-11-12. P6.9 shipped `PublicFarmView`
+        // (agrent-ios#538, TestFlight 96.1+) with `.onOpenURL` →
+        // `PublicProfileLink.handle(from:)` → `router.open(.publicFarm(…))`,
+        // so the condition this file wrote down in advance is met and the
+        // owner gave the word. The app can now open what it claims, which is
+        // the only thing that was ever missing.
+        //
+        // THREE entries for TWO prefixes: the exclusion is a component too,
+        // and it is FIRST because Apple takes the first match and `*` crosses
+        // `/` — see the module docblock and the ordering case below.
+        const expected = [
+            { '/': '/f/*/opengraph-image', exclude: true, comment: 'the OG image is for crawlers, not the app' },
+            { '/': '/m/*' },
+            { '/': '/f/*' },
+        ];
         expect(APPLINK_COMPONENTS).toEqual(expected);
         // And the same list actually reaches the wire — the module and the
         // response are separate facts, and only the second is what Apple
@@ -203,6 +218,29 @@ describe('what may be claimed, once anything is', () => {
         expect(catchAlls([{ '/': '*' }, { '/': 'NOT /api/*' }])).toHaveLength(2);
     });
 
+    /**
+     * Prefixes claimed DESPITE serving a web page, because the app has a
+     * screen that opens them.
+     *
+     * The collision rule's premise is "a claimed path with a working page
+     * hijacks it ON A PHONE WHOSE APP HAS NO SCREEN FOR IT". When the screen
+     * exists the premise is false and hijacking is not the outcome — opening
+     * the farm in the app is, which is the point of the claim.
+     *
+     * So this is a DECLARED EXCEPTION rather than a loosened rule: every other
+     * page-serving prefix is still refused, and `/invite/*` is still the
+     * control that proves it. The iOS half lives in another repo, so the entry
+     * rests on an ARGUMENT with its evidence named — the same shape as the
+     * `webcredentials` claim in the module docblock, and the reason each value
+     * here is the evidence rather than a bare `true`.
+     */
+    const CLAIMED_WITH_A_SCREEN: Readonly<Record<string, string>> = {
+        f: 'agrent-ios#538 ships PublicFarmView (TestFlight 96.1+); .onOpenURL → '
+            + 'PublicProfileLink.handle(from:) → router.open(.publicFarm(handle:)); '
+            + 'entitlement applinks:app.agrent.bg already in project.yml. '
+            + 'Owner ruling 2026-11-12.',
+    };
+
     /** A claimed prefix that already serves a web page the app cannot open. */
     const collisions = (claims: ReadonlyArray<Record<string, unknown>>): string[] => {
         const pages = collectSourceFiles({ roots: ['src/app'], extensions: ['.tsx'] })
@@ -218,9 +256,67 @@ describe('what may be claimed, once anything is', () => {
         ];
         // The collector refuses an empty result, but not an empty DERIVATION.
         expect(segments.length).toBeGreaterThan(3);
-        const values = claims.flatMap((c) => Object.values(c)).filter((v): v is string => typeof v === 'string');
-        return segments.filter((seg) => values.some((v) => v === `/${seg}` || v.startsWith(`/${seg}/`)));
+        // Only the PATHS, and only the ones being CLAIMED. An `exclude`
+        // component is the opposite of a claim, so counting its path as a
+        // collision would report the very carve-out that prevents one — and
+        // `comment` is free text that could contain anything.
+        const values = claims
+            .filter((c) => c.exclude !== true)
+            .flatMap((c) => (typeof c['/'] === 'string' ? [c['/'] as string] : []));
+        return segments
+            .filter((seg) => values.some((v) => v === `/${seg}` || v.startsWith(`/${seg}/`)))
+            .filter((seg) => !(seg in CLAIMED_WITH_A_SCREEN));
     };
+
+    it('every declared exception names a prefix that DOES serve a page', () => {
+        // Otherwise the entry is decoration: an exception over a prefix with
+        // no page suppresses nothing, and would sit here looking like it did.
+        const pages = collectSourceFiles({ roots: ['src/app'], extensions: ['.tsx'] })
+            .map((f) => f.replace(/\\/g, '/'))
+            .filter((f) => f.endsWith('/page.tsx'))
+            .map((f) => f.split('src/app/')[1]?.split('/')[0]);
+        expect(Object.keys(CLAIMED_WITH_A_SCREEN).length).toBeGreaterThan(0);
+        for (const seg of Object.keys(CLAIMED_WITH_A_SCREEN)) {
+            expect(pages).toContain(seg);
+        }
+    });
+
+    it('every declared exception carries its EVIDENCE, not a bare flag', () => {
+        // The iOS half is in another repo, so this cannot be checked from
+        // here — which is exactly why the entry has to say what was checked
+        // and where. A `true` would be an assertion with no author.
+        for (const [seg, why] of Object.entries(CLAIMED_WITH_A_SCREEN)) {
+            // Long enough to be a reason, and naming the two things a reader
+            // needs in order to re-check it: the iOS PR and the handler.
+            expect(why.length).toBeGreaterThan(60);
+            expect(why).toMatch(/agrent-ios#\d+/);
+            expect(why).toMatch(/onOpenURL|router\.open/);
+            expect(seg).toMatch(/^[a-z][a-z0-9-]*$/);
+        }
+    });
+
+    it('EXCLUDES the OG image, and the exclusion comes FIRST', () => {
+        // `/f/[handle]/opengraph-image.tsx` makes Next serve
+        // `/f/{handle}/opengraph-image`, and AASA's `*` matches ACROSS `/` —
+        // Apple's components are not segment globs. So a bare `/f/*` claims
+        // the image, and a PNG fetched by Slack, iMessage and WhatsApp when a
+        // farm link is shared becomes a link that launches the app.
+        const idx = APPLINK_COMPONENTS.findIndex((c) => c.exclude === true);
+        const claimIdx = APPLINK_COMPONENTS.findIndex((c) => c['/'] === '/f/*');
+        expect(idx).toBeGreaterThanOrEqual(0);
+        expect(claimIdx).toBeGreaterThanOrEqual(0);
+        // Apple takes the FIRST matching component, so an exclusion after the
+        // include never fires.
+        expect(idx).toBeLessThan(claimIdx);
+        expect(APPLINK_COMPONENTS[idx]['/']).toBe('/f/*/opengraph-image');
+        // And the generated route really exists, so the carve-out is not
+        // guarding a path nobody serves.
+        expect(
+            collectSourceFiles({ roots: ['src/app'], extensions: ['.tsx'] })
+                .map((f) => f.replace(/\\/g, '/'))
+                .some((f) => f.endsWith('f/[handle]/opengraph-image.tsx')),
+        ).toBe(true);
+    });
 
     it('claims no prefix that already serves a page', () => {
         expect(collisions(APPLINK_COMPONENTS)).toEqual([]);
@@ -246,7 +342,8 @@ describe('what may be claimed, once anything is', () => {
         // `/f/[handle]` as a real web page: the collision check above started
         // failing, exactly as this file's docblock predicted it would, because
         // a claimed path with a working page HIJACKS that page on a phone
-        // whose app has no screen for it. It returns with P6.9.
-        expect(APPLINK_COMPONENTS.length).toBe(1);
+        // whose app has no screen for it. It returned with P6.9 (2026-11-12),
+        // through `CLAIMED_WITH_A_SCREEN` rather than by relaxing the rule.
+        expect(APPLINK_COMPONENTS.length).toBe(3);
     });
 });

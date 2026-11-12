@@ -44,6 +44,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { collectSourceFiles } from '../helpers/collect-files';
 import { blankNonCode } from '../helpers/blank-non-code';
+import { assertAllowlistIsLive } from '../helpers/assert-allowlist-is-live';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -89,12 +90,26 @@ const SCANNED = collectSourceFiles({
 });
 
 describe('Focus-ring offset discipline (Roadmap-6 PR-3)', () => {
-    it('every allowlisted file still exists', () => {
-        const stale: string[] = [];
-        for (const e of ALLOWLIST) {
-            if (!fs.existsSync(path.join(ROOT, e.file))) stale.push(e.file);
-        }
-        expect(stale).toEqual([]);
+    it('every allowlisted file still exists AND still violates — #2414', () => {
+        // Strictly stronger than the existence check this replaces: a deleted
+        // file cannot violate, so it fails this too. What existence could NOT
+        // see is an entry whose file is PRESENT and CLEAN — it reads as an
+        // accepted violation over a file that has since been fixed, and
+        // removing it changes no verdict, which is why nothing notices.
+        const report = assertAllowlistIsLive({
+            label: 'focus-ring-offset-discipline ALLOWLIST',
+            entries: ALLOWLIST.map((e) => e.file),
+            // The SAME transform the scan below applies, line by line. Passing
+            // a different one is the difference between judging code and
+            // judging comments.
+            blankOptions: {},
+            violates: (code) =>
+                code.split('\n').some((line) => VIOLATION_RE.test(line)),
+        });
+        console.log(
+            `[focus-ring-offset-discipline] ${report.live.length} of ${ALLOWLIST.length} allowlisted file(s) still use a tight ring-offset`,
+        );
+        expect(report.live).toHaveLength(ALLOWLIST.length);
     });
 
     it('no .tsx file uses ring-offset-{0,1} outside the allowlist', () => {

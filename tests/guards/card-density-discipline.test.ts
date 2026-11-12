@@ -32,6 +32,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { blankNonCode } from '../helpers/blank-non-code';
+import { assertAllowlistIsLive } from '../helpers/assert-allowlist-is-live';
 
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
@@ -48,14 +49,27 @@ const EXEMPT_FILE_PATTERNS: RegExp[] = [
   /\.stories\.tsx?$/,
 ];
 
-// Files that legitimately reference the strings (e.g. the Card
-// primitive's docstring describing what it replaces). Each entry must
-// have a written reason.
-const EXEMPT_FILES = new Set<string>([
-  // Card primitive's docstring mentions `<div className="glass-card p-5">`
-  // and `<div className="glass-card p-8">` as historical patterns.
-  "src/components/ui/card.tsx",
-]);
+// Files that legitimately reference the banned strings in EXECUTABLE code.
+// Each entry must have a written reason, and must still match the ban — see
+// the liveness assertion below.
+//
+// EMPTY, and deliberately kept as a mechanism rather than deleted (#2414).
+// It held `src/components/ui/card.tsx`, justified as "the Card primitive's
+// docstring mentions `glass-card p-5` / `p-8` as historical patterns". That
+// reason described a PAST state: measured 2026-11-12, `card.tsx` contains the
+// banned co-occurrence ZERO times on any line, comment or code. So the entry
+// exempted nothing, and removing it changes no verdict — which is exactly
+// what made it misleading, because it read as a known accepted violation over
+// a file that is clean.
+//
+// It was also MISDIRECTED. The file that mentions `glass-card` in prose is
+// `card-variants.ts`, and that is handled by blanking comments before
+// matching, never by this list.
+//
+// An empty list makes the liveness assertion vacuous, so that `it()` carries
+// a discrimination control — the `FLAG_EXEMPT` precedent, where a guard with
+// an empty exemption map proves its detector against crafted input instead.
+const EXEMPT_FILES = new Set<string>([]);
 
 // Match `glass-card` and `p-5` (or `p-8`) co-occurring within the same
 // className value. We accept either ordering and any extra utilities
@@ -66,6 +80,19 @@ const PATTERNS_TO_BAN = [
   /\bglass-card\b[^"`]*\bp-8\b/,
   /\bp-8\b[^"`]*\bglass-card\b/,
 ];
+
+/**
+ * The ban, as ONE predicate — because the scan and the exemption-liveness
+ * check must apply the same one.
+ *
+ * Supplying the liveness check a different transform than the scan uses is
+ * the trap `assert-allowlist-is-live`'s docblock names: it is the difference
+ * between judging code and judging comments, and it fails toward calling a
+ * live exemption dead.
+ */
+function violatesDensityBan(line: string): boolean {
+  return PATTERNS_TO_BAN.some((re) => re.test(line));
+}
 
 function isExempt(rel: string): boolean {
   if (EXEMPT_FILES.has(rel)) return true;
@@ -100,20 +127,23 @@ function findOffenders(): Hit[] {
   const hits: Hit[] = [];
   for (const dir of SCAN_DIRS) {
     for (const file of walk(path.join(ROOT, dir))) {
-      const content = fs.readFileSync(file, "utf8");
-      const lines = content.split("\n");
-      lines.forEach((line, i) => {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("//") || trimmed.startsWith("*")) return;
-        for (const re of PATTERNS_TO_BAN) {
-          if (re.test(line)) {
-            hits.push({
-              file: path.relative(ROOT, file),
-              line: i + 1,
-              text: line.trim(),
-            });
-            break; // one hit per line is enough
-          }
+      const raw = fs.readFileSync(file, "utf8");
+      // Blank comments through the shared state-aware pass rather than the
+      // per-line `//` / `*` heuristic this used to carry. That heuristic was
+      // weaker in both directions: it missed a block-comment line not
+      // starting with `*`, and it missed a TRAILING comment entirely, while
+      // over-skipping a code line that merely begins with `*`. Positions are
+      // preserved, so line numbers still line up.
+      const blanked = blankNonCode(raw);
+      const rawLines = raw.split("\n");
+      blanked.split("\n").forEach((line, i) => {
+        if (violatesDensityBan(line)) {
+          hits.push({
+            file: path.relative(ROOT, file),
+            line: i + 1,
+            // The RAW line, so the message a reader gets is the real source.
+            text: (rawLines[i] ?? line).trim(),
+          });
         }
       });
     }
@@ -137,11 +167,47 @@ describe("Card density discipline ratchet", () => {
     expect(offenders).toHaveLength(0);
   });
 
-  it("documents every exempt file with a reason", () => {
-    for (const rel of EXEMPT_FILES) {
-      const abs = path.resolve(ROOT, rel);
-      expect(fs.existsSync(abs)).toBe(true);
-    }
+  it("every exempt file still exists AND still violates — #2414", () => {
+    const entries = [...EXEMPT_FILES];
+    const report = assertAllowlistIsLive({
+      label: "card-density-discipline EXEMPT_FILES",
+      entries,
+      blankOptions: {},
+      violates: (code) => code.split("\n").some(violatesDensityBan),
+    });
+    console.log(
+      `[card-density-discipline] ${report.live.length} of ${entries.length} exempt file(s) still use an off-scale glass-card padding`,
+    );
+    expect(report.live).toHaveLength(entries.length);
+  });
+
+  it("control: the liveness check reports a CLEAN file as irrelevant", () => {
+    // EXEMPT_FILES is empty, so the assertion above ranges over nothing and
+    // would pass however broken the helper or the predicate were. This is the
+    // discrimination proof: a real, present, CLEAN file must be rejected.
+    //
+    // `card.tsx` is the file the dead entry used to name, which makes it the
+    // honest subject — if it ever legitimately needs exempting again, this
+    // control fails and says so.
+    const clean = "src/components/ui/card.tsx";
+    expect(fs.existsSync(path.resolve(ROOT, clean))).toBe(true);
+    expect(() =>
+      assertAllowlistIsLive({
+        label: "card-density-discipline control",
+        entries: [clean],
+        blankOptions: {},
+        violates: (code) => code.split("\n").some(violatesDensityBan),
+      }),
+    ).toThrow(/IRRELEVANT/);
+  });
+
+  it("control: the liveness check reports a LIVE file as live", () => {
+    // The other direction, so the control above cannot pass by refusing
+    // everything. `card-variants.ts` carries `glass-card` in prose only, so
+    // it is not the subject; a synthetic line is, because no file in the repo
+    // violates this ban any more — which is the ratchet working.
+    expect(violatesDensityBan('<div className="glass-card p-5">')).toBe(true);
+    expect(violatesDensityBan('<div className="glass-card p-6">')).toBe(false);
   });
 
   it("exempt files are deliberately small in number", () => {
