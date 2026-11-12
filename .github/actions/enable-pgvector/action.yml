@@ -138,35 +138,71 @@ runs:
         # cannot see. The `ci.yml` playwright loop clears runner-side locks
         # for the same reason — this is that idea across the container
         # boundary.
-        # ── The pgvector FALLBACK pin, and why it is a fallback ──────────
+        # ── ABI DRIFT, and why installing is not enough ──────────────────
         #
-        # PGDG can publish a `postgresql-16-pgvector` whose dependency NOTHING
-        # in the repo satisfies. Measured 2026-11-12, main red on 4adc45a17:
+        # Measured 2026-11-12 (main red on 4adc45a17, #2999). Two distinct
+        # failures, and the first one masked the second:
         #
-        #   postgresql-16-pgvector 0.8.7-1.pgdg13+2
-        #     Depends: postgresql-16 (>> 16.16)
-        #   ...but PGDG's newest postgresql-16 is 16.15.
+        #   1. `postgresql-16-pgvector 0.8.7-1.pgdg13+2` declares
+        #      `Depends: postgresql-16 (>> 16.16)`. PGDG's newest is 16.16, and
+        #      16.16 is not STRICTLY greater than 16.16, so apt refuses with
+        #      "held broken packages" in ~3 seconds on every attempt.
         #
-        # So the newest pgvector requires a server version PGDG itself does
-        # not ship. That is an upstream packaging bug, not a fetch problem:
-        # apt fails in ~3 seconds with "held broken packages", identically on
-        # every attempt, so the 3-attempt retry below cannot help and the
-        # 120s timeout never comes near.
+        #   2. Fix only that, and the install succeeds and the SERVER BREAKS.
+        #      The image runs postgresql 16.15 while PGDG's current extensions
+        #      are built against 16.16, so apt upgrades `postgresql-16`
+        #      underneath the already-running postmaster and replaces
+        #      `/usr/lib/postgresql/16/lib/*.so`. The next statement fails with
+        #      `could not load library "plpgsql.so": undefined symbol:
+        #      heap_datum_update_type` — two steps away, in "Apply Prisma
+        #      migrations", with nothing pointing back here.
         #
-        # UNPINNED FIRST, pin only as a fallback. A hard pin would rot
-        # silently — it would keep us on an old pgvector long after PGDG fixed
-        # the dependency, and nothing would ever say so. Trying the newest
-        # first means this self-heals the day `+3` lands or postgresql-16
-        # passes 16.16, and the fallback costs ~3s on the way there.
+        # So: HOLD the server package, and VERIFY the extensions actually load.
         #
-        # `+1` is the last version whose dependency is plain `postgresql-16`
-        # with no version bound, so it installs against whatever the pinned
-        # image ships.
-        pgvector_fallback='0.8.7-1.pgdg13+1'
+        # ## The hold
+        #
+        # A service container's PID 1 IS postgres, so the usual answer —
+        # upgrade and restart — cannot work: `pg_ctl restart` terminates the
+        # container. Measured. Holding is the only way to keep the running
+        # binaries and the extension libraries from the same build.
+        #
+        # ## Why VERIFY rather than pin
+        #
+        # A matched pin alone rots in BOTH directions. Pin postgis to the
+        # 16.15 build and it breaks the day the image ships 16.16; leave it
+        # unpinned and it breaks today. And an install that "succeeded" tells
+        # you nothing: the library and the extension SCRIPTS are separate
+        # packages, and a 3.7.0 script set against a 3.6.4 library fails with
+        # "extension scripts version 3.7.0 cannot use older library version".
+        #
+        # So the discriminator is a real `CREATE EXTENSION` in a scratch
+        # database. Try the newest unpinned first — correct whenever the image
+        # and PGDG agree, which is the normal state and the state this
+        # self-heals into — and fall back to the matched set only when
+        # verification fails. All three packages move together in the fallback,
+        # library and scripts included, because pinning two of three produces
+        # the version-mismatch error above.
+        pg_hold() { docker exec "$1" sh -c 'apt-mark hold postgresql-16 >/dev/null 2>&1 || true'; }
+        pg_verify() {
+          docker exec "$1" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -tAc \
+            'CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS vector;' \
+            >/dev/null 2>&1
+        }
+        # The builds that match a 16.15 server. Used ONLY as a fallback.
+        matched='postgresql-16-postgis-3=3.6.4+dfsg-2.pgdg13+1 postgresql-16-postgis-3-scripts=3.6.4+dfsg-2.pgdg13+1 postgresql-16-pgvector=0.8.7-1.pgdg13+1'
         installed=0
         for attempt in 1 2 3; do
           echo "::group::apt install postgis + pgvector (attempt $attempt/3)"
-          if timeout 120 docker exec -e PGV="$pgvector_fallback" "$cid" sh -c 'apt-get update -qq && { apt-get install -y -qq postgresql-16-postgis-3 postgresql-16-pgvector || { echo "newest pgvector unsatisfiable; falling back to ${PGV}"; apt-get install -y -qq postgresql-16-postgis-3 "postgresql-16-pgvector=${PGV}"; }; }'; then
+          pg_hold "$cid"
+          if timeout 120 docker exec "$cid" sh -c 'apt-get update -qq && apt-get install -y -qq postgresql-16-postgis-3 postgresql-16-pgvector' && pg_verify "$cid"; then
+            echo "newest postgis/pgvector installed and both extensions load"
+            echo "::endgroup::"
+            installed=1
+            break
+          fi
+          echo "::notice::newest postgis/pgvector did not install-and-load; trying the build set matched to this image's server"
+          if timeout 180 docker exec -e MATCHED="$matched" "$cid" sh -c 'apt-get update -qq && apt-get install -y -qq --allow-downgrades $MATCHED' && pg_verify "$cid"; then
+            echo "matched build set installed and both extensions load"
             echo "::endgroup::"
             installed=1
             break
