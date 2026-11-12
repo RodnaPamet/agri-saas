@@ -1419,7 +1419,18 @@
           },
           "type": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "TRACTOR",
+              "HARVESTER",
+              "IMPLEMENT",
+              "VEHICLE",
+              "IRRIGATION",
+              "BUILDING",
+              "STORAGE",
+              "LIVESTOCK_EQUIPMENT",
+              "TOOL",
+              "OTHER"
+            ]
           },
           "status": {
             "type": "string",
@@ -1768,7 +1779,18 @@
           },
           "type": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "TRACTOR",
+              "HARVESTER",
+              "IMPLEMENT",
+              "VEHICLE",
+              "IRRIGATION",
+              "BUILDING",
+              "STORAGE",
+              "LIVESTOCK_EQUIPMENT",
+              "TOOL",
+              "OTHER"
+            ]
           },
           "status": {
             "type": "string",

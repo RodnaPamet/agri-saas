@@ -28,7 +28,35 @@ export const EmptyBodySchema = z.object({}).strip().openapi('EmptyBody', {
 
 export const CreateAssetSchema = z.object({
     name: z.string().min(1, 'Name is required'),
-    type: z.string().min(1, 'Type is required'),
+    /**
+     * The `AssetType` enum, not a bare string — #2950.
+     *
+     * `Asset.type` is a Prisma ENUM column, so `type: 'TRAKTOR'` passed
+     * validation, reached `createAsset`, and failed at Prisma as a
+     * `PrismaClientValidationError` — a 500 where the caller had earned a 400.
+     * The two fields immediately below were already enums; this one was the
+     * oversight.
+     *
+     * Harmless until now because the web form picks from a fixed list. #2948
+     * puts an iOS client on this endpoint, and a mobile client building a
+     * machine-creation screen is exactly the caller that sends a typo, a
+     * lowercased value or a localised label — and a 500 gives it nothing to
+     * show the user.
+     *
+     * SPELLED OUT rather than `z.nativeEnum(AssetType)`, and that is a bundle
+     * decision rather than a style one: this module does not import
+     * `@prisma/client` and is imported by two CLIENT components
+     * (`NewTaskFields`, `ReportDialog`), so pulling the generated client in as
+     * a VALUE here would risk Prisma's runtime reaching the browser bundle —
+     * the class `check-public-chunk-payload.mjs` exists to catch. The drift
+     * that spelling invites is held by
+     * `tests/guards/asset-schema-enums-match-prisma.test.ts`, which derives the
+     * expected members from the schema file.
+     */
+    type: z.enum([
+        'TRACTOR', 'HARVESTER', 'IMPLEMENT', 'VEHICLE', 'IRRIGATION',
+        'BUILDING', 'STORAGE', 'LIVESTOCK_EQUIPMENT', 'TOOL', 'OTHER',
+    ]),
     status: z.enum(['ACTIVE', 'IN_MAINTENANCE', 'RETIRED']).optional(),
     criticality: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().nullable(),
     owner: z.string().optional(),                     // Free-text keeper (the person physically holding the asset)
@@ -49,7 +77,15 @@ export const CreateAssetSchema = z.object({
 
 export const UpdateAssetSchema = z.object({
     name: z.string().min(1).optional(),
-    type: z.string().min(1).optional(),
+    /**
+     * Same narrowing as `CreateAssetSchema.type`, and NOT an afterthought:
+     * #2950 named only the create schema, so fixing that alone would have left
+     * the identical 500 reachable by `PATCH`. `count-the-routes-a-gate-covers`.
+     */
+    type: z.enum([
+        'TRACTOR', 'HARVESTER', 'IMPLEMENT', 'VEHICLE', 'IRRIGATION',
+        'BUILDING', 'STORAGE', 'LIVESTOCK_EQUIPMENT', 'TOOL', 'OTHER',
+    ]).optional(),
     status: z.enum(['ACTIVE', 'IN_MAINTENANCE', 'RETIRED']).optional(),
     criticality: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional().nullable(),
     owner: z.string().optional(),                     // Free-text keeper
