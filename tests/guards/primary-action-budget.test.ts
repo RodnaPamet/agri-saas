@@ -58,6 +58,19 @@ const PRIMARY_BUDGET: Record<string, number> = {
     // per modal. (The companies client keeps the default 1 — it is edit-only,
     // with no create action.)
     "src/app/t/[tenantSlug]/(app)/admin/promotions/PromotionsAdminClient.tsx": 2,
+    // #2963 farm-claim review — two REGIONS, disclosed one at a time. Each
+    // claim row's primary is «Потвърди» (verify); pressing «Оспори» opens a
+    // dispute FORM inside the row, whose own primary is «Запиши оспорването».
+    // The scanner sees 2 in one file because the form is inline.
+    //
+    // Demoting the dispute submit to secondary was the other option and it is
+    // the wrong one HERE specifically: `disputeFarmClaim` deliberately takes
+    // no ЕИК because "demanding one would make the refusal path harder than
+    // the approval path", and the owner ruled (2026-11-10) that the console
+    // must wire refusal for exactly that reason. A refusal form whose submit
+    // is quieter than the approval button reintroduces the asymmetry in
+    // styling after it was closed in function.
+    "src/app/t/[tenantSlug]/(app)/admin/farm-claims/FarmClaimsReviewClient.tsx": 2,
     // SP-F1 — the file picker has two mutually-exclusive footer modes:
     // file-select ("Import/Select") and folder-select ("Use this folder").
     // Each is the single primary of its mode; the static scanner counts both.

@@ -8251,6 +8251,74 @@ exports[`API contract — per-schema snapshots schema: FarmDocumentUploader 1`] 
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: FarmIdentityClaimForReview 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    },
+    "tenantName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "NULL when the tenant row is gone. A claim outlives its farm, and a blank name in a console reads as a rendering fault rather than a deleted farm, so the client renders that case explicitly."
+    },
+    "tenantSlug": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "VERIFIED",
+        "DISPUTED"
+      ],
+      "description": "The Prisma enum has a FOURTH member, \`REJECTED\`, which nothing in this product writes or reads — see the issue linked from \`farm-identity-review.ts\`. It is deliberately absent here rather than offered as a filter nothing can produce."
+    },
+    "claimedByUserId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verifiedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "disputedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "tenantId",
+    "tenantName",
+    "tenantSlug",
+    "status",
+    "claimedByUserId",
+    "createdAt",
+    "verifiedAt",
+    "disputedAt"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: FarmProfile 1`] = `
 "{
   "type": "object",
