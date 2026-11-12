@@ -227,14 +227,14 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
                 reportId: id,
                 actionKind: 'CONTENT_REMOVED',
                 rationale: 'grade claim unsubstantiated',
-                generation: 'current',
+                actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
 
             const row = await globalPrisma.$queryRawUnsafe<Array<{ r: string }>>(
                 `SELECT "moderatorRef" AS r FROM "ModerationAction" WHERE "id" = $1`, actionId,
             );
-            expect(row[0].r).toBe(moderatorRefFor('current'));
+            expect(row[0].r).toBe(moderatorRefFor({ kind: 'platform-key', generation: 'current' }));
             expect(row[0].r).toBe('platform-key:current');
             // Prefixed, so a reader cannot mistake it for a person's handle.
             expect(row[0].r).toMatch(/^platform-key:/);
@@ -250,7 +250,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
                 // there is no ranking to demote within, so a recorded
                 // demotion announced a sanction that does not exist.
                 reportId: id, actionKind: 'CONTENT_REMOVED',
-                rationale: 'demoted pending evidence', generation: 'previous',
+                rationale: 'demoted pending evidence', actor: { kind: 'platform-key', generation: 'previous' },
             });
             actions.push(actionId);
             const row = await globalPrisma.$queryRawUnsafe<Array<{ r: string }>>(
@@ -269,7 +269,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             const target = await makeSuspendableUser();
             const { actionId, status, suspended } = await actOnNotice({
                 reportId: id, actionKind: 'ACCOUNT_SUSPENDED',
-                rationale: 'repeat offender', generation: 'current',
+                rationale: 'repeat offender', actor: { kind: 'platform-key', generation: 'current' },
                 suspendUserId: target,
             });
             actions.push(actionId);
@@ -302,7 +302,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             const id = await fileOne();
             await expect(actOnNotice({
                 reportId: id, actionKind: 'ACCOUNT_SUSPENDED',
-                rationale: 'no target given', generation: 'current',
+                rationale: 'no target given', actor: { kind: 'platform-key', generation: 'current' },
             // On the CODE, not the message. `toThrow(string)` matches the
             // MESSAGE, and this passed only because the throw site passed its
             // own code as the message — which is what showed a farmer
@@ -327,7 +327,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             const id = await fileOne();
             const { actionId, status } = await actOnNotice({
                 reportId: id, actionKind: 'NONE',
-                rationale: 'looked; the listing is accurate', generation: 'current',
+                rationale: 'looked; the listing is accurate', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
             // "Looked and did nothing" must be distinguishable from "never
@@ -343,7 +343,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             const id = await fileOne();
             const { actionId } = await actOnNotice({
                 reportId: id, actionKind: 'CONTENT_REMOVED',
-                rationale: '<script>alert(1)</script>unsubstantiated', generation: 'current',
+                rationale: '<script>alert(1)</script>unsubstantiated', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
             const raw = await globalPrisma.$queryRawUnsafe<Array<{ r: string }>>(
@@ -371,7 +371,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
         it('reports a missing notice rather than inventing an action', async () => {
             const result = await actOnNotice({
                 reportId: `cr-nope-${randomUUID()}`, actionKind: 'NONE',
-                rationale: 'x', generation: 'current',
+                rationale: 'x', actor: { kind: 'platform-key', generation: 'current' },
             });
             expect(result.actionId).toBe('');
         });
@@ -382,7 +382,7 @@ describeFn('P5.4a — the moderation console (#1595)', () => {
             const id = await fileOne();
             const { actionId } = await actOnNotice({
                 reportId: id, actionKind: 'CONTENT_REMOVED',
-                rationale: 'removed', generation: 'current',
+                rationale: 'removed', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
 

@@ -48,7 +48,7 @@ import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { codedBadRequest } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logger } from '@/lib/observability/logger';
-import { moderatorRefFor, type PlatformKeyGeneration } from '@/lib/auth/platform-admin';
+import { moderatorRefFor, actorUserIdFor, type ModerationActor } from '@/lib/auth/platform-admin';
 
 export type ReportStatus = 'RECEIVED' | 'TRIAGED' | 'ACTIONED' | 'REJECTED';
 export type ModerationActionKind =
@@ -66,6 +66,7 @@ const DEFAULT_QUEUE_PAGE = 50;
 // it back would be a cycle. Re-exported so existing importers (and
 // `p5-4a-moderation-console.test.ts`) are untouched.
 export { moderatorRefFor } from '@/lib/auth/platform-admin';
+export type { ModerationActor } from '@/lib/auth/platform-admin';
 
 export interface QueuedNotice {
     id: string;
@@ -355,7 +356,7 @@ export async function actOnNotice(input: {
     reportId: string;
     actionKind: ModerationActionKind;
     rationale: string;
-    generation: PlatformKeyGeneration;
+    actor: ModerationActor;
     /**
      * REQUIRED by `ActOnNoticeSchema` when the outcome withholds access.
      * Supplied, never derived: a notice names CONTENT, and a reported listing
@@ -394,7 +395,7 @@ export async function actOnNotice(input: {
             data: {
                 id: actionId,
                 reportId: report.id,
-                moderatorRef: moderatorRefFor(input.generation),
+                moderatorRef: moderatorRefFor(input.actor),
                 actionKind: input.actionKind,
                 // Denormalised from the notice, never from the request. A
                 // caller-supplied subject would let an action be recorded
@@ -457,7 +458,7 @@ export async function actOnNotice(input: {
             }
             const outcome = await suspendAccountOnTx(tx, {
                 userId: input.suspendUserId,
-                generation: input.generation,
+                actor: input.actor,
                 reason: input.rationale,
             });
             suspended = outcome.applied;
@@ -544,12 +545,12 @@ export async function actOnNotice(input: {
         await appendPlatformAuditEntry({
             scope: 'moderation',
             action: 'MODERATION_ACTION_RECORDED',
-            actorUserId: null,
+            actorUserId: actorUserIdFor(input.actor),
             detailsJson: {
                 actionId,
                 reportId: report.id,
                 actionKind: input.actionKind,
-                moderatorRef: moderatorRefFor(input.generation),
+                moderatorRef: moderatorRefFor(input.actor),
                 subjectKind: report.subjectKind,
                 subjectId: report.subjectId,
                 // The RATIONALE is not here. It is moderator free text and
@@ -572,8 +573,11 @@ export async function actOnNotice(input: {
         reportId: report.id,
         actionId,
         actionKind: input.actionKind,
-        // The generation, not a person — there is no person to log.
-        generation: input.generation,
+        // WHICH KIND of actor, never the person's id: a userId in a log line
+        // is a person named in telemetry, and `audit-redaction` treats an
+        // attribution field as redactable for that reason. The audit CHAIN
+        // carries the identity; the log carries only the door.
+        actorKind: input.actor.kind,
     });
 
     // #1667 ruling 1 — the statement is queued automatically, not when
@@ -928,7 +932,7 @@ export async function moderationHandlingStats(
 export async function restoreRemovedContent(input: {
     actionId: string;
     rationale: string;
-    generation: PlatformKeyGeneration;
+    actor: ModerationActor;
 }): Promise<{ restoreActionId: string | null; restored: boolean }> {
     const action = await prisma.moderationAction.findUnique({
         where: { id: input.actionId },
@@ -993,7 +997,7 @@ export async function restoreRemovedContent(input: {
                 // so "what happened to this notice" is one query rather than a
                 // join nobody will think to write.
                 reportId: action.reportId,
-                moderatorRef: moderatorRefFor(input.generation),
+                moderatorRef: moderatorRefFor(input.actor),
                 actionKind: 'CONTENT_RESTORED',
                 subjectKind: action.subjectKind,
                 subjectId: action.subjectId,
@@ -1014,12 +1018,12 @@ export async function restoreRemovedContent(input: {
         await appendPlatformAuditEntry({
             scope: 'moderation',
             action: 'MODERATION_CONTENT_RESTORED',
-            actorUserId: null,
+            actorUserId: actorUserIdFor(input.actor),
             detailsJson: {
                 restoreActionId,
                 reversedActionId: action.id,
                 subjectKind: action.subjectKind,
-                moderatorRef: moderatorRefFor(input.generation),
+                moderatorRef: moderatorRefFor(input.actor),
                 // Never the rationale: `detailsJson` is not an encrypted
                 // column, and the reason lives on `ModerationAction.rationale`,
                 // which is. #1619 draws this line.

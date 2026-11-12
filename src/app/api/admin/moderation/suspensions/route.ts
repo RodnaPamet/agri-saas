@@ -99,7 +99,10 @@ export const POST = withApiErrorHandling(
 
         const result = await suspendAccount({
             userId: parsed.data.userId,
-            generation: gate.generation,
+            // The KEY door, so attribution is the key generation and
+            // `actorUserId` stays null. The console's session door passes
+            // `{ kind: 'user' }` instead (#2735).
+            actor: { kind: 'platform-key', generation: gate.generation },
             reason: parsed.data.reason,
         });
 
@@ -139,7 +142,10 @@ export const DELETE = withApiErrorHandling(
 
         const result = await liftSuspension({
             userId: parsed.data.userId,
-            generation: gate.generation,
+            // The KEY door, so attribution is the key generation and
+            // `actorUserId` stays null. The console's session door passes
+            // `{ kind: 'user' }` instead (#2735).
+            actor: { kind: 'platform-key', generation: gate.generation },
         });
 
         if (!result.applied) {

@@ -41,6 +41,7 @@ import {
     ScrollText,
     MessagesSquare,
     BadgeCheck,
+    Flag,
     type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -374,6 +375,25 @@ export function useNavSections(): NavSectionDef[] {
                     href: tenantHref('/admin/farm-claims'),
                     label: t('platformFarmClaims'),
                     icon: BadgeCheck,
+                    visible: tenant.isPlatformTenant === true,
+                },
+                // «Сигнали» — the Art 16 triage queue and the Art 17 decision
+                // (#2735). THIS LINE IS THE DELIVERABLE, for the same reason as
+                // the one above: P5.4a shipped the queue and the decision behind
+                // `verifyPlatformApiKey`, so the only attribution available was
+                // a shared KEY GENERATION — "a regulator asking 'who decided
+                // this' gets 'somebody holding the key'". The fix is a caller
+                // who IS a person, which means a session, which means a page
+                // somebody can reach.
+                //
+                // `=== true` like its siblings: a console that judges other
+                // people's content must degrade CLOSED, and the page
+                // `notFound()`s while the route runs `assertPlatformSupport`
+                // independently of this.
+                {
+                    href: tenantHref('/admin/moderation'),
+                    label: t('platformModeration'),
+                    icon: Flag,
                     visible: tenant.isPlatformTenant === true,
                 },
             ]),

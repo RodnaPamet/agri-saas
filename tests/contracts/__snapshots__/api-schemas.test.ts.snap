@@ -17374,6 +17374,89 @@ exports[`API contract — per-schema snapshots schema: QueueStatement 1`] = `
 }"
 `;
 
+exports[`API contract — per-schema snapshots schema: QueuedModerationNotice 1`] = `
+"{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subjectKind": {
+      "type": "string",
+      "description": "LISTING, MESSAGE, PROFILE or THREAD from the anonymous Art 16 route; DIRECT_MESSAGE and CHANNEL_POST additionally from the signed-in one. ACCOUNT is NOT reportable — it is the subject of an ACTION only."
+    },
+    "subjectId": {
+      "type": "string"
+    },
+    "reasonCode": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "RECEIVED",
+        "TRIAGED",
+        "ACTIONED",
+        "REJECTED"
+      ]
+    },
+    "anonymous": {
+      "type": "boolean",
+      "description": "Whether the notifier gave an id — never WHICH. A moderator decides on the CONTENT, and knowing who reported it invites deciding on the reporter. It is returned because it changes whether there is anybody to answer to under Art 17."
+    },
+    "detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "snapshot": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "captureError": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "capturedAt",
+        "captureError"
+      ],
+      "description": "The evidence capture. NULL and a non-null \`captureError\` mean different things — nothing was attempted, versus an attempt that failed — and a console that rendered both as \\"no evidence\\" would hide a broken capture."
+    },
+    "subjectNoticeCount": {
+      "type": "integer",
+      "description": "How many notices name this subject, this one included. DISPLAY ONLY: nothing may order the queue by it. \`notice-score-is-shadow-only\` covers this field for the reason it covers the AI score — \\"order the triage queue by report count\\" looks like an improvement and is a number a brigade can drive."
+    }
+  },
+  "required": [
+    "id",
+    "createdAt",
+    "subjectKind",
+    "subjectId",
+    "reasonCode",
+    "status",
+    "anonymous",
+    "detail",
+    "snapshot",
+    "subjectNoticeCount"
+  ]
+}"
+`;
+
 exports[`API contract — per-schema snapshots schema: QueuedNotice 1`] = `
 "{
   "type": "object",

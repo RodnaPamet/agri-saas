@@ -43,6 +43,7 @@
         "platformPromotions": "Manage promotions",
         "platformCompanies": "Manage suppliers",
         "platformFarmClaims": "Farm verification",
+        "platformModeration": "Notices",
         "platformFeatures": "Features",
         "platformPrices": "Manage prices"
     },
@@ -7018,6 +7019,8 @@
         "INVALID_FARM_TASK_TYPE": "Unknown farm task type: {type}.",
         "INVALID_FILE": "That file was not found.",
         "INVALID_BODY": "The request is incomplete or malformed.",
+        "INVALID_STATUS_FILTER": "Unrecognised status. Allowed: RECEIVED, TRIAGED, ACTIONED, REJECTED.",
+        "MODERATION_NOTICE_NOT_FOUND": "That notice no longer exists.",
         "INVALID_SOURCE": "That source is not one this inbox has.",
         "INVALID_CURSOR": "That page could not be loaded. Please try again.",
         "INVALID_JSON": "The request could not be read.",
@@ -7210,5 +7213,67 @@
         "newMessages": "New messages",
         "today": "Today",
         "yesterday": "Yesterday"
+    },
+    "moderationQueue": {
+        "title": "Notices",
+        "subtitle": "Content notices that have been filed, and the decision on each.",
+        "breadcrumbAdmin": "Admin",
+        "status": {
+            "RECEIVED": "New",
+            "TRIAGED": "In review",
+            "ACTIONED": "Decided",
+            "REJECTED": "Rejected"
+        },
+        "empty": {
+            "RECEIVED": "No new notices.",
+            "TRIAGED": "No notices in review.",
+            "ACTIONED": "No decided notices.",
+            "REJECTED": "No rejected notices."
+        },
+        "subjectKind": {
+            "LISTING": "Listing",
+            "MESSAGE": "Exchange message",
+            "PROFILE": "Profile",
+            "THREAD": "Conversation",
+            "DIRECT_MESSAGE": "Direct message",
+            "CHANNEL_POST": "Channel post",
+            "ACCOUNT": "Account"
+        },
+        "subjectLine": "{kind} · {id}",
+        "anonymousYes": "Anonymous notice",
+        "anonymousNo": "Notifier has an account",
+        "noticeCount": "notices about this subject: {count}",
+        "evidenceNone": "no evidence captured",
+        "evidenceFailed": "evidence capture failed",
+        "evidenceCaptured": "evidence captured",
+        "loadFailed": "The notices could not be loaded.",
+        "statusFilterAria": "Notice status",
+        "decide": "Decide",
+        "record": "Record the decision",
+        "cancel": "Cancel",
+        "outcomeLabel": "What you are deciding",
+        "kind": {
+            "NONE": "No action",
+            "CONTENT_REMOVED": "Remove the content",
+            "ACCOUNT_SUSPENDED": "Suspend the account",
+            "ACCOUNT_TERMINATED": "Close the account"
+        },
+        "kindHint": {
+            "NONE": "You looked and are taking no action. That is a decision and is recorded as one.",
+            "CONTENT_REMOVED": "The content stops being visible. The text is kept so this is reversible.",
+            "ACCOUNT_SUSPENDED": "The person can no longer sign in. Requires an account to be named.",
+            "ACCOUNT_TERMINATED": "Suspends and erases the data after 30 days. Requires an account to be named."
+        },
+        "rationaleLabel": "Reason",
+        "rationaleHint": "This is the text the statement of reasons sent to the affected person is built from. Required.",
+        "accountLabel": "Account the measure applies to",
+        "accountHint": "A notice names CONTENT. Which account to restrict is your judgement — one listing may belong to a farm with several members.",
+        "outcome": {
+            "ACTED": "The decision is recorded and the statement of reasons is queued.",
+            "NOT_PERFORMABLE": "That measure is not possible for this kind of subject. Choose another.",
+            "SUSPEND_TARGET_REQUIRED": "Name the account the measure applies to.",
+            "NOT_FOUND": "That notice no longer exists.",
+            "FAILED": "The decision was not recorded. Try again."
+        }
     }
 }

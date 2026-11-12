@@ -136,6 +136,20 @@ const MIGRATED_PAGES = [
     // tenant, `notFound()`s otherwise, and renders its island.
     'admin/farm-claims/page.tsx',
     'admin/farm-claims/FarmClaimsReviewClient.tsx',
+    // #2735 «Сигнали» — the moderation console. PROMOTED ON ARRIVAL, following
+    // the farm-claims pair immediately above and this file's own rule:
+    // "promotion to MIGRATED_PAGES is the path forward, never silent
+    // floor-bumping". Clean on all three checks — no raw colour utilities
+    // (semantic `content-*`/`border-*` only), no legacy `.btn`, no `.badge` —
+    // and built from platform primitives: ListPageShell, PageBreadcrumbs,
+    // Heading, ToggleGroup, FormField, RadioGroup, Textarea, Input, Button,
+    // EmptyState, ErrorState, InlineNotice, Skeleton, StatusBadge.
+    //
+    // `page.tsx` is a server gate with no markup: it resolves the tenant,
+    // `notFound()`s unless this is the platform tenant with `canAdmin`, and
+    // renders its island.
+    'admin/moderation/page.tsx',
+    'admin/moderation/ModerationQueueClient.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;

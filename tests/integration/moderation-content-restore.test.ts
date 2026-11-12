@@ -78,7 +78,7 @@ async function removeOne(): Promise<{ listingId: string; actionId: string; repor
     const reportId = await fileNotice(listingId);
     const { actionId } = await actOnNotice({
         reportId, actionKind: 'CONTENT_REMOVED',
-        rationale: 'misleading grade', generation: 'current',
+        rationale: 'misleading grade', actor: { kind: 'platform-key', generation: 'current' },
     });
     actions.push(actionId);
     return { listingId, actionId, reportId };
@@ -158,7 +158,7 @@ describeFn('a content removal can be reversed (#2867)', () => {
 
             const out = await restoreRemovedContent({
                 actionId, rationale: 'appeal upheld — the grade was right',
-                generation: 'current',
+                actor: { kind: 'platform-key', generation: 'current' },
             });
             expect(out.restored).toBe(true);
             expect(out.restoreActionId).not.toBeNull();
@@ -179,7 +179,7 @@ describeFn('a content removal can be reversed (#2867)', () => {
         it('leaves the notice ACTIONED — it WAS acted on', async () => {
             const { actionId, reportId } = await removeOne();
             const out = await restoreRemovedContent({
-                actionId, rationale: 'appeal upheld', generation: 'current',
+                actionId, rationale: 'appeal upheld', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(out.restoreActionId!);
             // Moving it back to RECEIVED would put a decided notice into the
@@ -192,12 +192,12 @@ describeFn('a content removal can be reversed (#2867)', () => {
         it('is IDEMPOTENT and writes NOTHING the second time', async () => {
             const { listingId, actionId, reportId } = await removeOne();
             const first = await restoreRemovedContent({
-                actionId, rationale: 'appeal upheld', generation: 'current',
+                actionId, rationale: 'appeal upheld', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(first.restoreActionId!);
 
             const second = await restoreRemovedContent({
-                actionId, rationale: 'appeal upheld again', generation: 'current',
+                actionId, rationale: 'appeal upheld again', actor: { kind: 'platform-key', generation: 'current' },
             });
             // SUCCEEDS — a moderator closing a second appeal has done nothing
             // wrong — and says nothing changed.
@@ -220,12 +220,12 @@ describeFn('a content removal can be reversed (#2867)', () => {
             const reportId = await fileNotice(listingId);
             const { actionId } = await actOnNotice({
                 reportId, actionKind: 'NONE',
-                rationale: 'looked, did nothing', generation: 'current',
+                rationale: 'looked, did nothing', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(actionId);
 
             await expect(restoreRemovedContent({
-                actionId, rationale: 'r', generation: 'current',
+                actionId, rationale: 'r', actor: { kind: 'platform-key', generation: 'current' },
             })).rejects.toMatchObject({ code: 'MODERATION_ACTION_NOT_REVERSIBLE' });
 
             // `NONE` removed nothing, so a restore would be a reversal of
@@ -235,7 +235,7 @@ describeFn('a content removal can be reversed (#2867)', () => {
 
         it('refuses an action id nothing has', async () => {
             await expect(restoreRemovedContent({
-                actionId: `ma-nope-${randomUUID()}`, rationale: 'r', generation: 'current',
+                actionId: `ma-nope-${randomUUID()}`, rationale: 'r', actor: { kind: 'platform-key', generation: 'current' },
             })).rejects.toMatchObject({ code: 'MODERATION_ACTION_NOT_FOUND' });
         }, 60_000);
 
@@ -245,7 +245,7 @@ describeFn('a content removal can be reversed (#2867)', () => {
                 `DELETE FROM "ExchangeListing" WHERE "id" = $1`, listingId);
 
             await expect(restoreRemovedContent({
-                actionId, rationale: 'appeal upheld', generation: 'current',
+                actionId, rationale: 'appeal upheld', actor: { kind: 'platform-key', generation: 'current' },
             })).rejects.toMatchObject({ code: 'MODERATION_SUBJECT_GONE' });
 
             // Nothing written. A restore recorded against content that no
@@ -263,7 +263,7 @@ describeFn('a content removal can be reversed (#2867)', () => {
             // succeed is worse than the gap #2867 was filed for.
             const { listingId, actionId } = await removeOne();
             const out = await restoreRemovedContent({
-                actionId, rationale: 'appeal upheld', generation: 'current',
+                actionId, rationale: 'appeal upheld', actor: { kind: 'platform-key', generation: 'current' },
             });
             actions.push(out.restoreActionId!);
             expect(out.restored).toBe(true);
