@@ -62,7 +62,12 @@ import {
 } from '@/lib/schemas';
 
 const CASES = [
-    { label: 'CreateAssetSchema.purchaseDate', schema: CreateAssetSchema, field: 'purchaseDate', valid: { name: 'Tractor', type: 'MACHINE' } },
+    // `type` was `'MACHINE'` here until #2950, and that is not and never was
+    // an `AssetType` member — it passed only because the schema was
+    // `z.string().min(1)`. A payload built this way would have reached Prisma
+    // and failed as a 500, so the fixture could never have worked against the
+    // real column. Changed to a real member rather than widening the enum.
+    { label: 'CreateAssetSchema.purchaseDate', schema: CreateAssetSchema, field: 'purchaseDate', valid: { name: 'Tractor', type: 'TRACTOR' } },
     { label: 'UpdateAssetSchema.purchaseDate', schema: UpdateAssetSchema, field: 'purchaseDate', valid: {} },
     { label: 'CreateEvidenceSchema.nextReviewDate', schema: CreateEvidenceSchema, field: 'nextReviewDate', valid: { title: 'A document' } },
     { label: 'UpdateEvidenceSchema.nextReviewDate', schema: UpdateEvidenceSchema, field: 'nextReviewDate', valid: {} },
@@ -129,7 +134,7 @@ describe('asset + evidence dates reject unparseable input (#1558)', () => {
             // or anything short.
             for (const bad of [' ', '  ', 'x', 'abcd']) {
                 expect(
-                    CreateAssetSchema.safeParse({ name: 'T', type: 'MACHINE', purchaseDate: bad })
+                    CreateAssetSchema.safeParse({ name: 'T', type: 'TRACTOR', purchaseDate: bad })
                         .success,
                 ).toBe(false);
             }
@@ -150,7 +155,7 @@ describe('asset + evidence dates reject unparseable input (#1558)', () => {
         for (const bad of ['abcd', 'not-a-date', '2026-13-45']) {
             expect(before.safeParse({ purchaseDate: bad }).success).toBe(true);
             expect(
-                CreateAssetSchema.safeParse({ name: 'Tractor', type: 'MACHINE', purchaseDate: bad })
+                CreateAssetSchema.safeParse({ name: 'Tractor', type: 'TRACTOR', purchaseDate: bad })
                     .success,
             ).toBe(false);
         }
