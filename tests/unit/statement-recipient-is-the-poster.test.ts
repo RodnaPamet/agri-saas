@@ -8,17 +8,24 @@
  * colleague's moderated content, which is close to what P5.2b decided a social
  * block must never reveal and is the way #1656 was decided.
  *
- * ## Two of four kinds resolve, and that split is inherited not invented
+ * ## THREE kinds resolve, and the split is inherited not invented
  *
- * `captureReportSnapshot` already treats the same two as unsupported, for
- * reasons that apply here unchanged:
+ * This said "two of four" until #2955. `CHANNEL_POST` was added by P9.3c
+ * (#2937) and the sentence was not, which is the reason the arm sat untested
+ * here: the prisma mock below carried no `channelPost`, so a call for that kind
+ * threw on `undefined.findUnique`, the function's own catch swallowed it, and
+ * the result was `null` — indistinguishable from a kind that has no arm. A
+ * green suite about an arm it never reached.
  *
- *   LISTING   `ExchangeListing.sellerUserId`
- *   MESSAGE   `ExchangeMessage.senderUserId`
- *   PROFILE   the surface arrives with P6; it does not exist
- *   THREAD    a thread is not POSTED — two parties, and the seller side
- *             deliberately has no column ("it is `listing.sellerUserId`"), so
- *             "the member who posted it" has no referent
+ *   LISTING        `ExchangeListing.sellerUserId`
+ *   MESSAGE        `ExchangeMessage.senderUserId`
+ *   CHANNEL_POST   `ChannelPost.authorUserId` (P9.3c)
+ *   PROFILE        the removable surface is P6's `FarmBrand`; not this
+ *   THREAD         a thread is not POSTED — two parties, and the seller side
+ *                  deliberately has no column ("it is `listing.sellerUserId`"),
+ *                  so "the member who posted it" has no referent
+ *   DIRECT_MESSAGE reportable and NOT removable (owner ruling 2026-11-08), so
+ *                  there is no removal to explain
  *
  * The failure this guards against is the one that makes a statement worse than
  * no statement: addressing a legal communication about somebody's content to a
@@ -26,15 +33,28 @@
  */
 const listingFindUnique = jest.fn();
 const messageFindUnique = jest.fn();
+const channelPostFindUnique = jest.fn();
+const models = () => ({
+    exchangeListing: { findUnique: (...a: unknown[]) => listingFindUnique(...a) },
+    exchangeMessage: { findUnique: (...a: unknown[]) => messageFindUnique(...a) },
+    // ADDED BY #2955. Its absence is why the `CHANNEL_POST` arm was green and
+    // unreached — see the docblock.
+    channelPost: { findUnique: (...a: unknown[]) => channelPostFindUnique(...a) },
+});
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: {
-        exchangeListing: { findUnique: (...a: unknown[]) => listingFindUnique(...a) },
-        exchangeMessage: { findUnique: (...a: unknown[]) => messageFindUnique(...a) },
-    },
-    prisma: {
-        exchangeListing: { findUnique: (...a: unknown[]) => listingFindUnique(...a) },
-        exchangeMessage: { findUnique: (...a: unknown[]) => messageFindUnique(...a) },
+    default: models(),
+    prisma: models(),
+}));
+
+const warn = jest.fn();
+const info = jest.fn();
+jest.mock('@/lib/observability/logger', () => ({
+    logger: {
+        warn: (...a: unknown[]) => warn(...a),
+        info: (...a: unknown[]) => info(...a),
+        error: jest.fn(),
+        debug: jest.fn(),
     },
 }));
 
@@ -44,6 +64,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     listingFindUnique.mockResolvedValue({ sellerUserId: 'u-seller' });
     messageFindUnique.mockResolvedValue({ senderUserId: 'u-sender' });
+    channelPostFindUnique.mockResolvedValue({ authorUserId: 'u-author' });
 });
 
 describe('the content statement goes to the poster (#1690)', () => {
@@ -74,11 +95,67 @@ describe('the content statement goes to the poster (#1690)', () => {
         expect(messageFindUnique).not.toHaveBeenCalled();
     });
 
-    it('a subjectId matching nothing resolves to nobody', async () => {
-        // A bogus or deleted id. No statement is the correct outcome — the
-        // alternative is addressing one to whoever a fallback picked.
+    it('CHANNEL_POST resolves to the author', async () => {
+        await expect(resolveContentRecipient('CHANNEL_POST', 'cp-1')).resolves.toBe('u-author');
+        expect(channelPostFindUnique).toHaveBeenCalledWith({
+            where: { id: 'cp-1' },
+            select: { authorUserId: true },
+        });
+    });
+
+    it('a subjectId matching nothing resolves to nobody — and says so at WARN (#2955)', async () => {
+        // A bogus or deleted id. No statement is still the correct OUTCOME —
+        // the alternative is addressing one to whoever a fallback picked.
+        //
+        // What #2955 changes is that it is no longer SILENT. This is a kind we
+        // support, so a null here means a removal that will never be explained,
+        // and it used to be reached without a single log line — the same value
+        // the designed `PROFILE`/`THREAD` path returns, so the two were
+        // indistinguishable in any log search.
         listingFindUnique.mockResolvedValue(null);
         await expect(resolveContentRecipient('LISTING', 'lst-gone')).resolves.toBeNull();
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        const [event, fields] = warn.mock.calls[0] as [string, Record<string, unknown>];
+        expect(event).toBe('moderation.statement_recipient_row_missing');
+        expect(fields.subjectKind).toBe('LISTING');
+        // The id, because somebody has to be able to find which decision went
+        // unexplained. A listing id, never a person and never body text.
+        expect(fields.subjectId).toBe('lst-gone');
+    });
+
+    it('warns for EVERY supported kind whose row is gone, not just LISTING', async () => {
+        // Three arms, three chances to forget. The first draft of #2955 wired
+        // one and the suite would have passed.
+        for (const [kind, id, mock] of [
+            ['MESSAGE', 'msg-gone', messageFindUnique],
+            ['CHANNEL_POST', 'cp-gone', channelPostFindUnique],
+        ] as const) {
+            warn.mockClear();
+            (mock as jest.Mock).mockResolvedValue(null);
+            await expect(resolveContentRecipient(kind, id)).resolves.toBeNull();
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect((warn.mock.calls[0] as [string, Record<string, unknown>])[1].subjectKind)
+                .toBe(kind);
+        }
+    });
+
+    it('a DESIGNED recipientless kind does NOT warn — the control that makes the warn mean something', async () => {
+        // `PROFILE` and `THREAD` return null by design and stay at `info`. If
+        // they warned too, the warn would fire on the normal state and be worth
+        // nothing — the same reasoning that keeps an unledgered E2E flake loud
+        // and a ledgered one quiet.
+        await expect(resolveContentRecipient('PROFILE', 'p-1')).resolves.toBeNull();
+        await expect(resolveContentRecipient('THREAD', 't-1')).resolves.toBeNull();
+        expect(warn).not.toHaveBeenCalled();
+        expect(info).toHaveBeenCalled();
+    });
+
+    it('a RESOLVED kind does not warn either', async () => {
+        // The other direction: a warn on every call would satisfy the cases
+        // above and make the signal useless.
+        await expect(resolveContentRecipient('LISTING', 'lst-1')).resolves.toBe('u-seller');
+        expect(warn).not.toHaveBeenCalled();
     });
 
     it('a lookup failure resolves to nobody rather than throwing', async () => {
