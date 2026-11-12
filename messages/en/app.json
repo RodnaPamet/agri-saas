@@ -42,6 +42,7 @@
         "sectionPlatform": "Platform",
         "platformPromotions": "Manage promotions",
         "platformCompanies": "Manage suppliers",
+        "platformFarmClaims": "Farm verification",
         "platformFeatures": "Features",
         "platformPrices": "Manage prices"
     },
@@ -6744,6 +6745,43 @@
             "oblast": "Regions",
             "input": "Fuels and fertilisers",
             "other": "Other"
+        }
+    },
+    "farmClaims": {
+        "title": "Farm verification",
+        "breadcrumbAdmin": "Administration",
+        "breadcrumbCurrent": "Farm verification",
+        "howToVerify": "Look the farm up in the commercial register yourself and type the ЕИК you find there. It is not shown here: the claim is stored as a one-way hash, so typing the number is what checks it.",
+        "loadError": "The queue could not be loaded.",
+        "tenantGone": "(farm deleted)",
+        "claimedOn": "claimed {date}",
+        "slug": "Address",
+        "eikLabel": "ЕИК from the register",
+        "dispute": "Dispute",
+        "confirmDispute": "Record dispute",
+        "reasonLabel": "Why this claim is wrong",
+        "reasonNotShown": "Kept for the audit trail and the next reviewer. The farm is not shown this.",
+        "filterAria": "Filter by status",
+        "verify": "Verify",
+        "status": {
+            "PENDING": "Awaiting review",
+            "VERIFIED": "Verified",
+            "DISPUTED": "Disputed"
+        },
+        "empty": {
+            "PENDING": "No farm is waiting for review.",
+            "VERIFIED": "No farm has been verified yet.",
+            "DISPUTED": "No claim is disputed."
+        },
+        "outcome": {
+            "VERIFIED": "Verified. This farm now counts as a verified farm.",
+            "ALREADY_VERIFIED": "This claim was already verified. Nothing changed.",
+            "EIK_MISMATCH": "That ЕИК does not match what this farm claimed. Check the number and try again; nothing has been changed.",
+            "EIK_INVALID": "That is not a valid ЕИК — the checksum does not match. It was refused before any lookup.",
+            "NOT_FOUND": "This claim no longer exists.",
+            "DISPUTED_COLLISION": "Another farm already holds a verified claim on this ЕИК. This claim is now disputed and needs a decision between the two farms — trying again will not resolve it.",
+            "DISPUTED": "Recorded as disputed. The farm is not verified and nothing was filed from this claim.",
+            "ALREADY_DISPUTED": "This claim is disputed. The dispute has to be resolved before it can be verified."
         }
     },
     "errors": {

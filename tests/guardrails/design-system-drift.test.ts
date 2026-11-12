@@ -122,6 +122,20 @@ const MIGRATED_PAGES = [
     'channels/ChannelsDirectoryClient.tsx',
     'channels/[channelId]/page.tsx',
     'channels/[channelId]/ChannelFeedClient.tsx',
+    //
+    // #2963 farm-claim review console — PROMOTED ON ARRIVAL, same as the
+    // channels pair above and for this file's own stated reason: "promotion to
+    // MIGRATED_PAGES is the path forward, never silent floor-bumping". Both are
+    // clean on the three checks — no raw colour utilities (semantic
+    // `content-*`/`border-*` only), no legacy `.btn`, no legacy `.badge` — and
+    // built from platform primitives: ListPageShell, PageBreadcrumbs, Heading,
+    // ToggleGroup, FormField, Input, Button, InlineNotice, StatusBadge,
+    // EmptyState, ErrorState, Skeleton.
+    //
+    // `page.tsx` is a server gate with no markup: it resolves the platform
+    // tenant, `notFound()`s otherwise, and renders its island.
+    'admin/farm-claims/page.tsx',
+    'admin/farm-claims/FarmClaimsReviewClient.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;

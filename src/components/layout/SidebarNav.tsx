@@ -40,6 +40,7 @@ import {
     Newspaper,
     ScrollText,
     MessagesSquare,
+    BadgeCheck,
     type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -355,6 +356,24 @@ export function useNavSections(): NavSectionDef[] {
                     href: tenantHref('/admin/feature-flags'),
                     label: t('platformFeatures'),
                     icon: ToggleRight,
+                    visible: tenant.isPlatformTenant === true,
+                },
+                // «Потвърждаване на стопанства» (#2963) — the farm-identity
+                // review queue. THIS LINE IS THE DELIVERABLE: P3.9 shipped the
+                // usecase and both keyed routes, all Edge-reachable, and one
+                // claim then sat PENDING for 28 days because reviewing it
+                // meant holding `PLATFORM_ADMIN_API_KEY` and composing a
+                // request by hand. `pages-are-reachable` counts a string
+                // literal in another directory as the way in, and this is it.
+                //
+                // Same `=== true` as its siblings and for the same reason: a
+                // console that decides what «verified farm» means product-wide
+                // must degrade CLOSED, and the page `notFound()`s plus the
+                // route runs `assertPlatformSupport` independently.
+                {
+                    href: tenantHref('/admin/farm-claims'),
+                    label: t('platformFarmClaims'),
+                    icon: BadgeCheck,
                     visible: tenant.isPlatformTenant === true,
                 },
             ]),
