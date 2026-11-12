@@ -17,6 +17,11 @@ import { randomUUID } from 'node:crypto';
 
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import {
+    actorUserIdFor,
+    moderatorRefFor,
+    type ModerationActor,
+} from '@/lib/auth/platform-admin';
 import { appendPlatformAuditEntry } from '@/lib/audit/platform-audit-writer';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { resolveRecipientLocale } from '@/lib/email/recipient-locale';
@@ -44,6 +49,22 @@ export async function queueStatement(input: {
     actionId: string;
     recipientUserId: string;
     locale: string;
+    /**
+     * WHO queued it — #2735's second verb.
+     *
+     * #1619 made "decided" and "explained" two chain verbs deliberately,
+     * because Art 17 makes them two obligations. PR 1 of #2735 gave
+     * `MODERATION_ACTION_RECORDED` a person and left this one at
+     * `actorUserId: null` — so the chain named who DECIDED and not who
+     * EXPLAINED, which is the asymmetry that issue exists to remove rather
+     * than relocate.
+     *
+     * For a statement queued automatically by `actOnNotice`, the actor is the
+     * DECISION's actor: composing and queueing it is part of that person's
+     * act, so attributing it to them is accurate rather than a convenience.
+     * For one queued by hand through the console it is the caller.
+     */
+    actor: ModerationActor;
     bodyRendered: string;
 }): Promise<{ statementId: string }> {
     const statementId = `sor-${randomUUID()}`;
@@ -73,9 +94,13 @@ export async function queueStatement(input: {
         await appendPlatformAuditEntry({
             scope: 'moderation',
             action: 'MODERATION_STATEMENT_QUEUED',
-            actorUserId: null,
+            actorUserId: actorUserIdFor(input.actor),
             detailsJson: {
                 statementId,
+                // The same prefixed shape the action row uses, so a reader with
+                // only the chain can tell a console decision from a script's
+                // without joining anything.
+                moderatorRef: moderatorRefFor(input.actor),
                 actionId: input.actionId,
                 recipientUserId: input.recipientUserId,
                 locale: input.locale,
@@ -147,6 +172,8 @@ export async function queueStatementForAction(input: {
     readonly recipientUserId: string;
     readonly actionKind: string;
     readonly rationale: string;
+    /** The DECIDER — see `queueStatement`'s own note on why that is right. */
+    readonly actor: ModerationActor;
 }): Promise<{ statementId: string } | null> {
     try {
         const recipient = await prisma.user.findUnique({
@@ -162,6 +189,7 @@ export async function queueStatementForAction(input: {
         return await queueStatement({
             actionId: input.actionId,
             recipientUserId: input.recipientUserId,
+            actor: input.actor,
             locale,
             bodyRendered: body,
         });
