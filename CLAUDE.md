@@ -914,7 +914,16 @@ others as backstops.
   for the pre-commit hook and the CI guardrail. Carve out with
   `// pragma: allowlist secret`, or put fixtures under `tests/fixtures/secrets/`.
 - **C.3 — Sessions are rows.** `UserSession` is minted per sign-in and verified
-  on every JWT pass; per-tenant policy caps concurrency and max age.
+  on every JWT pass; per-tenant policy caps concurrency and max age. **For a
+  NATIVE client that cap is an IDLE window, not an absolute age** (#3004): a
+  successful `/api/auth/token/refresh` slides `expiresAt` to
+  `now + sessionMaxAgeMinutes`, so a phone in regular use never signs out and
+  one left in a drawer does. The slide uses the TENANT's number, so lowering
+  the policy still tightens; the web is untouched because `recordNewSession`
+  takes `min(input.expiresAt, now + policy)` and the web's 14 days is the
+  smaller one. `SESSION_MAX_AGE_DAYS` (14, web) and
+  `SESSION_IDLE_MAX_AGE_MINUTES` (43200, the column default) are therefore
+  different numbers ON PURPOSE — making them agree doubles every web session.
 - **C.4 — Audit events stream out HMAC-signed**, fail-safe: the audit row is
   already committed, so a broken SIEM never undoes the write. Free-text
   `details` is dropped; actor is an opaque id, never an email.

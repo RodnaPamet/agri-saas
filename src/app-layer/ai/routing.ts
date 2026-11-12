@@ -655,10 +655,53 @@ export async function completeWithRouting<T = unknown>(
                 }
 
                 for (let attempt = 0; attempt <= route.retries; attempt++) {
+                    /*
+                     * Incremental text, rehydrated — #2670 item 4.
+                     *
+                     * Installed PER ATTEMPT, which is the whole reason it is
+                     * declared inside this loop: a retry starts the model's
+                     * text again, so an accumulator shared across attempts
+                     * would concatenate two answers.
+                     *
+                     * The restart is DECLARED, by reporting an empty
+                     * cumulative before the attempt runs — never inferred
+                     * from the next value being shorter. That inference is
+                     * what this comment claimed for a day and it is wrong in
+                     * the one direction that corrupts an answer: a fresh
+                     * attempt whose FIRST delta is longer than everything the
+                     * previous attempt released reads as GROWTH, so the
+                     * caller appends a mid-sentence slice of the new answer
+                     * to the old one and never learns to discard. Deltas here
+                     * are chunks, not characters, so clearing that bar takes
+                     * one ordinary chunk after a short preamble.
+                     *
+                     * It costs nothing when there is nothing to discard: an
+                     * empty cumulative releases no text, so the caller emits
+                     * no event and only carries the flag.
+                     *
+                     * Rehydrated here and nowhere else, because `map` is built
+                     * per target in this function and is not visible to the
+                     * caller — and because a placeholder can straddle a delta
+                     * boundary, so only the ACCUMULATION is safe to rehydrate.
+                     */
+                    let streamedRaw = '';
+                    opts.onTextProgress?.('');
+                    const attemptOpts: AiCompleteOptions<T> = opts.onTextProgress
+                        ? {
+                              ...callOpts,
+                              stream: true,
+                              onTextDelta: (delta) => {
+                                  streamedRaw += delta;
+                                  opts.onTextProgress?.(
+                                      external ? rehydrate(streamedRaw, map) : streamedRaw,
+                                  );
+                              },
+                          }
+                        : callOpts;
                     try {
                         const raw = await completeOnce<T>(
                             provider,
-                            callOpts,
+                            attemptOpts,
                             target.model,
                             route.maxTokens,
                             route.timeoutMs,

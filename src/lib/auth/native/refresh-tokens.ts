@@ -20,6 +20,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
 import { runWithAuditContext } from '@/lib/audit-context';
+import { SESSION_IDLE_MAX_AGE_MINUTES } from '@/lib/auth/session-lifetime';
 
 /**
  * Token issue and refresh run OUTSIDE `runInTenantContext` by construction — a
@@ -129,6 +130,88 @@ function capToSession(want: Date, sessionExpiresAt: Date): Date {
     return want.getTime() > sessionExpiresAt.getTime() ? sessionExpiresAt : want;
 }
 
+/**
+ * Slide the session's own expiry to `now + the tenant's sessionMaxAgeMinutes`
+ * — #3004. Returns the new expiry, or null when nothing was written.
+ *
+ * The owner's decision is that a phone in regular use never signs out. The
+ * number is NOT hardcoded here, because the tenant's column is a configured
+ * security control: a tenant that lowered it to seven days for its own
+ * reasons must get seven, and a constant beside a field called
+ * `sessionMaxAgeMinutes` that no longer bounds session age is worse than no
+ * field at all. So the tenant's number stops being an absolute age and
+ * becomes an idle window.
+ *
+ * It assigns rather than taking a maximum, so a tenant TIGHTENING the policy
+ * shortens live sessions on their next refresh instead of having to wait for
+ * the old expiry — which is the direction a security control has to move in.
+ *
+ * ## An absent policy is the DEFAULT policy, not "no slide"
+ *
+ * `sessionMaxAgeMinutes` is nullable and most tenants have no
+ * `TenantSecuritySettings` row at all, so reading a missing row as "do not
+ * slide" would have shipped a feature that is inert for almost everybody
+ * while every test passed — the #1669 shape, a control whose unconfigured
+ * state is indistinguishable from a working one. NULL means unset, not
+ * unlimited and not fourteen days: the fourteen came from the WEB's
+ * `input.expiresAt`, never from a tenant's choice. So an absent or null
+ * policy slides by the schema default, which is what a new row would carry.
+ *
+ * ## One read per refresh, uncached
+ *
+ * A refresh is roughly four requests an hour per device, and the read is a
+ * single indexed lookup outside any transaction — so there is no connection
+ * held while it runs and no #1191 deadlock to worry about. It is deliberately
+ * NOT cached: this is a security control, and a stale answer here is a wrong
+ * answer about one tenant's policy rather than bounded staleness about the
+ * deployment. Same reasoning as the feature-flag cohort read, which is
+ * uncached for exactly this reason while the flag TABLE is cached.
+ *
+ * ## Best-effort, deliberately
+ *
+ * Every failure leaves the previous expiry standing, which is exactly the
+ * behaviour before this existed. Failing the refresh instead would sign out a
+ * working phone because a policy read failed — the opposite of the point.
+ */
+async function slideSessionExpiry(
+    userSessionRowId: string,
+    tenantId: string | null,
+): Promise<Date | null> {
+    let minutes: number | null = SESSION_IDLE_MAX_AGE_MINUTES;
+    if (tenantId) {
+        try {
+            const settings = await prisma.tenantSecuritySettings.findUnique({
+                where: { tenantId },
+                select: { sessionMaxAgeMinutes: true },
+            });
+            minutes = settings?.sessionMaxAgeMinutes ?? SESSION_IDLE_MAX_AGE_MINUTES;
+        } catch {
+            // Keep the default rather than refusing to slide.
+        }
+    }
+    // A zero or negative policy is not an idle window and must not be turned
+    // into an expiry in the past, which would sign the operator out mid-refresh.
+    if (!minutes || minutes <= 0) return null;
+
+    const next = new Date(Date.now() + minutes * 60 * 1000);
+    try {
+        // `revokedAt: null` so a session revoked between the caller's liveness
+        // check and this write is never resurrected with a fresh expiry.
+        const slid = await asSystem(() => prisma.userSession.updateMany({
+            where: { id: userSessionRowId, revokedAt: null },
+            data: { expiresAt: next },
+        }));
+        return slid.count === 1 ? next : null;
+    } catch (err) {
+        logger.warn('native-auth.session_slide_failed', {
+            component: 'native-auth',
+            userSessionId: userSessionRowId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+    }
+}
+
 export type RotateResult =
     | { ok: true; raw: string; expiresAt: Date; userSessionId: string; userId: string; tenantId: string | null }
     | { ok: false; reason: 'unknown' | 'expired' | 'revoked' | 'session_invalid' | 'replayed' };
@@ -220,10 +303,6 @@ interface ClaimableToken {
  */
 async function claimAndMint(row: ClaimableToken, sessionExpiresAt: Date): Promise<RotateResult> {
     const raw = newRawToken();
-    const expiresAt = capToSession(
-        new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
-        sessionExpiresAt,
-    );
 
     // ATOMIC CLAIM. Only the caller that flips consumedAt from null wins.
     const claimed = await asSystem(() => prisma.nativeRefreshToken.updateMany({
@@ -242,6 +321,23 @@ async function claimAndMint(row: ClaimableToken, sessionExpiresAt: Date): Promis
         });
         return { ok: false, reason: 'replayed' };
     }
+
+    /*
+     * The session slides only AFTER the claim is won — #3004.
+     *
+     * Ordering is the security property here, not tidiness. A replayed token
+     * loses the claim and the branch above burns the family and the session,
+     * so extending before claiming would let a thief keep a session alive
+     * with a token that is about to be rejected. And the successor is capped
+     * to the NEW expiry rather than the one the caller proved live, because
+     * capping to the old one would hand back a token expiring sooner than the
+     * session it belongs to and the phone would re-sign-in anyway.
+     */
+    const slidTo = await slideSessionExpiry(row.userSessionId, row.tenantId);
+    const expiresAt = capToSession(
+        new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
+        slidTo ?? sessionExpiresAt,
+    );
 
     const created = await asSystem(() => prisma.nativeRefreshToken.create({
         data: {

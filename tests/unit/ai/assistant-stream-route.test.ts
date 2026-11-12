@@ -573,3 +573,144 @@ describe('POST /api/t/{slug}/assistant/stream (#2578)', () => {
         });
     });
 });
+
+// ─── Incremental answer text (#2670 item 4) ───
+
+describe('answer_delta — streamed answer text', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        assertFeatureEnabled.mockResolvedValue(undefined);
+    });
+
+    /** Drive `onTextProgress` the way routing does: ABSOLUTE text, growing. */
+    function streamOut(text: string, from = '') {
+        return async (..._a: unknown[]) => {
+            const opts = _a[2] as { onTextProgress?: (c: string) => void };
+            for (let i = 1; i <= text.length; i++) {
+                opts.onTextProgress?.(from + text.slice(0, i));
+            }
+            return { text: from + text };
+        };
+    }
+
+    it('releases complete sentences, and `answer` still carries the whole text', async () => {
+        const text = 'Поливайте рано сутрин. Избягвайте обяд. Готово.';
+        completeWithRouting.mockImplementation(streamOut(text));
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const { events } = await drain(await POST(...ask({ question: 'кога да поливам' })));
+
+        const deltas = events.filter((e) => e.type === 'answer_delta');
+        expect(deltas.length).toBeGreaterThan(0);
+        // Every byte released, in order, reconstructing the sentences that
+        // completed — the tail with no terminator arrives via `answer`.
+        expect(deltas.map((d) => d.text).join('')).toBe('Поливайте рано сутрин. Избягвайте обяд. ');
+
+        // `answer` remains AUTHORITATIVE and unchanged — a client that ignores
+        // every delta still renders the complete answer, which is the property
+        // that makes this safe to add to a live client contract.
+        const answer = events.find((e) => e.type === 'answer');
+        expect(answer).toMatchObject({ text });
+    });
+
+    it('numbers deltas monotonically from 0, so a client can spot a gap', async () => {
+        completeWithRouting.mockImplementation(streamOut('Едно. Две. Три. Четири.'));
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const { events } = await drain(await POST(...ask({ question: 'колко' })));
+        const seqs = events.filter((e) => e.type === 'answer_delta').map((e) => e.seq);
+        expect(seqs).toEqual(seqs.map((_, i) => i));
+    });
+
+    it('still emits conversation FIRST, before any delta', async () => {
+        completeWithRouting.mockImplementation(streamOut('Готово. Край.'));
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const { events } = await drain(await POST(...ask({ question: 'готово?' })));
+        expect(events[0]).toMatchObject({ type: 'conversation' });
+        const firstDelta = events.findIndex((e) => e.type === 'answer_delta');
+        expect(firstDelta).toBeGreaterThan(0);
+    });
+
+    it('NEVER streams a secret, even one that completes mid-answer', async () => {
+        // The property that matters: not "it refused" but that no byte
+        // carrying the match ever left. Asserted on the RAW body, because that
+        // is what reached the socket.
+        const text = `Първо изречение. Ключът е ${AWS_EXAMPLE} — ползвайте го.`;
+        completeWithRouting.mockImplementation(streamOut(text));
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const { raw, events } = await drain(await POST(...ask({ question: 'ключът' })));
+
+        expect(raw).not.toContain(AWS_EXAMPLE);
+        // The clean first sentence MAY have gone out before the secret
+        // completed — that is the design — but nothing after it did.
+        const deltas = events.filter((e) => e.type === 'answer_delta');
+        for (const d of deltas) expect(String(d.text)).not.toContain(AWS_EXAMPLE);
+        // And the authoritative gate still refuses the whole answer.
+        expect(events.some((e) => e.type === 'refusal')).toBe(true);
+        expect(events.some((e) => e.type === 'answer')).toBe(false);
+    });
+
+    it('reports a RESTART when the server retries mid-answer', async () => {
+        // `completeWithRouting` retries up to twice before failing over, and a
+        // retry begins the text again — which arrives as a SHORTER cumulative.
+        completeWithRouting.mockImplementation(async (..._a: unknown[]) => {
+            const opts = _a[2] as { onTextProgress?: (c: string) => void };
+            opts.onTextProgress?.('Първи опит. ');
+            opts.onTextProgress?.('Вт');          // shorter — the retry
+            opts.onTextProgress?.('Втори опит. ');
+            return { text: 'Втори опит. ' };
+        });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const { events } = await drain(await POST(...ask({ question: 'опит' })));
+
+        const deltas = events.filter((e) => e.type === 'answer_delta');
+        expect(deltas.some((d) => d.restarted === true)).toBe(true);
+        // The restart is flagged rather than left to a seq jump: a gap means
+        // something was LOST, a restart means what the client has is WRONG.
+        const restart = deltas.find((d) => d.restarted === true);
+        expect(restart!.text).toBe('Втори опит. ');
+    });
+
+    it('a fresh attempt whose first chunk is LONGER than the old answer does not splice', async () => {
+        /*
+         * The restart signal is DECLARED by routing (an empty cumulative
+         * before each attempt), never inferred from the next value being
+         * shorter. This is the case the inference gets wrong: attempt two's
+         * first chunk clears everything attempt one released, so a size
+         * comparison reads it as GROWTH and the client is handed a
+         * mid-sentence slice of the new answer glued to the old one — with
+         * no `restarted` flag, so it never learns to discard. Deltas are
+         * chunks rather than characters, so one ordinary chunk after a short
+         * preamble is enough.
+         */
+        completeWithRouting.mockImplementation(async (..._a: unknown[]) => {
+            const opts = _a[2] as { onTextProgress?: (c: string) => void };
+            opts.onTextProgress?.('');                                  // attempt 1 declared
+            opts.onTextProgress?.('Проверявам. ');
+            opts.onTextProgress?.('');                                  // attempt 2 declared
+            opts.onTextProgress?.('Поливайте рано сутрин, преди жегата. ');
+            return { text: 'Поливайте рано сутрин, преди жегата. ' };
+        });
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const { events } = await drain(await POST(...ask({ question: 'кога' })));
+
+        const deltas = events.filter((e) => e.type === 'answer_delta');
+        // Whole sentences, each from ONE answer. A declaration that released
+        // nothing emits no event of its own, so there are exactly two.
+        expect(deltas.map((d) => d.text)).toEqual([
+            'Проверявам. ',
+            'Поливайте рано сутрин, преди жегата. ',
+        ]);
+        expect(deltas[1].restarted).toBe(true);
+        expect(deltas[0].restarted).toBeUndefined();
+    });
+
+    it('an answer with no sentence boundary streams nothing, and still answers', async () => {
+        // The tail is buffered until it completes, so a one-clause answer
+        // arrives only via `answer`. Asserted so that "no deltas" is a known
+        // state rather than looking like the feature being off.
+        completeWithRouting.mockImplementation(streamOut('Без точка накрая'));
+        const { POST } = await import('@/app/api/t/[tenantSlug]/assistant/stream/route');
+        const { events } = await drain(await POST(...ask({ question: 'и?' })));
+        expect(events.filter((e) => e.type === 'answer_delta')).toHaveLength(0);
+        expect(events.find((e) => e.type === 'answer')).toMatchObject({ text: 'Без точка накрая' });
+    });
+});

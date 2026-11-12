@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { getTenantCtx } from '@/app-layer/context';
 import { isPlatformTenant } from '@/lib/auth/platform-support';
 
+import { AccountActionsClient } from './AccountActionsClient';
+import { HandlingStatsClient } from './HandlingStatsClient';
 import { ModerationQueueClient } from './ModerationQueueClient';
 
 /**
@@ -46,5 +48,24 @@ export default async function ModerationQueuePage({
 
     if (!isPlatformTenant(tenantSlug) || !ctx.permissions.canAdmin) notFound();
 
-    return <ModerationQueueClient tenantSlug={tenantSlug} />;
+    return (
+        <>
+            {/*
+              * ABOVE the queue: the handling-time reading and the undelivered
+              * count are what a moderator should see BEFORE deciding anything —
+              * an unsent statement is a breach already in progress, and P5's
+              * exit criterion is measured on these figures (#2735, PR 4).
+              */}
+            <HandlingStatsClient />
+            <ModerationQueueClient tenantSlug={tenantSlug} />
+            {/*
+              * Below the queue, not beside it: deciding a notice and acting on
+              * something already decided are different jobs, and P5.1 kept
+              * `subjectKind: 'ACCOUNT'` separate from the content kinds so that
+              * "somebody reported this profile" and "we suspended this account"
+              * are not one query (#2735, PR 3).
+              */}
+            <AccountActionsClient />
+        </>
+    );
 }

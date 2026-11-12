@@ -911,7 +911,27 @@
       "documented": true
     },
     {
+      "path": "/api/t/{tenantSlug}/admin/moderation/metrics",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/t/{tenantSlug}/admin/moderation/notices",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/moderation/restore",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/moderation/statements",
+      "status": "live",
+      "documented": true
+    },
+    {
+      "path": "/api/t/{tenantSlug}/admin/moderation/suspensions",
       "status": "live",
       "documented": true
     },

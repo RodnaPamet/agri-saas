@@ -23,6 +23,7 @@ import { encode, getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 
 import {
+    SESSION_IDLE_MAX_AGE_MINUTES,
     SESSION_MAX_AGE_DAYS,
     SESSION_MAX_AGE_MINUTES,
     SESSION_MAX_AGE_MS,
@@ -124,15 +125,62 @@ describe('every site consumes the shared constant', () => {
     });
 });
 
+describe('the idle window is a SEPARATE number from the web lifetime (#3004)', () => {
+    it('is 30 days, and deliberately not the web number', () => {
+        expect(SESSION_IDLE_MAX_AGE_MINUTES).toBe(43200);
+        expect(SESSION_IDLE_MAX_AGE_MINUTES).not.toBe(SESSION_MAX_AGE_MINUTES);
+    });
+
+    it('the web lifetime stays SHORTER, which is why raising the policy changed no cookie', () => {
+        /*
+         * The load-bearing assertion of the pair. `recordNewSession` caps a new
+         * row to min(input.expiresAt, now + policy), so the web is unaffected
+         * only while its own number is the smaller one. Raise
+         * SESSION_MAX_AGE_DAYS to 30 to "make them agree" and web sessions
+         * silently double — the exact regression #618 exists for.
+         */
+        expect(SESSION_MAX_AGE_MINUTES).toBeLessThan(SESSION_IDLE_MAX_AGE_MINUTES);
+    });
+});
+
 describe('the schema default cannot drift from the constant', () => {
-    it('sessionMaxAgeMinutes defaults to SESSION_MAX_AGE_MINUTES', () => {
+    it('sessionMaxAgeMinutes defaults to SESSION_IDLE_MAX_AGE_MINUTES', () => {
         const schema = read('prisma/schema/auth.prisma');
         const line = schema
             .split('\n')
             .find((l) => l.includes('sessionMaxAgeMinutes') && l.includes('@default'));
         expect(line).toBeDefined();
         const n = Number(line!.match(/@default\((\d+)\)/)?.[1]);
-        expect(n).toBe(SESSION_MAX_AGE_MINUTES);
+        // The column is the tenant POLICY default (an idle window since
+        // #3004), not the web lifetime it used to mirror.
+        expect(n).toBe(SESSION_IDLE_MAX_AGE_MINUTES);
+    });
+
+    it('the idle-window migration moves the default and ONLY the old default', () => {
+        const sql = read(
+            'prisma/migrations/20261112210000_session_idle_window/migration.sql',
+        );
+        // Comments stripped: the prose names both numbers, so a bare digit
+        // sweep over this file would grade the explanation, not the SQL.
+        const stmts = sql.replace(/--[^\n]*/g, '');
+
+        expect(Number(stmts.match(/SET DEFAULT (\d+)/)![1])).toBe(
+            SESSION_IDLE_MAX_AGE_MINUTES,
+        );
+        expect(Number(stmts.match(/SET "sessionMaxAgeMinutes" = (\d+)/)![1])).toBe(
+            SESSION_IDLE_MAX_AGE_MINUTES,
+        );
+        /*
+         * The backfill is SCOPED, and this is the assertion to keep. The owner
+         * authorised raising rows still holding the OLD DEFAULT, on the
+         * reasoning that such a row cannot be told from one nobody ever
+         * considered. A tenant that chose its own number keeps it, so an
+         * unscoped UPDATE would overwrite a configured security control with
+         * a looser one — the single thing that authorisation did not cover.
+         */
+        expect(Number(stmts.match(/WHERE "sessionMaxAgeMinutes" = (\d+)/)![1])).toBe(
+            SESSION_MAX_AGE_MINUTES,
+        );
     });
 
     it('the migration writes the same number', () => {
