@@ -217,6 +217,51 @@ export async function queueStatementForAction(input: {
  * saw and acted on. A mis-aimed notice is a moderator-review problem, not a
  * resolution one.
  */
+/**
+ * A kind this module HAS an arm for, whose row is gone — #2955.
+ *
+ * ## There are two silent paths out of `resolveContentRecipient`, not one
+ *
+ * #2955 is about the first: a kind with no arm at all falls through, logs at
+ * `info` beside the legitimately recipientless kinds, and the removal happens
+ * with nobody told. A derived guard now makes that unshippable.
+ *
+ * This is the SECOND, and it was logged by nothing. A kind we do support, whose
+ * row has since been deleted, returned `null` from `row?.x ?? null` — the same
+ * value the fall-through returns, reached without a single log line. So a
+ * removal that explained nobody looked identical to a removal of something with
+ * no recipient by design.
+ *
+ * A build-time guard cannot see this one: the arm EXISTS, the pairing is
+ * satisfied, and the row is simply absent at the moment the statement would be
+ * composed. Only a runtime signal separates it.
+ *
+ * ## `warn`, not `info`, and deliberately a different EVENT NAME
+ *
+ * `moderation.statement_recipient_unsupported` is the designed outcome for
+ * `PROFILE` and `THREAD` and stays at `info` — a probe that fires on the normal
+ * state is one people learn to ignore. This is a compliance gap: an Art 17
+ * obligation that will not be met for a decision already recorded. Sharing the
+ * event name would make the two indistinguishable in a log search, which is the
+ * property the whole issue is about.
+ *
+ * It does NOT throw. The removal and the action row are already committed by the
+ * time a statement is composed, and failing here would leave a decision
+ * performed with its audit entry written and an exception on the way out — worse
+ * than a loud log, and #1269's rule for the audit writer for the same reason.
+ */
+function missingRow(subjectKind: string, subjectId: string): null {
+    logger.warn('moderation.statement_recipient_row_missing', {
+        component: 'statement-queue',
+        subjectKind,
+        // The id, because this is a REMOVABLE kind: somebody has to be able to
+        // find which decision went unexplained. It names a listing, a message or
+        // a post — never a person, and no body text.
+        subjectId,
+    });
+    return null;
+}
+
 export async function resolveContentRecipient(
     subjectKind: string,
     subjectId: string,
@@ -227,14 +272,14 @@ export async function resolveContentRecipient(
                 where: { id: subjectId },
                 select: { sellerUserId: true },
             });
-            return row?.sellerUserId ?? null;
+            return row?.sellerUserId ?? missingRow(subjectKind, subjectId);
         }
         if (subjectKind === 'MESSAGE') {
             const row = await prisma.exchangeMessage.findUnique({
                 where: { id: subjectId },
                 select: { senderUserId: true },
             });
-            return row?.senderUserId ?? null;
+            return row?.senderUserId ?? missingRow(subjectKind, subjectId);
         }
         if (subjectKind === 'CHANNEL_POST') {
             // P9.3c (#2937). WITHOUT THIS ARM THE REMOVAL STILL HAPPENS AND
@@ -253,7 +298,7 @@ export async function resolveContentRecipient(
                 where: { id: subjectId },
                 select: { authorUserId: true },
             });
-            return row?.authorUserId ?? null;
+            return row?.authorUserId ?? missingRow(subjectKind, subjectId);
         }
         // PROFILE and THREAD — see the docblock. Logged at info, not warn: it
         // is the designed outcome for these kinds today, not a fault.
