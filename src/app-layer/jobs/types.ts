@@ -444,6 +444,17 @@ export interface NoticeScorePayload {
     limit?: number;
 }
 
+export interface WorkedParcelDerivationPayload {
+    /** Limit to one tenant. Default: every tenant that reported that day. */
+    tenantId?: string;
+    /**
+     * The Europe/Sofia calendar day, `YYYY-MM-DD`. Defaults to YESTERDAY in
+     * Sofia: the job runs after midnight, and deriving "today" would process a
+     * day still in progress and have to be re-run.
+     */
+    date?: string;
+}
+
 export interface ChannelAutoHidePayload {
     /** How many candidate posts one run considers. Defaults to 50. */
     limit?: number;
@@ -980,6 +991,7 @@ export interface JobPayloadMap {
     'notification-dispatch': NotificationDispatchPayload;
     'statement-dispatch': StatementDispatchPayload;
     'notice-score': NoticeScorePayload;
+    'worked-parcel-derivation': WorkedParcelDerivationPayload;
     'channel-auto-hide': ChannelAutoHidePayload;
     'memory-extract': MemoryExtractPayload;
     'account-erasure-sweep': AccountErasureSweepPayload;
@@ -1439,6 +1451,22 @@ export const JOB_DEFAULTS: Record<JobName, {
         // delay. Values copied from the neighbours rather than chosen.
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'worked-parcel-derivation': {
+        /*
+         * RETRIES ARE SAFE HERE, which is the opposite of the two jobs either
+         * side of it. `statement-dispatch` uses `attempts: 1` because a retry
+         * re-SENDS and `notice-score` because a retry re-SPENDS an AI budget.
+         * This job writes through unique indexes — `(assetId, parcelId, date)`
+         * and `(assetId, date)` — so a second attempt UPDATES the same rows
+         * and cannot double-count minutes. A transient failure (a PostGIS
+         * error on one geometry, a pool timeout) is then worth retrying rather
+         * than leaving a day underived until tomorrow.
+         */
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30000 },
+        removeOnComplete: 100,
         removeOnFail: 500,
     },
     'notice-score': {

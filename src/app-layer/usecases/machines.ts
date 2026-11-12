@@ -69,27 +69,26 @@ export interface MachineWorkedView {
     /** Always true: `WorkedParcel` is what SURVIVES the sweep. */
     retained: boolean;
     /**
-     * When the derivation last ran for this machine-day, or `null`.
+     * When the derivation last PROCESSED this machine-day, or `null` — #2984.
      *
-     * ## It is ALWAYS null for an empty day today, and that is a known limit
+     * Read from the `MachineWorkedDay` marker, never from the rows. That is
+     * what makes three states expressible out of two fields:
      *
-     * #2948 Addendum 2 asks for three states from two fields: `parcels: []`
-     * with `derivedAt: null` means "not computed yet" (show the «изчисляват се
-     * през нощта» copy), and `parcels: []` with a timestamp means "it ran and
-     * the machine worked no parcel", which is a real answer.
+     * | `parcels` | `derivedAt` | means |
+     * |---|---|---|
+     * | `[]` | `null` | not processed yet — «изчисляват се през нощта» |
+     * | `[]` | timestamp | **it ran, and this machine worked no parcel** |
+     * | rows | timestamp | the normal case |
      *
-     * **The second is not expressible yet.** This value is read off the
-     * `WorkedParcel` rows, and a day with no work HAS no rows — so there is
-     * nowhere for "I processed this machine-day and found nothing" to live. A
-     * run-marker is needed: one row per (asset, day) the job touched,
-     * independent of whether it produced any work.
+     * The middle row was inexpressible until the marker existed, because this
+     * value was reduced out of the `WorkedParcel` rows and an idle day has
+     * none — so a farm whose machine genuinely idled was told the figures were
+     * still being computed, every time it looked, with no error and no metric.
      *
-     * It is not wrong today, because the nightly derivation does not exist
-     * yet, so `null` — "has not run" — is the truthful answer for every date.
-     * It becomes wrong the moment that job ships without a marker, and the
-     * failure is silent: a farm whose machine genuinely idled would be told
-     * the figures are still being computed, for ever. **#2984** holds the
-     * marker; the nightly job must land it in the same change.
+     * A marker whose `parcelsMatched` is 0 is therefore a real answer, and
+     * `positionsConsidered` on that row is what separates "the machine idled"
+     * from "the tracker reported nothing usable". The read does not surface
+     * that second figure yet; the marker holds it when somebody asks.
      */
     derivedAt: string | null;
 }
@@ -247,12 +246,11 @@ export async function readMachineWorked(
         // which is the right thing for `MachinePosition.recordedAt` and the
         // wrong thing for a date column, where it would shift the day by the
         // offset and return the neighbour's rows.
-        const rows = await MachineRepository.listWorkedParcels(
-            db,
-            ctx,
-            assetId,
-            new Date(`${date}T00:00:00Z`),
-        );
+        const day = new Date(`${date}T00:00:00Z`);
+        const [rows, marker] = await Promise.all([
+            MachineRepository.listWorkedParcels(db, ctx, assetId, day),
+            MachineRepository.findWorkedDayMarker(db, ctx, assetId, day),
+        ]);
 
         return {
             date,
@@ -264,17 +262,13 @@ export async function readMachineWorked(
                 confidence: decimalToNumber(r.confidence),
             })),
             retained: true,
-            // Newest wins, so a re-derived day reports the latest run rather
-            // than the first. With zero rows this is `null` — see the field's
-            // docblock for why that is honest today and what has to change
-            // when the nightly derivation lands.
-            derivedAt:
-                rows.length === 0
-                    ? null
-                    : rows
-                          .map((r) => r.derivedAt)
-                          .reduce((a, b) => (a > b ? a : b))
-                          .toISOString(),
+            // From the MARKER (#2984). The reduce over row timestamps this
+            // replaces could only ever answer for a day that produced rows,
+            // which is the one case that needed no help: an EMPTY day is
+            // exactly where the answer matters, and it had nowhere to come
+            // from. A re-derived day reports the latest run because the
+            // marker is upserted rather than appended.
+            derivedAt: marker?.derivedAt.toISOString() ?? null,
         };
     });
 }
