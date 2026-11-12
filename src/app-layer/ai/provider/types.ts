@@ -98,6 +98,35 @@ export interface AiCompleteOptions<T = unknown> {
     /** Opt into streaming — `complete()` returns once the stream drains. */
     stream?: boolean;
     /**
+     * Incremental text, as the PROVIDER produces it — #2670 item 4.
+     *
+     * Read by the provider, not by a usecase. The text handed over is RAW:
+     * for an external backend it still carries the redaction placeholders
+     * `completeWithRouting` rehydrates afterwards, so a caller must not put
+     * it in front of a person. Use `onTextProgress` for that.
+     *
+     * Must not throw. It runs inside the provider's `for await` over the
+     * event stream, so an exception there aborts the model call.
+     */
+    onTextDelta?: (delta: string) => void;
+    /**
+     * Incremental text, REHYDRATED and cumulative — the one a caller wants.
+     *
+     * Read by `completeWithRouting`, which accumulates the provider's raw
+     * deltas, rehydrates the accumulation when the backend is external, and
+     * calls this with the ABSOLUTE text so far. Cumulative rather than
+     * incremental because a redaction placeholder can straddle a delta
+     * boundary, so only the accumulation is safe to rehydrate.
+     *
+     * Setting it implies `stream: true`.
+     *
+     * A retry starts the text again, so the value can get SHORTER than a
+     * previous call. `createPrefixReleaser().observe()` treats that as a
+     * restart; a caller rolling its own must do the same or it will release
+     * the same sentences twice.
+     */
+    onTextProgress?: (cumulative: string) => void;
+    /**
      * Sampling temperature (provider default when unset).
      *
      * **IGNORED by the Claude provider.** Anthropic API version `2026-10-21`
