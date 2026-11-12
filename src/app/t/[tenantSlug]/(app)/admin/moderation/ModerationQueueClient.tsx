@@ -145,9 +145,15 @@ export function ModerationQueueClient({ tenantSlug }: { tenantSlug: string }) {
         } catch (err) {
             const code =
                 err && typeof err === 'object' && 'code' in err ? String(err.code) : '';
+            // Switching on `error.code`, which only exists because the route
+            // THROWS coded errors rather than returning a bare
+            // `{ error: 'invalid_request' }` body. That started as a #1447
+            // spec-agreement failure and turned out to be a real defect in this
+            // handler: with a bare body there is no `code` here at all, so
+            // every refusal would have fallen through to the generic arm.
             if (code === 'MODERATION_ACTION_NOT_PERFORMABLE') setOutcome('NOT_PERFORMABLE');
             else if (code === 'SUSPEND_TARGET_REQUIRED') setOutcome('SUSPEND_TARGET_REQUIRED');
-            else if (code === 'NOT_FOUND' || code === 'not_found') setOutcome('NOT_FOUND');
+            else if (code === 'MODERATION_NOTICE_NOT_FOUND') setOutcome('NOT_FOUND');
             else setOutcome('FAILED');
         } finally {
             setBusy(false);
@@ -207,7 +213,7 @@ export function ModerationQueueClient({ tenantSlug }: { tenantSlug: string }) {
                     {notices.map((n) => (
                         <div
                             key={n.id}
-                            className="rounded-lg border border-border-default p-default space-y-default"
+                            className="rounded-lg border border-border-subtle p-default space-y-default"
                         >
                             <div className="flex flex-wrap items-center gap-tight">
                                 <StatusBadge>{t(`status.${n.status}`)}</StatusBadge>

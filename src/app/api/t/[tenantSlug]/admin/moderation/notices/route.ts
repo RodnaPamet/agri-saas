@@ -6,6 +6,7 @@ import { listNotices, actOnNotice } from '@/app-layer/usecases/moderation';
 import { jsonResponse } from '@/lib/api-response';
 import { assertPlatformSupport } from '@/lib/auth/platform-support';
 import { withApiErrorHandling } from '@/lib/errors/api';
+import { codedBadRequest, codedNotFound } from '@/lib/errors/types';
 import { ActOnNoticeSchema } from '@/lib/schemas';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { parseLimitParam } from '@/lib/validation/query-params';
@@ -107,7 +108,16 @@ export const GET = withApiErrorHandling(
                 status: url.searchParams.get('status') ?? undefined,
             });
             if (!parsed.success) {
-                return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+                // CODED, not a bare body: this operation declares
+                // `ErrorResponse`, and #1447's guard checks the AGREEMENT
+                // between what a route sends and what its spec says. A coded
+                // throw is also what carries a translated sentence — a bare
+                // `{ error: 'invalid_request' }` reaches a Bulgarian operator
+                // as English and gives the console nothing to switch on.
+                throw codedBadRequest(
+                    'INVALID_STATUS_FILTER',
+                    'status accepts RECEIVED, TRIAGED, ACTIONED or REJECTED.',
+                );
             }
 
             // The shared parser, not a local zod coercion: `??` does not catch
@@ -129,11 +139,15 @@ export const POST = withApiErrorHandling(
             try {
                 raw = await req.json();
             } catch {
-                return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+                throw codedBadRequest('INVALID_JSON', 'The request body is not valid JSON.');
             }
             const parsed = ActOnNoticeSchema.safeParse(raw);
             if (!parsed.success) {
-                return jsonResponse({ error: 'invalid_request' }, { status: 400 });
+                // Two different codes for two different faults. A malformed
+                // body and a well-formed body missing its rationale are not the
+                // same problem, and a console that reported both as "invalid"
+                // would leave a moderator guessing which.
+                throw codedBadRequest('INVALID_BODY', 'The decision is missing a required field.');
             }
 
             const result = await actOnNotice({
@@ -147,11 +161,19 @@ export const POST = withApiErrorHandling(
             });
 
             if (!result.actionId) {
-                // The notice does not exist. A 404 rather than a 400: the body
-                // was well-formed, and a platform moderator is entitled to the
-                // difference — unlike the public notice route, where
-                // distinguishing them would be an enumeration oracle.
-                return jsonResponse({ error: 'not_found' }, { status: 404 });
+                // `actOnNotice` reports a missing notice as an EMPTY `actionId`
+                // rather than throwing, so a route returning its result
+                // unexamined would answer 201 over a decision never recorded.
+                //
+                // A 404 rather than a 400: the body was well-formed, and a
+                // platform moderator is entitled to the difference — unlike the
+                // public notice route, where telling a real id from a made-up
+                // one would be an enumeration oracle on an unauthenticated
+                // surface.
+                throw codedNotFound(
+                    'MODERATION_NOTICE_NOT_FOUND',
+                    'That notice no longer exists.',
+                );
             }
 
             return jsonResponse(result, { status: 201 });

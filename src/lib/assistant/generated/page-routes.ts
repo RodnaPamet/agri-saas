@@ -78,6 +78,7 @@ export const PAGE_ROUTE_TEMPLATES: readonly string[] = [
     "/t/[tenantSlug]/admin/ledger-integrity",
     "/t/[tenantSlug]/admin/market-prices",
     "/t/[tenantSlug]/admin/members",
+    "/t/[tenantSlug]/admin/moderation",
     "/t/[tenantSlug]/admin/modules",
     "/t/[tenantSlug]/admin/notifications",
     "/t/[tenantSlug]/admin/promotions",

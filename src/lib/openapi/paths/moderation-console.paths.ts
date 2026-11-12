@@ -103,7 +103,7 @@ export function registerModerationConsolePaths(registry: OpenAPIRegistry): void 
             }),
         }),
         extraResponses: codedErrorResponses({
-            400: 'A bad `status` filter value.',
+            400: 'INVALID_STATUS_FILTER — an unrecognised `status`.',
             404: 'Not the platform-support tenant — `assertPlatformSupport` 404s rather than '
                 + 'forbidding, so another tenant is not told this console exists.',
         }),
@@ -168,8 +168,11 @@ export function registerModerationConsolePaths(registry: OpenAPIRegistry): void 
             }),
         }),
         extraResponses: codedErrorResponses({
-            400: 'SUSPEND_TARGET_REQUIRED, MODERATION_ACTION_NOT_PERFORMABLE, or a malformed body.',
-            404: 'No such notice, or not the platform-support tenant.',
+            400: 'SUSPEND_TARGET_REQUIRED, MODERATION_ACTION_NOT_PERFORMABLE, INVALID_JSON '
+                + '(unparseable body) or INVALID_BODY (a required field missing). The last two '
+                + 'are separate codes because a malformed body and a well-formed one missing '
+                + 'its rationale are different faults with different fixes.',
+            404: 'MODERATION_NOTICE_NOT_FOUND, or not the platform-support tenant.',
         }),
         success: {
             status: 201,

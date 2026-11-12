@@ -69741,7 +69741,7 @@
             }
           },
           "400": {
-            "description": "A bad `status` filter value.",
+            "description": "INVALID_STATUS_FILTER — an unrecognised `status`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -69931,7 +69931,7 @@
             }
           },
           "400": {
-            "description": "SUSPEND_TARGET_REQUIRED, MODERATION_ACTION_NOT_PERFORMABLE, or a malformed body.",
+            "description": "SUSPEND_TARGET_REQUIRED, MODERATION_ACTION_NOT_PERFORMABLE, INVALID_JSON (unparseable body) or INVALID_BODY (a required field missing). The last two are separate codes because a malformed body and a well-formed one missing its rationale are different faults with different fixes.",
             "content": {
               "application/json": {
                 "schema": {
@@ -69961,7 +69961,7 @@
             }
           },
           "404": {
-            "description": "No such notice, or not the platform-support tenant.",
+            "description": "MODERATION_NOTICE_NOT_FOUND, or not the platform-support tenant.",
             "content": {
               "application/json": {
                 "schema": {

@@ -7019,6 +7019,8 @@
         "INVALID_FARM_TASK_TYPE": "Unknown farm task type: {type}.",
         "INVALID_FILE": "That file was not found.",
         "INVALID_BODY": "The request is incomplete or malformed.",
+        "INVALID_STATUS_FILTER": "Unrecognised status. Allowed: RECEIVED, TRIAGED, ACTIONED, REJECTED.",
+        "MODERATION_NOTICE_NOT_FOUND": "That notice no longer exists.",
         "INVALID_SOURCE": "That source is not one this inbox has.",
         "INVALID_CURSOR": "That page could not be loaded. Please try again.",
         "INVALID_JSON": "The request could not be read.",
