@@ -330,10 +330,27 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
                     + 'than refused, so a stale picker does not fail the whole post. '
                     + '`mentionsRecorded` says how many were kept.',
             }),
+            kind: z.enum(['POST', 'QUESTION']).optional().openapi({
+                description:
+                    '«Публикация» or «Въпрос». `CARD` is a THIRD member of the enum and '
+                    + 'is deliberately not accepted: a card is machine-written by the '
+                    + 'platform queue, so taking one from a caller would let any member '
+                    + 'forge a post that renders as the platform\'s own data.',
+            }),
+            tenantSlug: z.string().optional().openapi({
+                description:
+                    'The farm to post AS (#2989), recorded at write time so a person who '
+                    + 'later leaves that farm does not have their past posts relabelled. '
+                    + 'SUPPLIED rather than read from the path, because these routes are '
+                    + 'person-scoped and carry no slug — the PAGE is at `/t/{slug}/channels`, '
+                    + 'the API is not. An ACTIVE membership is required; an ABSENT value '
+                    + 'records no farm and the author line shows the name alone, which is '
+                    + 'preferred to guessing from the caller\'s memberships.',
+            }),
         }),
         extraResponses: codedErrorResponses({
             400: 'CHANNEL_POST_REQUIRED (empty AFTER sanitising — a body of only markup sanitises to nothing), CHANNEL_POST_TOO_LONG, CHANNEL_ARCHIVED, or CHANNEL_SLOW_MODE with `waitSeconds` in the details.',
-            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.',
+            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED; or NOT_A_MEMBER_OF_THAT_FARM when `tenantSlug` names a farm the caller is not an ACTIVE member of (#2989). That last one covers "no such farm" as well, deliberately — two codes would make this an enumeration oracle for farm slugs.',
             404: 'CHANNEL_NOT_FOUND, or the flag is off.',
         }),
         success: {
@@ -424,10 +441,17 @@ export function registerChannelPaths(registry: OpenAPIRegistry): void {
             body: z.string().min(1).max(8000),
             alsoToChannel: z.boolean().optional(),
             mentionUserIds: z.array(z.string()).max(5).optional(),
+            tenantSlug: z.string().optional().openapi({
+                description:
+                    'The farm to reply AS (#2989) — see `postToChannel`. Recorded at '
+                    + 'write time on BOTH rows a reply can produce, the reply and its '
+                    + '«Също изпрати в канала» copy, resolved once so the two cannot '
+                    + 'disagree about which farm sent them.',
+            }),
         }),
         extraResponses: codedErrorResponses({
             400: 'CHANNEL_POST_REQUIRED, CHANNEL_POST_TOO_LONG, CHANNEL_ARCHIVED, CHANNEL_SLOW_MODE, CHANNEL_TOO_MANY_MENTIONS, CHANNEL_THREAD_TOO_DEEP (replying to a reply) or CHANNEL_POST_DELETED (the parent was retracted, so a reply would render beneath «изтрито» with no context).',
-            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.',
+            403: 'CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED; or NOT_A_MEMBER_OF_THAT_FARM for a `tenantSlug` the caller is not an ACTIVE member of (#2989).',
             404: 'CHANNEL_POST_NOT_FOUND, or the flag is off.',
         }),
         success: {

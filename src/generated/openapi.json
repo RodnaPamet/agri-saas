@@ -62938,6 +62938,18 @@
                     },
                     "maxItems": 5,
                     "description": "EXPLICIT user ids, at most five — never parsed from the body, because there is no person handle in this product: `PersonProfile` has `userId` and `displayName` and no handle, and the DM surface resolves a FARM handle to that farm's owner. A mention must name a MEMBER of the channel; a non-member (or yourself) is silently DROPPED rather than refused, so a stale picker does not fail the whole post. `mentionsRecorded` says how many were kept."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "POST",
+                      "QUESTION"
+                    ],
+                    "description": "«Публикация» or «Въпрос». `CARD` is a THIRD member of the enum and is deliberately not accepted: a card is machine-written by the platform queue, so taking one from a caller would let any member forge a post that renders as the platform's own data."
+                  },
+                  "tenantSlug": {
+                    "type": "string",
+                    "description": "The farm to post AS (#2989), recorded at write time so a person who later leaves that farm does not have their past posts relabelled. SUPPLIED rather than read from the path, because these routes are person-scoped and carry no slug — the PAGE is at `/t/{slug}/channels`, the API is not. An ACTIVE membership is required; an ABSENT value records no farm and the author line shows the name alone, which is preferred to guessing from the caller's memberships."
                   }
                 },
                 "required": [
@@ -62996,7 +63008,7 @@
             }
           },
           "403": {
-            "description": "CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.",
+            "description": "CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED; or NOT_A_MEMBER_OF_THAT_FARM when `tenantSlug` names a farm the caller is not an ACTIVE member of (#2989). That last one covers \"no such farm\" as well, deliberately — two codes would make this an enumeration oracle for farm slugs.",
             "content": {
               "application/json": {
                 "schema": {
@@ -63273,6 +63285,10 @@
                       "type": "string"
                     },
                     "maxItems": 5
+                  },
+                  "tenantSlug": {
+                    "type": "string",
+                    "description": "The farm to reply AS (#2989) — see `postToChannel`. Recorded at write time on BOTH rows a reply can produce, the reply and its «Също изпрати в канала» copy, resolved once so the two cannot disagree about which farm sent them."
                   }
                 },
                 "required": [
@@ -63338,7 +63354,7 @@
             }
           },
           "403": {
-            "description": "CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED.",
+            "description": "CHANNEL_NOT_A_MEMBER or CHANNEL_BANNED; or NOT_A_MEMBER_OF_THAT_FARM for a `tenantSlug` the caller is not an ACTIVE member of (#2989).",
             "content": {
               "application/json": {
                 "schema": {
