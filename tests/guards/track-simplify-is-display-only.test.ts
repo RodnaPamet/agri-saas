@@ -85,8 +85,8 @@ const MEASURING_ROOTS = [
  * smaller scanned count beside an unchanged declared count, which is visible
  * rather than swallowed.
  */
-function measuringFiles(): string[] {
-    return MEASURING_ROOTS.map((rel) => join(ROOT, rel)).filter((full) => existsSync(full));
+function measuringFiles(roots: readonly string[] = MEASURING_ROOTS): string[] {
+    return roots.map((rel) => join(ROOT, rel)).filter((full) => existsSync(full));
 }
 
 describe('the simplified track is DISPLAY ONLY (#2948)', () => {
@@ -106,6 +106,27 @@ describe('the simplified track is DISPLAY ONLY (#2948)', () => {
                 `${files.length === 0 ? 'population EMPTY — stage 4 has not landed' : 'population live'}`,
         );
         expect(MEASURING_ROOTS.length).toBeGreaterThan(0);
+    });
+
+    it('control: the selector CAN select — it is empty because the POPULATION is', () => {
+        // `selector-teeth` reported `measuringFiles() → return []` as SURVIVED,
+        // and it was right: every declared root is a stage-4 file that does not
+        // exist yet, so the function already returns [] and gutting it changes
+        // no assertion. That is the defining shape of a dead selector — the
+        // guard would pass just as happily if the selection were broken rather
+        // than merely empty, and nothing would say which.
+        //
+        // This is the control that separates the two. It drives the SAME
+        // function over a root that DOES exist, so a body replaced by `return
+        // []` fails here. The roots parameter exists for this and defaults to
+        // MEASURING_ROOTS, so the production call site is unchanged.
+        const real = 'src/lib/machines/track-simplify.ts';
+        expect(existsSync(join(ROOT, real))).toBe(true);
+        expect(measuringFiles([real])).toEqual([join(ROOT, real)]);
+
+        // And the other direction, so the control cannot pass by returning
+        // everything it is given: a root that does not exist is filtered out.
+        expect(measuringFiles(['src/lib/machines/no-such-file.ts'])).toEqual([]);
     });
 
     it('no measuring file imports the simplifier', () => {
