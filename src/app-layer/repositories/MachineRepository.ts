@@ -44,6 +44,9 @@ export const MACHINE_FLEET_CAP = 500;
 /** Ceiling on one machine-day's worked-parcel rows. */
 export const WORKED_PARCEL_CAP = 500;
 
+/** Ceiling on one task's asset rows. A task uses a tractor and an implement, not a fleet. */
+export const TASK_ASSET_CAP = 100;
+
 export interface MachineAssetRow {
     id: string;
     name: string;
@@ -208,6 +211,114 @@ export class MachineRepository {
             orderBy: [{ recordedAt: 'asc' }, { id: 'asc' }],
             take: MAX_POSITIONS_PER_DAY + 1,
         });
+    }
+
+    /**
+     * A task's identity for the machine reads — assignment and status only.
+     *
+     * Deliberately NOT the whole task. These endpoints authorise on "are you
+     * the assignee of an open task", so that is all they need, and selecting
+     * a task's `description` — an encrypted column — would decrypt business
+     * content to answer a question about a machine.
+     */
+    static async findTaskAuth(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskId: string,
+    ): Promise<{ id: string; assigneeUserId: string | null; status: string } | null> {
+        const row = await db.task.findFirst({
+            where: { id: taskId, tenantId: ctx.tenantId },
+            select: { id: true, assigneeUserId: true, status: true },
+        });
+        return row === null ? null : { ...row, status: String(row.status) };
+    }
+
+    /**
+     * The LOCATABLE assets on one task, name-ordered.
+     *
+     * Filtered to locatable types, because the question every caller asks of
+     * this list is about position. A task's trailer or hand tool is a real
+     * `TaskAsset` row and is not something a map can answer for.
+     */
+    static async listTaskLocatableAssets(
+        db: PrismaTx,
+        ctx: RequestContext,
+        taskId: string,
+    ): Promise<MachineAssetRow[]> {
+        const rows = await db.taskAsset.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                taskId,
+                asset: { ...LOCATABLE_ASSET_WHERE },
+            },
+            select: { asset: { select: { id: true, name: true, type: true } } },
+            orderBy: { assetId: 'asc' },
+            take: TASK_ASSET_CAP,
+        });
+        return rows
+            .map((r) => r.asset)
+            .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    }
+
+    /**
+     * Earliest live-tracker install per asset — the tie-break's second rank.
+     *
+     * #2948 makes the order explicit and TOTAL because "the first one with a
+     * tracker" names no particular row: insertion order is not an order, and
+     * two clients could legitimately get different machines from one task.
+     */
+    static async earliestTrackerInstall(
+        db: PrismaTx,
+        ctx: RequestContext,
+        assetIds: readonly string[],
+    ): Promise<Map<string, Date>> {
+        if (assetIds.length === 0) return new Map();
+        const rows = await db.machineTracker.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                assetId: { in: [...assetIds] },
+                removedAt: null,
+            },
+            select: { assetId: true, installedAt: true },
+            orderBy: [{ installedAt: 'asc' }, { id: 'asc' }],
+            take: TASK_ASSET_CAP,
+        });
+        const out = new Map<string, Date>();
+        for (const r of rows) if (!out.has(r.assetId)) out.set(r.assetId, r.installedAt);
+        return out;
+    }
+
+    /**
+     * Every TRACKED machine in the tenant — NAME AND TYPE ONLY.
+     *
+     * The `select` is the disclosure control, not a projection choice. This
+     * backs the drivers' transparency notice, which #2948 specifies as "no
+     * positions, no IMEI, no last-seen": it discharges a duty rather than
+     * giving anybody a map, and it is readable by EVERY role including the
+     * operator persona. Widening this select widens that audience with it.
+     *
+     * TRACKED, not locatable: a machine with no tracker and no telematics link
+     * is not reporting anything, and listing it in a notice about what is
+     * tracked would overstate the surveillance.
+     */
+    static async listTrackedMachineNames(
+        db: PrismaTx,
+        ctx: RequestContext,
+    ): Promise<{ name: string; type: AssetType }[]> {
+        const rows = await db.asset.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                ...LOCATABLE_ASSET_WHERE,
+                OR: [
+                    { machineTrackers: { some: { tenantId: ctx.tenantId, removedAt: null } } },
+                    { telematicsLinks: { some: { tenantId: ctx.tenantId, removedAt: null } } },
+                ],
+            },
+            select: { name: true, type: true },
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take: MACHINE_FLEET_CAP,
+        });
+        return rows;
     }
 
     /**
