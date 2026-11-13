@@ -172,6 +172,37 @@ describe('Structural Guard: Tenant Isolation Conventions', () => {
             // not reach tenant data — holds structurally rather than by
             // review.
             'f',
+            // «Вдъхновение» — the book library (#2980 PR 3).
+            //
+            // Owner ruling 2026-11-13, with a mechanism behind it rather than
+            // a preference. A book belongs to no farm — `Book` and
+            // `BookChapter` carry no `tenantId` at all — and the PATH SHAPE is
+            // what carries the surface to every role including a
+            // MECHANISATOR: the operator lockdown in `src/middleware.ts` sits
+            // inside `if (isTenantPath(pathname))`, so a non-tenant path is
+            // excluded before `isOperatorAllowedPath` is consulted, and that
+            // allowlist does not name the library.
+            //
+            // `/t/{slug}/library` was rejected for two further reasons: it
+            // would need an entry in the separate hand-written page
+            // enumeration, and it would imply a per-farm library that does not
+            // exist.
+            //
+            // The invariant this guard protects — a page outside `/t/` must
+            // not reach tenant data — holds structurally, and more cleanly
+            // than for `f` above: the pages are SHELLS. They render no data at
+            // all. Both fetch `/api/library/books…` from the client, which
+            // runs `getUserCtx` and `runInUserContext`, and there is no tenant
+            // in the path for either page to resolve even if it wanted one.
+            // The reads are of a GLOBAL CATALOGUE whose RLS admits any
+            // authenticated session and whose rows have no `tenantId` to join
+            // through.
+            //
+            // They are not unguarded: each gates on `auth()`,
+            // `redirectIfSuspended` and `isFeatureEnabled('library.enabled')`,
+            // and `/library` is in `isPersonPath` so the Edge applies the MFA
+            // gate — which `/api/library/books` itself lacked until this PR.
+            'library',
         ]);
 
         // Get immediate children of app/ that are page directories

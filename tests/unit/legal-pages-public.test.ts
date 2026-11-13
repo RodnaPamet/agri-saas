@@ -170,6 +170,19 @@ describe('every page allowed outside /t/ is EITHER public or session-gated on pu
             'is defensive, not a claim to be public, and it is deliberately ' +
             'NOT gated on being suspended, since gating the destination on the ' +
             'condition would redirect it to itself.',
+        library:
+            '«Вдъхновение», the book library (#2980). NON-TENANT by owner ruling ' +
+            '2026-11-13 — a book belongs to no farm — and SIGNED-IN by the same ' +
+            'ruling, which is the distinction this entry records. It is ' +
+            'deliberately NOT in PUBLIC_PATH_EXACT: opening a prefix opens every ' +
+            'method on it, and a library is not a legal duty the way the Art 16 ' +
+            'notice route is, so nothing about it wants to be anonymous. A ' +
+            'signed-in read costs a phone nothing because it already holds a ' +
+            'session, and `book_select` requires one — the policy admits a row ' +
+            'only when `app.user_id` or `app.actor_user_id` is set, so an ' +
+            'anonymous read would return zero books rather than an error. A ' +
+            'marketing-facing library later is a `/f/`-style surface and its own ' +
+            'decision.',
     };
 
     it('reports the population it classified', () => {

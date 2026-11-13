@@ -240,6 +240,70 @@ describe('the book reader', () => {
         expect(container.querySelector('[lang]')).toBeNull();
     });
 
+    it('renders a BAILEY-SIZED book whole — 31 chapters, 360 paragraphs', () => {
+        /*
+         * The fixture above is a 2-chapter book. Production is not.
+         *
+         * The other backend session flagged it the hour the books went live:
+         * Bailey is 31 chapters and 360 paragraphs, Sun Tzu went 74 → 250 when
+         * its long paragraphs were split, and "if any budget there was sized
+         * on a 13-chapter book, Bailey is the one that will find it."
+         *
+         * So this asserts the reader renders the LARGEST real book whole
+         * rather than the smallest convenient one. There is no pagination and
+         * no virtualization here on purpose — 360 rows is well under the Epic
+         * 68 threshold of 1000, and find-in-page across a whole chapter is
+         * worth more on a book than windowing is — but "on purpose" is only
+         * credible if something checks the whole thing arrives.
+         *
+         * Counted, not eyeballed: the assertion is on the NUMBER of rendered
+         * paragraphs, because a renderer that silently truncated at some
+         * internal cap would still show a page that looks right.
+         */
+        const big = {
+            ...BOOK,
+            slug: 'bailey-sveshtenata-zemya',
+            title: 'Свещената земя',
+            author: 'Либърти Хайд Бейли',
+            chapters: Array.from({ length: 31 }, (_, i) => ({
+                number: i + 1,
+                title: `Глава ${i + 1}`,
+                originalTitle: null,
+                // 360 paragraphs over 31 chapters, as staged.
+                paragraphs: Array.from(
+                    { length: i < 20 ? 12 : 11 },
+                    (_, j) => `Параграф ${i + 1}.${j + 1}`,
+                ),
+            })),
+        };
+        const total = big.chapters.reduce((n, c) => n + c.paragraphs.length, 0);
+        expect(total).toBe(361);
+
+        swr({ data: big, isLoading: false, error: undefined });
+        const { container } = render(<BookReaderClient slug={big.slug} />);
+
+        // First and last heading by their FULL text, so an off-by-one at
+        // either end fails rather than averaging out.
+        //
+        // Not `getByText('Глава 1', { exact: false })` — that is a SUBSTRING
+        // match, so it also matches «Глава 10» through «Глава 19» and threw
+        // "Found multiple elements". A fixture of 31 is the first one large
+        // enough for that to bite; the 2-chapter fixture above would never
+        // have shown it.
+        const headings = Array.from(container.querySelectorAll('h2')).map((h) =>
+            (h.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        );
+        expect(headings).toHaveLength(31);
+        expect(headings[0]).toBe('1. Глава 1');
+        expect(headings[30]).toBe('31. Глава 31');
+        expect(container.querySelectorAll('section')).toHaveLength(31);
+        // And every paragraph. `<p>` also carries the author and the
+        // attribution footer, so the floor is the paragraph count and the
+        // assertion allows for those rather than pinning an exact total that
+        // a layout change would break for no reason.
+        expect(container.querySelectorAll('p').length).toBeGreaterThanOrEqual(total);
+    });
+
     it('renders nothing extra for a chapter with no original title', () => {
         swr({ data: BOOK, isLoading: false, error: undefined });
         render(<BookReaderClient slug="sun-tzu-izkustvoto-na-voynata" />);
