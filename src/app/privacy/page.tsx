@@ -8,6 +8,7 @@ import {
 import { Heading } from '@/components/ui/typography';
 import { DELETION_GRACE_DAYS } from '@/app-layer/usecases/account-erasure';
 import { USAGE_EVENT_RETENTION_DAYS } from '@/app-layer/telemetry/usage-events';
+import { RAW_POSITION_RETENTION_DAYS } from '@/lib/machines/fleet-view';
 
 /**
  * Privacy notice — a PUBLIC route (no tenant, no auth), because the promotions
@@ -53,7 +54,19 @@ export default async function PrivacyPage() {
         // no typed content, no position, nothing naming a field or a crop, no
         // cross-service tracking, no ad network. A reader told only "we record
         // how you use the app" would reasonably assume the worse version.
-        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests', 'collectUsage'] },
+        //
+        // `collectPositions` added with #3024, and the ORDER of that decision is
+        // the point. #493 established it for usage telemetry — the disclosure
+        // exists before the first event is recorded, not after — and production
+        // held `trackers 0`, `positions_total 0` when this was written, so the
+        // same order was still available for machinery tracking and was taken.
+        //
+        // It says whose record it is, because that is the part a driver cannot
+        // infer: the row belongs to the MACHINE and carries no person column,
+        // and it still shows where a person was if they were on it. A notice
+        // that only said "we record machine positions" would be true and would
+        // leave the reader to work that out.
+        { key: 'collect', body: ['collectAccount', 'collectFarm', 'collectRequests', 'collectUsage', 'collectPositions'] },
         // `useExchange` added with #1348: the exchange now shares a name with
         // the other farm, exactly as an offer request does. The notice said so
         // for offer requests only, and a document that describes one of two
@@ -123,6 +136,17 @@ export default async function PrivacyPage() {
                     the data gets". Same reasoning as `{graceDays}` above. */}
                 <p className="text-content-muted">
                     {t('keepUsage', { usageDays: USAGE_EVENT_RETENTION_DAYS })}
+                </p>
+                {/* #3024 — the machinery track's retention, INTERPOLATED from
+                    the constant `machine-position-sweep` (#3012) deletes by, so
+                    the notice and the job cannot disagree. That sweep is armed
+                    in production, which is what turns this sentence from a
+                    promise into a description. The second half names what
+                    SURVIVES the deletion — the derived worked-parcel record —
+                    because a reader told only that tracks are deleted would
+                    reasonably conclude nothing is kept. */}
+                <p className="text-content-muted">
+                    {t('keepPositions', { positionDays: RAW_POSITION_RETENTION_DAYS })}
                 </p>
             </section>
 
