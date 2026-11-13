@@ -691,6 +691,11 @@
       "documented": true
     },
     {
+      "path": "/api/social/profile",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/reports",
       "status": "live",
       "documented": true

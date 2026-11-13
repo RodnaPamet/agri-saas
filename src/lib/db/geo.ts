@@ -495,3 +495,144 @@ export function iouAgainstColumnSql(column: Prisma.Sql, candidate: Prisma.Sql): 
 export function intersectsColumnSql(column: Prisma.Sql, candidate: Prisma.Sql): Prisma.Sql {
     return Prisma.sql`ST_Intersects(${column}, ${candidate})`;
 }
+
+/**
+ * The worked-parcel matcher — #2948 stage 4.
+ *
+ * Lives HERE and not in the job, because this file is the only place raw
+ * `ST_*` is allowed and `geo-raw-sql-containment` enforces it. The reason is
+ * in that guard's own words: the spatial surface stays auditable. A whole
+ * statement rather than a column fragment is a departure from this file's
+ * other exports, and it is the honest shape — the query IS geometry from its
+ * first CTE to its last, and splitting it into fragments the job reassembles
+ * would put the geometry back in the job while satisfying the letter of the
+ * rule.
+ *
+ * ## The projection is the part that silently lies
+ *
+ * SRID 4326 is DEGREES. A length or a buffer computed on it comes back in
+ * degrees — a number that looks like metres and is not, and whose error is
+ * not even uniform: at 43°N a degree of longitude is about 81 km against
+ * 111 km for latitude. Bulgaria is UTM zone 35N, so every distance here goes
+ * through EPSG:32635 first.
+ *
+ * `MachinePosition` stores `lat`/`lon` as decimals rather than a geometry
+ * column, so points are built with `ST_MakePoint(lon, lat)` — in THAT order,
+ * which every PostGIS signature takes and which is the reverse of how the
+ * columns read.
+ *
+ * ## What the CTEs do, inside-out
+ *
+ *   filtered  the day's positions that could be work at all
+ *   hits      those falling inside some parcel, flagged by whether they are
+ *             also inside the parcel shrunk by `inwardBufferM`
+ *   marked    a 1 wherever a gap longer than `runGapMinutes` ends a run
+ *   runs      a running sum of those marks, giving each run an id
+ *   per_run   one row per (parcel, run): its span and its point counts
+ *   kept      runs lasting at least `minRunMinutes`
+ *
+ * Minutes are summed PER RUN and then across runs, so a machine that left a
+ * field and came back is not credited with the gap between.
+ *
+ * ## The thresholds are the caller's, deliberately
+ *
+ * Ignition, the speed band, the run length and the buffer are policy rather
+ * than geometry — #2948 says plainly that all of them want calibration
+ * against one real day — so they arrive as arguments and the job owns their
+ * values and their version string. What belongs here is only the geometry.
+ *
+ * ## No backticks inside the template literal below
+ *
+ * It is a `Prisma.sql` tagged template, so one backtick in a comment closes
+ * the string and turns the next token into a tagged-template call. That cost
+ * two debugging rounds while this query lived in the job: first
+ * 'SIMULATED is not a function', then four TS1005 syntax errors. Neither
+ * failed a test — both made the suite fail to COMPILE, which reports
+ * "Tests: 0 total". `machine-worked-derivation` asserts their absence.
+ */
+export function workedParcelMatchesSql(args: {
+    tenantId: string;
+    assetId: string;
+    dayStart: Date;
+    dayEnd: Date;
+    /** Allowed `MachinePositionSource` values — an ALLOWLIST, never a denylist. */
+    sources: readonly string[];
+    minSpeedKph: number;
+    maxSpeedKph: number;
+    runGapMinutes: number;
+    minRunMinutes: number;
+    inwardBufferM: number;
+}): Prisma.Sql {
+    return Prisma.sql`
+        WITH filtered AS (
+            SELECT p."recordedAt",
+                   ST_SetSRID(ST_MakePoint(p."lon"::float8, p."lat"::float8), 4326) AS geom
+            FROM "MachinePosition" p
+            WHERE p."tenantId" = ${args.tenantId}
+              AND p."assetId" = ${args.assetId}
+              AND p."recordedAt" >= ${args.dayStart}
+              AND p."recordedAt" < ${args.dayEnd}
+              -- COALESCE, not an equality: a tracker that never reports
+              -- ignition must not have its whole day discarded. NULL means
+              -- "not reported", not "off".
+              AND COALESCE(p."ignition", TRUE)
+              AND p."speedKph" IS NOT NULL
+              AND p."speedKph" >= ${args.minSpeedKph}
+              AND p."speedKph" <= ${args.maxSpeedKph}
+              AND p."source"::text IN (${Prisma.join(args.sources)})
+        ),
+        hits AS (
+            SELECT pa."id" AS parcel_id,
+                   f."recordedAt",
+                   f.geom,
+                   ST_Contains(
+                       ST_Buffer(ST_Transform(pa."geometry", 32635), ${-args.inwardBufferM}::float8),
+                       ST_Transform(f.geom, 32635)
+                   ) AS well_inside
+            FROM filtered f
+            JOIN "Parcel" pa
+              ON pa."tenantId" = ${args.tenantId}
+             AND pa."deletedAt" IS NULL
+             AND pa."geometry" IS NOT NULL
+             AND ST_Intersects(pa."geometry", f.geom)
+        ),
+        marked AS (
+            SELECT parcel_id, "recordedAt", well_inside,
+                   CASE
+                       WHEN "recordedAt" - LAG("recordedAt") OVER (
+                                PARTITION BY parcel_id ORDER BY "recordedAt")
+                            > (${args.runGapMinutes} * INTERVAL '1 minute')
+                       THEN 1 ELSE 0
+                   END AS breaks
+            FROM hits
+        ),
+        runs AS (
+            SELECT parcel_id, "recordedAt", well_inside,
+                   SUM(breaks) OVER (
+                       PARTITION BY parcel_id ORDER BY "recordedAt"
+                   ) AS run_id
+            FROM marked
+        ),
+        per_run AS (
+            SELECT parcel_id, run_id,
+                   MIN("recordedAt") AS started,
+                   MAX("recordedAt") AS ended,
+                   COUNT(*) AS points,
+                   COUNT(*) FILTER (WHERE well_inside) AS inside_points
+            FROM runs
+            GROUP BY parcel_id, run_id
+        ),
+        kept AS (
+            SELECT *
+            FROM per_run
+            WHERE ended - started >= (${args.minRunMinutes} * INTERVAL '1 minute')
+        )
+        SELECT parcel_id,
+               CAST(ROUND(SUM(EXTRACT(EPOCH FROM (ended - started)) / 60.0)) AS int)
+                   AS minutes,
+               CAST(SUM(inside_points) AS int) AS inside_points,
+               CAST(SUM(points) AS int) AS matched_points
+        FROM kept
+        GROUP BY parcel_id
+    `;
+}

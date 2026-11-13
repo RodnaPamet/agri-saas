@@ -18,6 +18,7 @@ const MachineRepository = {
     latestPositions: jest.fn(),
     listDayPositions: jest.fn(),
     listWorkedParcels: jest.fn(),
+    findWorkedDayMarker: jest.fn(),
 };
 jest.mock('../../../src/app-layer/repositories/MachineRepository', () => ({
     MachineRepository,
@@ -59,6 +60,8 @@ beforeEach(() => {
     MachineRepository.latestPositions.mockResolvedValue([]);
     MachineRepository.listDayPositions.mockResolvedValue([]);
     MachineRepository.listWorkedParcels.mockResolvedValue([]);
+    // No marker by default: an UNPROCESSED day is the empty state.
+    MachineRepository.findWorkedDayMarker.mockResolvedValue(null);
 });
 
 describe('listMachines', () => {
@@ -257,6 +260,16 @@ describe('readMachineWorked', () => {
                 parcel: { name: 'Юг 4' },
             },
         ]);
+        // #2984: the timestamp is the MARKER's, not the row's. The row still
+        // carries one and it is deliberately DIFFERENT here, so a reader that
+        // went back to reducing over rows fails rather than passing by
+        // coincidence.
+        MachineRepository.findWorkedDayMarker.mockResolvedValue({
+            derivedAt: new Date('2026-11-13T02:20:00.000Z'),
+            derivedFrom: 'v1:test',
+            positionsConsidered: 120,
+            parcelsMatched: 1,
+        });
         const out = await readMachineWorked(ctx, 'a1', '2026-11-12');
         expect(out.parcels).toEqual([
             {
@@ -267,10 +280,19 @@ describe('readMachineWorked', () => {
                 confidence: 0.8,
             },
         ]);
-        expect(out.derivedAt).toBe('2026-11-13T02:15:00.000Z');
+        expect(out.derivedAt).toBe('2026-11-13T02:20:00.000Z');
     });
 
     it('reports the LATEST run when a day was re-derived', async () => {
+        /*
+         * Previously this reduced over the rows' own `derivedAt` values and
+         * took the newest. Since #2984 the marker answers it, and the marker
+         * is UPSERTED per (asset, day) — so "the latest run" is a property of
+         * that one row rather than something reconstructed from the rows it
+         * produced. The row timestamps below are deliberately STALE, which is
+         * the case a re-derivation leaves behind when it rewrites some parcels
+         * and not others.
+         */
         MachineRepository.listWorkedParcels.mockResolvedValue([
             {
                 parcelId: 'p1', minutesWorked: 10, areaHa: null, confidence: null,
@@ -278,23 +300,44 @@ describe('readMachineWorked', () => {
             },
             {
                 parcelId: 'p2', minutesWorked: 20, areaHa: null, confidence: null,
-                derivedAt: new Date('2026-11-14T02:00:00.000Z'), parcel: { name: 'B' },
+                derivedAt: new Date('2026-11-13T02:00:00.000Z'), parcel: { name: 'B' },
             },
         ]);
+        MachineRepository.findWorkedDayMarker.mockResolvedValue({
+            derivedAt: new Date('2026-11-14T02:00:00.000Z'),
+            derivedFrom: 'v1:test',
+            positionsConsidered: 300,
+            parcelsMatched: 2,
+        });
         const out = await readMachineWorked(ctx, 'a1', '2026-11-12');
         expect(out.derivedAt).toBe('2026-11-14T02:00:00.000Z');
     });
 
-    it('KNOWN LIMIT: an empty day cannot yet say "ran and found nothing"', async () => {
-        // #2948 Addendum 2 asks for three states from two fields, and the
-        // middle one — `parcels: []` with a timestamp — is not expressible,
-        // because `derivedAt` is read off the rows and an idle day has none.
-        //
-        // This asserts the CURRENT behaviour rather than the contract, and it
-        // is correct today because the nightly derivation does not exist, so
-        // "has not run" is true of every date. It is pinned here so the
-        // derivation cannot ship without confronting it: the fix is a run
-        // marker, and when it lands this test changes in the same diff.
+    it('an empty day WITH a marker says "ran and found nothing" — #2984', async () => {
+        /*
+         * The limit this file pinned until now, and its predecessor said "when
+         * it lands this test changes in the same diff". It has: the middle row
+         * of #2948 Addendum 2's table is expressible, because the timestamp
+         * comes from `MachineWorkedDay` rather than from rows an idle day does
+         * not have.
+         */
+        MachineRepository.findWorkedDayMarker.mockResolvedValue({
+            derivedAt: new Date('2026-11-13T02:20:00.000Z'),
+            derivedFrom: 'v1:test',
+            // The machine reported, and nothing was work — which is what
+            // separates an idle day from a tracker that sent nothing usable.
+            positionsConsidered: 420,
+            parcelsMatched: 0,
+        });
+        const out = await readMachineWorked(ctx, 'a1', '2026-11-12');
+        expect(out.parcels).toEqual([]);
+        expect(out.derivedAt).toBe('2026-11-13T02:20:00.000Z');
+    });
+
+    it('an empty day with NO marker still says "not computed yet"', async () => {
+        // The control for the test above. Without it, a reader that reported a
+        // timestamp unconditionally would satisfy the new assertion and
+        // destroy the distinction the whole issue is about.
         const out = await readMachineWorked(ctx, 'a1', '2026-11-12');
         expect(out.parcels).toEqual([]);
         expect(out.derivedAt).toBeNull();

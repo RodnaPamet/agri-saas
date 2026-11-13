@@ -1871,6 +1871,23 @@ export const CreateChannelPostSchema = z.object({
      * existed.
      */
     kind: z.enum(['POST', 'QUESTION']).optional(),
+    /**
+     * The farm to post AS, by slug — #2989.
+     *
+     * SUPPLIED rather than read off the path, because there is no slug in the
+     * path: channel routes are `/api/social/channels/...`, person-scoped,
+     * while the PAGE is at `/t/{slug}/channels`. #2989 assumed otherwise.
+     *
+     * Not forgeable — the usecase requires an ACTIVE membership of that farm
+     * and refuses otherwise, with one code for "no such farm" and "not your
+     * farm" so this is not an enumeration oracle for slugs.
+     *
+     * Optional, and an absent value records NULL rather than guessing. The
+     * read-time rule this column exists to avoid is "oldest membership, then
+     * id", and applying it here would be the same guess merely frozen into a
+     * row.
+     */
+    tenantSlug: z.string().min(1).max(100).optional(),
 });
 
 /** A reply, and optionally «Също изпрати в канала» — P9.3b (#2937). */
@@ -1886,6 +1903,22 @@ export const CreateChannelReplySchema = z.object({
      */
     alsoToChannel: z.boolean().optional(),
     mentionUserIds: z.array(z.string().min(1)).max(5).optional(),
+    /** The farm to reply AS, by slug — #2989. See `CreateChannelPostSchema`. */
+    tenantSlug: z.string().min(1).max(100).optional(),
+});
+
+/**
+ * A person's own display name — #2989.
+ *
+ * `null` is ACCEPTED and means "clear it", which is why this is `nullable()`
+ * and not merely optional: an absent key and an explicit null would otherwise
+ * be indistinguishable, and one of them has to mean "remove my name".
+ *
+ * The length cap lives in the usecase, AFTER sanitisation, so markup cannot
+ * pass a cap here and then be stripped to something shorter.
+ */
+export const SetDisplayNameSchema = z.object({
+    displayName: z.string().max(500).nullable(),
 });
 
 /** «Решено» — P9.3b (#2937). Asker only; the usecase enforces that. */
