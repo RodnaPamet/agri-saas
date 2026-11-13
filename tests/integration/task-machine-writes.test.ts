@@ -176,6 +176,38 @@ describeFn('#3026 — task machine writes', () => {
             expect(await rows()).toHaveLength(1);
         });
 
+        it('two attaches AT ONCE both succeed and leave ONE row', async () => {
+            /*
+             * THIS CASE FOUND A DEFECT, which is why it is here rather than
+             * being decoration on a sequential idempotence test.
+             *
+             * `upsert` was the first spelling, and Prisma's `upsert` is NOT
+             * atomic for a compound unique — it reads, then inserts. Two
+             * overlapping transactions both miss and the loser raises P2002:
+             * measured, this case failed 2 runs in 4 with `Unique constraint
+             * failed on …TaskAsset_taskId_assetId_key` naming the upsert.
+             *
+             * `createMany` + `skipDuplicates` compiles to `ON CONFLICT DO
+             * NOTHING`, so the database resolves the collision and `count`
+             * says which side of it a call was on. Five consecutive runs green
+             * after the change.
+             *
+             * The phone produces this race routinely: it is an outbox client on
+             * rural LTE, so a request that times out is retried while the first
+             * may still be in flight. A P2002 there is a 500 for work that in
+             * fact succeeded, and an outbox item parked as poison on a phone
+             * that was right to retry.
+             */
+            const [a, b] = await Promise.all([
+                attachTaskAsset(ctxFor('ADMIN'), taskId, tractor),
+                attachTaskAsset(ctxFor('ADMIN'), taskId, tractor),
+            ]);
+
+            expect(a.attached).toBe(true);
+            expect(b.attached).toBe(true);
+            expect(await rows()).toHaveLength(1);
+        });
+
         it('detaching twice is not an error — the phone retries', async () => {
             await attachTaskAsset(ctxFor('ADMIN'), taskId, tractor);
             await detachTaskAsset(ctxFor('ADMIN'), taskId, tractor);

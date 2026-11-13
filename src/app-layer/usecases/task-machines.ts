@@ -307,16 +307,34 @@ export async function attachTaskAsset(
             );
         }
 
-        const existing = await db.taskAsset.findFirst({
-            where: { taskId, assetId, tenantId: ctx.tenantId },
-            select: { id: true },
+        /*
+         * `createMany` + `skipDuplicates` — ONE statement, and the unique index
+         * arbitrates.
+         *
+         * `upsert` was the obvious spelling and is NOT atomic for a compound
+         * unique: Prisma reads, then inserts, so two overlapping transactions
+         * both miss and the loser raises P2002. Measured here rather than
+         * reasoned about — the concurrency case in
+         * `task-machine-writes.test.ts` failed intermittently, 2 runs in 4,
+         * with `Unique constraint failed on …TaskAsset_taskId_assetId_key`
+         * pointing straight at the `upsert` call.
+         *
+         * `skipDuplicates` compiles to `ON CONFLICT DO NOTHING`, so the
+         * database resolves the collision and `count` reports which side of it
+         * this call was on: 1 means this call created the row, 0 means it was
+         * already there. That also removes the pre-read entirely — the
+         * read-then-write window is gone rather than narrowed.
+         *
+         * Note `skipDuplicates` is deliberately NOT used on `MachinePosition`,
+         * for the opposite reason: that table has no unique key, so it would
+         * silently do nothing. It works here BECAUSE `@@unique([taskId,
+         * assetId])` exists.
+         */
+        const written = await db.taskAsset.createMany({
+            data: [{ tenantId: ctx.tenantId, taskId, assetId }],
+            skipDuplicates: true,
         });
-
-        await db.taskAsset.upsert({
-            where: { taskId_assetId: { taskId, assetId } },
-            create: { tenantId: ctx.tenantId, taskId, assetId },
-            update: {},
-        });
+        const alreadyAttached = written.count === 0;
 
         /*
          * The audit row is written only on a REAL attachment. A retry that
@@ -330,7 +348,7 @@ export async function attachTaskAsset(
          * SIEM filter can separate this on. That is CLAUDE.md's stated rule
          * for when the canonical verb is the wrong choice.
          */
-        if (existing === null) {
+        if (!alreadyAttached) {
             await logEvent(db, ctx, {
                 action: 'TASK_MACHINE_ATTACHED',
                 entityType: 'TaskAsset',
@@ -346,7 +364,7 @@ export async function attachTaskAsset(
             });
         }
 
-        return { attached: true, alreadyAttached: existing !== null };
+        return { attached: true, alreadyAttached };
     });
 }
 
@@ -376,6 +394,16 @@ export async function detachTaskAsset(
         const task = await MachineRepository.findTaskAuth(db, ctx, taskId);
         if (task === null) throw codedNotFound('TASK_NOT_FOUND', 'No such task.');
 
+        /*
+         * `tenantId` here is defence in depth and is UNPROVEN by the suite:
+         * removing it leaves all fifteen cases green, because
+         * `runInTenantContext` has already bound RLS and the policy scopes the
+         * delete to this farm. It stays for the reason every repository query
+         * in this codebase carries one — the application filter is what makes
+         * an error message legible when the app is working correctly — and the
+         * cross-farm case is caught one line above, where the TASK fails to
+         * resolve.
+         */
         const res = await db.taskAsset.deleteMany({
             where: { taskId, assetId, tenantId: ctx.tenantId },
         });
