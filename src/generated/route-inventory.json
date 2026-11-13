@@ -646,6 +646,11 @@
       "documented": true
     },
     {
+      "path": "/api/social/channels/{channelId}/mute",
+      "status": "live",
+      "documented": true
+    },
+    {
       "path": "/api/social/channels/{channelId}/posts",
       "status": "live",
       "documented": true
