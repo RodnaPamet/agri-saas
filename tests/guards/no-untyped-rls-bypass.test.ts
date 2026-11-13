@@ -200,7 +200,44 @@ describe('the typed bypass is actually USED — not a control that only exists',
         //
         // Raised by exactly one, for one named caller, rather than to a round
         // number.
-        expect(callers.length).toBeLessThanOrEqual(6);
+        //
+        // EIGHT since #2987's person-scoped push: `lib/notifications/apns.ts`
+        // and `lib/notifications/web-push.ts`, both under one new reason,
+        // `person-push-devices`. Two files rather than one because the two
+        // transports are separate modules by design — each filters its own
+        // `platform` in SQL so a row of the other kind never enters its
+        // world — and a shared device-reading helper would be a third module
+        // holding the bypass for both, which is a worse place for it.
+        //
+        // The bypass is forced rather than chosen. A channel post and a direct
+        // message carry no `tenantId` (P9.1's five tables, P8.1's four), so
+        // there is no context to enter with; and `PushSubscription` is one row
+        // per (tenant, user, endpoint) with a tenant-scoped registration
+        // route, so a resolved-tenant read would MISS a device registered
+        // under a different farm — silently, about half the time.
+        //
+        // What bounds it is the `userId` filter plus the SHAPE of the answer:
+        // a device token and its APNs environment, or the Web Push keys.
+        // No tenant id, slug, membership or farm identity crosses the
+        // boundary, which is the `dm-recipient-resolution` argument one domain
+        // over. The nearest existing reasons were checked rather than assumed:
+        // `cross-tenant-sweep` is for SCHEDULED jobs iterating every tenant
+        // and this runs per recipient, and `dm-recipient-resolution`'s own
+        // bound is the ORDER of a handle→profile→owner chain that has nothing
+        // to do with devices.
+        //
+        // NINE, not eight: `app-layer/notifications/person-delivery.ts` is the
+        // third file of the same #2987 change and was missed when I first
+        // raised this — the ratchet caught it, which is the ratchet working.
+        // It reads the recipient's `UserNotificationPreference` rows ACROSS
+        // farms (the table is keyed `@@unique([userId, tenantId])`, so a
+        // person in three farms has three, and a tenantless event belongs to
+        // none of them) and counts their devices the same way. Same forced
+        // bypass, same `userId` bound, same shape of answer: a preference enum
+        // and two integers.
+        //
+        // Raised by exactly three, for three named callers.
+        expect(callers.length).toBeLessThanOrEqual(9);
 
         // ── and the SITES, because the file count hid five of them ──
         //
@@ -261,7 +298,25 @@ describe('the typed bypass is actually USED — not a control that only exists',
         // here the three reads ARE the safety argument: it is their ORDER that
         // bounds the bypass, and splitting them would let a future edit reorder
         // them across block boundaries without any one reason looking wrong.
-        expect(sites.length).toBeLessThanOrEqual(13);
+        //
+        // 13 → 17 by #2987: FOUR sites across the two push transports — a read
+        // and a prune in each. The prune needs the bypass more than the read
+        // does, and that is the reason it is a separate site rather than
+        // folded in: a token the push service reported gone may be stored
+        // under a farm the person has since LEFT, and a tenant-scoped
+        // `deleteMany` would remove zero rows and return normally
+        // (`rls-delete-is-silent-and-select-governs-it`), so the dead device
+        // would be pushed to for ever while every send kept reporting `gone`.
+        // 17 → 18: the fifth #2987 site, in `person-delivery.ts`. ONE block
+        // holding both reads — the preference rows and the device rows — and
+        // one rather than two deliberately, the opposite choice from the two
+        // transports above. There the read and the PRUNE are separate because
+        // the prune needs the bypass for its own reason (a tenant-scoped
+        // delete removes zero rows silently). Here the two reads ARE one
+        // answer: the decision needs the preference AND the device count
+        // together, and splitting them would let a future edit read one under
+        // a bypass and the other not, with neither reason looking wrong.
+        expect(sites.length).toBeLessThanOrEqual(18);
 
         // The floor, and it is an INVARIANT rather than a second hardcoded
         // number: every file that bypasses contains at least one call, so

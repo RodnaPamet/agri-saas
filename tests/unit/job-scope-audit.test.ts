@@ -165,7 +165,20 @@ describe('Executor Registry — tenantId propagation audit', () => {
             // also a NARROWER claim than the job makes: the sweep is every
             // channel on the platform, and charging one arbitrary farm for
             // platform moderation work is the `notice-score` reason exactly.
-            if (['channel-auto-hide', 'usage-event-retention', 'machine-position-sweep', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
+            // person-push-send (#2987) delivers a channel mention, a channel
+            // reply or a direct message to one person's devices. Tenantless
+            // for the strongest reason on this list: the subject has no farm,
+            // because P9.1's five channel tables and P8.1's four DM tables
+            // carry no tenantId at all. A payload tenantId would not be a
+            // narrower claim — it would be a FABRICATED one, since the only
+            // candidate is an arbitrary membership of the recipient's, which
+            // is P5.4a's invent-a-tenant mistake. It would also pick wrong:
+            // PushSubscription is one row per (tenant, user, endpoint) and the
+            // registration route is tenant-scoped, so a person in three farms
+            // may hold a row under only one of them. The axis this job scopes
+            // by is the RECIPIENT, and every query under `person-push-devices`
+            // filters userId to that one person.
+            if (['person-push-send', 'channel-auto-hide', 'usage-event-retention', 'machine-position-sweep', 'health-check', 'sync-pull', 'schedule-trigger-sweep', 'sharepoint-delta-sync-dispatch', 'sharepoint-subscription-renew', 'risk-appetite-monitor', 'risk-snapshot', 'report-delivery', 'exchange-expiry-sweep', 'market-prices-pull', 'market-prices-barchart', 'market-news-pull', 'news-event-extraction', 'support-scheme-extraction', 'promotion-lead-retention', 'process-outbox', 'zero-success-route-check', 'unverified-account-sweep', 'mail-canary', 'statement-dispatch', 'notice-score', 'account-erasure-sweep', 'notice-triage-alert', 'document-retention-sweep', 'document-drive-copy-sweep', 'memory-extract'].includes(jobName)) continue;
 
             // If the parameter is named _payload, it means tenantId is being ignored
             if (paramName.startsWith('_')) {

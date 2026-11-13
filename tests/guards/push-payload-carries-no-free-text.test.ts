@@ -35,6 +35,25 @@ import { collectSourceFiles, REPO_ROOT } from '../helpers/collect-files';
 const PLANTED = 'Пръскане на блок 3 срещу мана ZZQX';
 
 /**
+ * Every job whose payload reaches an APNs `aps.alert.body`.
+ *
+ * `person-push-send` joined on #2987 — the tenantless sibling for channel
+ * mentions, channel replies and direct messages. It is here because the
+ * exposure is IDENTICAL: the same `sendApnsToPerson` → Apple path, the same
+ * unencrypted alert body. A guard that ranged over `push-send` alone would
+ * have graded the three producers that already existed and said nothing about
+ * the three new ones, which is `count-the-routes-a-gate-covers` with the
+ * population one name short.
+ *
+ * It matters more for channels than for tasks, and that is worth saying:
+ * `ChannelPost.body` is PLAINTEXT at rest (P9.1, so P9.7 can search it), so
+ * the encryption boundary that makes a task description obviously unsendable
+ * does not exist here. Nothing but this rule stops a channel post's prose
+ * going through Redis and APNs.
+ */
+const PUSH_JOBS = ['push-send', 'person-push-send'] as const;
+
+/**
  * The population, as a NAMED module-level helper rather than inline in `it()`.
  *
  * `selector-teeth-reports-its-denominator` caps the number of guard files
@@ -75,29 +94,37 @@ export function pushEnqueueSites(): Array<{ file: string; body: string }> {
          * nothing.
          */
         const src = blankNonCode(readFileSync(file, 'utf8'));
-        if (!src.includes("enqueue('push-send'")) continue;
-        // The object literal of each call, up to its closing brace.
-        const re = /enqueue\(\s*'push-send'\s*,\s*\{([\s\S]*?)\n\s*\}\s*\)/g;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(src)) !== null) {
-            const bodyLine = m[1]
-                .split('\n')
-                .map((l) => l.replace(/\/\/.*$/, '').trim())
-                .find((l) => l.startsWith('body:'));
-            sites.push({
-                file: file.slice(REPO_ROOT.length + 1),
-                body: bodyLine ?? '<no body: key>',
-            });
+        if (!PUSH_JOBS.some((j) => src.includes(`enqueue('${j}'`))) continue;
+        for (const job of PUSH_JOBS) {
+            // The object literal of each call, up to its closing brace.
+            const re = new RegExp(
+                `enqueue\\(\\s*'${job}'\\s*,\\s*\\{([\\s\\S]*?)\\n\\s*\\}\\s*\\)`,
+                'g',
+            );
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(src)) !== null) {
+                const bodyLine = m[1]
+                    .split('\n')
+                    .map((l) => l.replace(/\/\/.*$/, '').trim())
+                    .find((l) => l.startsWith('body:'));
+                sites.push({
+                    file: file.slice(REPO_ROOT.length + 1),
+                    body: bodyLine ?? '<no body: key>',
+                });
+            }
         }
     }
     return sites;
 }
 
 describe('push payloads carry no farmer-written text (#1999)', () => {
-    it('§1 every enqueue("push-send") site feeds `body` from a pushBody', () => {
+    it('§1 every push-enqueue site feeds `body` from a pushBody', () => {
         const sites = pushEnqueueSites();
 
-        console.log(`[push-payload] ${sites.length} enqueue('push-send') site(s) across src/`);
+        console.log(
+            `[push-payload] ${sites.length} push-enqueue site(s) across src/ `
+            + `(jobs: ${PUSH_JOBS.join(', ')})`,
+        );
         for (const s of sites) console.log(`[push-payload]   ${s.file} → ${s.body}`);
 
         // A floor, so an extraction that stops matching fails instead of
