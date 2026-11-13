@@ -124,8 +124,20 @@ export interface PersonPushSendResult {
  * `PushSubscription` registration is tenant-scoped. This is a NAVIGATION
  * SHELL: the notification stays tenantless, and the slug is a URL segment
  * deciding which farm's chrome the page opens inside. P8.4 settled that the
- * answer is arbitrary — "a DM list is identical under every farm" — so any
- * active membership is as correct as any other.
+ * answer is arbitrary — "a DM list is identical under every farm" — so one
+ * active membership is as good a choice as the next.
+ *
+ * (The wording is load-bearing. `no-explicit-any-ratchet` counts five cast
+ * patterns on RAW TEXT, before any comment stripping — its own CAPS comment
+ * says so, and #1526 lowered that cap 18 to 16 by deleting two PROSE hits.
+ * The earlier version of the sentence above ended with the two-word cast
+ * spelling, in English, and reddened a shard. No regex can separate the two
+ * readings: the guard correctly rejects "has any" and "this was any good",
+ * because those differ by a character, while the English and the cast do not
+ * differ at all. So the fix is always the wording, never the cap — a cap that
+ * four real casts are tracked by is not something to spend on a sentence.
+ * Writing this note cost a second shard, because the first draft of it
+ * explained the trap by quoting the phrase.)
  *
  * ## `listMyFarms`, rather than a second spelling of its predicate
  *
