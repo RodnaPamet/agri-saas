@@ -481,6 +481,27 @@ describe('New page token discipline', () => {
         // It uses PageHeader rather than a hand-rolled breadcrumbs+Heading+<p>
         // stack precisely because the inline-subtitle budget names that
         // component as the canonical home for a page subtitle.
+        // 96 → 97 (+1, #2948 stage 5's link fix): the
+        // `/machines/[assetId]` REDIRECT. A genuinely new route, so it enters
+        // the tally the way every unpromoted route above does, and it is not
+        // drift — three lines of `text-content-subtle` copied from
+        // `/issues/[issueId]`, which is the same kind of page for the same
+        // reason.
+        //
+        // It is deliberately NOT promoted to MIGRATED_PAGES: that list is for
+        // pages that adopt the design system's shape, and a redirect has no
+        // shape to adopt. Promoting it to dodge a +1 would put a mislabel in
+        // the one list a reader consults to see what "migrated" means.
+        //
+        // MEASURED from the failing assertion (97), not computed from the line
+        // above — the cap and the count can disagree for reasons that are not
+        // this diff, and taking the number from the failure is what keeps a
+        // shared ratchet honest when two branches raise it at once.
+        //
+        // This one is expected to come DOWN rather than stay: the entry in
+        // `pages-are-reachable`'s `DELIBERATELY_UNLINKED` names the condition —
+        // when the web gets a fleet surface, the alert points there and this
+        // page goes.
         // THE DENOMINATOR, BEFORE THE CAP — #2377.
         //
         // `unmigrated` derives from `allPages`, so a walk that found nothing
@@ -497,11 +518,11 @@ describe('New page token discipline', () => {
         // does not move it, and far above zero so an emptied walk fails.
         console.log(
             `[design-system-drift] ${allPages.length} page-ish file(s) under the tenant tree, `
-                + `${unmigrated.length} unmigrated (cap 96)`,
+                + `${unmigrated.length} unmigrated (cap 97)`,
         );
         expect(allPages.length).toBeGreaterThanOrEqual(80);
 
-        expect(unmigrated.length).toBeLessThanOrEqual(96);
+        expect(unmigrated.length).toBeLessThanOrEqual(97);
     });
 
     it('migrated page count is at least 4', () => {
