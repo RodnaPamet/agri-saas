@@ -172,8 +172,22 @@ model ChannelMembership {
   /// `channel_membership_update` exists at all.
   lastReadAt DateTime?
 
-  /// Muted: still a member, no push. P9.3 pushes only for mentions and replies,
-  /// so this narrows an already-narrow trigger.
+  /// Muted: still a member, no notification. P9.3 notifies only for mentions
+  /// and replies, so this narrows an already-narrow trigger.
+  ///
+  /// READ since #2987, by `reachableTargets` in `usecases/channels.ts`, which
+  /// is where the suppression happens — deliberately NOT at the mention.
+  /// `resolveMentionable` leaves a muted person in the recordable set, because
+  /// the mention ROW is a record (and the thing the Art 15 export returns)
+  /// while the mute is a statement about being INTERRUPTED. Filtering earlier
+  /// would make a muted person's mention vanish from their own data download.
+  ///
+  /// This docblock read "no push" from P9.1 until #2987 and described a
+  /// mechanism that did not exist: nothing wrote this column and nothing
+  /// consulted it, so a mute control on the phone would have done nothing and
+  /// looked exactly like a working one. **It still has no WRITER** — there is
+  /// no mute endpoint, so the only way to set it today is a direct update, and
+  /// #2990 owns the control alongside the read cursor.
   mutedAt DateTime?
 
   channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
@@ -321,8 +335,35 @@ model ChannelPostReaction {
 /// be advisory and a post could mention a hundred people; as rows, the usecase
 /// counts them before inserting and the count is checkable in SQL.
 ///
-/// It is also what makes the mention PUSH addressable without parsing prose in
-/// the notification path — P9.3 pushes only for mentions and replies.
+/// It is also what makes the mention NOTIFICATION addressable without parsing
+/// prose in the notification path — P9.3 notifies for mentions and replies and
+/// nothing else, never for an ordinary post.
+///
+/// ## The notification EXISTS since #2987, and until then this said it did
+///
+/// From P9.1 to 2026-11-13 the only writer of this table was
+/// `recordMentions` and the only reader in the repo was the GDPR export, so a
+/// mention's sole observable effect was that it appeared in the mentioned
+/// person's Art 15 download, possibly months later. `channel_post_mention_insert`'s
+/// own migration comment rested a SECURITY argument on a push that did not
+/// exist, which is worse than a rotted claim: a reader checking whether the
+/// control was load-bearing got "yes, obviously" from the prose and "there is
+/// no push" from the code.
+///
+/// It is load-bearing now. `queueChannelActivityNotify` publishes on the
+/// `channel-activity:<userId>` address for every mention and every reply, so a
+/// caller able to INSERT a row here could reach any person on the platform
+/// without posting anything they would read — exactly the harm the missing arm
+/// prevents.
+///
+/// What is still NOT delivered, so the next reader does not over-read the
+/// paragraph above: that is an SSE event, so a person with the app OPEN is
+/// told at once and a person with it closed learns nothing until they open it.
+/// Every push transport here is tenant-scoped end to end
+/// (`PushSubscription.tenantId` is NOT NULL, `sendApnsToUser` binds RLS
+/// through `runInTenantContext`, `UserNotificationPreference` is per (user,
+/// farm)) and a channel has no farm. A direct message is in the same position
+/// and equally silent.
 model ChannelPostMention {
   id String @id @default(cuid())
 
