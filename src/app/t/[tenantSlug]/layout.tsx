@@ -64,7 +64,7 @@ export default async function TenantLayout({
     }
     const [
         planRaw, availableModules, promotionsAvailable, googleIntegrationEnabled,
-        channelsEnabled,
+        channelsEnabled, libraryEnabled,
     ] =
         await Promise.all([
             getTenantPlan(serverCtx.tenant.id),
@@ -85,6 +85,15 @@ export default async function TenantLayout({
             // above: it costs no extra latency on a call that is already
             // awaited.
             isFeatureEnabled('social.channels', session.user.id),
+            // #2980 — «Вдъхновение». Same mechanism as the line above, and
+            // the same reason: the sidebar item is rendered by a client hook
+            // and there is no client-side flags hook by design. Note the PAGE
+            // it links to is NOT under this layout — it is `/library`, a
+            // non-tenant route by owner ruling — so this flag is resolved
+            // here purely to decide whether the item is OFFERED. The page
+            // gates itself on the same flag and answers 404, which is what
+            // keeps a dark surface unreachable rather than merely unlinked.
+            isFeatureEnabled('library.enabled', session.user.id),
         ]);
     const plan = planRaw ?? undefined;
 
@@ -101,6 +110,7 @@ export default async function TenantLayout({
             isPlatformTenant: isPlatformTenant(tenantSlug),
             googleIntegrationEnabled,
             channelsEnabled,
+            libraryEnabled,
             permissions: serverCtx.permissions,
             appPermissions: serverCtx.appPermissions,
         }}>
