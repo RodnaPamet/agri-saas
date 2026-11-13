@@ -6840,6 +6840,7 @@
         "CHANNEL_POST_TOO_LONG": "That post is too long.",
         "CHANNEL_SLOW_MODE": "That channel is in slow mode. Wait a little before posting again.",
         "VOICE_NOTE_DURATION_REQUIRED": "That recording has no length.",
+        "VOICE_NOTE_HAS_LOCATION": "That recording carries the place it was made. Record it again with location off.",
         "BOOK_NOT_FOUND": "That book is not in the library.",
         "ACCESS_REVIEW_ALREADY_CLOSED": "This campaign is already closed.",
         "ACCESS_REVIEW_DECISIONS_IMMUTABLE": "This campaign is closed; decisions are immutable.",

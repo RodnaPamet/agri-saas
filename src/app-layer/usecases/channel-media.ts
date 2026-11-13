@@ -122,6 +122,71 @@ const EXTENSION: Record<string, string> = {
     'audio/ogg': 'ogg',
 };
 
+
+/**
+ * Atom and tag names that carry a LOCATION, in the two containers accepted.
+ *
+ * `©xyz` is the QuickTime/MP4 user-data atom holding an ISO-6709 coordinate
+ * string; `loci` is the 3GPP location box; `LOCATION=` is the Vorbis comment
+ * field name for Ogg.
+ *
+ * `©` is U+00A9, which in a container is the single byte 0xA9 — these are
+ * matched against a `latin1` reading of the buffer for that reason, not utf8,
+ * where 0xA9 alone is invalid and would decode to a replacement character that
+ * matches nothing.
+ */
+const LOCATION_MARKERS: readonly string[] = ['\u00a9xyz', 'loci', 'LOCATION='];
+
+/**
+ * Refuse a recording that carries where it was made — #3044.
+ *
+ * ## Why REFUSE rather than strip
+ *
+ * agrent-ios measured the recorder this product actually uses — Core Audio's
+ * AAC m4a writer at the phone's settings, mono 22.05 kHz 64 kbps, which is
+ * what `AVAudioRecorder` produces: brand `M4A `, and `©too`, `©xyz`, `loci`,
+ * `©day` and `ilst` all ABSENT. There is no metadata box at all.
+ *
+ * So the gap this guards was real in principle and empty in practice, and a
+ * stripper would have been a new container parser on an upload path, written
+ * to remove atoms that are not there. A marker scan costs one substring search
+ * over a buffer already in memory and adds no decoder, while enforcing the
+ * property that matters: a recording made somewhere should not carry where.
+ *
+ * ## Why LOCATION only
+ *
+ * `©too` names an encoder or a device model, and a future recorder may write
+ * one legitimately — refusing it would reject honest recordings for no privacy
+ * gain, and a control that fires on honest input is one somebody switches off.
+ * A location atom is different in kind: it is what a parcel's coordinates
+ * would travel in, which is what `stripImageMetadata` exists to stop on the
+ * photograph path.
+ *
+ * ## Why the SERVER, when the phone checks too
+ *
+ * agrent-ios refuses before upload, which is the right place for a fast
+ * failure and not the place for the guarantee: #2940's own argument about
+ * «max 2:00» is that a control enforced in the recorder is a suggestion, and
+ * this endpoint is person-scoped and reachable by anything holding a session.
+ *
+ * ## What it does NOT establish
+ *
+ * That the recording carries no location at all. A coordinate in a
+ * codec-private box, or in the audio itself, is not something a marker scan
+ * can see — `mime-sniff`'s note applies, this is a byte-level check and not a
+ * parser. It refuses the containers' STANDARD places for a coordinate, which
+ * is where a recorder that wrote one would put it.
+ */
+function refuseIfLocated(bytes: Buffer): void {
+    const text = bytes.toString('latin1');
+    if (LOCATION_MARKERS.some((marker) => text.includes(marker))) {
+        throw codedBadRequest(
+            'VOICE_NOTE_HAS_LOCATION',
+            'That recording carries the place it was made. Record it again with location off.',
+        );
+    }
+}
+
 function notThere(): never {
     throw codedNotFound('CHANNEL_POST_NOT_FOUND', 'That post does not exist.');
 }
@@ -229,6 +294,11 @@ export async function postChannelVoiceNote(
     if (input.durationMs > VOICE_NOTE_MAX_MS) {
         throw codedBadRequest('VOICE_NOTE_TOO_LONG', 'That recording is longer than two minutes.');
     }
+
+    // BEFORE the channel reads and before the AV scan, because it is the
+    // cheapest refusal of the three: an upload that cannot be stored never
+    // reaches a database round trip or ClamAV.
+    refuseIfLocated(input.bytes);
 
     await assertPostable(ctx, channelId);
 
